@@ -1,0 +1,88 @@
+global:
+  resolve_timeout: 5m
+  # SMTP configuration for email alerts
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'alerts@example.com'
+  smtp_auth_username: 'alerts@example.com'
+  smtp_auth_password: 'your-app-password'
+  smtp_require_tls: true
+
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route configuration
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default'
+
+  routes:
+    # Critical alerts
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      continue: true
+
+    # Warning alerts
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+
+    # Database alerts
+    - match:
+        service: postgres
+      receiver: 'database-team'
+
+    # Application alerts
+    - match:
+        service: backend
+      receiver: 'backend-team'
+
+# Receiver configurations
+receivers:
+  - name: 'default'
+    email_configs:
+      - to: 'team@example.com'
+        headers:
+          Subject: '[ALERT] {{ .GroupLabels.alertname }}'
+
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'oncall@example.com,team@example.com'
+        headers:
+          Subject: '[CRITICAL] {{ .GroupLabels.alertname }}'
+    # Add Slack webhook for critical alerts
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+        channel: '#critical-alerts'
+        title: 'Critical Alert: {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+  - name: 'warning-alerts'
+    email_configs:
+      - to: 'team@example.com'
+        headers:
+          Subject: '[WARNING] {{ .GroupLabels.alertname }}'
+
+  - name: 'database-team'
+    email_configs:
+      - to: 'database-team@example.com'
+        headers:
+          Subject: '[DATABASE] {{ .GroupLabels.alertname }}'
+
+  - name: 'backend-team'
+    email_configs:
+      - to: 'backend-team@example.com'
+        headers:
+          Subject: '[BACKEND] {{ .GroupLabels.alertname }}'
+
+# Inhibition rules
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'service']

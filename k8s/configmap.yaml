@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ecommerce-cod-config
+  namespace: ecommerce-cod
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  CORS_ORIGIN: "https://yourdomain.com"
+  LOG_LEVEL: "info"

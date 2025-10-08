@@ -1,0 +1,98 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.staging
+.env.production
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage
+*.lcov
+.nyc_output
+
+# Production builds
+dist
+build
+.next
+out
+
+# Cache
+.cache
+.parcel-cache
+.npm
+.eslintcache
+.stylelintcache
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.idea
+.vscode
+*.sublime-project
+*.sublime-workspace
+
+# Prisma
+prisma/migrations/**/migration.sql
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# Backups
+backups/*
+!backups/.gitkeep
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.csr
+nginx/ssl/*
+!nginx/ssl/README.md
+
+# Docker
+.docker
+docker-compose.override.yml
+
+# Monitoring data
+monitoring/prometheus/data
+monitoring/grafana/data
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Lock files (keep package-lock.json, yarn.lock for reproducibility)
+# Uncomment the following if using yarn
+# yarn.lock
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets
+secrets/
+*.secret
+credentials.json
+serviceAccount.json
