@@ -29,13 +29,13 @@ describe('Orders Controller', () => {
       const mockOrders = [
         {
           id: 'order-1',
-          orderNumber: 'ORD-001',
+          orderNumber: '1001',
           status: 'pending_confirmation',
           totalAmount: 100,
         },
         {
           id: 'order-2',
-          orderNumber: 'ORD-002',
+          orderNumber: '1002',
           status: 'confirmed',
           totalAmount: 200,
         },
@@ -77,7 +77,7 @@ describe('Orders Controller', () => {
     });
 
     it('should search orders by order number', async () => {
-      mockReq.query = { search: 'ORD-001' };
+      mockReq.query = { search: '1001' };
 
       prismaMock.order.findMany.mockResolvedValue([]);
       prismaMock.order.count.mockResolvedValue(0);
@@ -108,7 +108,7 @@ describe('Orders Controller', () => {
 
       const mockOrder = {
         id: 'order-123',
-        orderNumber: 'ORD-123456-00001',
+        orderNumber: '1001',
         ...orderData,
       };
 

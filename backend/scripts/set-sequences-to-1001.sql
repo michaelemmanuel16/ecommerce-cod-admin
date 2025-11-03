@@ -1,0 +1,20 @@
+-- Set all PostgreSQL sequences to start at 1001 for 4-digit IDs
+ALTER SEQUENCE users_id_seq RESTART WITH 1001;
+ALTER SEQUENCE customers_id_seq RESTART WITH 1001;
+ALTER SEQUENCE products_id_seq RESTART WITH 1001;
+ALTER SEQUENCE orders_id_seq RESTART WITH 1001;
+ALTER SEQUENCE order_items_id_seq RESTART WITH 1001;
+ALTER SEQUENCE order_history_id_seq RESTART WITH 1001;
+ALTER SEQUENCE deliveries_id_seq RESTART WITH 1001;
+ALTER SEQUENCE transactions_id_seq RESTART WITH 1001;
+ALTER SEQUENCE expenses_id_seq RESTART WITH 1001;
+ALTER SEQUENCE workflows_id_seq RESTART WITH 1001;
+ALTER SEQUENCE workflow_executions_id_seq RESTART WITH 1001;
+ALTER SEQUENCE webhook_configs_id_seq RESTART WITH 1001;
+ALTER SEQUENCE webhook_logs_id_seq RESTART WITH 1001;
+ALTER SEQUENCE notifications_id_seq RESTART WITH 1001;
+ALTER SEQUENCE system_config_id_seq RESTART WITH 1001;
+ALTER SEQUENCE checkout_forms_id_seq RESTART WITH 1001;
+ALTER SEQUENCE form_packages_id_seq RESTART WITH 1001;
+ALTER SEQUENCE form_upsells_id_seq RESTART WITH 1001;
+ALTER SEQUENCE form_submissions_id_seq RESTART WITH 1001;

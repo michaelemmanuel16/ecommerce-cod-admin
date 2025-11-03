@@ -1,9 +1,15 @@
+export interface UserPreferences {
+  ordersDefaultView?: 'kanban' | 'list';
+}
+
 export interface User {
-  id: string;
+  id: number;
   email: string;
-  name: string;
-  role: 'admin' | 'customer_rep' | 'delivery_agent';
+  firstName: string;
+  lastName: string;
+  role: 'super_admin' | 'admin' | 'manager' | 'sales_rep' | 'inventory_manager' | 'delivery_agent' | 'accountant' | 'customer_rep';
   avatar?: string;
+  preferences?: UserPreferences;
   createdAt: string;
   updatedAt: string;
 }
@@ -28,41 +34,50 @@ export interface RegisterData {
 }
 
 export type OrderStatus =
-  | 'new_orders'
-  | 'confirmation_pending'
+  | 'pending_confirmation'
   | 'confirmed'
-  | 'being_prepared'
+  | 'preparing'
   | 'ready_for_pickup'
   | 'out_for_delivery'
   | 'delivered'
-  | 'returned';
+  | 'cancelled'
+  | 'returned'
+  | 'failed_delivery';
 
 export type OrderPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 
 export interface OrderItem {
-  id: string;
-  productId: string;
+  id: number;
+  productId: number;
   productName: string;
   quantity: number;
   price: number;
   total: number;
+  itemType?: 'package' | 'upsell';
+  metadata?: {
+    packageName?: string;
+    upsellName?: string;
+    upsellDescription?: string;
+    originalPrice?: number;
+    discountType?: string;
+    discountValue?: number;
+  };
 }
 
 export interface ShippingAddress {
   street: string;
-  city: string;
   state: string;
   postalCode: string;
-  country: string;
+  country?: string;
   phone: string;
 }
 
 export interface Order {
-  id: string;
-  orderNumber: string;
-  customerId: string;
+  id: number;
+  orderNumber?: string; // Optional - may come from backend
+  customerId: number;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -74,18 +89,34 @@ export interface Order {
   paymentMethod: 'cod' | 'card' | 'upi';
   shippingAddress: ShippingAddress;
   notes?: string;
-  assignedTo?: string;
+  assignedTo?: number;
   assignedToName?: string;
+  customerRep?: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: string;
+  };
+  deliveryAgent?: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    phoneNumber: string;
+    role: string;
+  };
   createdAt: string;
   updatedAt: string;
   estimatedDelivery?: string;
 }
 
 export interface Customer {
-  id: string;
-  name: string;
+  id: number;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
+  alternatePhone?: string;
   address?: ShippingAddress;
   totalOrders: number;
   totalSpent: number;
@@ -94,21 +125,23 @@ export interface Customer {
 }
 
 export interface Product {
-  id: string;
+  id: number;
   name: string;
   description: string;
   price: number;
   stock: number;
+  stockQuantity?: number; // Backend uses stockQuantity
   category: string;
   imageUrl?: string;
   sku: string;
   isActive: boolean;
+  lowStockThreshold: number;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface Notification {
-  id: string;
+  id: number;
   type: 'order_created' | 'order_updated' | 'order_status_changed' | 'system';
   title: string;
   message: string;
@@ -158,7 +191,7 @@ export interface WorkflowEdge {
 }
 
 export interface Workflow {
-  id: string;
+  id: number;
   name: string;
   description: string;
   isActive: boolean;
@@ -168,6 +201,13 @@ export interface Workflow {
   updatedAt: string;
 }
 
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
 export interface FilterOptions {
   status?: OrderStatus[];
   priority?: OrderPriority[];
@@ -175,4 +215,9 @@ export interface FilterOptions {
   dateFrom?: string;
   dateTo?: string;
   search?: string;
+  page?: number;
+  limit?: number;
 }
+
+// Re-export checkout form types
+export * from './checkout-form';

@@ -1,11 +1,11 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError } from '../middleware/errorHandler';
 
-export const register = async (req: AuthRequest, res: Response): Promise<void> => {
+export const register = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { email, password, firstName, lastName, phoneNumber, role } = req.body;
 
@@ -56,21 +56,18 @@ export const register = async (req: AuthRequest, res: Response): Promise<void> =
 
     res.status(201).json({
       message: 'User registered successfully',
-      user: {
-        ...user,
-        name: `${user.firstName} ${user.lastName}`
-      },
+      user,
       tokens: {
         accessToken,
         refreshToken
       }
     });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const login = async (req: AuthRequest, res: Response): Promise<void> => {
+export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { email, password } = req.body;
 
@@ -110,22 +107,24 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
 
     res.json({
       message: 'Login successful',
-      accessToken,
-      refreshToken,
       user: {
         id: user.id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role
+      },
+      tokens: {
+        accessToken,
+        refreshToken
       }
     });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const refresh = async (req: AuthRequest, res: Response): Promise<void> => {
+export const refresh = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { refreshToken } = req.body;
 
@@ -134,6 +133,13 @@ export const refresh = async (req: AuthRequest, res: Response): Promise<void> =>
     }
 
     const decoded = verifyRefreshToken(refreshToken);
+
+    // Validate ID type - handle migration from string (CUID) to integer IDs
+    if (typeof decoded.id !== 'number') {
+      // Token contains old string ID (from pre-migration era)
+      // Force user to re-login to get new token with integer ID
+      throw new AppError('Token format outdated. Please log in again.', 401);
+    }
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.id }
@@ -153,11 +159,11 @@ export const refresh = async (req: AuthRequest, res: Response): Promise<void> =>
       accessToken: newAccessToken
     });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const logout = async (req: AuthRequest, res: Response): Promise<void> => {
+export const logout = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (req.user) {
       await prisma.user.update({
@@ -168,11 +174,11 @@ export const logout = async (req: AuthRequest, res: Response): Promise<void> => 
 
     res.json({ message: 'Logout successful' });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const me = async (req: AuthRequest, res: Response): Promise<void> => {
+export const me = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.user) {
       throw new AppError('Unauthorized', 401);
@@ -195,6 +201,6 @@ export const me = async (req: AuthRequest, res: Response): Promise<void> => {
 
     res.json({ user });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };

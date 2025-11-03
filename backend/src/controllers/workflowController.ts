@@ -1,20 +1,15 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
-import prisma from '../utils/prisma';
-import { AppError } from '../middleware/errorHandler';
-import { workflowQueue } from '../queues/workflowQueue';
+import { WorkflowTriggerType } from '@prisma/client';
+import workflowService from '../services/workflowService';
 
 export const getAllWorkflows = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { isActive, triggerType } = req.query;
 
-    const where: any = {};
-    if (isActive !== undefined) where.isActive = isActive === 'true';
-    if (triggerType) where.triggerType = triggerType;
-
-    const workflows = await prisma.workflow.findMany({
-      where,
-      orderBy: { createdAt: 'desc' }
+    const workflows = await workflowService.getAllWorkflows({
+      isActive: isActive !== undefined ? isActive === 'true' : undefined,
+      triggerType: triggerType as WorkflowTriggerType | undefined
     });
 
     res.json({ workflows });
@@ -27,15 +22,13 @@ export const createWorkflow = async (req: AuthRequest, res: Response): Promise<v
   try {
     const { name, description, triggerType, triggerData, actions, conditions } = req.body;
 
-    const workflow = await prisma.workflow.create({
-      data: {
-        name,
-        description,
-        triggerType,
-        triggerData,
-        actions,
-        conditions
-      }
+    const workflow = await workflowService.createWorkflow({
+      name,
+      description,
+      triggerType,
+      triggerData,
+      actions,
+      conditions
     });
 
     res.status(201).json({ workflow });
@@ -47,21 +40,12 @@ export const createWorkflow = async (req: AuthRequest, res: Response): Promise<v
 export const getWorkflow = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-
-    const workflow = await prisma.workflow.findUnique({
-      where: { id },
-      include: {
-        executions: {
-          orderBy: { startedAt: 'desc' },
-          take: 10
-        }
-      }
-    });
-
-    if (!workflow) {
-      throw new AppError('Workflow not found', 404);
+    const workflowId = parseInt(id, 10);
+    if (isNaN(workflowId)) {
+      res.status(400).json({ error: 'Invalid workflow ID' });
+      return;
     }
-
+    const workflow = await workflowService.getWorkflowById(workflowId);
     res.json({ workflow });
   } catch (error) {
     throw error;
@@ -71,13 +55,13 @@ export const getWorkflow = async (req: AuthRequest, res: Response): Promise<void
 export const updateWorkflow = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const workflowId = parseInt(id, 10);
+    if (isNaN(workflowId)) {
+      res.status(400).json({ error: 'Invalid workflow ID' });
+      return;
+    }
     const updateData = req.body;
-
-    const workflow = await prisma.workflow.update({
-      where: { id },
-      data: updateData
-    });
-
+    const workflow = await workflowService.updateWorkflow(workflowId, updateData);
     res.json({ workflow });
   } catch (error) {
     throw error;
@@ -87,12 +71,13 @@ export const updateWorkflow = async (req: AuthRequest, res: Response): Promise<v
 export const deleteWorkflow = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-
-    await prisma.workflow.delete({
-      where: { id }
-    });
-
-    res.json({ message: 'Workflow deleted successfully' });
+    const workflowId = parseInt(id, 10);
+    if (isNaN(workflowId)) {
+      res.status(400).json({ error: 'Invalid workflow ID' });
+      return;
+    }
+    const result = await workflowService.deleteWorkflow(workflowId);
+    res.json(result);
   } catch (error) {
     throw error;
   }
@@ -101,41 +86,15 @@ export const deleteWorkflow = async (req: AuthRequest, res: Response): Promise<v
 export const executeWorkflow = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const workflowId = parseInt(id, 10);
+    if (isNaN(workflowId)) {
+      res.status(400).json({ error: 'Invalid workflow ID' });
+      return;
+    }
     const { input } = req.body;
 
-    const workflow = await prisma.workflow.findUnique({
-      where: { id }
-    });
-
-    if (!workflow) {
-      throw new AppError('Workflow not found', 404);
-    }
-
-    if (!workflow.isActive) {
-      throw new AppError('Workflow is not active', 400);
-    }
-
-    // Create execution record
-    const execution = await prisma.workflowExecution.create({
-      data: {
-        workflowId: id,
-        status: 'pending',
-        input: input || {}
-      }
-    });
-
-    // Add to queue
-    await workflowQueue.add('execute-workflow', {
-      executionId: execution.id,
-      workflowId: workflow.id,
-      actions: workflow.actions,
-      input: input || {}
-    });
-
-    res.json({
-      message: 'Workflow execution started',
-      execution
-    });
+    const result = await workflowService.executeWorkflow(workflowId, input);
+    res.json(result);
   } catch (error) {
     throw error;
   }
@@ -144,31 +103,31 @@ export const executeWorkflow = async (req: AuthRequest, res: Response): Promise<
 export const getWorkflowExecutions = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const workflowId = parseInt(id, 10);
+    if (isNaN(workflowId)) {
+      res.status(400).json({ error: 'Invalid workflow ID' });
+      return;
+    }
     const { page = 1, limit = 20 } = req.query;
 
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const [executions, total] = await Promise.all([
-      prisma.workflowExecution.findMany({
-        where: { workflowId: id },
-        skip,
-        take: Number(limit),
-        orderBy: { startedAt: 'desc' }
-      }),
-      prisma.workflowExecution.count({
-        where: { workflowId: id }
-      })
-    ]);
-
-    res.json({
-      executions,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        pages: Math.ceil(total / Number(limit))
-      }
+    const result = await workflowService.getWorkflowExecutions(workflowId, {
+      page: Number(page),
+      limit: Number(limit)
     });
+
+    res.json(result);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getWorkflowTemplates = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { category } = req.query;
+
+    const result = await workflowService.getTemplates(category as string | undefined);
+
+    res.json(result);
   } catch (error) {
     throw error;
   }

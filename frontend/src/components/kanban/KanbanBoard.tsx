@@ -7,6 +7,8 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  closestCorners,
+  closestCenter,
 } from '@dnd-kit/core';
 import { KanbanColumn } from './KanbanColumn';
 import { OrderCard } from './OrderCard';
@@ -16,10 +18,9 @@ import { Loading } from '../ui/Loading';
 import toast from 'react-hot-toast';
 
 const columns: { status: OrderStatus; title: string; color: string }[] = [
-  { status: 'new_orders', title: 'New Orders', color: 'bg-purple-500' },
-  { status: 'confirmation_pending', title: 'Confirmation Pending', color: 'bg-yellow-500' },
+  { status: 'pending_confirmation', title: 'Pending Confirmation', color: 'bg-yellow-500' },
   { status: 'confirmed', title: 'Confirmed', color: 'bg-blue-500' },
-  { status: 'being_prepared', title: 'Being Prepared', color: 'bg-orange-500' },
+  { status: 'preparing', title: 'Preparing', color: 'bg-orange-500' },
   { status: 'ready_for_pickup', title: 'Ready for Pickup', color: 'bg-cyan-500' },
   { status: 'out_for_delivery', title: 'Out for Delivery', color: 'bg-indigo-500' },
   { status: 'delivered', title: 'Delivered', color: 'bg-green-500' },
@@ -40,7 +41,8 @@ export const KanbanBoard: React.FC = () => {
 
   useEffect(() => {
     fetchOrders();
-  }, [fetchOrders]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDragStart = (event: DragStartEvent) => {
     const order = orders.find((o) => o.id === event.active.id);
@@ -53,17 +55,37 @@ export const KanbanBoard: React.FC = () => {
 
     if (!over) return;
 
-    const orderId = active.id as string;
-    const newStatus = over.id as OrderStatus;
+    const orderId = active.id as number;
+
+    // Check if over.id is a column (status) or an order
+    let newStatus: OrderStatus;
+    const validStatuses: OrderStatus[] = [
+      'pending_confirmation', 'confirmed', 'preparing', 'ready_for_pickup',
+      'out_for_delivery', 'delivered', 'cancelled', 'returned', 'failed_delivery'
+    ];
+
+    if (validStatuses.includes(over.id as OrderStatus)) {
+      // Dropped on a column
+      newStatus = over.id as OrderStatus;
+    } else {
+      // Dropped on another order - find the column that contains it
+      const targetOrder = orders.find(o => o.id === over.id);
+      if (!targetOrder) return;
+      newStatus = targetOrder.status;
+    }
 
     const order = orders.find((o) => o.id === orderId);
     if (!order || order.status === newStatus) return;
 
     try {
+      console.log('Updating order status:', { orderId, newStatus });
       await updateOrderStatus(orderId, newStatus);
       toast.success('Order status updated successfully');
-    } catch (error) {
-      toast.error('Failed to update order status');
+    } catch (error: any) {
+      console.error('Failed to update order status:', error);
+      console.error('Error response:', error.response?.data);
+      const errorMsg = error.response?.data?.details?.[0]?.msg || error.response?.data?.error || 'Failed to update order status';
+      toast.error(errorMsg);
     }
   };
 
@@ -77,10 +99,11 @@ export const KanbanBoard: React.FC = () => {
   return (
     <DndContext
       sensors={sensors}
+      collisionDetection={closestCorners}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div className="flex gap-4 pb-4 h-full">
         {columns.map((column) => (
           <KanbanColumn
             key={column.status}

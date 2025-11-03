@@ -11,24 +11,29 @@ import {
   BarChart3,
   Workflow,
   Settings,
+  FileText,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { usePermissions } from '../../hooks/usePermissions';
 
 const menuItems = [
-  { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { path: '/orders', icon: ShoppingBag, label: 'Orders Kanban' },
-  { path: '/orders/list', icon: ShoppingBag, label: 'Orders List' },
-  { path: '/customers', icon: Users, label: 'Customers' },
-  { path: '/products', icon: Package, label: 'Products' },
-  { path: '/delivery-agents', icon: Truck, label: 'Delivery Agents' },
-  { path: '/customer-reps', icon: UserCog, label: 'Customer Reps' },
-  { path: '/financial', icon: DollarSign, label: 'Financial' },
-  { path: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { path: '/workflows', icon: Workflow, label: 'Workflows' },
-  { path: '/settings', icon: Settings, label: 'Settings' },
+  { path: '/', icon: LayoutDashboard, label: 'Dashboard', key: 'dashboard' },
+  { path: '/orders', icon: ShoppingBag, label: 'Orders', key: 'orders' },
+  { path: '/customers', icon: Users, label: 'Customers', key: 'customers' },
+  { path: '/products', icon: Package, label: 'Products', key: 'products' },
+  { path: '/delivery-agents', icon: Truck, label: 'Delivery Agents', key: 'delivery-agents' },
+  { path: '/customer-reps', icon: UserCog, label: 'Customer Reps', key: 'customer-reps' },
+  { path: '/financial', icon: DollarSign, label: 'Financial', key: 'financial' },
+  { path: '/analytics', icon: BarChart3, label: 'Analytics', key: 'analytics' },
+  { path: '/workflows', icon: Workflow, label: 'Workflows', key: 'workflows' },
+  { path: '/settings', icon: Settings, label: 'Settings', key: 'settings' },
 ];
 
 export const Sidebar: React.FC = () => {
+  const { canAccessMenu } = usePermissions();
+
+  const visibleMenuItems = menuItems.filter(item => canAccessMenu(item.key));
+
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-gray-900 text-white p-4">
       <div className="mb-8">
@@ -36,7 +41,7 @@ export const Sidebar: React.FC = () => {
         <p className="text-gray-400 text-sm">E-commerce Dashboard</p>
       </div>
       <nav className="space-y-1">
-        {menuItems.map((item) => (
+        {visibleMenuItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}

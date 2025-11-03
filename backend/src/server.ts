@@ -7,6 +7,7 @@ import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import path from 'path';
 import { initializeSocket } from './sockets';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { apiLimiter } from './middleware/rateLimiter';
@@ -26,6 +27,13 @@ import webhookRoutes from './routes/webhookRoutes';
 import analyticsRoutes from './routes/analyticsRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import healthRoutes from './routes/health.routes';
+import uploadRoutes from './routes/uploadRoutes';
+import adminRoutes from './routes/adminRoutes';
+import checkoutFormRoutes from './routes/checkoutFormRoutes';
+import publicOrderRoutes from './routes/publicOrderRoutes';
+
+// Initialize workflow queue worker
+import './queues/workflowQueue';
 
 // Validate environment variables before starting server
 try {
@@ -44,12 +52,27 @@ const PORT = process.env.PORT || 3000;
 export const io = initializeSocket(server);
 
 // Middleware
-app.use(helmet());
+// Configure helmet to allow public checkout forms to be embedded in iframes
+app.use(helmet({
+  contentSecurityPolicy: false, // Allow inline styles and scripts (needed for iframe embeds)
+  frameguard: false // Disable X-Frame-Options globally, we'll set it per route
+}));
 app.use(compression());
+
+// CORS for public API routes - allow all origins for embedding
+app.use('/api/public', cors({
+  origin: '*', // Allow embedding from any domain
+  credentials: false, // No credentials needed for public routes
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type']
+}));
+
+// CORS for protected routes - restricted to frontend URL only
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true
 }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -62,11 +85,24 @@ app.use((req, res, next) => {
   next();
 });
 
+// Set X-Frame-Options to protect admin routes from clickjacking
+// Public routes (/api/public/*) will not have this header, allowing iframe embedding
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/public')) {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  }
+  next();
+});
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 // Health check routes (without rate limiting for monitoring)
 app.use('/', healthRoutes);
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/users', apiLimiter, userRoutes);
 app.use('/api/customers', apiLimiter, customerRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
@@ -77,6 +113,11 @@ app.use('/api/workflows', apiLimiter, workflowRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
 app.use('/api/notifications', apiLimiter, notificationRoutes);
+app.use('/api/upload', apiLimiter, uploadRoutes);
+app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
+
+// Public routes (no authentication required)
+app.use('/api/public', publicOrderRoutes);
 
 // Root route
 app.get('/', (req, res) => {
@@ -94,7 +135,10 @@ app.get('/', (req, res) => {
       workflows: '/api/workflows',
       webhooks: '/api/webhooks',
       analytics: '/api/analytics',
-      notifications: '/api/notifications'
+      notifications: '/api/notifications',
+      upload: '/api/upload',
+      checkoutForms: '/api/checkout-forms',
+      public: '/api/public'
     }
   });
 });
@@ -138,7 +182,11 @@ process.on('SIGINT', () => {
 
 // Unhandled rejection handler
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  logger.error('Unhandled Rejection at:', {
+    promise,
+    reason: reason instanceof Error ? reason.message : reason,
+    stack: reason instanceof Error ? reason.stack : undefined
+  });
 });
 
 export default app;

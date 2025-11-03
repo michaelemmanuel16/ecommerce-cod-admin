@@ -3,6 +3,7 @@ import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import bcrypt from 'bcrypt';
+import { getRepPerformanceDetails } from '../services/repPerformanceService';
 
 export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -29,6 +30,11 @@ export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void
           isActive: true,
           isAvailable: true,
           lastLogin: true,
+          vehicleType: true,
+          vehicleId: true,
+          deliveryRate: true,
+          totalEarnings: true,
+          location: true,
           createdAt: true
         },
         orderBy: { createdAt: 'desc' }
@@ -88,7 +94,12 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
 
 export const getUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
+    const { id: idParam } = req.params;
+    const id = parseInt(idParam, 10);
+
+    if (isNaN(id)) {
+      throw new AppError('Invalid user ID', 400);
+    }
 
     const user = await prisma.user.findUnique({
       where: { id },
@@ -102,6 +113,11 @@ export const getUser = async (req: AuthRequest, res: Response): Promise<void> =>
         isActive: true,
         isAvailable: true,
         lastLogin: true,
+        vehicleType: true,
+        vehicleId: true,
+        deliveryRate: true,
+        totalEarnings: true,
+        location: true,
         createdAt: true,
         updatedAt: true
       }
@@ -119,18 +135,41 @@ export const getUser = async (req: AuthRequest, res: Response): Promise<void> =>
 
 export const updateUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
-    const { firstName, lastName, phoneNumber, role, isActive } = req.body;
+    const { id: idParam } = req.params;
+    const id = parseInt(idParam, 10);
+
+    if (isNaN(id)) {
+      throw new AppError('Invalid user ID', 400);
+    }
+
+    const {
+      firstName,
+      lastName,
+      phoneNumber,
+      role,
+      isActive,
+      vehicleType,
+      vehicleId,
+      deliveryRate,
+      totalEarnings,
+      location
+    } = req.body;
+
+    const updateData: any = {};
+    if (firstName !== undefined) updateData.firstName = firstName;
+    if (lastName !== undefined) updateData.lastName = lastName;
+    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
+    if (role !== undefined) updateData.role = role;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (vehicleType !== undefined) updateData.vehicleType = vehicleType;
+    if (vehicleId !== undefined) updateData.vehicleId = vehicleId;
+    if (deliveryRate !== undefined) updateData.deliveryRate = Number(deliveryRate);
+    if (totalEarnings !== undefined) updateData.totalEarnings = Number(totalEarnings);
+    if (location !== undefined) updateData.location = location;
 
     const user = await prisma.user.update({
       where: { id },
-      data: {
-        firstName,
-        lastName,
-        phoneNumber,
-        role,
-        isActive
-      },
+      data: updateData,
       select: {
         id: true,
         email: true,
@@ -139,6 +178,12 @@ export const updateUser = async (req: AuthRequest, res: Response): Promise<void>
         phoneNumber: true,
         role: true,
         isActive: true,
+        isAvailable: true,
+        vehicleType: true,
+        vehicleId: true,
+        deliveryRate: true,
+        totalEarnings: true,
+        location: true,
         updatedAt: true
       }
     });
@@ -151,8 +196,53 @@ export const updateUser = async (req: AuthRequest, res: Response): Promise<void>
 
 export const deleteUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
+    const { id: idParam } = req.params;
+    const id = parseInt(idParam, 10);
 
+    if (isNaN(id)) {
+      throw new AppError('Invalid user ID', 400);
+    }
+
+    // Check if user has any active/pending orders assigned
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        role: true,
+        assignedOrdersAsAgent: {
+          where: {
+            status: {
+              notIn: ['delivered', 'cancelled', 'returned']
+            }
+          },
+          select: { id: true }
+        },
+        assignedOrdersAsRep: {
+          where: {
+            status: {
+              notIn: ['delivered', 'cancelled', 'returned']
+            }
+          },
+          select: { id: true }
+        }
+      }
+    });
+
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    const hasActiveOrders =
+      user.assignedOrdersAsAgent.length > 0 ||
+      user.assignedOrdersAsRep.length > 0;
+
+    if (hasActiveOrders) {
+      throw new AppError(
+        'Cannot delete user with active orders. Please reassign or complete orders first.',
+        400
+      );
+    }
+
+    // Deactivate instead of permanently delete
     await prisma.user.update({
       where: { id },
       data: { isActive: false }
@@ -166,7 +256,13 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
 
 export const toggleAvailability = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
+    const { id: idParam } = req.params;
+    const id = parseInt(idParam, 10);
+
+    if (isNaN(id)) {
+      throw new AppError('Invalid user ID', 400);
+    }
+
     const { isAvailable } = req.body;
 
     const user = await prisma.user.update({
@@ -241,6 +337,11 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response): Prom
         firstName: true,
         lastName: true,
         isAvailable: true,
+        vehicleType: true,
+        vehicleId: true,
+        deliveryRate: true,
+        totalEarnings: true,
+        location: true,
         assignedOrdersAsAgent: {
           select: {
             id: true,
@@ -264,11 +365,163 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response): Prom
         totalAssigned: total,
         completed: delivered,
         pending,
-        successRate: total > 0 ? (delivered / total) * 100 : 0
+        successRate: total > 0 ? (delivered / total) * 100 : 0,
+        vehicleType: agent.vehicleType,
+        vehicleId: agent.vehicleId,
+        deliveryRate: agent.deliveryRate || 0,
+        totalEarnings: agent.totalEarnings || 0,
+        location: agent.location
       };
     });
 
     res.json({ performance });
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getRepPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { repId } = req.query;
+
+    const performance = await getRepPerformanceDetails(repId as string | undefined);
+
+    res.json({ performance });
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const updateRepDetails = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id: idParam } = req.params;
+    const id = parseInt(idParam, 10);
+
+    if (isNaN(id)) {
+      throw new AppError('Invalid user ID', 400);
+    }
+
+    const {
+      firstName,
+      lastName,
+      phoneNumber,
+      email,
+      commissionRate,
+      isActive,
+      isAvailable
+    } = req.body;
+
+    // Validate that the user is a sales rep
+    const existingUser = await prisma.user.findUnique({
+      where: { id },
+      select: { role: true }
+    });
+
+    if (!existingUser) {
+      throw new AppError('Sales representative not found', 404);
+    }
+
+    if (existingUser.role !== 'sales_rep') {
+      throw new AppError('User is not a sales representative', 400);
+    }
+
+    // Validate commission rate if provided (now it's a fixed amount, not a percentage)
+    if (commissionRate !== undefined) {
+      const amount = Number(commissionRate);
+      if (isNaN(amount) || amount < 0) {
+        throw new AppError('Commission amount must be a positive number', 400);
+      }
+    }
+
+    // Build update data object
+    const updateData: any = {};
+    if (firstName !== undefined) updateData.firstName = firstName;
+    if (lastName !== undefined) updateData.lastName = lastName;
+    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
+    if (email !== undefined) updateData.email = email;
+    if (req.body.country !== undefined) updateData.country = req.body.country;
+    if (commissionRate !== undefined) updateData.commissionRate = Number(commissionRate);
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (isAvailable !== undefined) updateData.isAvailable = isAvailable;
+
+    // Update the rep
+    const updatedRep = await prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phoneNumber: true,
+        country: true,
+        role: true,
+        commissionRate: true,
+        isActive: true,
+        isAvailable: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    res.json({
+      message: 'Sales representative updated successfully',
+      rep: updatedRep
+    });
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getUserPreferences = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      throw new AppError('User not authenticated', 401);
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { preferences: true }
+    });
+
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    res.json({ preferences: user.preferences || {} });
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const updateUserPreferences = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    const { preferences } = req.body;
+
+    if (!userId) {
+      throw new AppError('User not authenticated', 401);
+    }
+
+    // Check if user exists first
+    const userExists = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true }
+    });
+
+    if (!userExists) {
+      throw new AppError('User not found. Please log in again.', 401);
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { preferences },
+      select: { preferences: true }
+    });
+
+    res.json({ preferences: updatedUser.preferences });
   } catch (error) {
     throw error;
   }

@@ -18,13 +18,18 @@ export const UserMenu: React.FC = () => {
     <Dropdown
       trigger={
         <button className="flex items-center gap-2">
-          <Avatar name={user?.name} src={user?.avatar} />
+          <Avatar
+            name={user ? `${user.firstName} ${user.lastName}` : undefined}
+            src={user?.avatar}
+          />
         </button>
       }
       align="right"
     >
       <div className="px-4 py-2 border-b">
-        <p className="font-semibold">{user?.name}</p>
+        <p className="font-semibold">
+          {user ? `${user.firstName} ${user.lastName}` : 'Unknown User'}
+        </p>
         <p className="text-xs text-gray-600">{user?.email}</p>
       </div>
       <DropdownItem onClick={() => navigate('/settings')}>

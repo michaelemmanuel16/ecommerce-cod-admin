@@ -1,0 +1,531 @@
+import { PrismaClient, OrderStatus } from '@prisma/client';
+import bcrypt from 'bcrypt';
+
+const prisma = new PrismaClient();
+
+// Ghana regions and cities
+const ghanaLocations = [
+  { region: 'Greater Accra', cities: ['Accra', 'Tema', 'Madina', 'Legon', 'Dansoman', 'Kasoa', 'Achimota'] },
+  { region: 'Ashanti', cities: ['Kumasi', 'Obuasi', 'Ejisu', 'Mampong', 'Konongo'] },
+  { region: 'Western', cities: ['Sekondi-Takoradi', 'Tarkwa', 'Axim', 'Prestea'] },
+  { region: 'Central', cities: ['Cape Coast', 'Elmina', 'Winneba', 'Kasoa'] },
+  { region: 'Eastern', cities: ['Koforidua', 'Akosombo', 'Nkawkaw', 'Mpraeso'] },
+  { region: 'Northern', cities: ['Tamale', 'Yendi', 'Savelugu', 'Walewale'] },
+  { region: 'Volta', cities: ['Ho', 'Hohoe', 'Keta', 'Aflao'] },
+  { region: 'Upper East', cities: ['Bolgatanga', 'Bawku', 'Navrongo'] },
+  { region: 'Upper West', cities: ['Wa', 'Tumu', 'Lawra'] },
+  { region: 'Bono', cities: ['Sunyani', 'Berekum', 'Dormaa Ahenkro'] },
+];
+
+// Sample names
+const firstNames = [
+  'Kwame', 'Kofi', 'Yaw', 'Akua', 'Ama', 'Abena', 'Kwesi', 'Adjoa',
+  'Emmanuel', 'Grace', 'Samuel', 'Esther', 'Daniel', 'Rebecca', 'Joseph',
+  'Sarah', 'David', 'Hannah', 'Michael', 'Ruth', 'Peter', 'Mary',
+  'John', 'Elizabeth', 'James', 'Comfort', 'Isaac', 'Patience',
+  'Benjamin', 'Charity', 'Solomon', 'Faith', 'Stephen', 'Joyce'
+];
+
+const lastNames = [
+  'Mensah', 'Asante', 'Boateng', 'Owusu', 'Agyeman', 'Osei', 'Addo',
+  'Frimpong', 'Annan', 'Adjei', 'Ofori', 'Gyasi', 'Konadu', 'Opoku',
+  'Darko', 'Amoah', 'Yeboah', 'Appiah', 'Nkrumah', 'Amponsah'
+];
+
+// Product categories and items
+const productData = [
+  // Electronics
+  { category: 'Electronics', name: 'Samsung Galaxy A54 5G', price: 2500, cost: 2000 },
+  { category: 'Electronics', name: 'iPhone 13 Pro Max', price: 7500, cost: 6500 },
+  { category: 'Electronics', name: 'Apple Watch Series 8', price: 3200, cost: 2800 },
+  { category: 'Electronics', name: 'Sony WH-1000XM5 Headphones', price: 1800, cost: 1400 },
+  { category: 'Electronics', name: 'iPad Air 5th Gen', price: 4500, cost: 3800 },
+  { category: 'Electronics', name: 'MacBook Pro M2', price: 12000, cost: 10500 },
+  { category: 'Electronics', name: 'Samsung 55" QLED TV', price: 5500, cost: 4500 },
+  { category: 'Electronics', name: 'PlayStation 5', price: 4200, cost: 3600 },
+  { category: 'Electronics', name: 'JBL Flip 6 Speaker', price: 680, cost: 500 },
+  { category: 'Electronics', name: 'Canon EOS R6', price: 15000, cost: 13000 },
+
+  // Fashion
+  { category: 'Fashion', name: 'Nike Air Max 270', price: 850, cost: 600 },
+  { category: 'Fashion', name: 'Adidas Ultraboost 22', price: 920, cost: 650 },
+  { category: 'Fashion', name: 'Levi\'s 501 Original Jeans', price: 380, cost: 250 },
+  { category: 'Fashion', name: 'Kente Cloth Traditional Wear', price: 1200, cost: 800 },
+  { category: 'Fashion', name: 'Designer Handbag', price: 2500, cost: 1800 },
+  { category: 'Fashion', name: 'Ray-Ban Aviator Sunglasses', price: 680, cost: 450 },
+  { category: 'Fashion', name: 'Leather Wallet', price: 180, cost: 100 },
+  { category: 'Fashion', name: 'Smart Watch Band', price: 120, cost: 60 },
+
+  // Home & Living
+  { category: 'Home & Living', name: 'Blender 1000W', price: 450, cost: 300 },
+  { category: 'Home & Living', name: 'Microwave Oven', price: 850, cost: 600 },
+  { category: 'Home & Living', name: 'Rice Cooker 5L', price: 280, cost: 180 },
+  { category: 'Home & Living', name: 'Air Fryer 6.5L', price: 680, cost: 480 },
+  { category: 'Home & Living', name: 'Vacuum Cleaner', price: 950, cost: 650 },
+  { category: 'Home & Living', name: 'Standing Fan', price: 320, cost: 200 },
+  { category: 'Home & Living', name: 'LED Desk Lamp', price: 180, cost: 100 },
+
+  // Health & Beauty
+  { category: 'Health & Beauty', name: 'Shea Butter Pure 500g', price: 85, cost: 50 },
+  { category: 'Health & Beauty', name: 'African Black Soap Set', price: 120, cost: 70 },
+  { category: 'Health & Beauty', name: 'Hair Dryer Professional', price: 380, cost: 250 },
+  { category: 'Health & Beauty', name: 'Fitness Tracker Band', price: 420, cost: 280 },
+  { category: 'Health & Beauty', name: 'Massage Gun', price: 680, cost: 450 },
+  { category: 'Health & Beauty', name: 'Digital Scale', price: 180, cost: 100 },
+  { category: 'Health & Beauty', name: 'Blood Pressure Monitor', price: 320, cost: 200 },
+];
+
+// Vehicle types for delivery agents
+const vehicleTypes = ['Motorcycle', 'Car', 'Van', 'Bicycle', 'Tricycle'];
+
+// Helper functions
+function randomElement<T>(array: T[]): T {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
+function randomPhone(): string {
+  const prefixes = ['024', '054', '055', '020', '050', '027', '057', '026', '056'];
+  const prefix = randomElement(prefixes);
+  const number = Math.floor(Math.random() * 10000000).toString().padStart(7, '0');
+  return `0${prefix}${number}`;
+}
+
+function randomDate(start: Date, end: Date): Date {
+  return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+}
+
+async function resetSequences() {
+  console.log('Resetting database sequences to start at 1000...');
+
+  const tables = [
+    'users', 'customers', 'products', 'orders', 'order_items',
+    'deliveries', 'transactions', 'expenses', 'workflows',
+    'workflow_executions', 'webhook_configs', 'webhook_logs',
+    'notifications', 'checkout_forms', 'form_packages',
+    'form_upsells', 'form_submissions', 'order_history'
+  ];
+
+  for (const table of tables) {
+    try {
+      await prisma.$executeRawUnsafe(
+        `ALTER SEQUENCE ${table}_id_seq RESTART WITH 1000;`
+      );
+    } catch (error) {
+      // Sequence might not exist yet, that's okay
+      console.log(`Sequence for ${table} might not exist yet, skipping...`);
+    }
+  }
+}
+
+async function cleanDatabase() {
+  console.log('Cleaning database...');
+
+  // Delete in correct order to respect foreign key constraints
+  await prisma.formSubmission.deleteMany();
+  await prisma.formUpsell.deleteMany();
+  await prisma.formPackage.deleteMany();
+  await prisma.checkoutForm.deleteMany();
+  await prisma.notification.deleteMany();
+  await prisma.webhookLog.deleteMany();
+  await prisma.webhookConfig.deleteMany();
+  await prisma.workflowExecution.deleteMany();
+  await prisma.workflow.deleteMany();
+  await prisma.expense.deleteMany();
+  await prisma.transaction.deleteMany();
+  await prisma.delivery.deleteMany();
+  await prisma.orderHistory.deleteMany();
+  await prisma.orderItem.deleteMany();
+  await prisma.order.deleteMany();
+  await prisma.product.deleteMany();
+  await prisma.customer.deleteMany();
+  await prisma.user.deleteMany();
+
+  console.log('Database cleaned successfully');
+}
+
+async function seed() {
+  console.log('🌱 Starting comprehensive seed...');
+
+  // Clean database and reset sequences
+  await cleanDatabase();
+  await resetSequences();
+
+  // ==================== CREATE USERS ====================
+  console.log('\n👥 Creating users...');
+  const hashedPassword = await bcrypt.hash('password123', 10);
+
+  // Super Admin
+  const superAdmin = await prisma.user.create({
+    data: {
+      email: 'admin@codadmin.com',
+      password: hashedPassword,
+      firstName: 'Super',
+      lastName: 'Admin',
+      phoneNumber: randomPhone(),
+      role: 'super_admin',
+      isActive: true,
+      isAvailable: true,
+    }
+  });
+  console.log(`✓ Created super admin (ID: ${superAdmin.id})`);
+
+  // Admins
+  const admins = [];
+  for (let i = 1; i <= 2; i++) {
+    const admin = await prisma.user.create({
+      data: {
+        email: `admin${i}@codadmin.com`,
+        password: hashedPassword,
+        firstName: randomElement(firstNames),
+        lastName: randomElement(lastNames),
+        phoneNumber: randomPhone(),
+        role: 'admin',
+        isActive: true,
+        isAvailable: true,
+      }
+    });
+    admins.push(admin);
+  }
+  console.log(`✓ Created ${admins.length} admins`);
+
+  // Managers
+  const managers = [];
+  for (let i = 1; i <= 2; i++) {
+    const manager = await prisma.user.create({
+      data: {
+        email: `manager${i}@codadmin.com`,
+        password: hashedPassword,
+        firstName: randomElement(firstNames),
+        lastName: randomElement(lastNames),
+        phoneNumber: randomPhone(),
+        role: 'manager',
+        isActive: true,
+        isAvailable: true,
+      }
+    });
+    managers.push(manager);
+  }
+  console.log(`✓ Created ${managers.length} managers`);
+
+  // Customer Reps
+  const customerReps = [];
+  for (let i = 1; i <= 10; i++) {
+    const rep = await prisma.user.create({
+      data: {
+        email: `rep${i}@codadmin.com`,
+        password: hashedPassword,
+        firstName: randomElement(firstNames),
+        lastName: randomElement(lastNames),
+        phoneNumber: randomPhone(),
+        role: 'sales_rep',
+        commissionRate: 5 + Math.random() * 5, // 5-10%
+        isActive: true,
+        isAvailable: Math.random() > 0.2, // 80% available
+      }
+    });
+    customerReps.push(rep);
+  }
+  console.log(`✓ Created ${customerReps.length} customer reps`);
+
+  // Delivery Agents
+  const deliveryAgents = [];
+  for (let i = 1; i <= 10; i++) {
+    const location = randomElement(ghanaLocations);
+    const agent = await prisma.user.create({
+      data: {
+        email: `agent${i}@codadmin.com`,
+        password: hashedPassword,
+        firstName: randomElement(firstNames),
+        lastName: randomElement(lastNames),
+        phoneNumber: randomPhone(),
+        role: 'delivery_agent',
+        vehicleType: randomElement(vehicleTypes),
+        vehicleId: `GH-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
+        deliveryRate: 10 + Math.random() * 15, // GHS 10-25 per delivery
+        location: `${randomElement(location.cities)}, ${location.region}`,
+        isActive: true,
+        isAvailable: Math.random() > 0.3, // 70% available
+      }
+    });
+    deliveryAgents.push(agent);
+  }
+  console.log(`✓ Created ${deliveryAgents.length} delivery agents`);
+
+  // Accountants
+  const accountants = [];
+  for (let i = 1; i <= 2; i++) {
+    const accountant = await prisma.user.create({
+      data: {
+        email: `accountant${i}@codadmin.com`,
+        password: hashedPassword,
+        firstName: randomElement(firstNames),
+        lastName: randomElement(lastNames),
+        phoneNumber: randomPhone(),
+        role: 'accountant',
+        isActive: true,
+        isAvailable: true,
+      }
+    });
+    accountants.push(accountant);
+  }
+  console.log(`✓ Created ${accountants.length} accountants`);
+
+  // Inventory Managers
+  const inventoryManagers = [];
+  for (let i = 1; i <= 2; i++) {
+    const invManager = await prisma.user.create({
+      data: {
+        email: `inventory${i}@codadmin.com`,
+        password: hashedPassword,
+        firstName: randomElement(firstNames),
+        lastName: randomElement(lastNames),
+        phoneNumber: randomPhone(),
+        role: 'inventory_manager',
+        isActive: true,
+        isAvailable: true,
+      }
+    });
+    inventoryManagers.push(invManager);
+  }
+  console.log(`✓ Created ${inventoryManagers.length} inventory managers`);
+
+  // ==================== CREATE CUSTOMERS ====================
+  console.log('\n👤 Creating customers...');
+  const customers = [];
+  for (let i = 1; i <= 50; i++) {
+    const location = randomElement(ghanaLocations);
+    const city = randomElement(location.cities);
+    const customer = await prisma.customer.create({
+      data: {
+        firstName: randomElement(firstNames),
+        lastName: randomElement(lastNames),
+        email: Math.random() > 0.3 ? `customer${i}@example.com` : undefined,
+        phoneNumber: randomPhone(),
+        alternatePhone: Math.random() > 0.5 ? randomPhone() : undefined,
+        address: `House ${Math.floor(Math.random() * 500) + 1}, Street ${Math.floor(Math.random() * 100)}`,
+        state: location.region,
+        area: city,
+        landmark: Math.random() > 0.5 ? randomElement([
+          'Near Police Station', 'Behind Market', 'Near School',
+          'Close to Church', 'Opposite Hospital', 'Near Main Road'
+        ]) : undefined,
+        tags: Math.random() > 0.7 ? ['vip'] : Math.random() > 0.5 ? ['regular'] : [],
+        isActive: Math.random() > 0.1, // 90% active
+      }
+    });
+    customers.push(customer);
+  }
+  console.log(`✓ Created ${customers.length} customers`);
+
+  // ==================== CREATE PRODUCTS ====================
+  console.log('\n📦 Creating products...');
+  const products = [];
+  for (let i = 0; i < productData.length; i++) {
+    const data = productData[i];
+    const product = await prisma.product.create({
+      data: {
+        sku: `SKU-${(1000 + i).toString().padStart(4, '0')}`,
+        name: data.name,
+        description: `High quality ${data.name.toLowerCase()} available for delivery`,
+        category: data.category,
+        price: data.price,
+        costPrice: data.cost,
+        stockQuantity: Math.floor(Math.random() * 200) + 50,
+        lowStockThreshold: 20,
+        isActive: Math.random() > 0.1, // 90% active
+      }
+    });
+    products.push(product);
+  }
+  console.log(`✓ Created ${products.length} products`);
+
+  // ==================== CREATE ORDERS ====================
+  console.log('\n🛒 Creating orders...');
+  const orderStatuses = [
+    'pending_confirmation',
+    'confirmed',
+    'preparing',
+    'ready_for_pickup',
+    'out_for_delivery',
+    'delivered',
+    'cancelled',
+    'returned',
+    'failed_delivery'
+  ];
+
+  const orders = [];
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+  for (let i = 1; i <= 120; i++) {
+    const customer = randomElement(customers);
+    const status = randomElement(orderStatuses) as OrderStatus;
+    const rep = randomElement(customerReps);
+    const createdAt = randomDate(threeMonthsAgo, new Date());
+
+    // Select 1-4 random products
+    const numProducts = Math.floor(Math.random() * 4) + 1;
+    const orderProducts = [];
+    for (let j = 0; j < numProducts; j++) {
+      orderProducts.push(randomElement(products));
+    }
+
+    // Calculate totals
+    const subtotal = orderProducts.reduce((sum, p) => sum + p.price, 0);
+    const shippingCost = 10 + Math.floor(Math.random() * 30); // GHS 10-40
+    const discount = Math.random() > 0.7 ? Math.floor(Math.random() * 50) : 0;
+    const totalAmount = subtotal + shippingCost - discount;
+
+    // Determine payment status based on order status
+    let paymentStatus: 'pending' | 'collected' | 'deposited' | 'reconciled' = 'pending';
+    if (status === 'delivered') {
+      const rand = Math.random();
+      paymentStatus = rand > 0.7 ? 'reconciled' : rand > 0.4 ? 'deposited' : 'collected';
+    } else if (status === 'out_for_delivery') {
+      paymentStatus = Math.random() > 0.5 ? 'collected' : 'pending';
+    }
+
+    const order = await prisma.order.create({
+      data: {
+        customerId: customer.id,
+        customerRepId: rep.id,
+        status,
+        paymentStatus,
+        subtotal,
+        shippingCost,
+        discount,
+        totalAmount,
+        codAmount: totalAmount,
+        deliveryAddress: customer.address,
+        deliveryState: customer.state,
+        deliveryArea: customer.area,
+        priority: Math.floor(Math.random() * 3),
+        tags: Math.random() > 0.8 ? ['urgent'] : [],
+        source: randomElement(['manual', 'web', 'mobile', 'whatsapp']),
+        createdById: superAdmin.id,
+        createdAt,
+        orderItems: {
+          create: orderProducts.map((product) => ({
+            productId: product.id,
+            quantity: Math.floor(Math.random() * 3) + 1,
+            unitPrice: product.price,
+            totalPrice: product.price * (Math.floor(Math.random() * 3) + 1),
+          }))
+        },
+      }
+    });
+    orders.push(order);
+  }
+  console.log(`✓ Created ${orders.length} orders`);
+
+  // Update customer totals
+  console.log('\n📊 Updating customer statistics...');
+  for (const customer of customers) {
+    const customerOrders = orders.filter(o => o.customerId === customer.id);
+    const totalSpent = customerOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    await prisma.customer.update({
+      where: { id: customer.id },
+      data: {
+        totalOrders: customerOrders.length,
+        totalSpent,
+      }
+    });
+  }
+
+  // ==================== CREATE DELIVERIES ====================
+  console.log('\n🚚 Creating deliveries...');
+  const deliveryOrders = orders.filter(o =>
+    ['out_for_delivery', 'delivered', 'failed_delivery'].includes(o.status)
+  );
+
+  let deliveryCount = 0;
+  for (const order of deliveryOrders) {
+    const agent = randomElement(deliveryAgents);
+    const scheduledTime = new Date(order.createdAt);
+    scheduledTime.setDate(scheduledTime.getDate() + Math.floor(Math.random() * 3) + 1);
+
+    const deliveryData: any = {
+      orderId: order.id,
+      agentId: agent.id,
+      scheduledTime,
+      deliveryAttempts: order.status === 'failed_delivery' ? 3 : 1,
+    };
+
+    if (order.status === 'delivered') {
+      const actualTime = new Date(scheduledTime);
+      actualTime.setHours(actualTime.getHours() + Math.floor(Math.random() * 5));
+      deliveryData.actualDeliveryTime = actualTime;
+      deliveryData.proofType = randomElement(['signature', 'photo', 'otp']);
+      deliveryData.proofData = 'Delivered successfully';
+      deliveryData.recipientName = `${order.customerId}`;
+    } else if (order.status === 'failed_delivery') {
+      deliveryData.notes = randomElement([
+        'Customer not available',
+        'Wrong address provided',
+        'Customer refused delivery',
+        'Unable to locate address'
+      ]);
+    }
+
+    await prisma.delivery.create({ data: deliveryData });
+    deliveryCount++;
+
+    // Assign delivery agent to order
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { deliveryAgentId: agent.id }
+    });
+  }
+  console.log(`✓ Created ${deliveryCount} deliveries`);
+
+  // ==================== CREATE TRANSACTIONS ====================
+  console.log('\n💰 Creating transactions...');
+  const paidOrders = orders.filter(o =>
+    ['delivered'].includes(o.status) && o.paymentStatus !== 'pending'
+  );
+
+  for (const order of paidOrders) {
+    await prisma.transaction.create({
+      data: {
+        orderId: order.id,
+        type: 'payment',
+        amount: order.codAmount || order.totalAmount,
+        paymentMethod: 'cash',
+        status: order.paymentStatus,
+        reference: `TXN-${order.id}-${Date.now()}`,
+        description: `COD payment for order #${order.id}`,
+      }
+    });
+  }
+  console.log(`✓ Created ${paidOrders.length} transactions`);
+
+  // ==================== SUMMARY ====================
+  console.log('\n✅ Seed completed successfully!');
+  console.log('\n📈 Summary:');
+  console.log(`   Users: ${1 + admins.length + managers.length + customerReps.length + deliveryAgents.length + accountants.length + inventoryManagers.length}`);
+  console.log(`   - Super Admin: 1`);
+  console.log(`   - Admins: ${admins.length}`);
+  console.log(`   - Managers: ${managers.length}`);
+  console.log(`   - Customer Reps: ${customerReps.length}`);
+  console.log(`   - Delivery Agents: ${deliveryAgents.length}`);
+  console.log(`   - Accountants: ${accountants.length}`);
+  console.log(`   - Inventory Managers: ${inventoryManagers.length}`);
+  console.log(`   Customers: ${customers.length}`);
+  console.log(`   Products: ${products.length}`);
+  console.log(`   Orders: ${orders.length}`);
+  console.log(`   Deliveries: ${deliveryCount}`);
+  console.log(`   Transactions: ${paidOrders.length}`);
+  console.log('\n🔑 Login credentials:');
+  console.log('   Email: admin@codadmin.com');
+  console.log('   Password: password123');
+  console.log('\n   All other users also use password: password123');
+}
+
+seed()
+  .catch((e) => {
+    console.error('❌ Error during seed:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

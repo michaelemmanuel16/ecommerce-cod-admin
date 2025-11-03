@@ -70,9 +70,15 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
 export const getProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const productId = parseInt(id, 10);
+
+    if (isNaN(productId)) {
+      res.status(400).json({ error: 'Invalid product ID' });
+      return;
+    }
 
     const product = await prisma.product.findUnique({
-      where: { id }
+      where: { id: productId }
     });
 
     if (!product) {
@@ -88,10 +94,17 @@ export const getProduct = async (req: AuthRequest, res: Response): Promise<void>
 export const updateProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const productId = parseInt(id, 10);
+
+    if (isNaN(productId)) {
+      res.status(400).json({ error: 'Invalid product ID' });
+      return;
+    }
+
     const updateData = req.body;
 
     const product = await prisma.product.update({
-      where: { id },
+      where: { id: productId },
       data: updateData
     });
 
@@ -104,9 +117,15 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
 export const deleteProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const productId = parseInt(id, 10);
+
+    if (isNaN(productId)) {
+      res.status(400).json({ error: 'Invalid product ID' });
+      return;
+    }
 
     await prisma.product.update({
-      where: { id },
+      where: { id: productId },
       data: { isActive: false }
     });
 
@@ -119,10 +138,17 @@ export const deleteProduct = async (req: AuthRequest, res: Response): Promise<vo
 export const updateProductStock = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const productId = parseInt(id, 10);
+
+    if (isNaN(productId)) {
+      res.status(400).json({ error: 'Invalid product ID' });
+      return;
+    }
+
     const { stockQuantity } = req.body;
 
     const product = await prisma.product.update({
-      where: { id },
+      where: { id: productId },
       data: { stockQuantity }
     });
 

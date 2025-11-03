@@ -13,7 +13,12 @@ RUN npm ci && \
 # Copy source code
 COPY . .
 
-# Build application
+# Build application with environment variables
+ARG VITE_API_URL=http://localhost:3000
+ARG VITE_WS_URL=http://localhost:3000
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_WS_URL=${VITE_WS_URL}
+
 RUN npm run build
 
 # Production stage with Nginx
@@ -48,7 +53,7 @@ EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/ || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Start Nginx
 CMD ["nginx", "-g", "daemon off;"]

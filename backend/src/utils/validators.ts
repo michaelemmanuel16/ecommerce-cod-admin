@@ -61,9 +61,8 @@ export const createCustomerValidation: ValidationChain[] = [
   body('lastName').notEmpty().trim(),
   body('phoneNumber').isMobilePhone('any'),
   body('address').notEmpty(),
-  body('city').notEmpty(),
   body('state').notEmpty(),
-  body('zipCode').notEmpty(),
+  body('zipCode').optional(),
   body('area').notEmpty()
 ];
 
@@ -77,16 +76,16 @@ export const createProductValidation: ValidationChain[] = [
 ];
 
 export const createOrderValidation: ValidationChain[] = [
-  body('customerId').notEmpty(),
+  body('customerId').optional(),
+  body('customerPhone').optional(),
   body('orderItems').isArray({ min: 1 }),
   body('orderItems.*.productId').notEmpty(),
   body('orderItems.*.quantity').isInt({ min: 1 }),
   body('subtotal').isFloat({ min: 0 }),
   body('totalAmount').isFloat({ min: 0 }),
   body('deliveryAddress').notEmpty(),
-  body('deliveryCity').notEmpty(),
   body('deliveryState').notEmpty(),
-  body('deliveryZipCode').notEmpty(),
+  body('deliveryZipCode').optional(),
   body('deliveryArea').notEmpty()
 ];
 

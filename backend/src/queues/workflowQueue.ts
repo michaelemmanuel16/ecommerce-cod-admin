@@ -1,6 +1,7 @@
 import Bull from 'bull';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import { evaluateConditions } from '../utils/conditionEvaluator';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
@@ -15,9 +16,9 @@ export const workflowQueue = new Bull('workflow-execution', REDIS_URL, {
 });
 
 workflowQueue.process('execute-workflow', async (job) => {
-  const { executionId, workflowId, actions, input } = job.data;
+  const { executionId, workflowId, actions, conditions, input } = job.data;
 
-  logger.info('Processing workflow execution', { executionId, workflowId });
+  logger.info('Processing workflow execution', { executionId, workflowId, hasConditions: !!conditions });
 
   try {
     await prisma.workflowExecution.update({
@@ -30,7 +31,7 @@ workflowQueue.process('execute-workflow', async (job) => {
     // Execute actions sequentially
     for (const action of actions) {
       try {
-        const result = await executeAction(action, input);
+        const result = await executeAction(action, input, conditions);
         output.steps.push({
           action: action.type,
           success: true,
@@ -79,7 +80,157 @@ workflowQueue.process('execute-workflow', async (job) => {
   }
 });
 
-async function executeAction(action: any, input: any): Promise<any> {
+async function executeAssignUserAction(action: any, input: any, conditions?: any): Promise<any> {
+  const config = action.config || {};
+  const userType = config.userType; // 'sales_rep' | 'delivery_agent'
+  const distributionMode = config.distributionMode || 'even';
+  const assignments = config.assignments || [];
+  const onlyUnassigned = config.onlyUnassigned !== undefined ? config.onlyUnassigned : true;
+
+  // Determine which field to update
+  const targetField = userType === 'sales_rep' ? 'customerRepId' : 'deliveryAgentId';
+
+  logger.info('Executing assign_user action', {
+    userType,
+    distributionMode,
+    assignmentsCount: assignments.length,
+    onlyUnassigned,
+    hasConditions: !!conditions
+  });
+
+  // Find orders that need assignment - include product data for condition evaluation
+  const whereClause: any = {};
+  if (onlyUnassigned) {
+    whereClause[targetField] = null;
+  }
+
+  const orders = await prisma.order.findMany({
+    where: whereClause,
+    include: {
+      orderItems: {
+        include: {
+          product: true
+        }
+      }
+    },
+    orderBy: { createdAt: 'asc' }
+  });
+
+  logger.info(`Found ${orders.length} unassigned orders to check`);
+
+  if (orders.length === 0) {
+    return { assigned: 0, message: 'No orders found to assign' };
+  }
+
+  // Filter orders by workflow conditions
+  let ordersToAssign = orders;
+  if (conditions) {
+    ordersToAssign = orders.filter(order => {
+      // Transform order to include productName field for condition evaluation
+      const orderContext = {
+        ...order,
+        productName: order.orderItems.map((item: any) => item.product.name).join(', ')
+      };
+
+      const matches = evaluateConditions(conditions, orderContext);
+      logger.debug('Order condition check', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        productName: orderContext.productName,
+        matches
+      });
+      return matches;
+    });
+
+    logger.info(`After condition filtering: ${ordersToAssign.length} of ${orders.length} orders match`);
+  }
+
+  if (ordersToAssign.length === 0) {
+    return { assigned: 0, message: 'No orders match the workflow conditions' };
+  }
+
+  if (assignments.length === 0) {
+    return { assigned: 0, message: 'No users configured for assignment' };
+  }
+
+  let assignedCount = 0;
+  const results = [];
+
+  // Even distribution
+  if (distributionMode === 'even') {
+    for (let i = 0; i < ordersToAssign.length; i++) {
+      const assignmentIndex = i % assignments.length;
+      const assignment = assignments[assignmentIndex];
+
+      await prisma.order.update({
+        where: { id: ordersToAssign[i].id },
+        data: { [targetField]: assignment.userId }
+      });
+
+      assignedCount++;
+      results.push({
+        orderId: ordersToAssign[i].id,
+        orderNumber: ordersToAssign[i].orderNumber,
+        assignedTo: assignment.userId
+      });
+
+      logger.info('Order assigned (even)', {
+        orderId: ordersToAssign[i].id,
+        orderNumber: ordersToAssign[i].orderNumber,
+        userId: assignment.userId
+      });
+    }
+  }
+  // Weighted distribution
+  else if (distributionMode === 'weighted') {
+    const totalWeight = assignments.reduce((sum: number, a: any) => sum + (a.weight || 0), 0);
+
+    if (totalWeight === 0) {
+      return { assigned: 0, message: 'Total weight is 0, cannot distribute' };
+    }
+
+    for (const order of ordersToAssign) {
+      // Generate random number and select user based on weight
+      const random = Math.random() * totalWeight;
+      let cumulative = 0;
+      let selectedUserId = assignments[0].userId;
+
+      for (const assignment of assignments) {
+        cumulative += assignment.weight || 0;
+        if (random <= cumulative) {
+          selectedUserId = assignment.userId;
+          break;
+        }
+      }
+
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { [targetField]: selectedUserId }
+      });
+
+      assignedCount++;
+      results.push({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        assignedTo: selectedUserId
+      });
+
+      logger.info('Order assigned (weighted)', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        userId: selectedUserId
+      });
+    }
+  }
+
+  return {
+    assigned: assignedCount,
+    results,
+    message: `Successfully assigned ${assignedCount} orders`
+  };
+}
+
+async function executeAction(action: any, input: any, conditions?: any): Promise<any> {
   switch (action.type) {
     case 'send_sms':
       logger.info('Sending SMS', { to: action.config.to, message: action.config.message });
@@ -104,6 +255,9 @@ async function executeAction(action: any, input: any): Promise<any> {
         data: { deliveryAgentId: action.config.agentId }
       });
       return { assigned: true };
+
+    case 'assign_user':
+      return await executeAssignUserAction(action, input, conditions);
 
     case 'add_tag':
       const customer = await prisma.customer.findUnique({

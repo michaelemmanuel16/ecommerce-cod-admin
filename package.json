@@ -1,0 +1,20 @@
+{
+  "name": "ecommerce-cod-admin-e2e",
+  "version": "1.0.0",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report",
+    "test:e2e:auth": "playwright test e2e/01-authentication.spec.ts",
+    "test:e2e:orders": "playwright test e2e/02-order-management.spec.ts",
+    "test:e2e:kanban": "playwright test e2e/03-kanban-board.spec.ts",
+    "test:e2e:customers": "playwright test e2e/04-customer-management.spec.ts",
+    "test:e2e:realtime": "playwright test e2e/05-real-time-updates.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "shadcn": "^3.4.0"
+  }
+}

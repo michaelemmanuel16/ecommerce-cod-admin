@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout Form Embed Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 40px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      color: #1a202c;
+      margin-bottom: 10px;
+    }
+
+    p {
+      color: #4a5568;
+      margin-bottom: 30px;
+    }
+
+    .embed-container {
+      background: #f7fafc;
+      border: 2px dashed #cbd5e0;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+
+    .info-box {
+      background: #ebf8ff;
+      border-left: 4px solid #3182ce;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+    }
+
+    .info-box p {
+      margin: 0;
+      color: #2c5282;
+      font-size: 14px;
+    }
+
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f0fff4;
+      border: 1px solid #9ae6b4;
+      border-radius: 6px;
+      color: #22543d;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🛍️ Checkout Form Embedding Test</h1>
+    <p>This page demonstrates embedding a checkout form from your e-commerce admin dashboard.</p>
+
+    <div class="info-box">
+      <p><strong>Testing Instructions:</strong></p>
+      <p>1. Make sure your frontend dev server is running (npm run dev)</p>
+      <p>2. Create a checkout form in the admin dashboard</p>
+      <p>3. Copy the iframe code from the "Get Embed Code" button</p>
+      <p>4. Replace the iframe below with your copied code</p>
+      <p>5. Open this HTML file in your browser</p>
+    </div>
+
+    <div class="embed-container">
+      <h3 style="margin-top: 0; color: #2d3748;">Embedded Checkout Form:</h3>
+
+      <!-- Replace this iframe with your actual embed code -->
+      <div id="checkout-form-placeholder"></div>
+      <script>
+        // Example: Auto-resize iframe embed (Method 2 from EmbedCodeModal)
+        // Replace 'your-form-slug' with your actual form slug
+        (function() {
+          var iframe = document.createElement('iframe');
+          iframe.src = 'http://localhost:5173/order/your-form-slug';
+          iframe.style.width = '100%';
+          iframe.style.height = '800px';
+          iframe.style.border = 'none';
+          iframe.style.maxWidth = '600px';
+          iframe.style.margin = '0 auto';
+          iframe.style.display = 'block';
+          iframe.setAttribute('scrolling', 'auto');
+          iframe.setAttribute('allowtransparency', 'true');
+
+          // Auto-resize support
+          window.addEventListener('message', function(e) {
+            if (e.origin === 'http://localhost:5173' && e.data.type === 'checkout-resize') {
+              iframe.style.height = e.data.height + 'px';
+              updateStatus('Auto-resized to: ' + e.data.height + 'px');
+            }
+          });
+
+          document.getElementById('checkout-form-placeholder').appendChild(iframe);
+        })();
+
+        function updateStatus(message) {
+          var statusDiv = document.getElementById('status');
+          if (statusDiv) {
+            statusDiv.innerHTML += '<br>✓ ' + message;
+          }
+        }
+      </script>
+
+      <div id="status" class="status">
+        <strong>Auto-Resize Status:</strong><br>
+        Waiting for iframe to load...
+      </div>
+    </div>
+
+    <div style="margin-top: 30px; padding: 20px; background: #fffaf0; border: 1px solid #feb2b2; border-radius: 6px;">
+      <p style="margin: 0; color: #7c2d12; font-size: 14px;">
+        <strong>⚠️ Important:</strong> Replace <code>your-form-slug</code> in the JavaScript code above with your actual checkout form slug. You can find the slug in your admin dashboard when creating/editing a form.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

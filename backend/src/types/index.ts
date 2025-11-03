@@ -3,14 +3,14 @@ import { UserRole } from '@prisma/client';
 
 export interface AuthRequest extends Request {
   user?: {
-    id: string;
+    id: number;
     email: string;
     role: UserRole;
   };
 }
 
 export interface JWTPayload {
-  id: string;
+  id: number;
   email: string;
   role: UserRole;
 }
@@ -27,9 +27,8 @@ export interface FilterParams {
   startDate?: string;
   endDate?: string;
   area?: string;
-  city?: string;
-  customerRepId?: string;
-  deliveryAgentId?: string;
+  customerRepId?: number;
+  deliveryAgentId?: number;
 }
 
 export interface WorkflowAction {
@@ -64,7 +63,7 @@ export interface DashboardMetrics {
 }
 
 export interface PerformanceMetrics {
-  userId: string;
+  userId: number;
   userName: string;
   totalAssigned: number;
   completed: number;

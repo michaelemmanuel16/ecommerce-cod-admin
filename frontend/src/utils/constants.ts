@@ -1,13 +1,8 @@
 import { OrderStatus, OrderPriority } from '../types';
 
 export const ORDER_STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bgColor: string }> = {
-  new: {
-    label: 'New Orders',
-    color: 'text-blue-700',
-    bgColor: 'bg-blue-100',
-  },
-  confirmation_pending: {
-    label: 'Confirmation Pending',
+  pending_confirmation: {
+    label: 'Pending Confirmation',
     color: 'text-yellow-700',
     bgColor: 'bg-yellow-100',
   },
@@ -16,8 +11,8 @@ export const ORDER_STATUS_CONFIG: Record<OrderStatus, { label: string; color: st
     color: 'text-green-700',
     bgColor: 'bg-green-100',
   },
-  being_prepared: {
-    label: 'Being Prepared',
+  preparing: {
+    label: 'Preparing',
     color: 'text-purple-700',
     bgColor: 'bg-purple-100',
   },
@@ -36,23 +31,33 @@ export const ORDER_STATUS_CONFIG: Record<OrderStatus, { label: string; color: st
     color: 'text-emerald-700',
     bgColor: 'bg-emerald-100',
   },
-  returned: {
-    label: 'Returned',
-    color: 'text-red-700',
-    bgColor: 'bg-red-100',
-  },
   cancelled: {
     label: 'Cancelled',
     color: 'text-gray-700',
     bgColor: 'bg-gray-100',
   },
+  returned: {
+    label: 'Returned',
+    color: 'text-red-700',
+    bgColor: 'bg-red-100',
+  },
+  failed_delivery: {
+    label: 'Failed Delivery',
+    color: 'text-red-700',
+    bgColor: 'bg-red-100',
+  },
 };
 
 export const PRIORITY_CONFIG: Record<OrderPriority, { label: string; color: string; bgColor: string }> = {
-  high: {
-    label: 'High',
+  urgent: {
+    label: 'Urgent',
     color: 'text-red-700',
     bgColor: 'bg-red-100',
+  },
+  high: {
+    label: 'High',
+    color: 'text-orange-700',
+    bgColor: 'bg-orange-100',
   },
   medium: {
     label: 'Medium',
@@ -67,14 +72,15 @@ export const PRIORITY_CONFIG: Record<OrderPriority, { label: string; color: stri
 };
 
 export const KANBAN_COLUMNS: OrderStatus[] = [
-  'new',
-  'confirmation_pending',
+  'pending_confirmation',
   'confirmed',
-  'being_prepared',
+  'preparing',
   'ready_for_pickup',
   'out_for_delivery',
   'delivered',
   'cancelled',
+  'returned',
+  'failed_delivery',
 ];
 
 export const ITEMS_PER_PAGE_OPTIONS = [10, 25, 50, 100];

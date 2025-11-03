@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { User, LoginCredentials, RegisterData } from '../types';
+import { User, LoginCredentials, RegisterData, UserPreferences } from '../types';
 import { authService } from '../services/auth.service';
+import { usersService } from '../services/users.service';
 import { connectSocket, disconnectSocket } from '../services/socket';
 import toast from 'react-hot-toast';
 
@@ -15,6 +16,7 @@ interface AuthState {
   register: (data: RegisterData) => Promise<void>;
   logout: () => void;
   setAccessToken: (token: string) => void;
+  updatePreferences: (preferences: UserPreferences) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -37,7 +39,7 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
-          toast.success(`Welcome back, ${user.name}!`);
+          toast.success(`Welcome back, ${user.firstName} ${user.lastName}!`);
           connectSocket();
         } catch (error) {
           set({ isLoading: false });
@@ -56,7 +58,7 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
-          toast.success(`Welcome, ${user.name}!`);
+          toast.success(`Welcome, ${user.firstName} ${user.lastName}!`);
           connectSocket();
         } catch (error) {
           set({ isLoading: false });
@@ -79,9 +81,34 @@ export const useAuthStore = create<AuthState>()(
       setAccessToken: (token: string) => {
         set({ accessToken: token });
       },
+
+      updatePreferences: async (preferences: UserPreferences) => {
+        try {
+          const updatedPreferences = await usersService.updateUserPreferences(preferences);
+          const currentUser = get().user;
+          if (currentUser) {
+            set({
+              user: {
+                ...currentUser,
+                preferences: updatedPreferences,
+              },
+            });
+          }
+        } catch (error) {
+          console.error('Failed to update preferences:', error);
+          throw error;
+        }
+      },
     }),
     {
       name: 'auth-storage',
+      partialize: (state) => ({
+        user: state.user,
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+        isAuthenticated: state.isAuthenticated,
+        // Exclude isLoading from persistence
+      }),
     }
   )
 );

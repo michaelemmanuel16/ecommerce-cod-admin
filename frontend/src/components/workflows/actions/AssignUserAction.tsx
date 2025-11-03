@@ -1,0 +1,372 @@
+import React, { useState, useEffect } from 'react';
+import { Users, AlertCircle, TrendingUp, PieChart } from 'lucide-react';
+import { customerRepsService, CustomerRep } from '../../../services/customer-reps.service';
+import { deliveryAgentsService, DeliveryAgent } from '../../../services/delivery-agents.service';
+import { cn } from '../../../utils/cn';
+
+export interface UserAssignment {
+  userId: string;
+  weight: number; // Percentage (0-100)
+}
+
+export interface AssignUserConfig {
+  userType: 'sales_rep' | 'delivery_agent';
+  assignments: UserAssignment[];
+  distributionMode: 'even' | 'weighted';
+  onlyUnassigned: boolean;
+}
+
+interface AssignUserActionProps {
+  config: AssignUserConfig;
+  onChange: (config: AssignUserConfig) => void;
+}
+
+type User = (CustomerRep | DeliveryAgent) & { name: string };
+
+export const AssignUserAction: React.FC<AssignUserActionProps> = ({
+  config,
+  onChange,
+}) => {
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [validationError, setValidationError] = useState<string>('');
+
+  useEffect(() => {
+    loadUsers();
+  }, [config.userType]);
+
+  useEffect(() => {
+    validateWeights();
+  }, [config.assignments, config.distributionMode]);
+
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      if (config.userType === 'sales_rep') {
+        const reps = await customerRepsService.getCustomerReps();
+        setUsers(reps.filter((rep) => rep.isActive));
+      } else {
+        const agents = await deliveryAgentsService.getDeliveryAgents();
+        setUsers(agents.filter((agent) => agent.isActive));
+      }
+    } catch (error) {
+      console.error('Error loading users:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const validateWeights = () => {
+    if (config.distributionMode === 'weighted' && config.assignments.length > 0) {
+      const totalWeight = config.assignments.reduce(
+        (sum, assignment) => sum + assignment.weight,
+        0
+      );
+
+      if (Math.abs(totalWeight - 100) > 0.01) {
+        setValidationError(`Total must equal 100% (currently ${totalWeight.toFixed(1)}%)`);
+      } else {
+        setValidationError('');
+      }
+    } else {
+      setValidationError('');
+    }
+  };
+
+  const handleUserTypeChange = (userType: 'sales_rep' | 'delivery_agent') => {
+    onChange({
+      ...config,
+      userType,
+      assignments: [], // Reset assignments when changing user type
+    });
+  };
+
+  const handleDistributionModeChange = (mode: 'even' | 'weighted') => {
+    const newConfig = { ...config, distributionMode: mode };
+
+    if (mode === 'even') {
+      // Distribute evenly
+      const evenWeight = config.assignments.length > 0
+        ? 100 / config.assignments.length
+        : 0;
+      newConfig.assignments = config.assignments.map((assignment) => ({
+        ...assignment,
+        weight: Number(evenWeight.toFixed(2)),
+      }));
+    }
+
+    onChange(newConfig);
+  };
+
+  const toggleUserSelection = (userId: string) => {
+    const isSelected = config.assignments.some((a) => a.userId === userId);
+
+    if (isSelected) {
+      // Remove user
+      const newAssignments = config.assignments.filter((a) => a.userId !== userId);
+
+      if (config.distributionMode === 'even' && newAssignments.length > 0) {
+        const evenWeight = 100 / newAssignments.length;
+        onChange({
+          ...config,
+          assignments: newAssignments.map((a) => ({
+            ...a,
+            weight: Number(evenWeight.toFixed(2)),
+          })),
+        });
+      } else {
+        onChange({ ...config, assignments: newAssignments });
+      }
+    } else {
+      // Add user
+      const newAssignments = [...config.assignments];
+
+      if (config.distributionMode === 'even') {
+        const evenWeight = 100 / (newAssignments.length + 1);
+        newAssignments.push({ userId, weight: Number(evenWeight.toFixed(2)) });
+        onChange({
+          ...config,
+          assignments: newAssignments.map((a) => ({
+            ...a,
+            weight: Number(evenWeight.toFixed(2)),
+          })),
+        });
+      } else {
+        newAssignments.push({ userId, weight: 0 });
+        onChange({ ...config, assignments: newAssignments });
+      }
+    }
+  };
+
+  const updateWeight = (userId: string, weight: number) => {
+    onChange({
+      ...config,
+      assignments: config.assignments.map((assignment) =>
+        assignment.userId === userId
+          ? { ...assignment, weight: Number(weight) }
+          : assignment
+      ),
+    });
+  };
+
+  const getUserById = (userId: string) => {
+    return users.find((u) => u.id === userId);
+  };
+
+  if (loading) {
+    return (
+      <div className="p-4 text-center text-gray-500">
+        Loading users...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* User Type Selection */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          User Type
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => handleUserTypeChange('sales_rep')}
+            className={cn(
+              'p-4 rounded-lg border-2 transition-all text-left',
+              config.userType === 'sales_rep'
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-200 hover:border-blue-300'
+            )}
+          >
+            <Users className="w-5 h-5 mb-2 text-blue-600" />
+            <div className="font-semibold text-gray-900">Sales Reps</div>
+            <div className="text-xs text-gray-600">Customer representatives</div>
+          </button>
+          <button
+            onClick={() => handleUserTypeChange('delivery_agent')}
+            className={cn(
+              'p-4 rounded-lg border-2 transition-all text-left',
+              config.userType === 'delivery_agent'
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-200 hover:border-blue-300'
+            )}
+          >
+            <TrendingUp className="w-5 h-5 mb-2 text-blue-600" />
+            <div className="font-semibold text-gray-900">Delivery Agents</div>
+            <div className="text-xs text-gray-600">Field agents</div>
+          </button>
+        </div>
+      </div>
+
+      {/* Distribution Mode Toggle */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Distribution Mode
+        </label>
+        <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
+          <button
+            onClick={() => handleDistributionModeChange('even')}
+            className={cn(
+              'flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all',
+              config.distributionMode === 'even'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            )}
+          >
+            Even Split
+          </button>
+          <button
+            onClick={() => handleDistributionModeChange('weighted')}
+            className={cn(
+              'flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all',
+              config.distributionMode === 'weighted'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            )}
+          >
+            Weighted Split
+          </button>
+        </div>
+      </div>
+
+      {/* User Selection */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Select {config.userType === 'sales_rep' ? 'Sales Reps' : 'Delivery Agents'}
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto p-1">
+          {users.map((user) => {
+            const isSelected = config.assignments.some((a) => a.userId === user.id);
+            const assignment = config.assignments.find((a) => a.userId === user.id);
+
+            return (
+              <div
+                key={user.id}
+                className={cn(
+                  'p-3 rounded-lg border-2 transition-all',
+                  isSelected
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-blue-300'
+                )}
+              >
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleUserSelection(user.id)}
+                    className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 truncate">
+                      {user.name}
+                    </div>
+                    <div className="text-xs text-gray-600 truncate">
+                      {user.email}
+                    </div>
+                    {user.isAvailable && (
+                      <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded">
+                        Available
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Weight Slider for Weighted Mode */}
+                {isSelected && config.distributionMode === 'weighted' && assignment && (
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium text-gray-700">
+                        Weight
+                      </span>
+                      <span className="text-sm font-semibold text-blue-600">
+                        {assignment.weight.toFixed(1)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={assignment.weight}
+                      onChange={(e) =>
+                        updateWeight(user.id, parseFloat(e.target.value))
+                      }
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Validation Error */}
+      {validationError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <div className="text-sm font-medium text-red-800">
+              Invalid Distribution
+            </div>
+            <div className="text-sm text-red-700">{validationError}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Visual Preview */}
+      {config.assignments.length > 0 && !validationError && (
+        <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <PieChart className="w-5 h-5 text-green-600" />
+            <h4 className="text-sm font-semibold text-green-900">
+              Traffic Distribution Preview
+            </h4>
+          </div>
+          <div className="space-y-2">
+            {config.assignments.map((assignment) => {
+              const user = getUserById(assignment.userId);
+              return (
+                <div key={assignment.userId} className="flex items-center gap-2">
+                  <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-green-500 h-full rounded-full transition-all"
+                      style={{ width: `${assignment.weight}%` }}
+                    />
+                  </div>
+                  <div className="text-sm text-gray-900 w-32 truncate">
+                    {user?.name}
+                  </div>
+                  <div className="text-sm font-semibold text-green-700 w-16 text-right">
+                    {assignment.weight.toFixed(1)}%
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Only Unassigned Option */}
+      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg">
+        <input
+          type="checkbox"
+          id="onlyUnassigned"
+          checked={config.onlyUnassigned}
+          onChange={(e) =>
+            onChange({ ...config, onlyUnassigned: e.target.checked })
+          }
+          className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+        />
+        <label htmlFor="onlyUnassigned" className="flex-1">
+          <div className="text-sm font-medium text-gray-900">
+            Only apply to unassigned orders
+          </div>
+          <div className="text-xs text-gray-600 mt-1">
+            Skip orders that already have an assigned user
+          </div>
+        </label>
+      </div>
+    </div>
+  );
+};

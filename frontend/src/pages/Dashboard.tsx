@@ -50,7 +50,7 @@ export const Dashboard: React.FC = () => {
         />
         <StatCard
           title="Total Revenue"
-          value={`$${totalRevenue}`}
+          value={`$${totalRevenue.toFixed(2)}`}
           icon={DollarSign}
           trend={8}
           iconColor="text-green-600"

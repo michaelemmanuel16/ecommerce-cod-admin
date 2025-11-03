@@ -32,7 +32,7 @@ export const connectSocket = () => {
   socket.on('order_created', (data) => {
     toast.success(`New order received: ${data.orderNumber}`);
     useNotificationsStore.getState().addNotification({
-      id: Date.now().toString(),
+      id: Date.now(), // Use number instead of string
       type: 'order_created',
       title: 'New Order',
       message: `Order ${data.orderNumber} has been created`,
@@ -44,7 +44,7 @@ export const connectSocket = () => {
 
   socket.on('order_updated', (data) => {
     useNotificationsStore.getState().addNotification({
-      id: Date.now().toString(),
+      id: Date.now(), // Use number instead of string
       type: 'order_updated',
       title: 'Order Updated',
       message: `Order ${data.orderNumber} has been updated`,
@@ -58,7 +58,7 @@ export const connectSocket = () => {
     const statusText = data.status.split('_').join(' ');
     toast.success(`Order ${data.orderNumber} status changed to ${statusText}`);
     useNotificationsStore.getState().addNotification({
-      id: Date.now().toString(),
+      id: Date.now(), // Use number instead of string
       type: 'order_status_changed',
       title: 'Status Changed',
       message: `Order ${data.orderNumber} is now ${statusText}`,

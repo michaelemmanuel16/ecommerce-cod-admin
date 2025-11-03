@@ -1,25 +1,32 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Layout } from './components/layout/Layout';
+import { Toast } from './components/ui/Toast';
+import { Loading } from './components/ui/Loading';
+
+// Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
-import { OrdersKanban } from './pages/OrdersKanban';
-import { OrdersList } from './pages/OrdersList';
-import { OrderDetails } from './pages/OrderDetails';
-import { Products } from './pages/Products';
-import { ProductForm } from './pages/ProductForm';
-import { Customers } from './pages/Customers';
-import { CustomerDetails } from './pages/CustomerDetails';
-import { DeliveryAgents } from './pages/DeliveryAgents';
-import { CustomerReps } from './pages/CustomerReps';
-import { Financial } from './pages/Financial';
-import { Analytics } from './pages/Analytics';
-import { Workflows } from './pages/Workflows';
-import { WorkflowEditor } from './pages/WorkflowEditor';
-import { Settings } from './pages/Settings';
-import { Toast } from './components/ui/Toast';
+
+// Lazy load all other pages for better initial load performance
+const Orders = lazy(() => import('./pages/Orders').then(m => ({ default: m.Orders })));
+const OrderDetails = lazy(() => import('./pages/OrderDetails').then(m => ({ default: m.OrderDetails })));
+const Products = lazy(() => import('./pages/Products').then(m => ({ default: m.Products })));
+const ProductForm = lazy(() => import('./pages/ProductForm').then(m => ({ default: m.ProductForm })));
+const Customers = lazy(() => import('./pages/Customers').then(m => ({ default: m.Customers })));
+const CustomerDetails = lazy(() => import('./pages/CustomerDetails').then(m => ({ default: m.CustomerDetails })));
+const DeliveryAgents = lazy(() => import('./pages/DeliveryAgents').then(m => ({ default: m.DeliveryAgents })));
+const CustomerReps = lazy(() => import('./pages/CustomerReps').then(m => ({ default: m.CustomerReps })));
+const Financial = lazy(() => import('./pages/Financial').then(m => ({ default: m.Financial })));
+const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })));
+const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m.Workflows })));
+const WorkflowEditor = lazy(() => import('./pages/WorkflowEditor').then(m => ({ default: m.WorkflowEditor })));
+const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
+const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ default: m.CheckoutForms })));
+const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
@@ -28,9 +35,17 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 function App() {
   return (
-    <>
+    <ErrorBoundary>
       <BrowserRouter>
         <Routes>
+          {/* Public routes - no authentication required */}
+          <Route path="/order/:slug" element={
+            <Suspense fallback={<Loading />}>
+              <PublicCheckout />
+            </Suspense>
+          } />
+
+          {/* Auth routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route
@@ -42,26 +57,91 @@ function App() {
             }
           >
             <Route index element={<Dashboard />} />
-            <Route path="orders" element={<OrdersKanban />} />
-            <Route path="orders/list" element={<OrdersList />} />
-            <Route path="orders/:id" element={<OrderDetails />} />
-            <Route path="products" element={<Products />} />
-            <Route path="products/new" element={<ProductForm />} />
-            <Route path="products/:id/edit" element={<ProductForm />} />
-            <Route path="customers" element={<Customers />} />
-            <Route path="customers/:id" element={<CustomerDetails />} />
-            <Route path="delivery-agents" element={<DeliveryAgents />} />
-            <Route path="customer-reps" element={<CustomerReps />} />
-            <Route path="financial" element={<Financial />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="workflows" element={<Workflows />} />
-            <Route path="workflows/:id" element={<WorkflowEditor />} />
-            <Route path="settings" element={<Settings />} />
+            <Route path="orders" element={
+              <Suspense fallback={<Loading />}>
+                <Orders />
+              </Suspense>
+            } />
+            <Route path="orders/:id" element={
+              <Suspense fallback={<Loading />}>
+                <OrderDetails />
+              </Suspense>
+            } />
+            <Route path="products" element={
+              <Suspense fallback={<Loading />}>
+                <Products />
+              </Suspense>
+            } />
+            <Route path="products/new" element={
+              <Suspense fallback={<Loading />}>
+                <ProductForm />
+              </Suspense>
+            } />
+            <Route path="products/:id/edit" element={
+              <Suspense fallback={<Loading />}>
+                <ProductForm />
+              </Suspense>
+            } />
+            <Route path="customers" element={
+              <Suspense fallback={<Loading />}>
+                <Customers />
+              </Suspense>
+            } />
+            <Route path="customers/:id" element={
+              <Suspense fallback={<Loading />}>
+                <CustomerDetails />
+              </Suspense>
+            } />
+            <Route path="delivery-agents" element={
+              <Suspense fallback={<Loading />}>
+                <DeliveryAgents />
+              </Suspense>
+            } />
+            <Route path="customer-reps" element={
+              <Suspense fallback={<Loading />}>
+                <CustomerReps />
+              </Suspense>
+            } />
+            <Route path="financial" element={
+              <Suspense fallback={<Loading />}>
+                <Financial />
+              </Suspense>
+            } />
+            <Route path="analytics" element={
+              <Suspense fallback={<Loading />}>
+                <Analytics />
+              </Suspense>
+            } />
+            <Route path="workflows" element={
+              <Suspense fallback={<Loading />}>
+                <Workflows />
+              </Suspense>
+            } />
+            <Route path="workflows/new" element={
+              <Suspense fallback={<Loading />}>
+                <WorkflowEditor />
+              </Suspense>
+            } />
+            <Route path="workflows/:id" element={
+              <Suspense fallback={<Loading />}>
+                <WorkflowEditor />
+              </Suspense>
+            } />
+            <Route path="settings" element={
+              <Suspense fallback={<Loading />}>
+                <Settings />
+              </Suspense>
+            } />
+            <Route path="checkout-forms" element={
+              <Suspense fallback={<Loading />}>
+                <CheckoutForms />
+              </Suspense>
+            } />
           </Route>
         </Routes>
       </BrowserRouter>
       <Toast />
-    </>
+    </ErrorBoundary>
   );
 }
 

@@ -22,9 +22,23 @@ export const generateRefreshToken = (payload: JWTPayload): string => {
 };
 
 export const verifyAccessToken = (token: string): JWTPayload => {
-  return jwt.verify(token, JWT_SECRET) as JWTPayload;
+  const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+  // Validate ID type - handle migration from string (CUID) to integer IDs
+  if (typeof decoded.id !== 'number') {
+    throw new Error('TOKEN_FORMAT_OUTDATED');
+  }
+
+  return decoded as JWTPayload;
 };
 
 export const verifyRefreshToken = (token: string): JWTPayload => {
-  return jwt.verify(token, JWT_REFRESH_SECRET) as JWTPayload;
+  const decoded = jwt.verify(token, JWT_REFRESH_SECRET) as any;
+
+  // Validate ID type - handle migration from string (CUID) to integer IDs
+  if (typeof decoded.id !== 'number') {
+    throw new Error('TOKEN_FORMAT_OUTDATED');
+  }
+
+  return decoded as JWTPayload;
 };

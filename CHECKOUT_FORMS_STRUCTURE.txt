@@ -1,0 +1,128 @@
+CHECKOUT FORMS - COMPONENT STRUCTURE
+=====================================
+
+Page Route: /checkout-forms
+
+CheckoutForms.tsx (Main Page)
+├── Header Section
+│   ├── Title: "Checkout Forms"
+│   ├── Description
+│   └── Button: "Create Form"
+│
+├── Empty State (when no forms)
+│   ├── Icon
+│   ├── Title: "No checkout forms yet"
+│   ├── Description
+│   └── Button: "Create Your First Form"
+│
+├── Forms Grid (3 columns responsive)
+│   └── Card (for each form)
+│       ├── Form Name (product name)
+│       ├── Description
+│       ├── Badge: Active/Inactive
+│       ├── Statistics
+│       │   ├── Fields count
+│       │   ├── Packages count
+│       │   └── Upsells count
+│       ├── Actions Row
+│       │   ├── Edit button
+│       │   ├── Clone button
+│       │   ├── Open (external) button
+│       │   └── Delete button
+│       └── Checkbox: "Enable this form"
+│
+└── CheckoutFormBuilder Modal
+    ├── Header: "Create/Edit Checkout Form"
+    ├── Product Selection Dropdown
+    ├── Description Textarea
+    ├── Form Fields Section
+    │   ├── "Add Field" button
+    │   └── FormFieldEditor (repeated)
+    │       ├── Drag handle
+    │       ├── Field Label input
+    │       ├── Field Type selector
+    │       ├── Required checkbox
+    │       ├── Enabled checkbox
+    │       ├── Delete button
+    │       └── Options input (for select type)
+    ├── Product Packages Section
+    │   ├── "From Existing Products" button
+    │   ├── "Add Custom Package" button
+    │   └── PackageEditor (repeated)
+    │       ├── Name input
+    │       ├── Price input
+    │       ├── Quantity input
+    │       ├── Popular checkbox
+    │       └── Delete button
+    ├── Upsells/Add-ons Section
+    │   ├── "From Existing Products" button
+    │   ├── "Add Custom Upsell" button
+    │   └── UpsellEditor (repeated)
+    │       ├── Name input
+    │       ├── Price input
+    │       ├── Quantity input
+    │       ├── Popular checkbox
+    │       └── Delete button
+    ├── Form Settings Section
+    │   └── Default Country selector
+    ├── Styling Settings Section
+    │   ├── Button Color
+    │   │   ├── Color picker
+    │   │   └── Hex input
+    │   └── Accent Color
+    │       ├── Color picker
+    │       └── Hex input
+    └── Actions
+        ├── Cancel button
+        └── Create/Update Form button
+
+COMPONENT FILES
+===============
+1. /frontend/src/pages/CheckoutForms.tsx
+   - Main page component
+   - Forms list/grid
+   - CRUD operations orchestration
+
+2. /frontend/src/components/forms/CheckoutFormBuilder.tsx
+   - Modal container
+   - Form builder with all sections
+   - react-hook-form integration
+   - State management for fields/packages/upsells
+
+3. /frontend/src/components/forms/FormFieldEditor.tsx
+   - Single field configuration row
+   - 12-column grid layout
+   - Field type handling
+
+4. /frontend/src/components/forms/PackageEditor.tsx
+   - Single package configuration row
+   - 12-column grid layout
+
+5. /frontend/src/components/forms/UpsellEditor.tsx
+   - Single upsell configuration row
+   - 12-column grid layout
+
+TYPE DEFINITIONS
+================
+/frontend/src/types/checkout-form.ts
+
+- FieldType: 'text' | 'phone' | 'textarea' | 'select'
+- FormField: { id, label, type, required, enabled, options? }
+- ProductPackage: { id, name, price, quantity, popular }
+- Upsell: { id, name, price, quantity, popular }
+- CheckoutFormSettings: { defaultCountry }
+- CheckoutFormStyling: { buttonColor, accentColor }
+- CheckoutForm: Complete form entity
+
+COLOR SCHEME
+============
+Button Color (default): #0f172a (slate-900)
+Accent Color (default): #f97316 (orange-500)
+Active Badge: Green (bg-green-100, text-green-800)
+Inactive Badge: Gray (bg-gray-100, text-gray-800)
+
+NAVIGATION
+==========
+Sidebar Menu Item: "Checkout Forms" (FileText icon)
+Position: After "Products"
+Route: /checkout-forms

@@ -17,7 +17,15 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
 
     req.user = decoded;
     next();
-  } catch (error) {
+  } catch (error: any) {
+    // Handle outdated token format (from CUID → integer ID migration)
+    if (error.message === 'TOKEN_FORMAT_OUTDATED') {
+      res.status(401).json({
+        error: 'Token format outdated. Please log in again.',
+        code: 'TOKEN_FORMAT_OUTDATED'
+      });
+      return;
+    }
     res.status(401).json({ error: 'Invalid token' });
   }
 };
@@ -54,4 +62,18 @@ export const requirePermission = (allowedRoles: UserRole[]) => {
 
     next();
   };
+};
+
+export const requireSuperAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  if (req.user.role !== 'super_admin') {
+    res.status(403).json({ error: 'Forbidden: Super Admin access required' });
+    return;
+  }
+
+  next();
 };

@@ -72,16 +72,18 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL}
       CORS_ORIGIN: ${CORS_ORIGIN}
     volumes:
-      - ./backend/uploads:/app/uploads
-      - ./backend/logs:/app/logs
+      - backend_uploads:/app/uploads
+      - backend_logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,6 +111,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: production
+      args:
+        VITE_API_URL: ${API_URL}
+        VITE_WS_URL: ${WS_URL}
     container_name: ecommerce-cod-frontend
     restart: always
     depends_on:
@@ -141,4 +146,8 @@ volumes:
   nginx_cache:
     driver: local
   nginx_logs:
+    driver: local
+  backend_uploads:
+    driver: local
+  backend_logs:
     driver: local

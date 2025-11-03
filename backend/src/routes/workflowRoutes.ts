@@ -8,6 +8,9 @@ const router = Router();
 
 router.use(authenticate);
 
+// Templates endpoint must come before /:id to avoid matching "templates" as an ID
+router.get('/templates', workflowController.getWorkflowTemplates);
+
 router.get('/', workflowController.getAllWorkflows);
 router.post('/', requirePermission(['super_admin', 'admin']), workflowController.createWorkflow);
 router.get('/:id', workflowController.getWorkflow);

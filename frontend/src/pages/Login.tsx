@@ -26,12 +26,18 @@ export const Login: React.FC = () => {
     resolver: zodResolver(loginSchema),
   });
 
+  const [errorMessage, setErrorMessage] = React.useState<string>('');
+
   const onSubmit = async (data: LoginFormData) => {
+    setErrorMessage('');
     try {
+      console.log('Attempting login with:', data.email);
       await login(data);
       navigate('/');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login failed:', error);
+      const message = error?.response?.data?.message || error?.message || 'Login failed';
+      setErrorMessage(message);
     }
   };
 
@@ -44,6 +50,12 @@ export const Login: React.FC = () => {
         </div>
         <Card>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            {errorMessage && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+                <strong className="font-bold">Error: </strong>
+                <span className="block sm:inline">{errorMessage}</span>
+              </div>
+            )}
             <Input
               label="Email"
               type="email"
