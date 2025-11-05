@@ -133,7 +133,7 @@ apiClient.interceptors.response.use(
       // Check for outdated token format error
       const errorCode = error.response?.data?.code;
       if (errorCode === 'TOKEN_FORMAT_OUTDATED') {
-        useAuthStore.getState().logout();
+        useAuthStore.getState().logout(false);
         toast.error('Your session is outdated. Please log in again.');
         window.location.href = '/login';
         return Promise.reject(error);
@@ -144,7 +144,7 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = useAuthStore.getState().refreshToken;
         if (!refreshToken) {
-          useAuthStore.getState().logout();
+          useAuthStore.getState().logout(false);
           window.location.href = '/login';
           return Promise.reject(error);
         }
@@ -164,13 +164,13 @@ apiClient.interceptors.response.use(
       } catch (refreshError: any) {
         // Check if refresh token is also outdated
         if (refreshError.response?.data?.code === 'TOKEN_FORMAT_OUTDATED') {
-          useAuthStore.getState().logout();
+          useAuthStore.getState().logout(false);
           toast.error('Your session is outdated. Please log in again.');
           window.location.href = '/login';
           return Promise.reject(refreshError);
         }
 
-        useAuthStore.getState().logout();
+        useAuthStore.getState().logout(false);
         toast.error('Session expired. Please login again.');
         window.location.href = '/login';
         return Promise.reject(refreshError);

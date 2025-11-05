@@ -39,7 +39,7 @@ export const CustomerDetails: React.FC = () => {
       ]);
       setCustomer(customerData);
       // Filter orders for this customer
-      setOrders(ordersData.filter(order => order.customerId === numericId));
+      setOrders(ordersData.orders.filter(order => order.customerId === numericId));
     } catch (error) {
       console.error('Failed to load customer data:', error);
       alert('Failed to load customer details');

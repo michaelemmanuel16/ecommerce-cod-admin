@@ -58,7 +58,7 @@ export const loginValidation: ValidationChain[] = [
 
 export const createCustomerValidation: ValidationChain[] = [
   body('firstName').notEmpty().trim(),
-  body('lastName').notEmpty().trim(),
+  body('lastName').optional().trim(),
   body('phoneNumber').isMobilePhone('any'),
   body('address').notEmpty(),
   body('state').notEmpty(),

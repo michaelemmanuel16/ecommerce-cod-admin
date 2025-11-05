@@ -210,10 +210,8 @@ export interface PaginationMeta {
 
 export interface FilterOptions {
   status?: OrderStatus[];
-  priority?: OrderPriority[];
-  paymentStatus?: PaymentStatus[];
-  dateFrom?: string;
-  dateTo?: string;
+  startDate?: string;
+  endDate?: string;
   search?: string;
   page?: number;
   limit?: number;

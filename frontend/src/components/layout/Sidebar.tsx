@@ -12,6 +12,8 @@ import {
   Workflow,
   Settings,
   FileText,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -29,17 +31,50 @@ const menuItems = [
   { path: '/settings', icon: Settings, label: 'Settings', key: 'settings' },
 ];
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  isCollapsed: boolean;
+  onToggle: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
   const { canAccessMenu } = usePermissions();
 
   const visibleMenuItems = menuItems.filter(item => canAccessMenu(item.key));
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-gray-900 text-white p-4">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold">COD Admin</h1>
-        <p className="text-gray-400 text-sm">E-commerce Dashboard</p>
+    <aside
+      className={cn(
+        "fixed left-0 top-0 h-full bg-gray-900 text-white p-4 transition-all duration-300 ease-in-out",
+        isCollapsed ? "w-20" : "w-64"
+      )}
+    >
+      {/* Header with toggle button */}
+      <div className="mb-8 relative">
+        <div className={cn("overflow-hidden", isCollapsed ? "text-center" : "")}>
+          <h1 className={cn("font-bold transition-all", isCollapsed ? "text-lg" : "text-2xl")}>
+            {isCollapsed ? "COD" : "COD Admin"}
+          </h1>
+          {!isCollapsed && <p className="text-gray-400 text-sm">E-commerce Dashboard</p>}
+        </div>
+
+        {/* Toggle button */}
+        <button
+          onClick={onToggle}
+          className={cn(
+            "absolute top-0 p-1 rounded-md hover:bg-gray-800 transition-colors",
+            isCollapsed ? "left-1/2 -translate-x-1/2" : "right-0"
+          )}
+          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {isCollapsed ? (
+            <ChevronRight className="w-5 h-5" />
+          ) : (
+            <ChevronLeft className="w-5 h-5" />
+          )}
+        </button>
       </div>
+
+      {/* Navigation */}
       <nav className="space-y-1">
         {visibleMenuItems.map((item) => (
           <NavLink
@@ -47,15 +82,17 @@ export const Sidebar: React.FC = () => {
             to={item.path}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
+                'flex items-center rounded-lg transition-colors',
+                isCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-4 py-3',
                 isActive
                   ? 'bg-blue-600 text-white'
                   : 'text-gray-300 hover:bg-gray-800'
               )
             }
+            title={isCollapsed ? item.label : undefined}
           >
-            <item.icon className="w-5 h-5" />
-            <span>{item.label}</span>
+            <item.icon className="w-5 h-5 flex-shrink-0" />
+            {!isCollapsed && <span>{item.label}</span>}
           </NavLink>
         ))}
       </nav>

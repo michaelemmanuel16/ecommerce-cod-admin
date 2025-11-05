@@ -16,7 +16,6 @@ export const customersService = {
         address: c.address ? {
           street: c.address,
           state: c.state,
-          postalCode: c.zipCode,
           country: 'US',
           phone: c.phoneNumber
         } : undefined
@@ -37,7 +36,6 @@ export const customersService = {
       address: customer.address ? {
         street: customer.address,
         state: customer.state,
-        postalCode: customer.zipCode,
         country: 'US',
         phone: customer.phoneNumber
       } : undefined

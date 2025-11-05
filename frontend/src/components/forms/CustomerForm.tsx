@@ -59,15 +59,20 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({
     setIsSubmitting(true);
 
     try {
+      // Split name into firstName and lastName
+      const nameParts = formData.name.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
       const customerData = {
-        name: formData.name.trim(),
+        firstName,
+        lastName,
         email: formData.email.trim(),
         phoneNumber: formData.phone.trim(),
         alternatePhone: formData.alternatePhone.trim() || undefined,
         address: formData.street.trim(),
         state: formData.state.trim(),
-        area: formData.state.trim(), // Use state as area
-        zipCode: '',
+        area: formData.state.trim(),
       };
 
       if (customer) {
@@ -124,7 +129,6 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({
               type="email"
               value={formData.email}
               onChange={handleChange}
-              required
               placeholder="john.doe@example.com"
             />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

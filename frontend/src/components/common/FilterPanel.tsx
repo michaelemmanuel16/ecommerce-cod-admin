@@ -2,7 +2,7 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { useOrdersStore } from '../../stores/ordersStore';
-import { OrderStatus, OrderPriority, PaymentStatus } from '../../types';
+import { OrderStatus } from '../../types';
 
 interface FilterPanelProps {
   isOpen: boolean;
@@ -13,10 +13,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ isOpen, onClose }) => 
   const { filters, setFilters } = useOrdersStore();
 
   const [selectedStatus, setSelectedStatus] = React.useState<OrderStatus[]>(filters.status || []);
-  const [selectedPriority, setSelectedPriority] = React.useState<OrderPriority[]>(filters.priority || []);
-  const [selectedPaymentStatus, setSelectedPaymentStatus] = React.useState<PaymentStatus[]>(
-    filters.paymentStatus || []
-  );
 
   const statuses: OrderStatus[] = [
     'pending_confirmation',
@@ -30,40 +26,25 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ isOpen, onClose }) => 
     'failed_delivery',
   ];
 
-  const priorities: OrderPriority[] = ['low', 'medium', 'high', 'urgent'];
-  const paymentStatuses: PaymentStatus[] = ['pending', 'paid', 'failed', 'refunded'];
-
   const handleApply = () => {
     setFilters({
       ...filters,
       status: selectedStatus.length > 0 ? selectedStatus : undefined,
-      priority: selectedPriority.length > 0 ? selectedPriority : undefined,
-      paymentStatus: selectedPaymentStatus.length > 0 ? selectedPaymentStatus : undefined,
     });
     onClose();
   };
 
   const handleReset = () => {
     setSelectedStatus([]);
-    setSelectedPriority([]);
-    setSelectedPaymentStatus([]);
-    setFilters({});
+    // Preserve date filters when resetting status filters
+    setFilters({
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+    });
   };
 
   const toggleStatus = (status: OrderStatus) => {
     setSelectedStatus((prev) =>
-      prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]
-    );
-  };
-
-  const togglePriority = (priority: OrderPriority) => {
-    setSelectedPriority((prev) =>
-      prev.includes(priority) ? prev.filter((p) => p !== priority) : [...prev, priority]
-    );
-  };
-
-  const togglePaymentStatus = (status: PaymentStatus) => {
-    setSelectedPaymentStatus((prev) =>
       prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]
     );
   };
@@ -105,42 +86,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({ isOpen, onClose }) => 
                   <span className="ml-2 text-sm text-gray-700 capitalize">
                     {status.replace(/_/g, ' ')}
                   </span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Priority Filter */}
-          <div>
-            <h3 className="text-sm font-medium text-gray-900 mb-3">Priority</h3>
-            <div className="space-y-2">
-              {priorities.map((priority) => (
-                <label key={priority} className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={selectedPriority.includes(priority)}
-                    onChange={() => togglePriority(priority)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
-                  />
-                  <span className="ml-2 text-sm text-gray-700 capitalize">{priority}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Payment Status Filter */}
-          <div>
-            <h3 className="text-sm font-medium text-gray-900 mb-3">Payment Status</h3>
-            <div className="space-y-2">
-              {paymentStatuses.map((status) => (
-                <label key={status} className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={selectedPaymentStatus.includes(status)}
-                    onChange={() => togglePaymentStatus(status)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
-                  />
-                  <span className="ml-2 text-sm text-gray-700 capitalize">{status}</span>
                 </label>
               ))}
             </div>

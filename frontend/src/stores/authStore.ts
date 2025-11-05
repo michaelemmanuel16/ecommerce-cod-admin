@@ -14,7 +14,7 @@ interface AuthState {
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
-  logout: () => void;
+  logout: (showToast?: boolean) => void;
   setAccessToken: (token: string) => void;
   updatePreferences: (preferences: UserPreferences) => Promise<void>;
 }
@@ -66,7 +66,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      logout: () => {
+      logout: (showToast = true) => {
         authService.logout().catch(console.error);
         set({
           user: null,
@@ -75,7 +75,9 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
         });
         disconnectSocket();
-        toast.success('Logged out successfully');
+        if (showToast) {
+          toast.success('Logged out successfully');
+        }
       },
 
       setAccessToken: (token: string) => {

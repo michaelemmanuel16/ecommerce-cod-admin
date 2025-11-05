@@ -18,8 +18,14 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
       limit = 20
     } = req.query;
 
+    // Parse status - can be a single value or array
+    let parsedStatus: OrderStatus[] | undefined;
+    if (status) {
+      parsedStatus = Array.isArray(status) ? status as OrderStatus[] : [status as OrderStatus];
+    }
+
     const result = await orderService.getAllOrders({
-      status: status as OrderStatus | undefined,
+      status: parsedStatus,
       customerId: customerId as string | undefined,
       customerRepId: customerRepId as string | undefined,
       deliveryAgentId: deliveryAgentId as string | undefined,

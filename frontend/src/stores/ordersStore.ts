@@ -28,8 +28,10 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
   fetchOrders: async () => {
     set({ isLoading: true });
     try {
-      const { orders, pagination } = await ordersService.getOrders(get().filters);
-      console.log('Fetched orders:', orders);
+      const currentFilters = get().filters;
+      console.log('[OrdersStore] Fetching orders with filters:', currentFilters);
+      const { orders, pagination } = await ordersService.getOrders(currentFilters);
+      console.log('[OrdersStore] Fetched orders:', orders.length, 'orders');
       set({ orders, pagination, isLoading: false });
     } catch (error) {
       console.error('Error fetching orders:', error);

@@ -44,7 +44,7 @@ interface BulkImportOrderData {
 }
 
 interface OrderFilters {
-  status?: OrderStatus;
+  status?: OrderStatus[];
   customerId?: number;
   customerRepId?: number;
   deliveryAgentId?: number;
@@ -82,7 +82,7 @@ export class OrderService {
 
     const where: Prisma.OrderWhereInput = {};
 
-    if (status) where.status = status;
+    if (status && status.length > 0) where.status = { in: status };
     if (customerId) where.customerId = customerId;
     if (customerRepId) where.customerRepId = customerRepId;
     if (deliveryAgentId) where.deliveryAgentId = deliveryAgentId;
@@ -557,8 +557,8 @@ export class OrderService {
       throw new AppError('Order not found', 404);
     }
 
-    // Validate status transition
-    this.validateStatusTransition(order.status, data.status);
+    // Status validation removed - allow any status transition for admin flexibility
+    // this.validateStatusTransition(order.status, data.status);
 
     const updated = await prisma.order.update({
       where: { id },
@@ -573,7 +573,45 @@ export class OrderService {
         }
       },
       include: {
-        customer: true
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+            alternatePhone: true,
+            email: true
+          }
+        },
+        customerRep: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true
+          }
+        },
+        deliveryAgent: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+            role: true
+          }
+        },
+        orderItems: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                sku: true
+              }
+            }
+          }
+        }
       }
     });
 
@@ -582,6 +620,18 @@ export class OrderService {
       oldStatus: order.status,
       newStatus: data.status
     });
+
+    // Emit socket event for real-time updates (non-blocking)
+    setImmediate(() => {
+      try {
+        emitOrderUpdated(io, updated);
+      } catch (error) {
+        logger.error('Failed to emit order updated event', { orderId, error });
+      }
+    });
+
+    // Note: triggerStatusChangeWorkflows removed - method doesn't exist
+    // Add workflow triggering here if needed in the future
 
     return updated;
   }

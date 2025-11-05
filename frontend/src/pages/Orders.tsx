@@ -6,6 +6,7 @@ import { SearchBar } from '../components/common/SearchBar';
 import { FilterPanel } from '../components/common/FilterPanel';
 import { Button } from '../components/ui/Button';
 import { Pagination } from '../components/ui/Pagination';
+import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { OrderForm } from '../components/forms/OrderForm';
 import { useOrdersStore } from '../stores/ordersStore';
 import { useAuthStore } from '../stores/authStore';
@@ -56,7 +57,7 @@ const statusOptions: { value: OrderStatus; label: string }[] = [
 export const Orders: React.FC = () => {
   const navigate = useNavigate();
   const { user, updatePreferences } = useAuthStore();
-  const [viewMode, setViewMode] = useState<ViewMode>(user?.preferences?.ordersDefaultView || 'kanban');
+  const [viewMode, setViewMode] = useState<ViewMode>(user?.preferences?.ordersDefaultView || 'list');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
   const [selectedOrderForEdit, setSelectedOrderForEdit] = useState<Order | null>(null);
@@ -91,7 +92,7 @@ export const Orders: React.FC = () => {
   const resizingColumn = useRef<string | null>(null);
   const startX = useRef<number>(0);
   const startWidth = useRef<number>(0);
-  const { orders, pagination, fetchOrders, updateOrderStatus, setPage } = useOrdersStore();
+  const { orders, pagination, filters, fetchOrders, updateOrderStatus, setPage, setFilters } = useOrdersStore();
 
   useEffect(() => {
     fetchOrders();
@@ -169,6 +170,15 @@ export const Orders: React.FC = () => {
     console.log('Search:', query);
   };
 
+  const handleDateRangeChange = (startDate: string | undefined, endDate: string | undefined) => {
+    console.log('[Orders] Date range changed:', { startDate, endDate, currentFilters: filters });
+    setFilters({
+      ...filters,
+      startDate,
+      endDate,
+    });
+  };
+
   const handleNewOrder = () => {
     setSelectedOrderForEdit(null);
     setIsOrderFormOpen(true);
@@ -186,8 +196,26 @@ export const Orders: React.FC = () => {
   const handleStatusChange = async (orderId: number, newStatus: OrderStatus) => {
     try {
       await updateOrderStatus(orderId, newStatus);
-    } catch (error) {
+      toast.success('Order status updated successfully');
+    } catch (error: any) {
       console.error('Error updating order status:', error);
+
+      // Handle different error types
+      if (error.code === 'ECONNABORTED') {
+        toast.error('Request timeout. The server took too long to respond. Please try again.');
+      } else if (error.response?.status === 401) {
+        toast.error('Authentication failed. Please log in again.');
+      } else if (error.response?.status === 403) {
+        toast.error('You do not have permission to update this order.');
+      } else if (error.response?.status === 404) {
+        toast.error('Order not found. It may have been deleted.');
+      } else if (error.response?.data?.message) {
+        toast.error(error.response.data.message);
+      } else if (error.message) {
+        toast.error(`Failed to update order: ${error.message}`);
+      } else {
+        toast.error('Failed to update order status. Please try again.');
+      }
     }
   };
 
@@ -309,8 +337,8 @@ export const Orders: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-4 justify-between">
-          {/* View Toggle */}
-          <div className="flex items-center bg-gray-100 rounded-lg p-1">
+          {/* View Toggle - Hidden by default. Uncomment to enable Kanban view toggle */}
+          {/* <div className="flex items-center bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => {
                 setViewMode('kanban');
@@ -339,10 +367,18 @@ export const Orders: React.FC = () => {
               <List className="w-4 h-4" />
               <span className="text-sm font-medium">List</span>
             </button>
-          </div>
+          </div> */}
 
-          <div className="flex-1 max-w-md">
-            <SearchBar onSearch={handleSearch} placeholder="Search orders..." />
+          <div className="flex items-center gap-3 flex-1">
+            <div className="flex-1 max-w-md">
+              <SearchBar onSearch={handleSearch} placeholder="Search orders..." />
+            </div>
+            <DateRangePicker
+              startDate={filters.startDate}
+              endDate={filters.endDate}
+              onChange={handleDateRangeChange}
+              placeholder="Filter by date range"
+            />
           </div>
         </div>
       </div>

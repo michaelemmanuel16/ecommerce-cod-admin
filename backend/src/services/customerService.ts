@@ -4,13 +4,14 @@ import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 
 interface CreateCustomerData {
-  name: string;
+  firstName: string;
+  lastName?: string;
   email?: string;
   phoneNumber: string;
   alternatePhone?: string;
   address: string;
   state: string;
-  zipCode: string;
+  zipCode?: string;
   area: string;
   landmark?: string;
   tags?: string[];
@@ -104,18 +105,11 @@ export class CustomerService {
       throw new AppError('Customer with this phone number already exists', 400);
     }
 
-    // Split name into firstName and lastName
-    const nameParts = data.name.trim().split(' ');
-    const firstName = nameParts[0] || 'Unknown';
-    const lastName = nameParts.slice(1).join(' ') || '';
-
-    const { name, ...restData } = data;
-
     const customer = await prisma.customer.create({
       data: {
-        ...restData,
-        firstName,
-        lastName
+        ...data,
+        firstName: data.firstName || 'Unknown',
+        lastName: data.lastName || ''
       }
     });
 
@@ -212,18 +206,9 @@ export class CustomerService {
       }
     }
 
-    // If name is provided, split it into firstName and lastName
-    const finalUpdateData: any = { ...updateData };
-    if (updateData.name !== undefined) {
-      const nameParts = updateData.name.trim().split(' ');
-      finalUpdateData.firstName = nameParts[0] || 'Unknown';
-      finalUpdateData.lastName = nameParts.slice(1).join(' ') || '';
-      delete finalUpdateData.name;
-    }
-
     const updated = await prisma.customer.update({
       where: { id },
-      data: finalUpdateData
+      data: updateData
     });
 
     logger.info('Customer updated', { customerId });
@@ -260,8 +245,13 @@ export class CustomerService {
    * Update customer tags
    */
   async updateCustomerTags(customerId: string, tags: string[]) {
+    const id = parseInt(customerId, 10);
+    if (isNaN(id)) {
+      throw new AppError('Invalid customer ID', 400);
+    }
+
     const customer = await prisma.customer.findUnique({
-      where: { id: customerId }
+      where: { id }
     });
 
     if (!customer) {
@@ -269,11 +259,11 @@ export class CustomerService {
     }
 
     const updated = await prisma.customer.update({
-      where: { id: customerId },
+      where: { id },
       data: { tags }
     });
 
-    logger.info('Customer tags updated', { customerId, tags });
+    logger.info('Customer tags updated', { customerId: id, tags });
     return updated;
   }
 
@@ -281,8 +271,13 @@ export class CustomerService {
    * Add tags to customer (merge with existing)
    */
   async addCustomerTags(customerId: string, newTags: string[]) {
+    const id = parseInt(customerId, 10);
+    if (isNaN(id)) {
+      throw new AppError('Invalid customer ID', 400);
+    }
+
     const customer = await prisma.customer.findUnique({
-      where: { id: customerId }
+      where: { id }
     });
 
     if (!customer) {
@@ -292,11 +287,11 @@ export class CustomerService {
     const uniqueTags = Array.from(new Set([...customer.tags, ...newTags]));
 
     const updated = await prisma.customer.update({
-      where: { id: customerId },
+      where: { id },
       data: { tags: uniqueTags }
     });
 
-    logger.info('Customer tags added', { customerId, newTags });
+    logger.info('Customer tags added', { customerId: id, newTags });
     return updated;
   }
 
@@ -304,8 +299,13 @@ export class CustomerService {
    * Remove tags from customer
    */
   async removeCustomerTags(customerId: string, tagsToRemove: string[]) {
+    const id = parseInt(customerId, 10);
+    if (isNaN(id)) {
+      throw new AppError('Invalid customer ID', 400);
+    }
+
     const customer = await prisma.customer.findUnique({
-      where: { id: customerId }
+      where: { id }
     });
 
     if (!customer) {
@@ -315,11 +315,11 @@ export class CustomerService {
     const updatedTags = customer.tags.filter((tag) => !tagsToRemove.includes(tag));
 
     const updated = await prisma.customer.update({
-      where: { id: customerId },
+      where: { id },
       data: { tags: updatedTags }
     });
 
-    logger.info('Customer tags removed', { customerId, tagsToRemove });
+    logger.info('Customer tags removed', { customerId: id, tagsToRemove });
     return updated;
   }
 
@@ -327,8 +327,13 @@ export class CustomerService {
    * Get customer analytics
    */
   async getCustomerAnalytics(customerId: string) {
+    const id = parseInt(customerId, 10);
+    if (isNaN(id)) {
+      throw new AppError('Invalid customer ID', 400);
+    }
+
     const customer = await prisma.customer.findUnique({
-      where: { id: customerId },
+      where: { id },
       include: {
         orders: {
           select: {
@@ -373,8 +378,13 @@ export class CustomerService {
    * Get customer order history with full details
    */
   async getCustomerOrderHistory(customerId: string, filters?: { page?: number; limit?: number }) {
+    const id = parseInt(customerId, 10);
+    if (isNaN(id)) {
+      throw new AppError('Invalid customer ID', 400);
+    }
+
     const customer = await prisma.customer.findUnique({
-      where: { id: customerId }
+      where: { id }
     });
 
     if (!customer) {
@@ -386,7 +396,7 @@ export class CustomerService {
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
-        where: { customerId },
+        where: { customerId: id },
         skip,
         take: limit,
         include: {
@@ -409,7 +419,7 @@ export class CustomerService {
         },
         orderBy: { createdAt: 'desc' }
       }),
-      prisma.order.count({ where: { customerId } })
+      prisma.order.count({ where: { customerId: id } })
     ]);
 
     return {
@@ -513,10 +523,17 @@ export class CustomerService {
    * Merge duplicate customers
    */
   async mergeCustomers(primaryCustomerId: string, secondaryCustomerId: string) {
+    const primaryId = parseInt(primaryCustomerId, 10);
+    const secondaryId = parseInt(secondaryCustomerId, 10);
+
+    if (isNaN(primaryId) || isNaN(secondaryId)) {
+      throw new AppError('Invalid customer ID(s)', 400);
+    }
+
     const [primaryCustomer, secondaryCustomer] = await Promise.all([
-      prisma.customer.findUnique({ where: { id: primaryCustomerId } }),
+      prisma.customer.findUnique({ where: { id: primaryId } }),
       prisma.customer.findUnique({
-        where: { id: secondaryCustomerId },
+        where: { id: secondaryId },
         include: { orders: true }
       })
     ]);
@@ -528,13 +545,13 @@ export class CustomerService {
     await prisma.$transaction(async (tx) => {
       // Transfer all orders from secondary to primary
       await tx.order.updateMany({
-        where: { customerId: secondaryCustomerId },
-        data: { customerId: primaryCustomerId }
+        where: { customerId: secondaryId },
+        data: { customerId: primaryId }
       });
 
       // Update primary customer stats
       await tx.customer.update({
-        where: { id: primaryCustomerId },
+        where: { id: primaryId },
         data: {
           totalOrders: primaryCustomer.totalOrders + secondaryCustomer.totalOrders,
           totalSpent: primaryCustomer.totalSpent + secondaryCustomer.totalSpent,
@@ -544,14 +561,14 @@ export class CustomerService {
 
       // Deactivate secondary customer
       await tx.customer.update({
-        where: { id: secondaryCustomerId },
+        where: { id: secondaryId },
         data: { isActive: false }
       });
     });
 
     logger.info('Customers merged', {
-      primaryCustomerId,
-      secondaryCustomerId
+      primaryCustomerId: primaryId,
+      secondaryCustomerId: secondaryId
     });
 
     return { message: 'Customers merged successfully' };
