@@ -33,7 +33,7 @@ export const createWebhook = async (req: AuthRequest, res: Response): Promise<vo
 export const getWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const webhook = await webhookService.getWebhookById(id);
+    const webhook = await webhookService.getWebhookById(Number(id));
     res.json({ webhook });
   } catch (error) {
     throw error;
@@ -44,7 +44,7 @@ export const updateWebhook = async (req: AuthRequest, res: Response): Promise<vo
   try {
     const { id } = req.params;
     const updateData = req.body;
-    const webhook = await webhookService.updateWebhook(id, updateData);
+    const webhook = await webhookService.updateWebhook(Number(id), updateData);
     res.json({ webhook });
   } catch (error) {
     throw error;
@@ -54,7 +54,7 @@ export const updateWebhook = async (req: AuthRequest, res: Response): Promise<vo
 export const deleteWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const result = await webhookService.deleteWebhook(id);
+    const result = await webhookService.deleteWebhook(Number(id));
     res.json(result);
   } catch (error) {
     throw error;
@@ -86,7 +86,7 @@ export const getWebhookLogs = async (req: AuthRequest, res: Response): Promise<v
     const { id } = req.params;
     const { page = 1, limit = 20 } = req.query;
 
-    const result = await webhookService.getWebhookLogs(id, {
+    const result = await webhookService.getWebhookLogs(Number(id), {
       page: Number(page),
       limit: Number(limit)
     });
@@ -102,7 +102,7 @@ export const testWebhook = async (req: AuthRequest, res: Response): Promise<void
     const { id } = req.params;
     const { sampleData } = req.body;
 
-    const result = await webhookService.testWebhook(id, sampleData);
+    const result = await webhookService.testWebhook(Number(id), sampleData);
     res.json(result);
   } catch (error) {
     throw error;

@@ -28,4 +28,9 @@ module.exports = {
       statements: 70,
     },
   },
+  globals: {
+    'ts-jest': {
+      isolatedModules: true,
+    },
+  },
 };

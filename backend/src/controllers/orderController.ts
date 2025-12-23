@@ -26,9 +26,9 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
 
     const result = await orderService.getAllOrders({
       status: parsedStatus,
-      customerId: customerId as string | undefined,
-      customerRepId: customerRepId as string | undefined,
-      deliveryAgentId: deliveryAgentId as string | undefined,
+      customerId: customerId ? Number(customerId) : undefined,
+      customerRepId: customerRepId ? Number(customerRepId) : undefined,
+      deliveryAgentId: deliveryAgentId ? Number(deliveryAgentId) : undefined,
       area: area as string | undefined,
       startDate: startDate ? new Date(startDate as string) : undefined,
       endDate: endDate ? new Date(endDate as string) : undefined,
@@ -96,7 +96,7 @@ export const bulkImportOrders = async (req: AuthRequest, res: Response): Promise
       throw new Error('Invalid orders data');
     }
 
-    const results = await orderService.bulkImportOrders(orders, req.user?.id);
+    const results = await orderService.bulkImportOrders(orders, req.user?.id?.toString());
 
     res.json({ results });
   } catch (error) {
@@ -128,7 +128,7 @@ export const updateOrder = async (req: AuthRequest, res: Response): Promise<void
 export const deleteOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const result = await orderService.cancelOrder(id, req.user?.id, 'Order cancelled');
+    const result = await orderService.cancelOrder(id, req.user?.id?.toString(), 'Order cancelled');
     res.json(result);
   } catch (error) {
     throw error;
@@ -143,7 +143,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
     const order = await orderService.updateOrderStatus(id, {
       status: status as OrderStatus,
       notes,
-      changedBy: req.user?.id
+      changedBy: req.user?.id?.toString()
     });
 
     res.json({ order });
@@ -156,7 +156,7 @@ export const assignCustomerRep = async (req: AuthRequest, res: Response): Promis
   try {
     const { id } = req.params;
     const { customerRepId } = req.body;
-    const order = await orderService.assignCustomerRep(id, customerRepId, req.user?.id);
+    const order = await orderService.assignCustomerRep(id, customerRepId, req.user?.id?.toString());
     res.json({ order });
   } catch (error) {
     throw error;
@@ -167,7 +167,7 @@ export const assignDeliveryAgent = async (req: AuthRequest, res: Response): Prom
   try {
     const { id } = req.params;
     const { deliveryAgentId } = req.body;
-    const order = await orderService.assignDeliveryAgent(id, deliveryAgentId, req.user?.id);
+    const order = await orderService.assignDeliveryAgent(id, deliveryAgentId, req.user?.id?.toString());
     res.json({ order });
   } catch (error) {
     throw error;
