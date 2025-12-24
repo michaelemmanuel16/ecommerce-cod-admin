@@ -54,7 +54,13 @@ describe('Orders Store', () => {
     );
 
     const { fetchOrders } = useOrdersStore.getState();
-    await fetchOrders();
+
+    // fetchOrders rethrows the error, so we need to catch it
+    try {
+      await fetchOrders();
+    } catch (error) {
+      // Expected to throw
+    }
 
     const state = useOrdersStore.getState();
     expect(state.error).toBe(errorMessage);
@@ -120,14 +126,25 @@ describe('Orders Store', () => {
     expect(state.orders[0].status).toBe('confirmed');
   });
 
-  it('should set and clear filters', () => {
+  it('should set and clear filters', async () => {
+    // Mock getOrders for filter operations (setFilters/clearFilters trigger fetchOrders)
+    vi.mocked(ordersService.getOrders).mockResolvedValue({
+      orders: [],
+      pagination: { total: 0, page: 1, limit: 50, pages: 0 },
+    } as any);
+
     const { setFilters, clearFilters } = useOrdersStore.getState();
 
     setFilters({ status: 'confirmed', area: 'Manhattan' });
+    // Wait for async fetchOrders to complete
+    await new Promise(resolve => setTimeout(resolve, 10));
+
     let state = useOrdersStore.getState();
-    expect(state.filters).toEqual({ status: 'confirmed', area: 'Manhattan' });
+    expect(state.filters).toEqual({ status: 'confirmed', area: 'Manhattan', page: 1 });
 
     clearFilters();
+    await new Promise(resolve => setTimeout(resolve, 10));
+
     state = useOrdersStore.getState();
     expect(state.filters).toEqual({});
   });
