@@ -15,7 +15,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
       endDate,
       search,
       page = 1,
-      limit = 20
+      limit = 50
     } = req.query;
 
     // Parse status - can be a single value or array

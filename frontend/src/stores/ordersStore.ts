@@ -14,6 +14,7 @@ interface OrdersState {
   setFilters: (filters: FilterOptions) => void;
   setSelectedOrder: (order: Order | null) => void;
   setPage: (page: number) => void;
+  setPageSize: (limit: number) => void;
   addOrder: (order: Order) => void;
   updateOrder: (order: Order) => void;
 }
@@ -22,7 +23,7 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
   orders: [],
   selectedOrder: null,
   filters: {},
-  pagination: { page: 1, limit: 20, total: 0, pages: 0 },
+  pagination: { page: 1, limit: 50, total: 0, pages: 0 },
   isLoading: false,
 
   fetchOrders: async () => {
@@ -78,6 +79,12 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
 
   setPage: (page: number) => {
     set((state) => ({ filters: { ...state.filters, page } }));
+    get().fetchOrders();
+  },
+
+  setPageSize: (limit: number) => {
+    // Reset to page 1 when page size changes
+    set((state) => ({ filters: { ...state.filters, limit, page: 1 } }));
     get().fetchOrders();
   },
 

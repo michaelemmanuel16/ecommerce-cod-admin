@@ -94,7 +94,7 @@ export const Orders: React.FC = () => {
   const resizingColumn = useRef<string | null>(null);
   const startX = useRef<number>(0);
   const startWidth = useRef<number>(0);
-  const { orders, pagination, filters, fetchOrders, updateOrderStatus, setPage, setFilters } = useOrdersStore();
+  const { orders, pagination, filters, fetchOrders, updateOrderStatus, setPage, setPageSize, setFilters } = useOrdersStore();
 
   useEffect(() => {
     fetchOrders();
@@ -622,11 +622,15 @@ export const Orders: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-              {pagination.pages > 1 && (
+              {pagination.pages > 0 && (
                 <Pagination
                   currentPage={pagination.page}
                   totalPages={pagination.pages}
                   onPageChange={setPage}
+                  pageSize={pagination.limit}
+                  pageSizeOptions={[25, 50, 75, 100]}
+                  onPageSizeChange={setPageSize}
+                  totalItems={pagination.total}
                 />
               )}
             </div>
