@@ -13,6 +13,7 @@ import { errorHandler, notFound } from './middleware/errorHandler';
 import { apiLimiter } from './middleware/rateLimiter';
 import logger from './utils/logger';
 import { validateEnvironment } from './config/validateEnv';
+import { setSocketInstance } from './utils/socketInstance';
 
 // Routes
 import authRoutes from './routes/authRoutes';
@@ -50,6 +51,9 @@ const PORT = process.env.PORT || 3000;
 
 // Initialize Socket.io
 export const io = initializeSocket(server);
+
+// Register Socket.io instance for global access (workflow queues, etc.)
+setSocketInstance(io);
 
 // Middleware
 // Configure helmet to allow public checkout forms to be embedded in iframes
@@ -111,7 +115,7 @@ app.use('/api/deliveries', apiLimiter, deliveryRoutes);
 app.use('/api/financial', apiLimiter, financialRoutes);
 app.use('/api/workflows', apiLimiter, workflowRoutes);
 app.use('/api/webhooks', webhookRoutes);
-app.use('/api/analytics', apiLimiter, analyticsRoutes);
+app.use('/api/analytics', analyticsRoutes); // No rate limit - already cached & authenticated
 app.use('/api/notifications', apiLimiter, notificationRoutes);
 app.use('/api/upload', apiLimiter, uploadRoutes);
 app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);

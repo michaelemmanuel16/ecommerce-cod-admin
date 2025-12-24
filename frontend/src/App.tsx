@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -9,7 +9,7 @@ import { Loading } from './components/ui/Loading';
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
-import { Dashboard } from './pages/Dashboard';
+import { DynamicDashboard } from './pages/DynamicDashboard';
 
 // Lazy load all other pages for better initial load performance
 const Orders = lazy(() => import('./pages/Orders').then(m => ({ default: m.Orders })));
@@ -23,7 +23,7 @@ const CustomerReps = lazy(() => import('./pages/CustomerReps').then(m => ({ defa
 const Financial = lazy(() => import('./pages/Financial').then(m => ({ default: m.Financial })));
 const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })));
 const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m.Workflows })));
-const WorkflowEditor = lazy(() => import('./pages/WorkflowEditor').then(m => ({ default: m.WorkflowEditor })));
+const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ default: m.CheckoutForms })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
@@ -34,6 +34,19 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 function App() {
+  const { isAuthenticated, refreshPermissions, setupPermissionListener } = useAuthStore();
+
+  // Refresh permissions and setup socket listener on mount
+  useEffect(() => {
+    if (isAuthenticated) {
+      // Refresh permissions to ensure they're up to date
+      refreshPermissions();
+
+      // Setup socket listener for real-time permission updates
+      setupPermissionListener();
+    }
+  }, [isAuthenticated, refreshPermissions, setupPermissionListener]);
+
   return (
     <ErrorBoundary>
       <BrowserRouter>
@@ -56,7 +69,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Dashboard />} />
+            <Route index element={<DynamicDashboard />} />
             <Route path="orders" element={
               <Suspense fallback={<Loading />}>
                 <Orders />
@@ -119,12 +132,12 @@ function App() {
             } />
             <Route path="workflows/new" element={
               <Suspense fallback={<Loading />}>
-                <WorkflowEditor />
+                <WorkflowWizard />
               </Suspense>
             } />
             <Route path="workflows/:id" element={
               <Suspense fallback={<Loading />}>
-                <WorkflowEditor />
+                <WorkflowWizard />
               </Suspense>
             } />
             <Route path="settings" element={

@@ -39,14 +39,14 @@ export const salesRepConfig: DashboardConfig = {
     {
       id: 'my-commission',
       type: 'stat',
-      title: 'My Commission',
+      title: 'My Earnings',
       icon: 'Wallet',
       dataSource: 'calculated.myCommission',
       format: 'currency',
       subtitle: {
-        template: 'From {count} orders @ {rate}%',
+        template: 'From {delivered} delivered orders @ GH₵{rate}',
         dataSources: {
-          count: 'repPerformance.totalOrders',
+          delivered: 'repPerformance.deliveredOrders',
           rate: 'calculated.commissionRate',
         },
       },
@@ -119,6 +119,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'lineChart',
       title: 'My Sales Trends',
       dataSource: 'salesTrends',
+      gridPosition: { row: 1, col: 1, colSpan: 2 },
       height: 300,
       config: {
         xAxis: 'date',
@@ -137,6 +138,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'donutChart',
       title: 'My Order Status Distribution',
       dataSource: 'ordersByStatus',
+      gridPosition: { row: 1, col: 3, colSpan: 1 },
       height: 300,
       config: {
         nameKey: 'status',
@@ -154,6 +156,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'barChart',
       title: 'My Top Products',
       dataSource: 'productPerformance',
+      gridPosition: { row: 2, col: 1, colSpan: 2 },
       height: 300,
       config: {
         xAxis: 'name',
@@ -171,6 +174,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'lineChart',
       title: 'My Commission Over Time',
       dataSource: 'salesTrends',
+      gridPosition: { row: 2, col: 3, colSpan: 1 },
       height: 300,
       config: {
         xAxis: 'date',
@@ -188,6 +192,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'barChart',
       title: 'My Customer Acquisition',
       dataSource: 'customerAcquisition',
+      gridPosition: { row: 3, col: 1, colSpan: 3 },
       height: 300,
       config: {
         xAxis: 'month',
@@ -204,6 +209,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'dataTable',
       title: 'My Recent Customers',
       dataSource: 'recentCustomers',
+      gridPosition: { row: 4, col: 1, colSpan: 3 },
       height: 400,
       config: {
         columns: [

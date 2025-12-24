@@ -1,15 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { User, LoginCredentials, RegisterData, UserPreferences } from '../types';
+import { User, LoginCredentials, RegisterData, UserPreferences, Permissions } from '../types';
 import { authService } from '../services/auth.service';
 import { usersService } from '../services/users.service';
-import { connectSocket, disconnectSocket } from '../services/socket';
+import { connectSocket, disconnectSocket, getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
 
 interface AuthState {
   user: User | null;
   accessToken: string | null;
   refreshToken: string | null;
+  permissions: Permissions | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
@@ -17,6 +18,8 @@ interface AuthState {
   logout: (showToast?: boolean) => void;
   setAccessToken: (token: string) => void;
   updatePreferences: (preferences: UserPreferences) => Promise<void>;
+  refreshPermissions: () => Promise<void>;
+  setupPermissionListener: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -25,17 +28,19 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       accessToken: null,
       refreshToken: null,
+      permissions: null,
       isAuthenticated: false,
       isLoading: false,  // This should not be persisted
 
       login: async (credentials: LoginCredentials) => {
         set({ isLoading: true });
         try {
-          const { user, tokens } = await authService.login(credentials);
+          const { user, tokens, permissions } = await authService.login(credentials);
           set({
             user,
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
+            permissions: permissions || null,
             isAuthenticated: true,
             isLoading: false,
           });
@@ -50,11 +55,12 @@ export const useAuthStore = create<AuthState>()(
       register: async (data: RegisterData) => {
         set({ isLoading: true });
         try {
-          const { user, tokens } = await authService.register(data);
+          const { user, tokens, permissions } = await authService.register(data);
           set({
             user,
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
+            permissions: permissions || null,
             isAuthenticated: true,
             isLoading: false,
           });
@@ -72,6 +78,7 @@ export const useAuthStore = create<AuthState>()(
           user: null,
           accessToken: null,
           refreshToken: null,
+          permissions: null,
           isAuthenticated: false,
         });
         disconnectSocket();
@@ -101,6 +108,54 @@ export const useAuthStore = create<AuthState>()(
           throw error;
         }
       },
+
+      refreshPermissions: async () => {
+        try {
+          const { user, isAuthenticated } = get();
+          if (!isAuthenticated || !user) {
+            return;
+          }
+
+          const { permissions } = await authService.getMe();
+          set({ permissions: permissions || null });
+          console.log('[AuthStore] Permissions refreshed successfully');
+        } catch (error) {
+          console.error('[AuthStore] Failed to refresh permissions:', error);
+        }
+      },
+
+      setupPermissionListener: () => {
+        const socket = getSocket();
+        if (!socket) {
+          console.warn('[AuthStore] Socket not available for permission listener');
+          return;
+        }
+
+        // Listen for permission updates from backend
+        socket.on('permissions:updated', (event: { updatedRoles: string[]; timestamp: Date }) => {
+          const { user, refreshPermissions } = get();
+
+          if (!user) return;
+
+          console.log('[AuthStore] Received permissions:updated event', event);
+
+          // Check if current user's role was affected
+          if (event.updatedRoles.includes(user.role)) {
+            console.log('[AuthStore] User role affected, refreshing permissions...');
+
+            // Refresh permissions immediately
+            refreshPermissions();
+
+            // Show notification to user
+            toast.success('Your permissions have been updated', {
+              duration: 5000,
+              icon: '🔐',
+            });
+          }
+        });
+
+        console.log('[AuthStore] Permission listener setup complete');
+      },
     }),
     {
       name: 'auth-storage',
@@ -108,6 +163,7 @@ export const useAuthStore = create<AuthState>()(
         user: state.user,
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
+        permissions: state.permissions,
         isAuthenticated: state.isAuthenticated,
         // Exclude isLoading from persistence
       }),

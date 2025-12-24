@@ -83,7 +83,7 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
       value: '',
     };
 
-    if (!conditions) {
+    if (!conditions || !conditions.rules) {
       onChange({
         id: `group-${Date.now()}`,
         logic: 'AND',
@@ -98,7 +98,7 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
   };
 
   const removeRule = (ruleId: string) => {
-    if (!conditions) return;
+    if (!conditions || !conditions.rules) return;
 
     const newRules = conditions.rules.filter((rule) => rule.id !== ruleId);
 
@@ -117,7 +117,7 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
     field: keyof ConditionRule,
     value: string
   ) => {
-    if (!conditions) return;
+    if (!conditions || !conditions.rules) return;
 
     onChange({
       ...conditions,
@@ -165,7 +165,7 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
         </Button>
       </div>
 
-      {!conditions || conditions.rules.length === 0 ? (
+      {!conditions || !conditions.rules || conditions.rules.length === 0 ? (
         <div className="p-8 border-2 border-dashed border-gray-300 rounded-lg text-center">
           <HelpCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
           <p className="text-gray-600 mb-4">
@@ -270,7 +270,7 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({
       )}
 
       {/* Visual Logic Display */}
-      {conditions && conditions.rules.length > 0 && (
+      {conditions && conditions.rules && conditions.rules.length > 0 && (
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <h4 className="text-sm font-semibold text-blue-900 mb-2">
             Condition Logic:

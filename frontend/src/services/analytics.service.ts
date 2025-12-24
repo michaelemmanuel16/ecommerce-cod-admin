@@ -57,15 +57,43 @@ export interface CustomerInsights {
   avgOrderValue: number;
 }
 
+export interface PendingOrder {
+  id: number;
+  orderNumber: string;
+  customerName: string;
+  customerPhone: string;
+  customerArea: string;
+  totalAmount: number;
+  createdAt: string;
+  repName: string;
+}
+
+export interface Activity {
+  id: number;
+  type: string;
+  title: string;
+  message: string;
+  userName: string;
+  userRole: string;
+  isRead: boolean;
+  createdAt: string;
+  data?: any;
+}
+
 export const analyticsService = {
-  async getDashboardMetrics(): Promise<DashboardMetrics> {
-    const response = await apiClient.get('/api/analytics/dashboard');
+  async getDashboardMetrics(params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<DashboardMetrics> {
+    const response = await apiClient.get('/api/analytics/dashboard', { params });
     return response.data.metrics;
   },
 
   async getSalesTrends(params?: {
     period?: 'daily' | 'monthly';
     days?: number;
+    startDate?: string;
+    endDate?: string;
   }): Promise<SalesTrend[]> {
     const response = await apiClient.get('/api/analytics/sales-trends', { params });
     return response.data.trends;
@@ -79,8 +107,11 @@ export const analyticsService = {
     return response.data.funnel;
   },
 
-  async getRepPerformance(): Promise<PerformanceMetrics[]> {
-    const response = await apiClient.get('/api/analytics/rep-performance');
+  async getRepPerformance(params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<PerformanceMetrics[]> {
+    const response = await apiClient.get('/api/analytics/rep-performance', { params });
     return response.data.performance;
   },
 
@@ -92,5 +123,15 @@ export const analyticsService = {
   async getCustomerInsights(): Promise<CustomerInsights> {
     const response = await apiClient.get('/api/analytics/customer-insights');
     return response.data.insights;
+  },
+
+  async getPendingOrders(): Promise<PendingOrder[]> {
+    const response = await apiClient.get('/api/analytics/pending-orders');
+    return response.data.orders;
+  },
+
+  async getRecentActivity(): Promise<Activity[]> {
+    const response = await apiClient.get('/api/analytics/recent-activity');
+    return response.data.activity;
   }
 };

@@ -29,15 +29,10 @@ export const AssignUserAction: React.FC<AssignUserActionProps> = ({
 }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [validationError, setValidationError] = useState<string>('');
 
   useEffect(() => {
     loadUsers();
   }, [config.userType]);
-
-  useEffect(() => {
-    validateWeights();
-  }, [config.assignments, config.distributionMode]);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -53,23 +48,6 @@ export const AssignUserAction: React.FC<AssignUserActionProps> = ({
       console.error('Error loading users:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const validateWeights = () => {
-    if (config.distributionMode === 'weighted' && config.assignments.length > 0) {
-      const totalWeight = config.assignments.reduce(
-        (sum, assignment) => sum + assignment.weight,
-        0
-      );
-
-      if (Math.abs(totalWeight - 100) > 0.01) {
-        setValidationError(`Total must equal 100% (currently ${totalWeight.toFixed(1)}%)`);
-      } else {
-        setValidationError('');
-      }
-    } else {
-      setValidationError('');
     }
   };
 
@@ -138,14 +116,65 @@ export const AssignUserAction: React.FC<AssignUserActionProps> = ({
     }
   };
 
-  const updateWeight = (userId: string, weight: number) => {
+  const distributeEvenly = () => {
+    if (config.assignments.length === 0) return;
+
+    const evenWeight = 100 / config.assignments.length;
     onChange({
       ...config,
-      assignments: config.assignments.map((assignment) =>
-        assignment.userId === userId
-          ? { ...assignment, weight: Number(weight) }
-          : assignment
-      ),
+      assignments: config.assignments.map((assignment) => ({
+        ...assignment,
+        weight: Number(evenWeight.toFixed(2)),
+      })),
+    });
+  };
+
+  const updateWeight = (userId: string, newWeight: number) => {
+    // Clamp weight between 0 and 100
+    const targetWeight = Math.max(0, Math.min(100, Number(newWeight) || 0));
+
+    // Get other assignments (not the one being updated)
+    const otherAssignments = config.assignments.filter((a) => a.userId !== userId);
+
+    // If only one user, set to 100%
+    if (otherAssignments.length === 0) {
+      onChange({
+        ...config,
+        assignments: [{ userId, weight: 100 }],
+      });
+      return;
+    }
+
+    // Calculate remaining percentage for other users
+    const remaining = 100 - targetWeight;
+
+    // Calculate current total of other users
+    const othersTotal = otherAssignments.reduce((sum, a) => sum + a.weight, 0);
+
+    // Proportionally redistribute remaining percentage among other users
+    const normalizedAssignments = otherAssignments.map((assignment) => {
+      let newWeight: number;
+
+      if (othersTotal > 0) {
+        // Maintain proportions: each gets their share of the remaining percentage
+        newWeight = (assignment.weight / othersTotal) * remaining;
+      } else {
+        // If all others are 0%, distribute evenly
+        newWeight = remaining / otherAssignments.length;
+      }
+
+      return {
+        ...assignment,
+        weight: Number(newWeight.toFixed(2)),
+      };
+    });
+
+    onChange({
+      ...config,
+      assignments: [
+        { userId, weight: Number(targetWeight.toFixed(2)) },
+        ...normalizedAssignments,
+      ],
     });
   };
 
@@ -227,6 +256,16 @@ export const AssignUserAction: React.FC<AssignUserActionProps> = ({
             Weighted Split
           </button>
         </div>
+        {/* Distribute Evenly Helper Button */}
+        {config.distributionMode === 'weighted' && config.assignments.length > 1 && (
+          <button
+            onClick={distributeEvenly}
+            className="mt-3 w-full px-3 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors flex items-center justify-center gap-2"
+          >
+            <PieChart className="w-4 h-4" />
+            Reset to Even Distribution
+          </button>
+        )}
       </div>
 
       {/* User Selection */}
@@ -271,16 +310,29 @@ export const AssignUserAction: React.FC<AssignUserActionProps> = ({
                   </div>
                 </div>
 
-                {/* Weight Slider for Weighted Mode */}
+                {/* Weight Slider + Input for Weighted Mode */}
                 {isSelected && config.distributionMode === 'weighted' && assignment && (
                   <div className="mt-3 pt-3 border-t border-blue-200">
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-gray-700">
                         Weight
                       </span>
-                      <span className="text-sm font-semibold text-blue-600">
-                        {assignment.weight.toFixed(1)}%
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={assignment.weight.toFixed(1)}
+                          onChange={(e) =>
+                            updateWeight(user.id, parseFloat(e.target.value))
+                          }
+                          className="w-16 px-2 py-1 text-sm font-semibold text-blue-600 text-right border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-semibold text-blue-600">
+                          %
+                        </span>
+                      </div>
                     </div>
                     <input
                       type="range"
@@ -301,27 +353,25 @@ export const AssignUserAction: React.FC<AssignUserActionProps> = ({
         </div>
       </div>
 
-      {/* Validation Error */}
-      {validationError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <div className="text-sm font-medium text-red-800">
-              Invalid Distribution
-            </div>
-            <div className="text-sm text-red-700">{validationError}</div>
-          </div>
-        </div>
-      )}
-
       {/* Visual Preview */}
-      {config.assignments.length > 0 && !validationError && (
+      {config.assignments.length > 0 && (
         <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-center gap-2 mb-3">
-            <PieChart className="w-5 h-5 text-green-600" />
-            <h4 className="text-sm font-semibold text-green-900">
-              Traffic Distribution Preview
-            </h4>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <PieChart className="w-5 h-5 text-green-600" />
+              <h4 className="text-sm font-semibold text-green-900">
+                Traffic Distribution Preview
+              </h4>
+            </div>
+            {/* Total Indicator - Always 100% */}
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-green-100 rounded-full">
+              <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <span className="text-sm font-bold text-green-800">
+                Total: 100%
+              </span>
+            </div>
           </div>
           <div className="space-y-2">
             {config.assignments.map((assignment) => {
@@ -330,7 +380,7 @@ export const AssignUserAction: React.FC<AssignUserActionProps> = ({
                 <div key={assignment.userId} className="flex items-center gap-2">
                   <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
                     <div
-                      className="bg-green-500 h-full rounded-full transition-all"
+                      className="bg-green-500 h-full rounded-full transition-all duration-300"
                       style={{ width: `${assignment.weight}%` }}
                     />
                   </div>

@@ -1,23 +1,23 @@
 import { Router } from 'express';
 import * as orderController from '../controllers/orderController';
-import { authenticate, requirePermission } from '../middleware/auth';
-import { validate } from '../middleware/validation';
+import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { validate, validateRequest } from '../middleware/validation';
 import { createOrderValidation, updateOrderStatusValidation, paginationValidation } from '../utils/validators';
 
 const router = Router();
 
 router.use(authenticate);
 
-router.get('/', paginationValidation, validate, orderController.getAllOrders);
-router.post('/', createOrderValidation, validate, orderController.createOrder);
-router.post('/bulk', requirePermission(['super_admin', 'admin', 'manager']), orderController.bulkImportOrders);
-router.get('/kanban', orderController.getKanbanView);
-router.get('/stats', orderController.getOrderStats);
-router.get('/:id', orderController.getOrder);
-router.put('/:id', orderController.updateOrder);
-router.delete('/:id', requirePermission(['super_admin', 'admin', 'manager']), orderController.deleteOrder);
-router.patch('/:id/status', updateOrderStatusValidation, validate, orderController.updateOrderStatus);
-router.patch('/:id/assign-rep', requirePermission(['super_admin', 'admin', 'manager']), orderController.assignCustomerRep);
-router.patch('/:id/assign-agent', requirePermission(['super_admin', 'admin', 'manager']), orderController.assignDeliveryAgent);
+router.get('/', paginationValidation, validate, requireResourcePermission('orders', 'view'), orderController.getAllOrders);
+router.post('/', createOrderValidation, validate, requireResourcePermission('orders', 'create'), orderController.createOrder);
+router.post('/bulk', requireResourcePermission('orders', 'bulk_import'), orderController.bulkImportOrders);
+router.get('/kanban', requireResourcePermission('orders', 'view'), orderController.getKanbanView);
+router.get('/stats', requireResourcePermission('orders', 'view'), orderController.getOrderStats);
+router.get('/:id', requireResourcePermission('orders', 'view'), orderController.getOrder);
+router.put('/:id', requireResourcePermission('orders', 'update'), orderController.updateOrder);
+router.delete('/:id', requireResourcePermission('orders', 'delete'), orderController.deleteOrder);
+router.patch('/:id/status', validateRequest(updateOrderStatusValidation), requireResourcePermission('orders', 'update'), orderController.updateOrderStatus);
+router.patch('/:id/assign-rep', requireResourcePermission('orders', 'assign'), orderController.assignCustomerRep);
+router.patch('/:id/assign-agent', requireResourcePermission('orders', 'assign'), orderController.assignDeliveryAgent);
 
 export default router;

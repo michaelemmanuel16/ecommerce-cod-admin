@@ -15,7 +15,7 @@ router.get('/permissions', requireSuperAdmin, adminController.getRolePermissions
 router.put('/permissions', requireSuperAdmin, adminController.updateRolePermissions);
 
 // User Management (super_admin and admin)
-router.get('/users', requirePermission(['super_admin', 'admin']), adminController.getAllUsers);
+router.get('/users', requirePermission(['super_admin', 'admin', "manager"]), adminController.getAllUsers);
 router.post('/users', requirePermission(['super_admin', 'admin']), adminController.createUser);
 router.put('/users/:id', requirePermission(['super_admin', 'admin']), adminController.updateUser);
 router.post('/users/:id/reset-password', requirePermission(['super_admin', 'admin']), adminController.resetUserPassword);

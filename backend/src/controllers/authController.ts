@@ -4,6 +4,7 @@ import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError } from '../middleware/errorHandler';
+import { adminService } from '../services/adminService';
 
 export const register = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -31,6 +32,8 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
         firstName: true,
         lastName: true,
         role: true,
+        commissionRate: true,
+        deliveryRate: true,
         createdAt: true
       }
     });
@@ -54,13 +57,18 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
       data: { refreshToken }
     });
 
+    // Get user permissions from system config
+    const allPermissions = await adminService.getRolePermissions();
+    const userPermissions = allPermissions[user.role] || {};
+
     res.status(201).json({
       message: 'User registered successfully',
       user,
       tokens: {
         accessToken,
         refreshToken
-      }
+      },
+      permissions: userPermissions
     });
   } catch (error) {
     next(error);
@@ -105,6 +113,10 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
       }
     });
 
+    // Get user permissions from system config
+    const allPermissions = await adminService.getRolePermissions();
+    const userPermissions = allPermissions[user.role] || {};
+
     res.json({
       message: 'Login successful',
       user: {
@@ -112,12 +124,15 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        role: user.role
+        role: user.role,
+        commissionRate: user.commissionRate,
+        deliveryRate: user.deliveryRate
       },
       tokens: {
         accessToken,
         refreshToken
-      }
+      },
+      permissions: userPermissions
     });
   } catch (error) {
     next(error);
@@ -199,7 +214,11 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
       }
     });
 
-    res.json({ user });
+    // Get user permissions from system config
+    const allPermissions = await adminService.getRolePermissions();
+    const userPermissions = allPermissions[user?.role || ''] || {};
+
+    res.json({ user, permissions: userPermissions });
   } catch (error) {
     next(error);
   }

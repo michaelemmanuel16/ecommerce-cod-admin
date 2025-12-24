@@ -24,11 +24,23 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
       parsedStatus = Array.isArray(status) ? status as OrderStatus[] : [status as OrderStatus];
     }
 
+    // ROLE-BASED FILTERING: Sales reps can only see their assigned orders
+    let effectiveCustomerRepId = customerRepId ? Number(customerRepId) : undefined;
+    if (req.user?.role === 'sales_rep') {
+      effectiveCustomerRepId = req.user.id; // Override with user's own ID
+    }
+
+    // ROLE-BASED FILTERING: Delivery agents can only see their assigned orders
+    let effectiveDeliveryAgentId = deliveryAgentId ? Number(deliveryAgentId) : undefined;
+    if (req.user?.role === 'delivery_agent') {
+      effectiveDeliveryAgentId = req.user.id; // Override with user's own ID
+    }
+
     const result = await orderService.getAllOrders({
       status: parsedStatus,
       customerId: customerId ? Number(customerId) : undefined,
-      customerRepId: customerRepId ? Number(customerRepId) : undefined,
-      deliveryAgentId: deliveryAgentId ? Number(deliveryAgentId) : undefined,
+      customerRepId: effectiveCustomerRepId,
+      deliveryAgentId: effectiveDeliveryAgentId,
       area: area as string | undefined,
       startDate: startDate ? new Date(startDate as string) : undefined,
       endDate: endDate ? new Date(endDate as string) : undefined,
@@ -96,7 +108,7 @@ export const bulkImportOrders = async (req: AuthRequest, res: Response): Promise
       throw new Error('Invalid orders data');
     }
 
-    const results = await orderService.bulkImportOrders(orders, req.user?.id?.toString());
+    const results = await orderService.bulkImportOrders(orders, req.user?.id);
 
     res.json({ results });
   } catch (error) {
@@ -128,7 +140,7 @@ export const updateOrder = async (req: AuthRequest, res: Response): Promise<void
 export const deleteOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const result = await orderService.cancelOrder(id, req.user?.id?.toString(), 'Order cancelled');
+    const result = await orderService.cancelOrder(id, req.user?.id, 'Order cancelled');
     res.json(result);
   } catch (error) {
     throw error;
@@ -143,7 +155,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
     const order = await orderService.updateOrderStatus(id, {
       status: status as OrderStatus,
       notes,
-      changedBy: req.user?.id?.toString()
+      changedBy: req.user?.id
     });
 
     res.json({ order });
@@ -156,7 +168,7 @@ export const assignCustomerRep = async (req: AuthRequest, res: Response): Promis
   try {
     const { id } = req.params;
     const { customerRepId } = req.body;
-    const order = await orderService.assignCustomerRep(id, customerRepId, req.user?.id?.toString());
+    const order = await orderService.assignCustomerRep(id, customerRepId, req.user?.id);
     res.json({ order });
   } catch (error) {
     throw error;
@@ -167,7 +179,7 @@ export const assignDeliveryAgent = async (req: AuthRequest, res: Response): Prom
   try {
     const { id } = req.params;
     const { deliveryAgentId } = req.body;
-    const order = await orderService.assignDeliveryAgent(id, deliveryAgentId, req.user?.id?.toString());
+    const order = await orderService.assignDeliveryAgent(id, deliveryAgentId, req.user?.id);
     res.json({ order });
   } catch (error) {
     throw error;

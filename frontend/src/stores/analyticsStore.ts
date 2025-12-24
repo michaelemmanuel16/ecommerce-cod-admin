@@ -5,7 +5,9 @@ import {
   SalesTrend,
   ConversionFunnelStep,
   PerformanceMetrics,
-  CustomerInsights
+  CustomerInsights,
+  PendingOrder,
+  Activity
 } from '../services/analytics.service';
 import { getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
@@ -17,14 +19,23 @@ interface AnalyticsState {
   repPerformance: PerformanceMetrics[];
   agentPerformance: PerformanceMetrics[];
   customerInsights: CustomerInsights | null;
+  pendingOrders: PendingOrder[];
+  recentActivity: Activity[];
   isLoading: boolean;
   error: string | null;
-  fetchDashboardMetrics: () => Promise<void>;
-  fetchSalesTrends: (period?: 'daily' | 'monthly', days?: number) => Promise<void>;
+  fetchDashboardMetrics: (startDate?: string, endDate?: string) => Promise<void>;
+  fetchSalesTrends: (
+    period?: 'daily' | 'monthly',
+    days?: number,
+    startDate?: string,
+    endDate?: string
+  ) => Promise<void>;
   fetchConversionFunnel: (startDate?: string, endDate?: string) => Promise<void>;
   fetchRepPerformance: () => Promise<void>;
   fetchAgentPerformance: () => Promise<void>;
   fetchCustomerInsights: () => Promise<void>;
+  fetchPendingOrders: () => Promise<void>;
+  fetchRecentActivity: () => Promise<void>;
   refreshAll: () => Promise<void>;
 }
 
@@ -35,11 +46,28 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
     socket.on('order:created', () => {
       // Refresh metrics when new orders are created
       get().fetchDashboardMetrics();
+      get().fetchPendingOrders();
+    });
+
+    socket.on('order:updated', () => {
+      // Refresh pending orders when orders are updated (e.g., workflow assignments)
+      console.log('[analyticsStore] order:updated event received, refreshing pending orders');
+      get().fetchPendingOrders();
+      get().fetchDashboardMetrics();
+    });
+
+    socket.on('order:assigned', () => {
+      // Refresh pending orders when sales reps or agents are assigned
+      console.log('[analyticsStore] order:assigned event received, refreshing pending orders');
+      get().fetchPendingOrders();
+      get().fetchRepPerformance();
+      get().fetchAgentPerformance();
     });
 
     socket.on('order:status_changed', () => {
       // Refresh metrics when order status changes
       get().fetchDashboardMetrics();
+      get().fetchPendingOrders();
     });
 
     socket.on('delivery:completed', () => {
@@ -56,13 +84,15 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
     repPerformance: [],
     agentPerformance: [],
     customerInsights: null,
+    pendingOrders: [],
+    recentActivity: [],
     isLoading: false,
     error: null,
 
-    fetchDashboardMetrics: async () => {
+    fetchDashboardMetrics: async (startDate?: string, endDate?: string) => {
       set({ isLoading: true, error: null });
       try {
-        const metrics = await analyticsService.getDashboardMetrics();
+        const metrics = await analyticsService.getDashboardMetrics({ startDate, endDate });
         set({ metrics, isLoading: false });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch dashboard metrics';
@@ -71,9 +101,19 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
       }
     },
 
-    fetchSalesTrends: async (period?: 'daily' | 'monthly', days?: number) => {
+    fetchSalesTrends: async (
+      period?: 'daily' | 'monthly',
+      days?: number,
+      startDate?: string,
+      endDate?: string
+    ) => {
       try {
-        const trends = await analyticsService.getSalesTrends({ period, days });
+        const trends = await analyticsService.getSalesTrends({
+          period,
+          days,
+          startDate,
+          endDate,
+        });
         set({ trends });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch sales trends';
@@ -93,9 +133,12 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
       }
     },
 
-    fetchRepPerformance: async () => {
+    fetchRepPerformance: async (startDate?: string, endDate?: string) => {
       try {
-        const repPerformance = await analyticsService.getRepPerformance();
+        const repPerformance = await analyticsService.getRepPerformance({
+          startDate,
+          endDate
+        });
         set({ repPerformance });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch rep performance';
@@ -126,6 +169,28 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
       }
     },
 
+    fetchPendingOrders: async () => {
+      try {
+        const pendingOrders = await analyticsService.getPendingOrders();
+        set({ pendingOrders });
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch pending orders';
+        console.error(errorMessage, error);
+        toast.error(errorMessage);
+      }
+    },
+
+    fetchRecentActivity: async () => {
+      try {
+        const recentActivity = await analyticsService.getRecentActivity();
+        set({ recentActivity });
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch recent activity';
+        console.error(errorMessage, error);
+        toast.error(errorMessage);
+      }
+    },
+
     refreshAll: async () => {
       set({ isLoading: true, error: null });
       try {
@@ -134,6 +199,8 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
           get().fetchSalesTrends('daily', 7),
           get().fetchRepPerformance(),
           get().fetchAgentPerformance(),
+          get().fetchPendingOrders(),
+          get().fetchRecentActivity(),
         ]);
         set({ isLoading: false });
       } catch (error: any) {

@@ -153,12 +153,20 @@ export function useDashboardData(
           }
         }
 
-        // Commission (for sales reps)
-        if (dashboardData.myPerformance && user?.commissionRate) {
+        // Earnings (for sales reps)
+        if (dashboardData.repPerformance && user?.commissionRate) {
           calculated.myCommission = (
-            dashboardData.myPerformance.revenue *
-            (user.commissionRate / 100)
+            dashboardData.repPerformance.deliveredOrders * user.commissionRate
           ).toFixed(2);
+          calculated.commissionRate = user.commissionRate;
+        }
+
+        // Conversion rate (for sales reps)
+        if (dashboardData.repPerformance && dashboardData.repPerformance.totalOrders > 0) {
+          calculated.myConversionRate = (
+            (dashboardData.repPerformance.deliveredOrders / dashboardData.repPerformance.totalOrders) *
+            100
+          ).toFixed(1);
         }
 
         // Earnings (for delivery agents)
@@ -300,15 +308,44 @@ async function executeFetcher(
       break;
 
     case 'fetchRepPerformance':
-      await storeMethods.fetchRepPerformance();
+      await storeMethods.fetchRepPerformance(
+        dateRange?.startDate,
+        dateRange?.endDate
+      );
       const repPerf = useAnalyticsStore.getState().repPerformance;
-      dashboardData.repPerformance = repPerf;
 
       // Filter for current user if role is sales_rep
       if (user?.role === 'sales_rep') {
-        dashboardData.myPerformance = repPerf.find(
+        const myPerf = repPerf.find(
           (rep: any) => rep.userId === user.id
         );
+
+        // Transform backend field names to match config expectations
+        if (myPerf) {
+          dashboardData.repPerformance = {
+            totalOrders: myPerf.totalAssigned || 0,
+            deliveredOrders: myPerf.completed || 0,
+            pendingOrders: myPerf.pending || 0,
+            totalRevenue: myPerf.revenue || 0,
+            avgResponseTime: myPerf.avgResponseTime || 0,
+            successRate: myPerf.successRate || 0,
+            userId: myPerf.userId,
+            userName: myPerf.userName,
+          };
+        } else {
+          // No performance data found - use empty defaults
+          dashboardData.repPerformance = {
+            totalOrders: 0,
+            deliveredOrders: 0,
+            pendingOrders: 0,
+            totalRevenue: 0,
+            avgResponseTime: 0,
+            successRate: 0,
+          };
+        }
+      } else {
+        // Admins/managers see all reps' performance (array)
+        dashboardData.repPerformance = repPerf;
       }
       break;
 

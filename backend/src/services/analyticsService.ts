@@ -6,14 +6,56 @@ interface DateFilters {
   endDate?: Date;
 }
 
+/**
+ * Helper function to build user-scoped filter for analytics queries
+ * Sales reps only see orders assigned to them, admins/managers see all orders
+ */
+function buildUserScopeFilter(userId?: number, userRole?: string) {
+  // Sales reps only see their assigned orders
+  if (userRole === 'sales_rep' && userId) {
+    return { customerRepId: userId };
+  }
+  // Delivery agents only see their assigned deliveries
+  if (userRole === 'delivery_agent' && userId) {
+    return { deliveryAgentId: userId };
+  }
+  // Admins, managers, and other roles see all data
+  return {};
+}
+
 export class AnalyticsService {
   /**
    * Get dashboard metrics
+   * Supports optional date range filtering and user-scoped filtering
    */
-  async getDashboardMetrics() {
+  async getDashboardMetrics(
+    filters?: {
+      startDate?: string;
+      endDate?: string;
+    },
+    userId?: number,
+    userRole?: string
+  ) {
+    console.log('[analyticsService.getDashboardMetrics] Called with filters:', filters, 'userId:', userId, 'userRole:', userRole);
+
     const today = new Date();
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
     const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+
+    // Build date filter for queries
+    const dateFilter = filters?.startDate && filters?.endDate
+      ? {
+          createdAt: {
+            gte: new Date(filters.startDate),
+            lte: new Date(filters.endDate)
+          }
+        }
+      : {};
+
+    // Build user scope filter (sales reps only see their assigned orders)
+    const userFilter = buildUserScopeFilter(userId, userRole);
+
+    console.log('[analyticsService.getDashboardMetrics] Date filter:', dateFilter, 'User filter:', userFilter);
 
     const [
       totalOrders,
@@ -25,9 +67,12 @@ export class AnalyticsService {
       activeAgents,
       deliveries
     ] = await Promise.all([
-      prisma.order.count(),
+      prisma.order.count({
+        where: { ...dateFilter, ...userFilter }
+      }),
       prisma.order.count({
         where: {
+          ...userFilter,
           createdAt: {
             gte: startOfDay,
             lte: endOfDay
@@ -36,20 +81,31 @@ export class AnalyticsService {
       }),
       prisma.order.count({
         where: {
+          ...dateFilter,
+          ...userFilter,
           status: {
             notIn: ['delivered', 'cancelled', 'returned']
           }
         }
       }),
       prisma.order.count({
-        where: { status: 'delivered' }
+        where: {
+          ...dateFilter,
+          ...userFilter,
+          status: 'delivered'
+        }
       }),
       prisma.order.aggregate({
-        where: { status: 'delivered' },
+        where: {
+          ...dateFilter,
+          ...userFilter,
+          status: 'delivered'
+        },
         _sum: { totalAmount: true }
       }),
       prisma.order.aggregate({
         where: {
+          ...userFilter,
           status: 'delivered',
           createdAt: {
             gte: startOfDay,
@@ -111,17 +167,43 @@ export class AnalyticsService {
 
   /**
    * Get sales trends over time
+   * Supports both relative (days) and absolute (startDate/endDate) date ranges
+   * Supports user-scoped filtering for sales reps
    */
-  async getSalesTrends(filters: { period?: string; days?: number }) {
-    const { period = 'daily', days = 30 } = filters;
+  async getSalesTrends(
+    filters: {
+      period?: string;
+      days?: number;
+      startDate?: string;
+      endDate?: string;
+    },
+    userId?: number,
+    userRole?: string
+  ) {
+    const { period = 'daily', days = 30, startDate: customStart, endDate: customEnd } = filters;
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    // Use custom date range if provided, otherwise calculate from days
+    let startDate: Date;
+    let endDate: Date;
+
+    if (customStart && customEnd) {
+      startDate = new Date(customStart);
+      endDate = new Date(customEnd);
+    } else {
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      endDate = new Date();
+    }
+
+    // Build user scope filter (sales reps only see their assigned orders)
+    const userFilter = buildUserScopeFilter(userId, userRole);
 
     const orders = await prisma.order.findMany({
       where: {
+        ...userFilter,
         createdAt: {
-          gte: startDate
+          gte: startDate,
+          lte: endDate
         }
       },
       select: {
@@ -190,8 +272,19 @@ export class AnalyticsService {
 
   /**
    * Get customer representative performance
+   * Supports optional date range filtering
    */
-  async getRepPerformance() {
+  async getRepPerformance(filters?: { startDate?: string; endDate?: string }) {
+    // Build date filter for orders
+    const dateFilter = filters?.startDate || filters?.endDate
+      ? {
+          createdAt: {
+            ...(filters.startDate && { gte: new Date(filters.startDate) }),
+            ...(filters.endDate && { lte: new Date(filters.endDate) })
+          }
+        }
+      : undefined;
+
     const reps = await prisma.user.findMany({
       where: {
         role: 'sales_rep',
@@ -202,6 +295,7 @@ export class AnalyticsService {
         firstName: true,
         lastName: true,
         assignedOrdersAsRep: {
+          where: dateFilter,
           select: {
             id: true,
             status: true,
@@ -529,6 +623,86 @@ export class AnalyticsService {
       avgOrderValue: avgOrderValue._avg.totalAmount || 0,
       timestamp: now
     };
+  }
+
+  /**
+   * Get pending orders awaiting action
+   * Returns all orders with status pending_confirmation
+   */
+  async getPendingOrders() {
+    const orders = await prisma.order.findMany({
+      where: {
+        status: 'pending_confirmation'
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+            area: true
+          }
+        },
+        customerRep: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+
+    return orders.map((order) => ({
+      id: order.id,
+      orderNumber: `#${order.id.toString().padStart(6, '0')}`,
+      customerName: `${order.customer.firstName} ${order.customer.lastName}`,
+      customerPhone: order.customer.phoneNumber,
+      customerArea: order.customer.area,
+      totalAmount: order.totalAmount,
+      createdAt: order.createdAt,
+      repName: order.customerRep
+        ? `${order.customerRep.firstName} ${order.customerRep.lastName}`
+        : 'Unassigned'
+    }));
+  }
+
+  /**
+   * Get recent activity feed
+   * Returns the 10 most recent notifications
+   */
+  async getRecentActivity() {
+    const notifications = await prisma.notification.findMany({
+      take: 10,
+      orderBy: {
+        createdAt: 'desc'
+      },
+      include: {
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+            role: true
+          }
+        }
+      }
+    });
+
+    return notifications.map((notification) => ({
+      id: notification.id,
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      userName: `${notification.user.firstName} ${notification.user.lastName}`,
+      userRole: notification.user.role,
+      isRead: notification.isRead,
+      createdAt: notification.createdAt,
+      data: notification.data
+    }));
   }
 }
 

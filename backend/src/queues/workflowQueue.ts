@@ -2,6 +2,8 @@ import Bull from 'bull';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { evaluateConditions } from '../utils/conditionEvaluator';
+import { getSocketInstance } from '../utils/socketInstance';
+import { emitOrderUpdated, emitOrderAssigned } from '../sockets/index';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
@@ -158,11 +160,13 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
 
   // Even distribution
   if (distributionMode === 'even') {
+    const io = getSocketInstance();
+
     for (let i = 0; i < ordersToAssign.length; i++) {
       const assignmentIndex = i % assignments.length;
       const assignment = assignments[assignmentIndex];
 
-      await prisma.order.update({
+      const updatedOrder = await prisma.order.update({
         where: { id: ordersToAssign[i].id },
         data: { [targetField]: assignment.userId }
       });
@@ -179,6 +183,16 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
         orderNumber: ordersToAssign[i].orderNumber,
         userId: assignment.userId
       });
+
+      // Emit Socket.io events for real-time updates
+      if (io) {
+        emitOrderUpdated(io, updatedOrder);
+        emitOrderAssigned(io, updatedOrder, assignment.userId, userType);
+        logger.debug('Socket.io events emitted for order assignment', {
+          orderId: updatedOrder.id,
+          orderNumber: updatedOrder.orderNumber
+        });
+      }
     }
   }
   // Weighted distribution
@@ -188,6 +202,8 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
     if (totalWeight === 0) {
       return { assigned: 0, message: 'Total weight is 0, cannot distribute' };
     }
+
+    const io = getSocketInstance();
 
     for (const order of ordersToAssign) {
       // Generate random number and select user based on weight
@@ -203,7 +219,7 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
         }
       }
 
-      await prisma.order.update({
+      const updatedOrder = await prisma.order.update({
         where: { id: order.id },
         data: { [targetField]: selectedUserId }
       });
@@ -220,6 +236,16 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
         orderNumber: order.orderNumber,
         userId: selectedUserId
       });
+
+      // Emit Socket.io events for real-time updates
+      if (io) {
+        emitOrderUpdated(io, updatedOrder);
+        emitOrderAssigned(io, updatedOrder, selectedUserId, userType);
+        logger.debug('Socket.io events emitted for order assignment', {
+          orderId: updatedOrder.id,
+          orderNumber: updatedOrder.orderNumber
+        });
+      }
     }
   }
 

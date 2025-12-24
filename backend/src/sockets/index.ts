@@ -121,3 +121,18 @@ export function emitDeliveryUpdated(io: SocketServer, delivery: any) {
 export function emitNotification(io: SocketServer, userId: string, notification: any) {
   io.to(`user:${userId}`).emit('notification', notification);
 }
+
+export function emitPermissionsUpdated(io: SocketServer, updatedRoles: string[]) {
+  const event = {
+    updatedRoles,
+    timestamp: new Date()
+  };
+
+  // Emit to all affected roles
+  updatedRoles.forEach(role => {
+    io.to(`role:${role}`).emit('permissions:updated', event);
+  });
+
+  // Also emit to all connected clients (in case they need to refresh)
+  io.emit('permissions:updated', event);
+}

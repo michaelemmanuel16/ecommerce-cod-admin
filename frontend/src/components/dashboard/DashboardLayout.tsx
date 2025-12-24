@@ -155,7 +155,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
  * Helper to get grid classes from grid position config
  */
 function getGridClasses(position: any): string {
-  const { colSpan = 1 } = position;
+  // Handle undefined/null position with default values
+  const { colSpan = 1 } = position || {};
 
   // Map colSpan to Tailwind classes
   const spanClasses: Record<number, string> = {

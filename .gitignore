@@ -96,3 +96,6 @@ secrets/
 *.secret
 credentials.json
 serviceAccount.json
+
+# Auto Claude data directory
+.auto-claude/

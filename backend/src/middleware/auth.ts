@@ -2,6 +2,109 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import { verifyAccessToken } from '../utils/jwt';
 import { UserRole } from '@prisma/client';
+import prisma from '../utils/prisma';
+
+// Cache for role permissions to avoid database hits on every request
+let permissionsCache: any = null;
+let cacheTimestamp = 0;
+const CACHE_TTL = 60000; // 1 minute
+
+async function getPermissionsFromDatabase() {
+  const now = Date.now();
+
+  // Return cached permissions if still valid
+  if (permissionsCache && (now - cacheTimestamp) < CACHE_TTL) {
+    return permissionsCache;
+  }
+
+  // Fetch fresh permissions from database
+  const config = await prisma.systemConfig.findFirst();
+
+  if (!config || !config.rolePermissions) {
+    // Return default permissions if none configured
+    permissionsCache = getDefaultPermissions();
+  } else {
+    permissionsCache = config.rolePermissions as any;
+  }
+
+  cacheTimestamp = now;
+  return permissionsCache;
+}
+
+function getDefaultPermissions() {
+  return {
+    super_admin: {
+      users: ['create', 'view', 'update', 'delete'],
+      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign'],
+      customers: ['create', 'view', 'update', 'delete'],
+      products: ['create', 'view', 'update', 'delete', 'update_stock'],
+      financial: ['view', 'create', 'update', 'delete'],
+      analytics: ['view'],
+      workflows: ['create', 'view', 'update', 'delete', 'execute'],
+      settings: ['view', 'update'],
+    },
+    admin: {
+      users: ['create', 'view', 'update', 'delete'],
+      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign'],
+      customers: ['create', 'view', 'update', 'delete'],
+      products: ['create', 'view', 'update', 'delete'],
+      financial: ['view', 'create'],
+      analytics: ['view'],
+      workflows: ['create', 'view', 'update', 'delete', 'execute'],
+      settings: ['view'],
+    },
+    manager: {
+      users: [],
+      orders: ['view', 'update', 'bulk_import', 'assign'],
+      customers: ['create', 'view', 'update', 'delete'],
+      products: ['view'],
+      financial: ['view'],
+      analytics: ['view'],
+      workflows: ['view', 'execute'],
+      settings: [],
+    },
+    sales_rep: {
+      users: [],
+      orders: ['create', 'view', 'update'],
+      customers: ['create', 'view', 'update', 'delete'],
+      products: ['view'],
+      financial: [],
+      analytics: [],
+      workflows: [],
+      settings: [],
+    },
+    inventory_manager: {
+      users: [],
+      orders: ['view'],
+      customers: ['view'],
+      products: ['create', 'view', 'update', 'delete', 'update_stock'],
+      financial: [],
+      analytics: ['view'],
+      workflows: [],
+      settings: [],
+    },
+    delivery_agent: {
+      users: [],
+      orders: ['view', 'update'],
+      customers: ['view'],
+      products: ['view'],
+      financial: ['create'],
+      analytics: ['view'],
+      workflows: [],
+      settings: [],
+    },
+    accountant: {
+      users: [],
+      orders: ['view'],
+      customers: ['view'],
+      products: ['view'],
+      financial: ['view', 'create'],
+      analytics: ['view'],
+      workflows: [],
+      settings: [],
+    },
+  };
+}
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
   try {
@@ -62,6 +165,68 @@ export const requirePermission = (allowedRoles: UserRole[]) => {
 
     next();
   };
+};
+
+// New: Resource-action permission middleware that checks SystemConfig.rolePermissions
+export const requireResourcePermission = (resource: string, action: string) => {
+  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      // Super admin always has all permissions
+      if (req.user.role === 'super_admin') {
+        next();
+        return;
+      }
+
+      // Get permissions from database (or cache)
+      const permissions = await getPermissionsFromDatabase();
+      const rolePermissions = permissions[req.user.role];
+
+      if (!rolePermissions) {
+        res.status(403).json({
+          error: 'Forbidden: No permissions configured for your role',
+          code: 'NO_ROLE_PERMISSIONS'
+        });
+        return;
+      }
+
+      const resourcePermissions = rolePermissions[resource];
+
+      if (!resourcePermissions || !Array.isArray(resourcePermissions)) {
+        res.status(403).json({
+          error: `Forbidden: No access to ${resource}`,
+          code: 'NO_RESOURCE_ACCESS'
+        });
+        return;
+      }
+
+      if (!resourcePermissions.includes(action)) {
+        res.status(403).json({
+          error: `Forbidden: Cannot ${action} ${resource}`,
+          code: 'INSUFFICIENT_PERMISSION',
+          required: { resource, action },
+          userRole: req.user.role
+        });
+        return;
+      }
+
+      // User has permission
+      next();
+    } catch (error) {
+      console.error('Error checking permissions:', error);
+      res.status(500).json({ error: 'Failed to check permissions' });
+    }
+  };
+};
+
+// Helper to clear permissions cache (call after updating permissions)
+export const clearPermissionsCache = (): void => {
+  permissionsCache = null;
+  cacheTimestamp = 0;
 };
 
 export const requireSuperAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {

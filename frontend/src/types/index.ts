@@ -2,6 +2,11 @@ export interface UserPreferences {
   ordersDefaultView?: 'kanban' | 'list';
 }
 
+export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'analytics' | 'workflows' | 'settings';
+export type Action = 'create' | 'view' | 'update' | 'delete' | 'bulk_import' | 'assign' | 'update_stock' | 'execute';
+
+export type Permissions = Record<Resource, Action[]>;
+
 export interface User {
   id: number;
   email: string;
@@ -10,6 +15,8 @@ export interface User {
   role: 'super_admin' | 'admin' | 'manager' | 'sales_rep' | 'inventory_manager' | 'delivery_agent' | 'accountant' | 'customer_rep';
   avatar?: string;
   preferences?: UserPreferences;
+  commissionRate?: number;
+  deliveryRate?: number;
   createdAt: string;
   updatedAt: string;
 }

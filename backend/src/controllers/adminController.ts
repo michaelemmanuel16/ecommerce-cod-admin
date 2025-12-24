@@ -35,6 +35,22 @@ export const getRolePermissions = async (req: AuthRequest, res: Response): Promi
 export const updateRolePermissions = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const config = await adminService.updateRolePermissions(req.body);
+
+    // Clear permissions cache so new permissions take effect immediately
+    const { clearPermissionsCache } = await import('../middleware/auth');
+    clearPermissionsCache();
+
+    // Emit socket event to notify all connected users about permission changes
+    const { getSocketInstance } = await import('../utils/socketInstance');
+    const { emitPermissionsUpdated } = await import('../sockets');
+    const io = getSocketInstance();
+
+    if (io) {
+      // Get all roles that were updated
+      const updatedRoles = Object.keys(req.body);
+      emitPermissionsUpdated(io, updatedRoles);
+    }
+
     res.json(config.rolePermissions);
   } catch (error) {
     console.error('Error updating role permissions:', error);

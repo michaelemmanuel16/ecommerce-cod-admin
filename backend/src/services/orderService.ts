@@ -59,7 +59,7 @@ interface OrderFilters {
 interface UpdateOrderStatusData {
   status: OrderStatus;
   notes?: string;
-  changedBy?: string;
+  changedBy?: number;
 }
 
 export class OrderService {
@@ -317,7 +317,7 @@ export class OrderService {
   /**
    * Bulk import orders from external source
    */
-  async bulkImportOrders(orders: BulkImportOrderData[], createdById?: string) {
+  async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
     const results = {
       success: 0,
       failed: 0,
@@ -670,7 +670,7 @@ export class OrderService {
   /**
    * Cancel order
    */
-  async cancelOrder(orderId: string, changedBy?: string, notes?: string) {
+  async cancelOrder(orderId: string, changedBy?: number, notes?: string) {
     const id = parseInt(orderId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid order ID', 400);
@@ -735,7 +735,7 @@ export class OrderService {
   /**
    * Assign customer rep to order
    */
-  async assignCustomerRep(orderId: string, customerRepId: string, changedBy?: string) {
+  async assignCustomerRep(orderId: string, customerRepId: string, changedBy?: number) {
     const [order, rep] = await Promise.all([
       prisma.order.findUnique({ where: { id: orderId } }),
       prisma.user.findUnique({ where: { id: customerRepId } })
@@ -788,7 +788,7 @@ export class OrderService {
   /**
    * Assign delivery agent to order
    */
-  async assignDeliveryAgent(orderId: string, deliveryAgentId: string, changedBy?: string) {
+  async assignDeliveryAgent(orderId: string, deliveryAgentId: string, changedBy?: number) {
     const [order, agent] = await Promise.all([
       prisma.order.findUnique({ where: { id: orderId } }),
       prisma.user.findUnique({ where: { id: deliveryAgentId } })
