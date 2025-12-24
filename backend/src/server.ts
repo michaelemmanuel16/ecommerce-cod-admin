@@ -56,7 +56,24 @@ export const io = initializeSocket(server);
 setSocketInstance(io);
 
 // Middleware
-// Configure helmet to allow public checkout forms to be embedded in iframes
+/**
+ * SECURITY DECISION: Helmet Configuration
+ *
+ * We intentionally disable some Helmet protections globally to support
+ * public checkout form embedding via iframes:
+ *
+ * 1. contentSecurityPolicy: false
+ *    - Reason: Public checkout forms need inline styles/scripts for embedding
+ *    - Mitigation: We apply CSP selectively on protected routes
+ *
+ * 2. frameguard: false
+ *    - Reason: Public checkout must be embeddable in customer websites
+ *    - Mitigation: We manually set X-Frame-Options: SAMEORIGIN on admin routes
+ *                  (see middleware below at line 94-98)
+ *
+ * This is a conscious trade-off to enable the public checkout feature
+ * while maintaining security for authenticated admin routes.
+ */
 app.use(helmet({
   contentSecurityPolicy: false, // Allow inline styles and scripts (needed for iframe embeds)
   frameguard: false // Disable X-Frame-Options globally, we'll set it per route
@@ -80,11 +97,15 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request logging
+// Request logging (sanitized - no auth headers or sensitive data)
 app.use((req, res, next) => {
+  // Sanitize user-agent to prevent log injection
+  const userAgent = req.get('user-agent')?.substring(0, 200) || 'unknown';
+
   logger.info(`${req.method} ${req.path}`, {
     ip: req.ip,
-    userAgent: req.get('user-agent')
+    userAgent: userAgent.replace(/[^\x20-\x7E]/g, ''), // Remove non-printable chars
+    // Never log: Authorization, Cookie, or sensitive headers
   });
   next();
 });

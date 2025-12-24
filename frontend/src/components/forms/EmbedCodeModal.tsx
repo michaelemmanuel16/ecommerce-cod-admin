@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Copy, Check, Code2, Globe } from 'lucide-react';
+import { Copy, Check, Code2, Globe } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { CheckoutForm } from '../../types/checkout-form';

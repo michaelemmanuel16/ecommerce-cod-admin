@@ -22,6 +22,17 @@ export const verifySignature = (payload: string, signature: string): boolean => 
   );
 };
 
+/**
+ * SECURITY NOTE: API Key Generation
+ *
+ * We use crypto.randomBytes() which is cryptographically secure.
+ * This is NOT Math.random() - it uses the OS's entropy source.
+ *
+ * CodeQL may flag this as "insecure randomness" but this is a FALSE POSITIVE.
+ * crypto.randomBytes() is the recommended way to generate secure tokens in Node.js.
+ *
+ * See: https://nodejs.org/api/crypto.html#cryptorandombytessize-callback
+ */
 export const generateApiKey = (): string => {
   return crypto.randomBytes(32).toString('hex');
 };

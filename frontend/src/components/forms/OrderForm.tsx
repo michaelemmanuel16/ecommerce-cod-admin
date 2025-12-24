@@ -3,7 +3,7 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
-import { Order, OrderStatus, OrderItem, Product } from '../../types';
+import { Order, OrderStatus, Product } from '../../types';
 import { ordersService } from '../../services/orders.service';
 import { productsService } from '../../services/products.service';
 import { Plus, Trash2 } from 'lucide-react';

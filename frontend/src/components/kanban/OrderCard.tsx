@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Order } from '../../types';
-import { Phone, MapPin, DollarSign, Package } from 'lucide-react';
+import { Phone, DollarSign, Package } from 'lucide-react';
 import { useDraggable } from '@dnd-kit/core';
 
 interface OrderCardProps {
@@ -23,7 +23,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({ order }) => {
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = () => {
     // Only navigate if not dragging
     if (!isDragging) {
       navigate(`/orders/${order.id}`);

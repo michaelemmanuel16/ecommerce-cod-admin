@@ -21,6 +21,7 @@ describe('Orders Store', () => {
       isLoading: false,
       error: null,
       filters: {},
+      pagination: { page: 1, limit: 50, total: 0, pages: 0 },
     });
     vi.clearAllMocks();
   });
@@ -34,8 +35,8 @@ describe('Orders Store', () => {
   it('should fetch orders successfully', async () => {
     const mockOrders = [mockOrder, { ...mockOrder, id: 'order-456' }];
     vi.mocked(ordersService.getOrders).mockResolvedValue({
-      data: mockOrders,
-      pagination: { total: 2, page: 1, limit: 20 },
+      orders: mockOrders,
+      pagination: { total: 2, page: 1, limit: 20, pages: 1 },
     } as any);
 
     const { fetchOrders } = useOrdersStore.getState();

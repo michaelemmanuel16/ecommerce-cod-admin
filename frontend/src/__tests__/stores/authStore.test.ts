@@ -17,10 +17,11 @@ describe('Auth Store', () => {
     // Reset store state before each test
     useAuthStore.setState({
       user: null,
-      token: null,
+      accessToken: null,
       refreshToken: null,
       isLoading: false,
-      error: null,
+      isAuthenticated: false,
+      permissions: null,
     });
     vi.clearAllMocks();
   });
@@ -28,7 +29,7 @@ describe('Auth Store', () => {
   it('should initialize with null user and token', () => {
     const state = useAuthStore.getState();
     expect(state.user).toBeNull();
-    expect(state.token).toBeNull();
+    expect(state.accessToken).toBeNull();
     expect(state.refreshToken).toBeNull();
   });
 
@@ -42,42 +43,36 @@ describe('Auth Store', () => {
         role: 'admin',
       },
       tokens: {
-        access_token: 'access_token_123',
-        refresh_token: 'refresh_token_123',
+        accessToken: 'access_token_123',
+        refreshToken: 'refresh_token_123',
       },
+      permissions: null,
     };
 
     vi.mocked(authService.login).mockResolvedValue(mockResponse);
 
     const { login } = useAuthStore.getState();
-    await login('test@example.com', 'password123');
+    await login({ email: 'test@example.com', password: 'password123' });
 
     const state = useAuthStore.getState();
     expect(state.user).toEqual(mockResponse.user);
-    expect(state.token).toBe('access_token_123');
+    expect(state.accessToken).toBe('access_token_123');
     expect(state.refreshToken).toBe('refresh_token_123');
     expect(state.isLoading).toBe(false);
   });
 
   it('should handle login error', async () => {
-    const mockError = {
-      response: {
-        data: {
-          message: 'Invalid credentials',
-        },
-      },
-    };
+    const mockError = new Error('Invalid credentials');
 
     vi.mocked(authService.login).mockRejectedValue(mockError);
 
     const { login } = useAuthStore.getState();
 
     await expect(
-      login('test@example.com', 'wrongpassword')
+      login({ email: 'test@example.com', password: 'wrongpassword' })
     ).rejects.toThrow();
 
     const state = useAuthStore.getState();
-    expect(state.error).toBe('Invalid credentials');
     expect(state.user).toBeNull();
   });
 
@@ -91,9 +86,10 @@ describe('Auth Store', () => {
         role: 'customer_rep',
       },
       tokens: {
-        access_token: 'new_access_token',
-        refresh_token: 'new_refresh_token',
+        accessToken: 'new_access_token',
+        refreshToken: 'new_refresh_token',
       },
+      permissions: null,
     };
 
     vi.mocked(authService.register).mockResolvedValue(mockResponse);
@@ -108,77 +104,48 @@ describe('Auth Store', () => {
 
     const state = useAuthStore.getState();
     expect(state.user).toEqual(mockResponse.user);
-    expect(state.token).toBe('new_access_token');
+    expect(state.accessToken).toBe('new_access_token');
   });
 
   it('should clear user data on logout', () => {
     // Set initial state
     useAuthStore.setState({
       user: { id: '123', email: 'test@example.com' } as any,
-      token: 'token_123',
+      accessToken: 'token_123',
       refreshToken: 'refresh_123',
     });
 
     vi.mocked(authService.logout).mockResolvedValue(undefined);
 
     const { logout } = useAuthStore.getState();
-    logout();
+    logout(false); // Don't show toast in tests
 
     const state = useAuthStore.getState();
     expect(state.user).toBeNull();
-    expect(state.token).toBeNull();
+    expect(state.accessToken).toBeNull();
     expect(state.refreshToken).toBeNull();
   });
 
-  it('should update user data', () => {
+  it('should update user preferences', async () => {
+    const mockPreferences = { theme: 'dark', language: 'en' };
+
     useAuthStore.setState({
       user: {
         id: '123',
         email: 'test@example.com',
         firstName: 'Test',
         lastName: 'User',
+        role: 'admin',
       } as any,
     });
 
-    const { updateUser } = useAuthStore.getState();
-    updateUser({ firstName: 'Updated' });
+    vi.mocked(require('../../services/users.service').usersService.updateUserPreferences)
+      .mockResolvedValue(mockPreferences);
+
+    const { updatePreferences } = useAuthStore.getState();
+    await updatePreferences(mockPreferences as any);
 
     const state = useAuthStore.getState();
-    expect(state.user?.firstName).toBe('Updated');
-  });
-
-  it('should check auth and update user', async () => {
-    const mockUser = {
-      id: '123',
-      email: 'test@example.com',
-      firstName: 'Test',
-      lastName: 'User',
-      role: 'admin',
-    };
-
-    useAuthStore.setState({ token: 'valid_token' });
-    vi.mocked(authService.getCurrentUser).mockResolvedValue(mockUser as any);
-
-    const { checkAuth } = useAuthStore.getState();
-    await checkAuth();
-
-    const state = useAuthStore.getState();
-    expect(state.user).toEqual(mockUser);
-  });
-
-  it('should clear auth on checkAuth failure', async () => {
-    useAuthStore.setState({
-      token: 'invalid_token',
-      user: { id: '123' } as any,
-    });
-
-    vi.mocked(authService.getCurrentUser).mockRejectedValue(new Error('Unauthorized'));
-
-    const { checkAuth } = useAuthStore.getState();
-    await checkAuth();
-
-    const state = useAuthStore.getState();
-    expect(state.user).toBeNull();
-    expect(state.token).toBeNull();
+    expect(state.user?.preferences).toEqual(mockPreferences);
   });
 });

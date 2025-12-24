@@ -8,7 +8,6 @@ import {
   useSensor,
   useSensors,
   closestCorners,
-  closestCenter,
 } from '@dnd-kit/core';
 import { KanbanColumn } from './KanbanColumn';
 import { OrderCard } from './OrderCard';

@@ -8,15 +8,19 @@ interface OrdersState {
   filters: FilterOptions;
   pagination: PaginationMeta;
   isLoading: boolean;
+  error: string | null;
   fetchOrders: () => Promise<void>;
   fetchOrderById: (id: number) => Promise<void>;
   updateOrderStatus: (id: number, status: OrderStatus) => Promise<void>;
   setFilters: (filters: FilterOptions) => void;
+  clearFilters: () => void;
   setSelectedOrder: (order: Order | null) => void;
   setPage: (page: number) => void;
   setPageSize: (limit: number) => void;
   addOrder: (order: Order) => void;
-  updateOrder: (order: Order) => void;
+  updateOrder: (id: string, updates: Partial<Order>) => void;
+  deleteOrder: (id: string) => void;
+  getOrdersByStatus: (status: OrderStatus) => Order[];
 }
 
 export const useOrdersStore = create<OrdersState>((set, get) => ({
@@ -25,9 +29,10 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
   filters: {},
   pagination: { page: 1, limit: 50, total: 0, pages: 0 },
   isLoading: false,
+  error: null,
 
   fetchOrders: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const currentFilters = get().filters;
       console.log('[OrdersStore] Fetching orders with filters:', currentFilters);
@@ -35,8 +40,9 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
       console.log('[OrdersStore] Fetched orders:', orders.length, 'orders');
       set({ orders, pagination, isLoading: false });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch orders';
       console.error('Error fetching orders:', error);
-      set({ isLoading: false });
+      set({ isLoading: false, error: errorMessage });
       throw error;
     }
   },
@@ -73,6 +79,11 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     get().fetchOrders();
   },
 
+  clearFilters: () => {
+    set({ filters: {} });
+    get().fetchOrders();
+  },
+
   setSelectedOrder: (order: Order | null) => {
     set({ selectedOrder: order });
   },
@@ -94,11 +105,26 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     }));
   },
 
-  updateOrder: (order: Order) => {
+  updateOrder: (id: string, updates: Partial<Order>) => {
     set((state) => ({
-      orders: state.orders.map((o) => (o.id === order.id ? order : o)),
+      orders: state.orders.map((o) =>
+        o.id === id ? { ...o, ...updates } : o
+      ),
       selectedOrder:
-        state.selectedOrder?.id === order.id ? order : state.selectedOrder,
+        state.selectedOrder?.id === id
+          ? { ...state.selectedOrder, ...updates }
+          : state.selectedOrder,
     }));
+  },
+
+  deleteOrder: (id: string) => {
+    set((state) => ({
+      orders: state.orders.filter((o) => o.id !== id),
+      selectedOrder: state.selectedOrder?.id === id ? null : state.selectedOrder,
+    }));
+  },
+
+  getOrdersByStatus: (status: OrderStatus) => {
+    return get().orders.filter((order) => order.status === status);
   },
 }));
