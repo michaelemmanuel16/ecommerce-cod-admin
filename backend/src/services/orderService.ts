@@ -99,7 +99,9 @@ export class OrderService {
       const searchNum = parseInt(search);
       where.OR = [
         ...(isNaN(searchNum) ? [] : [{ id: searchNum }]),
-        { customer: { phoneNumber: { contains: search } } }
+        { customer: { phoneNumber: { contains: search, mode: 'insensitive' } } },
+        { customer: { firstName: { contains: search, mode: 'insensitive' } } },
+        { customer: { lastName: { contains: search, mode: 'insensitive' } } }
       ];
     }
 

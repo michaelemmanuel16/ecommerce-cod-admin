@@ -223,6 +223,58 @@ export const requireResourcePermission = (resource: string, action: string) => {
   };
 };
 
+// Resource-action permission middleware that checks if user has ANY of the specified permissions
+export const requireEitherPermission = (checks: Array<{resource: string, action: string}>) => {
+  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      // Super admin always has all permissions
+      if (req.user.role === 'super_admin') {
+        next();
+        return;
+      }
+
+      // Get permissions from database (or cache)
+      const permissions = await getPermissionsFromDatabase();
+      const rolePermissions = permissions[req.user.role];
+
+      if (!rolePermissions) {
+        res.status(403).json({
+          error: 'Forbidden: No permissions configured for your role',
+          code: 'NO_ROLE_PERMISSIONS'
+        });
+        return;
+      }
+
+      // Check if user has ANY of the specified permissions
+      const hasAnyPermission = checks.some(check => {
+        const resourcePermissions = rolePermissions[check.resource];
+        return resourcePermissions && Array.isArray(resourcePermissions) && resourcePermissions.includes(check.action);
+      });
+
+      if (!hasAnyPermission) {
+        res.status(403).json({
+          error: `Forbidden: Requires one of: ${checks.map(c => `${c.action} ${c.resource}`).join(', ')}`,
+          code: 'INSUFFICIENT_PERMISSION',
+          required: checks,
+          userRole: req.user.role
+        });
+        return;
+      }
+
+      // User has at least one of the required permissions
+      next();
+    } catch (error) {
+      console.error('Error checking permissions:', error);
+      res.status(500).json({ error: 'Failed to check permissions' });
+    }
+  };
+};
+
 // Helper to clear permissions cache (call after updating permissions)
 export const clearPermissionsCache = (): void => {
   permissionsCache = null;

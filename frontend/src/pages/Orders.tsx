@@ -10,6 +10,7 @@ import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { OrderForm } from '../components/forms/OrderForm';
 import { useOrdersStore } from '../stores/ordersStore';
 import { useAuthStore } from '../stores/authStore';
+import { usePermissions } from '../hooks/usePermissions';
 import { Order, OrderStatus } from '../types';
 import { ordersService } from '../services/orders.service';
 import toast from 'react-hot-toast';
@@ -57,6 +58,7 @@ const statusOptions: { value: OrderStatus; label: string }[] = [
 export const Orders: React.FC = () => {
   const navigate = useNavigate();
   const { user, updatePreferences } = useAuthStore();
+  const { can } = usePermissions();
   const [viewMode, setViewMode] = useState<ViewMode>(user?.preferences?.ordersDefaultView || 'list');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
@@ -167,7 +169,10 @@ export const Orders: React.FC = () => {
   );
 
   const handleSearch = (query: string) => {
-    console.log('Search:', query);
+    setFilters({
+      ...filters,
+      search: query,
+    });
   };
 
   const handleDateRangeChange = (startDate: string | undefined, endDate: string | undefined) => {
@@ -407,10 +412,12 @@ export const Orders: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <Button variant="ghost" size="sm" onClick={handleBulkDelete}>
-                <Trash2 className="w-4 h-4 mr-1" />
-                Delete Selected
-              </Button>
+              {can('orders', 'delete') && (
+                <Button variant="ghost" size="sm" onClick={handleBulkDelete}>
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  Delete Selected
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={() => setSelectedOrderIds(new Set())}>
                 Clear Selection
               </Button>
@@ -598,13 +605,15 @@ export const Orders: React.FC = () => {
                               >
                                 <Edit2 className="w-5 h-5" />
                               </button>
-                              <button
-                                onClick={() => handleDeleteOrder(order)}
-                                className="text-red-600 hover:text-red-800"
-                                title="Delete Order"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
+                              {can('orders', 'delete') && (
+                                <button
+                                  onClick={() => handleDeleteOrder(order)}
+                                  className="text-red-600 hover:text-red-800"
+                                  title="Delete Order"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { DashboardConfig, DashboardData } from '../config/types/dashboard';
 import { useAnalyticsStore } from '../stores/analyticsStore';
 import { useAuthStore } from '../stores/authStore';
+import { useOrdersStore } from '../stores/ordersStore';
 import { getSocket } from '../services/socket';
 import { DateRangeFilter } from '../pages/DynamicDashboard';
 
@@ -415,6 +416,36 @@ async function executeFetcher(
       break;
 
     case 'fetchOrdersByStatus':
+      // Fetch orders from the orders store and group by status for current sales rep
+      const ordersStore = useOrdersStore.getState();
+
+      // Ensure orders are loaded
+      if (ordersStore.orders.length === 0) {
+        await ordersStore.fetchOrders();
+      }
+
+      const allOrders = useOrdersStore.getState().orders;
+
+      // Filter orders for current sales rep if role is sales_rep
+      const relevantOrders = user?.role === 'sales_rep'
+        ? allOrders.filter(order => order.assignedSalesRepId === user.id)
+        : allOrders;
+
+      // Group by status and count
+      const statusCounts: Record<string, number> = {};
+      relevantOrders.forEach(order => {
+        const status = order.status || 'unknown';
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
+      });
+
+      // Convert to array format for chart
+      dashboardData.ordersByStatus = Object.entries(statusCounts)
+        .map(([status, count]) => ({ status, count }))
+        .sort((a, b) => b.count - a.count); // Sort by count descending
+
+      console.log('📊 Orders by status:', dashboardData.ordersByStatus);
+      break;
+
     case 'fetchTopProducts':
     case 'fetchRevenueByRegion':
     case 'fetchRecentOrders':

@@ -33,6 +33,16 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
 };
 
+const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }> = ({ children, allowedRoles }) => {
+  const { user } = useAuthStore();
+
+  if (!user || !allowedRoles.includes(user.role)) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 function App() {
   const { isAuthenticated, refreshPermissions, setupPermissionListener } = useAuthStore();
 
@@ -121,9 +131,11 @@ function App() {
               </Suspense>
             } />
             <Route path="analytics" element={
-              <Suspense fallback={<Loading />}>
-                <Analytics />
-              </Suspense>
+              <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'accountant']}>
+                <Suspense fallback={<Loading />}>
+                  <Analytics />
+                </Suspense>
+              </RoleGuard>
             } />
             <Route path="workflows" element={
               <Suspense fallback={<Loading />}>

@@ -150,79 +150,6 @@ export const salesRepConfig: DashboardConfig = {
       },
     },
 
-    // My Top Products (Bar Chart)
-    {
-      id: 'my-top-products',
-      type: 'barChart',
-      title: 'My Top Products',
-      dataSource: 'productPerformance',
-      gridPosition: { row: 2, col: 1, colSpan: 2 },
-      height: 300,
-      config: {
-        xAxis: 'name',
-        yAxis: 'revenue',
-        orientation: 'vertical',
-        maxBars: 10,
-        format: 'currency',
-        colors: ['#3B82F6'],
-      },
-    },
-
-    // My Commission Over Time (Line Chart)
-    {
-      id: 'my-commission-trends',
-      type: 'lineChart',
-      title: 'My Commission Over Time',
-      dataSource: 'salesTrends',
-      gridPosition: { row: 2, col: 3, colSpan: 1 },
-      height: 300,
-      config: {
-        xAxis: 'date',
-        yAxis: ['commission'],
-        colors: ['#10B981'],
-        showDots: false,
-        fill: true,
-        format: 'currency',
-      },
-    },
-
-    // My Customer Acquisition (Bar Chart)
-    {
-      id: 'my-customer-acquisition',
-      type: 'barChart',
-      title: 'My Customer Acquisition',
-      dataSource: 'customerAcquisition',
-      gridPosition: { row: 3, col: 1, colSpan: 3 },
-      height: 300,
-      config: {
-        xAxis: 'month',
-        yAxis: 'customers',
-        orientation: 'vertical',
-        format: 'number',
-        colors: ['#8B5CF6'],
-      },
-    },
-
-    // My Recent Customers (Data Table)
-    {
-      id: 'my-recent-customers',
-      type: 'dataTable',
-      title: 'My Recent Customers',
-      dataSource: 'recentCustomers',
-      gridPosition: { row: 4, col: 1, colSpan: 3 },
-      height: 400,
-      config: {
-        columns: [
-          { key: 'name', label: 'Customer', sortable: true },
-          { key: 'phone', label: 'Phone', sortable: false },
-          { key: 'totalOrders', label: 'Orders', sortable: true, format: 'number' },
-          { key: 'totalSpent', label: 'Spent', sortable: true, format: 'currency' },
-          { key: 'lastOrderDate', label: 'Last Order', sortable: true, format: 'date' },
-        ],
-        maxRows: 10,
-        onRowClick: true,
-      },
-    },
   ],
 
   // Real-time updates
@@ -238,9 +165,6 @@ export const salesRepConfig: DashboardConfig = {
     'fetchDashboardMetrics',
     'fetchSalesTrends',
     'fetchOrdersByStatus',
-    'fetchProductPerformance',
-    'fetchCustomerAcquisition',
-    'fetchRecentCustomers',
     'fetchRepPerformance',
   ],
 };

@@ -34,7 +34,7 @@ export const usePermissions = () => {
       case 'customers':
         return can('customers', 'view');
       case 'products':
-        return can('products', 'view');
+        return can('products', 'view') && user?.role !== 'sales_rep';
       case 'delivery-agents':
         return isManager; // Manager and above
       case 'customer-reps':
@@ -42,7 +42,7 @@ export const usePermissions = () => {
       case 'financial':
         return can('financial', 'view');
       case 'analytics':
-        return can('analytics', 'view');
+        return isManager || user?.role === 'accountant';
       case 'workflows':
         return can('workflows', 'view');
       case 'settings':
