@@ -13,7 +13,8 @@ type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'busines
 export const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const { user } = useAuthStore();
-  const { isSuperAdmin } = usePermissions();
+  const { isSuperAdmin, isAdmin } = usePermissions();
+  const isSalesRep = user?.role === 'sales_rep';
 
   const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null);
   const [businessForm, setBusinessForm] = useState({
@@ -121,7 +122,13 @@ export const Settings: React.FC = () => {
                   <input
                     type="text"
                     defaultValue={user?.firstName || ''}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={isSalesRep}
+                    readOnly={isSalesRep}
+                    className={`w-full px-4 py-2 border border-gray-300 rounded-lg ${
+                      isSalesRep
+                        ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
+                        : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                    }`}
                   />
                 </div>
                 <div>
@@ -131,7 +138,13 @@ export const Settings: React.FC = () => {
                   <input
                     type="text"
                     defaultValue={user?.lastName || ''}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={isSalesRep}
+                    readOnly={isSalesRep}
+                    className={`w-full px-4 py-2 border border-gray-300 rounded-lg ${
+                      isSalesRep
+                        ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
+                        : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                    }`}
                   />
                 </div>
                 <div>
@@ -143,7 +156,13 @@ export const Settings: React.FC = () => {
                     <input
                       type="email"
                       defaultValue={user?.email || ''}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={isSalesRep}
+                      readOnly={isSalesRep}
+                      className={`w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg ${
+                        isSalesRep
+                          ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
+                          : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                      }`}
                     />
                   </div>
                 </div>
@@ -156,17 +175,25 @@ export const Settings: React.FC = () => {
                     <input
                       type="tel"
                       placeholder="+1 (555) 000-0000"
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={isSalesRep}
+                      readOnly={isSalesRep}
+                      className={`w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg ${
+                        isSalesRep
+                          ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
+                          : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                      }`}
                     />
                   </div>
                 </div>
               </div>
-              <div className="mt-6 flex justify-end">
-                <Button variant="primary">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Changes
-                </Button>
-              </div>
+              {!isSalesRep && (
+                <div className="mt-6 flex justify-end">
+                  <Button variant="primary">
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Changes
+                  </Button>
+                </div>
+              )}
             </div>
           </Card>
 
@@ -200,30 +227,32 @@ export const Settings: React.FC = () => {
             </div>
           </Card>
 
-          <Card>
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Display Preferences</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between py-4 border-b border-gray-200">
-                  <div>
-                    <h4 className="font-medium text-gray-900">Default Orders View</h4>
-                    <p className="text-sm text-gray-600">Choose your preferred view for the Orders page</p>
+          {!isSalesRep && (
+            <Card>
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Display Preferences</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between py-4 border-b border-gray-200">
+                    <div>
+                      <h4 className="font-medium text-gray-900">Default Orders View</h4>
+                      <p className="text-sm text-gray-600">Choose your preferred view for the Orders page</p>
+                    </div>
+                    <select
+                      value={user?.preferences?.ordersDefaultView || 'kanban'}
+                      onChange={(e) => {
+                        const { updatePreferences } = useAuthStore.getState();
+                        updatePreferences({ ordersDefaultView: e.target.value as 'kanban' | 'list' });
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="kanban">Kanban Board</option>
+                      <option value="list">List View</option>
+                    </select>
                   </div>
-                  <select
-                    value={user?.preferences?.ordersDefaultView || 'kanban'}
-                    onChange={(e) => {
-                      const { updatePreferences } = useAuthStore.getState();
-                      updatePreferences({ ordersDefaultView: e.target.value as 'kanban' | 'list' });
-                    }}
-                    className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="kanban">Kanban Board</option>
-                    <option value="list">List View</option>
-                  </select>
                 </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+          )}
         </div>
       )}
 
@@ -242,16 +271,18 @@ export const Settings: React.FC = () => {
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
               </div>
-              <div className="flex items-center justify-between py-4 border-b border-gray-200">
-                <div>
-                  <h4 className="font-medium text-gray-900">Payment Notifications</h4>
-                  <p className="text-sm text-gray-600">Get notified about payment confirmations and failures</p>
+              {!isSalesRep && (
+                <div className="flex items-center justify-between py-4 border-b border-gray-200">
+                  <div>
+                    <h4 className="font-medium text-gray-900">Payment Notifications</h4>
+                    <p className="text-sm text-gray-600">Get notified about payment confirmations and failures</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" defaultChecked />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" defaultChecked />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
+              )}
             </div>
             <div className="mt-6 flex justify-end">
               <Button variant="primary">
@@ -267,42 +298,62 @@ export const Settings: React.FC = () => {
         <div className="space-y-6">
           <Card>
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Current Password
-                  </label>
-                  <input
-                    type="password"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    New Password
-                  </label>
-                  <input
-                    type="password"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Confirm New Password
-                  </label>
-                  <input
-                    type="password"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end">
-                <Button variant="primary">
-                  <Save className="w-4 h-4 mr-2" />
-                  Update Password
-                </Button>
-              </div>
+              {(isSuperAdmin || isAdmin) ? (
+                <>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Current Password
+                      </label>
+                      <input
+                        type="password"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        New Password
+                      </label>
+                      <input
+                        type="password"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Confirm New Password
+                      </label>
+                      <input
+                        type="password"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-6 flex justify-end">
+                    <Button variant="primary">
+                      <Save className="w-4 h-4 mr-2" />
+                      Update Password
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Security Settings</h3>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start">
+                      <Shield className="w-5 h-5 text-blue-600 mr-3 mt-0.5" />
+                      <div>
+                        <h4 className="font-medium text-blue-900 mb-1">Password Changes Restricted</h4>
+                        <p className="text-sm text-blue-700">
+                          For security reasons, password changes must be requested from your administrator.
+                          Please contact a Super Admin or Admin to reset your password.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </Card>
         </div>
