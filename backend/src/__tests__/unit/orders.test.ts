@@ -1,15 +1,43 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+
+// Mock server module to prevent circular dependency
+jest.mock('../../server', () => ({
+  io: {
+    emit: jest.fn(),
+    to: jest.fn().mockReturnThis(),
+  },
+}));
+
+// Mock workflow queue
+jest.mock('../../queues/workflowQueue', () => ({
+  workflowQueue: {
+    add: jest.fn().mockResolvedValue({}),
+  },
+}));
+
+// Mock orderService
+jest.mock('../../services/orderService', () => ({
+  __esModule: true,
+  default: {
+    getAllOrders: jest.fn(),
+    createOrder: jest.fn(),
+    getOrderById: jest.fn(),
+    updateOrderStatus: jest.fn(),
+  },
+}));
+
 import {
   getAllOrders,
   createOrder,
   getOrder,
   updateOrderStatus,
 } from '../../controllers/orderController';
-import { prismaMock } from '../mocks/prisma.mock';
+import orderService from '../../services/orderService';
 
 describe('Orders Controller', () => {
   let mockReq: any;
   let mockRes: any;
+  let mockNext: any;
 
   beforeEach(() => {
     mockReq = {
@@ -22,19 +50,20 @@ describe('Orders Controller', () => {
       status: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),
     };
+    mockNext = jest.fn();
   });
 
   describe('getAllOrders', () => {
     it('should return paginated orders', async () => {
       const mockOrders = [
         {
-          id: 'order-1',
+          id: 1,
           orderNumber: '1001',
           status: 'pending_confirmation',
           totalAmount: 100,
         },
         {
-          id: 'order-2',
+          id: 2,
           orderNumber: '1002',
           status: 'confirmed',
           totalAmount: 200,
@@ -43,8 +72,15 @@ describe('Orders Controller', () => {
 
       mockReq.query = { page: '1', limit: '20' };
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
-      prismaMock.order.count.mockResolvedValue(2);
+      (orderService.getAllOrders as jest.Mock).mockResolvedValue({
+        orders: mockOrders,
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 2,
+          pages: 1,
+        },
+      });
 
       await getAllOrders(mockReq, mockRes);
 
@@ -62,16 +98,16 @@ describe('Orders Controller', () => {
     it('should filter orders by status', async () => {
       mockReq.query = { status: 'confirmed' };
 
-      prismaMock.order.findMany.mockResolvedValue([]);
-      prismaMock.order.count.mockResolvedValue(0);
+      (orderService.getAllOrders as jest.Mock).mockResolvedValue({
+        orders: [],
+        pagination: { page: 1, limit: 50, total: 0, pages: 0 },
+      });
 
       await getAllOrders(mockReq, mockRes);
 
-      expect(prismaMock.order.findMany).toHaveBeenCalledWith(
+      expect(orderService.getAllOrders).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({
-            status: 'confirmed',
-          }),
+          status: ['confirmed'],
         })
       );
     });
@@ -79,21 +115,23 @@ describe('Orders Controller', () => {
     it('should search orders by order number', async () => {
       mockReq.query = { search: '1001' };
 
-      prismaMock.order.findMany.mockResolvedValue([]);
-      prismaMock.order.count.mockResolvedValue(0);
+      (orderService.getAllOrders as jest.Mock).mockResolvedValue({
+        orders: [],
+        pagination: { page: 1, limit: 50, total: 0, pages: 0 },
+      });
 
       await getAllOrders(mockReq, mockRes);
 
-      expect(prismaMock.order.findMany).toHaveBeenCalled();
+      expect(orderService.getAllOrders).toHaveBeenCalled();
     });
   });
 
   describe('createOrder', () => {
     it('should create a new order', async () => {
       const orderData = {
-        customerId: 'customer-123',
+        customerId: 123,
         orderItems: [
-          { productId: 'product-1', quantity: 2, unitPrice: 50 },
+          { productId: 1, quantity: 2, unitPrice: 50 },
         ],
         subtotal: 100,
         totalAmount: 100,
@@ -107,33 +145,30 @@ describe('Orders Controller', () => {
       mockReq.body = orderData;
 
       const mockOrder = {
-        id: 'order-123',
+        id: 123,
         orderNumber: '1001',
         ...orderData,
       };
 
-      prismaMock.order.count.mockResolvedValue(0);
-      prismaMock.order.create.mockResolvedValue(mockOrder as any);
-      prismaMock.customer.update.mockResolvedValue({} as any);
+      (orderService.createOrder as jest.Mock).mockResolvedValue(mockOrder);
 
       await createOrder(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(201);
       expect(mockRes.json).toHaveBeenCalledWith({ order: mockOrder });
-      expect(prismaMock.customer.update).toHaveBeenCalled();
     });
   });
 
   describe('getOrder', () => {
     it('should return order by id', async () => {
       const mockOrder = {
-        id: 'order-123',
+        id: 123,
         orderNumber: 'ORD-001',
-        customer: { id: 'customer-1', firstName: 'John' },
+        customer: { id: 1, firstName: 'John' },
       };
 
-      mockReq.params = { id: 'order-123' };
-      prismaMock.order.findUnique.mockResolvedValue(mockOrder as any);
+      mockReq.params = { id: '123' };
+      (orderService.getOrderById as jest.Mock).mockResolvedValue(mockOrder);
 
       await getOrder(mockReq, mockRes);
 
@@ -141,35 +176,37 @@ describe('Orders Controller', () => {
     });
 
     it('should throw error if order not found', async () => {
-      mockReq.params = { id: 'invalid-id' };
-      prismaMock.order.findUnique.mockResolvedValue(null);
+      mockReq.params = { id: '999' };
+      (orderService.getOrderById as jest.Mock).mockRejectedValue(
+        new Error('Order not found')
+      );
 
-      await expect(getOrder(mockReq, mockRes)).rejects.toThrow('Order not found');
+      await expect(getOrder(mockReq, mockRes, mockNext)).rejects.toThrow('Order not found');
     });
   });
 
   describe('updateOrderStatus', () => {
     it('should update order status', async () => {
       const mockOrder = {
-        id: 'order-123',
+        id: 123,
         orderNumber: 'ORD-001',
         status: 'confirmed',
       };
 
-      mockReq.params = { id: 'order-123' };
+      mockReq.params = { id: '123' };
       mockReq.body = { status: 'confirmed', notes: 'Order confirmed' };
 
-      prismaMock.order.update.mockResolvedValue(mockOrder as any);
+      (orderService.updateOrderStatus as jest.Mock).mockResolvedValue(mockOrder);
 
       await updateOrderStatus(mockReq, mockRes);
 
       expect(mockRes.json).toHaveBeenCalledWith({ order: mockOrder });
-      expect(prismaMock.order.update).toHaveBeenCalledWith(
+      expect(orderService.updateOrderStatus).toHaveBeenCalledWith(
+        '123',
         expect.objectContaining({
-          where: { id: 'order-123' },
-          data: expect.objectContaining({
-            status: 'confirmed',
-          }),
+          status: 'confirmed',
+          notes: 'Order confirmed',
+          changedBy: 'user-123',
         })
       );
     });

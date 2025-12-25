@@ -69,18 +69,26 @@ describe('WebhookService', () => {
       }
     };
 
+    const webhookBody = {
+      customer_phone: '+1234567890',
+      address: '123 Main St',
+      amount: 100,
+      city: 'New York',
+      state: 'NY',
+      zip: '10001',
+      area: 'Manhattan'
+    };
+
+    // Generate valid signature for the webhook body
+    const generateSignature = (body: any, secret: string) => {
+      const hmac = crypto.createHmac('sha256', secret);
+      return hmac.update(JSON.stringify(body)).digest('hex');
+    };
+
     const webhookData = {
-      signature: 'valid-signature',
+      signature: generateSignature(webhookBody, 'test-secret'),
       apiKey: 'test-api-key',
-      body: {
-        customer_phone: '+1234567890',
-        address: '123 Main St',
-        amount: 100,
-        city: 'New York',
-        state: 'NY',
-        zip: '10001',
-        area: 'Manhattan'
-      },
+      body: webhookBody,
       headers: { 'content-type': 'application/json' },
       endpoint: '/api/webhooks/receive',
       method: 'POST'
@@ -143,14 +151,16 @@ describe('WebhookService', () => {
     });
 
     it('should handle multiple orders in webhook', async () => {
+      const multiOrderBody = {
+        orders: [
+          webhookBody,
+          { ...webhookBody, customer_phone: '+9876543210' }
+        ]
+      };
       const multiOrderData = {
         ...webhookData,
-        body: {
-          orders: [
-            webhookData.body,
-            { ...webhookData.body, customer_phone: '+9876543210' }
-          ]
-        }
+        body: multiOrderBody,
+        signature: generateSignature(multiOrderBody, 'test-secret')
       };
 
       prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);

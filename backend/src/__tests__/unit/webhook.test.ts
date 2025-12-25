@@ -1,14 +1,28 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import { importOrdersViaWebhook } from '../../controllers/webhookController';
-import { prismaMock } from '../mocks/prisma.mock';
-import { verifySignature } from '../../utils/crypto';
 
+// Mock dependencies BEFORE imports
 jest.mock('../../utils/crypto');
 jest.mock('../../utils/logger', () => ({
   info: jest.fn(),
   error: jest.fn(),
   warn: jest.fn(),
 }));
+jest.mock('../../server', () => ({
+  io: {
+    emit: jest.fn(),
+    to: jest.fn().mockReturnThis(),
+  },
+}));
+jest.mock('../../queues/workflowQueue', () => ({
+  workflowQueue: {
+    add: jest.fn().mockResolvedValue({}),
+  },
+}));
+
+// Import prismaMock first to activate the jest.mock in prisma.mock.ts
+import { prismaMock } from '../mocks/prisma.mock';
+import { verifySignature } from '../../utils/crypto';
+import { importOrdersViaWebhook } from '../../controllers/webhookController';
 
 describe('Webhook Controller', () => {
   let mockReq: any;
@@ -84,11 +98,17 @@ describe('Webhook Controller', () => {
 
     it('should verify webhook signature when provided', async () => {
       const webhookData = { orders: [] };
-      mockReq.headers['x-webhook-signature'] = 'valid-signature';
+      mockReq.headers['x-webhook-signature'] = 'invalid-signature';
+      mockReq.headers['x-api-key'] = 'test-api-key';
       mockReq.body = webhookData;
 
-      (verifySignature as jest.Mock).mockReturnValue(false);
       prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
+      prismaMock.webhookConfig.findFirst.mockResolvedValue({
+        id: 'webhook-1',
+        apiKey: 'test-api-key',
+        secret: 'test-secret',
+        isActive: true,
+      } as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
       await expect(importOrdersViaWebhook(mockReq, mockRes)).rejects.toThrow(

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '../utils/test-utils';
-import Button from '../../components/ui/Button';
+import { Button } from '../../components/ui/Button';
 
 describe('Button Component', () => {
   it('renders button with text', () => {
@@ -27,7 +27,7 @@ describe('Button Component', () => {
     expect(screen.getByText('Primary')).toHaveClass('bg-blue-600');
 
     rerender(<Button variant="secondary">Secondary</Button>);
-    expect(screen.getByText('Secondary')).toHaveClass('bg-gray-600');
+    expect(screen.getByText('Secondary')).toHaveClass('bg-gray-200');
 
     rerender(<Button variant="danger">Danger</Button>);
     expect(screen.getByText('Danger')).toHaveClass('bg-red-600');

@@ -408,7 +408,7 @@ export class AnalyticsService {
    * Get customer insights
    */
   async getCustomerInsights() {
-    const [totalCustomers, activeCustomers, topCustomers, avgOrderValue] =
+    const [totalCustomers, activeCustomers, topCustomers, customersByCity, avgOrderValue] =
       await Promise.all([
         prisma.customer.count(),
         prisma.customer.count({
@@ -427,6 +427,10 @@ export class AnalyticsService {
             totalSpent: true
           }
         }),
+        prisma.customer.groupBy({
+          by: ['city'],
+          _count: { city: true }
+        }),
         prisma.order.aggregate({
           _avg: { totalAmount: true }
         })
@@ -436,6 +440,10 @@ export class AnalyticsService {
       totalCustomers,
       activeCustomers,
       topCustomers,
+      customersByCity: customersByCity.map(group => ({
+        city: group.city,
+        count: group._count.city
+      })),
       avgOrderValue: avgOrderValue._avg.totalAmount || 0
     };
 

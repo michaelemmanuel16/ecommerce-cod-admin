@@ -443,6 +443,7 @@ describe('WorkflowService', () => {
       ];
 
       prismaMock.workflow.findMany.mockResolvedValue(mockWorkflows as any);
+      prismaMock.workflow.findUnique.mockResolvedValue(mockWorkflows[0] as any);
       prismaMock.workflowExecution.create.mockResolvedValue({} as any);
 
       await workflowService.triggerStatusChangeWorkflows(

@@ -247,6 +247,7 @@ describe('DeliveryService', () => {
     it('should auto-assign agent with lowest workload', async () => {
       prismaMock.order.findUnique.mockResolvedValue(mockOrder as any);
       prismaMock.user.findMany.mockResolvedValue(mockAgents as any);
+      prismaMock.user.findUnique.mockResolvedValue(mockAgents[0] as any);
       prismaMock.delivery.findUnique.mockResolvedValue(null);
       prismaMock.delivery.create.mockResolvedValue({
         id: 'delivery-1',

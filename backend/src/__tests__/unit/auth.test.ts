@@ -1,16 +1,27 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import bcrypt from 'bcrypt';
-import { login, register, refresh, logout } from '../../controllers/authController';
-import { prismaMock } from '../mocks/prisma.mock';
-import { generateAccessToken, generateRefreshToken } from '../../utils/jwt';
 
-// Mock dependencies
+// Mock dependencies BEFORE any other imports
 jest.mock('../../utils/jwt');
 jest.mock('bcrypt');
+jest.mock('../../services/adminService', () => ({
+  adminService: {
+    getRolePermissions: jest.fn()
+  }
+}));
+
+// Import prismaMock first to activate the jest.mock in prisma.mock.ts
+import { prismaMock } from '../mocks/prisma.mock';
+
+// Now import other dependencies
+import bcrypt from 'bcrypt';
+import { generateAccessToken, generateRefreshToken } from '../../utils/jwt';
+import { login, register, refresh, logout } from '../../controllers/authController';
+import { adminService } from '../../services/adminService';
 
 describe('Auth Controller', () => {
   let mockReq: any;
   let mockRes: any;
+  let mockNext: any;
 
   beforeEach(() => {
     mockReq = {
@@ -21,6 +32,14 @@ describe('Auth Controller', () => {
       status: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),
     };
+    mockNext = jest.fn();
+
+    // Setup adminService mock
+    (adminService.getRolePermissions as jest.Mock).mockResolvedValue({
+      admin: { users: { create: true, read: true, update: true, delete: true } },
+      customer_rep: { orders: { create: true, read: true } },
+      sales_rep: { orders: { create: true, read: true } }
+    });
   });
 
   describe('login', () => {
@@ -46,13 +65,15 @@ describe('Auth Controller', () => {
       (generateRefreshToken as jest.Mock).mockReturnValue('refresh_token');
       prismaMock.user.update.mockResolvedValue(mockUser as any);
 
-      await login(mockReq, mockRes);
+      await login(mockReq, mockRes, mockNext);
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
           message: 'Login successful',
-          accessToken: 'access_token',
-          refreshToken: 'refresh_token',
+          tokens: expect.objectContaining({
+            accessToken: 'access_token',
+            refreshToken: 'refresh_token',
+          })
         })
       );
     });
@@ -65,7 +86,9 @@ describe('Auth Controller', () => {
 
       prismaMock.user.findUnique.mockResolvedValue(null);
 
-      await expect(login(mockReq, mockRes)).rejects.toThrow();
+      await login(mockReq, mockRes, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
     });
 
     it('should reject login for inactive user', async () => {
@@ -83,7 +106,11 @@ describe('Auth Controller', () => {
 
       prismaMock.user.findUnique.mockResolvedValue(mockUser as any);
 
-      await expect(login(mockReq, mockRes)).rejects.toThrow('Account is deactivated');
+      await login(mockReq, mockRes, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Account is deactivated' })
+      );
     });
   });
 
@@ -108,7 +135,7 @@ describe('Auth Controller', () => {
         createdAt: new Date(),
       } as any);
 
-      await register(mockReq, mockRes);
+      await register(mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(201);
       expect(mockRes.json).toHaveBeenCalledWith(
@@ -126,16 +153,20 @@ describe('Auth Controller', () => {
 
       prismaMock.user.findUnique.mockResolvedValue({ id: '123' } as any);
 
-      await expect(register(mockReq, mockRes)).rejects.toThrow('User already exists');
+      await register(mockReq, mockRes, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'User already exists' })
+      );
     });
   });
 
   describe('refresh', () => {
     it('should refresh access token with valid refresh token', async () => {
       const mockUser = {
-        id: '123',
+        id: 123,
         email: 'test@example.com',
-        role: 'admin',
+        role: 'admin' as any,
         refreshToken: 'valid_refresh_token',
       };
 
@@ -143,8 +174,10 @@ describe('Auth Controller', () => {
         refreshToken: 'valid_refresh_token',
       };
 
-      jest.requireMock('../../utils/jwt').verifyRefreshToken.mockReturnValue({
-        id: '123',
+      // Import verifyRefreshToken and mock it
+      const { verifyRefreshToken } = await import('../../utils/jwt');
+      (verifyRefreshToken as jest.Mock).mockReturnValue({
+        id: 123,  // Must be a number, not string
         email: 'test@example.com',
         role: 'admin',
       });
@@ -152,7 +185,7 @@ describe('Auth Controller', () => {
       prismaMock.user.findUnique.mockResolvedValue(mockUser as any);
       (generateAccessToken as jest.Mock).mockReturnValue('new_access_token');
 
-      await refresh(mockReq, mockRes);
+      await refresh(mockReq, mockRes, mockNext);
 
       expect(mockRes.json).toHaveBeenCalledWith({
         accessToken: 'new_access_token',
@@ -166,7 +199,7 @@ describe('Auth Controller', () => {
 
       prismaMock.user.update.mockResolvedValue({} as any);
 
-      await logout(mockReq, mockRes);
+      await logout(mockReq, mockRes, mockNext);
 
       expect(mockRes.json).toHaveBeenCalledWith({
         message: 'Logout successful',

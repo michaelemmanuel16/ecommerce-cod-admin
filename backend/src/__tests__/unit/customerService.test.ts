@@ -27,7 +27,7 @@ describe('CustomerService', () => {
       prismaMock.customer.findUnique.mockResolvedValue(null);
 
       const mockCustomer = {
-        id: 'customer-1',
+        id: 1,
         ...createCustomerData,
         totalOrders: 0,
         totalSpent: 0,
@@ -48,7 +48,7 @@ describe('CustomerService', () => {
 
     it('should throw error when phone number already exists', async () => {
       prismaMock.customer.findUnique.mockResolvedValue({
-        id: 'existing-customer',
+        id: 2,
         phoneNumber: '+1234567890'
       } as any);
 
@@ -62,7 +62,7 @@ describe('CustomerService', () => {
 
   describe('updateCustomer', () => {
     const mockCustomer = {
-      id: 'customer-1',
+      id: 1,
       firstName: 'John',
       lastName: 'Doe',
       phoneNumber: '+1234567890',
@@ -76,7 +76,7 @@ describe('CustomerService', () => {
         firstName: 'Jane'
       } as any);
 
-      const updated = await customerService.updateCustomer('customer-1', {
+      const updated = await customerService.updateCustomer('1', {
         firstName: 'Jane'
       });
 
@@ -88,17 +88,17 @@ describe('CustomerService', () => {
       prismaMock.customer.findUnique.mockResolvedValue(null);
 
       await expect(
-        customerService.updateCustomer('customer-1', { firstName: 'Jane' })
+        customerService.updateCustomer('1', { firstName: 'Jane' })
       ).rejects.toThrow(new AppError('Customer not found', 404));
     });
 
     it('should throw error when updating to duplicate phone number', async () => {
       prismaMock.customer.findUnique
         .mockResolvedValueOnce(mockCustomer as any)
-        .mockResolvedValueOnce({ id: 'other-customer' } as any);
+        .mockResolvedValueOnce({ id: 3 } as any);
 
       await expect(
-        customerService.updateCustomer('customer-1', {
+        customerService.updateCustomer('1', {
           phoneNumber: '+9876543210'
         })
       ).rejects.toThrow(new AppError('Phone number already in use', 400));
@@ -108,7 +108,7 @@ describe('CustomerService', () => {
       prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);
       prismaMock.customer.update.mockResolvedValue(mockCustomer as any);
 
-      const updated = await customerService.updateCustomer('customer-1', {
+      const updated = await customerService.updateCustomer('1', {
         phoneNumber: '+1234567890'
       });
 
@@ -119,24 +119,24 @@ describe('CustomerService', () => {
 
   describe('getCustomerAnalytics', () => {
     const mockCustomer = {
-      id: 'customer-1',
+      id: 1,
       firstName: 'John',
       lastName: 'Doe',
       orders: [
         {
-          id: 'order-1',
+          id: 1,
           totalAmount: 100,
           status: 'delivered',
           createdAt: new Date('2024-01-01')
         },
         {
-          id: 'order-2',
+          id: 2,
           totalAmount: 200,
           status: 'delivered',
           createdAt: new Date('2024-01-15')
         },
         {
-          id: 'order-3',
+          id: 3,
           totalAmount: 150,
           status: 'pending_confirmation',
           createdAt: new Date('2024-01-20')
@@ -147,7 +147,7 @@ describe('CustomerService', () => {
     it('should calculate customer analytics correctly', async () => {
       prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);
 
-      const analytics = await customerService.getCustomerAnalytics('customer-1');
+      const analytics = await customerService.getCustomerAnalytics('1');
 
       expect(analytics.totalOrders).toBe(3);
       expect(analytics.totalSpent).toBe(450);
@@ -162,7 +162,7 @@ describe('CustomerService', () => {
       prismaMock.customer.findUnique.mockResolvedValue(null);
 
       await expect(
-        customerService.getCustomerAnalytics('customer-1')
+        customerService.getCustomerAnalytics('1')
       ).rejects.toThrow(new AppError('Customer not found', 404));
     });
 
@@ -172,7 +172,7 @@ describe('CustomerService', () => {
         orders: []
       } as any);
 
-      const analytics = await customerService.getCustomerAnalytics('customer-1');
+      const analytics = await customerService.getCustomerAnalytics('1');
 
       expect(analytics.totalOrders).toBe(0);
       expect(analytics.totalSpent).toBe(0);
@@ -184,7 +184,7 @@ describe('CustomerService', () => {
 
   describe('mergeCustomers', () => {
     const primaryCustomer = {
-      id: 'primary-1',
+      id: 1,
       firstName: 'John',
       lastName: 'Doe',
       phoneNumber: '+1234567890',
@@ -194,7 +194,7 @@ describe('CustomerService', () => {
     };
 
     const secondaryCustomer = {
-      id: 'secondary-1',
+      id: 2,
       firstName: 'John',
       lastName: 'D',
       phoneNumber: '+1234567891',
@@ -202,9 +202,9 @@ describe('CustomerService', () => {
       totalSpent: 300,
       tags: ['regular'],
       orders: [
-        { id: 'order-1' },
-        { id: 'order-2' },
-        { id: 'order-3' }
+        { id: 1 },
+        { id: 2 },
+        { id: 3 }
       ]
     };
 
@@ -234,7 +234,7 @@ describe('CustomerService', () => {
         });
       });
 
-      const result = await customerService.mergeCustomers('primary-1', 'secondary-1');
+      const result = await customerService.mergeCustomers('1', '2');
 
       expect(result.message).toBe('Customers merged successfully');
     });
@@ -245,7 +245,7 @@ describe('CustomerService', () => {
         .mockResolvedValueOnce(secondaryCustomer as any);
 
       await expect(
-        customerService.mergeCustomers('primary-1', 'secondary-1')
+        customerService.mergeCustomers('1', '2')
       ).rejects.toThrow(new AppError('One or both customers not found', 404));
     });
 
@@ -255,14 +255,14 @@ describe('CustomerService', () => {
         .mockResolvedValueOnce(null);
 
       await expect(
-        customerService.mergeCustomers('primary-1', 'secondary-1')
+        customerService.mergeCustomers('1', '2')
       ).rejects.toThrow(new AppError('One or both customers not found', 404));
     });
   });
 
   describe('addCustomerTags', () => {
     const mockCustomer = {
-      id: 'customer-1',
+      id: 1,
       firstName: 'John',
       lastName: 'Doe',
       tags: ['vip', 'wholesale']
@@ -275,7 +275,7 @@ describe('CustomerService', () => {
         tags: ['vip', 'wholesale', 'priority']
       } as any);
 
-      const updated = await customerService.addCustomerTags('customer-1', ['priority']);
+      const updated = await customerService.addCustomerTags('1', ['priority']);
 
       expect(updated.tags).toContain('vip');
       expect(updated.tags).toContain('wholesale');
@@ -286,7 +286,7 @@ describe('CustomerService', () => {
       prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);
       prismaMock.customer.update.mockResolvedValue(mockCustomer as any);
 
-      const updated = await customerService.addCustomerTags('customer-1', ['vip']);
+      const updated = await customerService.addCustomerTags('1', ['vip']);
 
       expect(updated.tags.filter((tag: string) => tag === 'vip')).toHaveLength(1);
     });
@@ -294,7 +294,7 @@ describe('CustomerService', () => {
 
   describe('removeCustomerTags', () => {
     const mockCustomer = {
-      id: 'customer-1',
+      id: 1,
       firstName: 'John',
       lastName: 'Doe',
       tags: ['vip', 'wholesale', 'priority']
@@ -307,7 +307,7 @@ describe('CustomerService', () => {
         tags: ['vip', 'priority']
       } as any);
 
-      const updated = await customerService.removeCustomerTags('customer-1', ['wholesale']);
+      const updated = await customerService.removeCustomerTags('1', ['wholesale']);
 
       expect(updated.tags).not.toContain('wholesale');
       expect(updated.tags).toContain('vip');
@@ -318,7 +318,7 @@ describe('CustomerService', () => {
       prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);
       prismaMock.customer.update.mockResolvedValue(mockCustomer as any);
 
-      const updated = await customerService.removeCustomerTags('customer-1', ['nonexistent']);
+      const updated = await customerService.removeCustomerTags('1', ['nonexistent']);
 
       expect(updated.tags).toHaveLength(3);
     });

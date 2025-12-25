@@ -172,12 +172,13 @@ app.get('/', (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
-// Start server
-server.listen(PORT, () => {
-  logger.info(`Server running on port ${PORT}`);
-  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`Socket.io initialized`);
-  console.log(`
+// Start server only if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(PORT, () => {
+    logger.info(`Server running on port ${PORT}`);
+    logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    logger.info(`Socket.io initialized`);
+    console.log(`
     ╔═══════════════════════════════════════════════════════════════╗
     ║                                                               ║
     ║   E-commerce COD Admin API                                   ║
@@ -185,8 +186,9 @@ server.listen(PORT, () => {
     ║   Environment: ${process.env.NODE_ENV || 'development'}                                      ║
     ║                                                               ║
     ╚═══════════════════════════════════════════════════════════════╝
-  `);
-});
+    `);
+  });
+}
 
 // Graceful shutdown
 process.on('SIGTERM', () => {

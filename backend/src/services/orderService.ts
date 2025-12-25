@@ -64,6 +64,14 @@ interface UpdateOrderStatusData {
 
 export class OrderService {
   /**
+   * Generate unique order number
+   */
+  private async generateOrderNumber(): Promise<string> {
+    const count = await prisma.order.count();
+    return String(1000 + count + 1);
+  }
+
+  /**
    * Get all orders with filters and pagination
    */
   async getAllOrders(filters: OrderFilters) {
