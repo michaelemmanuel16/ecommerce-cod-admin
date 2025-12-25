@@ -40,7 +40,6 @@ export const KanbanBoard: React.FC = () => {
 
   useEffect(() => {
     fetchOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleDragStart = (event: DragStartEvent) => {
