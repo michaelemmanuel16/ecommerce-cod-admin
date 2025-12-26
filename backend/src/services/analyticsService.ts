@@ -23,6 +23,20 @@ function buildUserScopeFilter(userId?: number, userRole?: string) {
   return {};
 }
 
+/**
+ * Wrap Prisma query with timeout to prevent hanging requests
+ */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number = 15000,
+  errorMessage: string = 'Query timeout'
+): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+  );
+  return Promise.race([promise, timeout]);
+}
+
 export class AnalyticsService {
   /**
    * Get dashboard metrics
@@ -129,7 +143,9 @@ export class AnalyticsService {
         select: {
           scheduledTime: true,
           actualDeliveryTime: true
-        }
+        },
+        orderBy: { actualDeliveryTime: 'desc' },
+        take: 1000
       })
     ]);
 
@@ -408,46 +424,65 @@ export class AnalyticsService {
    * Get customer insights
    */
   async getCustomerInsights() {
-    const [totalCustomers, activeCustomers, topCustomers, customersByCity, avgOrderValue] =
-      await Promise.all([
-        prisma.customer.count(),
-        prisma.customer.count({
-          where: { isActive: true }
-        }),
-        prisma.customer.findMany({
-          where: { isActive: true },
-          orderBy: { totalSpent: 'desc' },
-          take: 10,
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true,
-            totalOrders: true,
-            totalSpent: true
-          }
-        }),
-        prisma.customer.groupBy({
-          by: ['city'],
-          _count: { city: true }
-        }),
-        prisma.order.aggregate({
-          _avg: { totalAmount: true }
-        })
-      ]);
+    try {
+      const [totalCustomers, activeCustomers, topCustomers, customersByArea, avgOrderValue] =
+        await withTimeout(
+          Promise.all([
+            prisma.customer.count(),
+            prisma.customer.count({
+              where: { isActive: true }
+            }),
+            prisma.customer.findMany({
+              where: { isActive: true },
+              orderBy: { totalSpent: 'desc' },
+              take: 10,
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                phoneNumber: true,
+                totalOrders: true,
+                totalSpent: true
+              }
+            }),
+            prisma.customer.groupBy({
+              by: ['area'],
+              _count: { area: true },
+              orderBy: { _count: { area: 'desc' } },
+              take: 20
+            }),
+            prisma.order.aggregate({
+              where: { status: 'delivered' },
+              _avg: { totalAmount: true }
+            })
+          ]),
+          15000,
+          'Customer insights query timeout'
+        );
 
-    const insights = {
-      totalCustomers,
-      activeCustomers,
-      topCustomers,
-      customersByCity: customersByCity.map(group => ({
-        city: group.city,
-        count: group._count.city
-      })),
-      avgOrderValue: avgOrderValue._avg.totalAmount || 0
-    };
+      const insights = {
+        totalCustomers,
+        activeCustomers,
+        topCustomers,
+        customersByArea: customersByArea.map(group => ({
+          area: group.area,
+          count: group._count.area
+        })),
+        avgOrderValue: avgOrderValue._avg.totalAmount || 0
+      };
 
-    return insights;
+      return insights;
+    } catch (error) {
+      console.error('[getCustomerInsights] Error:', error);
+      // Return empty data instead of crashing
+      return {
+        totalCustomers: 0,
+        activeCustomers: 0,
+        topCustomers: [],
+        customersByArea: [],
+        avgOrderValue: 0
+      };
+    }
   }
 
   /**

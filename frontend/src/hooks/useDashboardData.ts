@@ -364,8 +364,20 @@ async function executeFetcher(
       break;
 
     case 'fetchCustomerInsights':
-      await storeMethods.fetchCustomerInsights();
-      dashboardData.customerInsights = useAnalyticsStore.getState().customerInsights;
+      try {
+        await storeMethods.fetchCustomerInsights();
+        dashboardData.customerInsights = useAnalyticsStore.getState().customerInsights;
+      } catch (error) {
+        console.error('Failed to fetch customer insights:', error);
+        // Provide fallback data so dashboard still renders
+        dashboardData.customerInsights = {
+          totalCustomers: 0,
+          activeCustomers: 0,
+          topCustomers: [],
+          customersByArea: [],
+          avgOrderValue: 0
+        };
+      }
       break;
 
     case 'fetchPendingOrders':
