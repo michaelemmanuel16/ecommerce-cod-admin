@@ -289,8 +289,8 @@ describe('AnalyticsService', () => {
       ] as any);
 
       prismaMock.customer.groupBy.mockResolvedValue([
-        { city: 'New York', _count: 50 },
-        { city: 'Los Angeles', _count: 30 }
+        { area: 'New York', _count: { area: 50 } },
+        { area: 'Los Angeles', _count: { area: 30 } }
       ] as any);
 
       prismaMock.order.aggregate.mockResolvedValue({
@@ -303,7 +303,7 @@ describe('AnalyticsService', () => {
       expect(insights.activeCustomers).toBe(90);
       expect(insights.topCustomers).toHaveLength(2);
       expect(insights.topCustomers[0].totalSpent).toBe(1000);
-      expect(insights.customersByCity).toHaveLength(2);
+      expect(insights.customersByArea).toHaveLength(2);
       expect(insights.avgOrderValue).toBe(150);
     });
   });
