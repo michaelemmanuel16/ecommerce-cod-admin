@@ -25,3 +25,11 @@ export const webhookLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
+
+export const healthLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30, // 30 requests per minute (prevent health check DoS)
+  message: 'Too many health check requests',
+  standardHeaders: true,
+  legacyHeaders: false
+});

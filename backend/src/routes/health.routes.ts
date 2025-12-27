@@ -1,9 +1,20 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
+import { healthLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// Create singleton Redis instance for health checks (prevents connection leak)
+const redisClient = new Redis({
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379'),
+  password: process.env.REDIS_PASSWORD,
+  lazyConnect: true,
+  maxRetriesPerRequest: 1,
+  enableReadyCheck: false
+});
 
 // Health check endpoint - Basic
 router.get('/health', async (_req: Request, res: Response) => {
@@ -16,20 +27,13 @@ router.get('/health', async (_req: Request, res: Response) => {
 });
 
 // Readiness probe - Checks if service is ready to handle requests
-router.get('/ready', async (_req: Request, res: Response) => {
+router.get('/ready', healthLimiter, async (_req: Request, res: Response) => {
   try {
     // Check database connection
     await prisma.$queryRaw`SELECT 1`;
 
-    // Check Redis connection
-    const redis = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD,
-    });
-
-    await redis.ping();
-    redis.disconnect();
+    // Check Redis connection (use singleton instance)
+    await redisClient.ping();
 
     res.status(200).json({
       status: 'ready',
@@ -43,7 +47,10 @@ router.get('/ready', async (_req: Request, res: Response) => {
     res.status(503).json({
       status: 'not ready',
       timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error',
+      // Don't expose error details in production
+      error: process.env.NODE_ENV === 'development'
+        ? (error instanceof Error ? error.message : 'Unknown error')
+        : 'Service unavailable'
     });
   }
 });
@@ -60,7 +67,7 @@ router.get('/live', (_req: Request, res: Response) => {
 });
 
 // Detailed health check with all dependencies
-router.get('/health/detailed', async (_req: Request, res: Response) => {
+router.get('/health/detailed', healthLimiter, async (_req: Request, res: Response) => {
   const healthStatus = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -96,22 +103,18 @@ router.get('/health/detailed', async (_req: Request, res: Response) => {
     healthStatus.checks.database = {
       status: 'error',
       responseTime: 0,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      // Don't expose error details in production
+      error: process.env.NODE_ENV === 'development'
+        ? (error instanceof Error ? error.message : 'Unknown error')
+        : 'Connection error'
     } as any;
   }
 
-  // Check Redis
+  // Check Redis (use singleton instance)
   try {
-    const redis = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD,
-    });
-
     const redisStart = Date.now();
-    await redis.ping();
+    await redisClient.ping();
     const redisEnd = Date.now();
-    redis.disconnect();
 
     healthStatus.checks.redis = {
       status: 'ok',
@@ -122,7 +125,10 @@ router.get('/health/detailed', async (_req: Request, res: Response) => {
     healthStatus.checks.redis = {
       status: 'error',
       responseTime: 0,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      // Don't expose error details in production
+      error: process.env.NODE_ENV === 'development'
+        ? (error instanceof Error ? error.message : 'Unknown error')
+        : 'Connection error'
     } as any;
   }
 

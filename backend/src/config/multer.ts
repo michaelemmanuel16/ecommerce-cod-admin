@@ -39,6 +39,36 @@ export const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB max file size
+    fileSize: 5 * 1024 * 1024,  // 5MB max file size
+    files: 1,                    // Only 1 file per request (prevent DoS)
+    fields: 10,                  // Max 10 form fields (prevent field flooding)
+    parts: 20,                   // Max 20 parts in multipart (prevent multipart DoS)
+    headerPairs: 100             // Max 100 header pairs
   }
 });
+
+// Error handler for multer upload errors
+export const handleUploadErrors = (err: any, req: any, res: any, next: any) => {
+  if (err instanceof multer.MulterError) {
+    // Multer-specific errors
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File too large (max 5MB)' });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({ error: 'Too many files (max 1)' });
+    }
+    if (err.code === 'LIMIT_FIELD_COUNT') {
+      return res.status(400).json({ error: 'Too many form fields' });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ error: 'Unexpected file field' });
+    }
+    if (err.code === 'LIMIT_PART_COUNT') {
+      return res.status(400).json({ error: 'Too many parts in multipart data' });
+    }
+    return res.status(400).json({ error: `Upload error: ${err.message}` });
+  }
+
+  // Pass other errors to error handler
+  next(err);
+};
