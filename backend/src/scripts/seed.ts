@@ -1,5 +1,6 @@
 import { PrismaClient, OrderStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -79,19 +80,26 @@ const productData = [
 const vehicleTypes = ['Motorcycle', 'Car', 'Van', 'Bicycle', 'Tricycle'];
 
 // Helper functions
+// Cryptographically secure random number generator (0 to 1)
+function random(): number {
+  return crypto.randomInt(0, 1000000) / 1000000;
+}
+
 function randomElement<T>(array: T[]): T {
-  return array[Math.floor(Math.random() * array.length)];
+  return array[crypto.randomInt(0, array.length)];
 }
 
 function randomPhone(): string {
   const prefixes = ['024', '054', '055', '020', '050', '027', '057', '026', '056'];
   const prefix = randomElement(prefixes);
-  const number = Math.floor(Math.random() * 10000000).toString().padStart(7, '0');
+  const number = crypto.randomInt(0, 10000000).toString().padStart(7, '0');
   return `0${prefix}${number}`;
 }
 
 function randomDate(start: Date, end: Date): Date {
-  return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+  const range = end.getTime() - start.getTime();
+  const randomOffset = (crypto.randomInt(0, 1000000) / 1000000) * range;
+  return new Date(start.getTime() + randomOffset);
 }
 
 async function resetSequences() {
@@ -218,9 +226,9 @@ async function seed() {
         lastName: randomElement(lastNames),
         phoneNumber: randomPhone(),
         role: 'sales_rep',
-        commissionRate: 5 + Math.random() * 5, // 5-10%
+        commissionRate: 5 + random() * 5, // 5-10%
         isActive: true,
-        isAvailable: Math.random() > 0.2, // 80% available
+        isAvailable: random() > 0.2, // 80% available
       }
     });
     customerReps.push(rep);
@@ -240,11 +248,11 @@ async function seed() {
         phoneNumber: randomPhone(),
         role: 'delivery_agent',
         vehicleType: randomElement(vehicleTypes),
-        vehicleId: `GH-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
-        deliveryRate: 10 + Math.random() * 15, // GHS 10-25 per delivery
+        vehicleId: `GH-${Math.floor(random() * 10000).toString().padStart(4, '0')}`,
+        deliveryRate: 10 + random() * 15, // GHS 10-25 per delivery
         location: `${randomElement(location.cities)}, ${location.region}`,
         isActive: true,
-        isAvailable: Math.random() > 0.3, // 70% available
+        isAvailable: random() > 0.3, // 70% available
       }
     });
     deliveryAgents.push(agent);
@@ -299,18 +307,18 @@ async function seed() {
       data: {
         firstName: randomElement(firstNames),
         lastName: randomElement(lastNames),
-        email: Math.random() > 0.3 ? `customer${i}@example.com` : undefined,
+        email: random() > 0.3 ? `customer${i}@example.com` : undefined,
         phoneNumber: randomPhone(),
-        alternatePhone: Math.random() > 0.5 ? randomPhone() : undefined,
-        address: `House ${Math.floor(Math.random() * 500) + 1}, Street ${Math.floor(Math.random() * 100)}`,
+        alternatePhone: random() > 0.5 ? randomPhone() : undefined,
+        address: `House ${Math.floor(random() * 500) + 1}, Street ${Math.floor(random() * 100)}`,
         state: location.region,
         area: city,
-        landmark: Math.random() > 0.5 ? randomElement([
+        landmark: random() > 0.5 ? randomElement([
           'Near Police Station', 'Behind Market', 'Near School',
           'Close to Church', 'Opposite Hospital', 'Near Main Road'
         ]) : undefined,
-        tags: Math.random() > 0.7 ? ['vip'] : Math.random() > 0.5 ? ['regular'] : [],
-        isActive: Math.random() > 0.1, // 90% active
+        tags: random() > 0.7 ? ['vip'] : random() > 0.5 ? ['regular'] : [],
+        isActive: random() > 0.1, // 90% active
       }
     });
     customers.push(customer);
@@ -330,9 +338,9 @@ async function seed() {
         category: data.category,
         price: data.price,
         costPrice: data.cost,
-        stockQuantity: Math.floor(Math.random() * 200) + 50,
+        stockQuantity: Math.floor(random() * 200) + 50,
         lowStockThreshold: 20,
-        isActive: Math.random() > 0.1, // 90% active
+        isActive: random() > 0.1, // 90% active
       }
     });
     products.push(product);
@@ -364,7 +372,7 @@ async function seed() {
     const createdAt = randomDate(threeMonthsAgo, new Date());
 
     // Select 1-4 random products
-    const numProducts = Math.floor(Math.random() * 4) + 1;
+    const numProducts = Math.floor(random() * 4) + 1;
     const orderProducts = [];
     for (let j = 0; j < numProducts; j++) {
       orderProducts.push(randomElement(products));
@@ -372,17 +380,17 @@ async function seed() {
 
     // Calculate totals
     const subtotal = orderProducts.reduce((sum, p) => sum + p.price, 0);
-    const shippingCost = 10 + Math.floor(Math.random() * 30); // GHS 10-40
-    const discount = Math.random() > 0.7 ? Math.floor(Math.random() * 50) : 0;
+    const shippingCost = 10 + Math.floor(random() * 30); // GHS 10-40
+    const discount = random() > 0.7 ? Math.floor(random() * 50) : 0;
     const totalAmount = subtotal + shippingCost - discount;
 
     // Determine payment status based on order status
     let paymentStatus: 'pending' | 'collected' | 'deposited' | 'reconciled' = 'pending';
     if (status === 'delivered') {
-      const rand = Math.random();
+      const rand = random();
       paymentStatus = rand > 0.7 ? 'reconciled' : rand > 0.4 ? 'deposited' : 'collected';
     } else if (status === 'out_for_delivery') {
-      paymentStatus = Math.random() > 0.5 ? 'collected' : 'pending';
+      paymentStatus = random() > 0.5 ? 'collected' : 'pending';
     }
 
     const order = await prisma.order.create({
@@ -399,17 +407,17 @@ async function seed() {
         deliveryAddress: customer.address,
         deliveryState: customer.state,
         deliveryArea: customer.area,
-        priority: Math.floor(Math.random() * 3),
-        tags: Math.random() > 0.8 ? ['urgent'] : [],
+        priority: Math.floor(random() * 3),
+        tags: random() > 0.8 ? ['urgent'] : [],
         source: randomElement(['manual', 'web', 'mobile', 'whatsapp']),
         createdById: superAdmin.id,
         createdAt,
         orderItems: {
           create: orderProducts.map((product) => ({
             productId: product.id,
-            quantity: Math.floor(Math.random() * 3) + 1,
+            quantity: Math.floor(random() * 3) + 1,
             unitPrice: product.price,
-            totalPrice: product.price * (Math.floor(Math.random() * 3) + 1),
+            totalPrice: product.price * (Math.floor(random() * 3) + 1),
           }))
         },
       }
@@ -442,7 +450,7 @@ async function seed() {
   for (const order of deliveryOrders) {
     const agent = randomElement(deliveryAgents);
     const scheduledTime = new Date(order.createdAt);
-    scheduledTime.setDate(scheduledTime.getDate() + Math.floor(Math.random() * 3) + 1);
+    scheduledTime.setDate(scheduledTime.getDate() + Math.floor(random() * 3) + 1);
 
     const deliveryData: any = {
       orderId: order.id,
@@ -453,7 +461,7 @@ async function seed() {
 
     if (order.status === 'delivered') {
       const actualTime = new Date(scheduledTime);
-      actualTime.setHours(actualTime.getHours() + Math.floor(Math.random() * 5));
+      actualTime.setHours(actualTime.getHours() + Math.floor(random() * 5));
       deliveryData.actualDeliveryTime = actualTime;
       deliveryData.proofType = randomElement(['signature', 'photo', 'otp']);
       deliveryData.proofData = 'Delivered successfully';

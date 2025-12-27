@@ -4,6 +4,7 @@ import { WorkflowTriggerType, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { workflowQueue } from '../queues/workflowQueue';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
+import crypto from 'crypto';
 
 interface CreateWorkflowData {
   name: string;
@@ -525,7 +526,7 @@ export class WorkflowService {
     if (distributionMode === 'weighted') {
       // Use weighted selection based on assignments
       const totalWeight = assignments.reduce((sum: number, a: any) => sum + a.weight, 0);
-      const random = Math.random() * totalWeight;
+      const random = (crypto.randomInt(0, 1000000) / 1000000) * totalWeight;
 
       let cumulativeWeight = 0;
       for (const assignment of assignments) {
@@ -537,7 +538,7 @@ export class WorkflowService {
       }
     } else {
       // Even distribution - simple round-robin
-      const randomIndex = Math.floor(Math.random() * users.length);
+      const randomIndex = crypto.randomInt(0, users.length);
       selectedUser = users[randomIndex];
     }
 
