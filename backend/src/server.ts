@@ -98,7 +98,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Request logging (sanitized - no auth headers or sensitive data)
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
   // Sanitize user-agent to prevent log injection
   const userAgent = req.get('user-agent')?.substring(0, 200) || 'unknown';
 
@@ -145,7 +145,7 @@ app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/public', publicOrderRoutes);
 
 // Root route
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.json({
     message: 'E-commerce COD Admin API',
     version: '1.0.0',

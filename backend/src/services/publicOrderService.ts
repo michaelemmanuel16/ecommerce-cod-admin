@@ -17,8 +17,8 @@ interface PublicOrderData {
   landmark?: string;
 
   // Order selections
-  selectedPackageId: string;
-  selectedUpsellIds?: string[];
+  selectedPackageId: number;
+  selectedUpsellIds?: number[];
   notes?: string;
 
   // Tracking
@@ -77,7 +77,7 @@ export class PublicOrderService {
           throw new AppError(`Invalid upsell selection: ${upsellId}`, 400);
         }
         selectedUpsells.push({
-          id: upsell.id,
+          id: upsell.id.toString(),
           name: upsell.name,
           price: upsell.price,
           items: upsell.items,
@@ -207,7 +207,6 @@ export class PublicOrderService {
             email: orderData.email,
             deliveryAddress: orderData.deliveryAddress,
             deliveryState: orderData.deliveryState,
-            deliveryZipCode: orderData.deliveryZipCode,
             deliveryArea: orderData.deliveryArea,
             landmark: orderData.landmark,
             notes: orderData.notes
@@ -225,7 +224,7 @@ export class PublicOrderService {
                   name: u.name,
                   price: u.price
                 }))
-              : null,
+              : undefined,
           totalAmount,
           ipAddress: orderData.ipAddress,
           userAgent: orderData.userAgent
@@ -339,7 +338,7 @@ export class PublicOrderService {
    */
   async getFormSubmission(orderId: string) {
     const submission = await prisma.formSubmission.findFirst({
-      where: { orderId },
+      where: { orderId: parseInt(orderId, 10) },
       include: {
         form: {
           select: {

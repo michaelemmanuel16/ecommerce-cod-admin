@@ -6,7 +6,7 @@ import logger from '../utils/logger';
 interface CreateCheckoutFormData {
   name: string;
   slug: string;
-  productId: string;
+  productId: number;
   description?: string;
   fields: any;
   styling: any;
@@ -27,13 +27,14 @@ interface CreateCheckoutFormData {
     price: number;
     items: any;
     sortOrder?: number;
+    productId?: number;
   }>;
 }
 
 interface UpdateCheckoutFormData {
   name?: string;
   slug?: string;
-  productId?: string;
+  productId?: number;
   description?: string;
   fields?: any;
   styling?: any;
@@ -41,7 +42,7 @@ interface UpdateCheckoutFormData {
   regions?: any;
   isActive?: boolean;
   packages?: Array<{
-    id?: string;
+    id?: number;
     name: string;
     description?: string;
     price: number;
@@ -50,13 +51,14 @@ interface UpdateCheckoutFormData {
     sortOrder?: number;
   }>;
   upsells?: Array<{
-    id?: string;
+    id?: number;
     name: string;
     description?: string;
     imageUrl?: string;
     price: number;
     items: any;
     sortOrder?: number;
+    productId?: number;
   }>;
 }
 
@@ -193,7 +195,7 @@ export class CheckoutFormService {
    */
   async getCheckoutFormById(formId: string) {
     const form = await prisma.checkoutForm.findUnique({
-      where: { id: formId },
+      where: { id: parseInt(formId, 10) },
       include: {
         product: {
           select: {
@@ -307,8 +309,9 @@ export class CheckoutFormService {
    * Update checkout form with packages and upsells
    */
   async updateCheckoutForm(formId: string, data: UpdateCheckoutFormData) {
+    const formIdNum = parseInt(formId, 10);
     const existingForm = await prisma.checkoutForm.findUnique({
-      where: { id: formId },
+      where: { id: formIdNum },
       include: {
         packages: true,
         upsells: true
@@ -352,7 +355,7 @@ export class CheckoutFormService {
 
         await tx.formPackage.deleteMany({
           where: {
-            formId,
+            formId: formIdNum,
             id: packageIdsToKeep.length > 0 ? { notIn: packageIdsToKeep } : undefined
           }
         });
@@ -376,7 +379,7 @@ export class CheckoutFormService {
             // Create new package
             await tx.formPackage.create({
               data: {
-                formId,
+                formId: formIdNum,
                 name: pkg.name,
                 description: pkg.description,
                 price: pkg.price,
@@ -398,7 +401,7 @@ export class CheckoutFormService {
 
         await tx.formUpsell.deleteMany({
           where: {
-            formId,
+            formId: formIdNum,
             id: upsellIdsToKeep.length > 0 ? { notIn: upsellIdsToKeep } : undefined
           }
         });
@@ -422,7 +425,7 @@ export class CheckoutFormService {
             // Create new upsell
             await tx.formUpsell.create({
               data: {
-                formId,
+                formId: formIdNum,
                 name: upsell.name,
                 description: upsell.description,
                 imageUrl: upsell.imageUrl,
@@ -438,7 +441,7 @@ export class CheckoutFormService {
       // Update form basic fields
       const { packages, upsells, ...formData } = data;
       const updatedForm = await tx.checkoutForm.update({
-        where: { id: formId },
+        where: { id: formIdNum },
         data: formData,
         include: {
           product: {
@@ -469,8 +472,9 @@ export class CheckoutFormService {
    * Delete checkout form (soft delete by deactivating)
    */
   async deleteCheckoutForm(formId: string) {
+    const formIdNum = parseInt(formId, 10);
     const form = await prisma.checkoutForm.findUnique({
-      where: { id: formId }
+      where: { id: formIdNum }
     });
 
     if (!form) {
@@ -479,13 +483,13 @@ export class CheckoutFormService {
 
     // Check if form has submissions
     const submissionCount = await prisma.formSubmission.count({
-      where: { formId }
+      where: { formId: formIdNum }
     });
 
     if (submissionCount > 0) {
       // Soft delete if has submissions
       await prisma.checkoutForm.update({
-        where: { id: formId },
+        where: { id: formIdNum },
         data: { isActive: false }
       });
 
@@ -502,7 +506,7 @@ export class CheckoutFormService {
     } else {
       // Hard delete if no submissions (packages and upsells will cascade)
       await prisma.checkoutForm.delete({
-        where: { id: formId }
+        where: { id: formIdNum }
       });
 
       logger.info('Checkout form deleted', { formId, slug: form.slug });
@@ -514,8 +518,9 @@ export class CheckoutFormService {
    * Get form statistics
    */
   async getFormStats(formId: string) {
+    const formIdNum = parseInt(formId, 10);
     const form = await prisma.checkoutForm.findUnique({
-      where: { id: formId }
+      where: { id: formIdNum }
     });
 
     if (!form) {
@@ -523,22 +528,22 @@ export class CheckoutFormService {
     }
 
     const [submissions, totalRevenue, packageStats] = await Promise.all([
-      prisma.formSubmission.count({ where: { formId } }),
+      prisma.formSubmission.count({ where: { formId: formIdNum } }),
       prisma.formSubmission.aggregate({
-        where: { formId },
+        where: { formId: formIdNum },
         _sum: { totalAmount: true }
       }),
       prisma.formSubmission.groupBy({
         by: ['selectedPackage'],
-        where: { formId },
+        where: { formId: formIdNum },
         _count: true
       })
     ]);
 
     const stats = {
       totalSubmissions: submissions,
-      totalRevenue: totalRevenue._sum.totalAmount || 0,
-      averageOrderValue: submissions > 0 ? (totalRevenue._sum.totalAmount || 0) / submissions : 0,
+      totalRevenue: totalRevenue._sum?.totalAmount || 0,
+      averageOrderValue: submissions > 0 ? (totalRevenue._sum?.totalAmount || 0) / submissions : 0,
       packageBreakdown: packageStats
     };
 

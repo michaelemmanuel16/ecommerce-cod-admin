@@ -96,9 +96,14 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
     });
 
     if (!customer) {
+      const nameParts = formData.name.split(' ');
+      const firstName = nameParts[0] || formData.name;
+      const lastName = nameParts.slice(1).join(' ') || '';
+
       customer = await prisma.customer.create({
         data: {
-          name: formData.name,
+          firstName,
+          lastName,
           phoneNumber: formData.phoneNumber,
           email: formData.email || null,
           alternatePhone: formData.alternatePhone || null,
@@ -265,7 +270,8 @@ export const trackOrder = async (req: Request, res: Response): Promise<void> => 
       include: {
         customer: {
           select: {
-            name: true,
+            firstName: true,
+            lastName: true,
             phoneNumber: true
           }
         },

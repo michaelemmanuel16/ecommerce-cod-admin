@@ -2,7 +2,7 @@ import prisma from '../utils/prisma';
 import { OrderStatus } from '@prisma/client';
 
 export interface RepPerformanceDetails {
-  repId: string;
+  repId: number;
   repName: string;
   email: string;
   phoneNumber: string | null;
@@ -157,7 +157,7 @@ export const getRepEarningsByPeriod = async (
 ): Promise<{ earnings: number; orderCount: number }> => {
   try {
     const rep = await prisma.user.findUnique({
-      where: { id: repId },
+      where: { id: parseInt(repId, 10) },
       select: {
         commissionRate: true,
         assignedOrdersAsRep: {

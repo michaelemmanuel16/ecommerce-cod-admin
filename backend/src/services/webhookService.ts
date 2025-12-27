@@ -245,7 +245,6 @@ export class WebhookService {
             codAmount: Number(mappedData.totalAmount || externalOrder.amount || 0),
             deliveryAddress: mappedData.deliveryAddress || externalOrder.address || customer.address,
             deliveryState: mappedData.deliveryState || externalOrder.state || customer.state,
-            deliveryZipCode: mappedData.deliveryZipCode || externalOrder.zip || customer.zipCode,
             deliveryArea: mappedData.deliveryArea || externalOrder.area || customer.area,
             notes: mappedData.notes || externalOrder.notes,
             source: 'webhook',
@@ -316,7 +315,6 @@ export class WebhookService {
           email: mappedData.customerEmail || externalOrder.email || undefined,
           address: mappedData.deliveryAddress || externalOrder.address || '',
           state: mappedData.deliveryState || externalOrder.state || '',
-          zipCode: mappedData.deliveryZipCode || externalOrder.zip || '',
           area: mappedData.deliveryArea || externalOrder.area || ''
         }
       });
@@ -334,7 +332,7 @@ export class WebhookService {
    * Update webhook log
    */
   private async updateWebhookLog(
-    logId: string,
+    logId: number,
     data: {
       success: boolean;
       response?: any;
@@ -434,7 +432,7 @@ export class WebhookService {
       headers: log.headers as any,
       endpoint: log.endpoint,
       method: log.method,
-      apiKey: log.webhookConfig?.apiKey
+      apiKey: log.webhookConfig?.apiKey ?? undefined
     });
   }
 

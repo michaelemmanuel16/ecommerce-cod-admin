@@ -6,7 +6,7 @@ const router = Router();
 const prisma = new PrismaClient();
 
 // Health check endpoint - Basic
-router.get('/health', async (req: Request, res: Response) => {
+router.get('/health', async (_req: Request, res: Response) => {
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -16,7 +16,7 @@ router.get('/health', async (req: Request, res: Response) => {
 });
 
 // Readiness probe - Checks if service is ready to handle requests
-router.get('/ready', async (req: Request, res: Response) => {
+router.get('/ready', async (_req: Request, res: Response) => {
   try {
     // Check database connection
     await prisma.$queryRaw`SELECT 1`;
@@ -49,7 +49,7 @@ router.get('/ready', async (req: Request, res: Response) => {
 });
 
 // Liveness probe - Checks if service is alive
-router.get('/live', (req: Request, res: Response) => {
+router.get('/live', (_req: Request, res: Response) => {
   res.status(200).json({
     status: 'alive',
     timestamp: new Date().toISOString(),
@@ -60,7 +60,7 @@ router.get('/live', (req: Request, res: Response) => {
 });
 
 // Detailed health check with all dependencies
-router.get('/health/detailed', async (req: Request, res: Response) => {
+router.get('/health/detailed', async (_req: Request, res: Response) => {
   const healthStatus = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -132,7 +132,7 @@ router.get('/health/detailed', async (req: Request, res: Response) => {
 });
 
 // Metrics endpoint (Prometheus format)
-router.get('/metrics', async (req: Request, res: Response) => {
+router.get('/metrics', async (_req: Request, res: Response) => {
   try {
     const metrics = [];
 

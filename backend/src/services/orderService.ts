@@ -64,14 +64,6 @@ interface UpdateOrderStatusData {
 
 export class OrderService {
   /**
-   * Generate unique order number
-   */
-  private async generateOrderNumber(): Promise<string> {
-    const count = await prisma.order.count();
-    return String(1000 + count + 1);
-  }
-
-  /**
    * Get all orders with filters and pagination
    */
   async getAllOrders(filters: OrderFilters) {
@@ -354,11 +346,8 @@ export class OrderService {
           });
         }
 
-        const orderNumber = await this.generateOrderNumber();
-
         await prisma.order.create({
           data: {
-            orderNumber,
             customerId: customer.id,
             subtotal: orderData.subtotal,
             totalAmount: orderData.totalAmount,
@@ -380,7 +369,7 @@ export class OrderService {
         });
 
         results.success++;
-        logger.info(`Bulk import order created: ${orderNumber}`);
+        logger.info('Bulk import order created');
       } catch (err: any) {
         results.failed++;
         results.errors.push({
@@ -546,7 +535,7 @@ export class OrderService {
       });
     });
 
-    logger.info(`Order updated: ${order.orderNumber}`, { orderId });
+    logger.info(`Order updated: ${order.id}`, { orderId });
     return updated;
   }
 
@@ -625,7 +614,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Order status updated: ${order.orderNumber}`, {
+    logger.info(`Order status updated: ${order.id}`, {
       orderId,
       oldStatus: order.status,
       newStatus: data.status
@@ -644,37 +633,6 @@ export class OrderService {
     // Add workflow triggering here if needed in the future
 
     return updated;
-  }
-
-  /**
-   * Validate status transition
-   * Allows both forward and backward transitions for admin flexibility
-   */
-  private validateStatusTransition(currentStatus: OrderStatus, newStatus: OrderStatus): void {
-    // Allow same status (no-op)
-    if (currentStatus === newStatus) {
-      return;
-    }
-
-    // Extended transitions allowing backward movement for admin corrections
-    const validTransitions: Record<OrderStatus, OrderStatus[]> = {
-      pending_confirmation: ['confirmed', 'cancelled'],
-      confirmed: ['pending_confirmation', 'preparing', 'cancelled'],
-      preparing: ['pending_confirmation', 'confirmed', 'ready_for_pickup', 'cancelled'],
-      ready_for_pickup: ['confirmed', 'preparing', 'out_for_delivery', 'cancelled'],
-      out_for_delivery: ['ready_for_pickup', 'preparing', 'delivered', 'failed_delivery', 'cancelled'],
-      delivered: ['out_for_delivery', 'returned'],
-      cancelled: ['pending_confirmation', 'confirmed', 'preparing', 'ready_for_pickup'],
-      returned: ['delivered', 'out_for_delivery'],
-      failed_delivery: ['out_for_delivery', 'cancelled']
-    };
-
-    if (!validTransitions[currentStatus].includes(newStatus)) {
-      throw new AppError(
-        `Invalid status transition from ${currentStatus} to ${newStatus}`,
-        400
-      );
-    }
   }
 
   /**
@@ -738,7 +696,7 @@ export class OrderService {
       });
     });
 
-    logger.info(`Order cancelled: ${order.orderNumber}`, { orderId });
+    logger.info(`Order cancelled: ${order.id}`, { orderId });
     return { message: 'Order cancelled successfully' };
   }
 
@@ -747,8 +705,8 @@ export class OrderService {
    */
   async assignCustomerRep(orderId: string, customerRepId: string, changedBy?: number) {
     const [order, rep] = await Promise.all([
-      prisma.order.findUnique({ where: { id: orderId } }),
-      prisma.user.findUnique({ where: { id: customerRepId } })
+      prisma.order.findUnique({ where: { id: parseInt(orderId, 10) } }),
+      prisma.user.findUnique({ where: { id: parseInt(customerRepId, 10) } })
     ]);
 
     if (!order) {
@@ -760,15 +718,15 @@ export class OrderService {
     }
 
     const updated = await prisma.order.update({
-      where: { id: orderId },
+      where: { id: parseInt(orderId, 10) },
       data: {
-        customerRepId,
+        customerRepId: parseInt(customerRepId, 10),
         orderHistory: {
           create: {
             status: order.status,
             notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName}`,
             changedBy,
-            metadata: { assignedRepId: customerRepId }
+            metadata: { assignedRepId: parseInt(customerRepId, 10) }
           }
         }
       },
@@ -783,7 +741,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Customer rep assigned to order: ${order.orderNumber}`, {
+    logger.info(`Customer rep assigned to order: ${order.id}`, {
       orderId,
       repId: customerRepId
     });
@@ -800,8 +758,8 @@ export class OrderService {
    */
   async assignDeliveryAgent(orderId: string, deliveryAgentId: string, changedBy?: number) {
     const [order, agent] = await Promise.all([
-      prisma.order.findUnique({ where: { id: orderId } }),
-      prisma.user.findUnique({ where: { id: deliveryAgentId } })
+      prisma.order.findUnique({ where: { id: parseInt(orderId, 10) } }),
+      prisma.user.findUnique({ where: { id: parseInt(deliveryAgentId, 10) } })
     ]);
 
     if (!order) {
@@ -817,15 +775,15 @@ export class OrderService {
     }
 
     const updated = await prisma.order.update({
-      where: { id: orderId },
+      where: { id: parseInt(orderId, 10) },
       data: {
-        deliveryAgentId,
+        deliveryAgentId: parseInt(deliveryAgentId, 10),
         orderHistory: {
           create: {
             status: order.status,
             notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName}`,
             changedBy,
-            metadata: { assignedAgentId: deliveryAgentId }
+            metadata: { assignedAgentId: parseInt(deliveryAgentId, 10) }
           }
         }
       },
@@ -840,7 +798,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Delivery agent assigned to order: ${order.orderNumber}`, {
+    logger.info(`Delivery agent assigned to order: ${order.id}`, {
       orderId,
       agentId: deliveryAgentId
     });
@@ -858,7 +816,7 @@ export class OrderService {
   async getKanbanView(filters: { area?: string; agentId?: string }) {
     const where: Prisma.OrderWhereInput = {};
     if (filters.area) where.deliveryArea = filters.area;
-    if (filters.agentId) where.deliveryAgentId = filters.agentId;
+    if (filters.agentId) where.deliveryAgentId = parseInt(filters.agentId, 10);
 
     const orders = await prisma.order.findMany({
       where,

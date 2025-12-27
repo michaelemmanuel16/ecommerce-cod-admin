@@ -282,7 +282,7 @@ export const toggleAvailability = async (req: AuthRequest, res: Response): Promi
   }
 };
 
-export const getRepWorkload = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getRepWorkload = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const reps = await prisma.user.findMany({
       where: {
@@ -325,7 +325,7 @@ export const getRepWorkload = async (req: AuthRequest, res: Response): Promise<v
   }
 };
 
-export const getAgentPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getAgentPerformance = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const agents = await prisma.user.findMany({
       where: {

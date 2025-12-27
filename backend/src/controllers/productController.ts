@@ -158,7 +158,7 @@ export const updateProductStock = async (req: AuthRequest, res: Response): Promi
   }
 };
 
-export const getLowStockProducts = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getLowStockProducts = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const products = await prisma.product.findMany({
       where: {

@@ -4,8 +4,8 @@ import { DeliveryProofType, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 
 interface CreateDeliveryData {
-  orderId: string;
-  agentId: string;
+  orderId: number;
+  agentId: number;
   scheduledTime?: Date;
   notes?: string;
 }
@@ -42,7 +42,7 @@ export class DeliveryService {
     const { agentId, page = 1, limit = 20 } = filters;
 
     const where: Prisma.DeliveryWhereInput = {};
-    if (agentId) where.agentId = agentId;
+    if (agentId) where.agentId = parseInt(agentId, 10);
 
     const skip = (page - 1) * limit;
 
@@ -93,7 +93,7 @@ export class DeliveryService {
    */
   async getDeliveryById(deliveryId: string) {
     const delivery = await prisma.delivery.findUnique({
-      where: { id: deliveryId },
+      where: { id: parseInt(deliveryId, 10) },
       include: {
         order: {
           include: {
@@ -204,8 +204,9 @@ export class DeliveryService {
    * Update delivery details
    */
   async updateDelivery(deliveryId: string, updateData: Partial<CreateDeliveryData>) {
+    const deliveryIdNum = parseInt(deliveryId, 10);
     const delivery = await prisma.delivery.findUnique({
-      where: { id: deliveryId }
+      where: { id: deliveryIdNum }
     });
 
     if (!delivery) {
@@ -213,7 +214,7 @@ export class DeliveryService {
     }
 
     const updated = await prisma.delivery.update({
-      where: { id: deliveryId },
+      where: { id: deliveryIdNum },
       data: updateData,
       include: {
         order: true,
@@ -229,8 +230,9 @@ export class DeliveryService {
    * Upload proof of delivery
    */
   async uploadProofOfDelivery(deliveryId: string, data: UpdateProofData) {
+    const deliveryIdNum = parseInt(deliveryId, 10);
     const delivery = await prisma.delivery.findUnique({
-      where: { id: deliveryId },
+      where: { id: deliveryIdNum },
       include: { order: true }
     });
 
@@ -239,7 +241,7 @@ export class DeliveryService {
     }
 
     const updated = await prisma.delivery.update({
-      where: { id: deliveryId },
+      where: { id: deliveryIdNum },
       data: {
         proofType: data.proofType,
         proofData: data.proofData,
@@ -262,7 +264,7 @@ export class DeliveryService {
    */
   async completeDelivery(deliveryId: string, data: CompleteDeliveryData, userId?: string) {
     const delivery = await prisma.delivery.findUnique({
-      where: { id: deliveryId },
+      where: { id: parseInt(deliveryId, 10) },
       include: { order: true }
     });
 
@@ -274,11 +276,15 @@ export class DeliveryService {
       throw new AppError('Delivery already completed', 400);
     }
 
+    // Store order data before transaction
+    const orderCodAmount = delivery.order.codAmount;
+    const orderId = delivery.order.id;
+
     // Complete delivery and update order in transaction
     await prisma.$transaction(async (tx) => {
       // Update delivery
       await tx.delivery.update({
-        where: { id: deliveryId },
+        where: { id: parseInt(deliveryId, 10) },
         data: {
           actualDeliveryTime: new Date(),
           proofType: data.proofType,
@@ -299,7 +305,7 @@ export class DeliveryService {
             create: {
               status: 'delivered',
               notes: 'Order delivered successfully',
-              changedBy: userId
+              changedBy: userId ? parseInt(userId, 10) : null
             }
           }
         }
@@ -310,19 +316,19 @@ export class DeliveryService {
         data: {
           orderId: delivery.orderId,
           type: 'cod_collection',
-          amount: data.codAmount || delivery.order.codAmount || 0,
+          amount: data.codAmount || orderCodAmount || 0,
           paymentMethod: 'cash',
           status: 'collected',
           description: 'COD payment collected on delivery',
           metadata: {
-            deliveryId: delivery.id,
+            deliveryId: parseInt(deliveryId, 10),
             collectedBy: delivery.agentId
           }
         }
       });
     });
 
-    logger.info(`Delivery completed for order: ${delivery.order.id}`, {
+    logger.info(`Delivery completed for order: ${orderId}`, {
       deliveryId,
       orderId: delivery.orderId
     });
@@ -340,7 +346,7 @@ export class DeliveryService {
     reschedule?: boolean
   ) {
     const delivery = await prisma.delivery.findUnique({
-      where: { id: deliveryId },
+      where: { id: parseInt(deliveryId, 10) },
       include: { order: true }
     });
 
@@ -348,10 +354,13 @@ export class DeliveryService {
       throw new AppError('Delivery not found', 404);
     }
 
+    // Store order ID before transaction
+    const orderId = delivery.order.id;
+
     await prisma.$transaction(async (tx) => {
       // Increment delivery attempts
       await tx.delivery.update({
-        where: { id: deliveryId },
+        where: { id: parseInt(deliveryId, 10) },
         data: {
           deliveryAttempts: { increment: 1 },
           notes: `Failed delivery attempt: ${reason}`
@@ -368,15 +377,15 @@ export class DeliveryService {
             create: {
               status: newStatus,
               notes: `Delivery failed: ${reason}`,
-              changedBy: userId,
-              metadata: { deliveryId, reason, reschedule }
+              changedBy: userId ? parseInt(userId, 10) : null,
+              metadata: { deliveryId: parseInt(deliveryId, 10), reason, reschedule }
             }
           }
         }
       });
     });
 
-    logger.warn(`Delivery failed for order: ${delivery.order.id}`, {
+    logger.warn(`Delivery failed for order: ${orderId}`, {
       deliveryId,
       reason,
       reschedule
@@ -395,7 +404,7 @@ export class DeliveryService {
 
     const deliveries = await prisma.delivery.findMany({
       where: {
-        agentId,
+        agentId: parseInt(agentId, 10),
         scheduledTime: {
           gte: startOfDay,
           lte: endOfDay
@@ -420,7 +429,6 @@ export class DeliveryService {
     const route = deliveries.map((d) => ({
       deliveryId: d.id,
       orderId: d.orderId,
-      orderNumber: d.order.id,
       customer: d.order.customer,
       address: d.order.deliveryAddress,
       area: d.order.deliveryArea,
@@ -439,7 +447,7 @@ export class DeliveryService {
    */
   async autoAssignAgent(orderId: string) {
     const order = await prisma.order.findUnique({
-      where: { id: orderId }
+      where: { id: parseInt(orderId, 10) }
     });
 
     if (!order) {
@@ -478,7 +486,7 @@ export class DeliveryService {
 
     // Create delivery assignment
     const delivery = await this.createDelivery({
-      orderId,
+      orderId: parseInt(orderId, 10),
       agentId: selectedAgent.id,
       scheduledTime: new Date()
     });
@@ -495,7 +503,7 @@ export class DeliveryService {
    * Get delivery statistics for an agent
    */
   async getAgentStats(agentId: string, filters?: { startDate?: Date; endDate?: Date }) {
-    const where: Prisma.DeliveryWhereInput = { agentId };
+    const where: Prisma.DeliveryWhereInput = { agentId: parseInt(agentId, 10) };
 
     if (filters?.startDate || filters?.endDate) {
       where.createdAt = {};

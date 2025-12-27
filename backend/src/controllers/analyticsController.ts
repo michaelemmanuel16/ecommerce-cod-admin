@@ -81,7 +81,7 @@ export const getRepPerformance = async (req: AuthRequest, res: Response): Promis
   }
 };
 
-export const getAgentPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getAgentPerformance = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const performance = await analyticsService.getAgentPerformance();
     res.json({ performance });
@@ -90,7 +90,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response): Prom
   }
 };
 
-export const getCustomerInsights = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getCustomerInsights = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const insights = await analyticsService.getCustomerInsights();
     res.json({ insights });
@@ -99,7 +99,7 @@ export const getCustomerInsights = async (req: AuthRequest, res: Response): Prom
   }
 };
 
-export const getPendingOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getPendingOrders = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const orders = await analyticsService.getPendingOrders();
     res.json({ orders });
@@ -108,7 +108,7 @@ export const getPendingOrders = async (req: AuthRequest, res: Response): Promise
   }
 };
 
-export const getRecentActivity = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getRecentActivity = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const activity = await analyticsService.getRecentActivity();
     res.json({ activity });

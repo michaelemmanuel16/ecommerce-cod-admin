@@ -82,7 +82,7 @@ workflowQueue.process('execute-workflow', async (job) => {
   }
 });
 
-async function executeAssignUserAction(action: any, input: any, conditions?: any): Promise<any> {
+async function executeAssignUserAction(action: any, _input: any, conditions?: any): Promise<any> {
   const config = action.config || {};
   const userType = config.userType; // 'sales_rep' | 'delivery_agent'
   const distributionMode = config.distributionMode || 'even';
@@ -137,7 +137,6 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
       const matches = evaluateConditions(conditions, orderContext);
       logger.debug('Order condition check', {
         orderId: order.id,
-        orderNumber: order.orderNumber,
         productName: orderContext.productName,
         matches
       });
@@ -174,13 +173,11 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
       assignedCount++;
       results.push({
         orderId: ordersToAssign[i].id,
-        orderNumber: ordersToAssign[i].orderNumber,
         assignedTo: assignment.userId
       });
 
       logger.info('Order assigned (even)', {
         orderId: ordersToAssign[i].id,
-        orderNumber: ordersToAssign[i].orderNumber,
         userId: assignment.userId
       });
 
@@ -189,8 +186,7 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
         emitOrderUpdated(io, updatedOrder);
         emitOrderAssigned(io, updatedOrder, assignment.userId, userType);
         logger.debug('Socket.io events emitted for order assignment', {
-          orderId: updatedOrder.id,
-          orderNumber: updatedOrder.orderNumber
+          orderId: updatedOrder.id
         });
       }
     }
@@ -227,13 +223,11 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
       assignedCount++;
       results.push({
         orderId: order.id,
-        orderNumber: order.orderNumber,
         assignedTo: selectedUserId
       });
 
       logger.info('Order assigned (weighted)', {
         orderId: order.id,
-        orderNumber: order.orderNumber,
         userId: selectedUserId
       });
 
@@ -242,8 +236,7 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
         emitOrderUpdated(io, updatedOrder);
         emitOrderAssigned(io, updatedOrder, selectedUserId, userType);
         logger.debug('Socket.io events emitted for order assignment', {
-          orderId: updatedOrder.id,
-          orderNumber: updatedOrder.orderNumber
+          orderId: updatedOrder.id
         });
       }
     }

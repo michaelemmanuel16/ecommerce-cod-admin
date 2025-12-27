@@ -44,7 +44,7 @@ export const recordExpense = async (req: AuthRequest, res: Response): Promise<vo
       amount,
       description,
       expenseDate: new Date(expenseDate),
-      recordedBy: req.user!.id
+      recordedBy: req.user!.id.toString()
     });
 
     res.status(201).json({ expense });

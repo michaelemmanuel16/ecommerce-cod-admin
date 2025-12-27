@@ -162,7 +162,7 @@ export class FinancialService {
         amount: data.amount,
         description: data.description,
         expenseDate: data.expenseDate,
-        recordedBy: data.recordedBy,
+        recordedBy: parseInt(data.recordedBy, 10),
         receiptUrl: data.receiptUrl
       }
     });
@@ -275,7 +275,7 @@ export class FinancialService {
     // Filter by agent if specified
     let filteredCollections = collections;
     if (agentId) {
-      filteredCollections = collections.filter((c) => c.order?.deliveryAgent?.id === agentId);
+      filteredCollections = collections.filter((c) => c.order?.deliveryAgent?.id === parseInt(agentId, 10));
     }
 
     return {
@@ -296,7 +296,7 @@ export class FinancialService {
     const where: Prisma.TransactionWhereInput = {
       type: 'cod_collection',
       order: {
-        deliveryAgentId: agentId
+        deliveryAgentId: parseInt(agentId, 10)
       }
     };
 
@@ -356,7 +356,7 @@ export class FinancialService {
     const { transactionId, status, reference, notes } = data;
 
     const transaction = await prisma.transaction.findUnique({
-      where: { id: transactionId }
+      where: { id: parseInt(transactionId, 10) }
     });
 
     if (!transaction) {
@@ -364,7 +364,7 @@ export class FinancialService {
     }
 
     const updated = await prisma.transaction.update({
-      where: { id: transactionId },
+      where: { id: parseInt(transactionId, 10) },
       data: {
         status,
         reference,
@@ -401,9 +401,11 @@ export class FinancialService {
       throw new AppError('No transaction IDs provided', 400);
     }
 
+    const transactionIdsAsNumbers = transactionIds.map((id) => parseInt(id, 10));
+
     const updated = await prisma.transaction.updateMany({
       where: {
-        id: { in: transactionIds },
+        id: { in: transactionIdsAsNumbers },
         type: 'cod_collection',
         status: 'collected'
       },
@@ -417,7 +419,7 @@ export class FinancialService {
     await prisma.order.updateMany({
       where: {
         transaction: {
-          id: { in: transactionIds }
+          id: { in: transactionIdsAsNumbers }
         }
       },
       data: {

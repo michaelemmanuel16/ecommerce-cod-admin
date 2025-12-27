@@ -60,7 +60,7 @@ export const completeDelivery = async (req: AuthRequest, res: Response): Promise
         proofData,
         recipientName
       },
-      req.user?.id
+      req.user?.id?.toString()
     );
 
     res.json(result);

@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { adminService } from '../services/adminService';
 
-export const getSystemConfig = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getSystemConfig = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const config = await adminService.getSystemConfig();
     res.json(config);
@@ -22,7 +22,7 @@ export const updateSystemConfig = async (req: AuthRequest, res: Response): Promi
   }
 };
 
-export const getRolePermissions = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getRolePermissions = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const permissions = await adminService.getRolePermissions();
     res.json(permissions);
@@ -140,7 +140,7 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     // Prevent self-deletion
-    if (userId === req.user?.userId) {
+    if (userId === req.user?.id) {
       res.status(403).json({ error: 'Cannot delete your own account' });
       return;
     }
@@ -166,7 +166,7 @@ export const permanentlyDeleteUser = async (req: AuthRequest, res: Response): Pr
     }
 
     // Prevent self-deletion
-    if (userId === req.user?.userId) {
+    if (userId === req.user?.id) {
       res.status(403).json({ error: 'Cannot delete your own account' });
       return;
     }

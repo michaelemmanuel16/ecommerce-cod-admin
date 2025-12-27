@@ -3,8 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { WorkflowTriggerType, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { workflowQueue } from '../queues/workflowQueue';
-import { evaluateConditions as evaluateConditionRules, Conditions } from '../utils/conditionEvaluator';
-import assignmentService from './assignmentService';
+import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
 
 interface CreateWorkflowData {
   name: string;
@@ -18,11 +17,6 @@ interface CreateWorkflowData {
 interface WorkflowFilters {
   isActive?: boolean;
   triggerType?: WorkflowTriggerType;
-}
-
-interface ExecuteWorkflowData {
-  workflowId: number;
-  input?: any;
 }
 
 export class WorkflowService {
@@ -280,7 +274,7 @@ export class WorkflowService {
   private async executeAction(action: any, context: any): Promise<any> {
     // Check if action has conditions
     if (action.conditions) {
-      const conditionsMet = evaluateConditions(action.conditions, context);
+      const conditionsMet = this.evaluateConditions(action.conditions, context);
 
       if (!conditionsMet) {
         logger.info('Action conditions not met, skipping', {
@@ -391,7 +385,7 @@ export class WorkflowService {
     if (action.notes) updateData.notes = action.notes;
     if (action.priority !== undefined) updateData.priority = action.priority;
 
-    const order = await prisma.order.update({
+    await prisma.order.update({
       where: { id: orderId },
       data: updateData
     });
@@ -411,7 +405,7 @@ export class WorkflowService {
       throw new Error('Order ID or Agent ID not provided');
     }
 
-    const order = await prisma.order.update({
+    await prisma.order.update({
       where: { id: orderId },
       data: { deliveryAgentId: agentId }
     });
@@ -450,7 +444,7 @@ export class WorkflowService {
   /**
    * Execute HTTP request action
    */
-  private async executeHttpRequest(action: any, context: any): Promise<any> {
+  private async executeHttpRequest(action: any, _context: any): Promise<any> {
     // TODO: Implement HTTP request with proper error handling
     logger.info('HTTP request action executed (mock)', {
       url: action.url,
@@ -557,7 +551,7 @@ export class WorkflowService {
     };
 
     // Update the order
-    const order = await prisma.order.update({
+    await prisma.order.update({
       where: { id: orderId },
       data: updateData
     });

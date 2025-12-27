@@ -331,18 +331,9 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     if (regions !== undefined) updateData.regions = regions;
     if (isActive !== undefined) updateData.isActive = isActive;
 
-    const form = await prisma.checkoutForm.update({
+    await prisma.checkoutForm.update({
       where: { id: formId },
-      data: updateData,
-      include: {
-        product: true,
-        packages: {
-          orderBy: { sortOrder: 'asc' }
-        },
-        upsells: {
-          orderBy: { sortOrder: 'asc' }
-        }
-      }
+      data: updateData
     });
 
     // Update packages if provided

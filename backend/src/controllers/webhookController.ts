@@ -2,7 +2,7 @@ import { Response, Request } from 'express';
 import { AuthRequest } from '../types';
 import webhookService from '../services/webhookService';
 
-export const getAllWebhooks = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getAllWebhooks = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const webhooks = await webhookService.getAllWebhooks();
     res.json({ webhooks });
