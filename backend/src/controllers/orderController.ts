@@ -140,7 +140,7 @@ export const updateOrder = async (req: AuthRequest, res: Response): Promise<void
 export const deleteOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const result = await orderService.cancelOrder(id, req.user?.id, 'Order cancelled');
+    const result = await orderService.deleteOrder(id, req.user?.id);
     res.json(result);
   } catch (error) {
     throw error;

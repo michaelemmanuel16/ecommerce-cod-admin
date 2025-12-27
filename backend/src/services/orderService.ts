@@ -80,7 +80,9 @@ export class OrderService {
       limit = 20
     } = filters;
 
-    const where: Prisma.OrderWhereInput = {};
+    const where: Prisma.OrderWhereInput = {
+      deletedAt: null // Filter out soft-deleted orders
+    };
 
     if (status && status.length > 0) where.status = { in: status };
     if (customerId) where.customerId = customerId;
@@ -431,6 +433,10 @@ export class OrderService {
       throw new AppError('Order not found', 404);
     }
 
+    if (order.deletedAt) {
+      throw new AppError('Order has been deleted', 404);
+    }
+
     return order;
   }
 
@@ -698,6 +704,76 @@ export class OrderService {
 
     logger.info(`Order cancelled: ${order.id}`, { orderId });
     return { message: 'Order cancelled successfully' };
+  }
+
+  /**
+   * Soft delete order (set deletedAt timestamp)
+   */
+  async deleteOrder(orderId: string, userId?: number) {
+    const id = parseInt(orderId, 10);
+    if (isNaN(id)) {
+      throw new AppError('Invalid order ID', 400);
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { orderItems: true, customer: true }
+    });
+
+    if (!order) {
+      throw new AppError('Order not found', 404);
+    }
+
+    if (order.deletedAt) {
+      throw new AppError('Order already deleted', 400);
+    }
+
+    if (order.status === 'delivered') {
+      throw new AppError('Cannot delete delivered orders', 400);
+    }
+
+    // Soft delete with transaction (restock products, update customer stats)
+    await prisma.$transaction(async (tx) => {
+      // Restock products
+      for (const item of order.orderItems) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            stockQuantity: {
+              increment: item.quantity
+            }
+          }
+        });
+      }
+
+      // Update customer stats
+      await tx.customer.update({
+        where: { id: order.customerId },
+        data: {
+          totalOrders: { decrement: 1 },
+          totalSpent: { decrement: order.totalAmount }
+        }
+      });
+
+      // Create audit trail
+      await tx.orderHistory.create({
+        data: {
+          orderId: order.id,
+          status: order.status,
+          notes: `Order deleted by user ${userId || 'system'}`,
+          changedBy: userId
+        }
+      });
+
+      // Soft delete the order
+      await tx.order.update({
+        where: { id },
+        data: { deletedAt: new Date() }
+      });
+    });
+
+    logger.info(`Order soft deleted: ${order.id}`, { orderId, userId });
+    return { message: 'Order deleted successfully' };
   }
 
   /**

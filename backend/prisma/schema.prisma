@@ -178,6 +178,7 @@ model Order {
   createdById       Int?          @map("created_by_id")
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
+  deletedAt         DateTime?     @map("deleted_at")
 
   customer        Customer         @relation(fields: [customerId], references: [id])
   customerRep     User?            @relation("OrderCustomerRep", fields: [customerRepId], references: [id])
