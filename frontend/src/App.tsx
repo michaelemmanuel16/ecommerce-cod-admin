@@ -26,6 +26,7 @@ const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ default: m.CheckoutForms })));
+const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -161,6 +162,13 @@ function App() {
               <Suspense fallback={<Loading />}>
                 <CheckoutForms />
               </Suspense>
+            } />
+            <Route path="webhooks" element={
+              <RoleGuard allowedRoles={['super_admin', 'admin']}>
+                <Suspense fallback={<Loading />}>
+                  <Webhooks />
+                </Suspense>
+              </RoleGuard>
             } />
           </Route>
         </Routes>

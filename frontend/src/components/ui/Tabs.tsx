@@ -24,6 +24,7 @@ export const Tabs: React.FC<TabsProps> = ({ tabs, defaultTab }) => {
           {tabs.map((tab) => (
             <button
               key={tab.id}
+              type="button"
               onClick={() => setActiveTab(tab.id)}
               className={cn(
                 'py-4 px-1 border-b-2 font-medium text-sm',

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, MessageSquare, FileText } from 'lucide-react';
+import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, MessageSquare, FileText, Webhook } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useAuthStore } from '../stores/authStore';
@@ -8,7 +8,7 @@ import { UserManagementTable } from '../components/admin/UserManagementTable';
 import { RolePermissionsMatrix } from '../components/admin/RolePermissionsMatrix';
 import { adminService, SystemConfig } from '../services/admin.service';
 
-type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'notifications-config' | 'checkout-forms';
+type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'notifications-config' | 'checkout-forms' | 'webhooks';
 
 export const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
@@ -68,6 +68,7 @@ export const Settings: React.FC = () => {
     { id: 'users' as SettingsTab, label: 'User Management', icon: UsersIcon, adminOnly: true },
     { id: 'business' as SettingsTab, label: 'Business Settings', icon: Building2, adminOnly: true },
     { id: 'checkout-forms' as SettingsTab, label: 'Checkout Forms', icon: FileText, adminOnly: true },
+    { id: 'webhooks' as SettingsTab, label: 'Webhooks', icon: Webhook, adminOnly: true },
     { id: 'notifications-config' as SettingsTab, label: 'Notification Config', icon: MessageSquare, adminOnly: true },
     { id: 'permissions' as SettingsTab, label: 'Role Permissions', icon: Shield, adminOnly: true },
   ];
@@ -666,6 +667,42 @@ export const Settings: React.FC = () => {
                 <p className="text-xs text-gray-500 mt-2">
                   Public forms don't require authentication - perfect for sharing with customers!
                 </p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Super Admin Only - Webhooks */}
+      {activeTab === 'webhooks' && isSuperAdmin && (
+        <Card>
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Webhooks</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Import orders automatically from external systems via webhooks
+                </p>
+              </div>
+              <Button
+                variant="primary"
+                onClick={() => window.location.href = '/webhooks'}
+              >
+                <Webhook className="w-4 h-4 mr-2" />
+                Manage Webhooks
+              </Button>
+            </div>
+            <div className="space-y-4">
+              <div className="border border-gray-200 rounded-lg p-4 bg-blue-50">
+                <h4 className="font-medium text-gray-900 mb-2">🚀 Quick Start</h4>
+                <ol className="text-sm text-gray-700 space-y-2 list-decimal list-inside">
+                  <li>Click "Manage Webhooks" to open the Webhooks page</li>
+                  <li>Click "+ Add Webhook" button</li>
+                  <li>Enter your webhook details (name, URL, secret key)</li>
+                  <li>Map external field names to internal fields</li>
+                  <li>Test your field mapping with sample data</li>
+                  <li>Activate the webhook to start importing orders!</li>
+                </ol>
               </div>
             </div>
           </div>

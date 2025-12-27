@@ -81,6 +81,30 @@ export const importOrdersViaWebhook = async (req: Request, res: Response): Promi
   }
 };
 
+/**
+ * Import orders via unique webhook URL
+ * Simpler endpoint that doesn't require API keys in headers
+ */
+export const importOrdersViaUniqueUrl = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { uniqueUrl } = req.params;
+    const signature = req.headers['x-webhook-signature'] as string;
+
+    const result = await webhookService.processWebhookByUniqueUrl({
+      uniqueUrl,
+      signature,
+      body: req.body,
+      headers: req.headers,
+      endpoint: req.path,
+      method: req.method
+    });
+
+    res.json(result);
+  } catch (error) {
+    throw error;
+  }
+};
+
 export const getWebhookLogs = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;

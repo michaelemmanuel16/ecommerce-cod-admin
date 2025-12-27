@@ -141,9 +141,10 @@ model Product {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  orderItems    OrderItem[]
-  checkoutForms CheckoutForm[]
-  formUpsells   FormUpsell[]
+  orderItems     OrderItem[]
+  checkoutForms  CheckoutForm[]
+  formUpsells    FormUpsell[]
+  webhookConfigs WebhookConfig[]
 
   @@index([isActive])
   @@index([category, isActive])
@@ -348,18 +349,22 @@ model WorkflowExecution {
 
 model WebhookConfig {
   id           Int      @id @default(autoincrement())
+  uniqueUrl    String   @default(uuid()) @unique @map("unique_url") // Unique receiving URL ID
   name         String
   url          String
   secret       String
   apiKey       String?  @map("api_key")
+  productId    Int?     @map("product_id") // Foreign key to Product (nullable for backward compat)
   isActive     Boolean  @default(true) @map("is_active")
   fieldMapping Json     @map("field_mapping")
   headers      Json?
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  logs WebhookLog[]
+  product Product?     @relation(fields: [productId], references: [id])
+  logs    WebhookLog[]
 
+  @@index([productId])
   @@map("webhook_configs")
 }
 

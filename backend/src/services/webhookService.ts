@@ -2,12 +2,14 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import crypto from 'crypto';
+import { parsePackageField } from '../utils/packageParser';
 
 interface CreateWebhookData {
   name: string;
   url: string;
   secret: string;
   apiKey?: string;
+  productId?: number;
   fieldMapping: Record<string, string>;
   headers?: Record<string, string>;
 }
@@ -21,13 +23,31 @@ interface ProcessWebhookData {
   method: string;
 }
 
+interface ProcessWebhookByUniqueUrlData {
+  uniqueUrl: string;
+  signature?: string;
+  body: any;
+  headers: any;
+  endpoint: string;
+  method: string;
+}
+
 export class WebhookService {
   /**
    * Get all webhook configurations
    */
   async getAllWebhooks() {
     const webhooks = await prisma.webhookConfig.findMany({
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true
+          }
+        }
+      }
     });
 
     return webhooks;
@@ -43,14 +63,19 @@ export class WebhookService {
         url: data.url,
         secret: data.secret,
         apiKey: data.apiKey,
+        productId: data.productId,
         fieldMapping: data.fieldMapping,
         headers: data.headers || {}
+      },
+      include: {
+        product: true
       }
     });
 
     logger.info('Webhook configuration created', {
       webhookId: webhook.id,
-      name: webhook.name
+      name: webhook.name,
+      productId: webhook.productId
     });
 
     return webhook;
@@ -63,6 +88,13 @@ export class WebhookService {
     const webhook = await prisma.webhookConfig.findUnique({
       where: { id: webhookId },
       include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true
+          }
+        },
         logs: {
           orderBy: { processedAt: 'desc' },
           take: 10
@@ -91,7 +123,16 @@ export class WebhookService {
 
     const updated = await prisma.webhookConfig.update({
       where: { id: webhookId },
-      data: updateData
+      data: updateData,
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true
+          }
+        }
+      }
     });
 
     logger.info('Webhook configuration updated', { webhookId });
@@ -216,6 +257,90 @@ export class WebhookService {
   }
 
   /**
+   * Process incoming webhook via unique URL
+   */
+  async processWebhookByUniqueUrl(data: ProcessWebhookByUniqueUrlData) {
+    const { uniqueUrl, signature, body, headers, endpoint, method } = data;
+
+    // Create webhook log
+    const webhookLog = await prisma.webhookLog.create({
+      data: {
+        endpoint,
+        method,
+        headers: headers as any,
+        body: body as any,
+        success: false
+      }
+    });
+
+    try {
+      // Find webhook config by unique URL (include product relation)
+      const webhookConfig = await prisma.webhookConfig.findUnique({
+        where: { uniqueUrl, isActive: true },
+        include: {
+          product: true
+        }
+      });
+
+      if (!webhookConfig) {
+        await this.updateWebhookLog(webhookLog.id, {
+          success: false,
+          errorMessage: 'Invalid webhook URL',
+          statusCode: 404
+        });
+        throw new AppError('Webhook not found', 404);
+      }
+
+      // Link webhook log to config
+      await prisma.webhookLog.update({
+        where: { id: webhookLog.id },
+        data: { webhookConfigId: webhookConfig.id }
+      });
+
+      // Verify signature if provided
+      if (signature) {
+        const isValid = this.verifySignature(JSON.stringify(body), signature, webhookConfig.secret);
+        if (!isValid) {
+          await this.updateWebhookLog(webhookLog.id, {
+            success: false,
+            errorMessage: 'Invalid signature',
+            statusCode: 401
+          });
+          throw new AppError('Invalid webhook signature', 401);
+        }
+      }
+
+      // Process orders
+      const results = await this.processOrdersFromWebhook(body, webhookConfig);
+
+      // Update webhook log as successful
+      await this.updateWebhookLog(webhookLog.id, {
+        success: true,
+        response: results,
+        statusCode: 200
+      });
+
+      return {
+        message: 'Webhook processed',
+        results
+      };
+    } catch (error: any) {
+      logger.error('Webhook processing error', {
+        error: error.message,
+        webhookLogId: webhookLog.id
+      });
+
+      await this.updateWebhookLog(webhookLog.id, {
+        success: false,
+        errorMessage: error.message,
+        statusCode: error.statusCode || 500
+      });
+
+      throw error;
+    }
+  }
+
+  /**
    * Process orders from webhook payload
    */
   private async processOrdersFromWebhook(body: any, webhookConfig: any) {
@@ -236,26 +361,87 @@ export class WebhookService {
         // Find or create customer
         const customer = await this.findOrCreateCustomer(mappedData, externalOrder);
 
-        // Create order
+        // Determine product, quantity, and price
+        let product = null;
+        let quantity = 1;
+        let price = 0;
+        let packageInfo = '';
+
+        // Check if webhook has a configured product (new flow)
+        if (webhookConfig?.productId && webhookConfig?.product) {
+          // Use webhook's configured product
+          product = webhookConfig.product;
+
+          // Parse package field to extract quantity and price
+          const packageField = mappedData.quantity || mappedData.package || externalOrder.quantity || externalOrder.package || '';
+          packageInfo = packageField;
+
+          if (packageField) {
+            const parsed = parsePackageField(packageField);
+            quantity = parsed.quantity;
+            price = parsed.price;
+
+            logger.info('Parsed package field', {
+              packageField,
+              quantity,
+              price,
+              productId: product.id
+            });
+          } else {
+            // Fall back to explicit quantity/price fields if package field is empty
+            quantity = Number(mappedData.quantity || externalOrder.quantity || 1);
+            price = Number(mappedData.price || externalOrder.price || 0);
+          }
+        } else {
+          // Old flow: Look up product by name (backward compatibility)
+          const productName = mappedData.productName || externalOrder.product_name || externalOrder.product;
+          quantity = Number(mappedData.quantity || externalOrder.quantity || 1);
+          price = Number(mappedData.price || externalOrder.price || 0);
+          packageInfo = mappedData.package || externalOrder.package || '';
+
+          product = productName ? await this.findProductByName(productName) : null;
+        }
+
+        // Calculate totals
+        // The parsed price from package field is the TOTAL price for the package, not per-unit
+        // Example: "BUY THREE SETS - GH₵675" means 3 sets for 675 total (not 675 each)
+        const itemTotal = price; // Use price as-is (it's already the total)
+        const subtotal = mappedData.subtotal ? Number(mappedData.subtotal) : itemTotal;
+        const shippingCost = Number(mappedData.shippingCost || mappedData.deliveryFee || externalOrder.shipping_cost || externalOrder.delivery_fee || 0);
+        const totalAmount = mappedData.totalAmount ? Number(mappedData.totalAmount) : subtotal + shippingCost;
+
+        // Create order with OrderItems
         const createdOrder = await prisma.order.create({
           data: {
             customerId: customer.id,
-            subtotal: Number(mappedData.subtotal || externalOrder.amount || 0),
-            totalAmount: Number(mappedData.totalAmount || externalOrder.amount || 0),
-            codAmount: Number(mappedData.totalAmount || externalOrder.amount || 0),
+            subtotal,
+            shippingCost,
+            totalAmount,
+            codAmount: totalAmount,
             deliveryAddress: mappedData.deliveryAddress || externalOrder.address || customer.address,
             deliveryState: mappedData.deliveryState || externalOrder.state || customer.state,
             deliveryArea: mappedData.deliveryArea || externalOrder.area || customer.area,
-            notes: mappedData.notes || externalOrder.notes,
+            notes: mappedData.notes || externalOrder.notes || (packageInfo ? `Package: ${packageInfo}` : undefined),
             source: 'webhook',
             externalOrderId: externalOrder.id || externalOrder.order_id,
             webhookData: externalOrder,
+            orderItems: product ? {
+              create: {
+                productId: product.id,
+                quantity,
+                unitPrice: quantity > 0 ? price / quantity : price, // Calculate unit price from total
+                totalPrice: itemTotal
+              }
+            } : undefined,
             orderHistory: {
               create: {
                 status: 'pending_confirmation',
                 notes: 'Order imported via webhook'
               }
             }
+          },
+          include: {
+            orderItems: true
           }
         });
 
@@ -293,6 +479,26 @@ export class WebhookService {
   }
 
   /**
+   * Find product by name or SKU (case-insensitive)
+   */
+  private async findProductByName(productName: string): Promise<any> {
+    const product = await prisma.product.findFirst({
+      where: {
+        OR: [
+          { name: { equals: productName, mode: 'insensitive' } },
+          { sku: { equals: productName, mode: 'insensitive' } }
+        ]
+      }
+    });
+
+    if (!product) {
+      throw new Error(`Product not found: ${productName}`);
+    }
+
+    return product;
+  }
+
+  /**
    * Find or create customer from webhook data
    */
   private async findOrCreateCustomer(mappedData: any, externalOrder: any) {
@@ -312,6 +518,7 @@ export class WebhookService {
           firstName: mappedData.customerFirstName || externalOrder.customer_name || 'Unknown',
           lastName: mappedData.customerLastName || '',
           phoneNumber: customerPhone,
+          alternatePhone: mappedData.alternatePhone || externalOrder.alternative_phone || undefined,
           email: mappedData.customerEmail || externalOrder.email || undefined,
           address: mappedData.deliveryAddress || externalOrder.address || '',
           state: mappedData.deliveryState || externalOrder.state || '',

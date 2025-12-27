@@ -226,3 +226,6 @@ export interface FilterOptions {
 
 // Re-export checkout form types
 export * from './checkout-form';
+
+// Re-export webhook types
+export * from './webhook';

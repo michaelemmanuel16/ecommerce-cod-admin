@@ -7,8 +7,9 @@ import { webhookLimiter, apiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-// Public webhook endpoint (no auth required, uses signature verification)
-router.post('/import', webhookLimiter, webhookController.importOrdersViaWebhook);
+// Public webhook endpoints (no auth required, uses signature verification)
+router.post('/import/:uniqueUrl', webhookLimiter, webhookController.importOrdersViaUniqueUrl); // Unique URL-based import
+router.post('/import', webhookLimiter, webhookController.importOrdersViaWebhook); // Legacy API key-based import
 
 // Protected routes
 router.use(authenticate);

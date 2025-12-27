@@ -11,7 +11,6 @@ import {
   BarChart3,
   Workflow,
   Settings,
-  FileText,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
