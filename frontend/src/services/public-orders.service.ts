@@ -134,9 +134,10 @@ export const publicOrdersService = {
     return response.data;
   },
 
-  async trackOrder(orderNumber: string, phoneNumber: string): Promise<OrderTrackingInfo> {
-    const response = await publicClient.get('/api/public/orders/track', {
-      params: { orderNumber, phoneNumber },
+  async trackOrder(orderId: string, phoneNumber: string): Promise<OrderTrackingInfo> {
+    const response = await publicClient.post('/api/public/orders/track', {
+      orderId,
+      phoneNumber,
     });
     return response.data.order || response.data;
   },

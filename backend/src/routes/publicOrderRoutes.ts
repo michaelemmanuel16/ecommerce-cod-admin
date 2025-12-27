@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import * as publicOrderController from '../controllers/publicOrderController';
-import { webhookLimiter } from '../middleware/rateLimiter';
+import { webhookLimiter, publicOrderLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validation';
-import { body, query, param } from 'express-validator';
+import { body, param } from 'express-validator';
 
 const router = Router();
 
@@ -35,8 +35,8 @@ const createOrderValidation = [
 ];
 
 const trackOrderValidation = [
-  query('orderNumber').notEmpty().withMessage('Order number is required'),
-  query('phoneNumber').notEmpty().withMessage('Phone number is required')
+  body('orderId').notEmpty().withMessage('Order ID is required'),
+  body('phoneNumber').notEmpty().withMessage('Phone number is required')
     .matches(/^\+?[0-9]{8,15}$/).withMessage('Invalid phone number format')
 ];
 
@@ -58,9 +58,10 @@ router.post(
   publicOrderController.createPublicOrder
 );
 
-// Track order by order number and phone
-router.get(
+// Track order by order number and phone (POST to protect PII in request body)
+router.post(
   '/orders/track',
+  publicOrderLimiter, // Strict rate limiting to prevent brute force
   trackOrderValidation,
   validate,
   publicOrderController.trackOrder

@@ -1,4 +1,21 @@
 /* eslint-disable */
+
+/**
+ * ⚠️ DEVELOPMENT SCRIPT ONLY
+ *
+ * This script is for local development and initial setup.
+ * It should NOT be included in production Docker images.
+ *
+ * Security Notes:
+ * - This script logs the admin password to console for convenience
+ * - The scripts/ directory is excluded in .dockerignore
+ * - Only use this for local development and staging environments
+ * - Never run this in production with default credentials
+ *
+ * Usage:
+ *   ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=securepass npm run create-admin
+ */
+
 import dotenv from 'dotenv';
 dotenv.config();
 

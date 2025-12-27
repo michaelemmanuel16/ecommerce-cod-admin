@@ -253,7 +253,7 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
 
 export const trackOrder = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { orderId, phoneNumber } = req.query;
+    const { orderId, phoneNumber } = req.body;
 
     if (!orderId || !phoneNumber) {
       res.status(400).json({ error: 'Order ID and phone number are required' });

@@ -33,3 +33,12 @@ export const healthLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
+
+// Prevent brute force order tracking lookups (very restrictive)
+export const publicOrderLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isDevelopment ? 1000 : 10, // Very restrictive in production
+  message: 'Too many order tracking attempts. Please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false
+});
