@@ -3,7 +3,7 @@ import * as webhookController from '../controllers/webhookController';
 import { authenticate, requirePermission } from '../middleware/auth';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
-import { webhookLimiter } from '../middleware/rateLimiter';
+import { webhookLimiter, apiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -12,6 +12,7 @@ router.post('/import', webhookLimiter, webhookController.importOrdersViaWebhook)
 
 // Protected routes
 router.use(authenticate);
+router.use(apiLimiter); // Rate limiting for authenticated webhook management
 
 router.get('/', requirePermission(['super_admin', 'admin']), webhookController.getAllWebhooks);
 router.post('/', requirePermission(['super_admin', 'admin']), webhookController.createWebhook);

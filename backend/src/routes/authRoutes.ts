@@ -9,8 +9,8 @@ const router = Router();
 
 router.post('/register', authLimiter, registerValidation, validate, authController.register);
 router.post('/login', authLimiter, loginValidation, validate, authController.login);
-router.post('/refresh', authLimiter, authController.refresh); // Add rate limiting to prevent DoS
-router.post('/logout', authenticate, authController.logout);
-router.get('/me', authenticate, authController.me);
+router.post('/refresh', authLimiter, authController.refresh);
+router.post('/logout', authLimiter, authenticate, authController.logout);
+router.get('/me', authLimiter, authenticate, authController.me);
 
 export default router;
