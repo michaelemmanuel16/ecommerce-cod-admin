@@ -57,27 +57,13 @@ setSocketInstance(io);
 
 // Middleware
 /**
- * SECURITY DECISION: Helmet Configuration
+ * SECURITY: Helmet Configuration
  *
- * We intentionally disable some Helmet protections globally to support
- * public checkout form embedding via iframes:
- *
- * 1. contentSecurityPolicy: false
- *    - Reason: Public checkout forms need inline styles/scripts for embedding
- *    - Mitigation: We apply CSP selectively on protected routes
- *
- * 2. frameguard: false
- *    - Reason: Public checkout must be embeddable in customer websites
- *    - Mitigation: We manually set X-Frame-Options: SAMEORIGIN on admin routes
- *                  (see middleware below at line 94-98)
- *
- * This is a conscious trade-off to enable the public checkout feature
- * while maintaining security for authenticated admin routes.
+ * All Helmet protections are enabled by default (CSP, frameguard, etc.).
+ * For public checkout routes (/api/public/*), we selectively remove
+ * the X-Frame-Options header to allow iframe embedding.
  */
-app.use(helmet({
-  contentSecurityPolicy: false, // Allow inline styles and scripts (needed for iframe embeds)
-  frameguard: false // Disable X-Frame-Options globally, we'll set it per route
-}));
+app.use(helmet());
 app.use(compression());
 
 // CORS for public API routes - allow all origins for embedding
@@ -87,6 +73,12 @@ app.use('/api/public', cors({
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type']
 }));
+
+// Remove X-Frame-Options header for public routes to allow iframe embedding
+app.use('/api/public', (_req, res, next) => {
+  res.removeHeader('X-Frame-Options');
+  next();
+});
 
 // CORS for protected routes - restricted to frontend URL only
 app.use(cors({
@@ -107,15 +99,6 @@ app.use((req, _res, next) => {
     userAgent: userAgent.replace(/[^\x20-\x7E]/g, ''), // Remove non-printable chars
     // Never log: Authorization, Cookie, or sensitive headers
   });
-  next();
-});
-
-// Set X-Frame-Options to protect admin routes from clickjacking
-// Public routes (/api/public/*) will not have this header, allowing iframe embedding
-app.use((req, res, next) => {
-  if (!req.path.startsWith('/api/public')) {
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  }
   next();
 });
 
