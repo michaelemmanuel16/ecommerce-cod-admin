@@ -48,6 +48,7 @@ describe('CallService', () => {
 
     const mockOrder = {
       id: 100,
+      customerId: 1, // Must match validCallData.customerId
       status: 'confirmed'
     };
 
@@ -94,18 +95,22 @@ describe('CallService', () => {
     });
 
     it('should throw error if sales rep does not exist', async () => {
+      const dataWithoutOrder = { ...validCallData, orderId: undefined };
+      prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);
       prismaMock.user.findUnique.mockResolvedValue(null);
 
-      await expect(callService.createCall(validCallData)).rejects.toThrow(
+      await expect(callService.createCall(dataWithoutOrder)).rejects.toThrow(
         new AppError('Invalid user', 400)
       );
     });
 
     it('should throw error if sales rep does not have permission', async () => {
+      const dataWithoutOrder = { ...validCallData, orderId: undefined };
       const deliveryAgent = { ...mockSalesRep, role: 'delivery_agent' };
+      prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);
       prismaMock.user.findUnique.mockResolvedValue(deliveryAgent as any);
 
-      await expect(callService.createCall(validCallData)).rejects.toThrow(
+      await expect(callService.createCall(dataWithoutOrder)).rejects.toThrow(
         new AppError('User does not have permission to log calls', 403)
       );
     });
@@ -147,21 +152,19 @@ describe('CallService', () => {
     });
 
     it('should throw error if customer does not exist', async () => {
-      prismaMock.user.findUnique.mockResolvedValue(mockSalesRep as any);
       prismaMock.customer.findUnique.mockResolvedValue(null);
 
       await expect(callService.createCall(validCallData)).rejects.toThrow(
-        new AppError('Invalid customer', 400)
+        new AppError('Customer not found', 404)
       );
     });
 
     it('should throw error if order does not exist when orderId is provided', async () => {
-      prismaMock.user.findUnique.mockResolvedValue(mockSalesRep as any);
       prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);
       prismaMock.order.findUnique.mockResolvedValue(null);
 
       await expect(callService.createCall(validCallData)).rejects.toThrow(
-        new AppError('Invalid order', 400)
+        new AppError('Order not found', 404)
       );
     });
   });
@@ -190,10 +193,10 @@ describe('CallService', () => {
       const result = await callService.getCalls({});
 
       expect(result.calls).toEqual(mockCalls);
-      expect(result.total).toBe(1);
-      expect(result.page).toBe(1);
-      expect(result.limit).toBe(20);
-      expect(result.totalPages).toBe(1);
+      expect(result.pagination.total).toBe(1);
+      expect(result.pagination.page).toBe(1);
+      expect(result.pagination.limit).toBe(50);
+      expect(result.pagination.pages).toBe(1);
     });
 
     it('should filter calls by outcome', async () => {
@@ -213,7 +216,7 @@ describe('CallService', () => {
       prismaMock.call.findMany.mockResolvedValue(mockCalls as any);
       prismaMock.call.count.mockResolvedValue(1);
 
-      await callService.getCalls({ salesRepId: '5' });
+      await callService.getCalls({ salesRepId: 5 });
 
       expect(prismaMock.call.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -245,9 +248,9 @@ describe('CallService', () => {
 
       const result = await callService.getCalls({ page: 2, limit: 10 });
 
-      expect(result.page).toBe(2);
-      expect(result.limit).toBe(10);
-      expect(result.totalPages).toBe(5);
+      expect(result.pagination.page).toBe(2);
+      expect(result.pagination.limit).toBe(10);
+      expect(result.pagination.pages).toBe(5);
       expect(prismaMock.call.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 10, take: 10 })
       );
@@ -340,6 +343,10 @@ describe('CallService', () => {
     it('should calculate stats for all reps', async () => {
       prismaMock.user.findMany.mockResolvedValue(mockSalesReps as any);
       prismaMock.call.count.mockResolvedValue(2);
+      prismaMock.call.groupBy.mockResolvedValue([
+        { outcome: 'confirmed', _count: 1 },
+        { outcome: 'no_answer', _count: 1 }
+      ] as any);
       prismaMock.call.findMany.mockResolvedValue(mockCalls as any);
 
       const result = await callService.getCallStats({});
@@ -363,6 +370,10 @@ describe('CallService', () => {
       const endDate = new Date('2024-12-31');
       prismaMock.user.findMany.mockResolvedValue(mockSalesReps as any);
       prismaMock.call.count.mockResolvedValue(2);
+      prismaMock.call.groupBy.mockResolvedValue([
+        { outcome: 'confirmed', _count: 1 },
+        { outcome: 'no_answer', _count: 1 }
+      ] as any);
       prismaMock.call.findMany.mockResolvedValue(mockCalls as any);
 
       await callService.getCallStats({ startDate, endDate });
@@ -373,9 +384,13 @@ describe('CallService', () => {
     it('should filter stats by specific rep', async () => {
       prismaMock.user.findMany.mockResolvedValue(mockSalesReps as any);
       prismaMock.call.count.mockResolvedValue(2);
+      prismaMock.call.groupBy.mockResolvedValue([
+        { outcome: 'confirmed', _count: 1 },
+        { outcome: 'no_answer', _count: 1 }
+      ] as any);
       prismaMock.call.findMany.mockResolvedValue(mockCalls as any);
 
-      await callService.getCallStats({ salesRepId: '5' });
+      await callService.getCallStats({ salesRepId: 5 });
 
       expect(prismaMock.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({

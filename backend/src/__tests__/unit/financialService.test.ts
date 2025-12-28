@@ -22,6 +22,10 @@ describe('FinancialService', () => {
         _sum: { amount: 2000 }
       } as any);
 
+      prismaMock.order.aggregate
+        .mockResolvedValueOnce({ _sum: { totalAmount: 1000 } } as any) // deliveredOrders
+        .mockResolvedValueOnce({ _sum: { totalAmount: 500 } } as any); // outForDeliveryOrders
+
       const summary = await financialService.getFinancialSummary({
         startDate: new Date('2024-01-01'),
         endDate: new Date('2024-01-31')
@@ -31,7 +35,7 @@ describe('FinancialService', () => {
       expect(summary.totalExpenses).toBe(2000);
       expect(summary.profit).toBe(8000);
       expect(summary.codCollected).toBe(9500);
-      expect(summary.codPending).toBe(500);
+      expect(summary.codPending).toBe(2000); // 500 + 1000 + 500
       expect(summary.profitMargin).toBe(80); // (10000 - 2000) / 10000 * 100
     });
 
@@ -42,6 +46,10 @@ describe('FinancialService', () => {
 
       prismaMock.expense.aggregate.mockResolvedValue({
         _sum: { amount: null }
+      } as any);
+
+      prismaMock.order.aggregate.mockResolvedValue({
+        _sum: { totalAmount: null }
       } as any);
 
       const summary = await financialService.getFinancialSummary({});
