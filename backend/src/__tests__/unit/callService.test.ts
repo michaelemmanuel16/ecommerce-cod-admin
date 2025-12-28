@@ -1,3 +1,13 @@
+import { jest } from '@jest/globals';
+
+// Mock server module to prevent it from starting
+jest.mock('../../server', () => ({
+  io: {
+    emit: jest.fn(),
+    to: jest.fn().mockReturnThis(),
+  },
+}));
+
 import { CallService } from '../../services/callService';
 import { prismaMock } from '../mocks/prisma.mock';
 import { AppError } from '../../middleware/errorHandler';
