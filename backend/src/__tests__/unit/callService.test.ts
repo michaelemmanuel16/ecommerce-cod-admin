@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
 // Mock server module to prevent it from starting
 jest.mock('../../server', () => ({
@@ -8,8 +8,9 @@ jest.mock('../../server', () => ({
   },
 }));
 
-import { CallService } from '../../services/callService';
+// Import prismaMock first to activate the jest.mock in prisma.mock.ts
 import { prismaMock } from '../mocks/prisma.mock';
+import { CallService } from '../../services/callService';
 import { AppError } from '../../middleware/errorHandler';
 
 describe('CallService', () => {
