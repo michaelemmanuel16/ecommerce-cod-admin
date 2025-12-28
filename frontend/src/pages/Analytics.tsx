@@ -7,11 +7,16 @@ import {
   Clock,
   Package,
   Target,
-  BarChart3
+  BarChart3,
+  Phone,
+  Calendar,
+  PieChart
 } from 'lucide-react';
 import { useAnalyticsStore } from '../stores/analyticsStore';
+import { useCallsStore } from '../stores/callsStore';
 import { Card } from '../components/ui/Card';
 import { AnalyticsMetricsSkeleton, PerformanceListSkeleton } from '../components/ui/PageSkeletons';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 export const Analytics: React.FC = () => {
   const {
@@ -26,17 +31,20 @@ export const Analytics: React.FC = () => {
     fetchAgentPerformance
   } = useAnalyticsStore();
 
+  const { stats, fetchCallStats, isLoading: callsLoading } = useCallsStore();
+
   useEffect(() => {
     const loadAnalyticsData = async () => {
       await Promise.all([
         fetchDashboardMetrics(),
         fetchSalesTrends('daily', 7),
         fetchRepPerformance(),
-        fetchAgentPerformance()
+        fetchAgentPerformance(),
+        fetchCallStats()
       ]);
     };
     loadAnalyticsData();
-  }, [fetchDashboardMetrics, fetchSalesTrends, fetchRepPerformance, fetchAgentPerformance]);
+  }, [fetchDashboardMetrics, fetchSalesTrends, fetchRepPerformance, fetchAgentPerformance, fetchCallStats]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -341,6 +349,173 @@ export const Analytics: React.FC = () => {
                     ))}
                   </div>
                 )}
+              </div>
+            </Card>
+          </div>
+
+          {/* Call Tracking Section */}
+          <div className="mt-8">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Call Tracking</h2>
+
+            {/* Call Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <Card>
+                <div className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Today</p>
+                      <p className="text-2xl font-bold text-gray-900 mt-1">
+                        {stats.reduce((sum, s) => sum + s.todayCalls, 0)}
+                      </p>
+                    </div>
+                    <Phone className="w-8 h-8 text-blue-500" />
+                  </div>
+                </div>
+              </Card>
+
+              <Card>
+                <div className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">This Week</p>
+                      <p className="text-2xl font-bold text-gray-900 mt-1">
+                        {stats.reduce((sum, s) => sum + s.weekCalls, 0)}
+                      </p>
+                    </div>
+                    <Calendar className="w-8 h-8 text-green-500" />
+                  </div>
+                </div>
+              </Card>
+
+              <Card>
+                <div className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">This Month</p>
+                      <p className="text-2xl font-bold text-gray-900 mt-1">
+                        {stats.reduce((sum, s) => sum + s.monthCalls, 0)}
+                      </p>
+                    </div>
+                    <TrendingUp className="w-8 h-8 text-purple-500" />
+                  </div>
+                </div>
+              </Card>
+
+              <Card>
+                <div className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Avg per Day</p>
+                      <p className="text-2xl font-bold text-gray-900 mt-1">
+                        {stats.length > 0
+                          ? (stats.reduce((sum, s) => sum + s.avgCallsPerDay, 0) / stats.length).toFixed(1)
+                          : '0.0'}
+                      </p>
+                    </div>
+                    <PieChart className="w-8 h-8 text-orange-500" />
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Call Outcomes Chart */}
+            <Card className="mb-6">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold mb-4">Call Outcomes</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart
+                    data={[
+                      {
+                        name: 'Confirmed',
+                        value: stats.reduce((sum, s) => sum + s.outcomeBreakdown.confirmed, 0),
+                        fill: '#10b981'
+                      },
+                      {
+                        name: 'Rescheduled',
+                        value: stats.reduce((sum, s) => sum + s.outcomeBreakdown.rescheduled, 0),
+                        fill: '#3b82f6'
+                      },
+                      {
+                        name: 'No Answer',
+                        value: stats.reduce((sum, s) => sum + s.outcomeBreakdown.no_answer, 0),
+                        fill: '#f59e0b'
+                      },
+                      {
+                        name: 'Cancelled',
+                        value: stats.reduce((sum, s) => sum + s.outcomeBreakdown.cancelled, 0),
+                        fill: '#ef4444'
+                      },
+                      {
+                        name: 'Other',
+                        value: stats.reduce((sum, s) => sum + s.outcomeBreakdown.other, 0),
+                        fill: '#6b7280'
+                      }
+                    ]}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#3b82f6" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+
+            {/* Rep Call Performance Table */}
+            <Card>
+              <div className="p-6">
+                <h3 className="text-lg font-semibold mb-4">Sales Rep Call Performance</h3>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rep Name</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Today</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Month</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg/Day</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Confirmed</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">No Answer</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {stats.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                            No call data available
+                          </td>
+                        </tr>
+                      ) : (
+                        stats.map((stat) => (
+                          <tr key={stat.repId} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {stat.repName}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                              {stat.todayCalls}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                              {stat.weekCalls}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                              {stat.monthCalls}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                              {stat.avgCallsPerDay.toFixed(1)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                              {stat.outcomeBreakdown.confirmed}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-600">
+                              {stat.outcomeBreakdown.no_answer}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </Card>
           </div>

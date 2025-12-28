@@ -136,3 +136,59 @@ export function emitPermissionsUpdated(io: SocketServer, updatedRoles: string[])
   // Also emit to all connected clients (in case they need to refresh)
   io.emit('permissions:updated', event);
 }
+
+export function emitCallLogged(io: SocketServer, call: any) {
+  // Emit to managers and admins
+  io.to('role:admin').emit('call:logged', call);
+  io.to('role:manager').emit('call:logged', call);
+
+  // Emit to the sales rep who logged it
+  io.to(`user:${call.salesRepId}`).emit('call:logged', call);
+}
+
+// Financial event emitters
+export function emitExpenseCreated(io: SocketServer, expense: any) {
+  // Emit to roles with financial permission
+  io.to('role:admin').emit('expense:created', expense);
+  io.to('role:manager').emit('expense:created', expense);
+  io.to('role:accountant').emit('expense:created', expense);
+}
+
+export function emitExpenseUpdated(io: SocketServer, expense: any) {
+  // Emit to roles with financial permission
+  io.to('role:admin').emit('expense:updated', expense);
+  io.to('role:manager').emit('expense:updated', expense);
+  io.to('role:accountant').emit('expense:updated', expense);
+}
+
+export function emitExpenseDeleted(io: SocketServer, expenseId: string) {
+  const event = {
+    id: expenseId,
+    timestamp: new Date()
+  };
+
+  // Emit to roles with financial permission
+  io.to('role:admin').emit('expense:deleted', event);
+  io.to('role:manager').emit('expense:deleted', event);
+  io.to('role:accountant').emit('expense:deleted', event);
+}
+
+export function emitTransactionDeposited(io: SocketServer, transactionIds: string[], depositReference?: string) {
+  const event = {
+    transactionIds,
+    depositReference,
+    timestamp: new Date()
+  };
+
+  // Emit to roles with financial permission
+  io.to('role:admin').emit('transaction:deposited', event);
+  io.to('role:manager').emit('transaction:deposited', event);
+  io.to('role:accountant').emit('transaction:deposited', event);
+}
+
+export function emitTransactionReconciled(io: SocketServer, transaction: any) {
+  // Emit to roles with financial permission
+  io.to('role:admin').emit('transaction:reconciled', transaction);
+  io.to('role:manager').emit('transaction:reconciled', transaction);
+  io.to('role:accountant').emit('transaction:reconciled', transaction);
+}

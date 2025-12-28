@@ -7,6 +7,7 @@ import {
   Package,
   Truck,
   UserCog,
+  Phone,
   DollarSign,
   BarChart3,
   Workflow,

@@ -108,3 +108,11 @@ export const paginationValidation: ValidationChain[] = [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 })
 ];
+
+export const createCallValidation: ValidationChain[] = [
+  body('customerId').isInt().withMessage('Customer ID is required'),
+  body('orderId').optional().isInt(),
+  body('outcome').isIn(['confirmed', 'rescheduled', 'no_answer', 'cancelled', 'other']).withMessage('Invalid call outcome'),
+  body('duration').optional().isInt({ min: 0 }).withMessage('Duration must be a positive number'),
+  body('notes').optional().isString().isLength({ max: 500 }).withMessage('Notes must be 500 characters or less')
+];

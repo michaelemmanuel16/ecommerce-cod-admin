@@ -61,6 +61,14 @@ enum WorkflowActionType {
   http_request
 }
 
+enum CallOutcome {
+  confirmed
+  rescheduled
+  no_answer
+  cancelled
+  other
+}
+
 model User {
   id             Int       @id @default(autoincrement())
   email          String    @unique
@@ -90,6 +98,7 @@ model User {
   createdOrders         Order[]        @relation("OrderCreatedBy")
   notifications         Notification[]
   expenses              Expense[]
+  calls                 Call[]         @relation("CallSalesRep")
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -116,6 +125,7 @@ model Customer {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   orders Order[]
+  calls  Call[]
 
   @@index([isActive])
   @@index([email])
@@ -189,6 +199,7 @@ model Order {
   delivery        Delivery?
   transaction     Transaction?
   formSubmissions FormSubmission[]
+  calls           Call[]
 
   @@index([customerId])
   @@index([status])
@@ -517,4 +528,27 @@ model FormSubmission {
   @@index([orderId])
   @@index([createdAt])
   @@map("form_submissions")
+}
+
+model Call {
+  id         Int         @id @default(autoincrement())
+  orderId    Int?        @map("order_id")
+  customerId Int         @map("customer_id")
+  salesRepId Int         @map("sales_rep_id")
+  outcome    CallOutcome
+  duration   Int?        // Duration in seconds (optional)
+  notes      String?     // Optional 1-line note
+  createdAt  DateTime    @default(now()) @map("created_at")
+
+  order    Order?   @relation(fields: [orderId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
+  salesRep User     @relation("CallSalesRep", fields: [salesRepId], references: [id])
+
+  @@index([salesRepId])
+  @@index([customerId])
+  @@index([orderId])
+  @@index([createdAt])
+  @@index([salesRepId, createdAt])
+  @@index([outcome])
+  @@map("calls")
 }

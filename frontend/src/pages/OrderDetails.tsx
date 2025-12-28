@@ -2,20 +2,25 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package, User, MapPin, Phone, Mail, Calendar, DollarSign, CreditCard } from 'lucide-react';
 import { ordersService } from '../services/orders.service';
-import { Order } from '../types';
+import { callsService } from '../services/calls.service';
+import { Order, Call } from '../types';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Loading } from '../components/ui/Loading';
+import { LogCallModal } from '../components/calls/LogCallModal';
 
 export const OrderDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLogCallModalOpen, setIsLogCallModalOpen] = useState(false);
+  const [orderCalls, setOrderCalls] = useState<Call[]>([]);
 
   useEffect(() => {
     if (id) {
       loadOrder(id);
+      loadOrderCalls(id);
     }
   }, [id]);
 
@@ -30,6 +35,15 @@ export const OrderDetails: React.FC = () => {
       console.error('Failed to load order:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadOrderCalls = async (orderId: string) => {
+    try {
+      const calls = await callsService.getCallsByOrder(parseInt(orderId));
+      setOrderCalls(calls);
+    } catch (error) {
+      console.error('Failed to load order calls:', error);
     }
   };
 
@@ -94,6 +108,14 @@ export const OrderDetails: React.FC = () => {
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.status)}`}>
               {order.status ? order.status.replace(/_/g, ' ') : 'Unknown'}
             </span>
+            <Button
+              variant="primary"
+              onClick={() => setIsLogCallModalOpen(true)}
+              className="flex items-center gap-2"
+            >
+              <Phone className="w-4 h-4" />
+              Log Call
+            </Button>
           </div>
         </div>
       </div>
@@ -316,17 +338,59 @@ export const OrderDetails: React.FC = () => {
             </Card>
           )}
 
-          {/* Notes */}
-          {order.notes && (
+          {/* Call History */}
+          {orderCalls.length > 0 && (
             <Card>
               <div className="p-6">
-                <h2 className="text-lg font-semibold mb-2">Notes</h2>
-                <p className="text-gray-700">{order.notes}</p>
+                <h2 className="text-lg font-semibold mb-4">Call History</h2>
+                <div className="space-y-3">
+                  {orderCalls.map((call) => (
+                    <div key={call.id} className="border-b pb-3 last:border-b-0">
+                      <div className="flex justify-between items-start mb-1">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          call.outcome === 'confirmed' ? 'bg-green-100 text-green-800' :
+                          call.outcome === 'rescheduled' ? 'bg-blue-100 text-blue-800' :
+                          call.outcome === 'no_answer' ? 'bg-orange-100 text-orange-800' :
+                          call.outcome === 'cancelled' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {call.outcome.replace(/_/g, ' ')}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(call.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        By: {call.salesRep.firstName} {call.salesRep.lastName}
+                      </p>
+                      {call.notes && (
+                        <p className="text-sm text-gray-600 mt-1">{call.notes}</p>
+                      )}
+                      {call.duration && (
+                        <p className="text-xs text-gray-500 mt-1">{call.duration}s</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             </Card>
           )}
         </div>
       </div>
+
+      {/* Log Call Modal */}
+      {order && (
+        <LogCallModal
+          isOpen={isLogCallModalOpen}
+          onClose={() => {
+            setIsLogCallModalOpen(false);
+            loadOrderCalls(id!);
+          }}
+          customerId={order.customerId}
+          customerName={order.customerName}
+          orderId={order.id}
+        />
+      )}
     </div>
   );
 };

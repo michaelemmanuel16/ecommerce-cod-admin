@@ -618,35 +618,6 @@ export const Settings: React.FC = () => {
               </Button>
             </div>
             <div className="space-y-4">
-              <div className="border border-gray-200 rounded-lg p-4">
-                <h4 className="font-medium text-gray-900 mb-2">📋 What are Checkout Forms?</h4>
-                <p className="text-sm text-gray-600 mb-3">
-                  Checkout Forms allow you to create beautiful, shareable order forms for your products without requiring customer login.
-                </p>
-                <ul className="text-sm text-gray-600 space-y-2">
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2">✓</span>
-                    <span>Create custom forms with tiered pricing (Buy 1 Set, Buy 2 Sets, etc.)</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2">✓</span>
-                    <span>Add upsells and add-ons to increase order value</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2">✓</span>
-                    <span>Share via WhatsApp, SMS, or social media</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2">✓</span>
-                    <span>Track conversions and analytics per form</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2">✓</span>
-                    <span>Customize colors to match your brand</span>
-                  </li>
-                </ul>
-              </div>
-
               <div className="border border-gray-200 rounded-lg p-4 bg-blue-50">
                 <h4 className="font-medium text-gray-900 mb-2">🚀 Quick Start</h4>
                 <ol className="text-sm text-gray-700 space-y-2 list-decimal list-inside">
@@ -657,16 +628,6 @@ export const Settings: React.FC = () => {
                   <li>Customize colors to match your brand</li>
                   <li>Share the public URL with customers!</li>
                 </ol>
-              </div>
-
-              <div className="border border-gray-200 rounded-lg p-4">
-                <h4 className="font-medium text-gray-900 mb-2">📊 Example Form URL</h4>
-                <code className="text-sm bg-gray-100 px-3 py-2 rounded block">
-                  https://yourdomain.com/order/magic-copybook
-                </code>
-                <p className="text-xs text-gray-500 mt-2">
-                  Public forms don't require authentication - perfect for sharing with customers!
-                </p>
               </div>
             </div>
           </div>

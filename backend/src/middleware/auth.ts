@@ -42,6 +42,7 @@ function getDefaultPermissions() {
       analytics: ['view'],
       workflows: ['create', 'view', 'update', 'delete', 'execute'],
       settings: ['view', 'update'],
+      calls: ['create', 'view', 'update', 'delete'],
     },
     admin: {
       users: ['create', 'view', 'update', 'delete'],
@@ -52,6 +53,7 @@ function getDefaultPermissions() {
       analytics: ['view'],
       workflows: ['create', 'view', 'update', 'delete', 'execute'],
       settings: ['view'],
+      calls: ['create', 'view', 'update', 'delete'],
     },
     manager: {
       users: [],
@@ -62,6 +64,7 @@ function getDefaultPermissions() {
       analytics: ['view'],
       workflows: ['view', 'execute'],
       settings: [],
+      calls: ['view'],
     },
     sales_rep: {
       users: [],
@@ -72,6 +75,7 @@ function getDefaultPermissions() {
       analytics: [],
       workflows: [],
       settings: [],
+      calls: ['create', 'view'],
     },
     inventory_manager: {
       users: [],
@@ -82,6 +86,7 @@ function getDefaultPermissions() {
       analytics: ['view'],
       workflows: [],
       settings: [],
+      calls: [],
     },
     delivery_agent: {
       users: [],
@@ -92,6 +97,7 @@ function getDefaultPermissions() {
       analytics: ['view'],
       workflows: [],
       settings: [],
+      calls: [],
     },
     accountant: {
       users: [],
@@ -101,6 +107,7 @@ function getDefaultPermissions() {
       financial: ['view', 'create'],
       analytics: ['view'],
       workflows: [],
+      calls: [],
       settings: [],
     },
   };

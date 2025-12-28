@@ -50,6 +50,55 @@ export interface FinancialReport {
   orders: number;
 }
 
+export interface Expense {
+  id: string;
+  category: string;
+  amount: number;
+  description: string;
+  receiptUrl?: string;
+  expenseDate: string;
+  recordedBy?: {
+    firstName: string;
+    lastName: string;
+  };
+  createdAt: string;
+}
+
+export interface ExpenseCategory {
+  category: string;
+  totalAmount: number;
+  count: number;
+}
+
+export interface AgentCashHolding {
+  agent: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  totalCollected: number;
+  orderCount: number;
+  oldestCollectionDate: string;
+}
+
+export interface PipelineRevenue {
+  totalExpected: number;
+  byStatus: {
+    status: string;
+    amount: number;
+    count: number;
+  }[];
+}
+
+export interface ProfitMargins {
+  totalRevenue: number;
+  totalCost: number;
+  grossProfit: number;
+  profitMargin: number;
+  orderCount: number;
+}
+
 export const financialService = {
   async getFinancialSummary(startDate?: string, endDate?: string): Promise<FinancialSummary> {
     const response = await apiClient.get('/api/financial/summary', {
@@ -95,5 +144,88 @@ export const financialService = {
   }): Promise<FinancialReport[]> {
     const response = await apiClient.get('/api/financial/reports', { params });
     return response.data.reports;
+  },
+
+  async getExpenses(params?: {
+    category?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ expenses: Expense[]; pagination: any }> {
+    const response = await apiClient.get('/api/financial/expenses', { params });
+    return response.data;
+  },
+
+  async getExpenseBreakdown(startDate?: string, endDate?: string): Promise<ExpenseCategory[]> {
+    const response = await apiClient.get('/api/financial/expenses/breakdown', {
+      params: { startDate, endDate }
+    });
+    return response.data.breakdown;
+  },
+
+  async updateExpense(
+    id: string,
+    data: {
+      category?: string;
+      amount?: number;
+      description?: string;
+      expenseDate?: string;
+    }
+  ): Promise<Expense> {
+    const response = await apiClient.put(`/api/financial/expenses/${id}`, data);
+    return response.data.expense;
+  },
+
+  async deleteExpense(id: string): Promise<void> {
+    await apiClient.delete(`/api/financial/expenses/${id}`);
+  },
+
+  async getAgentCashHoldings(): Promise<AgentCashHolding[]> {
+    const response = await apiClient.get('/api/financial/agent-cash-holdings');
+    return response.data.holdings;
+  },
+
+  async getPipelineRevenue(startDate?: string, endDate?: string): Promise<PipelineRevenue> {
+    const response = await apiClient.get('/api/financial/pipeline-revenue', {
+      params: { startDate, endDate }
+    });
+    return response.data;
+  },
+
+  async getProfitMargins(startDate?: string, endDate?: string): Promise<ProfitMargins> {
+    const response = await apiClient.get('/api/financial/profit-margins', {
+      params: { startDate, endDate }
+    });
+    return response.data;
+  },
+
+  async markAsDeposited(transactionIds: string[], depositReference?: string): Promise<void> {
+    await apiClient.post('/api/financial/collections/deposit', {
+      transactionIds,
+      depositReference
+    });
+  },
+
+  async reconcileTransaction(
+    id: string,
+    data: {
+      status: string;
+      reference?: string;
+      notes?: string;
+    }
+  ): Promise<void> {
+    await apiClient.post(`/api/financial/transactions/${id}/reconcile`, data);
+  },
+
+  async getAgentSettlement(
+    agentId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<any> {
+    const response = await apiClient.get(`/api/financial/agents/settlement/${agentId}`, {
+      params: { startDate, endDate }
+    });
+    return response.data;
   }
 };

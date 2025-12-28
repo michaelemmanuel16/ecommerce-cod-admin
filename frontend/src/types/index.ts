@@ -224,6 +224,62 @@ export interface FilterOptions {
   limit?: number;
 }
 
+export enum CallOutcome {
+  CONFIRMED = 'confirmed',
+  RESCHEDULED = 'rescheduled',
+  NO_ANSWER = 'no_answer',
+  CANCELLED = 'cancelled',
+  OTHER = 'other'
+}
+
+export interface Call {
+  id: number;
+  orderId?: number;
+  customerId: number;
+  salesRepId: number;
+  outcome: CallOutcome;
+  duration?: number;
+  notes?: string;
+  createdAt: string;
+  customer: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    phoneNumber: string;
+  };
+  salesRep: {
+    id: number;
+    firstName: string;
+    lastName: string;
+  };
+  order?: {
+    id: number;
+    status: string;
+  };
+}
+
+export interface CallStats {
+  repId: number;
+  repName: string;
+  totalCalls: number;
+  todayCalls: number;
+  weekCalls: number;
+  monthCalls: number;
+  avgCallsPerDay: number;
+  avgDuration: number;
+  outcomeBreakdown: {
+    confirmed: number;
+    rescheduled: number;
+    no_answer: number;
+    cancelled: number;
+    other: number;
+  };
+  timeline: Array<{
+    date: string;
+    calls: number;
+  }>;
+}
+
 // Re-export checkout form types
 export * from './checkout-form';
 

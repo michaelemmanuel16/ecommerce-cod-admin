@@ -2,6 +2,14 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, PaymentStatus } from '@prisma/client';
 import logger from '../utils/logger';
+import { io } from '../server';
+import {
+  emitExpenseCreated,
+  emitExpenseUpdated,
+  emitExpenseDeleted,
+  emitTransactionDeposited,
+  emitTransactionReconciled
+} from '../sockets/index';
 
 interface DateFilters {
   startDate?: Date;
@@ -164,6 +172,14 @@ export class FinancialService {
         expenseDate: data.expenseDate,
         recordedBy: parseInt(data.recordedBy, 10),
         receiptUrl: data.receiptUrl
+      },
+      include: {
+        user: {
+          select: {
+            firstName: true,
+            lastName: true
+          }
+        }
       }
     });
 
@@ -172,6 +188,11 @@ export class FinancialService {
       category: expense.category,
       amount: expense.amount
     });
+
+    // Emit Socket.io event
+    if (io) {
+      emitExpenseCreated(io, expense);
+    }
 
     return expense;
   }
@@ -390,6 +411,11 @@ export class FinancialService {
       orderId: transaction.orderId
     });
 
+    // Emit Socket.io event
+    if (io) {
+      emitTransactionReconciled(io, updated);
+    }
+
     return updated;
   }
 
@@ -432,6 +458,11 @@ export class FinancialService {
       count: updated.count,
       depositReference
     });
+
+    // Emit Socket.io event
+    if (io) {
+      emitTransactionDeposited(io, transactionIds, depositReference);
+    }
 
     return {
       message: `${updated.count} transactions marked as deposited`,
@@ -614,6 +645,203 @@ export class FinancialService {
       profitMargin,
       orderCount: orders.length
     };
+  }
+
+  /**
+   * Update an existing expense
+   */
+  async updateExpense(
+    expenseId: string,
+    data: {
+      category?: string;
+      amount?: number;
+      description?: string;
+      expenseDate?: Date;
+    }
+  ) {
+    const expense = await prisma.expense.findUnique({
+      where: { id: parseInt(expenseId, 10) }
+    });
+
+    if (!expense) {
+      throw new AppError('Expense not found', 404);
+    }
+
+    const updated = await prisma.expense.update({
+      where: { id: parseInt(expenseId, 10) },
+      data: {
+        ...(data.category && { category: data.category }),
+        ...(data.amount !== undefined && { amount: data.amount }),
+        ...(data.description && { description: data.description }),
+        ...(data.expenseDate && { expenseDate: data.expenseDate })
+      },
+      include: {
+        user: {
+          select: {
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+
+    logger.info('Expense updated', {
+      expenseId,
+      changes: data
+    });
+
+    // Emit Socket.io event
+    if (io) {
+      emitExpenseUpdated(io, updated);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Delete an expense
+   */
+  async deleteExpense(expenseId: string) {
+    const expense = await prisma.expense.findUnique({
+      where: { id: parseInt(expenseId, 10) }
+    });
+
+    if (!expense) {
+      throw new AppError('Expense not found', 404);
+    }
+
+    await prisma.expense.delete({
+      where: { id: parseInt(expenseId, 10) }
+    });
+
+    logger.info('Expense deleted', {
+      expenseId,
+      category: expense.category,
+      amount: expense.amount
+    });
+
+    // Emit Socket.io event
+    if (io) {
+      emitExpenseDeleted(io, expenseId);
+    }
+
+    return { message: 'Expense deleted successfully' };
+  }
+
+  /**
+   * Get pipeline revenue (expected revenue from active orders)
+   */
+  async getPipelineRevenue(filters: DateFilters) {
+    const where: Prisma.OrderWhereInput = {
+      status: {
+        in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery']
+      },
+      deletedAt: null
+    };
+
+    if (filters.startDate || filters.endDate) {
+      where.createdAt = {};
+      if (filters.startDate) where.createdAt.gte = filters.startDate;
+      if (filters.endDate) where.createdAt.lte = filters.endDate;
+    }
+
+    const orders = await prisma.order.findMany({
+      where,
+      select: {
+        totalAmount: true,
+        status: true
+      }
+    });
+
+    // Calculate total expected revenue
+    const totalExpected = orders.reduce((sum, order) => sum + order.totalAmount, 0);
+
+    // Group by status
+    const byStatus = orders.reduce((acc, order) => {
+      const existing = acc.find((item) => item.status === order.status);
+      if (existing) {
+        existing.amount += order.totalAmount;
+        existing.count += 1;
+      } else {
+        acc.push({
+          status: order.status,
+          amount: order.totalAmount,
+          count: 1
+        });
+      }
+      return acc;
+    }, [] as { status: string; amount: number; count: number }[]);
+
+    return {
+      totalExpected,
+      byStatus
+    };
+  }
+
+  /**
+   * Get agent cash holdings (collected but not deposited)
+   */
+  async getAgentCashHoldings() {
+    // Get all transactions where COD is collected but not deposited
+    const collections = await prisma.transaction.findMany({
+      where: {
+        type: 'cod_collection',
+        status: 'collected'
+      },
+      include: {
+        order: {
+          include: {
+            deliveryAgent: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Group by delivery agent
+    const holdingsMap: Record<
+      number,
+      {
+        agent: { id: number; firstName: string; lastName: string; email: string };
+        totalCollected: number;
+        orderCount: number;
+        oldestCollectionDate: Date;
+      }
+    > = {};
+
+    collections.forEach((collection) => {
+      if (collection.order?.deliveryAgent) {
+        const agentId = collection.order.deliveryAgent.id;
+
+        if (!holdingsMap[agentId]) {
+          holdingsMap[agentId] = {
+            agent: collection.order.deliveryAgent,
+            totalCollected: 0,
+            orderCount: 0,
+            oldestCollectionDate: collection.createdAt
+          };
+        }
+
+        holdingsMap[agentId].totalCollected += collection.amount;
+        holdingsMap[agentId].orderCount += 1;
+
+        // Update oldest collection date
+        if (collection.createdAt < holdingsMap[agentId].oldestCollectionDate) {
+          holdingsMap[agentId].oldestCollectionDate = collection.createdAt;
+        }
+      }
+    });
+
+    // Convert to array and sort by total collected (descending)
+    const holdings = Object.values(holdingsMap).sort((a, b) => b.totalCollected - a.totalCollected);
+
+    return holdings;
   }
 }
 

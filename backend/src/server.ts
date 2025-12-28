@@ -32,6 +32,7 @@ import uploadRoutes from './routes/uploadRoutes';
 import adminRoutes from './routes/adminRoutes';
 import checkoutFormRoutes from './routes/checkoutFormRoutes';
 import publicOrderRoutes from './routes/publicOrderRoutes';
+import callRoutes from './routes/callRoutes';
 
 // Initialize workflow queue worker
 import './queues/workflowQueue';
@@ -123,6 +124,7 @@ app.use('/api/analytics', analyticsRoutes); // No rate limit - already cached & 
 app.use('/api/notifications', apiLimiter, notificationRoutes);
 app.use('/api/upload', apiLimiter, uploadRoutes);
 app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
+app.use('/api/calls', apiLimiter, callRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);
