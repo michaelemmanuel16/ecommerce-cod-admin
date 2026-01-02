@@ -23,8 +23,8 @@ RUN npm run build
 # Production stage
 FROM node:20-alpine AS production
 
-# Install dumb-init and netcat for proper signal handling and healthchecks
-RUN apk add --no-cache dumb-init netcat-openbsd
+# Install dumb-init, netcat, and openssl for Prisma and healthchecks
+RUN apk add --no-cache dumb-init netcat-openbsd openssl
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
@@ -46,12 +46,12 @@ RUN npx prisma generate
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 
 # Copy docker entrypoint script
-COPY --chown=nodejs:nodejs docker-entrypoint.sh ./
+COPY --from=builder --chown=nodejs:nodejs /app/docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
-# Create necessary directories
+# Create necessary directories and set ownership
 RUN mkdir -p /app/logs /app/uploads && \
-    chown -R nodejs:nodejs /app/logs /app/uploads
+    chown -R nodejs:nodejs /app
 
 # Switch to non-root user
 USER nodejs

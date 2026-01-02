@@ -179,7 +179,7 @@ export const deleteExpense = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
-export const getAgentCashHoldings = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getAgentCashHoldings = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const holdings = await financialService.getAgentCashHoldings();
 

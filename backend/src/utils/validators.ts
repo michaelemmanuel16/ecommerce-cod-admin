@@ -71,7 +71,7 @@ export const createProductValidation: ValidationChain[] = [
   body('name').notEmpty(),
   body('category').notEmpty(),
   body('price').isFloat({ min: 0 }),
-  body('costPrice').isFloat({ min: 0 }),
+  body('cogs').isFloat({ min: 0 }),
   body('stockQuantity').isInt({ min: 0 })
 ];
 

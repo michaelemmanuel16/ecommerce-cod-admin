@@ -60,7 +60,14 @@ export class FinancialService {
       if (endDate) expenseDateWhere.expenseDate.lte = endDate;
     }
 
-    const [revenue, expenses, codCollections, pendingCOD] = await Promise.all([
+    const orderDateWhere: any = {};
+    if (startDate || endDate) {
+      orderDateWhere.createdAt = {};
+      if (startDate) orderDateWhere.createdAt.gte = startDate;
+      if (endDate) orderDateWhere.createdAt.lte = endDate;
+    }
+
+    const [revenue, expenses, codCollections, pendingCOD, deliveredOrders, outForDeliveryOrders] = await Promise.all([
       prisma.transaction.aggregate({
         where: {
           ...dateWhere,
@@ -88,13 +95,39 @@ export class FinancialService {
           status: 'pending'
         },
         _sum: { amount: true }
+      }),
+      // Count delivered orders where payment hasn't been collected (COD orders with codAmount)
+      prisma.order.aggregate({
+        where: {
+          ...orderDateWhere,
+          status: 'delivered',
+          codAmount: { not: null },
+          paymentStatus: 'pending',
+          deletedAt: null
+        },
+        _sum: { totalAmount: true }
+      }),
+      // Count out-for-delivery orders (COD being collected)
+      prisma.order.aggregate({
+        where: {
+          ...orderDateWhere,
+          status: 'out_for_delivery',
+          codAmount: { not: null },
+          deletedAt: null
+        },
+        _sum: { totalAmount: true }
       })
     ]);
 
     const totalRevenue = revenue._sum.amount || 0;
     const totalExpenses = expenses._sum.amount || 0;
     const totalCOD = codCollections._sum.amount || 0;
-    const pendingCODAmount = pendingCOD._sum.amount || 0;
+    const transactionPending = pendingCOD._sum.amount || 0;
+    const deliveredPending = deliveredOrders._sum.totalAmount || 0;
+    const outForDelivery = outForDeliveryOrders._sum.totalAmount || 0;
+
+    // Outstanding COD = pending transactions + delivered orders awaiting collection + orders out for delivery
+    const pendingCODAmount = transactionPending + deliveredPending + outForDelivery;
 
     const summary = {
       totalRevenue,
@@ -630,7 +663,7 @@ export class FinancialService {
 
     orders.forEach((order) => {
       totalRevenue += order.totalAmount;
-      order.orderItems.forEach((item) => {
+      (order as any).orderItems?.forEach((item: any) => {
         totalCost += item.product.costPrice * item.quantity;
       });
     });

@@ -185,13 +185,13 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     },
 
     fetchSummary: async (startDate?: string, endDate?: string) => {
-      set({ isLoading: true, error: null });
+      set((state) => ({ loadingStates: { ...state.loadingStates, summary: true }, error: null }));
       try {
         const summary = await financialService.getFinancialSummary(startDate, endDate);
-        set({ summary, isLoading: false });
+        set((state) => ({ summary, loadingStates: { ...state.loadingStates, summary: false } }));
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch financial summary';
-        set({ error: errorMessage, isLoading: false });
+        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, summary: false } }));
         toast.error(errorMessage);
         throw error;
       }
@@ -238,13 +238,13 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     },
 
     fetchReports: async (period?: 'daily' | 'monthly', startDate?: string, endDate?: string) => {
-      set({ isLoading: true, error: null });
+      set((state) => ({ loadingStates: { ...state.loadingStates, reports: true }, error: null }));
       try {
         const reports = await financialService.getFinancialReports({ period, startDate, endDate });
-        set({ reports, isLoading: false });
+        set((state) => ({ reports, loadingStates: { ...state.loadingStates, reports: false } }));
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch financial reports';
-        set({ error: errorMessage, isLoading: false });
+        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, reports: false } }));
         toast.error(errorMessage);
         throw error;
       }

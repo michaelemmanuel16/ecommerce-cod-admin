@@ -316,8 +316,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
         .date-range-popover {
           position: absolute;
           top: calc(100% + 0.5rem);
-          left: 50%;
-          transform: translateX(-50%);
+          right: 0;
           background-color: white;
           border: 1px solid #e5e7eb;
           border-radius: 0.75rem;

@@ -404,7 +404,7 @@ describe('FinancialService', () => {
           orderItems: [
             {
               quantity: 2,
-              product: { costPrice: 40 }
+              product: { cogs: 40 }
             }
           ]
         },
@@ -413,7 +413,7 @@ describe('FinancialService', () => {
           orderItems: [
             {
               quantity: 3,
-              product: { costPrice: 50 }
+              product: { cogs: 50 }
             }
           ]
         }

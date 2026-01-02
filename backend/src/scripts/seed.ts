@@ -337,7 +337,7 @@ async function seed() {
         description: `High quality ${data.name.toLowerCase()} available for delivery`,
         category: data.category,
         price: data.price,
-        costPrice: data.cost,
+        cogs: data.cost,
         stockQuantity: Math.floor(random() * 200) + 50,
         lowStockThreshold: 20,
         isActive: random() > 0.1, // 90% active

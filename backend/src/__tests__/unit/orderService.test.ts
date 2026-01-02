@@ -57,7 +57,7 @@ describe('OrderService', () => {
       name: 'Test Product',
       sku: 'TEST-001',
       price: 100,
-      costPrice: 50,
+      cogs: 50,
       stockQuantity: 50,
       category: 'Electronics',
       description: 'Test description',

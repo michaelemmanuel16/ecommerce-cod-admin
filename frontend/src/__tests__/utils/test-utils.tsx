@@ -78,7 +78,7 @@ export const mockProduct = {
   description: 'A test product',
   category: 'Electronics',
   price: 50,
-  costPrice: 30,
+  cogs: 30,
   stockQuantity: 100,
   lowStockThreshold: 10,
   isActive: true,
