@@ -99,3 +99,30 @@ serviceAccount.json
 
 # Auto Claude data directory
 .auto-claude/
+
+# Test artifacts
+test-results/
+playwright-report/
+*.webm
+
+# Claude/AI tools
+.claude/
+.claude-plugin/
+.playwright-mcp/
+
+# Large log files in backend
+backend/backend.log
+backend/*.log
+
+# Development notes (optional - you may want to keep some)
+*_COMPLETE.txt
+*_SUMMARY.txt
+*OPTIMIZATION*.txt
+*IMPLEMENTATION_PROGRESS*.md
+
+# Zip archives
+*.zip
+
+# Temporary test files
+test_pages.py
+test-embed.html
