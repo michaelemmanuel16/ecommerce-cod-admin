@@ -31,7 +31,7 @@ describe('OrderService', () => {
 
   describe('createOrder', () => {
     const mockCustomer = {
-      id: 'customer-1',
+      id: 1,
       firstName: 'John',
       lastName: 'Doe',
       phoneNumber: '+1234567890',
@@ -53,7 +53,7 @@ describe('OrderService', () => {
     };
 
     const mockProduct = {
-      id: 'product-1',
+      id: 1,
       name: 'Test Product',
       sku: 'TEST-001',
       price: 100,
@@ -69,10 +69,10 @@ describe('OrderService', () => {
     };
 
     const createOrderData = {
-      customerId: 'customer-1',
+      customerId: 1,
       orderItems: [
         {
-          productId: 'product-1',
+          productId: 1,
           quantity: 2,
           unitPrice: 100
         }
@@ -86,7 +86,7 @@ describe('OrderService', () => {
       deliveryState: 'NY',
       deliveryZipCode: '10001',
       deliveryArea: 'Manhattan',
-      createdById: 'user-1'
+      createdById: 1
     };
 
     it('should create order with valid data', async () => {
@@ -95,18 +95,18 @@ describe('OrderService', () => {
       prismaMock.order.count.mockResolvedValue(0);
 
       const mockOrder = {
-        id: 'order-1',
+        id: 1,
         orderNumber: '1001',
-        customerId: 'customer-1',
+        customerId: 1,
         subtotal: 200,
         totalAmount: 210,
         status: 'pending_confirmation' as OrderStatus,
         customer: mockCustomer,
         orderItems: [
           {
-            id: 'item-1',
-            orderId: 'order-1',
-            productId: 'product-1',
+            id: 1,
+            orderId: 1,
+            productId: 1,
             quantity: 2,
             unitPrice: 100,
             totalPrice: 200,
@@ -116,7 +116,7 @@ describe('OrderService', () => {
         ]
       };
 
-      prismaMock.$transaction.mockImplementation(async (callback: any) => {
+      (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
           order: {
             create: jest.fn().mockResolvedValue(mockOrder)
@@ -130,17 +130,17 @@ describe('OrderService', () => {
         });
       });
 
-      const order = await orderService.createOrder(createOrderData);
+      const order = await orderService.createOrder(createOrderData as any);
 
       expect(order).toBeDefined();
       expect(order.orderNumber).toBeDefined();
-      expect(order.customerId).toBe('customer-1');
+      expect(order.customerId).toBe(1);
     });
 
     it('should throw error when customer not found', async () => {
       prismaMock.customer.findUnique.mockResolvedValue(null);
 
-      await expect(orderService.createOrder(createOrderData)).rejects.toThrow(
+      await expect(orderService.createOrder(createOrderData as any)).rejects.toThrow(
         new AppError('Customer not found', 404)
       );
     });
@@ -149,8 +149,8 @@ describe('OrderService', () => {
       prismaMock.customer.findUnique.mockResolvedValue(mockCustomer);
       prismaMock.product.findUnique.mockResolvedValue(null);
 
-      await expect(orderService.createOrder(createOrderData)).rejects.toThrow(
-        new AppError('Product product-1 not found', 404)
+      await expect(orderService.createOrder(createOrderData as any)).rejects.toThrow(
+        new AppError('Product 1 not found', 404)
       );
     });
 
@@ -161,7 +161,7 @@ describe('OrderService', () => {
         stockQuantity: 1
       });
 
-      await expect(orderService.createOrder(createOrderData)).rejects.toThrow(
+      await expect(orderService.createOrder(createOrderData as any)).rejects.toThrow(
         new AppError(
           'Insufficient stock for product Test Product. Available: 1',
           400
@@ -181,8 +181,8 @@ describe('OrderService', () => {
     };
 
     it('should update order status with valid transition', async () => {
-      prismaMock.order.findUnique.mockResolvedValue(mockOrder as any);
-      prismaMock.order.update.mockResolvedValue({
+      (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder as any);
+      (prismaMock.order.update as any).mockResolvedValue({
         ...mockOrder,
         status: 'confirmed' as OrderStatus
       } as any);
@@ -198,8 +198,8 @@ describe('OrderService', () => {
     });
 
     it('should allow any status transition for admin flexibility', async () => {
-      prismaMock.order.findUnique.mockResolvedValue(mockOrder as any);
-      prismaMock.order.update.mockResolvedValue({
+      (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder as any);
+      (prismaMock.order.update as any).mockResolvedValue({
         ...mockOrder,
         status: 'delivered' as OrderStatus
       } as any);
@@ -214,7 +214,7 @@ describe('OrderService', () => {
     });
 
     it('should throw error when order not found', async () => {
-      prismaMock.order.findUnique.mockResolvedValue(null);
+      (prismaMock.order.findUnique as any).mockResolvedValue(null);
 
       await expect(
         orderService.updateOrderStatus('999', {
@@ -243,8 +243,8 @@ describe('OrderService', () => {
     };
 
     it('should cancel order and restock products', async () => {
-      prismaMock.order.findUnique.mockResolvedValue(mockOrder as any);
-      prismaMock.$transaction.mockImplementation(async (callback: any) => {
+      (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder as any);
+      (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
           product: {
             update: jest.fn().mockResolvedValue({})
@@ -267,7 +267,7 @@ describe('OrderService', () => {
     });
 
     it('should throw error when cancelling delivered order', async () => {
-      prismaMock.order.findUnique.mockResolvedValue({
+      (prismaMock.order.findUnique as any).mockResolvedValue({
         ...mockOrder,
         status: 'delivered' as OrderStatus
       } as any);
@@ -280,7 +280,7 @@ describe('OrderService', () => {
     });
 
     it('should throw error when cancelling already cancelled order', async () => {
-      prismaMock.order.findUnique.mockResolvedValue({
+      (prismaMock.order.findUnique as any).mockResolvedValue({
         ...mockOrder,
         status: 'cancelled' as OrderStatus
       } as any);
@@ -317,14 +317,14 @@ describe('OrderService', () => {
         lastName: 'Doe'
       };
 
-      prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);
-      prismaMock.order.count.mockResolvedValue(0);
-      prismaMock.order.create.mockResolvedValue({
-        id: 'order-1',
+      (prismaMock.customer.findUnique as any).mockResolvedValue(mockCustomer as any);
+      (prismaMock.order.count as any).mockResolvedValue(0);
+      (prismaMock.order.create as any).mockResolvedValue({
+        id: 1,
         orderNumber: 'ORD-123-00001'
       } as any);
 
-      const results = await orderService.bulkImportOrders(bulkOrderData, 'user-1');
+      const results = await orderService.bulkImportOrders(bulkOrderData, 1);
 
       expect(results.success).toBe(1);
       expect(results.failed).toBe(0);
@@ -332,28 +332,28 @@ describe('OrderService', () => {
     });
 
     it('should create new customer if not exists', async () => {
-      prismaMock.customer.findUnique.mockResolvedValue(null);
-      prismaMock.customer.create.mockResolvedValue({
-        id: 'customer-new',
+      (prismaMock.customer.findUnique as any).mockResolvedValue(null);
+      (prismaMock.customer.create as any).mockResolvedValue({
+        id: 10,
         phoneNumber: '+1234567890'
       } as any);
-      prismaMock.order.count.mockResolvedValue(0);
-      prismaMock.order.create.mockResolvedValue({
-        id: 'order-1',
+      (prismaMock.order.count as any).mockResolvedValue(0);
+      (prismaMock.order.create as any).mockResolvedValue({
+        id: 1,
         orderNumber: 'ORD-123-00001'
       } as any);
 
-      const results = await orderService.bulkImportOrders(bulkOrderData, 'user-1');
+      const results = await orderService.bulkImportOrders(bulkOrderData, 1);
 
       expect(results.success).toBe(1);
       expect(prismaMock.customer.create).toHaveBeenCalled();
     });
 
     it('should handle errors and continue processing', async () => {
-      prismaMock.customer.findUnique.mockResolvedValue(null);
-      prismaMock.customer.create.mockRejectedValue(new Error('Database error'));
+      (prismaMock.customer.findUnique as any).mockResolvedValue(null);
+      (prismaMock.customer.create as any).mockRejectedValue(new Error('Database error'));
 
-      const results = await orderService.bulkImportOrders(bulkOrderData, 'user-1');
+      const results = await orderService.bulkImportOrders(bulkOrderData, 1);
 
       expect(results.success).toBe(0);
       expect(results.failed).toBe(1);
@@ -364,13 +364,13 @@ describe('OrderService', () => {
 
   describe('getOrderStats', () => {
     it('should calculate order statistics correctly', async () => {
-      prismaMock.order.count.mockResolvedValue(100);
-      prismaMock.order.groupBy.mockResolvedValue([
+      (prismaMock.order.count as any).mockResolvedValue(100);
+      (prismaMock.order.groupBy as any).mockResolvedValue([
         { status: 'delivered' as OrderStatus, _count: 50 },
         { status: 'pending_confirmation' as OrderStatus, _count: 30 },
         { status: 'cancelled' as OrderStatus, _count: 20 }
       ] as any);
-      prismaMock.order.aggregate
+      (prismaMock.order.aggregate as any)
         .mockResolvedValueOnce({ _sum: { totalAmount: 5000 } } as any)
         .mockResolvedValueOnce({ _avg: { totalAmount: 50 } } as any);
 

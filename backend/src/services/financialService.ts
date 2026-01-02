@@ -650,7 +650,7 @@ export class FinancialService {
           include: {
             product: {
               select: {
-                costPrice: true
+                cogs: true
               }
             }
           }
@@ -664,7 +664,7 @@ export class FinancialService {
     orders.forEach((order) => {
       totalRevenue += order.totalAmount;
       (order as any).orderItems?.forEach((item: any) => {
-        totalCost += item.product.costPrice * item.quantity;
+        totalCost += item.product.cogs * item.quantity;
       });
     });
 

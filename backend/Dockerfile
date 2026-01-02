@@ -1,6 +1,9 @@
 # Multi-stage build for optimized production image
 FROM node:20-alpine AS builder
 
+# Install openssl for Prisma
+RUN apk add --no-cache openssl libc6-compat
+
 WORKDIR /app
 
 # Copy package files

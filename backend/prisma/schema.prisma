@@ -141,7 +141,7 @@ model Product {
   description       String?
   category          String
   price             Float
-  costPrice         Float    @map("cost_price")
+  cogs              Float    @map("cost_price")
   stockQuantity     Int      @map("stock_quantity")
   lowStockThreshold Int      @default(10) @map("low_stock_threshold")
   imageUrl          String?  @map("image_url")
