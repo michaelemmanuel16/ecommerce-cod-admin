@@ -63,10 +63,7 @@ services:
     # Do not expose port in production
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: production
+    image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/backend:main
     container_name: ecommerce-cod-backend
     restart: always
     environment:
@@ -100,20 +97,14 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
+          cpus: '0.8'
           memory: 2G
         reservations:
           cpus: '0.5'
           memory: 512M
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      target: production
-      args:
-        VITE_API_URL: ${API_URL}
-        VITE_WS_URL: ${WS_URL}
+    image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:main
     container_name: ecommerce-cod-frontend
     restart: always
     depends_on:
@@ -128,7 +119,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1'
+          cpus: '0.3'
           memory: 512M
         reservations:
           cpus: '0.25'

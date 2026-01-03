@@ -178,14 +178,37 @@ jobs:
     if: github.ref == 'refs/heads/main'
     environment:
       name: production
-      url: https://example.com
+      url: https://codadminpro.com
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Deploy to production
-        run: |
-          echo "Deploying to production environment"
-          # Add your deployment script here
-          # ./scripts/deploy-production.sh
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            bash scripts/deploy-github-actions.sh
+
+      - name: Notify Slack
+        uses: slackapi/slack-github-action@v1.24.0
+        if: always()
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "Frontend Deployment ${{ job.status }}: ${{ github.repository }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Frontend Deployment Status:* ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* `${{ github.sha }}`\n*Author:* ${{ github.actor }}\n*Environment:* Production"
+                  }
+                }
+              ]
+            }
