@@ -192,4 +192,8 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
+            echo "Pulling latest deployment scripts from GitHub..."
+            git fetch origin
+            git reset --hard origin/main
+            echo "Running deployment script..."
             bash scripts/deploy-github-actions.sh
