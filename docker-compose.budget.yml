@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres:
+    environment:
+      # Optimize PostgreSQL for 1GB system
+      - POSTGRES_SHARED_BUFFERS=128MB
+      - POSTGRES_MAX_CONNECTIONS=20
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+        reservations:
+          memory: 100M
+
+  redis:
+    command: redis-server --maxmemory 50mb --maxmemory-policy allkeys-lru --save ""
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+
+  backend:
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=256
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+        reservations:
+          memory: 150M
+
+  frontend:
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+  nginx:
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M

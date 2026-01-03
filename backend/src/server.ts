@@ -82,6 +82,9 @@ app.use('/api/public', (_req, res, next) => {
 });
 
 // CORS for protected routes - restricted to frontend URL only
+// Trust proxy - we are behind nginx reverse proxy
+app.set("trust proxy", true);
+
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true
