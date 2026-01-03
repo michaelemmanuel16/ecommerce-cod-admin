@@ -2,7 +2,10 @@ import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'ax
 import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// Use relative URLs in production (when served by Nginx), absolute URLs in development
+const API_URL = import.meta.env.VITE_API_URL === 'relative'
+  ? '' // Empty string for relative URLs - Nginx will proxy /api to backend
+  : import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 // Request cache for deduplication (5 second TTL)
 const requestCache = new Map<string, { data: any; timestamp: number }>();

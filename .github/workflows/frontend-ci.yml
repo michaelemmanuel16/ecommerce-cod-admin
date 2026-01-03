@@ -151,6 +151,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VITE_API_URL=relative
+            VITE_WS_URL=relative
 
   deploy-staging:
     name: Deploy to Staging

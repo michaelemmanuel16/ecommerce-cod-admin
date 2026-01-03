@@ -3,7 +3,10 @@ import { useAuthStore } from '../stores/authStore';
 import { useNotificationsStore } from '../stores/notificationsStore';
 import toast from 'react-hot-toast';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3000';
+// Use relative URLs in production (when served by Nginx), absolute URLs in development
+const WS_URL = import.meta.env.VITE_WS_URL === 'relative'
+  ? '' // Empty string for relative URLs - will connect to same origin
+  : import.meta.env.VITE_WS_URL || 'http://localhost:3000';
 
 let socket: Socket | null = null;
 
