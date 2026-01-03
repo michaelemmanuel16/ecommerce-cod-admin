@@ -119,7 +119,7 @@ echo -e "${BLUE}[6/7] Running health checks...${NC}"
 echo -e "${YELLOW}Checking backend health...${NC}"
 BACKEND_HEALTHY=false
 for i in {1..6}; do
-    if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+    if docker exec ecommerce-cod-backend wget -q -O- http://localhost:3000/health > /dev/null 2>&1; then
         BACKEND_HEALTHY=true
         echo -e "${GREEN}✓ Backend is healthy${NC}"
         break

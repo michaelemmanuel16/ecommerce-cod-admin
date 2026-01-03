@@ -11,8 +11,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Load environment variables
-if [ -f .env.production ]; then
+# Load environment variables from .env file
+if [ -f .env ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+elif [ -f .env.production ]; then
     export $(cat .env.production | grep -v '^#' | xargs)
 fi
 
