@@ -217,22 +217,3 @@ jobs:
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
             bash scripts/deploy-github-actions.sh
-
-      - name: Notify Slack
-        uses: slackapi/slack-github-action@v1.24.0
-        if: ${{ always() && secrets.SLACK_WEBHOOK_URL }}
-        with:
-          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
-          payload: |
-            {
-              "text": "Backend Deployment ${{ job.status }}: ${{ github.repository }}",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Backend Deployment Status:* ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* `${{ github.sha }}`\n*Author:* ${{ github.actor }}\n*Environment:* Production"
-                  }
-                }
-              ]
-            }
