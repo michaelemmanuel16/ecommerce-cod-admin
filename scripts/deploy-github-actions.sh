@@ -83,9 +83,9 @@ echo -e "${YELLOW}Updating backend service...${NC}"
 if docker-compose -f "$COMPOSE_FILE" up -d --no-deps backend; then
     echo -e "${GREEN}✓ Backend container updated${NC}"
 
-    # Wait for backend to be healthy (respecting start_period of 40s)
-    echo -e "${YELLOW}Waiting for backend to initialize (45s)...${NC}"
-    sleep 45
+    # Wait for backend to be healthy
+    echo -e "${YELLOW}Waiting for backend to be healthy...${NC}"
+    sleep 10
 else
     echo -e "${RED}Error: Failed to update backend${NC}"
     if [ "$ROLLBACK_ENABLED" = true ]; then
@@ -115,25 +115,21 @@ echo ""
 # Step 6: Health checks
 echo -e "${BLUE}[6/7] Running health checks...${NC}"
 
-# Check backend health using docker's built-in health status
+# Check backend health
 echo -e "${YELLOW}Checking backend health...${NC}"
 BACKEND_HEALTHY=false
-for i in {1..12}; do
-    HEALTH_STATUS=$(docker inspect --format='{{.State.Health.Status}}' ecommerce-cod-backend 2>/dev/null || echo "unknown")
-    if [ "$HEALTH_STATUS" = "healthy" ]; then
+for i in {1..6}; do
+    if docker exec ecommerce-cod-backend node -e "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))" 2>&1; then
         BACKEND_HEALTHY=true
         echo -e "${GREEN}✓ Backend is healthy${NC}"
         break
     fi
-    echo -e "${YELLOW}Attempt $i/12: Backend status is '$HEALTH_STATUS', waiting...${NC}"
+    echo -e "${YELLOW}Attempt $i/6: Backend not ready yet, waiting...${NC}"
     sleep 5
 done
 
 if [ "$BACKEND_HEALTHY" = false ]; then
     echo -e "${RED}✗ Backend health check failed${NC}"
-    # Show container logs for debugging
-    echo -e "${YELLOW}Recent backend logs:${NC}"
-    docker logs ecommerce-cod-backend --tail 20 2>&1 || true
 
     if [ "$ROLLBACK_ENABLED" = true ]; then
         echo -e "${YELLOW}Initiating rollback due to failed health checks...${NC}"
@@ -147,25 +143,21 @@ if [ "$BACKEND_HEALTHY" = false ]; then
     fi
 fi
 
-# Check frontend health using docker's built-in health status
+# Check frontend health via nginx
 echo -e "${YELLOW}Checking frontend health...${NC}"
 FRONTEND_HEALTHY=false
-for i in {1..12}; do
-    HEALTH_STATUS=$(docker inspect --format='{{.State.Health.Status}}' ecommerce-cod-frontend 2>/dev/null || echo "unknown")
-    if [ "$HEALTH_STATUS" = "healthy" ]; then
+for i in {1..6}; do
+    if curl -sf http://localhost/health > /dev/null 2>&1; then
         FRONTEND_HEALTHY=true
         echo -e "${GREEN}✓ Frontend is healthy${NC}"
         break
     fi
-    echo -e "${YELLOW}Attempt $i/12: Frontend status is '$HEALTH_STATUS', waiting...${NC}"
+    echo -e "${YELLOW}Attempt $i/6: Frontend not ready yet, waiting...${NC}"
     sleep 5
 done
 
 if [ "$FRONTEND_HEALTHY" = false ]; then
     echo -e "${RED}✗ Frontend health check failed${NC}"
-    # Show container logs for debugging
-    echo -e "${YELLOW}Recent frontend logs:${NC}"
-    docker logs ecommerce-cod-frontend --tail 20 2>&1 || true
 
     if [ "$ROLLBACK_ENABLED" = true ]; then
         echo -e "${YELLOW}Initiating rollback due to failed health checks...${NC}"
