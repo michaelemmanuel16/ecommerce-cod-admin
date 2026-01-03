@@ -220,9 +220,11 @@ jobs:
 
       - name: Notify Slack
         uses: slackapi/slack-github-action@v1.24.0
-        if: ${{ always() && secrets.SLACK_WEBHOOK_URL }}
+        if: ${{ always() && env.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         with:
-          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-url: ${{ env.SLACK_WEBHOOK_URL }}
           payload: |
             {
               "text": "Backend Deployment ${{ job.status }}: ${{ github.repository }}",
