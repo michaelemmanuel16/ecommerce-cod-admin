@@ -193,24 +193,3 @@ jobs:
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
             bash scripts/deploy-github-actions.sh
-
-      - name: Notify Slack
-        uses: slackapi/slack-github-action@v1.24.0
-        if: ${{ always() && env.SLACK_WEBHOOK_URL != '' }}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        with:
-          webhook-url: ${{ env.SLACK_WEBHOOK_URL }}
-          payload: |
-            {
-              "text": "Frontend Deployment ${{ job.status }}: ${{ github.repository }}",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Frontend Deployment Status:* ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* `${{ github.sha }}`\n*Author:* ${{ github.actor }}\n*Environment:* Production"
-                  }
-                }
-              ]
-            }
