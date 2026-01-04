@@ -93,7 +93,7 @@ CREATE TABLE products (
     description TEXT,
     category VARCHAR(100),
     price DECIMAL(12, 2) NOT NULL,
-    cost_price DECIMAL(12, 2),
+    cogs DECIMAL(12, 2),
     stock_quantity INTEGER DEFAULT 0,
     low_stock_threshold INTEGER DEFAULT 10,
     variants JSONB DEFAULT '[]'::jsonb,

@@ -94,7 +94,7 @@ navigate(`/customers/${String(customerId)}`);
 
 **4. Missing Properties (Not ID-related)**
 - `OrdersList.tsx` (line 35): `orderNumber` doesn't exist on Order type
-- `ProductForm.tsx` (line 55): `costPrice` doesn't exist on Product type
+- `ProductForm.tsx` (line 55): `cogs` doesn't exist on Product type
 - `CustomerDetails.tsx` (line 31): `customerId` not in FilterOptions type
 - `usePermissions.ts` (lines 82, 84): Missing role types in User interface
 
@@ -165,7 +165,7 @@ const options = items.map(item => ({
 
 3. **Type Updates**: Add missing properties to types
    - Add `orderNumber?` to Order interface (or remove from usage)
-   - Add `costPrice?` to Product interface (or remove from usage)
+   - Add `cogs?` to Product interface (or remove from usage)
    - Add missing roles to User interface
 
 4. **Final Build**: Run `npm run build` to verify

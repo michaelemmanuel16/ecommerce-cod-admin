@@ -180,7 +180,7 @@ Categories of notifications.
 - `description` (TEXT) - Product description
 - `category` (VARCHAR) - Product category
 - `price` (DECIMAL) - Selling price
-- `cost_price` (DECIMAL) - Cost/wholesale price
+- `cogs` (DECIMAL) - Cost/wholesale price
 - `stock_quantity` (INTEGER) - Current stock level
 - `low_stock_threshold` (INTEGER) - Alert threshold
 - `variants` (JSONB) - Product variants (see JSONB structure)

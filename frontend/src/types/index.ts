@@ -136,6 +136,7 @@ export interface Product {
   name: string;
   description: string;
   price: number;
+  cogs: number;
   stock: number;
   stockQuantity?: number; // Backend uses stockQuantity
   category: string;

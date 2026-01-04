@@ -32,13 +32,17 @@ sleep 10
 
 # Run migrations
 echo -e "${GREEN}Running database migrations...${NC}"
-docker-compose -f docker-compose.dev.yml exec backend npx prisma migrate dev
+docker-compose -f docker-compose.dev.yml exec -T backend npx prisma migrate deploy
 
 # Seed database (optional)
-read -p "Do you want to seed the database? (y/n): " SEED
-if [ "$SEED" = "y" ] || [ "$SEED" = "Y" ]; then
-    echo -e "${GREEN}Seeding database...${NC}"
-    docker-compose -f docker-compose.dev.yml exec backend npx prisma db seed
+echo ""
+if read -p "Do you want to seed the database? (y/n): " SEED; then
+    if [ "$SEED" = "y" ] || [ "$SEED" = "Y" ]; then
+        echo -e "${GREEN}Seeding database...${NC}"
+        docker-compose -f docker-compose.dev.yml exec -T backend npx prisma db seed
+    fi
+else
+    echo -e "${GREEN}Skipping database seeding...${NC}"
 fi
 
 echo ""

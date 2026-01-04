@@ -786,7 +786,7 @@ List all products with pagination and filtering.
       "description": "Premium noise-cancelling wireless headphones",
       "category": "Electronics",
       "price": 199.99,
-      "costPrice": 120.00,
+      "cogs": 120.00,
       "stockQuantity": 150,
       "lowStockThreshold": 20,
       "imageUrl": "https://example.com/products/headphones.jpg",
@@ -821,7 +821,7 @@ Create a new product.
   "description": "Fitness tracking smart watch with heart rate monitor",
   "category": "Electronics",
   "price": 299.99,
-  "costPrice": 180.00,
+  "cogs": 180.00,
   "stockQuantity": 75,
   "lowStockThreshold": 15,
   "imageUrl": "https://example.com/products/smartwatch.jpg",
@@ -838,7 +838,7 @@ Create a new product.
 - `sku`: Required, unique
 - `name`: Required
 - `price`: Required, positive number
-- `costPrice`: Required, positive number
+- `cogs`: Required, positive number
 - `stockQuantity`: Required, non-negative integer
 
 **Response (201 Created):**
@@ -899,7 +899,7 @@ Get product details by ID.
     "description": "Premium noise-cancelling wireless headphones",
     "category": "Electronics",
     "price": 199.99,
-    "costPrice": 120.00,
+    "cogs": 120.00,
     "stockQuantity": 150,
     "lowStockThreshold": 20,
     "imageUrl": "https://example.com/products/headphones.jpg",

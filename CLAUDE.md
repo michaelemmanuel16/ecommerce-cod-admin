@@ -4,179 +4,6 @@ This file provides guidance to Claude Code when working with this repository.
 
 ---
 
-## 🚨 MANDATORY SUB-AGENT WORKFLOW (OVERRIDE ALL OTHER INSTRUCTIONS)
-
-**THIS WORKFLOW IS MANDATORY FOR ALL FEATURES REQUIRING SPECIALIZED KNOWLEDGE.**
-
-### Critical Rule: Research-First, Implement-Second
-
-**Sub-agents are RESEARCHERS, not implementers.**
-- They analyze the codebase and create detailed plans
-- They NEVER write, edit, or create code
-- The parent agent (main Claude session) does ALL implementation
-
-### Parent Agent Checklist (YOU - Main Claude Session)
-
-**YOU MUST follow these steps IN ORDER for ANY complex task:**
-
-- [ ] **Step 1: Create Context File FIRST**
-  - Create `.claude/docs/tasks/context-session-{n}.md` BEFORE delegating
-  - Use `.claude/docs/tasks/context-session-template.md` as template
-  - Include: project overview, goals, current state, technical constraints
-
-- [ ] **Step 2: Delegate Research to Sub-Agents**
-  - Identify which specialized agents are needed
-  - Delegate research tasks (can run in parallel)
-  - ALWAYS pass context file path in delegation message
-  - Example: "Consult the frontend-developer sub-agent. Context: `.claude/docs/tasks/context-session-1.md`"
-
-- [ ] **Step 3: Read ALL Sub-Agent Plans**
-  - Wait for sub-agents to complete research
-  - Read ALL plan files from `.claude/docs/{agent-name}-plan.md`
-  - Understand recommendations before implementing
-  - NEVER implement before reading plans
-
-- [ ] **Step 4: Implement Based on Plans**
-  - Follow recommendations from sub-agent plans
-  - YOU do ALL code writing, editing, and changes
-  - Combine insights from multiple agent plans
-  - Document any deviations from plans
-
-- [ ] **Step 5: Update Context File**
-  - Mark tasks as complete in context file
-  - Document what was implemented
-  - Note any issues or deviations from plans
-  - Update "Last Updated" timestamp
-
-### Sub-Agent Expectations
-
-When you delegate to a sub-agent, they will:
-
-1. ✅ Read `.claude/docs/tasks/context-session-{n}.md` FIRST
-2. ✅ Research codebase using Read/Glob/Grep tools only
-3. ✅ Create detailed plan at `.claude/docs/{agent-name}-plan.md`
-4. ✅ Update context file to mark research complete
-5. ✅ Return final message pointing to plan file
-
-Sub-agents will REFUSE to:
-- ❌ Write or edit any code files
-- ❌ Run bash commands or npm scripts
-- ❌ Create files or directories
-- ❌ Make ANY changes to the codebase
-
-### Correct vs Incorrect Patterns
-
-#### ❌ INCORRECT: Skipping the Workflow
-```
-User: "Add authentication to the app"
-Parent: [Immediately starts writing code without research]
-```
-
-#### ✅ CORRECT: Following the Workflow
-```
-User: "Add authentication to the app"
-Parent:
-1. Creates `.claude/docs/tasks/context-session-1.md`
-2. Delegates to database-architect (schema research)
-3. Delegates to backend-developer (API research)
-4. Delegates to frontend-developer (UI research)
-5. Reads all three plan files
-6. Implements based on combined research
-7. Updates context file with results
-```
-
-#### ❌ INCORRECT: Sub-Agent Implementing
-```
-Sub-agent: "I'll create the login component now..."
-[Sub-agent tries to write code]
-```
-
-#### ✅ CORRECT: Sub-Agent Research Only
-```
-Sub-agent: "I've analyzed the codebase and created a plan at
-`.claude/docs/frontend-developer-plan.md`. Please read this
-plan before implementing. Key recommendations:
-- Use Shadcn Form, Input, Button components
-- Store auth state in authStore (Zustand)
-- Implement token refresh interceptor
-```
-
-### File Structure Reference
-
-```
-.claude/
-├── docs/
-│   ├── tasks/
-│   │   ├── context-session-template.md    # Template for new context files
-│   │   ├── context-session-1.md           # Current project context
-│   │   └── context-session-2.md           # Another project context
-│   ├── agent-plan-template.md             # Template for agent plans
-│   ├── frontend-developer-plan.md         # Frontend research output
-│   ├── backend-developer-plan.md          # Backend research output
-│   ├── database-architect-plan.md         # Database research output
-│   └── WORKFLOW.md                        # Quick reference guide
-└── agents/
-    ├── README.md                           # Agent system overview
-    ├── frontend-developer.md               # Research specialist
-    ├── backend-developer.md                # Research specialist
-    └── [13+ more agent files]              # All research specialists
-```
-
-### Quick Delegation Template
-
-Copy-paste this when delegating:
-
-```
-Task for {agent-name}:
-{Describe research needed}
-
-Context file: `.claude/docs/tasks/context-session-{n}.md`
-Output plan to: `.claude/docs/{agent-name}-plan.md`
-
-Research only - no implementation.
-```
-
-### Why This Pattern?
-
-**Problem with direct implementation:**
-- ❌ No specialized knowledge applied
-- ❌ Misses codebase patterns and conventions
-- ❌ No planning or architecture consideration
-- ❌ Hard to debug without context
-
-**Benefits of research-first:**
-- ✅ Specialized agents provide domain expertise
-- ✅ All research documented in plan files
-- ✅ Parent maintains full context for debugging
-- ✅ Parallel research speeds up complex tasks
-- ✅ Token-efficient: summaries instead of full file reads
-
-### Available Specialized Agents
-
-**Minimalist Approach (5 Essential Agents):**
-
-**Core Development Specialists:**
-- `frontend-developer` - React/Shadcn UI architecture, Zustand state, React Router
-- `backend-developer` - Node.js/Express/Prisma API design, JWT auth, Bull/Redis queues
-- `database-architect` - Prisma schema design, migrations, query optimization, indexing
-
-**MCP-Powered Specialist:**
-- `shadcn-expert` - Shadcn component registry (has unique MCP tools)
-
-**Quality Assurance:**
-- `test-engineer` - Test coverage, Jest/Vitest/Playwright E2E testing
-
-**Why Only 5 Agents?**
-- ✅ Focused on your specific tech stack (React, Express, Prisma, Shadcn)
-- ✅ Only delegate when domain expertise adds value
-- ✅ MCP-powered agent for unique tool access (Shadcn registry)
-- ✅ Parent agent handles general tasks (code review, docs, optimization)
-- ✅ Reduces overhead while maintaining quality
-
-See `.claude/agents/README.md` for detailed agent descriptions.
-
----
-
 ## Project Overview
 
 E-Commerce Cash-on-Delivery (COD) Admin Dashboard - A full-stack TypeScript application for managing COD orders, deliveries, customer relationships, and financial reconciliation.
@@ -192,8 +19,13 @@ ecommerce-cod-admin/
 ├── k8s/              # Kubernetes deployment configs
 ├── nginx/            # Nginx reverse proxy configs
 ├── monitoring/       # Monitoring and observability configs
-└── .claude/          # Claude Code agent configurations
+└── .claude/          # Claude Code configurations
 ```
+
+## Planning Guidelines
+
+- Save plans in `.claude/plans/` or `.claude/docs/` (not `~/.claude/plans/`)
+- Keep plans focused on this project only
 
 ## Quick Start
 
@@ -238,26 +70,25 @@ docker-compose -f docker-compose.dev.yml up -d
 cd backend
 
 # Development
-npm run dev                    # Start dev server with hot reload
-npm run build                  # Compile TypeScript
-npm start                      # Run production build
+npm run dev
+npm run build
+npm start
 
 # Database (Prisma)
-npm run prisma:generate        # Generate Prisma Client after schema changes
-npm run prisma:migrate         # Create and apply migration
-npm run prisma:migrate -- --name description  # Create migration with name
-npm run prisma:studio          # Open database GUI
-npx prisma db seed             # Seed database
-ts-node create-admin.ts        # Create admin user interactively
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:migrate -- --name description
+npm run prisma:studio
+npx prisma db seed
+ts-node create-admin.ts
 
 # Testing
-npm test                       # Run all tests
-npm run test:unit              # Unit tests only
-npm run test:integration       # Integration tests only
-npm run test:coverage          # Coverage report
-npm run test:performance       # Query performance tests
-npm test -- <filename>         # Run specific test file
-# Example: npm test -- orderService.test.ts
+npm test
+npm run test:unit
+npm run test:integration
+npm run test:coverage
+npm run test:performance
+npm test -- <filename>
 ```
 
 ### Frontend (port 5173)
@@ -266,75 +97,64 @@ npm test -- <filename>         # Run specific test file
 cd frontend
 
 # Development
-npm run dev                    # Vite dev server
-npm run build                  # Production build
-npm run preview                # Preview build
+npm run dev
+npm run build
+npm run preview
 
 # Testing
-npm test                       # Vitest tests
-npm run test:ui                # Interactive test UI
-npm run test:coverage          # Coverage report
+npm test
+npm run test:ui
+npm run test:coverage
 ```
 
 ### E2E Tests (root directory)
 
 ```bash
-npm run test:e2e               # Run all E2E tests
-npm run test:e2e:ui            # Interactive UI
-npm run test:e2e:debug         # Debug mode
-npm run test:e2e:report        # View reports
-
-# Run specific test suites
-npm run test:e2e:auth          # Authentication tests
-npm run test:e2e:orders        # Order management tests
-npm run test:e2e:kanban        # Kanban board tests
-npm run test:e2e:customers     # Customer management tests
-npm run test:e2e:realtime      # Real-time updates tests
+npm run test:e2e
+npm run test:e2e:ui
+npm run test:e2e:debug
+npm run test:e2e:report
+npm run test:e2e:auth
+npm run test:e2e:orders
+npm run test:e2e:kanban
+npm run test:e2e:customers
+npm run test:e2e:realtime
 ```
 
 ### Utility Scripts (root directory)
 
 ```bash
 # Development
-./scripts/start-dev.sh         # Start full dev environment (Docker)
+./scripts/start-dev.sh
 
 # Deployment
-./scripts/deploy.sh            # Production deployment
-./scripts/deploy-staging.sh    # Staging deployment
-./scripts/deploy-production.sh # Production deployment (alternative)
+./scripts/deploy.sh
+./scripts/deploy-staging.sh
+./scripts/deploy-production.sh
 
 # Database
-./scripts/backup-database.sh   # Backup database
-./scripts/database-restore.sh  # Restore from backup
-./scripts/init-db.sh           # Initialize database
-./scripts/run-migrations.sh    # Run migrations only
+./scripts/backup-database.sh
+./scripts/database-restore.sh
+./scripts/init-db.sh
+./scripts/run-migrations.sh
 
 # Maintenance
-./scripts/health-check.sh      # Check service health
-./scripts/rollback.sh          # Rollback deployment
+./scripts/health-check.sh
+./scripts/rollback.sh
 ```
 
 ### Docker Commands
 
 ```bash
-# Development environment
-docker-compose -f docker-compose.dev.yml up -d     # Start all services
-docker-compose -f docker-compose.dev.yml down      # Stop all services
-docker-compose -f docker-compose.dev.yml logs -f   # View logs
-docker-compose -f docker-compose.dev.yml ps        # List running services
+# Development
+docker-compose -f docker-compose.dev.yml up -d
+docker-compose -f docker-compose.dev.yml down
+docker-compose -f docker-compose.dev.yml logs -f
+docker-compose -f docker-compose.dev.yml ps
 
-# Production environment
-docker-compose -f docker-compose.prod.yml up -d    # Start production
-docker-compose -f docker-compose.prod.yml down     # Stop production
-
-# Access specific service logs
-docker-compose -f docker-compose.dev.yml logs backend -f
-docker-compose -f docker-compose.dev.yml logs frontend -f
-docker-compose -f docker-compose.dev.yml logs postgres -f
-
-# Execute commands in containers
-docker-compose -f docker-compose.dev.yml exec backend npm run prisma:studio
-docker-compose -f docker-compose.dev.yml exec backend npm test
+# Production
+docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.prod.yml down
 ```
 
 ## Architecture
@@ -519,44 +339,21 @@ await axios.get('/api/orders');
 
 ## Testing
 
-### Backend (Jest)
+See Development Commands section for test commands.
 
-```bash
-npm test                       # All tests
-npm run test:unit              # Unit tests (mock Prisma)
-npm run test:integration       # Integration tests (real DB)
-npm run test:coverage          # Coverage report
-npm test -- <filename>         # Specific test
-```
-
-**Structure:**
-- `src/__tests__/unit/` - Unit tests
-- `src/__tests__/integration/` - Integration tests
+**Backend (Jest):**
+- `src/__tests__/unit/` - Unit tests (mock Prisma)
+- `src/__tests__/integration/` - Integration tests (real DB)
 - `src/__tests__/mocks/` - Test mocks
 
-### Frontend (Vitest)
-
-```bash
-npm test                       # All tests
-npm run test:ui                # Interactive UI
-npm run test:coverage          # Coverage report
-```
-
-**Patterns:**
-- Use Vitest + Testing Library
+**Frontend (Vitest):**
+- Vitest + Testing Library
 - Mock API calls with MSW
 - Colocate tests with components
 
-### E2E (Playwright)
-
-```bash
-npm run test:e2e               # All E2E tests
-npm run test:e2e:ui            # Interactive mode
-npm run test:e2e:debug         # Debug mode
-npm run test:e2e:report        # HTML report
-```
-
-**Located in:** `e2e/` directory
+**E2E (Playwright):**
+- Located in `e2e/` directory
+- Run specific test suites (auth, orders, kanban, customers, realtime)
 
 ## Common Issues
 
@@ -592,31 +389,9 @@ npm run test:e2e:report        # HTML report
 - `src/App.tsx` - Route definitions
 - `src/types/index.ts` - TypeScript types
 
-## Claude Code Agents
-
-This project uses 13 specialized agents. See `.claude/agents/README.md` for details.
-
-**Quick Reference:**
-- `project-manager` - Multi-phase orchestration
-- `frontend-developer` - React/Shadcn UI
-- `backend-developer` - Node.js/Express/Prisma
-- `database-architect` - Schema design, migrations
-- `test-engineer` - Jest/Vitest/Playwright
-- `code-reviewer` - Quality assurance
-- `security-auditor` - Security scanning
-- `devops-engineer` - CI/CD, Docker
-- `performance-optimizer` - Performance tuning
-- `documentation-writer` - Documentation
-
-**Agent Pattern:**
-- Sub-agents do RESEARCH (read-only)
-- Parent agent does IMPLEMENTATION
-- Context files in `.claude/docs/tasks/`
-- Research plans in `.claude/docs/{agent}-plan.md`
 
 ## Development Guidelines
 
-- Use specialized agents for tasks
 - Frontend: Shadcn components only
 - Backend: Keep business logic in services
 - Always validate with Zod

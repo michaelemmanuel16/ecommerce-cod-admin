@@ -149,7 +149,7 @@ async function seedComprehensiveData() {
           description: 'Reusable handwriting practice copybook',
           category: 'Educational',
           price: 250.00,
-          costPrice: 150.00,
+          cogs: 150.00,
           stockQuantity: 100,
         },
         {
@@ -158,7 +158,7 @@ async function seedComprehensiveData() {
           description: 'Effective hemorrhoid treatment',
           category: 'Health',
           price: 200.00,
-          costPrice: 120.00,
+          cogs: 120.00,
           stockQuantity: 50,
         },
         {
@@ -167,7 +167,7 @@ async function seedComprehensiveData() {
           description: 'Fitness tracking smartwatch',
           category: 'Electronics',
           price: 450.00,
-          costPrice: 280.00,
+          cogs: 280.00,
           stockQuantity: 30,
         },
         {
@@ -176,7 +176,7 @@ async function seedComprehensiveData() {
           description: 'Fast charging portable battery',
           category: 'Electronics',
           price: 180.00,
-          costPrice: 100.00,
+          cogs: 100.00,
           stockQuantity: 75,
         },
         {
@@ -185,7 +185,7 @@ async function seedComprehensiveData() {
           description: 'Noise canceling wireless headphones',
           category: 'Electronics',
           price: 320.00,
-          costPrice: 190.00,
+          cogs: 190.00,
           stockQuantity: 45,
         },
       ];

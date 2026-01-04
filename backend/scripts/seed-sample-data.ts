@@ -16,7 +16,7 @@ async function seedSampleData() {
         description: 'Reusable handwriting practice copybook with disappearing ink',
         category: 'Educational',
         price: 250.00,
-        costPrice: 150.00,
+        cogs: 150.00,
         stockQuantity: 100,
         lowStockThreshold: 10,
         isActive: true
@@ -30,7 +30,7 @@ async function seedSampleData() {
         description: 'Effective hemorrhoid treatment cream',
         category: 'Health',
         price: 200.00,
-        costPrice: 120.00,
+        cogs: 120.00,
         stockQuantity: 50,
         lowStockThreshold: 10,
         isActive: true
