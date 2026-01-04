@@ -4,37 +4,57 @@ import { StatCard } from '../components/common/StatCard';
 import { SalesTrendChart } from '../components/charts/SalesTrendChart';
 import { OrderFunnelChart } from '../components/charts/OrderFunnelChart';
 import { Card } from '../components/ui/Card';
-import { useOrdersStore } from '../stores/ordersStore';
+import { useAnalyticsStore } from '../stores/analyticsStore';
 
 export const Dashboard: React.FC = () => {
-  const { fetchOrders, orders } = useOrdersStore();
+  const {
+    metrics,
+    trends,
+    conversionFunnel,
+    fetchDashboardMetrics,
+    fetchSalesTrends,
+    fetchConversionFunnel,
+    isLoading
+  } = useAnalyticsStore();
 
   useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
+    // Fetch all dashboard data in parallel
+    Promise.all([
+      fetchDashboardMetrics(),
+      fetchSalesTrends('daily', 7),
+      fetchConversionFunnel()
+    ]);
+  }, [fetchDashboardMetrics, fetchSalesTrends, fetchConversionFunnel]);
 
-  const totalOrders = orders.length;
-  const totalRevenue = orders.reduce((sum, order) => sum + order.totalAmount, 0);
-  const activeOrders = orders.filter((o) => o.status !== 'delivered').length;
-  const deliveredToday = orders.filter((o) => o.status === 'delivered').length;
+  // Use server-side computed metrics
+  const totalOrders = metrics?.totalOrders ?? 0;
+  const totalRevenue = metrics?.totalRevenue ?? 0;
+  const pendingOrders = metrics?.pendingOrders ?? 0;
+  const deliveredOrders = metrics?.deliveredOrders ?? 0;
 
-  const salesData = [
-    { date: 'Mon', sales: 120 },
-    { date: 'Tue', sales: 150 },
-    { date: 'Wed', sales: 180 },
-    { date: 'Thu', sales: 160 },
-    { date: 'Fri', sales: 200 },
-    { date: 'Sat', sales: 220 },
-    { date: 'Sun', sales: 190 },
-  ];
+  // Transform trends data for chart
+  const salesData = trends.length > 0
+    ? trends.map(t => ({ date: t.date.split('-').pop() || t.date, sales: t.orders }))
+    : [
+      { date: 'Mon', sales: 0 },
+      { date: 'Tue', sales: 0 },
+      { date: 'Wed', sales: 0 },
+      { date: 'Thu', sales: 0 },
+      { date: 'Fri', sales: 0 },
+      { date: 'Sat', sales: 0 },
+      { date: 'Sun', sales: 0 },
+    ];
 
-  const funnelData = [
-    { status: 'New', count: 45 },
-    { status: 'Confirmed', count: 38 },
-    { status: 'Preparing', count: 32 },
-    { status: 'Delivery', count: 28 },
-    { status: 'Delivered', count: 25 },
-  ];
+  // Transform funnel data for chart
+  const funnelData = conversionFunnel.length > 0
+    ? conversionFunnel.map(f => ({ status: f.status, count: f.count }))
+    : [
+      { status: 'New', count: 0 },
+      { status: 'Confirmed', count: 0 },
+      { status: 'Preparing', count: 0 },
+      { status: 'Delivery', count: 0 },
+      { status: 'Delivered', count: 0 },
+    ];
 
   return (
     <div className="space-y-6">
@@ -43,28 +63,28 @@ export const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Orders"
-          value={totalOrders}
+          value={isLoading ? '...' : totalOrders}
           icon={ShoppingBag}
           trend={12}
           iconColor="text-blue-600"
         />
         <StatCard
           title="Total Revenue"
-          value={`$${totalRevenue.toFixed(2)}`}
+          value={isLoading ? '...' : `$${totalRevenue.toFixed(2)}`}
           icon={DollarSign}
           trend={8}
           iconColor="text-green-600"
         />
         <StatCard
-          title="Active Orders"
-          value={activeOrders}
+          title="Pending Orders"
+          value={isLoading ? '...' : pendingOrders}
           icon={TrendingUp}
           trend={-3}
           iconColor="text-orange-600"
         />
         <StatCard
-          title="Delivered Today"
-          value={deliveredToday}
+          title="Delivered Orders"
+          value={isLoading ? '...' : deliveredOrders}
           icon={CheckCircle}
           trend={15}
           iconColor="text-purple-600"
@@ -84,3 +104,4 @@ export const Dashboard: React.FC = () => {
     </div>
   );
 };
+

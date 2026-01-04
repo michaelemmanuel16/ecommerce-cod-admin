@@ -398,3 +398,4 @@ See Development Commands section for test commands.
 - Type everything with TypeScript
 - Test critical paths
 - Be concise - no unnecessary docs
+- **Before committing/pushing**: Always run `./scripts/validate-workflows.sh` to ensure all GitHub Actions workflows are valid and will pass CI/CD

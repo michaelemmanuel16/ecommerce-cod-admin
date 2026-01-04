@@ -88,21 +88,22 @@ export function useDashboardData(
       console.log('📊 First 3 fetchers:', config.dataFetchers.slice(0, 3));
       console.log('📊 Remaining fetchers:', config.dataFetchers.slice(3));
 
-      // Fetch critical metrics first (sequential for rate limiting)
-      for (const fetcherName of config.dataFetchers.slice(0, 3)) {
-        try {
-          await executeFetcher(fetcherName, dashboardData, storeMethods, user, dateRange);
-          // Small delay to prevent rate limiting
-          await new Promise(resolve => setTimeout(resolve, 100));
-        } catch (err) {
-          console.error(`Error fetching ${fetcherName}:`, err);
-          // Continue with other fetchers even if one fails
-        }
-      }
+      // Fetch critical metrics first in parallel
+      const criticalFetchers = config.dataFetchers.slice(0, 3);
+      await Promise.all(
+        criticalFetchers.map(async (fetcherName) => {
+          try {
+            await executeFetcher(fetcherName, dashboardData, storeMethods, user, dateRange);
+          } catch (err) {
+            console.error(`Error fetching ${fetcherName}:`, err);
+            // Continue with other fetchers even if one fails
+          }
+        })
+      );
 
-      // Fetch remaining data in smaller batches
+      // Fetch remaining data in parallel batches (larger batch size for speed)
       const remainingFetchers = config.dataFetchers.slice(3);
-      const batchSize = 2;
+      const batchSize = 4;
 
       for (let i = 0; i < remainingFetchers.length; i += batchSize) {
         const batch = remainingFetchers.slice(i, i + batchSize);
@@ -115,10 +116,7 @@ export function useDashboardData(
             }
           })
         );
-        // Delay between batches
-        if (i + batchSize < remainingFetchers.length) {
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
+        // No delay between batches - rely on backend rate limiting
       }
 
       // Apply calculations if defined in config

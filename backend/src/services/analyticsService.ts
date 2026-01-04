@@ -59,11 +59,11 @@ export class AnalyticsService {
     // Build date filter for queries
     const dateFilter = filters?.startDate && filters?.endDate
       ? {
-          createdAt: {
-            gte: new Date(filters.startDate),
-            lte: new Date(filters.endDate)
-          }
+        createdAt: {
+          gte: new Date(filters.startDate),
+          lte: new Date(filters.endDate)
         }
+      }
       : {};
 
     // Build user scope filter (sales reps only see their assigned orders)
@@ -135,36 +135,16 @@ export class AnalyticsService {
           isAvailable: true
         }
       }),
-      prisma.delivery.findMany({
-        where: {
-          actualDeliveryTime: { not: null },
-          scheduledTime: { not: null }
-        },
-        select: {
-          scheduledTime: true,
-          actualDeliveryTime: true
-        },
-        orderBy: { actualDeliveryTime: 'desc' },
-        take: 1000
-      })
+      // Use raw SQL aggregate instead of fetching 1000 rows
+      prisma.$queryRaw<[{ avg_time: number | null }]>`
+        SELECT AVG(EXTRACT(EPOCH FROM ("actualDeliveryTime" - "scheduledTime"))) / 3600 as avg_time
+        FROM "Delivery"
+        WHERE "actualDeliveryTime" IS NOT NULL AND "scheduledTime" IS NOT NULL
+      `
     ]);
 
-    // Calculate average delivery time
-    let totalDeliveryTime = 0;
-    let deliveryCount = 0;
-
-    deliveries.forEach((d) => {
-      if (d.scheduledTime && d.actualDeliveryTime) {
-        const diff = d.actualDeliveryTime.getTime() - d.scheduledTime.getTime();
-        totalDeliveryTime += diff;
-        deliveryCount++;
-      }
-    });
-
-    const avgTime =
-      deliveryCount > 0
-        ? Math.round(totalDeliveryTime / deliveryCount / (1000 * 60 * 60)) // Convert to hours
-        : 0;
+    // Average delivery time is now computed in SQL
+    const avgTime = Math.round(deliveries[0]?.avg_time ?? 0);
 
     const metrics = {
       totalOrders,
@@ -294,11 +274,11 @@ export class AnalyticsService {
     // Build date filter for orders
     const dateFilter = filters?.startDate || filters?.endDate
       ? {
-          createdAt: {
-            ...(filters.startDate && { gte: new Date(filters.startDate) }),
-            ...(filters.endDate && { lte: new Date(filters.endDate) })
-          }
+        createdAt: {
+          ...(filters.startDate && { gte: new Date(filters.startDate) }),
+          ...(filters.endDate && { lte: new Date(filters.endDate) })
         }
+      }
       : undefined;
 
     const reps = await prisma.user.findMany({

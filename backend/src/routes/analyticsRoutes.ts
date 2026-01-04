@@ -10,7 +10,7 @@ router.use(authenticate);
 router.use(apiLimiter); // Add rate limiting to prevent DoS on database-heavy queries
 
 // Cache analytics endpoints (5 minutes default)
-router.get('/dashboard', requireResourcePermission('analytics', 'view'), cacheMiddleware(120), analyticsController.getDashboardMetrics);
+router.get('/dashboard', requireResourcePermission('analytics', 'view'), cacheMiddleware(300), analyticsController.getDashboardMetrics);
 router.get('/sales-trends', requireResourcePermission('analytics', 'view'), cacheMiddleware(300), analyticsController.getSalesTrends);
 router.get('/conversion-funnel', requireResourcePermission('analytics', 'view'), cacheMiddleware(300), analyticsController.getConversionFunnel);
 router.get('/rep-performance', requireResourcePermission('analytics', 'view'), cacheMiddleware(300), analyticsController.getRepPerformance);
