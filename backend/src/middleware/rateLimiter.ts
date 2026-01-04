@@ -4,7 +4,7 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 1000 : 5,
+  max: isDevelopment ? 1000 : 100,
   message: 'Too many authentication attempts, please try again later',
   standardHeaders: true,
   legacyHeaders: false
@@ -12,7 +12,7 @@ export const authLimiter = rateLimit({
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 10000 : 100,
+  max: isDevelopment ? 10000 : 200,
   message: 'Too many requests, please try again later',
   standardHeaders: true,
   legacyHeaders: false
@@ -20,7 +20,7 @@ export const apiLimiter = rateLimit({
 
 export const webhookLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 1000 : 50,
+  max: isDevelopment ? 1000 : 100,
   message: 'Too many webhook requests, please try again later',
   standardHeaders: true,
   legacyHeaders: false
@@ -37,7 +37,7 @@ export const healthLimiter = rateLimit({
 // Prevent brute force order tracking lookups (very restrictive)
 export const publicOrderLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 1000 : 10, // Very restrictive in production
+  max: isDevelopment ? 1000 : 30, // Very restrictive in production
   message: 'Too many order tracking attempts. Please try again later.',
   standardHeaders: true,
   legacyHeaders: false
