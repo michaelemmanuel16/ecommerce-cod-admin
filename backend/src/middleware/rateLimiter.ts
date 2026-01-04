@@ -7,7 +7,11 @@ export const authLimiter = rateLimit({
   max: isDevelopment ? 1000 : 100,
   message: 'Too many authentication attempts, please try again later',
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  validate: {
+    trustProxy: false, // Disable validation since we're behind nginx
+    xForwardedForHeader: false
+  }
 });
 
 export const apiLimiter = rateLimit({
@@ -15,7 +19,11 @@ export const apiLimiter = rateLimit({
   max: isDevelopment ? 10000 : 200,
   message: 'Too many requests, please try again later',
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  validate: {
+    trustProxy: false,
+    xForwardedForHeader: false
+  }
 });
 
 export const webhookLimiter = rateLimit({
@@ -23,7 +31,11 @@ export const webhookLimiter = rateLimit({
   max: isDevelopment ? 1000 : 100,
   message: 'Too many webhook requests, please try again later',
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  validate: {
+    trustProxy: false,
+    xForwardedForHeader: false
+  }
 });
 
 export const healthLimiter = rateLimit({
@@ -31,7 +43,11 @@ export const healthLimiter = rateLimit({
   max: 30, // 30 requests per minute (prevent health check DoS)
   message: 'Too many health check requests',
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  validate: {
+    trustProxy: false,
+    xForwardedForHeader: false
+  }
 });
 
 // Prevent brute force order tracking lookups (very restrictive)
@@ -40,5 +56,9 @@ export const publicOrderLimiter = rateLimit({
   max: isDevelopment ? 1000 : 30, // Very restrictive in production
   message: 'Too many order tracking attempts. Please try again later.',
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  validate: {
+    trustProxy: false,
+    xForwardedForHeader: false
+  }
 });

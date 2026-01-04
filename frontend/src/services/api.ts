@@ -7,9 +7,8 @@ const API_URL = import.meta.env.VITE_API_URL === 'relative'
   ? '' // Empty string for relative URLs - Nginx will proxy /api to backend
   : import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-// Request cache for deduplication (5 second TTL)
+// Request cache (5 second TTL)
 const requestCache = new Map<string, { data: any; timestamp: number }>();
-const pendingRequests = new Map<string, Promise<any>>();
 const CACHE_TTL = 5000; // 5 seconds
 
 // Generate cache key from request config
@@ -57,22 +56,6 @@ apiClient.interceptors.request.use(
           message: 'Cached response'
         });
       }
-
-      // Check if request is already pending (deduplication)
-      const pending = pendingRequests.get(cacheKey);
-      if (pending) {
-        console.log('[API Interceptor] Request already pending:', config.url);
-        return Promise.reject({
-          config,
-          response: null,
-          isPending: true,
-          pendingPromise: pending,
-          isAxiosError: false,
-          toJSON: () => ({}),
-          name: 'PendingRequest',
-          message: 'Request already pending'
-        });
-      }
     }
 
     console.log('[API Interceptor] Proceeding with request:', config.method?.toUpperCase(), config.url);
@@ -95,7 +78,6 @@ apiClient.interceptors.response.use(
         data: response.data,
         timestamp: Date.now()
       });
-      pendingRequests.delete(cacheKey);
     }
     return response;
   },
@@ -112,11 +94,6 @@ apiClient.interceptors.response.use(
     // Handle cache hits
     if (error.name === 'CacheHit') {
       return Promise.resolve(error.response);
-    }
-
-    // Handle pending requests (deduplication)
-    if (error.name === 'PendingRequest') {
-      return error.pendingPromise;
     }
 
     const originalRequest = error.config as InternalAxiosRequestConfig & {
