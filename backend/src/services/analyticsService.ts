@@ -144,7 +144,8 @@ export class AnalyticsService {
     ]);
 
     // Average delivery time is now computed in SQL
-    const avgTime = Math.round(deliveries[0]?.avg_time ?? 0);
+    // Handle case where raw query returns undefined (e.g., in mocked tests)
+    const avgTime = Math.round(Array.isArray(deliveries) && deliveries[0]?.avg_time ? deliveries[0].avg_time : 0);
 
     const metrics = {
       totalOrders,

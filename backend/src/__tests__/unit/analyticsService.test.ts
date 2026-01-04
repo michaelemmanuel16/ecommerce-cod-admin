@@ -23,16 +23,8 @@ describe('AnalyticsService', () => {
 
       prismaMock.user.count.mockResolvedValue(5); // activeAgents
 
-      prismaMock.delivery.findMany.mockResolvedValue([
-        {
-          scheduledTime: new Date('2024-01-01T10:00:00'),
-          actualDeliveryTime: new Date('2024-01-01T12:00:00')
-        },
-        {
-          scheduledTime: new Date('2024-01-01T11:00:00'),
-          actualDeliveryTime: new Date('2024-01-01T13:00:00')
-        }
-      ] as any);
+      // Mock the raw SQL query for average delivery time (returns 2 hours)
+      prismaMock.$queryRaw.mockResolvedValue([{ avg_time: 2 }] as any);
 
       const metrics = await analyticsService.getDashboardMetrics();
 
@@ -51,7 +43,7 @@ describe('AnalyticsService', () => {
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.aggregate.mockResolvedValue({ _sum: { totalAmount: null } } as any);
       prismaMock.user.count.mockResolvedValue(0);
-      prismaMock.delivery.findMany.mockResolvedValue([]);
+      prismaMock.$queryRaw.mockResolvedValue([{ avg_time: null }] as any);
 
       const metrics = await analyticsService.getDashboardMetrics();
 
