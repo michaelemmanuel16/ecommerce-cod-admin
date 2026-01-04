@@ -135,17 +135,37 @@ export class AnalyticsService {
           isAvailable: true
         }
       }),
-      // Use raw SQL aggregate instead of fetching 1000 rows
-      prisma.$queryRaw<[{ avg_time: number | null }]>`
-        SELECT AVG(EXTRACT(EPOCH FROM ("actualDeliveryTime" - "scheduledTime"))) / 3600 as avg_time
-        FROM "Delivery"
-        WHERE "actualDeliveryTime" IS NOT NULL AND "scheduledTime" IS NOT NULL
-      `
+      // Fetch recent deliveries for avg time calculation
+      prisma.delivery.findMany({
+        where: {
+          actualDeliveryTime: { not: null },
+          scheduledTime: { not: null }
+        },
+        select: {
+          scheduledTime: true,
+          actualDeliveryTime: true
+        },
+        orderBy: { actualDeliveryTime: 'desc' },
+        take: 1000
+      })
     ]);
 
-    // Average delivery time is now computed in SQL
-    // Handle case where raw query returns undefined (e.g., in mocked tests)
-    const avgTime = Math.round(Array.isArray(deliveries) && deliveries[0]?.avg_time ? deliveries[0].avg_time : 0);
+    // Calculate average delivery time from recent deliveries
+    let totalDeliveryTime = 0;
+    let deliveryCount = 0;
+
+    deliveries.forEach((d) => {
+      if (d.scheduledTime && d.actualDeliveryTime) {
+        const diff = d.actualDeliveryTime.getTime() - d.scheduledTime.getTime();
+        totalDeliveryTime += diff;
+        deliveryCount++;
+      }
+    });
+
+    const avgTime =
+      deliveryCount > 0
+        ? Math.round(totalDeliveryTime / deliveryCount / (1000 * 60 * 60)) // Convert to hours
+        : 0;
 
     const metrics = {
       totalOrders,
