@@ -33,7 +33,8 @@ uploads/*
 !uploads/.gitkeep
 
 # Prisma
-prisma/migrations/
+# NOTE: migrations/ must be tracked for consistent deployments
+# .prisma/ is the generated client cache (should be excluded)
 .prisma/
 
 # Testing
