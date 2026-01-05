@@ -43,18 +43,23 @@ echo -e "${BLUE}[2/6] Pulling latest Docker images (develop branch)...${NC}"
 docker pull ghcr.io/michaelemmanuel16/ecommerce-cod-admin/backend:develop || echo -e "${YELLOW}Warning: Failed to pull backend image, will use existing${NC}"
 docker pull ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:develop || echo -e "${YELLOW}Warning: Failed to pull frontend image, will use existing${NC}"
 
-# Step 3: Stop existing containers
+# Step 3: Stop and remove existing containers
 echo -e "${BLUE}[3/6] Stopping existing staging containers...${NC}"
-docker-compose -f docker-compose.staging.yml down
+# Stop containers using docker-compose
+docker-compose -f docker-compose.staging.yml --env-file .env.staging down --remove-orphans || true
+
+# Remove any orphan containers with staging in the name
+echo -e "${YELLOW}Removing any orphan staging containers...${NC}"
+docker ps -aq --filter "name=staging" | xargs -r docker rm -f || true
 
 # Step 4: Start new containers
 echo -e "${BLUE}[4/6] Starting staging containers...${NC}"
-docker-compose -f docker-compose.staging.yml up -d
+docker-compose -f docker-compose.staging.yml --env-file .env.staging up -d
 
 # Step 5: Run database migrations
 echo -e "${BLUE}[5/6] Running database migrations...${NC}"
 sleep 10  # Wait for containers to be ready
-docker-compose -f docker-compose.staging.yml exec -T backend-staging npx prisma migrate deploy || echo -e "${YELLOW}Warning: Migrations may have failed or already applied${NC}"
+docker-compose -f docker-compose.staging.yml --env-file .env.staging exec -T backend npx prisma migrate deploy || echo -e "${YELLOW}Warning: Migrations may have failed or already applied${NC}"
 
 # Step 6: Health checks
 echo -e "${BLUE}[6/6] Performing health checks...${NC}"
@@ -83,12 +88,12 @@ echo -e "${GREEN}║   Staging Deployment Completed Successfully!               
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${BLUE}Application Status:${NC}"
-docker-compose -f docker-compose.staging.yml ps
+docker-compose -f docker-compose.staging.yml --env-file .env.staging ps
 echo ""
 echo -e "${BLUE}Access staging at:${NC}"
 echo "  https://staging.codadminpro.com (via nginx reverse proxy)"
 echo "  http://localhost:3001 (backend direct)"
-echo "  http://localhost:8080 (nginx direct)"
+echo "  http://localhost:5174 (frontend direct)"
 echo ""
 echo -e "${BLUE}View logs:${NC}"
 echo "  docker-compose -f docker-compose.staging.yml logs -f"
