@@ -129,6 +129,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set environment variables based on branch
+        id: env-vars
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "VITE_API_URL=https://codadminpro.com" >> $GITHUB_OUTPUT
+            echo "VITE_WS_URL=wss://codadminpro.com" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" == "refs/heads/develop" ]; then
+            echo "VITE_API_URL=https://staging.codadminpro.com" >> $GITHUB_OUTPUT
+            echo "VITE_WS_URL=wss://staging.codadminpro.com" >> $GITHUB_OUTPUT
+          else
+            echo "VITE_API_URL=relative" >> $GITHUB_OUTPUT
+            echo "VITE_WS_URL=relative" >> $GITHUB_OUTPUT
+          fi
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -152,8 +166,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            VITE_API_URL=relative
-            VITE_WS_URL=relative
+            VITE_API_URL=${{ steps.env-vars.outputs.VITE_API_URL }}
+            VITE_WS_URL=${{ steps.env-vars.outputs.VITE_WS_URL }}
 
   deploy-staging:
     name: Deploy to Staging
