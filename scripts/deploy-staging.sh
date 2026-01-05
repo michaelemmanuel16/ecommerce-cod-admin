@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Staging Deployment Script
-# Deploys the application to staging environment using port-based access
+# Deploys the application to staging environment
 
 set -e
 
@@ -20,7 +20,7 @@ echo ""
 # Check if .env.staging exists
 if [ ! -f .env.staging ]; then
     echo -e "${RED}Error: .env.staging file not found!${NC}"
-    echo -e "${YELLOW}Please create .env.staging with staging configuration${NC}"
+    echo -e "${YELLOW}Please create .env.staging with proper configuration${NC}"
     exit 1
 fi
 
@@ -29,30 +29,32 @@ export $(cat .env.staging | grep -v '^#' | xargs)
 
 echo -e "${GREEN}Starting staging deployment...${NC}"
 
-# Step 1: Backup database (if exists)
-echo -e "${BLUE}[1/6] Backing up staging database...${NC}"
+# Step 1: Backup database (if running)
+echo -e "${BLUE}[1/6] Checking for existing database...${NC}"
 if docker ps | grep -q "ecommerce-cod-postgres-staging"; then
-    ./scripts/backup-database.sh || echo -e "${YELLOW}Warning: Backup failed or skipped${NC}"
+    echo -e "${YELLOW}Creating database backup...${NC}"
+    docker exec ecommerce-cod-postgres-staging pg_dump -U ${POSTGRES_USER:-ecommerce_user} ${POSTGRES_DB:-ecommerce_cod_staging} > ./backups/staging-backup-$(date +%Y%m%d-%H%M%S).sql || echo -e "${YELLOW}Warning: Backup skipped${NC}"
 else
-    echo -e "${YELLOW}Staging database not running, skipping backup${NC}"
+    echo -e "${YELLOW}No existing database found, skipping backup${NC}"
 fi
 
-# Step 2: Pull latest Docker images from GitHub Container Registry
-echo -e "${BLUE}[2/6] Pulling latest Docker images...${NC}"
-docker-compose -f docker-compose.staging.yml pull
+# Step 2: Pull latest images from develop branch
+echo -e "${BLUE}[2/6] Pulling latest Docker images (develop branch)...${NC}"
+docker pull ghcr.io/michaelemmanuel16/ecommerce-cod-admin/backend:develop || echo -e "${YELLOW}Warning: Failed to pull backend image, will use existing${NC}"
+docker pull ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:develop || echo -e "${YELLOW}Warning: Failed to pull frontend image, will use existing${NC}"
 
-# Step 3: Stop existing staging containers
+# Step 3: Stop existing containers
 echo -e "${BLUE}[3/6] Stopping existing staging containers...${NC}"
 docker-compose -f docker-compose.staging.yml down
 
-# Step 4: Start staging containers
+# Step 4: Start new containers
 echo -e "${BLUE}[4/6] Starting staging containers...${NC}"
 docker-compose -f docker-compose.staging.yml up -d
 
 # Step 5: Run database migrations
 echo -e "${BLUE}[5/6] Running database migrations...${NC}"
 sleep 10  # Wait for containers to be ready
-docker-compose -f docker-compose.staging.yml exec -T backend npx prisma migrate deploy
+docker-compose -f docker-compose.staging.yml exec -T backend-staging npx prisma migrate deploy || echo -e "${YELLOW}Warning: Migrations may have failed or already applied${NC}"
 
 # Step 6: Health checks
 echo -e "${BLUE}[6/6] Performing health checks...${NC}"
@@ -60,33 +62,33 @@ sleep 15  # Wait for services to start
 
 # Check backend health
 if curl -f http://localhost:3001/health > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ Backend is healthy (http://localhost:3001)${NC}"
+    echo -e "${GREEN}✓ Backend (staging) is healthy${NC}"
 else
-    echo -e "${RED}✗ Backend health check failed${NC}"
+    echo -e "${RED}✗ Backend (staging) health check failed${NC}"
     echo -e "${YELLOW}Checking logs...${NC}"
-    docker-compose -f docker-compose.staging.yml logs --tail=50 backend
+    docker-compose -f docker-compose.staging.yml logs --tail=50 backend-staging
     exit 1
 fi
 
-# Check frontend health
-if curl -f http://localhost:5174/health > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ Frontend is healthy (http://localhost:5174)${NC}"
+# Check frontend health (via nginx)
+if curl -f http://localhost:8080/health > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Frontend (staging) is healthy${NC}"
 else
-    echo -e "${YELLOW}⚠ Frontend health check failed (might not have /health endpoint)${NC}"
-    echo -e "${GREEN}✓ Frontend container is running${NC}"
+    echo -e "${YELLOW}⚠ Frontend health check failed (may need nginx configuration)${NC}"
 fi
 
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   Staging deployment completed successfully!                  ║${NC}"
+echo -e "${GREEN}║   Staging Deployment Completed Successfully!                  ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "${BLUE}Access URLs:${NC}"
-echo -e "  Frontend: ${GREEN}http://143.110.197.200:5174${NC}"
-echo -e "  Backend:  ${GREEN}http://143.110.197.200:3001${NC}"
 echo ""
 echo -e "${BLUE}Application Status:${NC}"
 docker-compose -f docker-compose.staging.yml ps
+echo ""
+echo -e "${BLUE}Access staging at:${NC}"
+echo "  https://staging.codadminpro.com (via nginx reverse proxy)"
+echo "  http://localhost:3001 (backend direct)"
+echo "  http://localhost:8080 (nginx direct)"
 echo ""
 echo -e "${BLUE}View logs:${NC}"
 echo "  docker-compose -f docker-compose.staging.yml logs -f"

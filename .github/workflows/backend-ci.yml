@@ -183,7 +183,7 @@ jobs:
     if: github.ref == 'refs/heads/develop'
     environment:
       name: staging
-      url: http://143.110.197.200:3001
+      url: https://staging.codadminpro.com
 
     steps:
       - name: Checkout code

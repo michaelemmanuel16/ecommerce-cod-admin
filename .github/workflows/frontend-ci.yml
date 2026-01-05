@@ -152,8 +152,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            VITE_API_URL=https://codadminpro.com
-            VITE_WS_URL=https://codadminpro.com
+            VITE_API_URL=relative
+            VITE_WS_URL=relative
 
   deploy-staging:
     name: Deploy to Staging
@@ -162,7 +162,7 @@ jobs:
     if: github.ref == 'refs/heads/develop'
     environment:
       name: staging
-      url: http://143.110.197.200:5174
+      url: https://staging.codadminpro.com
 
     steps:
       - name: Checkout code

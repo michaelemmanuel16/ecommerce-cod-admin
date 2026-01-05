@@ -1,66 +1,93 @@
 services:
-  postgres:
+  nginx-staging:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: ecommerce-cod-nginx-staging
+    restart: unless-stopped
+    ports:
+      - "8080:80"      # Different port to avoid conflict with production
+      - "8443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_cache_staging:/var/cache/nginx
+      - nginx_logs_staging:/var/log/nginx
+    depends_on:
+      - backend-staging
+      - frontend-staging
+    networks:
+      - ecommerce-network-staging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  postgres-staging:
     image: postgres:15-alpine
     container_name: ecommerce-cod-postgres-staging
     restart: always
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_cod_staging}
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - postgres_staging_data:/var/lib/postgresql/data
+      - postgres_data_staging:/var/lib/postgresql/data
       - ./backups:/backups
     networks:
-      - ecommerce-staging-network
+      - ecommerce-network-staging
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecommerce_user}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    # Do not expose port - only accessible via network
 
-  redis:
+  redis-staging:
     image: redis:7-alpine
     container_name: ecommerce-cod-redis-staging
     restart: always
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
-      - redis_staging_data:/data
+      - redis_data_staging:/data
     networks:
-      - ecommerce-staging-network
+      - ecommerce-network-staging
     healthcheck:
       test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
+    # Do not expose port
 
-  backend:
+  backend-staging:
     image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/backend:develop
     container_name: ecommerce-cod-backend-staging
     restart: always
     ports:
-      - "3001:3000"  # Expose on port 3001
+      - "3001:3000"  # Expose on different port to avoid conflict with production
     environment:
-      NODE_ENV: production
+      NODE_ENV: staging
       PORT: 3000
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDIS_HOST: redis
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ecommerce_user}:${POSTGRES_PASSWORD}@postgres-staging:5432/${POSTGRES_DB:-ecommerce_cod_staging}
+      REDIS_HOST: redis-staging
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET}
-      FRONTEND_URL: ${FRONTEND_URL}
-      CORS_ORIGIN: ${CORS_ORIGIN}
+      FRONTEND_URL: ${FRONTEND_URL:-https://staging.codadminpro.com}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://staging.codadminpro.com}
     volumes:
-      - backend_staging_uploads:/app/uploads
-      - backend_staging_logs:/app/logs
+      - backend_uploads_staging:/app/uploads
+      - backend_logs_staging:/app/logs
     depends_on:
-      postgres:
+      postgres-staging:
         condition: service_healthy
-      redis:
+      redis-staging:
         condition: service_healthy
     networks:
-      - ecommerce-staging-network
+      - ecommerce-network-staging
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
@@ -76,16 +103,14 @@ services:
           cpus: '0.25'
           memory: 256M
 
-  frontend:
+  frontend-staging:
     image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:develop
     container_name: ecommerce-cod-frontend-staging
     restart: always
-    ports:
-      - "5174:8080"  # Expose on port 5174
     depends_on:
-      - backend
+      - backend-staging
     networks:
-      - ecommerce-staging-network
+      - ecommerce-network-staging
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -101,15 +126,19 @@ services:
           memory: 64M
 
 networks:
-  ecommerce-staging-network:
+  ecommerce-network-staging:
     driver: bridge
 
 volumes:
-  postgres_staging_data:
+  postgres_data_staging:
     driver: local
-  redis_staging_data:
+  redis_data_staging:
     driver: local
-  backend_staging_uploads:
+  nginx_cache_staging:
     driver: local
-  backend_staging_logs:
+  nginx_logs_staging:
+    driver: local
+  backend_uploads_staging:
+    driver: local
+  backend_logs_staging:
     driver: local
