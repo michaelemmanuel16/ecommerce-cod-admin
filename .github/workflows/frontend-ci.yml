@@ -133,14 +133,14 @@ jobs:
         id: env-vars
         run: |
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "VITE_API_URL=https://codadminpro.com" >> $GITHUB_OUTPUT
-            echo "VITE_WS_URL=wss://codadminpro.com" >> $GITHUB_OUTPUT
+            echo "VITE_API_URL=https://codadminpro.com" >> "$GITHUB_OUTPUT"
+            echo "VITE_WS_URL=wss://codadminpro.com" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref }}" == "refs/heads/develop" ]; then
-            echo "VITE_API_URL=https://staging.codadminpro.com" >> $GITHUB_OUTPUT
-            echo "VITE_WS_URL=wss://staging.codadminpro.com" >> $GITHUB_OUTPUT
+            echo "VITE_API_URL=https://staging.codadminpro.com" >> "$GITHUB_OUTPUT"
+            echo "VITE_WS_URL=wss://staging.codadminpro.com" >> "$GITHUB_OUTPUT"
           else
-            echo "VITE_API_URL=relative" >> $GITHUB_OUTPUT
-            echo "VITE_WS_URL=relative" >> $GITHUB_OUTPUT
+            echo "VITE_API_URL=relative" >> "$GITHUB_OUTPUT"
+            echo "VITE_WS_URL=relative" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Extract metadata
