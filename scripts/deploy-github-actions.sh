@@ -75,39 +75,69 @@ else
 fi
 echo ""
 
-# Step 5: Update containers with rolling restart
-echo -e "${BLUE}[5/7] Updating containers (rolling restart)...${NC}"
+# Step 5: Update containers (detect fresh vs rolling deployment)
+echo -e "${BLUE}[5/7] Updating containers...${NC}"
 
-# Update backend first
-echo -e "${YELLOW}Updating backend service...${NC}"
-if docker-compose -f "$COMPOSE_FILE" up -d --no-deps backend; then
-    echo -e "${GREEN}✓ Backend container updated${NC}"
+# Check if this is a fresh deployment or an update
+POSTGRES_EXISTS=$(docker ps -a --filter "name=ecommerce-cod-postgres" --format "{{.Names}}" 2>/dev/null || true)
 
-    # Wait for backend to be healthy
-    echo -e "${YELLOW}Waiting for backend to be healthy...${NC}"
-    sleep 10
-else
-    echo -e "${RED}Error: Failed to update backend${NC}"
-    if [ "$ROLLBACK_ENABLED" = true ]; then
-        echo -e "${YELLOW}Initiating rollback...${NC}"
-        docker tag "$CURRENT_BACKEND_IMAGE" ecommerce-cod-backend:rollback 2>/dev/null || true
-        docker-compose -f "$COMPOSE_FILE" up -d --no-deps backend
+if [ -z "$POSTGRES_EXISTS" ]; then
+    # Fresh deployment - start full stack
+    echo -e "${YELLOW}Fresh deployment detected - starting full stack...${NC}"
+    
+    if docker-compose -p production -f "$COMPOSE_FILE" up -d; then
+        echo -e "${GREEN}✓ Full stack started${NC}"
+        
+        # Wait for services to initialize
+        echo -e "${YELLOW}Waiting for services to initialize...${NC}"
+        sleep 15
+        
+        # Run migrations for fresh deployment
+        echo -e "${YELLOW}Running database migrations...${NC}"
+        if docker-compose -p production -f "$COMPOSE_FILE" exec -T backend npx prisma migrate deploy; then
+            echo -e "${GREEN}✓ Migrations completed${NC}"
+        else
+            echo -e "${YELLOW}Warning: Migration may have failed${NC}"
+        fi
+    else
+        echo -e "${RED}Error: Failed to start full stack${NC}"
+        exit 1
     fi
-    exit 1
-fi
-
-# Update frontend
-echo -e "${YELLOW}Updating frontend service...${NC}"
-if docker-compose -f "$COMPOSE_FILE" up -d --no-deps frontend; then
-    echo -e "${GREEN}✓ Frontend container updated${NC}"
 else
-    echo -e "${RED}Error: Failed to update frontend${NC}"
-    if [ "$ROLLBACK_ENABLED" = true ]; then
-        echo -e "${YELLOW}Initiating rollback...${NC}"
-        docker tag "$CURRENT_FRONTEND_IMAGE" ecommerce-cod-frontend:rollback 2>/dev/null || true
-        docker-compose -f "$COMPOSE_FILE" up -d --no-deps frontend
+    # Rolling update - only update app containers
+    echo -e "${YELLOW}Existing deployment detected - performing rolling update...${NC}"
+    
+    # Update backend first
+    echo -e "${YELLOW}Updating backend service...${NC}"
+    if docker-compose -p production -f "$COMPOSE_FILE" up -d --no-deps backend; then
+        echo -e "${GREEN}✓ Backend container updated${NC}"
+        
+        # Wait for backend to be healthy
+        echo -e "${YELLOW}Waiting for backend to be healthy...${NC}"
+        sleep 10
+    else
+        echo -e "${RED}Error: Failed to update backend${NC}"
+        if [ "$ROLLBACK_ENABLED" = true ]; then
+            echo -e "${YELLOW}Initiating rollback...${NC}"
+            docker tag "$CURRENT_BACKEND_IMAGE" ecommerce-cod-backend:rollback 2>/dev/null || true
+            docker-compose -p production -f "$COMPOSE_FILE" up -d --no-deps backend
+        fi
+        exit 1
     fi
-    exit 1
+    
+    # Update frontend
+    echo -e "${YELLOW}Updating frontend service...${NC}"
+    if docker-compose -p production -f "$COMPOSE_FILE" up -d --no-deps frontend; then
+        echo -e "${GREEN}✓ Frontend container updated${NC}"
+    else
+        echo -e "${RED}Error: Failed to update frontend${NC}"
+        if [ "$ROLLBACK_ENABLED" = true ]; then
+            echo -e "${YELLOW}Initiating rollback...${NC}"
+            docker tag "$CURRENT_FRONTEND_IMAGE" ecommerce-cod-frontend:rollback 2>/dev/null || true
+            docker-compose -p production -f "$COMPOSE_FILE" up -d --no-deps frontend
+        fi
+        exit 1
+    fi
 fi
 
 echo ""
