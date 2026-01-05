@@ -152,8 +152,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            VITE_API_URL=relative
-            VITE_WS_URL=relative
+            VITE_API_URL=https://codadminpro.com
+            VITE_WS_URL=https://codadminpro.com
 
   deploy-staging:
     name: Deploy to Staging

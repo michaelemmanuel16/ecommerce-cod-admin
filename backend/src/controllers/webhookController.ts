@@ -13,12 +13,13 @@ export const getAllWebhooks = async (_req: AuthRequest, res: Response): Promise<
 
 export const createWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, url, secret, apiKey, fieldMapping, headers } = req.body;
+    const { name, url, secret, productId, apiKey, fieldMapping, headers } = req.body;
 
     const webhook = await webhookService.createWebhook({
       name,
       url,
       secret,
+      productId,
       apiKey,
       fieldMapping,
       headers

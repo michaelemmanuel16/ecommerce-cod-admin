@@ -56,6 +56,7 @@ export const webhooksService = {
       name: data.name,
       url: data.url,
       secret: data.secret,
+      productId: data.productId,
       apiKey: data.apiKey,
       fieldMapping: data.fieldMapping,
       headers: data.headers || {}

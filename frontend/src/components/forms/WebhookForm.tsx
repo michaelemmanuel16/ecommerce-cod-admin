@@ -211,9 +211,8 @@ export const WebhookForm: React.FC<WebhookFormProps> = ({
       newErrors.name = 'Name is required';
     }
 
-    if (!formData.secret.trim()) {
-      newErrors.secret = 'Secret is required';
-    } else {
+    // Only validate secret if user provided one
+    if (formData.secret.trim()) {
       const secretError = validateSecret(formData.secret);
       if (secretError) {
         newErrors.secret = secretError;
@@ -239,6 +238,14 @@ export const WebhookForm: React.FC<WebhookFormProps> = ({
     e.preventDefault();
 
     if (!validateForm()) {
+      // Show which fields have errors
+      const errorMessages = [];
+      if (errors.name) errorMessages.push('Webhook Name');
+      if (errors.secret) errorMessages.push('Secret Key');
+      if (errors.productId) errorMessages.push('Product');
+      if (errors.fieldMapping) errorMessages.push('Field Mappings');
+
+      toast.error(`Please fix: ${errorMessages.join(', ')}`);
       return;
     }
 
