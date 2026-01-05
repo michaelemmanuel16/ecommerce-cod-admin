@@ -14,8 +14,8 @@ services:
       - nginx_cache_staging:/var/cache/nginx
       - nginx_logs_staging:/var/log/nginx
     depends_on:
-      - backend-staging
-      - frontend-staging
+      - backend
+      - frontend
     networks:
       - ecommerce-network-staging
     healthcheck:
@@ -24,7 +24,7 @@ services:
       timeout: 3s
       retries: 3
 
-  postgres-staging:
+  postgres:
     image: postgres:15-alpine
     container_name: ecommerce-cod-postgres-staging
     restart: always
@@ -44,7 +44,7 @@ services:
       retries: 5
     # Do not expose port - only accessible via network
 
-  redis-staging:
+  redis:
     image: redis:7-alpine
     container_name: ecommerce-cod-redis-staging
     restart: always
@@ -60,17 +60,17 @@ services:
       retries: 5
     # Do not expose port
 
-  backend-staging:
+  backend:
     image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/backend:develop
     container_name: ecommerce-cod-backend-staging
     restart: always
     ports:
       - "3001:3000"  # Expose on different port to avoid conflict with production
     environment:
-      NODE_ENV: staging
+      NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ecommerce_user}:${POSTGRES_PASSWORD}@postgres-staging:5432/${POSTGRES_DB:-ecommerce_cod_staging}
-      REDIS_HOST: redis-staging
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ecommerce_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ecommerce_cod_staging}
+      REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
@@ -82,9 +82,9 @@ services:
       - backend_uploads_staging:/app/uploads
       - backend_logs_staging:/app/logs
     depends_on:
-      postgres-staging:
+      postgres:
         condition: service_healthy
-      redis-staging:
+      redis:
         condition: service_healthy
     networks:
       - ecommerce-network-staging
@@ -103,12 +103,14 @@ services:
           cpus: '0.25'
           memory: 256M
 
-  frontend-staging:
+  frontend:
     image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:develop
     container_name: ecommerce-cod-frontend-staging
     restart: always
+    ports:
+      - "5174:8080"  # Expose on different port to avoid conflict with production
     depends_on:
-      - backend-staging
+      - backend
     networks:
       - ecommerce-network-staging
     healthcheck:
