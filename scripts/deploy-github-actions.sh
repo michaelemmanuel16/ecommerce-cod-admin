@@ -85,6 +85,11 @@ if [ -z "$POSTGRES_EXISTS" ]; then
     # Fresh deployment - start full stack
     echo -e "${YELLOW}Fresh deployment detected - starting full stack...${NC}"
     
+    # Clean up any orphaned containers to prevent name conflicts
+    echo -e "${YELLOW}Cleaning up any orphaned containers...${NC}"
+    docker ps -aq --filter "name=ecommerce-cod" | xargs -r docker rm -f 2>/dev/null || true
+    docker-compose -p production -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+    
     if docker-compose -p production -f "$COMPOSE_FILE" up -d; then
         echo -e "${GREEN}✓ Full stack started${NC}"
         
