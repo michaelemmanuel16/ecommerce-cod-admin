@@ -27,6 +27,66 @@ ecommerce-cod-admin/
 - Save plans in `.claude/plans/` or `.claude/docs/` (not `~/.claude/plans/`)
 - Keep plans focused on this project only
 
+## Git Workflow & Deployment
+
+**IMPORTANT: Always follow this workflow when making changes.**
+
+### Branch Strategy
+```
+feature/* → develop (staging) → main (production)
+```
+
+**Branches:**
+- `main` - Production (https://codadminpro.com) - **Never push directly**
+- `develop` - Staging (http://143.110.197.200:5174 & :3001) - **Use PRs only**
+- `feature/*` - Feature branches (create from develop)
+
+### Standard Workflow
+
+**1. Start new work:**
+```bash
+git checkout develop && git pull
+git checkout -b feature/descriptive-name
+```
+
+**2. Make changes and commit:**
+```bash
+git add .
+git commit -m "feat: Description of changes"
+git push -u origin feature/descriptive-name
+```
+
+**3. Deploy to staging (test first):**
+- Create PR on GitHub: `feature/descriptive-name` → `develop`
+- Merge PR → Auto-deploys to staging
+- Test at: http://143.110.197.200:5174
+
+**4. Deploy to production (after testing):**
+- Create PR on GitHub: `develop` → `main`
+- Merge PR → Auto-deploys to production
+- Verify at: https://codadminpro.com
+
+### Commit Conventions
+- `feat:` New feature
+- `fix:` Bug fix
+- `refactor:` Code refactoring
+- `test:` Add/update tests
+- `docs:` Documentation
+- `chore:` Maintenance
+
+### Deployment URLs
+- Production: https://codadminpro.com (main branch)
+- Staging Frontend: http://143.110.197.200:5174 (develop branch)
+- Staging Backend: http://143.110.197.200:3001 (develop branch)
+
+### Rules
+✅ Always create feature branches from `develop`
+✅ Always test in staging before production
+✅ Always use PRs (never push directly to main/develop)
+❌ Never skip staging deployment
+❌ Never commit secrets or .env files
+❌ Never force push to main/develop
+
 ## Quick Start
 
 ### Manual Setup
