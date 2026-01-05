@@ -105,6 +105,9 @@ services:
     image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:main
     container_name: ecommerce-cod-frontend
     restart: always
+    environment:
+      VITE_API_URL: https://codadminpro.com
+      FRONTEND_URL: ${FRONTEND_URL:-https://codadminpro.com}
     depends_on:
       - backend
     networks:
