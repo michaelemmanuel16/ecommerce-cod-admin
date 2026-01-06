@@ -4,7 +4,9 @@ import {
   CustomerRep,
   RepWorkload,
   RepPerformance,
-  UpdateRepData
+  UpdateRepData,
+  RepPayout,
+  PendingPayment
 } from '../services/customer-reps.service';
 import { connectSocket, getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
@@ -14,12 +16,17 @@ interface CustomerRepsState {
   workload: RepWorkload[];
   performance: RepPerformance[];
   selectedRep: CustomerRep | null;
+  payoutHistory: RepPayout[];
+  pendingPayments: PendingPayment[];
   isLoading: boolean;
   error: string | null;
   fetchReps: () => Promise<void>;
   fetchWorkload: () => Promise<void>;
   fetchPerformance: () => Promise<void>;
   fetchRepById: (id: string) => Promise<void>;
+  fetchPayoutHistory: (id: string) => Promise<void>;
+  fetchPendingPayments: (id: string) => Promise<void>;
+  processPayout: (id: string, data: { amount: number; method: string; orderIds: number[]; notes?: string }) => Promise<void>;
   toggleAvailability: (id: string, isAvailable: boolean) => Promise<void>;
   updateRep: (id: string, data: Partial<CustomerRep>) => Promise<void>;
   updateRepDetails: (id: string, data: UpdateRepData) => Promise<void>;
@@ -63,6 +70,8 @@ export const useCustomerRepsStore = create<CustomerRepsState>((set, get) => {
     workload: [],
     performance: [],
     selectedRep: null,
+    payoutHistory: [],
+    pendingPayments: [],
     isLoading: false,
     error: null,
 
@@ -110,6 +119,44 @@ export const useCustomerRepsStore = create<CustomerRepsState>((set, get) => {
         const errorMessage = error.response?.data?.message || 'Failed to fetch rep details';
         set({ error: errorMessage, isLoading: false });
         toast.error(errorMessage);
+        throw error;
+      }
+    },
+
+    fetchPayoutHistory: async (id: string) => {
+      try {
+        const payoutHistory = await customerRepsService.getPayoutHistory(id);
+        set({ payoutHistory });
+      } catch (error: any) {
+        console.error('Failed to fetch payout history', error);
+      }
+    },
+
+    fetchPendingPayments: async (id: string) => {
+      try {
+        const pendingPayments = await customerRepsService.getPendingPayments(id);
+        set({ pendingPayments });
+      } catch (error: any) {
+        console.error('Failed to fetch pending payments', error);
+      }
+    },
+
+    processPayout: async (id: string, data: { amount: number; method: string; orderIds: number[]; notes?: string }) => {
+      set({ isLoading: true });
+      try {
+        await customerRepsService.processPayout(id, data);
+        toast.success('Payout processed successfully');
+        // Refresh local data
+        await Promise.all([
+          get().fetchPendingPayments(id),
+          get().fetchPayoutHistory(id),
+          get().fetchPerformance()
+        ]);
+        set({ isLoading: false });
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to process payout';
+        toast.error(errorMessage);
+        set({ isLoading: false });
         throw error;
       }
     },

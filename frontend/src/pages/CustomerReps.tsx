@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { RepTable, RepTableData } from '../components/reps/RepTable';
 import { EditRepModal } from '../components/reps/EditRepModal';
+import { RepPayoutModal } from '../components/reps/RepPayoutModal';
 
 export const CustomerReps: React.FC = () => {
   const {
@@ -18,6 +19,7 @@ export const CustomerReps: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRep, setSelectedRep] = useState<RepTableData | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -70,7 +72,13 @@ export const CustomerReps: React.FC = () => {
 
   const handleCloseModal = () => {
     setIsEditModalOpen(false);
+    setIsPayoutModalOpen(false);
     setSelectedRep(null);
+  };
+
+  const handleOpenPayout = (rep: RepTableData) => {
+    setSelectedRep(rep);
+    setIsPayoutModalOpen(true);
   };
 
   return (
@@ -96,6 +104,7 @@ export const CustomerReps: React.FC = () => {
       <RepTable
         reps={filteredReps}
         onEdit={handleEdit}
+        onViewPayments={handleOpenPayout}
         isLoading={isLoading}
       />
 
@@ -104,6 +113,13 @@ export const CustomerReps: React.FC = () => {
         isOpen={isEditModalOpen}
         onClose={handleCloseModal}
         onUpdate={handleUpdate}
+      />
+
+      <RepPayoutModal
+        repId={selectedRep?.id || null}
+        repName={selectedRep?.name || ''}
+        isOpen={isPayoutModalOpen}
+        onClose={handleCloseModal}
       />
     </div>
   );

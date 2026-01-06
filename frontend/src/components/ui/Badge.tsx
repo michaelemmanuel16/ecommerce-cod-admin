@@ -4,7 +4,7 @@ import { OrderStatus, OrderPriority } from '../../types';
 
 interface BadgeProps {
   children: React.ReactNode;
-  variant?: 'status' | 'priority' | 'default' | 'success' | 'secondary';
+  variant?: 'status' | 'priority' | 'default' | 'success' | 'secondary' | 'warning' | 'danger';
   status?: OrderStatus;
   priority?: OrderPriority;
   className?: string;
@@ -46,6 +46,10 @@ export const Badge: React.FC<BadgeProps> = ({
     colorClass = 'bg-green-100 text-green-800';
   } else if (variant === 'secondary') {
     colorClass = 'bg-gray-100 text-gray-800';
+  } else if (variant === 'warning') {
+    colorClass = 'bg-yellow-100 text-yellow-800';
+  } else if (variant === 'danger') {
+    colorClass = 'bg-red-100 text-red-800';
   }
 
   return (

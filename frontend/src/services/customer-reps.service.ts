@@ -44,6 +44,28 @@ export interface UpdateRepData {
   isActive?: boolean;
 }
 
+export interface RepPayout {
+  id: number;
+  repId: number;
+  amount: number;
+  method: string;
+  status: string;
+  payoutDate: string;
+  notes?: string;
+  createdAt: string;
+  _count?: {
+    orders: number;
+  };
+}
+
+export interface PendingPayment {
+  orderId: number;
+  totalAmount: number;
+  commissionAmount: number;
+  customerName: string;
+  deliveredAt: string;
+}
+
 export const customerRepsService = {
   async getCustomerReps(): Promise<CustomerRep[]> {
     const response = await apiClient.get('/api/admin/users', {
@@ -107,5 +129,20 @@ export const customerRepsService = {
       totalEarnings: p.metrics?.totalEarnings || 0,
       monthlyEarnings: p.metrics?.monthlyEarnings || 0
     }));
+  },
+
+  async getPendingPayments(id: string): Promise<PendingPayment[]> {
+    const response = await apiClient.get(`/api/users/reps/${id}/pending-payments`);
+    return response.data || [];
+  },
+
+  async getPayoutHistory(id: string): Promise<RepPayout[]> {
+    const response = await apiClient.get(`/api/users/reps/${id}/payout-history`);
+    return response.data || [];
+  },
+
+  async processPayout(id: string, data: { amount: number; method: string; orderIds: number[]; notes?: string }): Promise<RepPayout> {
+    const response = await apiClient.post(`/api/users/reps/${id}/process-payout`, data);
+    return response.data.payout;
   }
 };
