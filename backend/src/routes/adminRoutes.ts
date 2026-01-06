@@ -4,10 +4,12 @@ import { authenticate, requireSuperAdmin, requirePermission } from '../middlewar
 
 const router = Router();
 
+// Public Configuration (No auth required)
+router.get('/config', adminController.getPublicConfig);
+
 router.use(authenticate);
 
 // System Configuration
-router.get('/config', adminController.getPublicConfig);
 router.get('/settings', requireSuperAdmin, adminController.getSystemConfig);
 router.put('/settings', requireSuperAdmin, adminController.updateSystemConfig);
 
