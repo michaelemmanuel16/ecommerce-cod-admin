@@ -1,6 +1,8 @@
 import { Response, Request } from 'express';
 import { PrismaClient, OrderStatus } from '@prisma/client';
 import workflowService from '../services/workflowService';
+import { io } from '../server';
+import { emitOrderCreated } from '../sockets';
 
 const prisma = new PrismaClient();
 
@@ -240,6 +242,9 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
     workflowService.triggerOrderCreatedWorkflows(order).catch(err => {
       console.error('Failed to trigger workflow for public order:', err);
     });
+
+    // Emit socket event for real-time update
+    emitOrderCreated(io, order);
 
     res.status(201).json({
       success: true,

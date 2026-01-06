@@ -4,6 +4,8 @@ import logger from '../utils/logger';
 import crypto from 'crypto';
 import { parsePackageField } from '../utils/packageParser';
 import workflowService from './workflowService';
+import { io } from '../server';
+import { emitOrderCreated } from '../sockets';
 
 interface CreateWebhookData {
   name: string;
@@ -456,6 +458,9 @@ export class WebhookService {
             error: err.message
           });
         });
+
+        // Emit socket event for real-time update
+        emitOrderCreated(io, createdOrder);
       } catch (err: any) {
         results.failed++;
         results.errors.push({

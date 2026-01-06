@@ -4,7 +4,7 @@ import { OrderStatus, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import workflowService from './workflowService';
 import { io } from '../server';
-import { emitOrderAssigned, emitOrderUpdated } from '../sockets/index';
+import { emitOrderAssigned, emitOrderCreated, emitOrderStatusChanged, emitOrderUpdated } from '../sockets/index';
 
 interface CreateOrderData {
   customerId?: number;
@@ -307,6 +307,9 @@ export class OrderService {
 
     logger.info(`Order created`, { orderId: order.id });
 
+    // Emit socket event for real-time update
+    emitOrderCreated(io, order);
+
     // Trigger workflows with order_created trigger (async, don't block order creation)
     workflowService.triggerOrderCreatedWorkflows(order).catch(error => {
       logger.error('Failed to trigger order_created workflows', {
@@ -372,6 +375,9 @@ export class OrderService {
 
         results.success++;
         logger.info('Bulk import order created', { orderId: createdOrder.id });
+
+        // Emit socket event for each imported order
+        emitOrderCreated(io, createdOrder);
 
         // Trigger workflows for each imported order
         workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
@@ -634,12 +640,13 @@ export class OrderService {
       newStatus: data.status
     });
 
-    // Emit socket event for real-time updates (non-blocking)
+    // Emit socket events for real-time updates (non-blocking)
     setImmediate(() => {
       try {
         emitOrderUpdated(io, updated);
+        emitOrderStatusChanged(io, updated, order.status, data.status);
       } catch (error) {
-        logger.error('Failed to emit order updated event', { orderId, error });
+        logger.error('Failed to emit socket events', { orderId, error });
       }
     });
 

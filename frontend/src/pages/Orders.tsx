@@ -15,6 +15,7 @@ import { Order, OrderStatus } from '../types';
 import { ordersService } from '../services/orders.service';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '../utils/format';
+import { getSocket } from '../services/socket';
 
 type ViewMode = 'kanban' | 'list';
 type SortField = 'id' | 'customerName' | 'totalAmount' | 'createdAt' | 'status';
@@ -99,6 +100,37 @@ export const Orders: React.FC = () => {
 
   useEffect(() => {
     fetchOrders();
+
+    // Setup real-time listeners
+    const socket = getSocket();
+    if (socket) {
+      const handleOrderCreated = (newOrder: any) => {
+        console.log('Real-time order created:', newOrder);
+        // We could either refresh everything or add the new order to the top
+        // For simplicity and correctness with filters, let's refresh
+        fetchOrders();
+      };
+
+      const handleOrderStatusChanged = (data: any) => {
+        console.log('Real-time status changed:', data);
+        fetchOrders();
+      };
+
+      const handleOrderUpdated = (data: any) => {
+        console.log('Real-time order updated:', data);
+        fetchOrders();
+      };
+
+      socket.on('order:created', handleOrderCreated);
+      socket.on('order:status_changed', handleOrderStatusChanged);
+      socket.on('order:updated', handleOrderUpdated);
+
+      return () => {
+        socket.off('order:created', handleOrderCreated);
+        socket.off('order:status_changed', handleOrderStatusChanged);
+        socket.off('order:updated', handleOrderUpdated);
+      };
+    }
   }, [fetchOrders]);
 
   // Save column widths to localStorage whenever they change
