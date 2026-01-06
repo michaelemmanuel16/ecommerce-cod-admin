@@ -8,6 +8,8 @@ import { ordersService } from '../../services/orders.service';
 import { productsService } from '../../services/products.service';
 import { Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useConfigStore } from '../../stores/configStore';
+import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
 
 interface OrderFormProps {
   isOpen: boolean;
@@ -41,6 +43,15 @@ export const OrderForm: React.FC<OrderFormProps> = ({
   order,
   onSuccess,
 }) => {
+  const { currency } = useConfigStore();
+  const countryName = getCountryByCurrency(currency);
+  const states = getRegionsForCountry(countryName);
+
+  const stateOptions = states.map(state => ({
+    value: state,
+    label: state
+  }));
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItemForm[]>([]);
@@ -388,11 +399,12 @@ export const OrderForm: React.FC<OrderFormProps> = ({
               onChange={handleChange}
               required
             />
-            <Input
+            <Select
               label="State"
               name="state"
               value={formData.state}
               onChange={handleChange}
+              options={stateOptions}
               required
             />
           </div>

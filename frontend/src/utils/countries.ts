@@ -117,6 +117,16 @@ export function getSupportedCountries(): string[] {
 }
 
 /**
+ * Get the country name for a given currency code
+ * @param currency - The currency code
+ * @returns Country name (e.g., 'Ghana', 'Nigeria')
+ */
+export function getCountryByCurrency(currency: string): string {
+  const countries = getSupportedCountries();
+  return countries.find(c => getCurrencyForCountry(c) === currency) || 'Ghana';
+}
+
+/**
  * Get all country data for a given country name
  * @param countryName - The country name
  * @returns Country object with all data
