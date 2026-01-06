@@ -9,8 +9,6 @@ import { WorkflowFormData, WorkflowAction } from '../../../pages/WorkflowWizard'
 interface ActionsStepProps {
   formData: WorkflowFormData;
   onUpdate: (updates: Partial<WorkflowFormData>) => void;
-  onNext: () => void;
-  onBack: () => void;
 }
 
 interface ActionType {
@@ -69,8 +67,6 @@ const actionTypes: ActionType[] = [
 export const ActionsStep: React.FC<ActionsStepProps> = ({
   formData,
   onUpdate,
-  onNext,
-  onBack,
 }) => {
   const [editingAction, setEditingAction] = useState<WorkflowAction | null>(null);
   const [showActionPalette, setShowActionPalette] = useState(false);
@@ -275,23 +271,7 @@ export const ActionsStep: React.FC<ActionsStepProps> = ({
         />
       )}
 
-      {/* Navigation */}
-      <div className="flex items-center justify-between pt-4">
-        <Button variant="ghost" onClick={onBack}>
-          <ChevronLeft className="w-4 h-4 mr-2" />
-          Back to Conditions
-        </Button>
-        <Button
-          variant="primary"
-          onClick={onNext}
-          disabled={formData.actions.length === 0}
-          size="lg"
-          className="min-w-[200px]"
-        >
-          Next: Review & Test
-          <ChevronRight className="w-5 h-5 ml-2" />
-        </Button>
-      </div>
+
     </div>
   );
 };

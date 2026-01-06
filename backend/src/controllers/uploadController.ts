@@ -12,11 +12,8 @@ export const uploadImage = async (req: AuthRequest, res: Response): Promise<void
     // Get the uploaded file info
     const file = req.file;
 
-    // Construct the URL for the uploaded file
-    // In production, you would typically upload to S3/CloudFront and return that URL
-    // For now, we'll serve static files from the uploads directory
-    const baseUrl = process.env.API_URL || `http://localhost:${process.env.PORT || 3000}`;
-    const imageUrl = `${baseUrl}/uploads/${file.filename}`;
+    // Return relative URL so it works with frontend proxy
+    const imageUrl = `/uploads/${file.filename}`;
 
     logger.info(`Image uploaded successfully: ${file.filename}`);
 

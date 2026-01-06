@@ -9,13 +9,11 @@ import { WorkflowFormData } from '../../../pages/WorkflowWizard';
 interface BasicInfoStepProps {
   formData: WorkflowFormData;
   onUpdate: (updates: Partial<WorkflowFormData>) => void;
-  onNext: () => void;
 }
 
 export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
   formData,
   onUpdate,
-  onNext,
 }) => {
   const [showTemplateGallery, setShowTemplateGallery] = useState(false);
 
@@ -31,11 +29,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
     setShowTemplateGallery(false);
   };
 
-  const handleNext = () => {
-    if (formData.name.trim()) {
-      onNext();
-    }
-  };
+
 
   return (
     <div className="space-y-6">
@@ -195,19 +189,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
         />
       )}
 
-      {/* Next Button - Prominent */}
-      <div className="flex justify-end pt-4">
-        <Button
-          variant="primary"
-          onClick={handleNext}
-          disabled={!formData.name.trim()}
-          size="lg"
-          className="min-w-[200px]"
-        >
-          Next: Choose Trigger
-          <ChevronRight className="w-5 h-5 ml-2" />
-        </Button>
-      </div>
+
     </div>
   );
 };

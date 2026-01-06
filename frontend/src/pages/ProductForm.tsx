@@ -58,7 +58,7 @@ export const ProductForm: React.FC = () => {
                 description: product.description || '',
                 sku: product.sku || '',
                 price: product.price?.toString() || '',
-                cogs: '', // Product type doesn't have cogs
+                cogs: product.cogs?.toString() || '',
                 stockQuantity: (product.stockQuantity ?? product.stock ?? 0).toString(),
                 lowStockThreshold: (product.lowStockThreshold ?? 10).toString(),
                 category: product.category || '',

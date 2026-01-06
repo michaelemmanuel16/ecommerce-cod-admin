@@ -518,7 +518,7 @@ export class WebhookService {
           firstName: mappedData.customerFirstName || externalOrder.customer_name || 'Unknown',
           lastName: mappedData.customerLastName || '',
           phoneNumber: customerPhone,
-          alternatePhone: mappedData.alternatePhone || externalOrder.alternative_phone || undefined,
+          alternatePhone: mappedData.alternativePhone || externalOrder.alternative_phone_number || undefined,
           email: mappedData.customerEmail || externalOrder.email || undefined,
           address: mappedData.deliveryAddress || externalOrder.address || '',
           state: mappedData.deliveryState || externalOrder.state || '',

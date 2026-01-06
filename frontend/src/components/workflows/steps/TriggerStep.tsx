@@ -8,8 +8,6 @@ import { WorkflowFormData } from '../../../pages/WorkflowWizard';
 interface TriggerStepProps {
   formData: WorkflowFormData;
   onUpdate: (updates: Partial<WorkflowFormData>) => void;
-  onNext: () => void;
-  onBack: () => void;
 }
 
 const triggerUseCases: Record<string, string[]> = {
@@ -63,8 +61,6 @@ const triggerDescriptions: Record<string, string> = {
 export const TriggerStep: React.FC<TriggerStepProps> = ({
   formData,
   onUpdate,
-  onNext,
-  onBack,
 }) => {
   const selectedUseCases = triggerUseCases[formData.triggerType] || [];
   const selectedDescription = triggerDescriptions[formData.triggerType] || '';
@@ -244,22 +240,7 @@ export const TriggerStep: React.FC<TriggerStepProps> = ({
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="flex items-center justify-between pt-4">
-        <Button variant="ghost" onClick={onBack}>
-          <ChevronLeft className="w-4 h-4 mr-2" />
-          Back to Basic Info
-        </Button>
-        <Button
-          variant="primary"
-          onClick={onNext}
-          size="lg"
-          className="min-w-[200px]"
-        >
-          Next: Add Conditions
-          <ChevronRight className="w-5 h-5 ml-2" />
-        </Button>
-      </div>
+
     </div>
   );
 };

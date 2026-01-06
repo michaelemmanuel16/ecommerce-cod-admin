@@ -9,17 +9,32 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+// Sanitize filename - remove spaces and special characters
+const sanitizeFilename = (filename: string): string => {
+  const ext = path.extname(filename);
+  const nameWithoutExt = path.basename(filename, ext);
+
+  const sanitized = nameWithoutExt
+    .toLowerCase()
+    .replace(/\s+/g, '-')           // Replace spaces with hyphens
+    .replace(/[^a-z0-9-_]/g, '')    // Remove special characters
+    .replace(/-+/g, '-')            // Replace multiple hyphens with single hyphen
+    .replace(/^-|-$/g, '');         // Remove leading/trailing hyphens
+
+  return sanitized;
+};
+
 // Configure storage
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, uploadDir);
   },
   filename: (_req, file, cb) => {
-    // Generate unique filename: timestamp-randomstring-originalname
+    // Generate unique filename: sanitizedname-timestamp-random.ext
     const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
     const ext = path.extname(file.originalname);
-    const nameWithoutExt = path.basename(file.originalname, ext);
-    cb(null, `${nameWithoutExt}-${uniqueSuffix}${ext}`);
+    const sanitizedName = sanitizeFilename(file.originalname);
+    cb(null, `${sanitizedName}-${uniqueSuffix}${ext}`);
   }
 });
 

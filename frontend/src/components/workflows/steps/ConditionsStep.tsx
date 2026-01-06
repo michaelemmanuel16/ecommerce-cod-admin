@@ -9,15 +9,11 @@ import { cn } from '../../../utils/cn';
 interface ConditionsStepProps {
   formData: WorkflowFormData;
   onUpdate: (updates: Partial<WorkflowFormData>) => void;
-  onNext: () => void;
-  onBack: () => void;
 }
 
 export const ConditionsStep: React.FC<ConditionsStepProps> = ({
   formData,
   onUpdate,
-  onNext,
-  onBack,
 }) => {
   const [skipConditions, setSkipConditions] = useState(
     !formData.conditions || !formData.conditions.rules || formData.conditions.rules.length === 0
@@ -267,22 +263,7 @@ export const ConditionsStep: React.FC<ConditionsStepProps> = ({
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="flex items-center justify-between pt-4">
-        <Button variant="ghost" onClick={onBack}>
-          <ChevronLeft className="w-4 h-4 mr-2" />
-          Back to Trigger
-        </Button>
-        <Button
-          variant="primary"
-          onClick={onNext}
-          size="lg"
-          className="min-w-[200px]"
-        >
-          Next: Add Actions
-          <ChevronRight className="w-5 h-5 ml-2" />
-        </Button>
-      </div>
+
     </div>
   );
 };

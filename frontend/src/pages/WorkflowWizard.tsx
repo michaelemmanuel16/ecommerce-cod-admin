@@ -225,7 +225,6 @@ export const WorkflowWizard: React.FC = () => {
           <BasicInfoStep
             formData={formData}
             onUpdate={updateFormData}
-            onNext={handleNext}
           />
         )}
 
@@ -233,8 +232,6 @@ export const WorkflowWizard: React.FC = () => {
           <TriggerStep
             formData={formData}
             onUpdate={updateFormData}
-            onNext={handleNext}
-            onBack={handleBack}
           />
         )}
 
@@ -242,8 +239,6 @@ export const WorkflowWizard: React.FC = () => {
           <ConditionsStep
             formData={formData}
             onUpdate={updateFormData}
-            onNext={handleNext}
-            onBack={handleBack}
           />
         )}
 
@@ -251,8 +246,6 @@ export const WorkflowWizard: React.FC = () => {
           <ActionsStep
             formData={formData}
             onUpdate={updateFormData}
-            onNext={handleNext}
-            onBack={handleBack}
           />
         )}
 

@@ -172,24 +172,20 @@ export const adminService = {
   async createUser(data: {
     email: string;
     password: string;
-    name: string;
+    firstName: string;
+    lastName: string;
     phoneNumber?: string;
     role: UserRole;
   }) {
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
-    // Split name into firstName and lastName
-    const nameParts = data.name.trim().split(' ');
-    const firstName = nameParts[0] || 'Unknown';
-    const lastName = nameParts.slice(1).join(' ') || '';
-
-    const { name, ...restData } = data;
-
     return prisma.user.create({
       data: {
-        ...restData,
-        firstName,
-        lastName,
+        email: data.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phoneNumber: data.phoneNumber,
+        role: data.role,
         password: hashedPassword,
       },
       select: {
