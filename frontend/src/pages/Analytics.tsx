@@ -17,6 +17,7 @@ import { useCallsStore } from '../stores/callsStore';
 import { Card } from '../components/ui/Card';
 import { AnalyticsMetricsSkeleton, PerformanceListSkeleton } from '../components/ui/PageSkeletons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { formatCurrency } from '../utils/format';
 
 export const Analytics: React.FC = () => {
   const {
@@ -45,13 +46,6 @@ export const Analytics: React.FC = () => {
     };
     loadAnalyticsData();
   }, [fetchDashboardMetrics, fetchSalesTrends, fetchRepPerformance, fetchAgentPerformance, fetchCallStats]);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
 
   return (
     <div>
@@ -245,13 +239,12 @@ export const Analytics: React.FC = () => {
                             {formatCurrency(trend.revenue)}
                           </td>
                           <td className="px-4 py-3 text-sm">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              trend.conversionRate >= 70
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${trend.conversionRate >= 70
                                 ? 'bg-green-100 text-green-800'
                                 : trend.conversionRate >= 50
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}>
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}>
                               {trend.conversionRate.toFixed(1)}%
                             </span>
                           </td>

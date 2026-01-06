@@ -7,11 +7,15 @@ import { ArrowLeft, Upload, X } from 'lucide-react';
 import { productsService } from '../services/products.service';
 import { Product } from '../types';
 import { apiClient } from '../services/api';
+import { useConfigStore } from '../stores/configStore';
+import { getCurrencySymbol } from '../utils/countries';
 
 export const ProductForm: React.FC = () => {
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
     const isEditMode = Boolean(id);
+    const { currency } = useConfigStore();
+    const currencySymbol = getCurrencySymbol(currency);
 
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -333,7 +337,7 @@ export const ProductForm: React.FC = () => {
                     <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <Input
-                                label="Selling Price ($)"
+                                label={`Selling Price (${currencySymbol})`}
                                 name="price"
                                 type="number"
                                 step="0.01"
@@ -344,7 +348,7 @@ export const ProductForm: React.FC = () => {
                                 required
                             />
                             <Input
-                                label="Cost Price ($)"
+                                label={`Cost Price (${currencySymbol})`}
                                 name="cogs"
                                 type="number"
                                 step="0.01"
@@ -371,7 +375,7 @@ export const ProductForm: React.FC = () => {
                                 <span className="text-sm text-gray-600 mr-2">Profit Margin:</span>
                                 <span className="text-sm font-semibold text-green-600">
                                     {formData.price && formData.cogs
-                                        ? `$${(parseFloat(formData.price) - parseFloat(formData.cogs)).toFixed(2)} (${(((parseFloat(formData.price) - parseFloat(formData.cogs)) / parseFloat(formData.price)) * 100).toFixed(1)}%)`
+                                        ? `${currencySymbol}${(parseFloat(formData.price) - parseFloat(formData.cogs)).toFixed(2)} (${(((parseFloat(formData.price) - parseFloat(formData.cogs)) / parseFloat(formData.price)) * 100).toFixed(1)}%)`
                                         : '—'}
                                 </span>
                             </div>

@@ -41,10 +41,11 @@ export const salesRepConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Earnings',
       icon: 'Wallet',
+      iconColor: 'text-green-600',
       dataSource: 'calculated.myCommission',
       format: 'currency',
       subtitle: {
-        template: 'From {delivered} delivered orders @ GH₵{rate}',
+        template: 'From {delivered} delivered orders @ {rate}',
         dataSources: {
           delivered: 'repPerformance.deliveredOrders',
           rate: 'calculated.commissionRate',
@@ -60,6 +61,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Pending Orders',
       icon: 'Clock',
+      iconColor: 'text-orange-600',
       dataSource: 'repPerformance.pendingOrders',
       format: 'number',
       subtitle: {
@@ -77,6 +79,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Total Orders',
       icon: 'ShoppingBag',
+      iconColor: 'text-blue-600',
       dataSource: 'repPerformance.totalOrders',
       format: 'number',
       subtitle: {
@@ -95,6 +98,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Conversion Rate',
       icon: 'TrendingUp',
+      iconColor: 'text-indigo-600',
       dataSource: 'calculated.myConversionRate',
       format: 'percentage',
       subtitle: {

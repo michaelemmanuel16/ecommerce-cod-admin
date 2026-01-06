@@ -20,6 +20,14 @@ export const adminService = {
     return config;
   },
 
+  async getPublicConfig() {
+    const config = await this.getSystemConfig();
+    return {
+      businessName: config.businessName,
+      currency: config.currency,
+    };
+  },
+
   async updateSystemConfig(data: {
     businessName?: string;
     businessEmail?: string;

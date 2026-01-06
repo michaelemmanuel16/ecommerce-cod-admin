@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Search, Edit2, Trash2, Eye, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { customersService } from '../services/customers.service';
+import { formatCurrency } from '../utils/format';
 import { Customer } from '../types';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -166,7 +167,7 @@ export const Customers: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-gray-900">
-                        ${customer.totalSpent.toFixed(2)}
+                        {formatCurrency(customer.totalSpent)}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

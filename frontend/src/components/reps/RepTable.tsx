@@ -3,6 +3,7 @@ import { Edit, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { cn } from '../../utils/cn';
+import { formatCurrency } from '../../utils/format';
 
 export interface RepTableData {
   id: string;
@@ -72,10 +73,6 @@ export const RepTable: React.FC<RepTableProps> = ({
     if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
     return 0;
   });
-
-  const formatCurrency = (amount: number) => {
-    return `GH₵${amount.toFixed(2)}`;
-  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);

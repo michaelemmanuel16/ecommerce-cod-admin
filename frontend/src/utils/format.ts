@@ -1,9 +1,13 @@
 import { format, formatDistance, formatRelative } from 'date-fns';
+import { useConfigStore } from '../stores/configStore';
 
-export const formatCurrency = (amount: number, currency: string = 'USD'): string => {
+export const formatCurrency = (amount: number, currency?: string): string => {
+  const globalCurrency = useConfigStore.getState().currency;
+  const targetCurrency = currency || globalCurrency || 'USD';
+
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency,
+    currency: targetCurrency,
   }).format(amount);
 };
 

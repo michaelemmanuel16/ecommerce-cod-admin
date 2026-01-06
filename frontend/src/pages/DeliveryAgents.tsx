@@ -6,6 +6,7 @@ import { Table, TableHead, TableBody, TableRow, TableCell } from '../components/
 import { Badge } from '../components/ui/Badge';
 import { AgentEditModal } from '../components/admin/AgentEditModal';
 import { DeliveryAgent } from '../services/delivery-agents.service';
+import { formatCurrency } from '../utils/format';
 
 export const DeliveryAgents: React.FC = () => {
   const {
@@ -43,11 +44,6 @@ export const DeliveryAgents: React.FC = () => {
   const handleEditClick = (agent: DeliveryAgent) => {
     setSelectedAgent(agent);
     setIsEditModalOpen(true);
-  };
-
-  const formatCurrency = (amount?: number) => {
-    if (amount === undefined || amount === null) return 'GH₵0.00';
-    return `GH₵${amount.toFixed(2)}`;
   };
 
   return (

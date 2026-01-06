@@ -4,6 +4,8 @@
  */
 
 import { ValueFormat, FormattedValue } from '../../config/types/dashboard';
+import { useConfigStore } from '../../stores/configStore';
+import { getCurrencySymbol } from '../countries';
 
 /**
  * Format a value based on the specified format type
@@ -34,15 +36,16 @@ export function formatValue(
 
   switch (format) {
     case 'currency':
+      const currency = useConfigStore.getState().currency || 'USD';
       return {
         raw: numValue,
         formatted: new Intl.NumberFormat(locale, {
           style: 'currency',
-          currency: 'USD',
+          currency: currency,
           minimumFractionDigits: options?.decimals ?? 2,
           maximumFractionDigits: options?.decimals ?? 2,
         }).format(numValue),
-        prefix: '$',
+        prefix: getCurrencySymbol(currency),
       };
 
     case 'percentage':

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Card } from '../../ui/Card';
+import { formatCurrency } from '../../../utils/format';
 
 interface StatusPipelineCardProps {
   status: 'pending' | 'collected' | 'deposited' | 'reconciled';
@@ -43,20 +44,10 @@ export const StatusPipelineCard: React.FC<StatusPipelineCardProps> = ({
 }) => {
   const config = STATUS_CONFIG[status];
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value);
-  };
-
   return (
     <Card
-      className={`border-l-4 ${config.borderColor} ${config.bgColor} ${
-        onClick ? 'cursor-pointer hover:shadow-md' : ''
-      } transition-shadow`}
+      className={`border-l-4 ${config.borderColor} ${config.bgColor} ${onClick ? 'cursor-pointer hover:shadow-md' : ''
+        } transition-shadow`}
       onClick={onClick}
     >
       <div className="p-4">

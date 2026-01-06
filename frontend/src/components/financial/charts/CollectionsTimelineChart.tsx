@@ -10,6 +10,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { CODCollection } from '../../../services/financial.service';
+import { formatCurrency } from '../../../utils/format';
 
 interface CollectionsTimelineChartProps {
   collections: CODCollection[];
@@ -59,15 +60,6 @@ export const CollectionsTimelineChart: React.FC<CollectionsTimelineChartProps> =
       .slice(-30); // Last 30 days
   }, [collections]);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value);
-  };
-
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -92,7 +84,7 @@ export const CollectionsTimelineChart: React.FC<CollectionsTimelineChartProps> =
           style={{ fontSize: '12px' }}
         />
         <YAxis
-          tickFormatter={formatCurrency}
+          tickFormatter={(value) => formatCurrency(value)}
           stroke="#6b7280"
           style={{ fontSize: '12px' }}
         />

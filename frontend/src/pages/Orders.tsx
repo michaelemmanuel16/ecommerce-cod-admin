@@ -14,6 +14,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { Order, OrderStatus } from '../types';
 import { ordersService } from '../services/orders.service';
 import toast from 'react-hot-toast';
+import { formatCurrency } from '../utils/format';
 
 type ViewMode = 'kanban' | 'list';
 type SortField = 'id' | 'customerName' | 'totalAmount' | 'createdAt' | 'status';
@@ -571,7 +572,7 @@ export const Orders: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900" style={{ width: columnWidths.amount, minWidth: columnWidths.amount, maxWidth: columnWidths.amount }}>
-                            ${order.totalAmount.toFixed(2)}
+                            {formatCurrency(order.totalAmount)}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap" style={{ width: columnWidths.status, minWidth: columnWidths.status, maxWidth: columnWidths.status }}>
                             <select

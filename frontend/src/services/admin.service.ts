@@ -72,6 +72,11 @@ export const adminService = {
     return response.data;
   },
 
+  async getPublicConfig(): Promise<Pick<SystemConfig, 'businessName' | 'currency'>> {
+    const response = await apiClient.get('/api/admin/config');
+    return response.data;
+  },
+
   async updateSystemConfig(data: Partial<SystemConfig>): Promise<SystemConfig> {
     const response = await apiClient.put('/api/admin/settings', data);
     return response.data;

@@ -6,7 +6,8 @@ const router = Router();
 
 router.use(authenticate);
 
-// System Configuration (super_admin only)
+// System Configuration
+router.get('/config', adminController.getPublicConfig);
 router.get('/settings', requireSuperAdmin, adminController.getSystemConfig);
 router.put('/settings', requireSuperAdmin, adminController.updateSystemConfig);
 

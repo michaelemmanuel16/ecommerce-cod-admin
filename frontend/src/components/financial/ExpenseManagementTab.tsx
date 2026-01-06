@@ -4,6 +4,7 @@ import { useFinancialStore } from '../../stores/financialStore';
 import { ExpenseCategoryCard } from './cards/ExpenseCategoryCard';
 import { Card } from '../ui/Card';
 import { AddExpenseModal } from './modals/AddExpenseModal';
+import { formatCurrency } from '../../utils/format';
 
 export const ExpenseManagementTab: React.FC = () => {
   const {
@@ -77,13 +78,6 @@ export const ExpenseManagementTab: React.FC = () => {
     a.download = `expenses-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
   };
 
   const formatDate = (dateStr: string) => {

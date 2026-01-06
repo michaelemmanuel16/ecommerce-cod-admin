@@ -1,5 +1,6 @@
 import React from 'react';
 import { Card } from '../../ui/Card';
+import { formatCurrency } from '../../../utils/format';
 
 interface ExpenseCategoryCardProps {
   category: string;
@@ -33,20 +34,10 @@ export const ExpenseCategoryCard: React.FC<ExpenseCategoryCardProps> = ({
 }) => {
   const colors = getColorsForCategory(category);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value);
-  };
-
   return (
     <Card
-      className={`border-l-4 ${colors.border} ${colors.bg} ${
-        onClick ? 'cursor-pointer hover:shadow-md' : ''
-      } transition-shadow`}
+      className={`border-l-4 ${colors.border} ${colors.bg} ${onClick ? 'cursor-pointer hover:shadow-md' : ''
+        } transition-shadow`}
       onClick={onClick}
     >
       <div className="p-4">

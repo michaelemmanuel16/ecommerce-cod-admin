@@ -4,6 +4,7 @@ import { useFinancialStore } from '../../stores/financialStore';
 import { FinancialKPICard } from './cards/FinancialKPICard';
 import { FinancialTrendsChart } from './charts/FinancialTrendsChart';
 import { Card } from '../ui/Card';
+import { formatCurrency } from '../../utils/format';
 
 type PeriodType = 'daily' | 'monthly';
 
@@ -70,38 +71,6 @@ export const ReportsTab: React.FC = () => {
     };
   }, [summary, expenseBreakdown]);
 
-  // Calculate period comparison
-  const periodComparison = useMemo(() => {
-    if (!profitMargins || !profitMargins.currentPeriod || !profitMargins.previousPeriod) return null;
-
-    return {
-      revenue: {
-        current: profitMargins.currentPeriod.revenue,
-        previous: profitMargins.previousPeriod.revenue,
-        change: profitMargins.currentPeriod.revenue - profitMargins.previousPeriod.revenue,
-        changePercent: profitMargins.previousPeriod.revenue > 0
-          ? ((profitMargins.currentPeriod.revenue - profitMargins.previousPeriod.revenue) / profitMargins.previousPeriod.revenue) * 100
-          : 0
-      },
-      expenses: {
-        current: profitMargins.currentPeriod.expenses,
-        previous: profitMargins.previousPeriod.expenses,
-        change: profitMargins.currentPeriod.expenses - profitMargins.previousPeriod.expenses,
-        changePercent: profitMargins.previousPeriod.expenses > 0
-          ? ((profitMargins.currentPeriod.expenses - profitMargins.previousPeriod.expenses) / profitMargins.previousPeriod.expenses) * 100
-          : 0
-      },
-      profit: {
-        current: profitMargins.currentPeriod.profit,
-        previous: profitMargins.previousPeriod.profit,
-        change: profitMargins.currentPeriod.profit - profitMargins.previousPeriod.profit,
-        changePercent: profitMargins.previousPeriod.profit !== 0
-          ? ((profitMargins.currentPeriod.profit - profitMargins.previousPeriod.profit) / Math.abs(profitMargins.previousPeriod.profit)) * 100
-          : 0
-      }
-    };
-  }, [profitMargins]);
-
   const handleExportPDF = () => {
     alert('PDF export functionality to be implemented');
   };
@@ -145,15 +114,6 @@ export const ReportsTab: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount);
-  };
-
   if (loadingStates.summary || loadingStates.reports) {
     return (
       <div className="space-y-6">
@@ -174,34 +134,33 @@ export const ReportsTab: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Profitability Analysis Cards */}
-      {profitMargins && profitMargins.currentPeriod && (
+      {profitMargins && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <FinancialKPICard
-            title="Revenue Growth"
-            value={profitMargins.currentPeriod.revenue}
+            title="Gross Profit"
+            value={profitMargins.grossProfit}
             icon={DollarSign}
             iconColor="text-green-600"
             iconBgColor="bg-green-100"
-            trend={periodComparison?.revenue.changePercent}
-            subtitle={`vs. previous period`}
+            subtitle="Current period"
           />
 
           <FinancialKPICard
             title="Profit Margin"
-            value={`${profitMargins.currentPeriod.profitMargin.toFixed(1)}%`}
-            icon={profitMargins.currentPeriod.profitMargin >= 0 ? TrendingUp : TrendingDown}
-            iconColor={profitMargins.currentPeriod.profitMargin >= 0 ? 'text-blue-600' : 'text-red-600'}
-            iconBgColor={profitMargins.currentPeriod.profitMargin >= 0 ? 'bg-blue-100' : 'bg-red-100'}
-            trend={periodComparison?.profit.changePercent}
+            value={`${profitMargins.profitMargin.toFixed(1)}%`}
+            icon={profitMargins.profitMargin >= 0 ? TrendingUp : TrendingDown}
+            iconColor={profitMargins.profitMargin >= 0 ? 'text-blue-600' : 'text-red-600'}
+            iconBgColor={profitMargins.profitMargin >= 0 ? 'bg-blue-100' : 'bg-red-100'}
+            subtitle="Of total revenue"
           />
 
           <FinancialKPICard
-            title="Expense Ratio"
-            value={`${profitMargins.currentPeriod.expenseRatio.toFixed(1)}%`}
+            title="Total Cost"
+            value={profitMargins.totalCost}
             icon={TrendingDown}
             iconColor="text-red-600"
             iconBgColor="bg-red-100"
-            subtitle="Of total revenue"
+            subtitle="COGS + Expenses"
           />
         </div>
       )}
@@ -214,21 +173,19 @@ export const ReportsTab: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPeriod('daily')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                  period === 'daily'
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${period === 'daily'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                  }`}
               >
                 Daily
               </button>
               <button
                 onClick={() => setPeriod('monthly')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                  period === 'monthly'
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${period === 'monthly'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                  }`}
               >
                 Monthly
               </button>
@@ -344,103 +301,6 @@ export const ReportsTab: React.FC = () => {
                   Net Margin: {plStatement.netMargin.toFixed(1)}%
                 </div>
               </div>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Period Comparison */}
-      {periodComparison && (
-        <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Period Comparison</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Metric
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Current Period
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Previous Period
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Change
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      % Change
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Revenue
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                      {formatCurrency(periodComparison.revenue.current)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
-                      {formatCurrency(periodComparison.revenue.previous)}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-semibold ${
-                      periodComparison.revenue.change >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {periodComparison.revenue.change >= 0 ? '+' : ''}{formatCurrency(periodComparison.revenue.change)}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-semibold ${
-                      periodComparison.revenue.changePercent >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {periodComparison.revenue.changePercent >= 0 ? '+' : ''}{periodComparison.revenue.changePercent.toFixed(1)}%
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Expenses
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                      {formatCurrency(periodComparison.expenses.current)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
-                      {formatCurrency(periodComparison.expenses.previous)}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-semibold ${
-                      periodComparison.expenses.change <= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {periodComparison.expenses.change >= 0 ? '+' : ''}{formatCurrency(periodComparison.expenses.change)}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-semibold ${
-                      periodComparison.expenses.changePercent <= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {periodComparison.expenses.changePercent >= 0 ? '+' : ''}{periodComparison.expenses.changePercent.toFixed(1)}%
-                    </td>
-                  </tr>
-                  <tr className="bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
-                      Net Profit
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">
-                      {formatCurrency(periodComparison.profit.current)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
-                      {formatCurrency(periodComparison.profit.previous)}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${
-                      periodComparison.profit.change >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {periodComparison.profit.change >= 0 ? '+' : ''}{formatCurrency(periodComparison.profit.change)}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${
-                      periodComparison.profit.changePercent >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {periodComparison.profit.changePercent >= 0 ? '+' : ''}{periodComparison.profit.changePercent.toFixed(1)}%
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
             </div>
           </div>
         </Card>

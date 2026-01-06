@@ -44,11 +44,17 @@ const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }>
   return <>{children}</>;
 };
 
+import { useConfigStore } from './stores/configStore';
+
 function App() {
   const { isAuthenticated, refreshPermissions, setupPermissionListener } = useAuthStore();
+  const { fetchConfig } = useConfigStore();
 
   // Refresh permissions and setup socket listener on mount
   useEffect(() => {
+    // Always fetch public config (includes business name and currency)
+    fetchConfig();
+
     if (isAuthenticated) {
       // Refresh permissions to ensure they're up to date
       refreshPermissions();
@@ -56,7 +62,7 @@ function App() {
       // Setup socket listener for real-time permission updates
       setupPermissionListener();
     }
-  }, [isAuthenticated, refreshPermissions, setupPermissionListener]);
+  }, [isAuthenticated, refreshPermissions, setupPermissionListener, fetchConfig]);
 
   return (
     <ErrorBoundary>

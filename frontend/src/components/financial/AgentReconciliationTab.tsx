@@ -4,6 +4,7 @@ import { useFinancialStore } from '../../stores/financialStore';
 import { FinancialKPICard } from './cards/FinancialKPICard';
 import { AgentSettlementChart } from './charts/AgentSettlementChart';
 import { Card } from '../ui/Card';
+import { formatCurrency } from '../../utils/format';
 
 export const AgentReconciliationTab: React.FC = () => {
   const {
@@ -23,13 +24,6 @@ export const AgentReconciliationTab: React.FC = () => {
     );
     return daysSinceOldest > 7;
   });
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-US', {

@@ -9,9 +9,11 @@ import { LucideIcon } from 'lucide-react';
 // Base Types
 // ============================================================================
 
-export type DateRangePreset = 'today' | 'yesterday' | 'last7days' | 'last30days' | 'thisWeek' | 'thisMonth' | 'lastMonth' | 'custom';
+export type DateRangePreset =
+  | string
+  | { label: string; value: string };
 
-export type ValueFormat = 'number' | 'currency' | 'percentage' | 'time' | 'date' | 'custom';
+export type ValueFormat = 'number' | 'currency' | 'percentage' | 'time' | 'date' | 'datetime' | 'custom';
 
 export type TrendComparison = 'previousPeriod' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'custom';
 
@@ -40,6 +42,7 @@ export interface TrendConfig {
   enabled: boolean;
   comparison?: TrendComparison;
   dataSource?: string;
+  compareKey?: string; // Support for older config format
   inverted?: boolean; // True if lower values are better (e.g., cancellation rate)
 }
 
@@ -83,6 +86,7 @@ export interface LineChartConfig {
     strokeWidth?: number;
     showDots?: boolean;
     fill?: boolean; // Area chart style
+    format?: ValueFormat;
   };
 }
 

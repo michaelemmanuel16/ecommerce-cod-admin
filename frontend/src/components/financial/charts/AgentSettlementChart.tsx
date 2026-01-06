@@ -10,6 +10,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { AgentCashHolding } from '../../../services/financial.service';
+import { formatCurrency } from '../../../utils/format';
 
 interface AgentSettlementChartProps {
   data: AgentCashHolding[];
@@ -20,15 +21,6 @@ export const AgentSettlementChart: React.FC<AgentSettlementChartProps> = ({
   data,
   height = 300
 }) => {
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value);
-  };
-
   if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500">
@@ -55,7 +47,7 @@ export const AgentSettlementChart: React.FC<AgentSettlementChartProps> = ({
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
         <XAxis
           type="number"
-          tickFormatter={formatCurrency}
+          tickFormatter={(value) => formatCurrency(value)}
           stroke="#6b7280"
           style={{ fontSize: '12px' }}
         />
