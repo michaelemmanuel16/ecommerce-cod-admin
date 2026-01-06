@@ -1033,14 +1033,19 @@ export class OrderService {
             }
           });
 
-          // Add to queue for async processing
-          await workflowQueue.add('execute-workflow', {
-            executionId: execution.id,
-            workflowId: workflow.id,
-            actions: workflow.actions,
-            conditions: workflow.conditions,
-            input: orderContext
-          });
+          // Add to queue for async processing (with 5s timeout to prevent hanging order creation)
+          await Promise.race([
+            workflowQueue.add('execute-workflow', {
+              executionId: execution.id,
+              workflowId: workflow.id,
+              actions: workflow.actions,
+              conditions: workflow.conditions,
+              input: orderContext
+            }),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Workflow queue timeout')), 5000)
+            )
+          ]);
 
           logger.info('Workflow triggered for new order', {
             workflowId: workflow.id,

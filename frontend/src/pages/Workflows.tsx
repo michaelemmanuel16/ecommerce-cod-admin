@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Play, Pause, Trash2, Edit, GitBranch, Zap, Clock, Sparkles, Search } from 'lucide-react';
+import { Plus, Play, Pause, Trash2, Edit, GitBranch, Zap, Clock, Sparkles, Search, Loader2 } from 'lucide-react';
 import { workflowsService, Workflow } from '../services/workflows.service';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { WorkflowTemplateGallery } from '../components/workflows/WorkflowTemplateGallery';
+import { getSocket } from '../services/socket';
+import toast from 'react-hot-toast';
 
 export const Workflows: React.FC = () => {
   const navigate = useNavigate();
@@ -12,9 +14,34 @@ export const Workflows: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showTemplateGallery, setShowTemplateGallery] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [executingIds, setExecutingIds] = useState<Set<string>>(new Set());
+  const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadWorkflows();
+
+    // Listen for real-time execution updates
+    const socket = getSocket();
+    if (socket) {
+      const handleStarted = (data: { workflowId: string }) => {
+        setRunningIds(prev => new Set(prev).add(String(data.workflowId)));
+      };
+      const handleCompleted = (data: { workflowId: string }) => {
+        setRunningIds(prev => {
+          const next = new Set(prev);
+          next.delete(String(data.workflowId));
+          return next;
+        });
+      };
+
+      socket.on('workflow:execution_started', handleStarted);
+      socket.on('workflow:execution_completed', handleCompleted);
+
+      return () => {
+        socket.off('workflow:execution_started', handleStarted);
+        socket.off('workflow:execution_completed', handleCompleted);
+      };
+    }
   }, []);
 
   const loadWorkflows = async () => {
@@ -51,10 +78,18 @@ export const Workflows: React.FC = () => {
 
   const handleExecuteWorkflow = async (id: string) => {
     try {
+      setExecutingIds(prev => new Set(prev).add(id));
       await workflowsService.executeWorkflow(id);
-      alert('Workflow execution started successfully');
-    } catch (error) {
+      toast.success('Workflow execution requested');
+    } catch (error: any) {
       console.error('Failed to execute workflow:', error);
+      toast.error(error.response?.data?.message || error.message || 'Failed to execute workflow');
+    } finally {
+      setExecutingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -193,21 +228,32 @@ export const Workflows: React.FC = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredWorkflows.map((workflow) => (
-                  <tr key={workflow.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{workflow.name}</div>
+                  <tr
+                    key={workflow.id}
+                    className={`hover:bg-gray-100 transition-colors ${workflow.isActive ? 'bg-green-50' : ''}`}
+                  >
+                    <td className={`px-6 py-4 whitespace-nowrap ${workflow.isActive ? 'border-l-4 border-green-500 shadow-[inset_4px_0_0_0_rgba(34,197,94,0.1)]' : 'border-l-4 border-transparent'}`}>
+                      <div className="text-sm font-bold text-gray-900">{workflow.name}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <button
-                        onClick={() => handleToggleWorkflow(workflow.id, workflow.isActive)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                          workflow.isActive
-                            ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                            : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                        }`}
-                      >
-                        {workflow.isActive ? 'Active' : 'Inactive'}
-                      </button>
+                      <div className="flex flex-col items-start gap-2">
+                        <button
+                          onClick={() => handleToggleWorkflow(workflow.id, workflow.isActive)}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold tracking-wider transition-all shadow-sm border ${workflow.isActive
+                            ? 'bg-green-100 text-green-700 border-green-200'
+                            : 'bg-gray-100 text-gray-600 border-gray-200'
+                            }`}
+                        >
+                          {workflow.isActive && <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />}
+                          {workflow.isActive ? 'ACTIVE' : 'INACTIVE'}
+                        </button>
+                        {runningIds.has(String(workflow.id)) && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 animate-pulse uppercase tracking-wider">
+                            <Zap className="w-3 h-3 mr-1 fill-current" />
+                            Running
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-600 max-w-xs truncate">
@@ -235,11 +281,15 @@ export const Workflows: React.FC = () => {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => handleExecuteWorkflow(workflow.id)}
-                          disabled={!workflow.isActive}
+                          disabled={!workflow.isActive || executingIds.has(workflow.id)}
                           className="text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Execute Workflow"
                         >
-                          <Play className="w-5 h-5" />
+                          {executingIds.has(workflow.id) ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : (
+                            <Play className="w-5 h-5" />
+                          )}
                         </button>
                         <button
                           onClick={() => navigate(`/workflows/${workflow.id}`)}

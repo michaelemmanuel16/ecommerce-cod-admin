@@ -185,14 +185,19 @@ export class WorkflowService {
       }
     });
 
-    // Add to queue for async processing
-    await workflowQueue.add('execute-workflow', {
-      executionId: execution.id,
-      workflowId: workflow.id,
-      actions: workflow.actions,
-      conditions: workflow.conditions,
-      input: input || {}
-    });
+    // Add to queue for async processing (with 5s timeout to prevent API hang)
+    await Promise.race([
+      workflowQueue.add('execute-workflow', {
+        executionId: execution.id,
+        workflowId: workflow.id,
+        actions: workflow.actions,
+        conditions: workflow.conditions,
+        input: input || {}
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Workflow queue is currently unavailable. Please try again later.')), 5000)
+      )
+    ]);
 
     logger.info('Workflow execution started', {
       workflowId,
