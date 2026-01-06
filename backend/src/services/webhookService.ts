@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import crypto from 'crypto';
 import { parsePackageField } from '../utils/packageParser';
+import workflowService from './workflowService';
 
 interface CreateWebhookData {
   name: string;
@@ -447,6 +448,14 @@ export class WebhookService {
 
         results.success++;
         logger.info('Webhook order created', { orderId: createdOrder.id });
+
+        // Trigger workflows for imported order
+        workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
+          logger.error('Failed to trigger workflow for webhook order', {
+            orderId: createdOrder.id,
+            error: err.message
+          });
+        });
       } catch (err: any) {
         results.failed++;
         results.errors.push({

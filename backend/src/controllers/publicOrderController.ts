@@ -1,5 +1,6 @@
 import { Response, Request } from 'express';
 import { PrismaClient, OrderStatus } from '@prisma/client';
+import workflowService from '../services/workflowService';
 
 const prisma = new PrismaClient();
 
@@ -233,6 +234,11 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
         totalOrders: { increment: 1 },
         totalSpent: { increment: finalTotal }
       }
+    });
+
+    // Trigger workflows (non-blocking)
+    workflowService.triggerOrderCreatedWorkflows(order).catch(err => {
+      console.error('Failed to trigger workflow for public order:', err);
     });
 
     res.status(201).json({

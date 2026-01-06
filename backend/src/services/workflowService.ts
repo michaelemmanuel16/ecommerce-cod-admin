@@ -682,7 +682,7 @@ export class WorkflowService {
   }
 
   /**
-   * Trigger workflows based on order status change
+   * Status change workflows triggered
    */
   async triggerStatusChangeWorkflows(orderId: string, oldStatus: string, newStatus: string) {
     const workflows = await prisma.workflow.findMany({
@@ -710,6 +710,101 @@ export class WorkflowService {
       newStatus,
       workflowsTriggered: workflows.length
     });
+  }
+
+  /**
+   * Trigger workflows with order_created trigger type
+   */
+  async triggerOrderCreatedWorkflows(order: any) {
+    try {
+      // Find active workflows with order_created trigger
+      const workflows = await prisma.workflow.findMany({
+        where: {
+          triggerType: 'order_created',
+          isActive: true
+        }
+      });
+
+      if (workflows.length === 0) {
+        logger.debug('No active order_created workflows found');
+        return;
+      }
+
+      logger.info(`Found ${workflows.length} active order_created workflows`, {
+        orderId: order.id,
+        workflows: workflows.map(w => w.id)
+      });
+
+      // Fetch full order data with products for workflow evaluation
+      const fullOrder = await prisma.order.findUnique({
+        where: { id: order.id },
+        include: {
+          orderItems: {
+            include: {
+              product: true
+            }
+          },
+          customer: true
+        }
+      });
+
+      if (!fullOrder) {
+        logger.error('Order not found for workflow triggering', { orderId: order.id });
+        return;
+      }
+
+      // Prepare context for workflow evaluation
+      const orderContext = {
+        ...fullOrder,
+        productName: fullOrder.orderItems.map((item: any) => item.product.name).join(', ')
+      };
+
+      // Trigger each workflow
+      for (const workflow of workflows) {
+        try {
+          // Create execution record
+          const execution = await prisma.workflowExecution.create({
+            data: {
+              workflowId: workflow.id,
+              status: 'pending',
+              input: orderContext
+            }
+          });
+
+          // Add to queue for async processing (with 5s timeout to prevent hanging order creation)
+          await Promise.race([
+            workflowQueue.add('execute-workflow', {
+              executionId: execution.id,
+              workflowId: workflow.id,
+              actions: workflow.actions,
+              conditions: workflow.conditions,
+              input: orderContext
+            }),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Workflow queue timeout')), 5000)
+            )
+          ]);
+
+          logger.info('Workflow triggered for new order', {
+            workflowId: workflow.id,
+            executionId: execution.id,
+            orderId: order.id
+          });
+        } catch (error: any) {
+          logger.error('Failed to trigger workflow', {
+            workflowId: workflow.id,
+            orderId: order.id,
+            error: error.message
+          });
+        }
+      }
+    } catch (error: any) {
+      logger.error('Error in triggerOrderCreatedWorkflows', {
+        orderId: order.id,
+        error: error.message
+      });
+      throw error;
+    }
   }
 
   /**
