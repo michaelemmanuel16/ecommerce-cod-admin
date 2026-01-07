@@ -1,1 +1,1 @@
-Line 1: Base Text
+Line 1: Main branch's conflicting version
