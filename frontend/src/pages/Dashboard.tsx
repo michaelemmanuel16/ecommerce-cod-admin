@@ -33,16 +33,20 @@ export const Dashboard: React.FC = () => {
   const deliveredOrders = metrics?.deliveredOrders ?? 0;
 
   // Transform trends data for chart
-  const salesData = trends.length > 0
-    ? trends.map(t => ({ date: t.date.split('-').pop() || t.date, sales: t.orders }))
+  const performanceData = trends.length > 0
+    ? trends.map(t => ({
+      date: t.date.split('-').pop() || t.date,
+      assigned: t.orders,
+      delivered: t.delivered
+    }))
     : [
-      { date: 'Mon', sales: 0 },
-      { date: 'Tue', sales: 0 },
-      { date: 'Wed', sales: 0 },
-      { date: 'Thu', sales: 0 },
-      { date: 'Fri', sales: 0 },
-      { date: 'Sat', sales: 0 },
-      { date: 'Sun', sales: 0 },
+      { date: 'Mon', assigned: 0, delivered: 0 },
+      { date: 'Tue', assigned: 0, delivered: 0 },
+      { date: 'Wed', assigned: 0, delivered: 0 },
+      { date: 'Thu', assigned: 0, delivered: 0 },
+      { date: 'Fri', assigned: 0, delivered: 0 },
+      { date: 'Sat', assigned: 0, delivered: 0 },
+      { date: 'Sun', assigned: 0, delivered: 0 },
     ];
 
   // Transform funnel data for chart
@@ -93,8 +97,10 @@ export const Dashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <h3 className="text-lg font-semibold mb-4">Sales Trend</h3>
-          <SalesTrendChart data={salesData} />
+          <h3 className="text-lg font-semibold mb-4">
+            {user?.role === 'sales_rep' ? 'My Performance (Assigned vs Delivered)' : 'Orders Performance'}
+          </h3>
+          <SalesTrendChart data={performanceData} />
         </Card>
         <Card>
           <h3 className="text-lg font-semibold mb-4">Order Funnel</h3>
