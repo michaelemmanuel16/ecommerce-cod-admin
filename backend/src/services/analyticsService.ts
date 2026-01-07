@@ -249,13 +249,15 @@ export class AnalyticsService {
       }
     });
 
-    const data = Object.entries(trends).map(([date, stats]) => ({
-      date,
-      orders: stats.orders,
-      revenue: stats.revenue,
-      delivered: stats.delivered,
-      conversionRate: stats.orders > 0 ? (stats.delivered / stats.orders) * 100 : 0
-    }));
+    const data = Object.entries(trends)
+      .map(([date, stats]) => ({
+        date,
+        orders: stats.orders,
+        revenue: stats.revenue,
+        delivered: stats.delivered,
+        conversionRate: stats.orders > 0 ? (stats.delivered / stats.orders) * 100 : 0
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
     return data;
   }
@@ -623,10 +625,12 @@ export class AnalyticsService {
       }
     });
 
-    return Object.entries(series).map(([date, value]) => ({
-      date,
-      value
-    }));
+    return Object.entries(series)
+      .map(([date, value]) => ({
+        date,
+        value
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
   }
 
   /**
