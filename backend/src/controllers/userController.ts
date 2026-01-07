@@ -115,6 +115,8 @@ export const getUser = async (req: AuthRequest, res: Response): Promise<void> =>
         isActive: true,
         isAvailable: true,
         lastLogin: true,
+        country: true,
+        commissionRate: true,
         vehicleType: true,
         vehicleId: true,
         deliveryRate: true,
@@ -359,8 +361,10 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response): Prom
         vehicleType: true,
         vehicleId: true,
         deliveryRate: true,
+        commissionRate: true,
         totalEarnings: true,
         location: true,
+        country: true,
         assignedOrdersAsAgent: {
           where: orderWhere,
           select: {
