@@ -41,6 +41,7 @@ export const inventoryManagerConfig: DashboardConfig = {
       type: 'stat',
       title: 'Total Products',
       icon: 'Package',
+      iconColor: 'text-blue-600',
       dataSource: 'inventoryMetrics.totalProducts',
       format: 'number',
       subtitle: {
@@ -59,6 +60,7 @@ export const inventoryManagerConfig: DashboardConfig = {
       type: 'stat',
       title: 'Low Stock Items',
       icon: 'AlertTriangle',
+      iconColor: 'text-orange-600',
       dataSource: 'inventoryMetrics.lowStockItems',
       format: 'number',
       subtitle: {
@@ -76,6 +78,7 @@ export const inventoryManagerConfig: DashboardConfig = {
       type: 'stat',
       title: 'Out of Stock',
       icon: 'XCircle',
+      iconColor: 'text-red-600',
       dataSource: 'inventoryMetrics.outOfStock',
       format: 'number',
       subtitle: {
@@ -93,6 +96,7 @@ export const inventoryManagerConfig: DashboardConfig = {
       type: 'stat',
       title: 'Inventory Value',
       icon: 'DollarSign',
+      iconColor: 'text-green-600',
       dataSource: 'inventoryMetrics.totalValue',
       format: 'currency',
       subtitle: {
@@ -116,6 +120,7 @@ export const inventoryManagerConfig: DashboardConfig = {
       type: 'barChart',
       title: 'Stock Levels by Category',
       dataSource: 'stockByCategory',
+      gridPosition: { row: 1, col: 1, colSpan: 1 },
       height: 300,
       config: {
         xAxis: 'category',
@@ -132,6 +137,7 @@ export const inventoryManagerConfig: DashboardConfig = {
       type: 'leaderboard',
       title: 'Top Selling Products',
       dataSource: 'topSellingProducts',
+      gridPosition: { row: 1, col: 2, colSpan: 1 },
       height: 300,
       config: {
         nameKey: 'name',
@@ -150,6 +156,7 @@ export const inventoryManagerConfig: DashboardConfig = {
       type: 'lineChart',
       title: 'Inventory Turnover',
       dataSource: 'inventoryTurnover',
+      gridPosition: { row: 1, col: 3, colSpan: 1 },
       height: 300,
       config: {
         xAxis: 'date',
@@ -168,6 +175,7 @@ export const inventoryManagerConfig: DashboardConfig = {
       type: 'barChart',
       title: 'Product Performance',
       dataSource: 'productPerformance',
+      gridPosition: { row: 2, col: 1, colSpan: 1 },
       height: 300,
       config: {
         xAxis: 'name',
@@ -185,6 +193,7 @@ export const inventoryManagerConfig: DashboardConfig = {
       type: 'lineChart',
       title: 'Stock Movement',
       dataSource: 'stockMovement',
+      gridPosition: { row: 2, col: 2, colSpan: 2 },
       height: 300,
       config: {
         xAxis: 'date',
@@ -202,6 +211,7 @@ export const inventoryManagerConfig: DashboardConfig = {
       type: 'dataTable',
       title: 'Low Stock Items',
       dataSource: 'lowStockItemsList',
+      gridPosition: { row: 3, col: 1, colSpan: 3 },
       height: 400,
       config: {
         columns: [
@@ -213,7 +223,7 @@ export const inventoryManagerConfig: DashboardConfig = {
           { key: 'lastRestocked', label: 'Last Restock', sortable: true, format: 'date' },
         ],
         maxRows: 15,
-        onRowClick: true,
+        onRowClick: 'product_details',
       },
     },
   ],

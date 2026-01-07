@@ -30,7 +30,7 @@ export const deliveryAgentConfig: DashboardConfig = {
     { label: 'This Month', value: 'this_month' },
     { label: 'Last Month', value: 'last_month' },
   ],
-  defaultDateRange: { label: 'Last 7 days', value: 'last_7_days' },
+  defaultDateRange: { label: 'This Month', value: 'this_month' },
 
   // 4 Stat Cards (Per User Requirements)
   statCards: [
@@ -39,6 +39,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Earnings',
       icon: 'DollarSign',
+      iconColor: 'text-green-600',
       dataSource: 'calculated.myEarnings',
       format: 'currency',
       subtitle: {
@@ -57,6 +58,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Active Deliveries',
       icon: 'Package',
+      iconColor: 'text-blue-600',
       dataSource: 'agentPerformance.activeDeliveries',
       format: 'number',
       subtitle: {
@@ -72,6 +74,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Completed Deliveries',
       icon: 'CheckCircle',
+      iconColor: 'text-indigo-600',
       dataSource: 'agentPerformance.completedDeliveries',
       format: 'number',
       subtitle: {
@@ -90,6 +93,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Success Rate',
       icon: 'Award',
+      iconColor: 'text-orange-600',
       dataSource: 'calculated.mySuccessRate',
       format: 'percentage',
       subtitle: {
@@ -113,6 +117,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       type: 'lineChart',
       title: 'My Earnings Over Time',
       dataSource: 'earningsTrends',
+      gridPosition: { row: 1, col: 1, colSpan: 2 },
       height: 300,
       config: {
         xAxis: 'date',
@@ -130,6 +135,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       type: 'donutChart',
       title: 'My Delivery Status',
       dataSource: 'deliveriesByStatus',
+      gridPosition: { row: 1, col: 3, colSpan: 1 },
       height: 300,
       config: {
         nameKey: 'status',
@@ -147,6 +153,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       type: 'barChart',
       title: 'My Performance Metrics',
       dataSource: 'performanceMetrics',
+      gridPosition: { row: 2, col: 1, colSpan: 1 },
       height: 300,
       config: {
         xAxis: 'metric',
@@ -163,6 +170,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       type: 'barChart',
       title: 'My Daily Deliveries',
       dataSource: 'dailyDeliveries',
+      gridPosition: { row: 2, col: 2, colSpan: 1 },
       height: 300,
       config: {
         xAxis: 'date',
@@ -179,6 +187,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       type: 'lineChart',
       title: 'My Average Delivery Time',
       dataSource: 'deliveryTimeAnalysis',
+      gridPosition: { row: 2, col: 3, colSpan: 1 },
       height: 300,
       config: {
         xAxis: 'date',
@@ -195,6 +204,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       type: 'dataTable',
       title: 'My Recent Deliveries',
       dataSource: 'recentDeliveries',
+      gridPosition: { row: 3, col: 1, colSpan: 3 },
       height: 400,
       config: {
         columns: [
@@ -206,7 +216,7 @@ export const deliveryAgentConfig: DashboardConfig = {
           { key: 'earnings', label: 'Earnings', sortable: true, format: 'currency' },
         ],
         maxRows: 10,
-        onRowClick: true,
+        onRowClick: 'order_details',
       },
     },
   ],

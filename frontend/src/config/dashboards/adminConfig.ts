@@ -12,7 +12,7 @@ export const adminDashboardConfig: DashboardConfig = {
 
   // Date range settings
   dateRangePresets: ['today', 'yesterday', 'this-week', 'this-month', 'last-7-days', 'last-30-days', 'this-year', 'last-year'],
-  defaultDateRange: 'last-30-days',
+  defaultDateRange: 'this-month',
   allowComparison: true,
 
   // Row 1: Stat cards (4 key metrics)

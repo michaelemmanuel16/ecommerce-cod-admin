@@ -32,7 +32,7 @@ export const salesRepConfig: DashboardConfig = {
     { label: 'This Year', value: 'this_year' },
     { label: 'All Time', value: 'all_time' },
   ],
-  defaultDateRange: { label: 'Last 30 days', value: 'last_30_days' },
+  defaultDateRange: { label: 'This Month', value: 'this_month' },
 
   // 4 Stat Cards (Per User Requirements)
   statCards: [
@@ -117,22 +117,21 @@ export const salesRepConfig: DashboardConfig = {
 
   // Charts
   charts: [
-    // My Sales Trends (Line Chart)
+    // My Orders vs Deliveries (Line Chart)
     {
       id: 'my-sales-trends',
       type: 'lineChart',
-      title: 'My Sales Trends',
+      title: 'My Orders vs Deliveries',
       dataSource: 'salesTrends',
       gridPosition: { row: 1, col: 1, colSpan: 2 },
       height: 300,
       config: {
         xAxis: 'date',
-        yAxis: ['revenue', 'orders'],
+        yAxis: ['orders', 'delivered'],
         colors: ['#3B82F6', '#10B981'],
         showDots: true,
-        showMovingAverage: true,
-        movingAverageWindow: 7,
-        format: 'currency',
+        showMovingAverage: false,
+        format: 'number',
       },
     },
 

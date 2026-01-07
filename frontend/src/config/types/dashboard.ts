@@ -251,8 +251,8 @@ export interface DashboardData {
   trends?: any[];
   salesTrends?: any[];
   conversionFunnel?: any[];
-  repPerformance?: any[];
-  agentPerformance?: any[];
+  repPerformance?: any;
+  agentPerformance?: any;
   customerInsights?: any;
   productPerformance?: any[];
   areaDistribution?: any[];
