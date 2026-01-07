@@ -53,8 +53,9 @@ function App() {
       // Refresh permissions to ensure they're up to date
       refreshPermissions();
 
-      // Setup socket listener for real-time permission updates
-      setupPermissionListener();
+      // Setup all socket listeners
+      const { initSocket } = useAuthStore.getState();
+      initSocket();
     }
   }, [isAuthenticated, refreshPermissions, setupPermissionListener]);
 

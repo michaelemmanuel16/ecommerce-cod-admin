@@ -21,37 +21,43 @@ interface DeliveryAgentsState {
   setSelectedAgent: (agent: DeliveryAgent | null) => void;
   addAgent: (agent: DeliveryAgent) => void;
   updateAgentInStore: (agent: DeliveryAgent) => void;
+  setupSocketListeners: () => void;
 }
 
 export const useDeliveryAgentsStore = create<DeliveryAgentsState>((set, get) => {
-  // Initialize Socket.io listeners
-  const socket = getSocket();
-  if (socket) {
-    socket.on('agent:updated', (data: DeliveryAgent) => {
-      get().updateAgentInStore(data);
-    });
-
-    socket.on('agent:availability_changed', (data: { agentId: string; isAvailable: boolean }) => {
-      const agents = get().agents.map(agent =>
-        agent.id === data.agentId ? { ...agent, isAvailable: data.isAvailable } : agent
-      );
-      set({ agents });
-    });
-
-    socket.on('order:assigned', (data: { assignedTo: string; role: string }) => {
-      if (data.role === 'delivery_agent') {
-        // Refresh performance stats when new order assigned to an agent
-        get().fetchPerformance();
-      }
-    });
-  }
-
   return {
     agents: [],
     performance: [],
     selectedAgent: null,
     isLoading: false,
     error: null,
+
+    setupSocketListeners: () => {
+      const socket = getSocket();
+      if (!socket) return;
+
+      socket.off('agent:updated');
+      socket.off('agent:availability_changed');
+      socket.off('order:assigned');
+
+      socket.on('agent:updated', (data: DeliveryAgent) => {
+        get().updateAgentInStore(data);
+      });
+
+      socket.on('agent:availability_changed', (data: { agentId: string; isAvailable: boolean }) => {
+        const agents = get().agents.map(agent =>
+          agent.id === data.agentId ? { ...agent, isAvailable: data.isAvailable } : agent
+        );
+        set({ agents });
+      });
+
+      socket.on('order:assigned', (data: { assignedTo: string; role: string }) => {
+        if (data.role === 'delivery_agent') {
+          // Refresh performance stats when new order assigned to an agent
+          get().fetchPerformance();
+        }
+      });
+    },
 
     fetchAgents: async () => {
       set({ isLoading: true, error: null });

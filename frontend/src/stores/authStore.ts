@@ -4,6 +4,9 @@ import { User, LoginCredentials, RegisterData, UserPreferences, Permissions } fr
 import { authService } from '../services/auth.service';
 import { usersService } from '../services/users.service';
 import { connectSocket, disconnectSocket, getSocket } from '../services/socket';
+import { useAnalyticsStore } from './analyticsStore';
+import { useDeliveryAgentsStore } from './deliveryAgentsStore';
+import { useCustomerRepsStore } from './customerRepsStore';
 import toast from 'react-hot-toast';
 
 interface AuthState {
@@ -20,6 +23,7 @@ interface AuthState {
   updatePreferences: (preferences: UserPreferences) => Promise<void>;
   refreshPermissions: () => Promise<void>;
   setupPermissionListener: () => void;
+  initSocket: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -46,6 +50,7 @@ export const useAuthStore = create<AuthState>()(
           });
           toast.success(`Welcome back, ${user.firstName} ${user.lastName}!`);
           connectSocket();
+          get().initSocket();
         } catch (error) {
           set({ isLoading: false });
           throw error;
@@ -131,6 +136,9 @@ export const useAuthStore = create<AuthState>()(
           return;
         }
 
+        // Remove existing listener to prevent duplicates
+        socket.off('permissions:updated');
+
         // Listen for permission updates from backend
         socket.on('permissions:updated', (event: { updatedRoles: string[]; timestamp: Date }) => {
           const { user, refreshPermissions } = get();
@@ -155,6 +163,19 @@ export const useAuthStore = create<AuthState>()(
         });
 
         console.log('[AuthStore] Permission listener setup complete');
+      },
+
+      initSocket: () => {
+        const socket = getSocket();
+        if (!socket) return;
+
+        // Setup listeners for all stores
+        get().setupPermissionListener();
+        useAnalyticsStore.getState().setupSocketListeners();
+        useDeliveryAgentsStore.getState().setupSocketListeners();
+        useCustomerRepsStore.getState().setupSocketListeners();
+
+        console.log('[AuthStore] All socket listeners initialized');
       },
     }),
     {

@@ -12,7 +12,7 @@ let socket: Socket | null = null;
 
 export const connectSocket = () => {
   const token = useAuthStore.getState().accessToken;
-  
+
   if (!token) {
     console.error('No auth token available');
     return;
@@ -32,11 +32,11 @@ export const connectSocket = () => {
     console.log('Socket disconnected');
   });
 
-  socket.on('order_created', (data) => {
+  socket.on('order:created', (data) => {
     toast.success(`New order received: ${data.orderNumber}`);
     useNotificationsStore.getState().addNotification({
       id: Date.now(), // Use number instead of string
-      type: 'order_created',
+      type: 'order:created',
       title: 'New Order',
       message: `Order ${data.orderNumber} has been created`,
       read: false,
@@ -45,10 +45,10 @@ export const connectSocket = () => {
     });
   });
 
-  socket.on('order_updated', (data) => {
+  socket.on('order:updated', (data) => {
     useNotificationsStore.getState().addNotification({
       id: Date.now(), // Use number instead of string
-      type: 'order_updated',
+      type: 'order:updated',
       title: 'Order Updated',
       message: `Order ${data.orderNumber} has been updated`,
       read: false,
@@ -57,12 +57,12 @@ export const connectSocket = () => {
     });
   });
 
-  socket.on('order_status_changed', (data) => {
+  socket.on('order:status_changed', (data) => {
     const statusText = data.status.split('_').join(' ');
     toast.success(`Order ${data.orderNumber} status changed to ${statusText}`);
     useNotificationsStore.getState().addNotification({
       id: Date.now(), // Use number instead of string
-      type: 'order_status_changed',
+      type: 'order:status_changed',
       title: 'Status Changed',
       message: `Order ${data.orderNumber} is now ${statusText}`,
       read: false,

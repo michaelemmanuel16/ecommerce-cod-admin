@@ -26,38 +26,10 @@ interface CustomerRepsState {
   setSelectedRep: (rep: CustomerRep | null) => void;
   addRep: (rep: CustomerRep) => void;
   updateRepInStore: (rep: CustomerRep) => void;
+  setupSocketListeners: () => void;
 }
 
 export const useCustomerRepsStore = create<CustomerRepsState>((set, get) => {
-  // Initialize Socket.io listeners
-  const socket = getSocket();
-  if (socket) {
-    socket.on('rep:updated', (data: CustomerRep) => {
-      get().updateRepInStore(data);
-    });
-
-    socket.on('rep:availability_changed', (data: { repId: string; isAvailable: boolean }) => {
-      const reps = get().reps.map(rep =>
-        rep.id === data.repId ? { ...rep, isAvailable: data.isAvailable } : rep
-      );
-      set({ reps });
-    });
-
-    socket.on('rep:workload_changed', (data: RepWorkload) => {
-      const workload = get().workload.map(w =>
-        w.userId === data.userId ? data : w
-      );
-      set({ workload });
-    });
-
-    socket.on('order:assigned', (data: { assignedTo: string; role: string }) => {
-      if (data.role === 'sales_rep') {
-        // Refresh workload when new order assigned to a rep
-        get().fetchWorkload();
-      }
-    });
-  }
-
   return {
     reps: [],
     workload: [],
@@ -65,6 +37,41 @@ export const useCustomerRepsStore = create<CustomerRepsState>((set, get) => {
     selectedRep: null,
     isLoading: false,
     error: null,
+
+    setupSocketListeners: () => {
+      const socket = getSocket();
+      if (!socket) return;
+
+      socket.off('rep:updated');
+      socket.off('rep:availability_changed');
+      socket.off('rep:workload_changed');
+      socket.off('order:assigned');
+
+      socket.on('rep:updated', (data: CustomerRep) => {
+        get().updateRepInStore(data);
+      });
+
+      socket.on('rep:availability_changed', (data: { repId: string; isAvailable: boolean }) => {
+        const reps = get().reps.map(rep =>
+          rep.id === data.repId ? { ...rep, isAvailable: data.isAvailable } : rep
+        );
+        set({ reps });
+      });
+
+      socket.on('rep:workload_changed', (data: RepWorkload) => {
+        const workload = get().workload.map(w =>
+          w.userId === data.userId ? data : w
+        );
+        set({ workload });
+      });
+
+      socket.on('order:assigned', (data: { assignedTo: string; role: string }) => {
+        if (data.role === 'sales_rep') {
+          // Refresh workload when new order assigned to a rep
+          get().fetchWorkload();
+        }
+      });
+    },
 
     fetchReps: async () => {
       set({ isLoading: true, error: null });
