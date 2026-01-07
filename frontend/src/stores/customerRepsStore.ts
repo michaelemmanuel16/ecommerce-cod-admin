@@ -22,7 +22,7 @@ interface CustomerRepsState {
   error: string | null;
   fetchReps: () => Promise<void>;
   fetchWorkload: () => Promise<void>;
-  fetchPerformance: () => Promise<void>;
+  fetchPerformance: (filters?: { startDate?: string; endDate?: string }) => Promise<void>;
   fetchRepById: (id: string) => Promise<void>;
   fetchPayoutHistory: (id: string) => Promise<void>;
   fetchPendingPayments: (id: string) => Promise<void>;
@@ -99,9 +99,9 @@ export const useCustomerRepsStore = create<CustomerRepsState>((set, get) => {
       }
     },
 
-    fetchPerformance: async () => {
+    fetchPerformance: async (filters?: { startDate?: string; endDate?: string }) => {
       try {
-        const performance = await customerRepsService.getRepPerformance();
+        const performance = await customerRepsService.getRepPerformance(filters);
         set({ performance });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch rep performance';

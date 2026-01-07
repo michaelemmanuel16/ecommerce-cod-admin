@@ -325,13 +325,28 @@ export const getRepWorkload = async (_req: AuthRequest, res: Response): Promise<
   }
 };
 
-export const getAgentPerformance = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getAgentPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const { startDate, endDate } = req.query;
+
+    const where: any = {
+      role: 'delivery_agent',
+      isActive: true
+    };
+
+    const orderWhere: any = {};
+    if (startDate || endDate) {
+      orderWhere.createdAt = {};
+      if (startDate) {
+        orderWhere.createdAt.gte = new Date(startDate as string);
+      }
+      if (endDate) {
+        orderWhere.createdAt.lte = new Date(endDate as string);
+      }
+    }
+
     const agents = await prisma.user.findMany({
-      where: {
-        role: 'delivery_agent',
-        isActive: true
-      },
+      where,
       select: {
         id: true,
         firstName: true,
@@ -343,6 +358,7 @@ export const getAgentPerformance = async (_req: AuthRequest, res: Response): Pro
         totalEarnings: true,
         location: true,
         assignedOrdersAsAgent: {
+          where: orderWhere,
           select: {
             id: true,
             status: true
@@ -382,9 +398,13 @@ export const getAgentPerformance = async (_req: AuthRequest, res: Response): Pro
 
 export const getRepPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { repId } = req.query;
+    const { repId, startDate, endDate } = req.query;
 
-    const performance = await getRepPerformanceDetails(repId as string | undefined);
+    const performance = await getRepPerformanceDetails(
+      repId as string | undefined,
+      startDate as string | undefined,
+      endDate as string | undefined
+    );
 
     res.json({ performance });
   } catch (error) {

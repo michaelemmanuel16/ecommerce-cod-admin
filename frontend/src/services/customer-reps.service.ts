@@ -115,8 +115,10 @@ export const customerRepsService = {
     };
   },
 
-  async getRepPerformance(): Promise<RepPerformance[]> {
-    const response = await apiClient.get('/api/users/reps/performance');
+  async getRepPerformance(filters?: { startDate?: string; endDate?: string }): Promise<RepPerformance[]> {
+    const response = await apiClient.get('/api/users/reps/performance', {
+      params: filters
+    });
     const backendPerformance = response.data.performance || [];
 
     // Transform backend structure (nested metrics) to match frontend interface (flat fields)
