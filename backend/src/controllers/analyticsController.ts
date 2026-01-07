@@ -46,10 +46,14 @@ export const getConversionFunnel = async (req: AuthRequest, res: Response): Prom
   try {
     const { startDate, endDate } = req.query;
 
-    const funnel = await analyticsService.getConversionFunnel({
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined
-    });
+    const funnel = await analyticsService.getConversionFunnel(
+      {
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined
+      },
+      req.user?.id,
+      req.user?.role
+    );
 
     res.json({ funnel });
   } catch (error) {
@@ -99,18 +103,18 @@ export const getCustomerInsights = async (_req: AuthRequest, res: Response): Pro
   }
 };
 
-export const getPendingOrders = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getPendingOrders = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const orders = await analyticsService.getPendingOrders();
+    const orders = await analyticsService.getPendingOrders(req.user?.id, req.user?.role);
     res.json({ orders });
   } catch (error) {
     throw error;
   }
 };
 
-export const getRecentActivity = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getRecentActivity = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const activity = await analyticsService.getRecentActivity();
+    const activity = await analyticsService.getRecentActivity(req.user?.id, req.user?.role);
     res.json({ activity });
   } catch (error) {
     throw error;

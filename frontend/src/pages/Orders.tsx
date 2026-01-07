@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { LayoutGrid, List, Filter, Plus, Edit2, Eye, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { LayoutGrid, List, Filter, Plus, Edit2, Eye, Trash2, ArrowUp, ArrowDown, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { KanbanBoard } from '../components/kanban/KanbanBoard';
 import { SearchBar } from '../components/common/SearchBar';
@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Pagination } from '../components/ui/Pagination';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { OrderForm } from '../components/forms/OrderForm';
+import { LogCallModal } from '../components/calls/LogCallModal';
 import { useOrdersStore } from '../stores/ordersStore';
 import { useAuthStore } from '../stores/authStore';
 import { usePermissions } from '../hooks/usePermissions';
@@ -65,6 +66,8 @@ export const Orders: React.FC = () => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
   const [selectedOrderForEdit, setSelectedOrderForEdit] = useState<Order | null>(null);
+  const [isLogCallModalOpen, setIsLogCallModalOpen] = useState(false);
+  const [selectedOrderForCall, setSelectedOrderForCall] = useState<Order | null>(null);
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
@@ -229,6 +232,11 @@ export const Orders: React.FC = () => {
 
   const handleViewOrder = (orderId: number) => {
     navigate(`/orders/${orderId}`);
+  };
+
+  const handleLogCall = (order: Order) => {
+    setSelectedOrderForCall(order);
+    setIsLogCallModalOpen(true);
   };
 
   const handleStatusChange = async (orderId: number, newStatus: OrderStatus) => {
@@ -638,6 +646,13 @@ export const Orders: React.FC = () => {
                               >
                                 <Edit2 className="w-5 h-5" />
                               </button>
+                              <button
+                                onClick={() => handleLogCall(order)}
+                                className="text-green-600 hover:text-green-800"
+                                title="Log Call"
+                              >
+                                <Phone className="w-5 h-5" />
+                              </button>
                               {can('orders', 'delete') && (
                                 <button
                                   onClick={() => handleDeleteOrder(order)}
@@ -681,6 +696,18 @@ export const Orders: React.FC = () => {
         order={selectedOrderForEdit}
         onSuccess={handleFormSuccess}
       />
+      {selectedOrderForCall && (
+        <LogCallModal
+          isOpen={isLogCallModalOpen}
+          onClose={() => {
+            setIsLogCallModalOpen(false);
+            setSelectedOrderForCall(null);
+          }}
+          customerId={selectedOrderForCall.customerId}
+          customerName={selectedOrderForCall.customerName}
+          orderId={selectedOrderForCall.id}
+        />
+      )}
     </div>
   );
 };

@@ -12,7 +12,7 @@ router.use(authenticate);
 router.get('/', requirePermission(['super_admin', 'admin', 'manager']), paginationValidation, validate, userController.getAllUsers);
 router.post('/', requirePermission(['super_admin', 'admin']), userController.createUser);
 router.get('/reps/workload', requirePermission(['super_admin', 'admin', 'manager']), userController.getRepWorkload);
-router.get('/reps/performance', requirePermission(['super_admin', 'admin', 'manager']), userController.getRepPerformance);
+router.get('/reps/performance', requirePermission(['super_admin', 'admin', 'manager', 'sales_rep']), userController.getRepPerformance);
 router.put('/reps/:id', requirePermission(['super_admin', 'admin', 'manager']), userController.updateRepDetails);
 router.get('/reps/:id/pending-payments', requirePermission(['super_admin', 'admin', 'manager']), payoutController.getPendingPayments);
 router.get('/reps/:id/payout-history', requirePermission(['super_admin', 'admin', 'manager']), payoutController.getPayoutHistory);

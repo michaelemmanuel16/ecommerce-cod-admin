@@ -406,7 +406,12 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response): Prom
 
 export const getRepPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { repId, startDate, endDate } = req.query;
+    let { repId, startDate, endDate } = req.query;
+
+    // Safety check: Sales reps can only see their own performance
+    if (req.user?.role === 'sales_rep') {
+      repId = req.user.id.toString();
+    }
 
     const performance = await getRepPerformanceDetails(
       repId as string | undefined,

@@ -18,13 +18,19 @@ async function getPermissionsFromDatabase() {
   }
 
   // Fetch fresh permissions from database
-  const config = await prisma.systemConfig.findFirst();
+  try {
+    const config = await prisma.systemConfig.findFirst();
 
-  if (!config || !config.rolePermissions) {
-    // Return default permissions if none configured
+    if (!config || !config.rolePermissions) {
+      console.log('[auth.getPermissionsFromDatabase] No config or rolePermissions found, using defaults');
+      permissionsCache = getDefaultPermissions();
+    } else {
+      console.log('[auth.getPermissionsFromDatabase] Loaded permissions from database');
+      permissionsCache = config.rolePermissions as any;
+    }
+  } catch (error) {
+    console.error('[auth.getPermissionsFromDatabase] Error fetching from database, using defaults:', error);
     permissionsCache = getDefaultPermissions();
-  } else {
-    permissionsCache = config.rolePermissions as any;
   }
 
   cacheTimestamp = now;
@@ -72,7 +78,7 @@ function getDefaultPermissions() {
       customers: ['create', 'view', 'update', 'delete'],
       products: ['view'],
       financial: [],
-      analytics: [],
+      analytics: ['view'],
       workflows: [],
       settings: [],
       calls: ['create', 'view'],
@@ -231,7 +237,7 @@ export const requireResourcePermission = (resource: string, action: string) => {
 };
 
 // Resource-action permission middleware that checks if user has ANY of the specified permissions
-export const requireEitherPermission = (checks: Array<{resource: string, action: string}>) => {
+export const requireEitherPermission = (checks: Array<{ resource: string, action: string }>) => {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.user) {
