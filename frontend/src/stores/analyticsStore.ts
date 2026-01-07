@@ -37,46 +37,10 @@ interface AnalyticsState {
   fetchPendingOrders: () => Promise<void>;
   fetchRecentActivity: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  setupSocketListeners: () => void;
 }
 
 export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
-  // Initialize Socket.io listeners for real-time updates
-  const socket = getSocket();
-  if (socket) {
-    socket.on('order:created', () => {
-      // Refresh metrics when new orders are created
-      get().fetchDashboardMetrics();
-      get().fetchPendingOrders();
-    });
-
-    socket.on('order:updated', () => {
-      // Refresh pending orders when orders are updated (e.g., workflow assignments)
-      console.log('[analyticsStore] order:updated event received, refreshing pending orders');
-      get().fetchPendingOrders();
-      get().fetchDashboardMetrics();
-    });
-
-    socket.on('order:assigned', () => {
-      // Refresh pending orders when sales reps or agents are assigned
-      console.log('[analyticsStore] order:assigned event received, refreshing pending orders');
-      get().fetchPendingOrders();
-      get().fetchRepPerformance();
-      get().fetchAgentPerformance();
-    });
-
-    socket.on('order:status_changed', () => {
-      // Refresh metrics when order status changes
-      get().fetchDashboardMetrics();
-      get().fetchPendingOrders();
-    });
-
-    socket.on('delivery:completed', () => {
-      // Refresh metrics when delivery is completed
-      get().fetchDashboardMetrics();
-      get().fetchAgentPerformance();
-    });
-  }
-
   return {
     metrics: null,
     trends: [],
@@ -88,6 +52,51 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
     recentActivity: [],
     isLoading: false,
     error: null,
+
+    setupSocketListeners: () => {
+      const socket = getSocket();
+      if (!socket) return;
+
+      // Remove existing listeners to prevent duplicates
+      socket.off('order:created');
+      socket.off('order:updated');
+      socket.off('order:assigned');
+      socket.off('order:status_changed');
+      socket.off('delivery:completed');
+
+      socket.on('order:created', () => {
+        // Refresh metrics when new orders are created
+        get().fetchDashboardMetrics();
+        get().fetchPendingOrders();
+      });
+
+      socket.on('order:updated', () => {
+        // Refresh pending orders when orders are updated (e.g., workflow assignments)
+        console.log('[analyticsStore] order:updated event received, refreshing pending orders');
+        get().fetchPendingOrders();
+        get().fetchDashboardMetrics();
+      });
+
+      socket.on('order:assigned', () => {
+        // Refresh pending orders when sales reps or agents are assigned
+        console.log('[analyticsStore] order:assigned event received, refreshing pending orders');
+        get().fetchPendingOrders();
+        get().fetchRepPerformance();
+        get().fetchAgentPerformance();
+      });
+
+      socket.on('order:status_changed', () => {
+        // Refresh metrics when order status changes
+        get().fetchDashboardMetrics();
+        get().fetchPendingOrders();
+      });
+
+      socket.on('delivery:completed', () => {
+        // Refresh metrics when delivery is completed
+        get().fetchDashboardMetrics();
+        get().fetchAgentPerformance();
+      });
+    },
 
     fetchDashboardMetrics: async (startDate?: string, endDate?: string) => {
       set({ isLoading: true, error: null });

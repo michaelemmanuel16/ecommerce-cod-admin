@@ -5,7 +5,7 @@ export interface UserPreferences {
 export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'analytics' | 'workflows' | 'settings';
 export type Action = 'create' | 'view' | 'update' | 'delete' | 'bulk_import' | 'assign' | 'update_stock' | 'execute';
 
-export type Permissions = Record<Resource, Action[]>;
+export type Permissions = Record<string, string[]> | string[];
 
 export interface User {
   id: number;
@@ -150,7 +150,7 @@ export interface Product {
 
 export interface Notification {
   id: number;
-  type: 'order_created' | 'order_updated' | 'order_status_changed' | 'system';
+  type: 'order:created' | 'order:updated' | 'order:status_changed' | 'system';
   title: string;
   message: string;
   read: boolean;

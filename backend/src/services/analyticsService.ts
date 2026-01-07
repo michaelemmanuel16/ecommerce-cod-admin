@@ -97,9 +97,7 @@ export class AnalyticsService {
         where: {
           ...dateFilter,
           ...userFilter,
-          status: {
-            notIn: ['delivered', 'cancelled', 'returned']
-          }
+          status: 'pending_confirmation'
         }
       }),
       prisma.order.count({
