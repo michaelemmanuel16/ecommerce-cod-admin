@@ -32,6 +32,7 @@ export interface RepPerformance {
   successRate: number;
   totalEarnings: number;
   monthlyEarnings: number;
+  country: string | null;
 }
 
 export interface UpdateRepData {
@@ -129,7 +130,8 @@ export const customerRepsService = {
       deliveredOrders: p.metrics?.deliveredCount || 0,
       successRate: p.metrics?.successRate || 0,
       totalEarnings: p.metrics?.totalEarnings || 0,
-      monthlyEarnings: p.metrics?.monthlyEarnings || 0
+      monthlyEarnings: p.metrics?.monthlyEarnings || 0,
+      country: p.country || null
     }));
   },
 

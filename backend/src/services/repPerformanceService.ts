@@ -9,6 +9,7 @@ export interface RepPerformanceDetails {
   commissionRate: number;
   isActive: boolean;
   isAvailable: boolean;
+  country: string | null;
   metrics: {
     totalAssigned: number;
     deliveredCount: number;
@@ -78,6 +79,7 @@ export const getRepPerformanceDetails = async (
         commissionRate: true,
         isActive: true,
         isAvailable: true,
+        country: true,
         assignedOrdersAsRep: {
           where: orderWhere,
           select: {
@@ -146,6 +148,7 @@ export const getRepPerformanceDetails = async (
         commissionRate: rep.commissionRate || 0,
         isActive: rep.isActive,
         isAvailable: rep.isAvailable,
+        country: rep.country,
         metrics: {
           totalAssigned,
           deliveredCount,
