@@ -694,7 +694,7 @@ export class WorkflowService {
           equals: newStatus
         }
       }
-    });
+    }) || [];
 
     for (const workflow of workflows) {
       await this.executeWorkflow(workflow.id, {
@@ -723,7 +723,7 @@ export class WorkflowService {
           triggerType: 'order_created',
           isActive: true
         }
-      });
+      }) || [];
 
       if (workflows.length === 0) {
         logger.debug('No active order_created workflows found');
@@ -756,7 +756,7 @@ export class WorkflowService {
       // Prepare context for workflow evaluation
       const orderContext = {
         ...fullOrder,
-        productName: fullOrder.orderItems.map((item: any) => item.product.name).join(', ')
+        productName: (fullOrder.orderItems || []).map((item: any) => item.product?.name || 'Unknown Product').join(', ')
       };
 
       // Trigger each workflow

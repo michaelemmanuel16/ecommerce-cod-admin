@@ -7,12 +7,14 @@ jest.mock('../../utils/logger', () => ({
   error: jest.fn(),
   warn: jest.fn(),
 }));
-jest.mock('../../server', () => ({
-  io: {
+jest.mock('../../server', () => {
+  const m = {
     emit: jest.fn(),
-    to: jest.fn().mockReturnThis(),
-  },
-}));
+    to: jest.fn(),
+  };
+  m.to.mockReturnValue(m);
+  return { io: m };
+});
 jest.mock('../../queues/workflowQueue', () => ({
   workflowQueue: {
     add: jest.fn().mockResolvedValue({}),
