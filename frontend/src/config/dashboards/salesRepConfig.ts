@@ -19,7 +19,7 @@
 import { DashboardConfig } from '../types/dashboard';
 
 export const salesRepConfig: DashboardConfig = {
-  title: 'Sales Performance',
+  title: 'Rep Dashboard',
 
   // Date range controls
   dateRangePresets: [
