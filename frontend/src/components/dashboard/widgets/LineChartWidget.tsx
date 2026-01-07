@@ -116,9 +116,9 @@ export const LineChartWidget: React.FC<LineChartWidgetProps> = ({
                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
               }}
               formatter={(value: any, name: string) => {
-                // Format tooltip value based on data type
+                // Format tooltip value based on data type from config
                 const formattedValue = typeof value === 'number'
-                  ? formatTooltipValue(value, 'number')
+                  ? formatTooltipValue(value, config.config.format || 'number')
                   : value;
                 return [formattedValue, formatLegendName(name)];
               }}
