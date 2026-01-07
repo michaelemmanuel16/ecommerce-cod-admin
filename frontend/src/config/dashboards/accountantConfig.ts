@@ -43,6 +43,7 @@ export const accountantConfig: DashboardConfig = {
       type: 'stat',
       title: 'Total Collected',
       icon: 'Wallet',
+      iconColor: 'text-green-600',
       dataSource: 'financialMetrics.totalCollected',
       format: 'currency',
       subtitle: {
@@ -61,6 +62,7 @@ export const accountantConfig: DashboardConfig = {
       type: 'stat',
       title: 'Pending Collections',
       icon: 'Clock',
+      iconColor: 'text-orange-600',
       dataSource: 'financialMetrics.pendingCollections',
       format: 'currency',
       subtitle: {
@@ -80,6 +82,7 @@ export const accountantConfig: DashboardConfig = {
       type: 'stat',
       title: 'Reconciled Today',
       icon: 'CheckCircle',
+      iconColor: 'text-blue-600',
       dataSource: 'financialMetrics.reconciledToday',
       format: 'number',
       subtitle: {
@@ -98,6 +101,7 @@ export const accountantConfig: DashboardConfig = {
       type: 'stat',
       title: 'Discrepancies',
       icon: 'AlertCircle',
+      iconColor: 'text-red-600',
       dataSource: 'financialMetrics.discrepancies',
       format: 'number',
       subtitle: {
@@ -122,6 +126,7 @@ export const accountantConfig: DashboardConfig = {
       type: 'lineChart',
       title: 'Daily Collections',
       dataSource: 'collectionsTrends',
+      gridPosition: { row: 1, col: 1, colSpan: 2 },
       height: 300,
       config: {
         xAxis: 'date',
@@ -140,6 +145,7 @@ export const accountantConfig: DashboardConfig = {
       type: 'donutChart',
       title: 'Payment Status Distribution',
       dataSource: 'paymentsByStatus',
+      gridPosition: { row: 1, col: 3, colSpan: 1 },
       height: 300,
       config: {
         nameKey: 'status',
@@ -157,6 +163,7 @@ export const accountantConfig: DashboardConfig = {
       type: 'barChart',
       title: 'Revenue by Region',
       dataSource: 'revenueByRegion',
+      gridPosition: { row: 2, col: 1, colSpan: 1 },
       height: 300,
       config: {
         xAxis: 'region',
@@ -174,6 +181,7 @@ export const accountantConfig: DashboardConfig = {
       type: 'lineChart',
       title: 'Cash Flow Analysis',
       dataSource: 'cashFlowData',
+      gridPosition: { row: 2, col: 2, colSpan: 1 },
       height: 300,
       config: {
         xAxis: 'date',
@@ -191,6 +199,7 @@ export const accountantConfig: DashboardConfig = {
       type: 'leaderboard',
       title: 'Top Revenue Sources',
       dataSource: 'topRevenueSources',
+      gridPosition: { row: 2, col: 3, colSpan: 1 },
       height: 300,
       config: {
         nameKey: 'source',
@@ -209,6 +218,7 @@ export const accountantConfig: DashboardConfig = {
       type: 'dataTable',
       title: 'Pending Reconciliation',
       dataSource: 'pendingReconciliation',
+      gridPosition: { row: 3, col: 1, colSpan: 3 },
       height: 400,
       config: {
         columns: [
@@ -220,7 +230,7 @@ export const accountantConfig: DashboardConfig = {
           { key: 'agentName', label: 'Agent', sortable: true },
         ],
         maxRows: 15,
-        onRowClick: true,
+        onRowClick: 'order_details',
       },
     },
   ],

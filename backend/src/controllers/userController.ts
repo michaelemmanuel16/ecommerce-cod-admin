@@ -30,6 +30,8 @@ export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void
           isActive: true,
           isAvailable: true,
           lastLogin: true,
+          country: true,
+          commissionRate: true,
           vehicleType: true,
           vehicleId: true,
           deliveryRate: true,
@@ -113,6 +115,8 @@ export const getUser = async (req: AuthRequest, res: Response): Promise<void> =>
         isActive: true,
         isAvailable: true,
         lastLogin: true,
+        country: true,
+        commissionRate: true,
         vehicleType: true,
         vehicleId: true,
         deliveryRate: true,
@@ -179,6 +183,8 @@ export const updateUser = async (req: AuthRequest, res: Response): Promise<void>
         role: true,
         isActive: true,
         isAvailable: true,
+        country: true,
+        commissionRate: true,
         vehicleType: true,
         vehicleId: true,
         deliveryRate: true,
@@ -325,13 +331,28 @@ export const getRepWorkload = async (_req: AuthRequest, res: Response): Promise<
   }
 };
 
-export const getAgentPerformance = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getAgentPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const { startDate, endDate } = req.query;
+
+    const where: any = {
+      role: 'delivery_agent',
+      isActive: true
+    };
+
+    const orderWhere: any = {};
+    if (startDate || endDate) {
+      orderWhere.createdAt = {};
+      if (startDate) {
+        orderWhere.createdAt.gte = new Date(startDate as string);
+      }
+      if (endDate) {
+        orderWhere.createdAt.lte = new Date(endDate as string);
+      }
+    }
+
     const agents = await prisma.user.findMany({
-      where: {
-        role: 'delivery_agent',
-        isActive: true
-      },
+      where,
       select: {
         id: true,
         firstName: true,
@@ -340,9 +361,12 @@ export const getAgentPerformance = async (_req: AuthRequest, res: Response): Pro
         vehicleType: true,
         vehicleId: true,
         deliveryRate: true,
+        commissionRate: true,
         totalEarnings: true,
         location: true,
+        country: true,
         assignedOrdersAsAgent: {
+          where: orderWhere,
           select: {
             id: true,
             status: true
@@ -382,9 +406,18 @@ export const getAgentPerformance = async (_req: AuthRequest, res: Response): Pro
 
 export const getRepPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { repId } = req.query;
+    let { repId, startDate, endDate } = req.query;
 
-    const performance = await getRepPerformanceDetails(repId as string | undefined);
+    // Safety check: Sales reps can only see their own performance
+    if (req.user?.role === 'sales_rep') {
+      repId = req.user.id.toString();
+    }
+
+    const performance = await getRepPerformanceDetails(
+      repId as string | undefined,
+      startDate as string | undefined,
+      endDate as string | undefined
+    );
 
     res.json({ performance });
   } catch (error) {

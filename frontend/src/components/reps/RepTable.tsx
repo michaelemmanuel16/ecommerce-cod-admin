@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Edit, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { Edit, ChevronUp, ChevronDown, ChevronsUpDown, Wallet } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { cn } from '../../utils/cn';
+import { formatCurrency } from '../../utils/format';
 
 export interface RepTableData {
   id: string;
@@ -25,6 +26,7 @@ export interface RepTableData {
 interface RepTableProps {
   reps: RepTableData[];
   onEdit: (rep: RepTableData) => void;
+  onViewPayments?: (rep: RepTableData) => void;
   isLoading?: boolean;
 }
 
@@ -34,6 +36,7 @@ type SortDirection = 'asc' | 'desc';
 export const RepTable: React.FC<RepTableProps> = ({
   reps,
   onEdit,
+  onViewPayments,
   isLoading = false,
 }) => {
   const [sortField, setSortField] = useState<SortField>('name');
@@ -72,10 +75,6 @@ export const RepTable: React.FC<RepTableProps> = ({
     if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
     return 0;
   });
-
-  const formatCurrency = (amount: number) => {
-    return `GH₵${amount.toFixed(2)}`;
-  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -203,14 +202,7 @@ export const RepTable: React.FC<RepTableProps> = ({
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <Badge
-                    className={cn(
-                      'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-                      rep.isActive
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-red-100 text-red-800'
-                    )}
-                  >
+                  <Badge variant={rep.isActive ? 'success' : 'secondary'}>
                     {rep.isActive ? 'Active' : 'Inactive'}
                   </Badge>
                 </td>
@@ -224,6 +216,17 @@ export const RepTable: React.FC<RepTableProps> = ({
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
+                    {onViewPayments && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onViewPayments(rep)}
+                        className="text-green-600 hover:text-green-800 hover:bg-green-50"
+                        title="View Payments"
+                      >
+                        <Wallet className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </td>
               </tr>

@@ -14,7 +14,7 @@ interface DeliveryAgentsState {
   isLoading: boolean;
   error: string | null;
   fetchAgents: () => Promise<void>;
-  fetchPerformance: () => Promise<void>;
+  fetchPerformance: (filters?: { startDate?: string; endDate?: string }) => Promise<void>;
   fetchAgentById: (id: string) => Promise<void>;
   toggleAvailability: (id: string, isAvailable: boolean) => Promise<void>;
   updateAgent: (id: string, data: Partial<DeliveryAgent>) => Promise<void>;
@@ -72,9 +72,9 @@ export const useDeliveryAgentsStore = create<DeliveryAgentsState>((set, get) => 
       }
     },
 
-    fetchPerformance: async () => {
+    fetchPerformance: async (filters?: { startDate?: string; endDate?: string }) => {
       try {
-        const performance = await deliveryAgentsService.getAgentPerformance();
+        const performance = await deliveryAgentsService.getAgentPerformance(filters);
         set({ performance });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch agent performance';

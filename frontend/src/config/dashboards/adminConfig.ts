@@ -12,7 +12,7 @@ export const adminDashboardConfig: DashboardConfig = {
 
   // Date range settings
   dateRangePresets: ['today', 'yesterday', 'this-week', 'this-month', 'last-7-days', 'last-30-days', 'this-year', 'last-year'],
-  defaultDateRange: 'last-30-days',
+  defaultDateRange: 'this-month',
   allowComparison: true,
 
   // Row 1: Stat cards (4 key metrics)
@@ -29,7 +29,7 @@ export const adminDashboardConfig: DashboardConfig = {
         enabled: true,
         comparison: 'previousPeriod',
       },
-      subtitle: null,
+      subtitle: undefined,
     },
     {
       id: 'total-orders',
@@ -43,7 +43,7 @@ export const adminDashboardConfig: DashboardConfig = {
         enabled: true,
         comparison: 'previousPeriod',
       },
-      subtitle: null,
+      subtitle: undefined,
     },
     {
       id: 'total-customers',
@@ -57,7 +57,7 @@ export const adminDashboardConfig: DashboardConfig = {
         enabled: true,
         comparison: 'previousPeriod',
       },
-      subtitle: null,
+      subtitle: undefined,
     },
     {
       id: 'delivery-rate',
@@ -71,7 +71,7 @@ export const adminDashboardConfig: DashboardConfig = {
         enabled: true,
         comparison: 'previousPeriod',
       },
-      subtitle: null,
+      subtitle: undefined,
     },
   ],
 
@@ -79,19 +79,20 @@ export const adminDashboardConfig: DashboardConfig = {
   // Row 3: Orders Awaiting Action + Recent Activity
   charts: [
     {
-      id: 'revenue-trend',
+      id: 'fulfillment-trend',
       type: 'lineChart',
-      title: 'Revenue Trend',
+      title: 'Order Fulfillment Trend',
       gridPosition: { row: 1, col: 1, colSpan: 2 },
       height: 350,
       dataSource: 'salesTrends',
       config: {
         xAxis: 'date',
-        yAxis: ['revenue'],
-        colors: ['#10B981'],
+        yAxis: ['orders', 'delivered'],
+        colors: ['#3B82F6', '#10B981'], // Blue for orders, Green for delivered
         showMovingAverage: false,
         strokeWidth: 2,
         showDots: true,
+        format: 'number',
       },
     },
     {

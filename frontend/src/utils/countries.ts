@@ -89,7 +89,10 @@ export function getCurrencySymbol(currency: string): string {
  * @returns Formatted price string (e.g., "GHS 100.00")
  */
 export function formatCurrency(amount: number, currency: string): string {
-  return `${currency} ${amount.toFixed(2)}`;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency,
+  }).format(amount);
 }
 
 /**
@@ -99,8 +102,10 @@ export function formatCurrency(amount: number, currency: string): string {
  * @returns Formatted price string with symbol (e.g., "GH₵ 100.00")
  */
 export function formatCurrencyWithSymbol(amount: number, currency: string): string {
-  const symbol = getCurrencySymbol(currency);
-  return `${symbol} ${amount.toFixed(2)}`;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency,
+  }).format(amount);
 }
 
 /**
@@ -109,6 +114,16 @@ export function formatCurrencyWithSymbol(amount: number, currency: string): stri
  */
 export function getSupportedCountries(): string[] {
   return Object.keys(COUNTRY_NAME_TO_CODE);
+}
+
+/**
+ * Get the country name for a given currency code
+ * @param currency - The currency code
+ * @returns Country name (e.g., 'Ghana', 'Nigeria')
+ */
+export function getCountryByCurrency(currency: string): string {
+  const countries = getSupportedCountries();
+  return countries.find(c => getCurrencyForCountry(c) === currency) || 'Ghana';
 }
 
 /**

@@ -20,6 +20,14 @@ export const adminService = {
     return config;
   },
 
+  async getPublicConfig() {
+    const config = await this.getSystemConfig();
+    return {
+      businessName: config.businessName,
+      currency: config.currency,
+    };
+  },
+
   async updateSystemConfig(data: {
     businessName?: string;
     businessEmail?: string;
@@ -153,6 +161,8 @@ export const adminService = {
           isActive: true,
           isAvailable: true,
           lastLogin: true,
+          country: true,
+          commissionRate: true,
           createdAt: true,
         },
         orderBy: { createdAt: 'desc' },
@@ -196,6 +206,8 @@ export const adminService = {
         phoneNumber: true,
         role: true,
         isActive: true,
+        country: true,
+        commissionRate: true,
         createdAt: true,
       },
     });
@@ -229,6 +241,8 @@ export const adminService = {
         phoneNumber: true,
         role: true,
         isActive: true,
+        country: true,
+        commissionRate: true,
         createdAt: true,
       },
     });

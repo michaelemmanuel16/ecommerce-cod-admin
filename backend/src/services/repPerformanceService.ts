@@ -9,6 +9,7 @@ export interface RepPerformanceDetails {
   commissionRate: number;
   isActive: boolean;
   isAvailable: boolean;
+  country: string | null;
   metrics: {
     totalAssigned: number;
     deliveredCount: number;
@@ -34,23 +35,41 @@ export interface RepPerformanceDetails {
  * Calculates success rates, earnings, and order statistics
  *
  * @param repId - Optional specific rep ID to filter by
+ * @param startDate - Optional start date for metric calculation
+ * @param endDate - Optional end date for metric calculation
  * @returns Array of rep performance details with commission calculations
  */
-export const getRepPerformanceDetails = async (repId?: string): Promise<RepPerformanceDetails[]> => {
+export const getRepPerformanceDetails = async (
+  repId?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<RepPerformanceDetails[]> => {
   try {
-    // Build where clause for filtering
-    const where: any = {
+    // Build where clause for filtering users
+    const userWhere: any = {
       role: 'sales_rep',
       isActive: true
     };
 
     if (repId) {
-      where.id = repId;
+      userWhere.id = parseInt(repId, 10);
+    }
+
+    // Build order filter for the include/select
+    const orderWhere: any = {};
+    if (startDate || endDate) {
+      orderWhere.createdAt = {};
+      if (startDate) {
+        orderWhere.createdAt.gte = new Date(startDate);
+      }
+      if (endDate) {
+        orderWhere.createdAt.lte = new Date(endDate);
+      }
     }
 
     // Get all sales reps with their assigned orders
     const reps = await prisma.user.findMany({
-      where,
+      where: userWhere,
       select: {
         id: true,
         email: true,
@@ -60,7 +79,9 @@ export const getRepPerformanceDetails = async (repId?: string): Promise<RepPerfo
         commissionRate: true,
         isActive: true,
         isAvailable: true,
+        country: true,
         assignedOrdersAsRep: {
+          where: orderWhere,
           select: {
             id: true,
             status: true,
@@ -73,6 +94,8 @@ export const getRepPerformanceDetails = async (repId?: string): Promise<RepPerfo
         createdAt: 'desc'
       }
     });
+
+    // Calculate performance metrics for each rep
 
     // Calculate performance metrics for each rep
     const performanceData: RepPerformanceDetails[] = reps.map(rep => {
@@ -125,6 +148,7 @@ export const getRepPerformanceDetails = async (repId?: string): Promise<RepPerfo
         commissionRate: rep.commissionRate || 0,
         isActive: rep.isActive,
         isAvailable: rep.isAvailable,
+        country: rep.country,
         metrics: {
           totalAssigned,
           deliveredCount,

@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
 // Mock server module to prevent it from starting
-jest.mock('../../server', () => ({
-  io: {
+jest.mock('../../server', () => {
+  const m = {
     emit: jest.fn(),
-    to: jest.fn().mockReturnThis(),
-  },
-}));
+    to: jest.fn(),
+  };
+  m.to.mockReturnValue(m);
+  return { io: m };
+});
 
 // Import prismaMock first to activate the jest.mock in prisma.mock.ts
 import { prismaMock } from '../mocks/prisma.mock';

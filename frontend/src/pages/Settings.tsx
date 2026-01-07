@@ -7,6 +7,9 @@ import { usePermissions } from '../hooks/usePermissions';
 import { UserManagementTable } from '../components/admin/UserManagementTable';
 import { RolePermissionsMatrix } from '../components/admin/RolePermissionsMatrix';
 import { adminService, SystemConfig } from '../services/admin.service';
+import { apiClient } from '../services/api';
+import { useConfigStore } from '../stores/configStore';
+import { getCurrencySymbol } from '../utils/countries';
 
 type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'notifications-config' | 'checkout-forms' | 'webhooks';
 
@@ -55,6 +58,8 @@ export const Settings: React.FC = () => {
       await adminService.updateSystemConfig(businessForm);
       alert('Business settings saved successfully');
       loadSystemConfig();
+      // Update global store
+      useConfigStore.getState().fetchConfig();
     } catch (error) {
       console.error('Failed to save business settings:', error);
       alert('Failed to save business settings');
@@ -92,11 +97,10 @@ export const Settings: React.FC = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
-                    activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
                 >
                   <div className="flex items-center">
                     <Icon className="w-4 h-4 mr-2" />
@@ -125,11 +129,10 @@ export const Settings: React.FC = () => {
                     defaultValue={user?.firstName || ''}
                     disabled={isSalesRep}
                     readOnly={isSalesRep}
-                    className={`w-full px-4 py-2 border border-gray-300 rounded-lg ${
-                      isSalesRep
-                        ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
-                        : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
-                    }`}
+                    className={`w-full px-4 py-2 border border-gray-300 rounded-lg ${isSalesRep
+                      ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
+                      : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                      }`}
                   />
                 </div>
                 <div>
@@ -141,11 +144,10 @@ export const Settings: React.FC = () => {
                     defaultValue={user?.lastName || ''}
                     disabled={isSalesRep}
                     readOnly={isSalesRep}
-                    className={`w-full px-4 py-2 border border-gray-300 rounded-lg ${
-                      isSalesRep
-                        ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
-                        : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
-                    }`}
+                    className={`w-full px-4 py-2 border border-gray-300 rounded-lg ${isSalesRep
+                      ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
+                      : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                      }`}
                   />
                 </div>
                 <div>
@@ -159,11 +161,10 @@ export const Settings: React.FC = () => {
                       defaultValue={user?.email || ''}
                       disabled={isSalesRep}
                       readOnly={isSalesRep}
-                      className={`w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg ${
-                        isSalesRep
-                          ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
-                          : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
-                      }`}
+                      className={`w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg ${isSalesRep
+                        ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
+                        : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                        }`}
                     />
                   </div>
                 </div>
@@ -178,11 +179,10 @@ export const Settings: React.FC = () => {
                       placeholder="+1 (555) 000-0000"
                       disabled={isSalesRep}
                       readOnly={isSalesRep}
-                      className={`w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg ${
-                        isSalesRep
-                          ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
-                          : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
-                      }`}
+                      className={`w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg ${isSalesRep
+                        ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
+                        : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                        }`}
                     />
                   </div>
                 </div>
@@ -430,13 +430,16 @@ export const Settings: React.FC = () => {
                       onChange={(e) => setBusinessForm({ ...businessForm, currency: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="USD">USD - US Dollar</option>
-                      <option value="EUR">EUR - Euro</option>
-                      <option value="GBP">GBP - British Pound</option>
-                      <option value="INR">INR - Indian Rupee</option>
-                      <option value="CAD">CAD - Canadian Dollar</option>
-                      <option value="AUD">AUD - Australian Dollar</option>
-                      <option value="JPY">JPY - Japanese Yen</option>
+                      <option value="USD">USD - US Dollar ($)</option>
+                      <option value="GHS">GHS - Ghanaian Cedi (₵)</option>
+                      <option value="NGN">NGN - Nigerian Naira (₦)</option>
+                      <option value="KES">KES - Kenyan Shilling (KSh)</option>
+                      <option value="EUR">EUR - Euro (€)</option>
+                      <option value="GBP">GBP - British Pound (£)</option>
+                      <option value="INR">INR - Indian Rupee (₹)</option>
+                      <option value="CAD">CAD - Canadian Dollar ($)</option>
+                      <option value="AUD">AUD - Australian Dollar ($)</option>
+                      <option value="JPY">JPY - Japanese Yen (¥)</option>
                     </select>
                   </div>
                   <div className="md:col-span-2">

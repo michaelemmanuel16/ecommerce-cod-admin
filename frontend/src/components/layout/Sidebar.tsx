@@ -50,28 +50,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
     >
       {/* Header with toggle button */}
       <div className="mb-8 relative">
-        <div className={cn("overflow-hidden", isCollapsed ? "text-center" : "")}>
-          <h1 className={cn("font-bold transition-all", isCollapsed ? "text-lg" : "text-2xl")}>
-            {isCollapsed ? "COD" : "COD Admin"}
-          </h1>
-          {!isCollapsed && <p className="text-gray-400 text-sm">E-commerce Dashboard</p>}
-        </div>
+        <div className={cn("flex items-center", isCollapsed ? "flex-col gap-4" : "justify-between")}>
+          <div className={cn("overflow-hidden", isCollapsed ? "text-center" : "")}>
+            <h1 className={cn("font-bold transition-all", isCollapsed ? "text-lg" : "text-2xl")}>
+              {isCollapsed ? "COD" : "COD Admin"}
+            </h1>
+            {!isCollapsed && <p className="text-gray-400 text-sm">E-commerce Dashboard</p>}
+          </div>
 
-        {/* Toggle button */}
-        <button
-          onClick={onToggle}
-          className={cn(
-            "absolute top-0 p-1 rounded-md hover:bg-gray-800 transition-colors",
-            isCollapsed ? "left-1/2 -translate-x-1/2" : "right-0"
-          )}
-          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {isCollapsed ? (
-            <ChevronRight className="w-5 h-5" />
-          ) : (
-            <ChevronLeft className="w-5 h-5" />
-          )}
-        </button>
+          <button
+            onClick={onToggle}
+            className={cn(
+              "p-1 rounded-md hover:bg-gray-800 transition-colors",
+              isCollapsed ? "" : "absolute top-0 right-0"
+            )}
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {isCollapsed ? (
+              <ChevronRight className="w-5 h-5" />
+            ) : (
+              <ChevronLeft className="w-5 h-5" />
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Navigation */}

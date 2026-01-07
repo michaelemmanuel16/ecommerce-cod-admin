@@ -247,13 +247,15 @@ export class AnalyticsService {
       }
     });
 
-    const data = Object.entries(trends).map(([date, stats]) => ({
-      date,
-      orders: stats.orders,
-      revenue: stats.revenue,
-      delivered: stats.delivered,
-      conversionRate: stats.orders > 0 ? (stats.delivered / stats.orders) * 100 : 0
-    }));
+    const data = Object.entries(trends)
+      .map(([date, stats]) => ({
+        date,
+        orders: stats.orders,
+        revenue: stats.revenue,
+        delivered: stats.delivered,
+        conversionRate: stats.orders > 0 ? (stats.delivered / stats.orders) * 100 : 0
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
     return data;
   }
@@ -261,7 +263,11 @@ export class AnalyticsService {
   /**
    * Get conversion funnel
    */
-  async getConversionFunnel(filters: DateFilters) {
+  async getConversionFunnel(
+    filters: DateFilters,
+    userId?: number,
+    userRole?: string
+  ) {
     const { startDate, endDate } = filters;
 
     const where: Prisma.OrderWhereInput = {};
@@ -270,6 +276,10 @@ export class AnalyticsService {
       if (startDate) where.createdAt.gte = startDate;
       if (endDate) where.createdAt.lte = endDate;
     }
+
+    // Build user scope filter
+    const userFilter = buildUserScopeFilter(userId, userRole);
+    Object.assign(where, userFilter);
 
     const statusCounts = await prisma.order.groupBy({
       by: ['status'],
@@ -289,7 +299,11 @@ export class AnalyticsService {
    * Get customer representative performance
    * Supports optional date range filtering
    */
-  async getRepPerformance(filters?: { startDate?: string; endDate?: string }) {
+  async getRepPerformance(
+    filters?: { startDate?: string; endDate?: string },
+    userId?: number,
+    userRole?: string
+  ) {
     // Build date filter for orders
     const dateFilter = filters?.startDate || filters?.endDate
       ? {
@@ -303,7 +317,8 @@ export class AnalyticsService {
     const reps = await prisma.user.findMany({
       where: {
         role: 'sales_rep',
-        isActive: true
+        isActive: true,
+        ...(userRole === 'sales_rep' && userId ? { id: userId } : {})
       },
       select: {
         id: true,
@@ -621,10 +636,12 @@ export class AnalyticsService {
       }
     });
 
-    return Object.entries(series).map(([date, value]) => ({
-      date,
-      value
-    }));
+    return Object.entries(series)
+      .map(([date, value]) => ({
+        date,
+        value
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
   }
 
   /**
@@ -671,10 +688,13 @@ export class AnalyticsService {
    * Get pending orders awaiting action
    * Returns all orders with status pending_confirmation
    */
-  async getPendingOrders() {
+  async getPendingOrders(userId?: number, userRole?: string) {
+    const userFilter = buildUserScopeFilter(userId, userRole);
+
     const orders = await prisma.order.findMany({
       where: {
-        status: 'pending_confirmation'
+        status: 'pending_confirmation',
+        ...userFilter
       },
       orderBy: {
         createdAt: 'desc'
@@ -717,8 +737,16 @@ export class AnalyticsService {
    * Get recent activity feed
    * Returns the 10 most recent notifications
    */
-  async getRecentActivity() {
+  async getRecentActivity(userId?: number, userRole?: string) {
+    const where: Prisma.NotificationWhereInput = {};
+
+    // If it's a sales rep, only show their own activity
+    if (userRole === 'sales_rep' && userId) {
+      where.userId = userId;
+    }
+
     const notifications = await prisma.notification.findMany({
+      where,
       take: 10,
       orderBy: {
         createdAt: 'desc'

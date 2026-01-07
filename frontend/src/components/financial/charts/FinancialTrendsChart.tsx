@@ -11,6 +11,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { FinancialReport } from '../../../services/financial.service';
+import { formatCurrency } from '../../../utils/format';
 
 interface FinancialTrendsChartProps {
   data: FinancialReport[];
@@ -29,15 +30,6 @@ export const FinancialTrendsChart: React.FC<FinancialTrendsChartProps> = ({
   height = 350,
   period = 'daily'
 }) => {
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value);
-  };
-
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     if (period === 'monthly') {
@@ -65,7 +57,7 @@ export const FinancialTrendsChart: React.FC<FinancialTrendsChartProps> = ({
           style={{ fontSize: '12px' }}
         />
         <YAxis
-          tickFormatter={formatCurrency}
+          tickFormatter={(value) => formatCurrency(value)}
           stroke="#6b7280"
           style={{ fontSize: '12px' }}
         />

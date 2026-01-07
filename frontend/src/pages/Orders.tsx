@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { LayoutGrid, List, Filter, Plus, Edit2, Eye, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { LayoutGrid, List, Filter, Plus, Edit2, Eye, Trash2, ArrowUp, ArrowDown, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { KanbanBoard } from '../components/kanban/KanbanBoard';
 import { SearchBar } from '../components/common/SearchBar';
@@ -8,12 +8,15 @@ import { Button } from '../components/ui/Button';
 import { Pagination } from '../components/ui/Pagination';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { OrderForm } from '../components/forms/OrderForm';
+import { LogCallModal } from '../components/calls/LogCallModal';
 import { useOrdersStore } from '../stores/ordersStore';
 import { useAuthStore } from '../stores/authStore';
 import { usePermissions } from '../hooks/usePermissions';
 import { Order, OrderStatus } from '../types';
 import { ordersService } from '../services/orders.service';
 import toast from 'react-hot-toast';
+import { formatCurrency } from '../utils/format';
+import { getSocket } from '../services/socket';
 
 type ViewMode = 'kanban' | 'list';
 type SortField = 'id' | 'customerName' | 'totalAmount' | 'createdAt' | 'status';
@@ -63,6 +66,8 @@ export const Orders: React.FC = () => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
   const [selectedOrderForEdit, setSelectedOrderForEdit] = useState<Order | null>(null);
+  const [isLogCallModalOpen, setIsLogCallModalOpen] = useState(false);
+  const [selectedOrderForCall, setSelectedOrderForCall] = useState<Order | null>(null);
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
@@ -98,6 +103,37 @@ export const Orders: React.FC = () => {
 
   useEffect(() => {
     fetchOrders();
+
+    // Setup real-time listeners
+    const socket = getSocket();
+    if (socket) {
+      const handleOrderCreated = (newOrder: any) => {
+        console.log('Real-time order created:', newOrder);
+        // We could either refresh everything or add the new order to the top
+        // For simplicity and correctness with filters, let's refresh
+        fetchOrders();
+      };
+
+      const handleOrderStatusChanged = (data: any) => {
+        console.log('Real-time status changed:', data);
+        fetchOrders();
+      };
+
+      const handleOrderUpdated = (data: any) => {
+        console.log('Real-time order updated:', data);
+        fetchOrders();
+      };
+
+      socket.on('order:created', handleOrderCreated);
+      socket.on('order:status_changed', handleOrderStatusChanged);
+      socket.on('order:updated', handleOrderUpdated);
+
+      return () => {
+        socket.off('order:created', handleOrderCreated);
+        socket.off('order:status_changed', handleOrderStatusChanged);
+        socket.off('order:updated', handleOrderUpdated);
+      };
+    }
   }, [fetchOrders]);
 
   // Save column widths to localStorage whenever they change
@@ -196,6 +232,11 @@ export const Orders: React.FC = () => {
 
   const handleViewOrder = (orderId: number) => {
     navigate(`/orders/${orderId}`);
+  };
+
+  const handleLogCall = (order: Order) => {
+    setSelectedOrderForCall(order);
+    setIsLogCallModalOpen(true);
   };
 
   const handleStatusChange = async (orderId: number, newStatus: OrderStatus) => {
@@ -571,7 +612,7 @@ export const Orders: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900" style={{ width: columnWidths.amount, minWidth: columnWidths.amount, maxWidth: columnWidths.amount }}>
-                            ${order.totalAmount.toFixed(2)}
+                            {formatCurrency(order.totalAmount)}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap" style={{ width: columnWidths.status, minWidth: columnWidths.status, maxWidth: columnWidths.status }}>
                             <select
@@ -604,6 +645,13 @@ export const Orders: React.FC = () => {
                                 title="Edit Order"
                               >
                                 <Edit2 className="w-5 h-5" />
+                              </button>
+                              <button
+                                onClick={() => handleLogCall(order)}
+                                className="text-green-600 hover:text-green-800"
+                                title="Log Call"
+                              >
+                                <Phone className="w-5 h-5" />
                               </button>
                               {can('orders', 'delete') && (
                                 <button
@@ -648,6 +696,18 @@ export const Orders: React.FC = () => {
         order={selectedOrderForEdit}
         onSuccess={handleFormSuccess}
       />
+      {selectedOrderForCall && (
+        <LogCallModal
+          isOpen={isLogCallModalOpen}
+          onClose={() => {
+            setIsLogCallModalOpen(false);
+            setSelectedOrderForCall(null);
+          }}
+          customerId={selectedOrderForCall.customerId}
+          customerName={selectedOrderForCall.customerName}
+          orderId={selectedOrderForCall.id}
+        />
+      )}
     </div>
   );
 };

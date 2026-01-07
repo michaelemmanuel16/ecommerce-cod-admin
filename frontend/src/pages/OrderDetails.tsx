@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Loading } from '../components/ui/Loading';
 import { LogCallModal } from '../components/calls/LogCallModal';
+import { formatCurrency } from '../utils/format';
 
 export const OrderDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -163,19 +164,19 @@ export const OrderDetails: React.FC = () => {
                             {hasDiscount && item.metadata?.originalPrice && (
                               <div className="flex items-center gap-2 mt-1">
                                 <span className="text-sm text-gray-400 line-through">
-                                  ${item.metadata.originalPrice.toFixed(2)}
+                                  {formatCurrency(item.metadata.originalPrice)}
                                 </span>
                                 <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium">
                                   {item.metadata.discountType === 'percentage'
                                     ? `-${item.metadata.discountValue}%`
-                                    : `-$${item.metadata.discountValue}`}
+                                    : `-${formatCurrency(item.metadata.discountValue)}`}
                                 </span>
                               </div>
                             )}
                           </div>
                           <div className="text-right">
-                            <p className="font-medium text-gray-900">${(item.total || item.price * item.quantity).toFixed(2)}</p>
-                            <p className="text-sm text-gray-500">${item.price.toFixed(2)} each</p>
+                            <p className="font-medium text-gray-900">{formatCurrency(item.total || item.price * item.quantity)}</p>
+                            <p className="text-sm text-gray-500">{formatCurrency(item.price)} each</p>
                           </div>
                         </div>
                       </div>
@@ -188,7 +189,7 @@ export const OrderDetails: React.FC = () => {
               <div className="border-t pt-4 mt-4">
                 <div className="flex justify-between text-lg font-bold">
                   <span>Total</span>
-                  <span>${order.totalAmount.toFixed(2)}</span>
+                  <span>{formatCurrency(order.totalAmount)}</span>
                 </div>
               </div>
             </div>
@@ -276,7 +277,7 @@ export const OrderDetails: React.FC = () => {
                 </div>
                 <div className="pt-3 border-t">
                   <p className="text-sm text-gray-500">Total Amount</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">${order.totalAmount.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(order.totalAmount)}</p>
                 </div>
               </div>
             </div>
@@ -347,13 +348,12 @@ export const OrderDetails: React.FC = () => {
                   {orderCalls.map((call) => (
                     <div key={call.id} className="border-b pb-3 last:border-b-0">
                       <div className="flex justify-between items-start mb-1">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          call.outcome === 'confirmed' ? 'bg-green-100 text-green-800' :
-                          call.outcome === 'rescheduled' ? 'bg-blue-100 text-blue-800' :
-                          call.outcome === 'no_answer' ? 'bg-orange-100 text-orange-800' :
-                          call.outcome === 'cancelled' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${call.outcome === 'confirmed' ? 'bg-green-100 text-green-800' :
+                            call.outcome === 'rescheduled' ? 'bg-blue-100 text-blue-800' :
+                              call.outcome === 'no_answer' ? 'bg-orange-100 text-orange-800' :
+                                call.outcome === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                  'bg-gray-100 text-gray-800'
+                          }`}>
                           {call.outcome.replace(/_/g, ' ')}
                         </span>
                         <span className="text-xs text-gray-500">

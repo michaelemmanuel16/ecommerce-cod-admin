@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Package, AlertTriangle, Edit2, Trash2 } from 'lucide-react';
 import { productsService } from '../services/products.service';
+import { formatCurrency } from '../utils/format';
 import { Product } from '../types';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -171,7 +172,7 @@ export const Products: React.FC = () => {
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                ${product.price.toFixed(2)}
+                                                {formatCurrency(product.price)}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center">

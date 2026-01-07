@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { Clock, Phone, MapPin, DollarSign, ChevronRight } from 'lucide-react';
+import { formatCurrency } from '../../../utils/format';
 import { WidgetProps } from '../../../config/types/dashboard';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -128,8 +129,7 @@ export const OrdersAwaitingWidget: React.FC<OrdersAwaitingWidgetProps> = ({
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
                 <div className="flex items-center gap-4 text-sm">
                   <span className="flex items-center gap-1 text-green-600 font-semibold">
-                    <DollarSign className="w-4 h-4" />
-                    ${order.totalAmount.toFixed(2)}
+                    {formatCurrency(order.totalAmount)}
                   </span>
                   <span className="flex items-center gap-1 text-gray-500">
                     <Clock className="w-3 h-3" />

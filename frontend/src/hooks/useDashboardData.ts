@@ -438,7 +438,7 @@ async function executeFetcher(
 
       // Filter orders for current sales rep if role is sales_rep
       const relevantOrders = user?.role === 'sales_rep'
-        ? allOrders.filter(order => order.assignedSalesRepId === user.id)
+        ? allOrders.filter(order => order.assignedTo === user.id)
         : allOrders;
 
       // Group by status and count
@@ -497,14 +497,23 @@ function parseDateRangeToDays(dateRange?: string): number {
     today: 1,
     yesterday: 1,
     'last-7-days': 7,
+    'last_7_days': 7,
     'last-30-days': 30,
+    'last_30_days': 30,
     'this-week': 7,
+    'this_week': 7,
     'this-month': 30,
+    'this_month': 30,
     'last-month': 30,
+    'last_month': 30,
     'this-quarter': 90,
+    'this_quarter': 90,
     'last-quarter': 90,
+    'last_quarter': 90,
     'this-year': 365,
+    'this_year': 365,
     'last-year': 365,
+    'last_year': 365,
     all_time: 365,
   };
 

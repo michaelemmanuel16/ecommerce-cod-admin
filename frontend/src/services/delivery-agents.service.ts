@@ -46,8 +46,10 @@ export const deliveryAgentsService = {
     }));
   },
 
-  async getAgentPerformance(): Promise<AgentPerformance[]> {
-    const response = await apiClient.get('/api/users/agents/performance');
+  async getAgentPerformance(filters?: { startDate?: string; endDate?: string }): Promise<AgentPerformance[]> {
+    const response = await apiClient.get('/api/users/agents/performance', {
+      params: filters
+    });
     return response.data.performance || [];
   },
 

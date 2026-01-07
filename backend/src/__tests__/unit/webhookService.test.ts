@@ -1,4 +1,14 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+
+// Mock server module to prevent it from starting
+jest.mock('../../server', () => {
+  const m = {
+    emit: jest.fn(),
+    to: jest.fn(),
+  };
+  m.to.mockReturnValue(m);
+  return { io: m };
+});
 import { prismaMock } from '../mocks/prisma.mock';
 import { WebhookService } from '../../services/webhookService';
 import { AppError } from '../../middleware/errorHandler';

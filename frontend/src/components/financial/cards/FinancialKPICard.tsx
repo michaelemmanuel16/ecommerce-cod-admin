@@ -1,6 +1,7 @@
 import React from 'react';
 import { LucideIcon, TrendingUp, TrendingDown } from 'lucide-react';
 import { Card } from '../../ui/Card';
+import { formatCurrency } from '../../../utils/format';
 
 interface FinancialKPICardProps {
   title: string;
@@ -26,14 +27,9 @@ export const FinancialKPICard: React.FC<FinancialKPICardProps> = ({
   trend,
   onClick
 }) => {
-  const formatValue = (val: string | number) => {
+  const formatVal = (val: string | number) => {
     if (typeof val === 'number') {
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-      }).format(val);
+      return formatCurrency(val);
     }
     return val;
   };
@@ -48,7 +44,7 @@ export const FinancialKPICard: React.FC<FinancialKPICardProps> = ({
           <div className="flex-1">
             <p className="text-sm font-medium text-gray-600">{title}</p>
             <p className="text-2xl font-bold text-gray-900 mt-2">
-              {formatValue(value)}
+              {formatVal(value)}
             </p>
             {subtitle && (
               <p className="text-xs text-gray-500 mt-1">{subtitle}</p>
@@ -61,9 +57,8 @@ export const FinancialKPICard: React.FC<FinancialKPICardProps> = ({
                   <TrendingDown className="w-4 h-4 text-red-600 mr-1" />
                 )}
                 <span
-                  className={`text-xs font-medium ${
-                    trend.value >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}
+                  className={`text-xs font-medium ${trend.value >= 0 ? 'text-green-600' : 'text-red-600'
+                    }`}
                 >
                   {trend.value >= 0 ? '+' : ''}
                   {trend.value}% {trend.label}

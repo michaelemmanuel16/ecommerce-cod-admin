@@ -5,9 +5,14 @@ import { evaluateConditions } from '../utils/conditionEvaluator';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderUpdated, emitOrderAssigned } from '../sockets/index';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const redisConfig = {
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379', 10),
+  password: process.env.REDIS_PASSWORD,
+};
 
-export const workflowQueue = new Bull('workflow-execution', REDIS_URL, {
+export const workflowQueue = new Bull('workflow-execution', {
+  redis: redisConfig,
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -21,6 +26,11 @@ workflowQueue.process('execute-workflow', async (job) => {
   const { executionId, workflowId, actions, conditions, input } = job.data;
 
   logger.info('Processing workflow execution', { executionId, workflowId, hasConditions: !!conditions });
+
+  const io = getSocketInstance();
+  if (io) {
+    io.emit('workflow:execution_started', { workflowId, executionId });
+  }
 
   try {
     await prisma.workflowExecution.update({
@@ -66,8 +76,26 @@ workflowQueue.process('execute-workflow', async (job) => {
     });
 
     logger.info('Workflow execution completed', { executionId });
+
+    if (io) {
+      io.emit('workflow:execution_completed', {
+        workflowId,
+        executionId,
+        status: 'completed',
+        completedAt: new Date()
+      });
+    }
   } catch (error: any) {
     logger.error('Workflow execution failed', { executionId, error: error.message });
+
+    if (io) {
+      io.emit('workflow:execution_completed', {
+        workflowId,
+        executionId,
+        status: 'failed',
+        error: error.message
+      });
+    }
 
     await prisma.workflowExecution.update({
       where: { id: executionId },

@@ -12,6 +12,16 @@ export const getSystemConfig = async (_req: AuthRequest, res: Response): Promise
   }
 };
 
+export const getPublicConfig = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const config = await adminService.getPublicConfig();
+    res.json(config);
+  } catch (error) {
+    console.error('Error fetching public config:', error);
+    res.status(500).json({ error: 'Failed to fetch application configuration' });
+  }
+};
+
 export const updateSystemConfig = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const config = await adminService.updateSystemConfig(req.body);

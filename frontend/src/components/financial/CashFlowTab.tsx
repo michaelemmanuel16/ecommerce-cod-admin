@@ -4,6 +4,7 @@ import { StatusPipelineCard } from './cards/StatusPipelineCard';
 import { CollectionsTimelineChart } from './charts/CollectionsTimelineChart';
 import { Card } from '../ui/Card';
 import { Filter, CheckSquare } from 'lucide-react';
+import { formatCurrency } from '../../utils/format';
 
 export const CashFlowTab: React.FC = () => {
   const {
@@ -65,13 +66,6 @@ export const CashFlowTab: React.FC = () => {
     } catch (error) {
       console.error('Failed to mark as deposited:', error);
     }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
   };
 
   const formatDate = (dateStr: string) => {
@@ -224,15 +218,14 @@ export const CashFlowTab: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span
-                          className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            collection.status === 'collected'
+                          className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${collection.status === 'collected'
                               ? 'bg-blue-100 text-blue-800'
                               : collection.status === 'deposited'
-                              ? 'bg-green-100 text-green-800'
-                              : collection.status === 'reconciled'
-                              ? 'bg-purple-100 text-purple-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}
+                                ? 'bg-green-100 text-green-800'
+                                : collection.status === 'reconciled'
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : 'bg-yellow-100 text-yellow-800'
+                            }`}
                         >
                           {collection.status}
                         </span>

@@ -32,6 +32,7 @@ export interface RepPerformance {
   successRate: number;
   totalEarnings: number;
   monthlyEarnings: number;
+  country: string | null;
 }
 
 export interface UpdateRepData {
@@ -42,6 +43,28 @@ export interface UpdateRepData {
   country?: string;
   commissionRate?: number;
   isActive?: boolean;
+}
+
+export interface RepPayout {
+  id: number;
+  repId: number;
+  amount: number;
+  method: string;
+  status: string;
+  payoutDate: string;
+  notes?: string;
+  createdAt: string;
+  _count?: {
+    orders: number;
+  };
+}
+
+export interface PendingPayment {
+  orderId: number;
+  totalAmount: number;
+  commissionAmount: number;
+  customerName: string;
+  deliveredAt: string;
 }
 
 export const customerRepsService = {
@@ -93,8 +116,10 @@ export const customerRepsService = {
     };
   },
 
-  async getRepPerformance(): Promise<RepPerformance[]> {
-    const response = await apiClient.get('/api/users/reps/performance');
+  async getRepPerformance(filters?: { startDate?: string; endDate?: string }): Promise<RepPerformance[]> {
+    const response = await apiClient.get('/api/users/reps/performance', {
+      params: filters
+    });
     const backendPerformance = response.data.performance || [];
 
     // Transform backend structure (nested metrics) to match frontend interface (flat fields)
@@ -105,7 +130,23 @@ export const customerRepsService = {
       deliveredOrders: p.metrics?.deliveredCount || 0,
       successRate: p.metrics?.successRate || 0,
       totalEarnings: p.metrics?.totalEarnings || 0,
-      monthlyEarnings: p.metrics?.monthlyEarnings || 0
+      monthlyEarnings: p.metrics?.monthlyEarnings || 0,
+      country: p.country || null
     }));
+  },
+
+  async getPendingPayments(id: string): Promise<PendingPayment[]> {
+    const response = await apiClient.get(`/api/users/reps/${id}/pending-payments`);
+    return response.data || [];
+  },
+
+  async getPayoutHistory(id: string): Promise<RepPayout[]> {
+    const response = await apiClient.get(`/api/users/reps/${id}/payout-history`);
+    return response.data || [];
+  },
+
+  async processPayout(id: string, data: { amount: number; method: string; orderIds: number[]; notes?: string }): Promise<RepPayout> {
+    const response = await apiClient.post(`/api/users/reps/${id}/process-payout`, data);
+    return response.data.payout;
   }
 };

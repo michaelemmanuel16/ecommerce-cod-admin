@@ -19,7 +19,7 @@
 import { DashboardConfig } from '../types/dashboard';
 
 export const salesRepConfig: DashboardConfig = {
-  title: 'Sales Performance',
+  title: 'Rep Dashboard',
 
   // Date range controls
   dateRangePresets: [
@@ -32,7 +32,7 @@ export const salesRepConfig: DashboardConfig = {
     { label: 'This Year', value: 'this_year' },
     { label: 'All Time', value: 'all_time' },
   ],
-  defaultDateRange: { label: 'Last 30 days', value: 'last_30_days' },
+  defaultDateRange: { label: 'This Month', value: 'this_month' },
 
   // 4 Stat Cards (Per User Requirements)
   statCards: [
@@ -41,10 +41,11 @@ export const salesRepConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Earnings',
       icon: 'Wallet',
+      iconColor: 'text-green-600',
       dataSource: 'calculated.myCommission',
       format: 'currency',
       subtitle: {
-        template: 'From {delivered} delivered orders @ GH₵{rate}',
+        template: 'From {delivered} delivered orders @ {rate}',
         dataSources: {
           delivered: 'repPerformance.deliveredOrders',
           rate: 'calculated.commissionRate',
@@ -60,6 +61,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Pending Orders',
       icon: 'Clock',
+      iconColor: 'text-orange-600',
       dataSource: 'repPerformance.pendingOrders',
       format: 'number',
       subtitle: {
@@ -77,6 +79,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Total Orders',
       icon: 'ShoppingBag',
+      iconColor: 'text-blue-600',
       dataSource: 'repPerformance.totalOrders',
       format: 'number',
       subtitle: {
@@ -95,6 +98,7 @@ export const salesRepConfig: DashboardConfig = {
       type: 'stat',
       title: 'My Conversion Rate',
       icon: 'TrendingUp',
+      iconColor: 'text-indigo-600',
       dataSource: 'calculated.myConversionRate',
       format: 'percentage',
       subtitle: {
@@ -113,22 +117,21 @@ export const salesRepConfig: DashboardConfig = {
 
   // Charts
   charts: [
-    // My Sales Trends (Line Chart)
+    // My Orders vs Deliveries (Line Chart)
     {
       id: 'my-sales-trends',
       type: 'lineChart',
-      title: 'My Sales Trends',
+      title: 'My Orders vs Deliveries',
       dataSource: 'salesTrends',
       gridPosition: { row: 1, col: 1, colSpan: 2 },
       height: 300,
       config: {
         xAxis: 'date',
-        yAxis: ['revenue', 'orders'],
+        yAxis: ['orders', 'delivered'],
         colors: ['#3B82F6', '#10B981'],
         showDots: true,
-        showMovingAverage: true,
-        movingAverageWindow: 7,
-        format: 'currency',
+        showMovingAverage: false,
+        format: 'number',
       },
     },
 

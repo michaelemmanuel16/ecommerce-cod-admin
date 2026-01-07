@@ -6,6 +6,8 @@ import { Table, TableHead, TableBody, TableRow, TableCell } from '../components/
 import { Badge } from '../components/ui/Badge';
 import { AgentEditModal } from '../components/admin/AgentEditModal';
 import { DeliveryAgent } from '../services/delivery-agents.service';
+import { formatCurrency } from '../utils/format';
+import { DateRangePicker } from '../components/ui/DateRangePicker';
 
 export const DeliveryAgents: React.FC = () => {
   const {
@@ -19,16 +21,18 @@ export const DeliveryAgents: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<DeliveryAgent | null>(null);
+  const [dateRange, setDateRange] = useState<{ start?: string; end?: string }>({});
 
   useEffect(() => {
-    const loadData = async () => {
-      await Promise.all([
-        fetchAgents(),
-        fetchPerformance()
-      ]);
-    };
-    loadData();
-  }, [fetchAgents, fetchPerformance]);
+    fetchAgents();
+  }, [fetchAgents]);
+
+  useEffect(() => {
+    fetchPerformance({
+      startDate: dateRange.start,
+      endDate: dateRange.end
+    });
+  }, [fetchPerformance, dateRange]);
 
   const filteredAgents = agents.filter((agent) =>
     agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -45,11 +49,6 @@ export const DeliveryAgents: React.FC = () => {
     setIsEditModalOpen(true);
   };
 
-  const formatCurrency = (amount?: number) => {
-    if (amount === undefined || amount === null) return 'GH₵0.00';
-    return `GH₵${amount.toFixed(2)}`;
-  };
-
   return (
     <div>
       <div className="mb-6">
@@ -57,18 +56,29 @@ export const DeliveryAgents: React.FC = () => {
         <p className="text-gray-600 mt-1">Manage agents in Settings → User Management</p>
       </div>
 
-      <Card className="mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search agents by name, email, or phone..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+      <div className="flex flex-col md:flex-row md:items-center gap-4 mb-6">
+        <div className="flex-1">
+          <Card>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Search agents by name, email, or phone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </Card>
+        </div>
+        <div className="w-full md:w-auto">
+          <DateRangePicker
+            startDate={dateRange.start}
+            endDate={dateRange.end}
+            onChange={(start, end) => setDateRange({ start, end })}
           />
         </div>
-      </Card>
+      </div>
 
       {isLoading ? (
         <Card>

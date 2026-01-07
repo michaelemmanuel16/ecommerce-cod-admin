@@ -103,7 +103,7 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Skip auto-logout for login/register endpoints - let them handle their own errors
       const isAuthEndpoint = originalRequest.url?.includes('/api/auth/login') ||
-                             originalRequest.url?.includes('/api/auth/register');
+        originalRequest.url?.includes('/api/auth/register');
 
       if (isAuthEndpoint) {
         // Let login/register pages handle 401 errors with their own UI
@@ -115,7 +115,9 @@ apiClient.interceptors.response.use(
       if (errorCode === 'TOKEN_FORMAT_OUTDATED') {
         useAuthStore.getState().logout(false);
         toast.error('Your session is outdated. Please log in again.');
-        window.location.href = '/login';
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
         return Promise.reject(error);
       }
 
@@ -125,7 +127,9 @@ apiClient.interceptors.response.use(
         const refreshToken = useAuthStore.getState().refreshToken;
         if (!refreshToken) {
           useAuthStore.getState().logout(false);
-          window.location.href = '/login';
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
           return Promise.reject(error);
         }
 
@@ -146,13 +150,17 @@ apiClient.interceptors.response.use(
         if (refreshError.response?.data?.code === 'TOKEN_FORMAT_OUTDATED') {
           useAuthStore.getState().logout(false);
           toast.error('Your session is outdated. Please log in again.');
-          window.location.href = '/login';
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
           return Promise.reject(refreshError);
         }
 
         useAuthStore.getState().logout(false);
         toast.error('Session expired. Please login again.');
-        window.location.href = '/login';
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
         return Promise.reject(refreshError);
       }
     }

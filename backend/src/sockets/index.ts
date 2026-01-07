@@ -3,6 +3,17 @@ import { Server as HTTPServer } from 'http';
 import { verifyAccessToken } from '../utils/jwt';
 import logger from '../utils/logger';
 
+/**
+ * Helper to safely emit to a room. Handles cases where io.to() returns undefined (e.g., in tests).
+ */
+function safeEmit(io: SocketServer | undefined, room: string, event: string, data: any): void {
+  if (!io || typeof io.to !== 'function') return;
+  const roomObj = io.to(room);
+  if (roomObj && typeof roomObj.emit === 'function') {
+    roomObj.emit(event, data);
+  }
+}
+
 export function initializeSocket(httpServer: HTTPServer): SocketServer {
   const io = new SocketServer(httpServer, {
     cors: {
@@ -61,20 +72,20 @@ export function initializeSocket(httpServer: HTTPServer): SocketServer {
 
 // Helper functions to emit events
 export function emitOrderCreated(io: SocketServer, order: any) {
-  io.to('role:admin').emit('order:created', order);
-  io.to('role:manager').emit('order:created', order);
-  io.to('role:sales_rep').emit('order:created', order);
+  safeEmit(io, 'role:admin', 'order:created', order);
+  safeEmit(io, 'role:manager', 'order:created', order);
+  safeEmit(io, 'role:sales_rep', 'order:created', order);
 }
 
 export function emitOrderUpdated(io: SocketServer, order: any) {
-  io.to(`order:${order.id}`).emit('order:updated', order);
+  safeEmit(io, `order:${order.id}`, 'order:updated', order);
 
   if (order.customerRepId) {
-    io.to(`user:${order.customerRepId}`).emit('order:updated', order);
+    safeEmit(io, `user:${order.customerRepId}`, 'order:updated', order);
   }
 
   if (order.deliveryAgentId) {
-    io.to(`user:${order.deliveryAgentId}`).emit('order:updated', order);
+    safeEmit(io, `user:${order.deliveryAgentId}`, 'order:updated', order);
   }
 }
 
@@ -87,16 +98,16 @@ export function emitOrderStatusChanged(io: SocketServer, order: any, oldStatus: 
     timestamp: new Date()
   };
 
-  io.to(`order:${order.id}`).emit('order:status_changed', event);
-  io.to('role:admin').emit('order:status_changed', event);
-  io.to('role:manager').emit('order:status_changed', event);
+  safeEmit(io, `order:${order.id}`, 'order:status_changed', event);
+  safeEmit(io, 'role:admin', 'order:status_changed', event);
+  safeEmit(io, 'role:manager', 'order:status_changed', event);
 
   if (order.customerRepId) {
-    io.to(`user:${order.customerRepId}`).emit('order:status_changed', event);
+    safeEmit(io, `user:${order.customerRepId}`, 'order:status_changed', event);
   }
 
   if (order.deliveryAgentId) {
-    io.to(`user:${order.deliveryAgentId}`).emit('order:status_changed', event);
+    safeEmit(io, `user:${order.deliveryAgentId}`, 'order:status_changed', event);
   }
 }
 
@@ -109,17 +120,17 @@ export function emitOrderAssigned(io: SocketServer, order: any, userId: string, 
     timestamp: new Date()
   };
 
-  io.to(`user:${userId}`).emit('order:assigned', event);
-  io.to(`order:${order.id}`).emit('order:assigned', event);
+  safeEmit(io, `user:${userId}`, 'order:assigned', event);
+  safeEmit(io, `order:${order.id}`, 'order:assigned', event);
 }
 
 export function emitDeliveryUpdated(io: SocketServer, delivery: any) {
-  io.to(`user:${delivery.agentId}`).emit('delivery:updated', delivery);
-  io.to(`order:${delivery.orderId}`).emit('delivery:updated', delivery);
+  safeEmit(io, `user:${delivery.agentId}`, 'delivery:updated', delivery);
+  safeEmit(io, `order:${delivery.orderId}`, 'delivery:updated', delivery);
 }
 
 export function emitNotification(io: SocketServer, userId: string, notification: any) {
-  io.to(`user:${userId}`).emit('notification', notification);
+  safeEmit(io, `user:${userId}`, 'notification', notification);
 }
 
 export function emitPermissionsUpdated(io: SocketServer, updatedRoles: string[]) {
@@ -130,35 +141,37 @@ export function emitPermissionsUpdated(io: SocketServer, updatedRoles: string[])
 
   // Emit to all affected roles
   updatedRoles.forEach(role => {
-    io.to(`role:${role}`).emit('permissions:updated', event);
+    safeEmit(io, `role:${role}`, 'permissions:updated', event);
   });
 
   // Also emit to all connected clients (in case they need to refresh)
-  io.emit('permissions:updated', event);
+  if (io && typeof io.emit === 'function') {
+    io.emit('permissions:updated', event);
+  }
 }
 
 export function emitCallLogged(io: SocketServer, call: any) {
   // Emit to managers and admins
-  io.to('role:admin').emit('call:logged', call);
-  io.to('role:manager').emit('call:logged', call);
+  safeEmit(io, 'role:admin', 'call:logged', call);
+  safeEmit(io, 'role:manager', 'call:logged', call);
 
   // Emit to the sales rep who logged it
-  io.to(`user:${call.salesRepId}`).emit('call:logged', call);
+  safeEmit(io, `user:${call.salesRepId}`, 'call:logged', call);
 }
 
 // Financial event emitters
 export function emitExpenseCreated(io: SocketServer, expense: any) {
   // Emit to roles with financial permission
-  io.to('role:admin').emit('expense:created', expense);
-  io.to('role:manager').emit('expense:created', expense);
-  io.to('role:accountant').emit('expense:created', expense);
+  safeEmit(io, 'role:admin', 'expense:created', expense);
+  safeEmit(io, 'role:manager', 'expense:created', expense);
+  safeEmit(io, 'role:accountant', 'expense:created', expense);
 }
 
 export function emitExpenseUpdated(io: SocketServer, expense: any) {
   // Emit to roles with financial permission
-  io.to('role:admin').emit('expense:updated', expense);
-  io.to('role:manager').emit('expense:updated', expense);
-  io.to('role:accountant').emit('expense:updated', expense);
+  safeEmit(io, 'role:admin', 'expense:updated', expense);
+  safeEmit(io, 'role:manager', 'expense:updated', expense);
+  safeEmit(io, 'role:accountant', 'expense:updated', expense);
 }
 
 export function emitExpenseDeleted(io: SocketServer, expenseId: string) {
@@ -168,9 +181,9 @@ export function emitExpenseDeleted(io: SocketServer, expenseId: string) {
   };
 
   // Emit to roles with financial permission
-  io.to('role:admin').emit('expense:deleted', event);
-  io.to('role:manager').emit('expense:deleted', event);
-  io.to('role:accountant').emit('expense:deleted', event);
+  safeEmit(io, 'role:admin', 'expense:deleted', event);
+  safeEmit(io, 'role:manager', 'expense:deleted', event);
+  safeEmit(io, 'role:accountant', 'expense:deleted', event);
 }
 
 export function emitTransactionDeposited(io: SocketServer, transactionIds: string[], depositReference?: string) {
@@ -181,14 +194,14 @@ export function emitTransactionDeposited(io: SocketServer, transactionIds: strin
   };
 
   // Emit to roles with financial permission
-  io.to('role:admin').emit('transaction:deposited', event);
-  io.to('role:manager').emit('transaction:deposited', event);
-  io.to('role:accountant').emit('transaction:deposited', event);
+  safeEmit(io, 'role:admin', 'transaction:deposited', event);
+  safeEmit(io, 'role:manager', 'transaction:deposited', event);
+  safeEmit(io, 'role:accountant', 'transaction:deposited', event);
 }
 
 export function emitTransactionReconciled(io: SocketServer, transaction: any) {
   // Emit to roles with financial permission
-  io.to('role:admin').emit('transaction:reconciled', transaction);
-  io.to('role:manager').emit('transaction:reconciled', transaction);
-  io.to('role:accountant').emit('transaction:reconciled', transaction);
+  safeEmit(io, 'role:admin', 'transaction:reconciled', transaction);
+  safeEmit(io, 'role:manager', 'transaction:reconciled', transaction);
+  safeEmit(io, 'role:accountant', 'transaction:reconciled', transaction);
 }

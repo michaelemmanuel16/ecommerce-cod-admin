@@ -1,6 +1,7 @@
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { ExpenseCategory } from '../../../services/financial.service';
+import { formatCurrency } from '../../../utils/format';
 
 interface ExpenseBreakdownChartProps {
   data: ExpenseCategory[];
@@ -26,15 +27,6 @@ export const ExpenseBreakdownChart: React.FC<ExpenseBreakdownChartProps> = ({
   data,
   height = 300
 }) => {
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value);
-  };
-
   if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500">

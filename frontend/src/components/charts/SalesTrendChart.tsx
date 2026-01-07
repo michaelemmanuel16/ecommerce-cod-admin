@@ -11,7 +11,7 @@ import {
 } from 'recharts';
 
 interface SalesTrendChartProps {
-  data: { date: string; sales: number }[];
+  data: { date: string; assigned: number; delivered: number }[];
 }
 
 export const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ data }) => {
@@ -20,13 +20,22 @@ export const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ data }) => {
       <LineChart data={data}>
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="date" />
-        <YAxis />
+        <YAxis allowDecimals={false} />
         <Tooltip />
         <Legend />
         <Line
           type="monotone"
-          dataKey="sales"
+          name="Assigned Orders"
+          dataKey="assigned"
           stroke="#3b82f6"
+          strokeWidth={2}
+          dot={{ r: 4 }}
+        />
+        <Line
+          type="monotone"
+          name="Delivered Orders"
+          dataKey="delivered"
+          stroke="#10b981"
           strokeWidth={2}
           dot={{ r: 4 }}
         />

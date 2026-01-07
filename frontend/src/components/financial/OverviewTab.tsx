@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { DollarSign, TrendingUp, TrendingDown, Wallet, Receipt, Clock } from 'lucide-react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { FinancialKPICard } from './cards/FinancialKPICard';
+import { formatCurrency } from '../../utils/format';
 import { RevenueExpenseTrendChart } from './charts/RevenueExpenseTrendChart';
 import { ExpenseBreakdownChart } from './charts/ExpenseBreakdownChart';
 import { Card } from '../ui/Card';
@@ -80,7 +81,7 @@ export const OverviewTab: React.FC = () => {
 
         <FinancialKPICard
           title="Outstanding COD"
-          value={summary?.codPending || 0}
+          value={summary?.codCollected || 0}
           icon={Clock}
           iconColor="text-yellow-600"
           iconBgColor="bg-yellow-100"
@@ -149,11 +150,7 @@ export const OverviewTab: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Average Order Value</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
-                {new Intl.NumberFormat('en-US', {
-                  style: 'currency',
-                  currency: 'USD',
-                  minimumFractionDigits: 0
-                }).format(avgOrderValue)}
+                {formatCurrency(avgOrderValue)}
               </p>
             </div>
             <div>

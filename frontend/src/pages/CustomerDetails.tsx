@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Mail, Phone, MapPin, Edit2, TrendingUp, ShoppingBag, DollarSign, Calendar } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { formatCurrency } from '../utils/format';
 import { customersService } from '../services/customers.service';
 import { ordersService } from '../services/orders.service';
 import { Customer, Order } from '../types';
@@ -128,7 +129,7 @@ export const CustomerDetails: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Total Spent</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">${totalSpent.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(totalSpent)}</p>
             </div>
             <div className="p-3 bg-green-100 rounded-full">
               <DollarSign className="w-6 h-6 text-green-600" />
@@ -140,7 +141,7 @@ export const CustomerDetails: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Avg Order Value</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">${avgOrderValue.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(avgOrderValue)}</p>
             </div>
             <div className="p-3 bg-purple-100 rounded-full">
               <TrendingUp className="w-6 h-6 text-purple-600" />
@@ -272,7 +273,7 @@ export const CustomerDetails: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                        ${order.totalAmount.toFixed(2)}
+                        {formatCurrency(order.totalAmount)}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm">
                         <Button

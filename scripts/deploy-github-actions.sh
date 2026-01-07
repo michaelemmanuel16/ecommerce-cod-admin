@@ -34,7 +34,7 @@ if [ ! -f "$COMPOSE_FILE" ]; then
     exit 1
 fi
 
-if ! docker-compose -f "$COMPOSE_FILE" ps | grep -q "Up"; then
+if docker-compose -p production -f "$COMPOSE_FILE" ps | grep -q "Up"; then
     echo -e "${YELLOW}Warning: Some containers are not running${NC}"
 fi
 
@@ -67,7 +67,7 @@ echo ""
 # Step 4: Pull new images from GHCR
 echo -e "${BLUE}[4/7] Pulling new Docker images from GHCR...${NC}"
 
-if docker-compose -f "$COMPOSE_FILE" pull backend frontend; then
+if docker-compose -p production -f "$COMPOSE_FILE" pull backend frontend; then
     echo -e "${GREEN}✓ Images pulled successfully${NC}"
 else
     echo -e "${RED}Error: Failed to pull images${NC}"
@@ -111,6 +111,11 @@ if [ -z "$POSTGRES_EXISTS" ]; then
 else
     # Rolling update - only update app containers
     echo -e "${YELLOW}Existing deployment detected - performing rolling update...${NC}"
+    
+    # Clean up any potential conflicting containers by name
+    # This prevents "Conflict. The container name is already in use" errors
+    echo -e "${YELLOW}Ensuring no name conflicts for app containers...${NC}"
+    docker rm -f ecommerce-cod-backend ecommerce-cod-frontend 2>/dev/null || true
     
     # Update backend first
     echo -e "${YELLOW}Updating backend service...${NC}"
@@ -174,7 +179,7 @@ if [ "$BACKEND_HEALTHY" = false ]; then
         echo -e "${YELLOW}Initiating rollback due to failed health checks...${NC}"
         docker tag "$CURRENT_BACKEND_IMAGE" ecommerce-cod-backend:rollback 2>/dev/null || true
         docker tag "$CURRENT_FRONTEND_IMAGE" ecommerce-cod-frontend:rollback 2>/dev/null || true
-        docker-compose -f "$COMPOSE_FILE" up -d --no-deps backend frontend
+        docker-compose -p production -f "$COMPOSE_FILE" up -d --no-deps backend frontend
         echo -e "${RED}Deployment failed and rolled back${NC}"
         exit 1
     else
@@ -206,7 +211,7 @@ if [ "$FRONTEND_HEALTHY" = false ]; then
         echo -e "${YELLOW}Initiating rollback due to failed health checks...${NC}"
         docker tag "$CURRENT_BACKEND_IMAGE" ecommerce-cod-backend:rollback 2>/dev/null || true
         docker tag "$CURRENT_FRONTEND_IMAGE" ecommerce-cod-frontend:rollback 2>/dev/null || true
-        docker-compose -f "$COMPOSE_FILE" up -d --no-deps backend frontend
+        docker-compose -p production -f "$COMPOSE_FILE" up -d --no-deps backend frontend
         echo -e "${RED}Deployment failed and rolled back${NC}"
         exit 1
     else
@@ -234,6 +239,6 @@ echo ""
 echo -e "${BLUE}Deployment completed at: $(date)${NC}"
 echo ""
 echo -e "${BLUE}Container Status:${NC}"
-docker-compose -f "$COMPOSE_FILE" ps
+docker-compose -p production -f "$COMPOSE_FILE" ps
 echo ""
 echo -e "${GREEN}All services are running and healthy!${NC}"
