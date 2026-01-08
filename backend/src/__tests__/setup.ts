@@ -19,3 +19,49 @@ global.console = {
   warn: jest.fn(),
   error: jest.fn(),
 };
+
+// Mock Bull queue to prevent Redis connections
+jest.mock('../queues/workflowQueue', () => ({
+  workflowQueue: {
+    add: jest.fn().mockResolvedValue({}),
+    process: jest.fn(),
+    close: jest.fn().mockResolvedValue(undefined),
+    on: jest.fn(),
+    removeAllListeners: jest.fn()
+  }
+}));
+
+// Mock socket.io to prevent connections
+jest.mock('../config/socket', () => ({
+  io: {
+    emit: jest.fn(),
+    to: jest.fn(() => ({ emit: jest.fn() })),
+    on: jest.fn(),
+    close: jest.fn()
+  },
+  emitOrderCreated: jest.fn(),
+  emitOrderUpdated: jest.fn(),
+  emitOrderStatusChanged: jest.fn(),
+  emitOrderAssigned: jest.fn()
+}));
+
+// Clear all timers and mocks after each test
+afterEach(() => {
+  jest.clearAllTimers();
+  jest.clearAllMocks();
+});
+
+// Global cleanup after all tests
+afterAll(async () => {
+  // Import dynamically to avoid initialization issues
+  const { default: prisma } = await import('../config/database');
+
+  // Close Prisma connection
+  await prisma.$disconnect();
+
+  // Clear all timers
+  jest.clearAllTimers();
+
+  // Give time for async operations to complete
+  await new Promise(resolve => setTimeout(resolve, 100));
+});
