@@ -41,6 +41,12 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
                 toast.success(`Successfully imported ${data.results.success} orders`);
                 onSuccess();
             }
+            if (data.results.duplicates > 0) {
+                toast.error(`${data.results.duplicates} duplicate orders were skipped`, {
+                    duration: 5000,
+                    icon: '🚫',
+                });
+            }
             if (data.results.failed > 0) {
                 toast.error(`Failed to import ${data.results.failed} orders`);
             }
@@ -169,6 +175,10 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
                                     <div className="text-center">
                                         <p className="text-2xl font-bold text-red-600">{results.failed}</p>
                                         <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Failed</p>
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-2xl font-bold text-amber-600">{results.duplicates || 0}</p>
+                                        <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Duplicates</p>
                                     </div>
                                 </div>
                                 {results.failed === 0 && results.success > 0 ? (

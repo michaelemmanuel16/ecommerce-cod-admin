@@ -333,6 +333,7 @@ export class OrderService {
     const results = {
       success: 0,
       failed: 0,
+      duplicates: 0,
       errors: [] as Array<{ order: BulkImportOrderData; error: string }>
     };
 
@@ -342,6 +343,25 @@ export class OrderService {
         let customer = await prisma.customer.findUnique({
           where: { phoneNumber: orderData.customerPhone }
         });
+
+        // Check for duplicates within last 24 hours if customer exists
+        if (customer) {
+          const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const duplicate = await prisma.order.findFirst({
+            where: {
+              customerId: customer.id,
+              totalAmount: orderData.totalAmount,
+              createdAt: { gte: twentyFourHoursAgo },
+              deletedAt: null
+            }
+          });
+
+          if (duplicate) {
+            results.duplicates++;
+            logger.info('Duplicate order skipped', { customerId: customer.id, totalAmount: orderData.totalAmount });
+            continue;
+          }
+        }
 
         if (!customer) {
           customer = await prisma.customer.create({
