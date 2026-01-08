@@ -1,7 +1,6 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import fileType from 'file-type';
 import { AppError } from '../middleware/errorHandler';
 
 // Ensure uploads directory exists
@@ -66,8 +65,10 @@ export const upload = multer({
 // Memory storage for spreadsheet parsing
 export const memoryStorage = multer.memoryStorage();
 
-// File filter for spreadsheets with MIME type validation
-const spreadsheetFilter = async (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+// File filter for spreadsheets - extension check only
+// Note: MIME type validation is done in the controller after file is uploaded
+// because file.buffer is not available during the filter stage
+const spreadsheetFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const allowedExtensions = ['.csv', '.xlsx', '.xls'];
   const ext = path.extname(file.originalname).toLowerCase();
 
@@ -76,22 +77,6 @@ const spreadsheetFilter = async (_req: any, file: Express.Multer.File, cb: multe
     return cb(new AppError('Only CSV and Excel files are allowed', 400));
   }
 
-  // For Excel files, validate MIME type from buffer content
-  if (ext === '.xlsx' || ext === '.xls') {
-    try {
-      // Note: file-type v16+ uses default export
-      const detectedType = await fileType.fromBuffer(file.buffer as any);
-      const validMimeTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'];
-
-      if (!detectedType || !validMimeTypes.includes(detectedType.mime)) {
-        return cb(new AppError('Invalid Excel file format detected', 400));
-      }
-    } catch (error) {
-      return cb(new AppError('Failed to validate file type', 400));
-    }
-  }
-
-  // CSV files don't have reliable MIME types, so we only check extension
   cb(null, true);
 };
 
