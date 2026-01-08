@@ -111,6 +111,7 @@ services:
       - "5174:8080"  # Expose on different port to avoid conflict with production
     environment:
       VITE_API_URL: https://staging.codadminpro.com
+      VITE_WS_URL: https://staging.codadminpro.com
       FRONTEND_URL: ${FRONTEND_URL:-https://staging.codadminpro.com}
     depends_on:
       - backend

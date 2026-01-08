@@ -59,9 +59,8 @@ function App() {
       // Refresh permissions to ensure they're up to date
       refreshPermissions();
 
-      // Setup all socket listeners
-      const { initSocket } = useAuthStore.getState();
-      initSocket();
+      // Initialize socket connection and listeners
+      useAuthStore.getState().initSocket();
     }
   }, [isAuthenticated, refreshPermissions, setupPermissionListener, fetchConfig]);
 

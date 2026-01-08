@@ -166,8 +166,15 @@ export const useAuthStore = create<AuthState>()(
       },
 
       initSocket: () => {
-        const socket = getSocket();
-        if (!socket) return;
+        let socket = getSocket();
+        if (!socket) {
+          socket = connectSocket();
+        }
+
+        if (!socket) {
+          console.warn('[AuthStore] Failed to initialize socket connection');
+          return;
+        }
 
         // Setup listeners for all stores
         get().setupPermissionListener();
