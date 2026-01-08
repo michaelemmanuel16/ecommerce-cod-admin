@@ -49,7 +49,7 @@ const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterC
   }
 };
 
-// Configure multer
+// Configure multer for images (original)
 export const upload = multer({
   storage,
   fileFilter,
@@ -59,6 +59,30 @@ export const upload = multer({
     fields: 10,                  // Max 10 form fields (prevent field flooding)
     parts: 20,                   // Max 20 parts in multipart (prevent multipart DoS)
     headerPairs: 100             // Max 100 header pairs
+  }
+});
+
+// Memory storage for spreadsheet parsing
+export const memoryStorage = multer.memoryStorage();
+
+// File filter for spreadsheets
+const spreadsheetFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const allowedExtensions = ['.csv', '.xlsx', '.xls'];
+  const ext = path.extname(file.originalname).toLowerCase();
+
+  if (allowedExtensions.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(new AppError('Only CSV and Excel files are allowed', 400));
+  }
+};
+
+export const spreadsheetUpload = multer({
+  storage: memoryStorage,
+  fileFilter: spreadsheetFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+    files: 1
   }
 });
 

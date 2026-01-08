@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { LayoutGrid, List, Filter, Plus, Edit2, Eye, Trash2, ArrowUp, ArrowDown, Phone } from 'lucide-react';
+import { LayoutGrid, List, Filter, Plus, Edit2, Eye, Trash2, ArrowUp, ArrowDown, Phone, Download, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { KanbanBoard } from '../components/kanban/KanbanBoard';
 import { SearchBar } from '../components/common/SearchBar';
@@ -9,6 +9,7 @@ import { Pagination } from '../components/ui/Pagination';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { OrderForm } from '../components/forms/OrderForm';
 import { LogCallModal } from '../components/calls/LogCallModal';
+import { BulkImportModal } from '../components/orders/BulkImportModal';
 import { useOrdersStore } from '../stores/ordersStore';
 import { useAuthStore } from '../stores/authStore';
 import { usePermissions } from '../hooks/usePermissions';
@@ -67,6 +68,8 @@ export const Orders: React.FC = () => {
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
   const [selectedOrderForEdit, setSelectedOrderForEdit] = useState<Order | null>(null);
   const [isLogCallModalOpen, setIsLogCallModalOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [selectedOrderForCall, setSelectedOrderForCall] = useState<Order | null>(null);
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -284,6 +287,19 @@ export const Orders: React.FC = () => {
     fetchOrders();
   };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      await ordersService.exportOrders(filters);
+      toast.success('Orders exported successfully');
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error('Failed to export orders');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedOrderIds(new Set(sortedOrders.map(o => o.id)));
@@ -375,6 +391,16 @@ export const Orders: React.FC = () => {
             <Button variant="ghost" onClick={() => setIsFilterOpen(true)}>
               <Filter className="w-4 h-4 mr-2" />
               Filters
+            </Button>
+            {can('orders', 'bulk_import') && (
+              <Button variant="ghost" onClick={() => setIsBulkImportOpen(true)}>
+                <Upload className="w-4 h-4 mr-2" />
+                Import
+              </Button>
+            )}
+            <Button variant="ghost" onClick={handleExport} isLoading={isExporting}>
+              <Download className="w-4 h-4 mr-2" />
+              Export
             </Button>
             <Button variant="primary" onClick={handleNewOrder}>
               <Plus className="w-4 h-4 mr-2" />
@@ -708,6 +734,11 @@ export const Orders: React.FC = () => {
           orderId={selectedOrderForCall.id}
         />
       )}
+      <BulkImportModal
+        isOpen={isBulkImportOpen}
+        onClose={() => setIsBulkImportOpen(false)}
+        onSuccess={fetchOrders}
+      />
     </div>
   );
 };

@@ -35,12 +35,17 @@ interface BulkImportOrderData {
   customerPhone: string;
   customerFirstName?: string;
   customerLastName?: string;
+  customerAlternatePhone?: string;
   subtotal: number;
   totalAmount: number;
   deliveryAddress: string;
   deliveryState: string;
   deliveryArea: string;
   notes?: string;
+  productName?: string;
+  quantity?: number;
+  unitPrice?: number;
+  status?: OrderStatus;
 }
 
 interface OrderFilters {
@@ -344,11 +349,40 @@ export class OrderService {
               firstName: orderData.customerFirstName || 'Unknown',
               lastName: orderData.customerLastName || '',
               phoneNumber: orderData.customerPhone,
+              alternatePhone: orderData.customerAlternatePhone,
               address: orderData.deliveryAddress,
               state: orderData.deliveryState,
               area: orderData.deliveryArea
             }
           });
+        } else if (orderData.customerAlternatePhone && !customer.alternatePhone) {
+          // Update alternate phone if it was missing
+          await prisma.customer.update({
+            where: { id: customer.id },
+            data: { alternatePhone: orderData.customerAlternatePhone }
+          });
+        }
+
+        // Handle product lookup if productName is provided
+        let orderItemsData: any[] = [];
+        if (orderData.productName) {
+          const product = await prisma.product.findFirst({
+            where: {
+              OR: [
+                { name: { contains: orderData.productName, mode: 'insensitive' } },
+                { sku: { contains: orderData.productName, mode: 'insensitive' } }
+              ]
+            }
+          });
+
+          if (product) {
+            orderItemsData = [{
+              productId: product.id,
+              quantity: orderData.quantity || 1,
+              unitPrice: orderData.unitPrice || product.price,
+              totalPrice: (orderData.quantity || 1) * (orderData.unitPrice || product.price)
+            }];
+          }
         }
 
         const createdOrder = await prisma.order.create({
@@ -361,11 +395,15 @@ export class OrderService {
             deliveryState: orderData.deliveryState,
             deliveryArea: orderData.deliveryArea,
             notes: orderData.notes,
+            status: orderData.status || 'pending_confirmation',
             source: 'bulk_import',
             createdById,
+            orderItems: orderItemsData.length > 0 ? {
+              create: orderItemsData
+            } : undefined,
             orderHistory: {
               create: {
-                status: 'pending_confirmation',
+                status: orderData.status || 'pending_confirmation',
                 notes: 'Order imported via bulk CSV',
                 changedBy: createdById
               }
