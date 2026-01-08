@@ -101,7 +101,7 @@ jobs:
           REDIS_PORT: 6379
           JWT_SECRET: test-secret
           JWT_REFRESH_SECRET: test-refresh-secret
-        run: npm run test:unit
+        run: npm run test:unit -- --forceExit --detectOpenHandles
 
       - name: Run integration tests
         working-directory: backend
@@ -111,7 +111,7 @@ jobs:
           REDIS_PORT: 6379
           JWT_SECRET: test-secret
           JWT_REFRESH_SECRET: test-refresh-secret
-        run: npm run test:integration
+        run: npm run test:integration -- --forceExit --detectOpenHandles
 
       - name: Generate coverage report
         working-directory: backend
@@ -121,7 +121,7 @@ jobs:
           REDIS_PORT: 6379
           JWT_SECRET: test-secret
           JWT_REFRESH_SECRET: test-refresh-secret
-        run: npm run test:coverage
+        run: npm run test:coverage -- --forceExit --detectOpenHandles
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
