@@ -58,23 +58,12 @@ docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging 
 
 # Step 5: Run database migrations
 echo -e "${BLUE}[5/6] Running database migrations...${NC}"
-echo "Waiting for backend container to be ready for migrations..."
-MAX_RETRIES=10
-RETRY_COUNT=0
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker ps --filter "name=ecommerce-cod-backend-staging" --filter "status=running" | grep -q "ecommerce-cod-backend-staging"; then
-        echo "Backend container is running, starting migrations..."
-        docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging exec -T backend npx prisma migrate deploy && break || echo -e "${YELLOW}Warning: Migration attempt failed, retrying...${NC}"
-    else
-        echo "Backend container not ready yet ($RETRY_COUNT/$MAX_RETRIES)..."
-    fi
-    RETRY_COUNT=$((RETRY_COUNT + 1))
-    sleep 5
-done
+sleep 10  # Wait for containers to be ready
+docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging exec -T backend npx prisma migrate deploy || echo -e "${YELLOW}Warning: Migrations may have failed or already applied${NC}"
 
 # Step 6: Health checks
 echo -e "${BLUE}[6/6] Performing health checks...${NC}"
-sleep 10  # Additional wait for app initialization
+sleep 15  # Wait for services to start
 
 # Check backend health
 if curl -f http://localhost:3001/health > /dev/null 2>&1; then
@@ -82,7 +71,7 @@ if curl -f http://localhost:3001/health > /dev/null 2>&1; then
 else
     echo -e "${RED}✗ Backend (staging) health check failed${NC}"
     echo -e "${YELLOW}Checking logs...${NC}"
-    docker-compose -p staging -f docker-compose.staging.yml logs --tail=100 backend
+    docker-compose -p staging -f docker-compose.staging.yml logs --tail=50 backend-staging
     exit 1
 fi
 

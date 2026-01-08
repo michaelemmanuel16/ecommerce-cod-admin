@@ -10,10 +10,38 @@ interface BulkImportModalProps {
     onSuccess: () => void;
 }
 
+interface BulkImportResults {
+    success: number;
+    failed: number;
+    duplicates: number;
+    errors: Array<{
+        order: Record<string, unknown>;
+        error: string;
+    }>;
+}
+
+interface UploadResponse {
+    results: BulkImportResults;
+    invalidOrders?: Array<{
+        row: number;
+        errors: string;
+        data: Record<string, unknown>;
+    }>;
+}
+
+interface ApiError {
+    response?: {
+        data?: {
+            message?: string;
+        };
+    };
+    message?: string;
+}
+
 export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClose, onSuccess }) => {
     const [file, setFile] = useState<File | null>(null);
     const [isUploading, setIsUploading] = useState(false);
-    const [results, setResults] = useState<any | null>(null);
+    const [results, setResults] = useState<BulkImportResults | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     if (!isOpen) return null;
@@ -50,9 +78,10 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
             if (data.results.failed > 0) {
                 toast.error(`Failed to import ${data.results.failed} orders`);
             }
-        } catch (error: any) {
-            console.error('Upload failed:', error);
-            toast.error(error.response?.data?.message || 'Upload failed');
+        } catch (error) {
+            const apiError = error as ApiError;
+            console.error('Upload failed:', apiError);
+            toast.error(apiError.response?.data?.message || apiError.message || 'Upload failed');
         } finally {
             setIsUploading(false);
         }

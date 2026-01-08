@@ -5,14 +5,15 @@ import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { validate, validateRequest } from '../middleware/validation';
 import { spreadsheetUpload, handleUploadErrors } from '../config/multer';
 import { createOrderValidation, updateOrderStatusValidation, paginationValidation } from '../utils/validators';
+import { bulkOrderRateLimiter, bulkImportRateLimiter } from '../middleware/bulkRateLimiter';
 
 const router = Router();
 
 router.use(authenticate);
 
 router.get('/', paginationValidation, validate, requireResourcePermission('orders', 'view'), orderController.getAllOrders);
-router.get('/export', requireResourcePermission('orders', 'view'), bulkOrderController.exportOrders);
-router.post('/upload', spreadsheetUpload.single('file'), handleUploadErrors, requireResourcePermission('orders', 'bulk_import'), bulkOrderController.uploadOrders);
+router.get('/export', bulkOrderRateLimiter, requireResourcePermission('orders', 'view'), bulkOrderController.exportOrders);
+router.post('/upload', bulkImportRateLimiter, spreadsheetUpload.single('file'), handleUploadErrors, requireResourcePermission('orders', 'bulk_import'), bulkOrderController.uploadOrders);
 router.post('/', createOrderValidation, validate, requireResourcePermission('orders', 'create'), orderController.createOrder);
 router.post('/bulk', requireResourcePermission('orders', 'bulk_import'), orderController.bulkImportOrders);
 router.get('/kanban', requireResourcePermission('orders', 'view'), orderController.getKanbanView);

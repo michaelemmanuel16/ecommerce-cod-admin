@@ -3,12 +3,17 @@ import { AuthRequest } from '../types';
 import { OrderStatus } from '@prisma/client';
 import orderService from '../services/orderService';
 import { Parser } from 'json2csv';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { parse } from 'csv-parse/sync';
 import logger from '../utils/logger';
+import { exportQuerySchema } from '../utils/bulkOrderValidators';
+import { z } from 'zod';
 
 export const exportOrders = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
+        // Validate query parameters
+        const validatedQuery = exportQuerySchema.parse(req.query);
+
         const {
             status,
             customerId,
@@ -18,13 +23,13 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
             startDate,
             endDate,
             search,
-            format = 'csv'
-        } = req.query;
+            format
+        } = validatedQuery;
 
         // Parse status - can be a single value or array
         let parsedStatus: OrderStatus[] | undefined;
         if (status) {
-            parsedStatus = Array.isArray(status) ? status as OrderStatus[] : [status as OrderStatus];
+            parsedStatus = Array.isArray(status) ? status : [status];
         }
 
         // Role-based filtering (logic duplicated from orderController for consistency)
@@ -38,18 +43,18 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
             effectiveDeliveryAgentId = req.user.id;
         }
 
-        // Fetch orders without pagination for export (limit to 10000 to prevent memory blowup)
+        // Fetch orders without pagination for export (limit to 1000 to prevent memory exhaustion)
         const result = await orderService.getAllOrders({
             status: parsedStatus,
-            customerId: customerId ? Number(customerId) : undefined,
+            customerId,
             customerRepId: effectiveCustomerRepId,
             deliveryAgentId: effectiveDeliveryAgentId,
-            area: area as string | undefined,
-            startDate: startDate ? new Date(startDate as string) : undefined,
-            endDate: endDate ? new Date(endDate as string) : undefined,
-            search: search as string | undefined,
+            area,
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            search,
             page: 1,
-            limit: 10000 // High limit for export
+            limit: 1000 // Reduced from 10000 to prevent memory exhaustion
         });
 
         const orders = result.orders.map(order => ({
@@ -71,10 +76,20 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
         }));
 
         if (format === 'xlsx') {
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.json_to_sheet(orders);
-            XLSX.utils.book_append_sheet(wb, ws, 'Orders');
-            const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Orders');
+
+            // Add headers
+            worksheet.columns = Object.keys(orders[0] || {}).map(key => ({
+                header: key,
+                key: key,
+                width: 20
+            }));
+
+            // Add rows
+            worksheet.addRows(orders);
+
+            const buffer = await workbook.xlsx.writeBuffer();
 
             res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
             res.setHeader('Content-Disposition', `attachment; filename=orders_export_${Date.now()}.xlsx`);
@@ -87,9 +102,13 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
             res.setHeader('Content-Disposition', `attachment; filename=orders_export_${Date.now()}.csv`);
             res.send(csv);
         }
-    } catch (error) {
-        logger.error('Export orders failed', { error });
-        res.status(500).json({ message: 'Export failed' });
+    } catch (error: any) {
+        logger.error('Export orders failed', { error: error.message, stack: error.stack });
+        if (error instanceof z.ZodError) {
+            res.status(400).json({ message: 'Invalid query parameters', errors: error.issues });
+            return;
+        }
+        res.status(500).json({ message: 'Export failed', error: error.message });
     }
 };
 
@@ -110,9 +129,24 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
                 trim: true
             });
         } else if (extension === 'xlsx' || extension === 'xls') {
-            const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-            const sheetName = workbook.SheetNames[0];
-            rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(req.file.buffer as any);
+            const worksheet = workbook.worksheets[0];
+
+            const headers: string[] = [];
+            worksheet.getRow(1).eachCell((cell) => {
+                headers.push(cell.value?.toString() || '');
+            });
+
+            rawData = [];
+            worksheet.eachRow((row, rowNumber) => {
+                if (rowNumber === 1) return; // Skip header row
+                const rowData: any = {};
+                row.eachCell((cell, colNumber) => {
+                    rowData[headers[colNumber - 1]] = cell.value;
+                });
+                rawData.push(rowData);
+            });
         } else {
             res.status(400).json({ message: 'Unsupported file format' });
             return;
@@ -159,6 +193,8 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
         }
 
         const results = await orderService.bulkImportOrders(mappedOrders, req.user?.id);
+
+        // Return results
         res.json({ results });
     } catch (error: any) {
         logger.error('Upload orders failed', { error: error.message });
