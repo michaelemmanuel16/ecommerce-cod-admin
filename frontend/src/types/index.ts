@@ -223,6 +223,11 @@ export interface FilterOptions {
   search?: string;
   page?: number;
   limit?: number;
+  customerId?: number;
+  customerRepId?: number;
+  deliveryAgentId?: number;
+  area?: string;
+  format?: 'csv' | 'xlsx';
 }
 
 export enum CallOutcome {

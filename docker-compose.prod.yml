@@ -107,6 +107,7 @@ services:
     restart: always
     environment:
       VITE_API_URL: https://codadminpro.com
+      VITE_WS_URL: https://codadminpro.com
       FRONTEND_URL: ${FRONTEND_URL:-https://codadminpro.com}
     depends_on:
       - backend

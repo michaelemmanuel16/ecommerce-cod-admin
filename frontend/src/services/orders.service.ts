@@ -44,8 +44,8 @@ const transformOrder = (order: any): Order => {
       assignedToName: order.customerRep
         ? `${order.customerRep.firstName} ${order.customerRep.lastName}`.trim()
         : order.deliveryAgent
-        ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim()
-        : undefined,
+          ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim()
+          : undefined,
       customerRep: order.customerRep,
       deliveryAgent: order.deliveryAgent,
       createdAt: order.createdAt,
@@ -110,6 +110,36 @@ export const ordersService = {
     const endpoint = role === 'agent' ? 'assign-agent' : 'assign-rep';
     const response = await apiClient.patch(`/api/orders/${id}/${endpoint}`, { userId });
     return transformOrder(response.data.order || response.data);
+  },
+
+  async exportOrders(filters?: FilterOptions): Promise<void> {
+    const response = await apiClient.get('/api/orders/export', {
+      params: filters,
+      responseType: 'blob'
+    });
+
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+
+    const extension = filters?.format === 'xlsx' ? 'xlsx' : 'csv';
+    link.setAttribute('download', `orders_export_${Date.now()}.${extension}`);
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  async uploadOrders(file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post('/api/orders/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
   },
 
   async getOrdersByStatus(): Promise<{ status: OrderStatus; count: number; revenue: number }[]> {

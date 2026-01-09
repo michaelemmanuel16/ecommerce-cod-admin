@@ -19,3 +19,26 @@ global.console = {
   warn: jest.fn(),
   error: jest.fn(),
 };
+
+// Clear all timers and mocks after each test to prevent leaks
+afterEach(() => {
+  jest.clearAllTimers();
+  jest.clearAllMocks();
+});
+
+// Global cleanup after all tests
+afterAll(async () => {
+  // Import dynamically to avoid initialization issues
+  try {
+    const { default: prisma } = await import('../config/database');
+    await prisma.$disconnect();
+  } catch (error) {
+    // Database connection may not be initialized in all tests
+  }
+
+  // Clear all timers
+  jest.clearAllTimers();
+
+  // Give time for async operations to complete
+  await new Promise(resolve => setTimeout(resolve, 100));
+});

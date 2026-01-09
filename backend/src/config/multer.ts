@@ -49,7 +49,7 @@ const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterC
   }
 };
 
-// Configure multer
+// Configure multer for images (original)
 export const upload = multer({
   storage,
   fileFilter,
@@ -59,6 +59,33 @@ export const upload = multer({
     fields: 10,                  // Max 10 form fields (prevent field flooding)
     parts: 20,                   // Max 20 parts in multipart (prevent multipart DoS)
     headerPairs: 100             // Max 100 header pairs
+  }
+});
+
+// Memory storage for spreadsheet parsing
+export const memoryStorage = multer.memoryStorage();
+
+// File filter for spreadsheets - extension check only
+// Note: MIME type validation is done in the controller after file is uploaded
+// because file.buffer is not available during the filter stage
+const spreadsheetFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const allowedExtensions = ['.csv', '.xlsx', '.xls'];
+  const ext = path.extname(file.originalname).toLowerCase();
+
+  // First check extension
+  if (!allowedExtensions.includes(ext)) {
+    return cb(new AppError('Only CSV and Excel files are allowed', 400));
+  }
+
+  cb(null, true);
+};
+
+export const spreadsheetUpload = multer({
+  storage: memoryStorage,
+  fileFilter: spreadsheetFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+    files: 1
   }
 });
 
