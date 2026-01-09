@@ -11,18 +11,27 @@ const redisConfig = {
   password: process.env.REDIS_PASSWORD,
 };
 
-export const workflowQueue = new Bull('workflow-execution', {
-  redis: redisConfig,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 2000
+// Use dummy queue for tests to avoid Redis connection errors
+export const workflowQueue = process.env.NODE_ENV === 'test'
+  ? ({
+    process: () => { },
+    on: () => { },
+    add: () => { },
+    close: () => Promise.resolve(),
+  } as any)
+  : new Bull('workflow-execution', {
+    redis: redisConfig,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 2000
+      }
     }
-  }
-});
+  });
 
-workflowQueue.process('execute-workflow', async (job) => {
+
+workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
   const { executionId, workflowId, actions, conditions, input } = job.data;
 
   logger.info('Processing workflow execution', { executionId, workflowId, hasConditions: !!conditions });
@@ -330,11 +339,11 @@ async function executeAction(action: any, input: any, conditions?: any): Promise
   }
 }
 
-workflowQueue.on('completed', (job) => {
+workflowQueue.on('completed', (job: Bull.Job) => {
   logger.info('Workflow job completed', { jobId: job.id });
 });
 
-workflowQueue.on('failed', (job, err) => {
+workflowQueue.on('failed', (job: Bull.Job | undefined, err: Error) => {
   logger.error('Workflow job failed', { jobId: job?.id, error: err.message });
 });
 

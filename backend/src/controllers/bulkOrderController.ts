@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { OrderStatus } from '@prisma/client';
-import orderService from '../services/orderService';
+import orderService, { BulkImportOrderData } from '../services/orderService';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
 import { parse } from 'csv-parse/sync';
@@ -199,7 +199,7 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
         }
 
         // Map raw data to BulkImportOrderData interface with input sanitization
-        const mappedOrders = rawData.map(row => {
+        const sanitizedOrders = rawData.map((row: any) => {
             const customerNameInput = String(row['CUSTOMER NAME'] || row['Customer Name'] || row['name'] || '').trim();
             const sanitizedName = sanitizeName(customerNameInput, BULK_ORDER_CONFIG.NAME.MAX_LENGTH);
             const nameParts = sanitizedName.split(' ');
@@ -231,14 +231,42 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
                 status: status,
                 notes: sanitizeString(String(row['Notes'] || ''), BULK_ORDER_CONFIG.NOTES.MAX_LENGTH)
             };
-        }).filter(o => o.customerPhone && o.totalAmount > 0);
+        });
 
-        if (mappedOrders.length === 0) {
+        const validOrders = sanitizedOrders.filter((order: BulkImportOrderData) => {
+            // Basic presence check
+            if (!order.customerPhone || !order.totalAmount || !order.deliveryAddress) {
+                return false;
+            }
+
+            // 1. Phone validation: Must have 10-15 digits
+            const digitsOnly = order.customerPhone.replace(/\D/g, '');
+            if (digitsOnly.length < BULK_ORDER_CONFIG.PHONE_NUMBER.DIGITS_MIN ||
+                digitsOnly.length > BULK_ORDER_CONFIG.PHONE_NUMBER.DIGITS_MAX) {
+                return false;
+            }
+
+            // 2. Address validation: Minimum length after sanitization
+            if (order.deliveryAddress.length < BULK_ORDER_CONFIG.ADDRESS.MIN_LENGTH) {
+                return false;
+            }
+
+            // 3. Amount validation (already in schema but good to catch early)
+            if (isNaN(Number(order.totalAmount)) || Number(order.totalAmount) <= 0) {
+                return false;
+            }
+
+            return true;
+        });
+
+
+        if (validOrders.length === 0) {
             res.status(400).json({ message: 'No valid orders found in file' });
             return;
         }
 
-        const results = await orderService.bulkImportOrders(mappedOrders, req.user?.id);
+        const results = await orderService.bulkImportOrders(validOrders, req.user?.id);
+
 
         // Return results
         res.json({ results });

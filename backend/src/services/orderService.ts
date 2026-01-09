@@ -32,7 +32,7 @@ interface CreateOrderData {
   createdById?: number;
 }
 
-interface BulkImportOrderData {
+export interface BulkImportOrderData {
   customerPhone: string;
   customerFirstName?: string;
   customerLastName?: string;
@@ -345,10 +345,10 @@ export class OrderService {
     for (let i = 0; i < orders.length; i += BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) {
       const batch = orders.slice(i, i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE);
 
-      // Process each order in the batch
-      for (const orderData of batch) {
-        try {
-          await prisma.$transaction(async (tx) => {
+      // Process orders in the current batch in parallel
+      const batchResults = await Promise.allSettled(
+        batch.map(async (orderData) => {
+          return prisma.$transaction(async (tx) => {
             // Find or create customer
             let customer = await tx.customer.findUnique({
               where: { phoneNumber: orderData.customerPhone }
@@ -357,7 +357,7 @@ export class OrderService {
             // Enhanced duplicate detection - check multiple criteria
             if (customer) {
               const duplicateWindow = new Date(Date.now() - BULK_ORDER_CONFIG.DUPLICATE_DETECTION_WINDOW);
-              const duplicate = await tx.order.findFirst({
+              const duplicates = await tx.order.findMany({
                 where: {
                   customerId: customer.id,
                   totalAmount: orderData.totalAmount,
@@ -373,28 +373,19 @@ export class OrderService {
                 }
               });
 
-              // Check if product also matches (if both have products)
-              if (duplicate && orderData.productName) {
-                const duplicateProductName = duplicate.orderItems?.[0]?.product?.name;
-                if (duplicateProductName && duplicateProductName.toLowerCase().includes(orderData.productName.toLowerCase())) {
-                  results.duplicates++;
-                  logger.info('Duplicate order skipped - enhanced check', {
-                    customerId: customer.id,
-                    totalAmount: orderData.totalAmount,
-                    address: orderData.deliveryAddress,
-                    product: orderData.productName
-                  });
-                  return; // Exit transaction without creating order
+              for (const duplicate of duplicates) {
+                // If no product name in imported order, and we found an order with same amount/address/area, it's a duplicate
+                if (!orderData.productName) {
+                  throw new Error('DUPLICATE_ORDER');
                 }
-              } else if (duplicate && !orderData.productName) {
-                // If no product specified, skip based on customer + amount + address + area
-                results.duplicates++;
-                logger.info('Duplicate order skipped', {
-                  customerId: customer.id,
-                  totalAmount: orderData.totalAmount,
-                  address: orderData.deliveryAddress
-                });
-                return; // Exit transaction without creating order
+
+                // If product name is provided, check if any existing order item matches it
+                const duplicateProductName = duplicate.orderItems?.[0]?.product?.name;
+                if (duplicateProductName &&
+                  (duplicateProductName.toLowerCase().includes(orderData.productName.toLowerCase()) ||
+                    orderData.productName.toLowerCase().includes(duplicateProductName.toLowerCase()))) {
+                  throw new Error('DUPLICATE_ORDER');
+                }
               }
             }
 
@@ -411,14 +402,13 @@ export class OrderService {
                 }
               });
             } else if (orderData.customerAlternatePhone && !customer.alternatePhone) {
-              // Update alternate phone if it was missing
               await tx.customer.update({
                 where: { id: customer.id },
                 data: { alternatePhone: orderData.customerAlternatePhone }
               });
             }
 
-            // Handle product lookup if productName is provided
+            // Handle product lookup
             let orderItemsData: any[] = [];
             if (orderData.productName) {
               const product = await tx.product.findFirst({
@@ -453,9 +443,7 @@ export class OrderService {
                 status: orderData.status || 'pending_confirmation',
                 source: 'bulk_import',
                 createdById,
-                orderItems: orderItemsData.length > 0 ? {
-                  create: orderItemsData
-                } : undefined,
+                orderItems: orderItemsData.length > 0 ? { create: orderItemsData } : undefined,
                 orderHistory: {
                   create: {
                     status: orderData.status || 'pending_confirmation',
@@ -466,32 +454,43 @@ export class OrderService {
               }
             });
 
-            results.success++;
-            logger.info('Bulk import order created', { orderId: createdOrder.id });
+            return createdOrder;
+          });
+        })
+      );
 
-            // Emit socket event for each imported order
-            emitOrderCreated(io, createdOrder);
+      // Handle batch results
+      for (let idx = 0; idx < batchResults.length; idx++) {
+        const result = batchResults[idx];
+        const orderData = batch[idx];
 
-            // Trigger workflows for each imported order
-            workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
-              logger.error('Failed to trigger workflow for bulk imported order', {
-                orderId: createdOrder.id,
-                error: err.message
-              });
+        if (result.status === 'fulfilled') {
+          results.success++;
+          const createdOrder = result.value;
+          emitOrderCreated(io, createdOrder);
+          workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
+            logger.error('Failed to trigger workflow for bulk imported order', {
+              orderId: createdOrder.id,
+              error: err.message
             });
-          }); // End individual transaction
-        } catch (transactionError: any) {
-          results.failed++;
-          results.errors.push({
-            order: orderData,
-            error: transactionError.message
           });
-          logger.error('Failed to import order in transaction', {
-            error: transactionError.message,
-            orderData
-          });
+        } else {
+          const error = result.reason;
+          if (error.message === 'DUPLICATE_ORDER') {
+            results.duplicates++;
+          } else {
+            results.failed++;
+            results.errors.push({
+              order: orderData,
+              error: error.message
+            });
+            logger.error('Failed to import order', {
+              error: error.message,
+              orderData
+            });
+          }
         }
-      } // End batch processing
+      }
 
       // Emit progress update after each batch
       const processed = Math.min(i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE, orders.length);
@@ -685,7 +684,7 @@ export class OrderService {
       });
     });
 
-    logger.info(`Order updated: ${order.id}`, { orderId });
+    logger.info(`Order updated: ${order.id} `, { orderId });
     return updated;
   }
 
@@ -716,7 +715,7 @@ export class OrderService {
         orderHistory: {
           create: {
             status: data.status,
-            notes: data.notes || `Status changed to ${data.status}`,
+            notes: data.notes || `Status changed to ${data.status} `,
             changedBy: data.changedBy
           }
         }
@@ -764,7 +763,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Order status updated: ${order.id}`, {
+    logger.info(`Order status updated: ${order.id} `, {
       orderId,
       oldStatus: order.status,
       newStatus: data.status
@@ -849,7 +848,7 @@ export class OrderService {
       });
     });
 
-    logger.info(`Order cancelled: ${order.id}`, { orderId });
+    logger.info(`Order cancelled: ${order.id} `, { orderId });
     return { message: 'Order cancelled successfully' };
   }
 
@@ -907,7 +906,7 @@ export class OrderService {
         data: {
           orderId: order.id,
           status: order.status,
-          notes: `Order deleted by user ${userId || 'system'}`,
+          notes: `Order deleted by user ${userId || 'system'} `,
           changedBy: userId
         }
       });
@@ -919,7 +918,7 @@ export class OrderService {
       });
     });
 
-    logger.info(`Order soft deleted: ${order.id}`, { orderId, userId });
+    logger.info(`Order soft deleted: ${order.id} `, { orderId, userId });
     return { message: 'Order deleted successfully' };
   }
 
@@ -947,7 +946,7 @@ export class OrderService {
         orderHistory: {
           create: {
             status: order.status,
-            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName}`,
+            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName} `,
             changedBy,
             metadata: { assignedRepId: parseInt(customerRepId, 10) }
           }
@@ -964,7 +963,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Customer rep assigned to order: ${order.id}`, {
+    logger.info(`Customer rep assigned to order: ${order.id} `, {
       orderId,
       repId: customerRepId
     });
@@ -1004,7 +1003,7 @@ export class OrderService {
         orderHistory: {
           create: {
             status: order.status,
-            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName}`,
+            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName} `,
             changedBy,
             metadata: { assignedAgentId: parseInt(deliveryAgentId, 10) }
           }
@@ -1021,7 +1020,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Delivery agent assigned to order: ${order.id}`, {
+    logger.info(`Delivery agent assigned to order: ${order.id} `, {
       orderId,
       agentId: deliveryAgentId
     });
