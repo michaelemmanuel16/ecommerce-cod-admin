@@ -16,7 +16,7 @@ The bulk order management feature allows administrators to import and export ord
 - **Format Options**: CSV or XLSX
 - **Filter Support**: Export respects all active filters (status, area, date range, search)
 - **Template Compliance**: Exported files use the same format as the import template
-- **Record Limit**: Limited to 1,000 records per export for performance
+- **Record Limit**: Limited to 500 records per export for memory safety and performance
 
 ## Import Template Structure
 
@@ -80,8 +80,9 @@ If you exceed these limits, you'll receive a `429 Too Many Requests` error.
 
 1. **File Validation**: Both extension and MIME type are validated
 2. **Input Validation**: All data is validated using Zod schemas before processing
-3. **Transaction Safety**: All imports are wrapped in database transactions - if any part fails, all changes are rolled back
-4. **Audit Logging**: All bulk operations are logged for security auditing
+3. **Input Sanitization**: All user inputs are sanitized to prevent XSS and injection attacks
+4. **Transaction Safety**: Each order is processed in its own transaction for partial success - if one order fails, successfully imported orders are retained
+5. **Audit Logging**: All bulk operations are logged for security auditing
 
 ## Error Handling
 

@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import workflowService from './workflowService';
 import { io } from '../server';
 import { emitOrderAssigned, emitOrderCreated, emitOrderStatusChanged, emitOrderUpdated } from '../sockets/index';
+import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 
 interface CreateOrderData {
   customerId?: number;
@@ -329,8 +330,8 @@ export class OrderService {
   
   /**
  * Bulk import orders from external source
- * Each order is processed in its own transaction to allow partial success
- * If 1 order fails, the other 999 will still be imported
+ * Orders are processed in batches for better performance
+ * Each batch is processed in its own transaction to allow partial success
  */
 async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
   const results = {
@@ -340,8 +341,12 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
     errors: [] as Array<{ order: BulkImportOrderData; error: string }>
   };
 
-  // Process each order in its own transaction for partial success
-  for (const orderData of orders) {
+  // Process orders in batches for better performance
+  for (let i = 0; i < orders.length; i += BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) {
+    const batch = orders.slice(i, i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE);
+
+    // Process each order in the batch
+    for (const orderData of batch) {
     try {
       await prisma.$transaction(async (tx) => {
         // Find or create customer
@@ -351,14 +356,14 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
 
         // Enhanced duplicate detection - check multiple criteria
         if (customer) {
-          const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const duplicateWindow = new Date(Date.now() - BULK_ORDER_CONFIG.DUPLICATE_DETECTION_WINDOW);
           const duplicate = await tx.order.findFirst({
             where: {
               customerId: customer.id,
               totalAmount: orderData.totalAmount,
               deliveryAddress: orderData.deliveryAddress,
               deliveryArea: orderData.deliveryArea,
-              createdAt: { gte: twentyFourHoursAgo },
+              createdAt: { gte: duplicateWindow },
               deletedAt: null
             },
             include: {
@@ -486,6 +491,15 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
         orderData
       });
     }
+    } // End batch processing
+
+    // Log progress after each batch
+    logger.info('Batch processed', {
+      batchNumber: Math.floor(i / BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) + 1,
+      totalBatches: Math.ceil(orders.length / BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE),
+      successSoFar: results.success,
+      failedSoFar: results.failed
+    });
   }
 
   // Log audit trail

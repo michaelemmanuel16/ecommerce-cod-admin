@@ -9,6 +9,8 @@ import logger from '../utils/logger';
 import { exportQuerySchema } from '../utils/bulkOrderValidators';
 import { z } from 'zod';
 import fileType from 'file-type';
+import { sanitizeName, sanitizePhoneNumber, sanitizeAddress, sanitizeString } from '../utils/sanitizer';
+import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 
 export const exportOrders = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
@@ -34,7 +36,7 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
         }
 
         // Role-based filtering (logic duplicated from orderController for consistency)
-        let effectiveCustomerRepId = customerRepId ? Number(customerId) : undefined;
+        let effectiveCustomerRepId = customerRepId ? Number(customerRepId) : undefined;
         if (req.user?.role === 'sales_rep') {
             effectiveCustomerRepId = req.user.id;
         }
@@ -44,7 +46,7 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
             effectiveDeliveryAgentId = req.user.id;
         }
 
-        // Fetch orders without pagination for export (limit to 1000 to prevent memory exhaustion)
+        // Fetch orders without pagination for export (configurable limit to prevent memory exhaustion)
         const result = await orderService.getAllOrders({
             status: parsedStatus,
             customerId,
@@ -55,11 +57,28 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
             endDate: endDate ? new Date(endDate) : undefined,
             search,
             page: 1,
-            limit: 1000 // Reduced from 10000 to prevent memory exhaustion
+            limit: BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS
         });
 
-        const orders = result.orders.map(order => ({
-            'Date': order.createdAt.toISOString().split('T')[0],
+        // Log warning if limit was reached
+        if (result.orders.length === BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS && result.pagination.total > BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS) {
+            logger.warn('Export limit reached', {
+                total: result.pagination.total,
+                exported: BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS,
+                userId: req.user?.id
+            });
+        }
+
+        const orders = result.orders.map(order => {
+            // Format date as dd/mm/yyyy to match template
+            const date = new Date(order.createdAt);
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const formattedDate = `${day}/${month}/${year}`;
+
+            return {
+            'Date': formattedDate,
             'Customer Name': `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
             'Phone': order.customer?.phoneNumber || '',
             'Alternative Phone': order.customer?.alternatePhone || '',
@@ -74,7 +93,8 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
             'Delivery Agent': order.deliveryAgent ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}` : 'Unassigned',
             'Order ID': order.id,
             'Notes': order.notes || ''
-        }));
+        };
+        });
 
         if (format === 'xlsx') {
             const workbook = new ExcelJS.Workbook();
@@ -170,10 +190,10 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             return;
         }
 
-        // Map raw data to BulkImportOrderData interface
+        // Map raw data to BulkImportOrderData interface with input sanitization
         const mappedOrders = rawData.map(row => {
-            const customerPhone = String(row['PHONE NUMBER'] || row['Phone'] || row['phone'] || '').trim();
-            const customerName = String(row['CUSTOMER NAME'] || row['Customer Name'] || row['name'] || '').trim();
+            const customerPhone = sanitizePhoneNumber(row['PHONE NUMBER'] || row['Phone'] || row['phone'] || '');
+            const customerName = sanitizeString(row['CUSTOMER NAME'] || row['Customer Name'] || row['name'] || '');
             const nameParts = customerName.split(' ');
 
             const price = Number(row['PRICE'] || row['Price'] || row['Total Amount'] || row['total'] || 0);
@@ -189,19 +209,19 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
 
             return {
                 customerPhone,
-                customerFirstName: nameParts[0] || 'Unknown',
-                customerLastName: nameParts.slice(1).join(' ') || '',
-                customerAlternatePhone: String(row['ALTERNATIVE PHONE NUMBER'] || row['Alt Phone'] || '').trim(),
+                customerFirstName: sanitizeName(nameParts[0] || 'Unknown'),
+                customerLastName: sanitizeName(nameParts.slice(1).join(' ') || ''),
+                customerAlternatePhone: sanitizePhoneNumber(row['ALTERNATIVE PHONE NUMBER'] || row['Alt Phone'] || ''),
                 subtotal: totalAmount,
                 totalAmount: totalAmount,
-                deliveryAddress: String(row['CUSTOMER ADDRESS'] || row['Address'] || '').trim(),
-                deliveryState: String(row['REGION'] || row['Region'] || row['State'] || '').trim(),
-                deliveryArea: String(row['REGION'] || row['Region'] || row['Area'] || '').trim(),
-                productName: String(row['PRODUCT NAME'] || row['Product'] || '').trim(),
+                deliveryAddress: sanitizeAddress(row['CUSTOMER ADDRESS'] || row['Address'] || ''),
+                deliveryState: sanitizeString(row['REGION'] || row['Region'] || row['State'] || ''),
+                deliveryArea: sanitizeString(row['REGION'] || row['Region'] || row['Area'] || ''),
+                productName: sanitizeString(row['PRODUCT NAME'] || row['Product'] || ''),
                 quantity: quantity,
                 unitPrice: price,
                 status: status,
-                notes: String(row['Notes'] || '').trim()
+                notes: sanitizeString(row['Notes'] || '')
             };
         }).filter(o => o.customerPhone && o.totalAmount > 0);
 
