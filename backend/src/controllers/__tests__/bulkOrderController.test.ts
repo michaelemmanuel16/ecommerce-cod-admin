@@ -69,7 +69,7 @@ describe('Bulk Order Controller', () => {
 
             expect(orderService.getAllOrders).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    limit: 1000,
+                    limit: 500,
                     page: 1
                 })
             );
@@ -147,7 +147,7 @@ describe('Bulk Order Controller', () => {
 
             expect(orderService.getAllOrders).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    limit: 1000
+                    limit: 500
                 })
             );
         });
