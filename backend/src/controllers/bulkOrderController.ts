@@ -78,22 +78,22 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
             const formattedDate = `${day}/${month}/${year}`;
 
             return {
-            'Date': formattedDate,
-            'Customer Name': `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
-            'Phone': order.customer?.phoneNumber || '',
-            'Alternative Phone': order.customer?.alternatePhone || '',
-            'Address': order.deliveryAddress,
-            'Area': order.deliveryArea,
-            'State': order.deliveryState,
-            'Product Name': order.orderItems?.[0]?.product?.name || '',
-            'Quantity': order.orderItems?.[0]?.quantity || 0,
-            'Total Amount': order.totalAmount,
-            'Status': order.status,
-            'Customer Rep': order.customerRep ? `${order.customerRep.firstName} ${order.customerRep.lastName}` : 'Unassigned',
-            'Delivery Agent': order.deliveryAgent ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}` : 'Unassigned',
-            'Order ID': order.id,
-            'Notes': order.notes || ''
-        };
+                'Date': formattedDate,
+                'Customer Name': `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
+                'Phone': order.customer?.phoneNumber || '',
+                'Alternative Phone': order.customer?.alternatePhone || '',
+                'Address': order.deliveryAddress,
+                'Area': order.deliveryArea,
+                'State': order.deliveryState,
+                'Product Name': order.orderItems?.[0]?.product?.name || '',
+                'Quantity': order.orderItems?.[0]?.quantity || 0,
+                'Total Amount': order.totalAmount,
+                'Status': order.status,
+                'Customer Rep': order.customerRep ? `${order.customerRep.firstName} ${order.customerRep.lastName}` : 'Unassigned',
+                'Delivery Agent': order.deliveryAgent ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}` : 'Unassigned',
+                'Order ID': order.id,
+                'Notes': order.notes || ''
+            };
         });
 
         if (format === 'xlsx') {
@@ -137,6 +137,14 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
     try {
         if (!req.file) {
             res.status(400).json({ message: 'No file uploaded' });
+            return;
+        }
+
+        // Validate file size
+        if (req.file.size > BULK_ORDER_CONFIG.MAX_FILE_SIZE) {
+            res.status(400).json({
+                message: `File too large. Maximum size allowed is ${BULK_ORDER_CONFIG.MAX_FILE_SIZE / (1024 * 1024)}MB`
+            });
             return;
         }
 
@@ -192,9 +200,9 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
 
         // Map raw data to BulkImportOrderData interface with input sanitization
         const mappedOrders = rawData.map(row => {
-            const customerPhone = sanitizePhoneNumber(row['PHONE NUMBER'] || row['Phone'] || row['phone'] || '');
-            const customerName = sanitizeString(row['CUSTOMER NAME'] || row['Customer Name'] || row['name'] || '');
-            const nameParts = customerName.split(' ');
+            const customerNameInput = String(row['CUSTOMER NAME'] || row['Customer Name'] || row['name'] || '').trim();
+            const sanitizedName = sanitizeName(customerNameInput, BULK_ORDER_CONFIG.NAME.MAX_LENGTH);
+            const nameParts = sanitizedName.split(' ');
 
             const price = Number(row['PRICE'] || row['Price'] || row['Total Amount'] || row['total'] || 0);
             const quantity = Number(row['QUANTITY'] || row['Quantity'] || 1);
@@ -208,20 +216,20 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             }
 
             return {
-                customerPhone,
-                customerFirstName: sanitizeName(nameParts[0] || 'Unknown'),
-                customerLastName: sanitizeName(nameParts.slice(1).join(' ') || ''),
-                customerAlternatePhone: sanitizePhoneNumber(row['ALTERNATIVE PHONE NUMBER'] || row['Alt Phone'] || ''),
+                customerPhone: sanitizePhoneNumber(String(row['PHONE NUMBER'] || row['Phone'] || row['phone'] || '')),
+                customerFirstName: nameParts[0] || 'Unknown',
+                customerLastName: nameParts.slice(1).join(' ') || '',
+                customerAlternatePhone: sanitizePhoneNumber(String(row['ALTERNATIVE PHONE NUMBER'] || row['Alt Phone'] || '')),
                 subtotal: totalAmount,
                 totalAmount: totalAmount,
-                deliveryAddress: sanitizeAddress(row['CUSTOMER ADDRESS'] || row['Address'] || ''),
-                deliveryState: sanitizeString(row['REGION'] || row['Region'] || row['State'] || ''),
-                deliveryArea: sanitizeString(row['REGION'] || row['Region'] || row['Area'] || ''),
-                productName: sanitizeString(row['PRODUCT NAME'] || row['Product'] || ''),
+                deliveryAddress: sanitizeAddress(String(row['CUSTOMER ADDRESS'] || row['Address'] || ''), BULK_ORDER_CONFIG.ADDRESS.MAX_LENGTH),
+                deliveryState: sanitizeString(String(row['REGION'] || row['Region'] || row['State'] || ''), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
+                deliveryArea: sanitizeString(String(row['REGION'] || row['Region'] || row['Area'] || ''), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
+                productName: sanitizeString(String(row['PRODUCT NAME'] || row['Product'] || ''), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
                 quantity: quantity,
                 unitPrice: price,
                 status: status,
-                notes: sanitizeString(row['Notes'] || '')
+                notes: sanitizeString(String(row['Notes'] || ''), BULK_ORDER_CONFIG.NOTES.MAX_LENGTH)
             };
         }).filter(o => o.customerPhone && o.totalAmount > 0);
 

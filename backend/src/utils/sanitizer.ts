@@ -28,13 +28,19 @@ export function escapeHtml(input: string): string {
  * Sanitize string by removing potentially dangerous characters
  * but preserving valid unicode and common punctuation
  * @param input - String to sanitize
+ * @param maxLength - Optional maximum length
  * @returns Sanitized string
  */
-export function sanitizeString(input: string | null | undefined): string {
+export function sanitizeString(input: string | null | undefined, maxLength?: number): string {
   if (!input) return '';
 
   // Convert to string if not already
-  const str = String(input).trim();
+  let str = String(input).trim();
+
+  // Enforce length limit if provided
+  if (maxLength && str.length > maxLength) {
+    str = str.substring(0, maxLength);
+  }
 
   // Escape HTML to prevent XSS
   return escapeHtml(str);
@@ -43,43 +49,62 @@ export function sanitizeString(input: string | null | undefined): string {
 /**
  * Sanitize phone number - allow only digits, +, -, spaces, and parentheses
  * @param input - Phone number to sanitize
+ * @param maxLength - Optional maximum length
  * @returns Sanitized phone number
  */
-export function sanitizePhoneNumber(input: string | null | undefined): string {
+export function sanitizePhoneNumber(input: string | null | undefined, maxLength?: number): string {
   if (!input) return '';
 
+  let str = String(input).trim();
+
+  // Enforce length limit if provided
+  if (maxLength && str.length > maxLength) {
+    str = str.substring(0, maxLength);
+  }
+
   // Allow only valid phone number characters
-  return String(input).replace(/[^0-9+\-\s()]/g, '').trim();
+  return str.replace(/[^0-9+\-\s()]/g, '').trim();
 }
 
 /**
  * Sanitize address - escape HTML but preserve valid characters
  * @param input - Address to sanitize
+ * @param maxLength - Optional maximum length
  * @returns Sanitized address
  */
-export function sanitizeAddress(input: string | null | undefined): string {
+export function sanitizeAddress(input: string | null | undefined, maxLength?: number): string {
   if (!input) return '';
 
-  return sanitizeString(input);
+  return sanitizeString(input, maxLength);
 }
 
 /**
- * Sanitize name - escape HTML, allow letters, spaces, hyphens, apostrophes
+ * Sanitize name - allow letters (including many international scripts), spaces, hyphens, apostrophes, periods
+ * Strips HTML tags and other non-name characters.
  * @param input - Name to sanitize
+ * @param maxLength - Optional maximum length
  * @returns Sanitized name
  */
-export function sanitizeName(input: string | null | undefined): string {
+export function sanitizeName(input: string | null | undefined, maxLength?: number): string {
   if (!input) return '';
 
-  const str = String(input).trim();
+  let str = String(input).trim();
 
-  // Escape HTML entities
-  const escaped = escapeHtml(str);
+  // Enforce length limit if provided
+  if (maxLength && str.length > maxLength) {
+    str = str.substring(0, maxLength);
+  }
 
-  // Allow letters (including unicode), spaces, hyphens, apostrophes, periods
-  // This preserves names like "O'Brien", "Jean-Pierre", "María", "李明"
-  return escaped.replace(/[^a-zA-Z\u00C0-\u024F\u1E00-\u1EFF\s\-'.]/g, '').trim();
+  // Strip everything NOT allowed (including <, >, &, etc. which are not in the allowed regex)
+  // This effectively removes HTML tags and potential injection vectors for names
+  const allowedPattern = /[a-zA-Z\u00C0-\u017F\u0400-\u04FF\u0600-\u06FF\u0370-\u03FF\s\-'.]/g;
+  const matches = str.match(allowedPattern);
+  const stripped = matches ? matches.join('') : '';
+
+  // Escape HTML entities for the remaining characters (like apostrophes or periods if they were allowed)
+  return escapeHtml(stripped).trim();
 }
+
 
 /**
  * Sanitize email address
@@ -96,3 +121,4 @@ export function sanitizeEmail(input: string | null | undefined): string {
 
   return emailPattern.test(str) ? str : '';
 }
+

@@ -327,191 +327,207 @@ export class OrderService {
     return order;
   }
 
-  
+
   /**
  * Bulk import orders from external source
  * Orders are processed in batches for better performance
  * Each batch is processed in its own transaction to allow partial success
  */
-async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
-  const results = {
-    success: 0,
-    failed: 0,
-    duplicates: 0,
-    errors: [] as Array<{ order: BulkImportOrderData; error: string }>
-  };
+  async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
+    const results = {
+      success: 0,
+      failed: 0,
+      duplicates: 0,
+      errors: [] as Array<{ order: BulkImportOrderData; error: string }>
+    };
 
-  // Process orders in batches for better performance
-  for (let i = 0; i < orders.length; i += BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) {
-    const batch = orders.slice(i, i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE);
+    // Process orders in batches for better performance
+    for (let i = 0; i < orders.length; i += BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) {
+      const batch = orders.slice(i, i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE);
 
-    // Process each order in the batch
-    for (const orderData of batch) {
-    try {
-      await prisma.$transaction(async (tx) => {
-        // Find or create customer
-        let customer = await tx.customer.findUnique({
-          where: { phoneNumber: orderData.customerPhone }
-        });
-
-        // Enhanced duplicate detection - check multiple criteria
-        if (customer) {
-          const duplicateWindow = new Date(Date.now() - BULK_ORDER_CONFIG.DUPLICATE_DETECTION_WINDOW);
-          const duplicate = await tx.order.findFirst({
-            where: {
-              customerId: customer.id,
-              totalAmount: orderData.totalAmount,
-              deliveryAddress: orderData.deliveryAddress,
-              deliveryArea: orderData.deliveryArea,
-              createdAt: { gte: duplicateWindow },
-              deletedAt: null
-            },
-            include: {
-              orderItems: {
-                include: { product: true }
-              }
-            }
-          });
-
-          // Check if product also matches (if both have products)
-          if (duplicate && orderData.productName) {
-            const duplicateProductName = duplicate.orderItems?.[0]?.product?.name;
-            if (duplicateProductName && duplicateProductName.toLowerCase().includes(orderData.productName.toLowerCase())) {
-              results.duplicates++;
-              logger.info('Duplicate order skipped - enhanced check', {
-                customerId: customer.id,
-                totalAmount: orderData.totalAmount,
-                address: orderData.deliveryAddress,
-                product: orderData.productName
-              });
-              return; // Exit transaction without creating order
-            }
-          } else if (duplicate && !orderData.productName) {
-            // If no product specified, skip based on customer + amount + address + area
-            results.duplicates++;
-            logger.info('Duplicate order skipped', {
-              customerId: customer.id,
-              totalAmount: orderData.totalAmount,
-              address: orderData.deliveryAddress
+      // Process each order in the batch
+      for (const orderData of batch) {
+        try {
+          await prisma.$transaction(async (tx) => {
+            // Find or create customer
+            let customer = await tx.customer.findUnique({
+              where: { phoneNumber: orderData.customerPhone }
             });
-            return; // Exit transaction without creating order
-          }
-        }
 
-        if (!customer) {
-          customer = await tx.customer.create({
-            data: {
-              firstName: orderData.customerFirstName || 'Unknown',
-              lastName: orderData.customerLastName || '',
-              phoneNumber: orderData.customerPhone,
-              alternatePhone: orderData.customerAlternatePhone,
-              address: orderData.deliveryAddress,
-              state: orderData.deliveryState,
-              area: orderData.deliveryArea
-            }
-          });
-        } else if (orderData.customerAlternatePhone && !customer.alternatePhone) {
-          // Update alternate phone if it was missing
-          await tx.customer.update({
-            where: { id: customer.id },
-            data: { alternatePhone: orderData.customerAlternatePhone }
-          });
-        }
+            // Enhanced duplicate detection - check multiple criteria
+            if (customer) {
+              const duplicateWindow = new Date(Date.now() - BULK_ORDER_CONFIG.DUPLICATE_DETECTION_WINDOW);
+              const duplicate = await tx.order.findFirst({
+                where: {
+                  customerId: customer.id,
+                  totalAmount: orderData.totalAmount,
+                  deliveryAddress: orderData.deliveryAddress,
+                  deliveryArea: orderData.deliveryArea,
+                  createdAt: { gte: duplicateWindow },
+                  deletedAt: null
+                },
+                include: {
+                  orderItems: {
+                    include: { product: true }
+                  }
+                }
+              });
 
-        // Handle product lookup if productName is provided
-        let orderItemsData: any[] = [];
-        if (orderData.productName) {
-          const product = await tx.product.findFirst({
-            where: {
-              OR: [
-                { name: { contains: orderData.productName, mode: 'insensitive' } },
-                { sku: { contains: orderData.productName, mode: 'insensitive' } }
-              ]
-            }
-          });
-
-          if (product) {
-            orderItemsData = [{
-              productId: product.id,
-              quantity: orderData.quantity || 1,
-              unitPrice: orderData.unitPrice || product.price,
-              totalPrice: (orderData.quantity || 1) * (orderData.unitPrice || product.price)
-            }];
-          }
-        }
-
-        const createdOrder = await tx.order.create({
-          data: {
-            customerId: customer.id,
-            subtotal: orderData.subtotal,
-            totalAmount: orderData.totalAmount,
-            codAmount: orderData.totalAmount,
-            deliveryAddress: orderData.deliveryAddress,
-            deliveryState: orderData.deliveryState,
-            deliveryArea: orderData.deliveryArea,
-            notes: orderData.notes,
-            status: orderData.status || 'pending_confirmation',
-            source: 'bulk_import',
-            createdById,
-            orderItems: orderItemsData.length > 0 ? {
-              create: orderItemsData
-            } : undefined,
-            orderHistory: {
-              create: {
-                status: orderData.status || 'pending_confirmation',
-                notes: 'Order imported via bulk CSV',
-                changedBy: createdById
+              // Check if product also matches (if both have products)
+              if (duplicate && orderData.productName) {
+                const duplicateProductName = duplicate.orderItems?.[0]?.product?.name;
+                if (duplicateProductName && duplicateProductName.toLowerCase().includes(orderData.productName.toLowerCase())) {
+                  results.duplicates++;
+                  logger.info('Duplicate order skipped - enhanced check', {
+                    customerId: customer.id,
+                    totalAmount: orderData.totalAmount,
+                    address: orderData.deliveryAddress,
+                    product: orderData.productName
+                  });
+                  return; // Exit transaction without creating order
+                }
+              } else if (duplicate && !orderData.productName) {
+                // If no product specified, skip based on customer + amount + address + area
+                results.duplicates++;
+                logger.info('Duplicate order skipped', {
+                  customerId: customer.id,
+                  totalAmount: orderData.totalAmount,
+                  address: orderData.deliveryAddress
+                });
+                return; // Exit transaction without creating order
               }
             }
-          }
-        });
 
-        results.success++;
-        logger.info('Bulk import order created', { orderId: createdOrder.id });
+            if (!customer) {
+              customer = await tx.customer.create({
+                data: {
+                  firstName: orderData.customerFirstName || 'Unknown',
+                  lastName: orderData.customerLastName || '',
+                  phoneNumber: orderData.customerPhone,
+                  alternatePhone: orderData.customerAlternatePhone,
+                  address: orderData.deliveryAddress,
+                  state: orderData.deliveryState,
+                  area: orderData.deliveryArea
+                }
+              });
+            } else if (orderData.customerAlternatePhone && !customer.alternatePhone) {
+              // Update alternate phone if it was missing
+              await tx.customer.update({
+                where: { id: customer.id },
+                data: { alternatePhone: orderData.customerAlternatePhone }
+              });
+            }
 
-        // Emit socket event for each imported order
-        emitOrderCreated(io, createdOrder);
+            // Handle product lookup if productName is provided
+            let orderItemsData: any[] = [];
+            if (orderData.productName) {
+              const product = await tx.product.findFirst({
+                where: {
+                  OR: [
+                    { name: { contains: orderData.productName, mode: 'insensitive' } },
+                    { sku: { contains: orderData.productName, mode: 'insensitive' } }
+                  ]
+                }
+              });
 
-        // Trigger workflows for each imported order
-        workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
-          logger.error('Failed to trigger workflow for bulk imported order', {
-            orderId: createdOrder.id,
-            error: err.message
+              if (product) {
+                orderItemsData = [{
+                  productId: product.id,
+                  quantity: orderData.quantity || 1,
+                  unitPrice: orderData.unitPrice || product.price,
+                  totalPrice: (orderData.quantity || 1) * (orderData.unitPrice || product.price)
+                }];
+              }
+            }
+
+            const createdOrder = await tx.order.create({
+              data: {
+                customerId: customer.id,
+                subtotal: orderData.subtotal,
+                totalAmount: orderData.totalAmount,
+                codAmount: orderData.totalAmount,
+                deliveryAddress: orderData.deliveryAddress,
+                deliveryState: orderData.deliveryState,
+                deliveryArea: orderData.deliveryArea,
+                notes: orderData.notes,
+                status: orderData.status || 'pending_confirmation',
+                source: 'bulk_import',
+                createdById,
+                orderItems: orderItemsData.length > 0 ? {
+                  create: orderItemsData
+                } : undefined,
+                orderHistory: {
+                  create: {
+                    status: orderData.status || 'pending_confirmation',
+                    notes: 'Order imported via bulk CSV',
+                    changedBy: createdById
+                  }
+                }
+              }
+            });
+
+            results.success++;
+            logger.info('Bulk import order created', { orderId: createdOrder.id });
+
+            // Emit socket event for each imported order
+            emitOrderCreated(io, createdOrder);
+
+            // Trigger workflows for each imported order
+            workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
+              logger.error('Failed to trigger workflow for bulk imported order', {
+                orderId: createdOrder.id,
+                error: err.message
+              });
+            });
+          }); // End individual transaction
+        } catch (transactionError: any) {
+          results.failed++;
+          results.errors.push({
+            order: orderData,
+            error: transactionError.message
           });
-        });
-      }); // End individual transaction
-    } catch (transactionError: any) {
-      results.failed++;
-      results.errors.push({
-        order: orderData,
-        error: transactionError.message
+          logger.error('Failed to import order in transaction', {
+            error: transactionError.message,
+            orderData
+          });
+        }
+      } // End batch processing
+
+      // Emit progress update after each batch
+      const processed = Math.min(i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE, orders.length);
+      const progress = Math.round((processed / orders.length) * 100);
+
+      io.emit('bulk_import_progress', {
+        progress,
+        processed,
+        total: orders.length,
+        success: results.success,
+        failed: results.failed,
+        duplicates: results.duplicates
       });
-      logger.error('Failed to import order in transaction', {
-        error: transactionError.message,
-        orderData
+
+      // Log progress after each batch
+      logger.info('Batch processed', {
+        progress,
+        processed,
+        total: orders.length,
+        batchNumber: Math.floor(i / BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) + 1,
+        totalBatches: Math.ceil(orders.length / BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE),
+        successSoFar: results.success,
+        failedSoFar: results.failed
       });
     }
-    } // End batch processing
 
-    // Log progress after each batch
-    logger.info('Batch processed', {
-      batchNumber: Math.floor(i / BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) + 1,
-      totalBatches: Math.ceil(orders.length / BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE),
-      successSoFar: results.success,
-      failedSoFar: results.failed
+    // Log audit trail
+    logger.info('Bulk import completed', {
+      success: results.success,
+      failed: results.failed,
+      duplicates: results.duplicates,
+      userId: createdById
     });
+
+    return results;
   }
-
-  // Log audit trail
-  logger.info('Bulk import completed', {
-    success: results.success,
-    failed: results.failed,
-    duplicates: results.duplicates,
-    userId: createdById
-  });
-
-  return results;
-}
 
   /**
    * Get single order by ID
