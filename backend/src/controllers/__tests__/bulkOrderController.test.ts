@@ -69,7 +69,7 @@ describe('Bulk Order Controller', () => {
 
             expect(orderService.getAllOrders).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    limit: 1000,
+                    limit: 500,
                     page: 1
                 })
             );
@@ -147,7 +147,7 @@ describe('Bulk Order Controller', () => {
 
             expect(orderService.getAllOrders).toHaveBeenCalledWith(
                 expect.objectContaining({
-                    limit: 1000
+                    limit: 500
                 })
             );
         });
@@ -179,6 +179,54 @@ describe('Bulk Order Controller', () => {
 
             expect(statusMock).toHaveBeenCalledWith(400);
             expect(jsonMock).toHaveBeenCalledWith({ message: 'Unsupported file format' });
+        });
+
+        it('should return 400 if file size exceeds limit', async () => {
+            mockReq = {
+                file: {
+                    originalname: 'orders.csv',
+                    buffer: Buffer.from('test'),
+                    size: 11 * 1024 * 1024 // 11MB
+                },
+                user: { id: 1 }
+            } as any;
+
+            await bulkOrderController.uploadOrders(mockReq as any, mockRes as Response);
+
+            expect(statusMock).toHaveBeenCalledWith(400);
+            expect(jsonMock).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: expect.stringContaining('File too large')
+                })
+            );
+        });
+
+        it('should truncate overly long names during import', async () => {
+            const longName = 'A'.repeat(200);
+            const csvContent = `CUSTOMER NAME,PHONE NUMBER,CUSTOMER ADDRESS,REGION,PRICE,QUANTITY
+${longName},+233123456789,123 Main St,Accra,250,1`;
+
+            mockReq = {
+                file: {
+                    originalname: 'orders.csv',
+                    buffer: Buffer.from(csvContent),
+                    size: csvContent.length
+                },
+                user: { id: 1 }
+            } as any;
+
+            (orderService.bulkImportOrders as jest.Mock).mockResolvedValue({ success: 1 });
+
+            await bulkOrderController.uploadOrders(mockReq as any, mockRes as Response);
+
+            expect(orderService.bulkImportOrders).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        customerFirstName: 'A'.repeat(100)
+                    })
+                ]),
+                expect.any(Number)
+            );
         });
 
         it('should successfully import valid CSV file', async () => {

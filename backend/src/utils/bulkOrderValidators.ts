@@ -1,11 +1,16 @@
 import { z } from 'zod';
 import { OrderStatus } from '@prisma/client';
 
-// Phone number validation (basic international format)
+// Phone number validation (international format with proper validation)
 const phoneNumberSchema = z.string()
     .min(10, 'Phone number must be at least 10 digits')
-    .max(15, 'Phone number must be at most 15 digits')
-    .regex(/^[0-9+\-\s()]+$/, 'Invalid phone number format');
+    .max(20, 'Phone number must be at most 20 characters')
+    .regex(/^\+?[0-9]{1,4}?[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}$/, 'Invalid phone number format')
+    .refine((val) => {
+        // Extract only digits to validate minimum length
+        const digits = val.replace(/\D/g, '');
+        return digits.length >= 10 && digits.length <= 15;
+    }, 'Phone number must contain 10-15 digits');
 
 // Order status enum validation
 const orderStatusSchema = z.nativeEnum(OrderStatus).optional();

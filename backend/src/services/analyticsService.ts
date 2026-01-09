@@ -31,10 +31,17 @@ async function withTimeout<T>(
   timeoutMs: number = 15000,
   errorMessage: string = 'Query timeout'
 ): Promise<T> {
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
-  );
-  return Promise.race([promise, timeout]);
+  let timeoutId: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([promise, timeout]);
+    return result;
+  } finally {
+    clearTimeout(timeoutId!);
+  }
 }
 
 export class AnalyticsService {

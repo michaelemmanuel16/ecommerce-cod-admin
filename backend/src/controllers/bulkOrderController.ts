@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { OrderStatus } from '@prisma/client';
-import orderService from '../services/orderService';
+import orderService, { BulkImportOrderData } from '../services/orderService';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
 import { parse } from 'csv-parse/sync';
@@ -9,6 +9,8 @@ import logger from '../utils/logger';
 import { exportQuerySchema } from '../utils/bulkOrderValidators';
 import { z } from 'zod';
 import fileType from 'file-type';
+import { sanitizeName, sanitizePhoneNumber, sanitizeAddress, sanitizeString } from '../utils/sanitizer';
+import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 
 export const exportOrders = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
@@ -34,7 +36,7 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
         }
 
         // Role-based filtering (logic duplicated from orderController for consistency)
-        let effectiveCustomerRepId = customerRepId ? Number(customerId) : undefined;
+        let effectiveCustomerRepId = customerRepId ? Number(customerRepId) : undefined;
         if (req.user?.role === 'sales_rep') {
             effectiveCustomerRepId = req.user.id;
         }
@@ -44,7 +46,7 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
             effectiveDeliveryAgentId = req.user.id;
         }
 
-        // Fetch orders without pagination for export (limit to 1000 to prevent memory exhaustion)
+        // Fetch orders without pagination for export (configurable limit to prevent memory exhaustion)
         const result = await orderService.getAllOrders({
             status: parsedStatus,
             customerId,
@@ -55,26 +57,44 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
             endDate: endDate ? new Date(endDate) : undefined,
             search,
             page: 1,
-            limit: 1000 // Reduced from 10000 to prevent memory exhaustion
+            limit: BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS
         });
 
-        const orders = result.orders.map(order => ({
-            'Date': order.createdAt.toISOString().split('T')[0],
-            'Customer Name': `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
-            'Phone': order.customer?.phoneNumber || '',
-            'Alternative Phone': order.customer?.alternatePhone || '',
-            'Address': order.deliveryAddress,
-            'Area': order.deliveryArea,
-            'State': order.deliveryState,
-            'Product Name': order.orderItems?.[0]?.product?.name || '',
-            'Quantity': order.orderItems?.[0]?.quantity || 0,
-            'Total Amount': order.totalAmount,
-            'Status': order.status,
-            'Customer Rep': order.customerRep ? `${order.customerRep.firstName} ${order.customerRep.lastName}` : 'Unassigned',
-            'Delivery Agent': order.deliveryAgent ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}` : 'Unassigned',
-            'Order ID': order.id,
-            'Notes': order.notes || ''
-        }));
+        // Log warning if limit was reached
+        if (result.orders.length === BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS && result.pagination.total > BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS) {
+            logger.warn('Export limit reached', {
+                total: result.pagination.total,
+                exported: BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS,
+                userId: req.user?.id
+            });
+        }
+
+        const orders = result.orders.map(order => {
+            // Format date as dd/mm/yyyy to match template
+            const date = new Date(order.createdAt);
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const formattedDate = `${day}/${month}/${year}`;
+
+            return {
+                'Date': formattedDate,
+                'Customer Name': `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
+                'Phone': order.customer?.phoneNumber || '',
+                'Alternative Phone': order.customer?.alternatePhone || '',
+                'Address': order.deliveryAddress,
+                'Area': order.deliveryArea,
+                'State': order.deliveryState,
+                'Product Name': order.orderItems?.[0]?.product?.name || '',
+                'Quantity': order.orderItems?.[0]?.quantity || 0,
+                'Total Amount': order.totalAmount,
+                'Status': order.status,
+                'Customer Rep': order.customerRep ? `${order.customerRep.firstName} ${order.customerRep.lastName}` : 'Unassigned',
+                'Delivery Agent': order.deliveryAgent ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}` : 'Unassigned',
+                'Order ID': order.id,
+                'Notes': order.notes || ''
+            };
+        });
 
         if (format === 'xlsx') {
             const workbook = new ExcelJS.Workbook();
@@ -117,6 +137,14 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
     try {
         if (!req.file) {
             res.status(400).json({ message: 'No file uploaded' });
+            return;
+        }
+
+        // Validate file size
+        if (req.file.size > BULK_ORDER_CONFIG.MAX_FILE_SIZE) {
+            res.status(400).json({
+                message: `File too large. Maximum size allowed is ${BULK_ORDER_CONFIG.MAX_FILE_SIZE / (1024 * 1024)}MB`
+            });
             return;
         }
 
@@ -170,11 +198,11 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             return;
         }
 
-        // Map raw data to BulkImportOrderData interface
-        const mappedOrders = rawData.map(row => {
-            const customerPhone = String(row['PHONE NUMBER'] || row['Phone'] || row['phone'] || '').trim();
-            const customerName = String(row['CUSTOMER NAME'] || row['Customer Name'] || row['name'] || '').trim();
-            const nameParts = customerName.split(' ');
+        // Map raw data to BulkImportOrderData interface with input sanitization
+        const sanitizedOrders = rawData.map((row: any) => {
+            const customerNameInput = String(row['CUSTOMER NAME'] || row['Customer Name'] || row['name'] || '').trim();
+            const sanitizedName = sanitizeName(customerNameInput, BULK_ORDER_CONFIG.NAME.MAX_LENGTH);
+            const nameParts = sanitizedName.split(' ');
 
             const price = Number(row['PRICE'] || row['Price'] || row['Total Amount'] || row['total'] || 0);
             const quantity = Number(row['QUANTITY'] || row['Quantity'] || 1);
@@ -188,29 +216,57 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             }
 
             return {
-                customerPhone,
+                customerPhone: sanitizePhoneNumber(String(row['PHONE NUMBER'] || row['Phone'] || row['phone'] || '')),
                 customerFirstName: nameParts[0] || 'Unknown',
                 customerLastName: nameParts.slice(1).join(' ') || '',
-                customerAlternatePhone: String(row['ALTERNATIVE PHONE NUMBER'] || row['Alt Phone'] || '').trim(),
+                customerAlternatePhone: sanitizePhoneNumber(String(row['ALTERNATIVE PHONE NUMBER'] || row['Alt Phone'] || '')),
                 subtotal: totalAmount,
                 totalAmount: totalAmount,
-                deliveryAddress: String(row['CUSTOMER ADDRESS'] || row['Address'] || '').trim(),
-                deliveryState: String(row['REGION'] || row['Region'] || row['State'] || '').trim(),
-                deliveryArea: String(row['REGION'] || row['Region'] || row['Area'] || '').trim(),
-                productName: String(row['PRODUCT NAME'] || row['Product'] || '').trim(),
+                deliveryAddress: sanitizeAddress(String(row['CUSTOMER ADDRESS'] || row['Address'] || ''), BULK_ORDER_CONFIG.ADDRESS.MAX_LENGTH),
+                deliveryState: sanitizeString(String(row['REGION'] || row['Region'] || row['State'] || ''), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
+                deliveryArea: sanitizeString(String(row['REGION'] || row['Region'] || row['Area'] || ''), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
+                productName: sanitizeString(String(row['PRODUCT NAME'] || row['Product'] || ''), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
                 quantity: quantity,
                 unitPrice: price,
                 status: status,
-                notes: String(row['Notes'] || '').trim()
+                notes: sanitizeString(String(row['Notes'] || ''), BULK_ORDER_CONFIG.NOTES.MAX_LENGTH)
             };
-        }).filter(o => o.customerPhone && o.totalAmount > 0);
+        });
 
-        if (mappedOrders.length === 0) {
+        const validOrders = sanitizedOrders.filter((order: BulkImportOrderData) => {
+            // Basic presence check
+            if (!order.customerPhone || !order.totalAmount || !order.deliveryAddress) {
+                return false;
+            }
+
+            // 1. Phone validation: Must have 10-15 digits
+            const digitsOnly = order.customerPhone.replace(/\D/g, '');
+            if (digitsOnly.length < BULK_ORDER_CONFIG.PHONE_NUMBER.DIGITS_MIN ||
+                digitsOnly.length > BULK_ORDER_CONFIG.PHONE_NUMBER.DIGITS_MAX) {
+                return false;
+            }
+
+            // 2. Address validation: Minimum length after sanitization
+            if (order.deliveryAddress.length < BULK_ORDER_CONFIG.ADDRESS.MIN_LENGTH) {
+                return false;
+            }
+
+            // 3. Amount validation (already in schema but good to catch early)
+            if (isNaN(Number(order.totalAmount)) || Number(order.totalAmount) <= 0) {
+                return false;
+            }
+
+            return true;
+        });
+
+
+        if (validOrders.length === 0) {
             res.status(400).json({ message: 'No valid orders found in file' });
             return;
         }
 
-        const results = await orderService.bulkImportOrders(mappedOrders, req.user?.id);
+        const results = await orderService.bulkImportOrders(validOrders, req.user?.id);
+
 
         // Return results
         res.json({ results });

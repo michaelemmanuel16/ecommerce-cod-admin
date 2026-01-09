@@ -231,12 +231,12 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
                                 <div className="space-y-3">
                                     <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Error Details</h3>
                                     <div className="border border-gray-100 rounded-lg divide-y divide-gray-100 overflow-hidden max-h-60 overflow-y-auto">
-                                        {results.errors.map((err: any, idx: number) => (
+                                        {results.errors.map((err: BulkImportResults['errors'][0], idx: number) => (
                                             <div key={idx} className="p-3 bg-white hover:bg-gray-50 transition-colors">
                                                 <div className="flex items-start justify-between gap-4">
                                                     <div className="min-w-0">
                                                         <p className="text-sm font-semibold text-gray-900 truncate">
-                                                            Phone: {err.order?.customerPhone || 'Unknown'}
+                                                            Phone: {(err.order as { customerPhone?: string })?.customerPhone || 'Unknown'}
                                                         </p>
                                                         <p className="text-xs text-red-600 mt-1">{err.error}</p>
                                                     </div>

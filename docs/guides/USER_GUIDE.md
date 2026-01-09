@@ -22,7 +22,7 @@ Complete guide for using the E-Commerce COD Admin Dashboard.
 
 Welcome to the E-Commerce COD Admin Dashboard! This comprehensive order management system helps you efficiently handle Cash on Delivery (COD) orders with features like:
 
-- Visual Kanban board for order tracking
+- High-performance list view for order tracking
 - Automated workflow rules
 - Customer relationship management
 - Product inventory management
@@ -140,20 +140,9 @@ Use the quick action buttons to:
 
 The heart of the system - manage all your COD orders efficiently.
 
-### Order Kanban Board
+### Order List View (Primary)
 
-The Kanban board provides a visual workflow for managing orders.
-
-```
-┌──────────┬──────────┬──────────┬──────────┬──────────┐
-│ PENDING  │CONFIRMED │PROCESSING│ SHIPPED  │DELIVERED │
-├──────────┼──────────┼──────────┼──────────┼──────────┤
-│ Order 1  │ Order 5  │ Order 8  │ Order 12 │ Order 15 │
-│ Order 2  │ Order 6  │ Order 9  │ Order 13 │ Order 16 │
-│ Order 3  │ Order 7  │ Order 10 │ Order 14 │ Order 17 │
-│ Order 4  │          │ Order 11 │          │          │
-└──────────┴──────────┴──────────┴──────────┴──────────┘
-```
+The Order List View is the high-performance engine for managing your COD operations. It is optimized for speed and high volume.
 
 **Order Statuses:**
 1. **PENDING** - New orders waiting for review
@@ -205,11 +194,9 @@ The Kanban board provides a visual workflow for managing orders.
 
 #### Updating Order Status
 
-**Method 1: Drag and Drop**
-1. Click and hold an order card
-2. Drag to target status column
-3. Release to drop
-4. Confirm status change if prompted
+1. Select order(s) via checkboxes
+2. Use "Batch Actions" or individual row actions
+3. Confirm status change
 
 **Method 2: Order Details**
 1. Open order details
@@ -229,27 +216,27 @@ The Kanban board provides a visual workflow for managing orders.
    - Notes
 4. Click "Save Changes"
 
-#### Bulk Operations
+#### Bulk Operations (Import/Export)
 
-Select multiple orders for bulk actions:
+The dashboard supports bulk management of orders via CSV and XLSX files.
 
-1. **Enable Selection Mode**
-   - Click checkbox icon in toolbar
-   - Checkboxes appear on order cards
+**Exporting Orders:**
+1. Navigate to the Orders page.
+2. Click the **Export** button.
+3. Select the desired format (CSV or Excel).
+4. ⚠️ **Note**: Exports are currently limited to **500 records** per request to ensure optimal system performance.
 
-2. **Select Orders**
-   - Click checkboxes on desired orders
-   - Or use "Select All" option
-
-3. **Choose Action**
-   - Update Status
-   - Assign to User
-   - Export Data
-   - Print Labels
-
-4. **Execute**
-   - Confirm bulk operation
-   - View progress and results
+**Importing Orders:**
+1. Click the **Import** button in the Orders view.
+2. Upload a valid CSV or XLSX file.
+3. ⚠️ **File Requirements**:
+   - Maximum file size: **10MB**.
+   - Required Columns: CUSTOMER NAME, PHONE NUMBER, CUSTOMER ADDRESS, REGION, PRODUCT NAME, PRICE, QUANTITY.
+4. **Real-time Progress**: A progress bar will appear during large imports, providing live updates on successful, failed, and duplicate records.
+5. **Security & Validation**: 
+   - All input data is automatically sanitized for XSS protection.
+   - Long field values (names, addresses) will be automatically truncated to safe lengths.
+   - Phone numbers must contain between 10-15 digits.
 
 ### Filtering Orders
 
@@ -1010,10 +997,15 @@ Settings: Edit    ✓      ✗       ✗
 - Clear browser cache
 
 **Export Failed**
-- Check data size (may be too large)
-- Try smaller date range
-- Check internet connection
-- Retry after few minutes
+- Check data size (limit is 500 records).
+- Try smaller date range.
+- Check internet connection.
+- Retry after few minutes.
+
+**Import Failed**
+- Ensure file is under 10MB.
+- Check that all required columns are present.
+- Verify that phone numbers are formatted correctly.
 
 **Webhook Not Receiving Orders**
 - Verify webhook URL is correct
