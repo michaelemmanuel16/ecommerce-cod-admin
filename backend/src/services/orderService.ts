@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import workflowService from './workflowService';
 import { io } from '../server';
 import { emitOrderAssigned, emitOrderCreated, emitOrderStatusChanged, emitOrderUpdated } from '../sockets/index';
+import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 
 interface CreateOrderData {
   customerId?: number;
@@ -31,7 +32,7 @@ interface CreateOrderData {
   createdById?: number;
 }
 
-interface BulkImportOrderData {
+export interface BulkImportOrderData {
   customerPhone: string;
   customerFirstName?: string;
   customerLastName?: string;
@@ -326,178 +327,206 @@ export class OrderService {
     return order;
   }
 
-  
+
   /**
  * Bulk import orders from external source
- * Each order is processed in its own transaction to allow partial success
- * If 1 order fails, the other 999 will still be imported
+ * Orders are processed in batches for better performance
+ * Each batch is processed in its own transaction to allow partial success
  */
-async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
-  const results = {
-    success: 0,
-    failed: 0,
-    duplicates: 0,
-    errors: [] as Array<{ order: BulkImportOrderData; error: string }>
-  };
+  async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
+    const results = {
+      success: 0,
+      failed: 0,
+      duplicates: 0,
+      errors: [] as Array<{ order: BulkImportOrderData; error: string }>
+    };
 
-  // Process each order in its own transaction for partial success
-  for (const orderData of orders) {
-    try {
-      await prisma.$transaction(async (tx) => {
-        // Find or create customer
-        let customer = await tx.customer.findUnique({
-          where: { phoneNumber: orderData.customerPhone }
-        });
+    // Process orders in batches for better performance
+    for (let i = 0; i < orders.length; i += BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) {
+      const batch = orders.slice(i, i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE);
 
-        // Enhanced duplicate detection - check multiple criteria
-        if (customer) {
-          const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          const duplicate = await tx.order.findFirst({
-            where: {
-              customerId: customer.id,
-              totalAmount: orderData.totalAmount,
-              deliveryAddress: orderData.deliveryAddress,
-              deliveryArea: orderData.deliveryArea,
-              createdAt: { gte: twentyFourHoursAgo },
-              deletedAt: null
-            },
-            include: {
-              orderItems: {
-                include: { product: true }
-              }
-            }
-          });
-
-          // Check if product also matches (if both have products)
-          if (duplicate && orderData.productName) {
-            const duplicateProductName = duplicate.orderItems?.[0]?.product?.name;
-            if (duplicateProductName && duplicateProductName.toLowerCase().includes(orderData.productName.toLowerCase())) {
-              results.duplicates++;
-              logger.info('Duplicate order skipped - enhanced check', {
-                customerId: customer.id,
-                totalAmount: orderData.totalAmount,
-                address: orderData.deliveryAddress,
-                product: orderData.productName
-              });
-              return; // Exit transaction without creating order
-            }
-          } else if (duplicate && !orderData.productName) {
-            // If no product specified, skip based on customer + amount + address + area
-            results.duplicates++;
-            logger.info('Duplicate order skipped', {
-              customerId: customer.id,
-              totalAmount: orderData.totalAmount,
-              address: orderData.deliveryAddress
+      // Process orders in the current batch in parallel
+      const batchResults = await Promise.allSettled(
+        batch.map(async (orderData) => {
+          return prisma.$transaction(async (tx) => {
+            // Find or create customer
+            let customer = await tx.customer.findUnique({
+              where: { phoneNumber: orderData.customerPhone }
             });
-            return; // Exit transaction without creating order
-          }
-        }
 
-        if (!customer) {
-          customer = await tx.customer.create({
-            data: {
-              firstName: orderData.customerFirstName || 'Unknown',
-              lastName: orderData.customerLastName || '',
-              phoneNumber: orderData.customerPhone,
-              alternatePhone: orderData.customerAlternatePhone,
-              address: orderData.deliveryAddress,
-              state: orderData.deliveryState,
-              area: orderData.deliveryArea
-            }
-          });
-        } else if (orderData.customerAlternatePhone && !customer.alternatePhone) {
-          // Update alternate phone if it was missing
-          await tx.customer.update({
-            where: { id: customer.id },
-            data: { alternatePhone: orderData.customerAlternatePhone }
-          });
-        }
+            // Enhanced duplicate detection - check multiple criteria
+            if (customer) {
+              const duplicateWindow = new Date(Date.now() - BULK_ORDER_CONFIG.DUPLICATE_DETECTION_WINDOW);
+              const duplicates = await tx.order.findMany({
+                where: {
+                  customerId: customer.id,
+                  totalAmount: orderData.totalAmount,
+                  deliveryAddress: orderData.deliveryAddress,
+                  deliveryArea: orderData.deliveryArea,
+                  createdAt: { gte: duplicateWindow },
+                  deletedAt: null
+                },
+                include: {
+                  orderItems: {
+                    include: { product: true }
+                  }
+                }
+              });
 
-        // Handle product lookup if productName is provided
-        let orderItemsData: any[] = [];
-        if (orderData.productName) {
-          const product = await tx.product.findFirst({
-            where: {
-              OR: [
-                { name: { contains: orderData.productName, mode: 'insensitive' } },
-                { sku: { contains: orderData.productName, mode: 'insensitive' } }
-              ]
-            }
-          });
+              for (const duplicate of duplicates) {
+                // If no product name in imported order, and we found an order with same amount/address/area, it's a duplicate
+                if (!orderData.productName) {
+                  throw new Error('DUPLICATE_ORDER');
+                }
 
-          if (product) {
-            orderItemsData = [{
-              productId: product.id,
-              quantity: orderData.quantity || 1,
-              unitPrice: orderData.unitPrice || product.price,
-              totalPrice: (orderData.quantity || 1) * (orderData.unitPrice || product.price)
-            }];
-          }
-        }
-
-        const createdOrder = await tx.order.create({
-          data: {
-            customerId: customer.id,
-            subtotal: orderData.subtotal,
-            totalAmount: orderData.totalAmount,
-            codAmount: orderData.totalAmount,
-            deliveryAddress: orderData.deliveryAddress,
-            deliveryState: orderData.deliveryState,
-            deliveryArea: orderData.deliveryArea,
-            notes: orderData.notes,
-            status: orderData.status || 'pending_confirmation',
-            source: 'bulk_import',
-            createdById,
-            orderItems: orderItemsData.length > 0 ? {
-              create: orderItemsData
-            } : undefined,
-            orderHistory: {
-              create: {
-                status: orderData.status || 'pending_confirmation',
-                notes: 'Order imported via bulk CSV',
-                changedBy: createdById
+                // If product name is provided, check if any existing order item matches it
+                const duplicateProductName = duplicate.orderItems?.[0]?.product?.name;
+                if (duplicateProductName &&
+                  (duplicateProductName.toLowerCase().includes(orderData.productName.toLowerCase()) ||
+                    orderData.productName.toLowerCase().includes(duplicateProductName.toLowerCase()))) {
+                  throw new Error('DUPLICATE_ORDER');
+                }
               }
             }
-          }
-        });
 
-        results.success++;
-        logger.info('Bulk import order created', { orderId: createdOrder.id });
+            if (!customer) {
+              customer = await tx.customer.create({
+                data: {
+                  firstName: orderData.customerFirstName || 'Unknown',
+                  lastName: orderData.customerLastName || '',
+                  phoneNumber: orderData.customerPhone,
+                  alternatePhone: orderData.customerAlternatePhone,
+                  address: orderData.deliveryAddress,
+                  state: orderData.deliveryState,
+                  area: orderData.deliveryArea
+                }
+              });
+            } else if (orderData.customerAlternatePhone && !customer.alternatePhone) {
+              await tx.customer.update({
+                where: { id: customer.id },
+                data: { alternatePhone: orderData.customerAlternatePhone }
+              });
+            }
 
-        // Emit socket event for each imported order
-        emitOrderCreated(io, createdOrder);
+            // Handle product lookup
+            let orderItemsData: any[] = [];
+            if (orderData.productName) {
+              const product = await tx.product.findFirst({
+                where: {
+                  OR: [
+                    { name: { contains: orderData.productName, mode: 'insensitive' } },
+                    { sku: { contains: orderData.productName, mode: 'insensitive' } }
+                  ]
+                }
+              });
 
-        // Trigger workflows for each imported order
-        workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
-          logger.error('Failed to trigger workflow for bulk imported order', {
-            orderId: createdOrder.id,
-            error: err.message
+              if (product) {
+                orderItemsData = [{
+                  productId: product.id,
+                  quantity: orderData.quantity || 1,
+                  unitPrice: orderData.unitPrice || product.price,
+                  totalPrice: (orderData.quantity || 1) * (orderData.unitPrice || product.price)
+                }];
+              }
+            }
+
+            const createdOrder = await tx.order.create({
+              data: {
+                customerId: customer.id,
+                subtotal: orderData.subtotal,
+                totalAmount: orderData.totalAmount,
+                codAmount: orderData.totalAmount,
+                deliveryAddress: orderData.deliveryAddress,
+                deliveryState: orderData.deliveryState,
+                deliveryArea: orderData.deliveryArea,
+                notes: orderData.notes,
+                status: orderData.status || 'pending_confirmation',
+                source: 'bulk_import',
+                createdById,
+                orderItems: orderItemsData.length > 0 ? { create: orderItemsData } : undefined,
+                orderHistory: {
+                  create: {
+                    status: orderData.status || 'pending_confirmation',
+                    notes: 'Order imported via bulk CSV',
+                    changedBy: createdById
+                  }
+                }
+              }
+            });
+
+            return createdOrder;
           });
-        });
-      }); // End individual transaction
-    } catch (transactionError: any) {
-      results.failed++;
-      results.errors.push({
-        order: orderData,
-        error: transactionError.message
+        })
+      );
+
+      // Handle batch results
+      for (let idx = 0; idx < batchResults.length; idx++) {
+        const result = batchResults[idx];
+        const orderData = batch[idx];
+
+        if (result.status === 'fulfilled') {
+          results.success++;
+          const createdOrder = result.value;
+          emitOrderCreated(io, createdOrder);
+          workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
+            logger.error('Failed to trigger workflow for bulk imported order', {
+              orderId: createdOrder.id,
+              error: err.message
+            });
+          });
+        } else {
+          const error = result.reason;
+          if (error.message === 'DUPLICATE_ORDER') {
+            results.duplicates++;
+          } else {
+            results.failed++;
+            results.errors.push({
+              order: orderData,
+              error: error.message
+            });
+            logger.error('Failed to import order', {
+              error: error.message,
+              orderData
+            });
+          }
+        }
+      }
+
+      // Emit progress update after each batch
+      const processed = Math.min(i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE, orders.length);
+      const progress = Math.round((processed / orders.length) * 100);
+
+      io.emit('bulk_import_progress', {
+        progress,
+        processed,
+        total: orders.length,
+        success: results.success,
+        failed: results.failed,
+        duplicates: results.duplicates
       });
-      logger.error('Failed to import order in transaction', {
-        error: transactionError.message,
-        orderData
+
+      // Log progress after each batch
+      logger.info('Batch processed', {
+        progress,
+        processed,
+        total: orders.length,
+        batchNumber: Math.floor(i / BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) + 1,
+        totalBatches: Math.ceil(orders.length / BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE),
+        successSoFar: results.success,
+        failedSoFar: results.failed
       });
     }
+
+    // Log audit trail
+    logger.info('Bulk import completed', {
+      success: results.success,
+      failed: results.failed,
+      duplicates: results.duplicates,
+      userId: createdById
+    });
+
+    return results;
   }
-
-  // Log audit trail
-  logger.info('Bulk import completed', {
-    success: results.success,
-    failed: results.failed,
-    duplicates: results.duplicates,
-    userId: createdById
-  });
-
-  return results;
-}
 
   /**
    * Get single order by ID
@@ -655,7 +684,7 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
       });
     });
 
-    logger.info(`Order updated: ${order.id}`, { orderId });
+    logger.info(`Order updated: ${order.id} `, { orderId });
     return updated;
   }
 
@@ -686,7 +715,7 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
         orderHistory: {
           create: {
             status: data.status,
-            notes: data.notes || `Status changed to ${data.status}`,
+            notes: data.notes || `Status changed to ${data.status} `,
             changedBy: data.changedBy
           }
         }
@@ -734,7 +763,7 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
       }
     });
 
-    logger.info(`Order status updated: ${order.id}`, {
+    logger.info(`Order status updated: ${order.id} `, {
       orderId,
       oldStatus: order.status,
       newStatus: data.status
@@ -819,7 +848,7 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
       });
     });
 
-    logger.info(`Order cancelled: ${order.id}`, { orderId });
+    logger.info(`Order cancelled: ${order.id} `, { orderId });
     return { message: 'Order cancelled successfully' };
   }
 
@@ -877,7 +906,7 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
         data: {
           orderId: order.id,
           status: order.status,
-          notes: `Order deleted by user ${userId || 'system'}`,
+          notes: `Order deleted by user ${userId || 'system'} `,
           changedBy: userId
         }
       });
@@ -889,7 +918,7 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
       });
     });
 
-    logger.info(`Order soft deleted: ${order.id}`, { orderId, userId });
+    logger.info(`Order soft deleted: ${order.id} `, { orderId, userId });
     return { message: 'Order deleted successfully' };
   }
 
@@ -917,7 +946,7 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
         orderHistory: {
           create: {
             status: order.status,
-            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName}`,
+            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName} `,
             changedBy,
             metadata: { assignedRepId: parseInt(customerRepId, 10) }
           }
@@ -934,7 +963,7 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
       }
     });
 
-    logger.info(`Customer rep assigned to order: ${order.id}`, {
+    logger.info(`Customer rep assigned to order: ${order.id} `, {
       orderId,
       repId: customerRepId
     });
@@ -974,7 +1003,7 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
         orderHistory: {
           create: {
             status: order.status,
-            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName}`,
+            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName} `,
             changedBy,
             metadata: { assignedAgentId: parseInt(deliveryAgentId, 10) }
           }
@@ -991,7 +1020,7 @@ async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
       }
     });
 
-    logger.info(`Delivery agent assigned to order: ${order.id}`, {
+    logger.info(`Delivery agent assigned to order: ${order.id} `, {
       orderId,
       agentId: deliveryAgentId
     });
