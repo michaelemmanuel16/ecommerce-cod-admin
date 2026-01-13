@@ -2,14 +2,14 @@ import rateLimit from 'express-rate-limit';
 
 const isDevelopment = !process.env.NODE_ENV || process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
 
-export const authLimiter = rateLimit({
+export const authLimiter = isDevelopment ? (_req: any, _res: any, next: any) => next() : rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 10000 : 100, // Significantly increased for development
+  max: 100,
   message: { message: 'Too many authentication attempts, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
   validate: {
-    trustProxy: false,
+    trustProxy: true,
     xForwardedForHeader: false
   }
 });

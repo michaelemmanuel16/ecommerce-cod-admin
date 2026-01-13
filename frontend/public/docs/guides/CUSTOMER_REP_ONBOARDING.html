@@ -1,0 +1,1812 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>CUSTOMER_REP_ONBOARDING</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    code {
+      white-space: pre-wrap;
+    }
+
+    span.smallcaps {
+      font-variant: small-caps;
+    }
+
+    div.columns {
+      display: flex;
+      gap: min(4vw, 1.5em);
+    }
+
+    div.column {
+      flex: auto;
+      overflow-x: auto;
+    }
+
+    div.hanging-indent {
+      margin-left: 1.5em;
+      text-indent: -1.5em;
+    }
+
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class] {
+      list-style: none;
+    }
+
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+
+    .display.math {
+      display: block;
+      text-align: center;
+      margin: 0.5rem auto;
+    }
+
+    /* Image sizing and styling */
+    img {
+      max-width: 800px;
+      width: 100%;
+      height: auto;
+      display: block;
+      margin: 20px 0;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    figure {
+      margin: 20px 0;
+    }
+
+    figcaption {
+      font-size: 0.9em;
+      color: #666;
+      margin-top: 8px;
+      font-style: italic;
+    }
+
+    /* Specific sizing for navigation menu screenshot */
+    img[alt="Navigation Menu - Screenshot"] {
+      max-width: 200px;
+    }
+  </style>
+  <link rel="stylesheet" href="custom-styles.css" />
+</head>
+
+<body>
+  <h1 id="customer-rep-onboarding-guide">Customer Rep Onboarding
+    Guide</h1>
+  <p>Welcome to the COD Admin Dashboard! This guide will help you get
+    started with handling customer orders and inquiries.</p>
+  <hr />
+  <h2 id="table-of-contents">Table of Contents</h2>
+  <ol type="1">
+    <li><a href="#getting-started">Getting Started</a></li>
+    <li><a href="#understanding-your-dashboard">Understanding Your
+        Dashboard</a></li>
+    <li><a href="#customer-management">Customer Management</a></li>
+    <li><a href="#creating-orders">Creating Orders</a></li>
+    <li><a href="#following-up-on-pending-orders">Following Up on Pending
+        Orders</a></li>
+    <li><a href="#updating-order-status">Updating Order Status</a></li>
+    <li><a href="#handling-cancelled-orders">Handling Cancelled
+        Orders</a></li>
+    <li><a href="#handling-returns">Handling Returns</a></li>
+    <li><a href="#common-workflows">Common Workflows</a></li>
+    <li><a href="#tips-and-best-practices">Tips and Best
+        Practices</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#getting-help">Getting Help</a></li>
+  </ol>
+  <hr />
+  <h2 id="getting-started">1. Getting Started</h2>
+  <h3 id="your-login-credentials">Your Login Credentials</h3>
+  <p>Your admin or manager will provide you with: - <strong>Email
+      address</strong>: Your work email - <strong>Password</strong>: Your
+    permanent password
+  </p>
+  <p><strong>Important</strong>: Only your admin can change your password.
+    Keep your credentials secure and don’t share them with anyone.</p>
+  <h3 id="accessing-the-dashboard">Accessing the Dashboard</h3>
+  <ol type="1">
+    <li>Open your web browser</li>
+    <li>Go to: <strong>https://codadminpro.com</strong></li>
+    <li>You’ll see the login page</li>
+  </ol>
+  <figure>
+    <img src="./screenshots/customer-rep/01-login-page.png" alt="Login Page - Screenshot" />
+    <figcaption aria-hidden="true">Login Page - Screenshot</figcaption>
+  </figure>
+  <ol start="4" type="1">
+    <li>Enter your email and password</li>
+    <li>Click <strong>“Sign In”</strong></li>
+  </ol>
+  <h3 id="after-login">After Login</h3>
+  <p>Once you log in, you’ll land on your <strong>Dashboard</strong>. This
+    is your home base where you can see: - Your earnings - Pending orders
+    that need follow-up - Total orders you’ve handled - Your conversion
+    rate</p>
+  <figure>
+    <img src="./screenshots/customer-rep/02-rep-dashboard.png" alt="Rep Dashboard - Screenshot" />
+    <figcaption aria-hidden="true">Rep Dashboard - Screenshot</figcaption>
+  </figure>
+  <p><strong>First-time login?</strong> An interactive tour will guide you
+    through the key features. Follow along to learn the basics.</p>
+  <p>You’re all set! No additional setup needed - you can start taking
+    calls and processing orders right away.</p>
+  <hr />
+  <h2 id="understanding-your-dashboard">2. Understanding Your
+    Dashboard</h2>
+  <p>Your dashboard is your command center. It shows your performance
+    metrics and helps you track your work.</p>
+  <figure>
+    <img src="./screenshots/customer-rep/03-dashboard-overview.png" alt="Dashboard Overview - Screenshot" />
+    <figcaption aria-hidden="true">Dashboard Overview -
+      Screenshot</figcaption>
+  </figure>
+  <h3 id="your-key-metrics">Your Key Metrics</h3>
+  <p>The dashboard displays 4 important numbers:</p>
+  <h4 id="my-earnings">1. My Earnings</h4>
+  <p>This shows your <strong>total commission earned this month</strong>
+    in Ghana Cedis (GHS). Your commission is calculated based on successful
+    orders you’ve processed.</p>
+  <h4 id="my-pending-orders">2. My Pending Orders ⚠️</h4>
+  <p>This is the <strong>number of orders waiting for follow-up</strong>.
+    These are orders that need customer confirmation or action from you.</p>
+  <p><strong>This is your most important metric!</strong> Pending orders
+    should be followed up quickly to convert them into sales. Check this
+    number regularly throughout the day.</p>
+  <h4 id="my-total-orders">3. My Total Orders</h4>
+  <p>The <strong>total number of orders you’ve created this
+      month</strong>. This includes all orders regardless of their status
+    (pending, confirmed, delivered, cancelled).</p>
+  <h4 id="my-conversion-rate">4. My Conversion Rate</h4>
+  <p>The <strong>percentage of your orders that became successful
+      sales</strong>. For example, if you created 100 orders and 75 were
+    delivered, your conversion rate is 75%.</p>
+  <p>A higher conversion rate means you’re doing a great job following up
+    and closing sales!</p>
+  <h3 id="understanding-monthly-data">Understanding Monthly Data</h3>
+  <p>All metrics reset at the beginning of each month. Your dashboard
+    always shows data for the current month only.</p>
+  <h3 id="navigation-menu">Navigation Menu</h3>
+  <p>Use the sidebar menu to navigate between different pages:</p>
+  <ul>
+    <li><strong>Dashboard</strong> - Your home page (where you are now)</li>
+    <li><strong>Orders</strong> - View and manage all your orders</li>
+    <li><strong>Customers</strong> - Search, add, and manage customer
+      information</li>
+    <li><strong>Settings</strong> - Update your profile and preferences</li>
+  </ul>
+  <figure>
+    <img src="./screenshots/customer-rep/04-navigation-menu.png" alt="Navigation Menu - Screenshot" />
+    <figcaption aria-hidden="true">Navigation Menu - Screenshot</figcaption>
+  </figure>
+  <p>Simply click on any menu item to switch pages.</p>
+  <hr />
+  <h2 id="customer-management">3. Customer Management</h2>
+  <p>Managing customer information correctly is crucial. Accurate customer
+    records help you process orders faster and avoid confusion.</p>
+  <h3 id="accessing-the-customers-page">Accessing the Customers Page</h3>
+  <p>Click <strong>“Customers”</strong> in the sidebar menu to view all
+    your customers.</p>
+  <figure>
+    <img src="./screenshots/customer-rep/05-customers-list.png" alt="Customers Page - Screenshot" />
+    <figcaption aria-hidden="true">Customers Page - Screenshot</figcaption>
+  </figure>
+  <h3 id="searching-for-existing-customers">Searching for Existing
+    Customers</h3>
+  <p><strong>Always search for a customer before creating a new
+      one!</strong> This prevents duplicate records.</p>
+  <p>To search: 1. Use the search bar at the top of the Customers page 2.
+    Type the customer’s <strong>name</strong> or <strong>phone
+      number</strong> 3. The list will filter to show matching results</p>
+  <figure>
+    <img src="./screenshots/customer-rep/06-customer-search.png" alt="Customer Search - Screenshot" />
+    <figcaption aria-hidden="true">Customer Search - Screenshot</figcaption>
+  </figure>
+  <p>If you find the customer, click on their name to view their details
+    and order history.</p>
+  <h3 id="adding-a-new-customer">Adding a New Customer</h3>
+  <p>If the customer doesn’t exist in the system:</p>
+  <ol type="1">
+    <li>Click the <strong>“Add Customer”</strong> button</li>
+    <li>Fill in the customer information form</li>
+    <li><strong>Required fields</strong> are marked with an asterisk (*) -
+      you must fill these in</li>
+    <li>Pay special attention to:
+      <ul>
+        <li><strong>Phone number</strong> - Verify this carefully (it’s how
+          you’ll contact them)</li>
+        <li><strong>Address</strong> - Get the complete delivery address</li>
+        <li><strong>Region</strong> - Select from the Ghana regions
+          dropdown</li>
+        <li><strong>City</strong> - Select the appropriate city</li>
+      </ul>
+    </li>
+  </ol>
+  <figure>
+    <img src="./screenshots/customer-rep/07-add-customer-form.png" alt="Add Customer Form - Screenshot" />
+    <figcaption aria-hidden="true">Add Customer Form -
+      Screenshot</figcaption>
+  </figure>
+  <ol start="5" type="1">
+    <li>Click <strong>“Save”</strong> to create the customer</li>
+  </ol>
+  <p><strong>Duplicate Warning</strong>: If you try to add a customer that
+    already exists, the system will warn you. In this case, use the existing
+    customer record instead.</p>
+  <h3 id="viewing-customer-details-order-history">Viewing Customer Details
+    &amp; Order History</h3>
+  <p>Click on any customer’s name to see: - Their complete contact
+    information - Delivery address - <strong>All past orders</strong>
+    they’ve placed</p>
+  <figure>
+    <img src="./screenshots/customer-rep/08-customer-details.png" alt="Customer Details - Screenshot" />
+    <figcaption aria-hidden="true">Customer Details -
+      Screenshot</figcaption>
+  </figure>
+  <p>This history helps you reference previous orders when talking to
+    repeat customers.</p>
+  <h3 id="editing-customer-information">Editing Customer Information</h3>
+  <p>If a customer’s details change (new address, phone number, etc.):</p>
+  <ol type="1">
+    <li>Open the customer’s detail page</li>
+    <li>Click <strong>“Edit”</strong></li>
+    <li>Update the necessary fields</li>
+    <li>Click <strong>“Save”</strong></li>
+  </ol>
+  <p><strong>Note</strong>: You cannot delete customers - only admins can
+    do this. If you need a customer removed, contact your admin.</p>
+  <h3 id="best-practices">Best Practices</h3>
+  <p>✅ <strong>Always search first</strong> - Check if the customer
+    exists before creating a new record ✅ <strong>Verify phone
+      numbers</strong> - Double-check the number during the call ✅
+    <strong>Get complete addresses</strong> - Include landmarks or
+    additional directions in the address field ✅ <strong>Update outdated
+      info</strong> - If a customer mentions they moved, update their address
+    immediately
+  </p>
+  <hr />
+  <h2 id="creating-orders">4. Creating Orders</h2>
+  <p>Creating orders is your main task. Here’s how to do it step by
+    step.</p>
+  <h3 id="accessing-the-orders-page">Accessing the Orders Page</h3>
+  <p>Click <strong>“Orders”</strong> in the sidebar menu to view all
+    orders.</p>
+  <figure>
+    <img src="./screenshots/customer-rep/09-orders-list.png" alt="Orders Page - Screenshot" />
+    <figcaption aria-hidden="true">Orders Page - Screenshot</figcaption>
+  </figure>
+  <p>To create a new order, click the <strong>“Create Order”</strong>
+    button.</p>
+  <h3 id="the-create-order-form">The Create Order Form</h3>
+  <p>When you click “Create Order”, you’ll see a form with several fields.
+    <strong>Required fields</strong> are marked with an asterisk (*).
+  </p>
+  <figure>
+    <img src="./screenshots/customer-rep/10-create-order-form.png" alt="Create Order Form - Screenshot" />
+    <figcaption aria-hidden="true">Create Order Form -
+      Screenshot</figcaption>
+  </figure>
+  <h3 id="step-by-step-order-creation">Step-by-Step Order Creation</h3>
+  <h4 id="step-1-select-or-create-customer">Step 1: Select or Create
+    Customer</h4>
+  <p>At the top of the form, you’ll see a <strong>customer selection
+      dropdown</strong>.</p>
+  <ul>
+    <li>If the customer already exists, search and select their name</li>
+    <li>If they’re new, you can create them right here by clicking
+      <strong>“Add New Customer”</strong> (no need to leave this page!)
+    </li>
+  </ul>
+  <p>The system will automatically link the order to the customer.</p>
+  <h4 id="step-2-add-products">Step 2: Add Products</h4>
+  <p>Use the <strong>product dropdown</strong> to select items for the
+    order.</p>
+  <figure>
+    <img src="./screenshots/customer-rep/11-product-selection.png" alt="Product Selection - Screenshot" />
+    <figcaption aria-hidden="true">Product Selection -
+      Screenshot</figcaption>
+  </figure>
+  <ul>
+    <li>Click <strong>“Add Product”</strong></li>
+    <li>Select the product from the dropdown</li>
+    <li>You’ll see the <strong>product price</strong> displayed
+      automatically</li>
+    <li><strong>You can modify the price</strong> if needed (discounts,
+      promotions, etc.)</li>
+    <li>Enter the <strong>quantity</strong></li>
+  </ul>
+  <p><strong>Multiple Products</strong>: You can add multiple products to
+    one order! Just click “Add Product” again to add another item.</p>
+  <figure>
+    <img src="./screenshots/customer-rep/12-multiple-products.png" alt="Multiple Products - Screenshot" />
+    <figcaption aria-hidden="true">Multiple Products -
+      Screenshot</figcaption>
+  </figure>
+  <h4 id="step-3-enter-delivery-address">Step 3: Enter Delivery
+    Address</h4>
+  <p>Even if the customer exists in the system, <strong>you must enter the
+      delivery address for this specific order</strong>.</p>
+  <p>Fill in: - Street address - City (select from dropdown) - Region
+    (select from dropdown) - Any landmarks or special directions</p>
+  <p><strong>Tip</strong>: Always verify the delivery address with the
+    customer during the call. Don’t assume their address hasn’t changed!</p>
+  <h4 id="step-4-add-order-notes-optional">Step 4: Add Order Notes
+    (Optional)</h4>
+  <p>If there are special instructions or important details, add them in
+    the <strong>“Order Notes”</strong> field: - “Customer prefers delivery
+    after 5pm” - “Call before delivery” - “Fragile items - handle with
+    care”</p>
+  <h4 id="step-5-review-and-submit">Step 5: Review and Submit</h4>
+  <ul>
+    <li><strong>Payment Method</strong>: All orders are Cash-on-Delivery
+      (COD) - you don’t need to select anything</li>
+    <li>Double-check all details (address, products, quantities)</li>
+    <li>Click <strong>“Create Order”</strong></li>
+  </ul>
+  <h3 id="after-creating-the-order">After Creating the Order</h3>
+  <p>Once you click “Create Order”:</p>
+  <ol type="1">
+    <li>The order is saved with status <strong>“Pending
+        Confirmation”</strong></li>
+    <li>It appears in your <strong>Orders table</strong></li>
+    <li>It adds to your <strong>“My Pending Orders”</strong> count on the
+      dashboard</li>
+  </ol>
+  <p><strong>Important</strong>: The order is now waiting for follow-up!
+    See <a href="#5-following-up-on-pending-orders">Section 5: Following Up
+      on Pending Orders</a> to learn what to do next.</p>
+  <h3 id="common-mistakes-to-avoid">Common Mistakes to Avoid</h3>
+  <p>❌ <strong>Not verifying the delivery address</strong> - Always
+    confirm with the customer ❌ <strong>Skipping order notes</strong> - Add
+    important details so delivery agents know what to expect ❌
+    <strong>Wrong quantities</strong> - Double-check how many items the
+    customer wants ❌ <strong>Forgetting to follow up</strong> - Creating
+    the order is just the first step!
+  </p>
+  <h3 id="best-practices-1">Best Practices</h3>
+  <p>✅ <strong>Read back the order</strong> - Before hanging up, confirm
+    all details with the customer ✅ <strong>Be specific with
+      addresses</strong> - Include landmarks like “Near the yellow church” or
+    “Opposite the school” ✅ <strong>Note customer preferences</strong> -
+    Use the notes field for anything that helps fulfill the order correctly
+    ✅ <strong>Follow up immediately</strong> - Don’t let orders sit in
+    pending status (more on this in Section 5!)</p>
+  <hr />
+  <h2 id="following-up-on-pending-orders">5. Following Up on Pending
+    Orders</h2>
+  <p><strong>THIS IS THE MOST IMPORTANT PART OF YOUR JOB!</strong> 🚨</p>
+  <p>Following up on pending orders is what separates great reps from
+    average ones. Your conversion rate, earnings, and success depend on
+    this.</p>
+  <h3 id="why-this-matters">Why This Matters</h3>
+  <p>When you create an order, it starts with status <strong>“Pending
+      Confirmation”</strong>. This means: - The customer hasn’t officially
+    confirmed they want it - The order won’t be processed until you follow
+    up - <strong>You don’t earn commission</strong> until the order is
+    delivered</p>
+  <p><strong>Every pending order sitting in your list is potential money
+      you’re losing!</strong></p>
+  <p>Your pending orders directly affect: - ❌ Your conversion rate (lower
+    rate = poor performance) - ❌ Your earnings (no confirmation = no
+    delivery = no commission) - ❌ Customer satisfaction (delays frustrate
+    customers)</p>
+  <h3 id="the-1-hour-rule">The 1-Hour Rule ⏰</h3>
+  <p><strong>Follow up within 1 HOUR of creating the order!</strong></p>
+  <p>The faster you follow up, the more likely the customer will confirm.
+    If you wait too long: - Customer loses interest - Customer orders from a
+    competitor - Customer forgets they even requested the order</p>
+  <h3 id="finding-your-pending-orders">Finding Your Pending Orders</h3>
+  <p>On the <strong>Orders page</strong>, click the
+    <strong>“Pending”</strong> filter tab to see all orders waiting for
+    follow-up.
+  </p>
+  <figure>
+    <img src="./screenshots/customer-rep/13-pending-orders-filter.png" alt="Pending Orders Filter - Screenshot" />
+    <figcaption aria-hidden="true">Pending Orders Filter -
+      Screenshot</figcaption>
+  </figure>
+  <p><strong>Pro tip</strong>: Check this list multiple times throughout
+    the day. Make it part of your hourly routine!</p>
+  <h3 id="what-follow-up-means">What “Follow Up” Means</h3>
+  <p>Following up means: 1. <strong>Calling the customer</strong> to
+    confirm they still want the order 2. <strong>Convincing them to
+      commit</strong> if they’re hesitant 3. <strong>Updating the order
+      status</strong> based on the outcome</p>
+  <h3 id="step-by-step-making-a-follow-up-call">Step-by-Step: Making a
+    Follow-Up Call</h3>
+  <h4 id="open-the-order-details">1. Open the Order Details</h4>
+  <p>Click on the pending order to see all the details.</p>
+  <figure>
+    <img src="./screenshots/customer-rep/14-order-details.png" alt="Order Details Page - Screenshot" />
+    <figcaption aria-hidden="true">Order Details Page -
+      Screenshot</figcaption>
+  </figure>
+  <p>Review: - Customer name and phone number - Products they ordered -
+    Delivery address - Any notes from the original call</p>
+  <h4 id="call-the-customer">2. Call the Customer</h4>
+  <p>Use the phone number on file to call them.</p>
+  <p><strong>During the call:</strong> - Confirm their name - Remind them
+    of the order details (products, quantity, total price) - Confirm their
+    delivery address - Answer any questions they have - <strong>Convince
+      them to take the order</strong> if they seem unsure</p>
+  <h4 id="log-the-call">3. Log the Call</h4>
+  <p>After the call, <strong>always log it in the system</strong> so
+    there’s a record.</p>
+  <figure>
+    <img src="./screenshots/customer-rep/15-log-call.png" alt="Log Call - Screenshot" />
+    <figcaption aria-hidden="true">Log Call - Screenshot</figcaption>
+  </figure>
+  <p>Click <strong>“Log Call”</strong> and add: - Date and time of call -
+    Brief notes about what happened - Whether you reached them or not</p>
+  <h3 id="three-possible-outcomes">Three Possible Outcomes</h3>
+  <p>After calling, one of three things will happen:</p>
+  <h4 id="outcome-1-customer-confirms">✅ Outcome 1: Customer
+    Confirms</h4>
+  <p><strong>The customer says YES, they want the order!</strong></p>
+  <p><strong>What to do:</strong> 1. Thank them and confirm delivery
+    details 2. Change the order status to <strong>“Confirmed”</strong> (see
+    <a href="#6-updating-order-status">Section 6: Updating Order Status</a>)
+    3. The order now moves forward in the fulfillment process 4. You’re one
+    step closer to earning commission!
+  </p>
+  <h4 id="outcome-2-customer-declines">❌ Outcome 2: Customer
+    Declines</h4>
+  <p><strong>The customer says NO, they don’t want the order
+      anymore.</strong></p>
+  <p><strong>What to do:</strong> 1. Ask politely why they changed their
+    mind (helps you improve) 2. Change the order status to
+    <strong>“Cancelled”</strong> (see <a href="#7-handling-cancelled-orders">Section 7: Handling Cancelled
+      Orders</a>) 3. Log the reason in your call notes 4. Move on to the next
+    pending order
+  </p>
+  <p><strong>Don’t take it personally!</strong> Cancellations happen.
+    Focus on the next opportunity.</p>
+  <h4 id="outcome-3-customer-doesnt-answer">📞 Outcome 3: Customer Doesn’t
+    Answer</h4>
+  <p><strong>The customer doesn’t pick up your call.</strong></p>
+  <p><strong>What to do:</strong> 1. Log that you attempted to call 2.
+    <strong>Leave the order as “Pending”</strong> 3. Try calling again later
+    the same day (maybe they’re busy) 4. If they still don’t answer, try
+    again over the next few days 5. <strong>Don’t give up after one
+      attempt!</strong>
+  </p>
+  <h3 id="how-many-times-should-you-call">How Many Times Should You
+    Call?</h3>
+  <p><strong>Multiple times!</strong> Many successful orders happen on the
+    2nd or 3rd call attempt.</p>
+  <p><strong>Best approach:</strong> - <strong>Day 1</strong>: Call 2-3
+    times at different times (morning, afternoon, evening) - <strong>Day
+      2-3</strong>: Call once per day - <strong>After 3-4 days</strong>: If
+    still no answer, consider cancelling (but log all attempts first)</p>
+  <p>Different customers have different schedules. Be persistent!</p>
+  <h3 id="tips-for-convincing-hesitant-customers">Tips for Convincing
+    Hesitant Customers</h3>
+  <p>Sometimes customers are unsure. Here’s how to help them commit:</p>
+  <p>✅ <strong>Remind them of benefits</strong> - Why they wanted the
+    product in the first place ✅ <strong>Address concerns</strong> - If
+    they mention price, delivery time, or quality concerns, address them
+    directly ✅ <strong>Create urgency</strong> - “We have limited stock” or
+    “This promotion ends soon” ✅ <strong>Be confident</strong> - Your
+    enthusiasm is contagious! Believe in the product ✅ <strong>Offer
+      solutions</strong> - If delivery address is an issue, ask if there’s an
+    alternate location ✅ <strong>Build trust</strong> - Reassure them about
+    COD payment (they pay when they receive it)</p>
+  <h3 id="daily-routine-for-managing-pending-orders">Daily Routine for
+    Managing Pending Orders</h3>
+  <p>Make this your habit:</p>
+  <p><strong>Morning (Start of shift):</strong> - Check your “My Pending
+    Orders” count on the dashboard - Filter and review all pending orders -
+    Prioritize orders from yesterday that need follow-up</p>
+  <p><strong>Throughout the day:</strong> - Follow up on new orders within
+    1 hour of creating them - Call back customers who didn’t answer
+    earlier</p>
+  <p><strong>End of shift:</strong> - Review any pending orders that still
+    need attention - Make notes for tomorrow’s follow-ups</p>
+  <h3 id="the-bottom-line">The Bottom Line</h3>
+  <p><strong>Pending orders = potential earnings sitting
+      idle.</strong></p>
+  <p>The faster you convert pending orders to confirmed orders, the more
+    money you make and the better your performance metrics. Don’t let orders
+    sit in pending status!</p>
+  <p><strong>Make following up your #1 priority every single
+      day.</strong></p>
+  <hr />
+  <h2 id="updating-order-status">6. Updating Order Status</h2>
+  <p>As a customer rep, you’re responsible for managing orders through
+    their entire lifecycle - from creation to delivery. Keeping order
+    statuses accurate and up-to-date is essential.</p>
+  <h3 id="understanding-order-statuses">Understanding Order Statuses</h3>
+  <p>Every order goes through a series of statuses as it moves from
+    creation to delivery:</p>
+  <pre><code>pending_confirmation → confirmed → preparing → ready_for_pickup
+→ out_for_delivery → delivered</code></pre>
+  <p><strong>You can also branch to:</strong> - <code>cancelled</code> -
+    Customer doesn’t want the order - <code>returned</code> - Customer
+    returns the order after delivery - <code>failed_delivery</code> -
+    Delivery attempt unsuccessful</p>
+  <h3 id="what-each-status-means">What Each Status Means</h3>
+  <table>
+    <colgroup>
+      <col style="width: 20%" />
+      <col style="width: 38%" />
+      <col style="width: 41%" />
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>What It Means</th>
+        <th>When to Use It</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>pending_confirmation</strong></td>
+        <td>Order created, waiting for customer to confirm</td>
+        <td>Automatically set when you create an order</td>
+      </tr>
+      <tr>
+        <td><strong>confirmed</strong></td>
+        <td>Customer confirmed they want the order</td>
+        <td>After successful follow-up call</td>
+      </tr>
+      <tr>
+        <td><strong>preparing</strong></td>
+        <td>Order is being prepared/packed for delivery</td>
+        <td>When you or warehouse team starts preparing items</td>
+      </tr>
+      <tr>
+        <td><strong>ready_for_pickup</strong></td>
+        <td>Order is packed and ready for delivery agent</td>
+        <td>When order is fully prepared and ready to go</td>
+      </tr>
+      <tr>
+        <td><strong>out_for_delivery</strong></td>
+        <td>Delivery agent has the order and is on the way</td>
+        <td>When delivery agent picks up and leaves for delivery</td>
+      </tr>
+      <tr>
+        <td><strong>delivered</strong></td>
+        <td>Customer received the order and paid</td>
+        <td>After successful delivery and payment collection</td>
+      </tr>
+      <tr>
+        <td><strong>cancelled</strong></td>
+        <td>Order was cancelled</td>
+        <td>Customer declined or order couldn’t be fulfilled</td>
+      </tr>
+      <tr>
+        <td><strong>returned</strong></td>
+        <td>Customer returned the order after delivery</td>
+        <td>When a delivered order comes back</td>
+      </tr>
+      <tr>
+        <td><strong>failed_delivery</strong></td>
+        <td>Delivery attempt failed</td>
+        <td>Customer wasn’t home, wrong address, etc.</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="how-to-update-order-status">How to Update Order Status</h3>
+  <h4 id="step-1-open-the-order">Step 1: Open the Order</h4>
+  <p>Go to the <strong>Orders page</strong> and click on the order you
+    want to update.</p>
+  <figure>
+    <img src="./screenshots/customer-rep/16-order-detail-status.png" alt="Order Detail Page - Screenshot" />
+    <figcaption aria-hidden="true">Order Detail Page -
+      Screenshot</figcaption>
+  </figure>
+  <h4 id="step-2-change-the-status">Step 2: Change the Status</h4>
+  <p>On the order detail page, you’ll see a <strong>Status
+      dropdown</strong> at the top.</p>
+  <ol type="1">
+    <li>Click on the current status dropdown</li>
+    <li>Select the new status from the list</li>
+    <li>(Optional but recommended) Add notes explaining the status
+      change</li>
+    <li>Click <strong>“Update”</strong> or the status will save
+      automatically</li>
+  </ol>
+  <figure>
+    <img src="./screenshots/customer-rep/17-update-status-dropdown.png" alt="Update Status Dropdown - Screenshot" />
+    <figcaption aria-hidden="true">Update Status Dropdown -
+      Screenshot</figcaption>
+  </figure>
+  <p>The status change happens immediately. You can also refresh the page
+    to see the update.</p>
+  <h3 id="common-status-updates-youll-make">Common Status Updates You’ll
+    Make</h3>
+  <h4 id="after-follow-up-call-change-to-confirmed">After Follow-Up Call →
+    Change to “Confirmed”</h4>
+  <p>When a customer confirms they want the order: 1. Open the order 2.
+    Change status from <code>pending_confirmation</code> →
+    <code>confirmed</code> 3. Add note: “Customer confirmed via phone
+    call”
+  </p>
+  <h4 id="when-preparing-the-order-change-to-preparing">When Preparing the
+    Order → Change to “Preparing”</h4>
+  <p>When you or the team starts preparing the items: 1. Change status
+    from <code>confirmed</code> → <code>preparing</code> 2. Add note about
+    what’s being prepared</p>
+  <h4 id="when-order-is-ready-change-to-ready-for-pickup">When Order is
+    Ready → Change to “Ready for Pickup”</h4>
+  <p>When everything is packed and ready: 1. Change status from
+    <code>preparing</code> → <code>ready_for_pickup</code> 2. Add note if
+    there are special handling instructions
+  </p>
+  <h4 id="when-going-out-for-delivery-change-to-out-for-delivery">When
+    Going Out for Delivery → Change to “Out for Delivery”</h4>
+  <p>When you or a delivery agent takes the order for delivery: 1. Change
+    status from <code>ready_for_pickup</code> →
+    <code>out_for_delivery</code> 2. Add note with delivery agent name or
+    vehicle details
+  </p>
+  <h4 id="after-successful-delivery-change-to-delivered">After Successful
+    Delivery → Change to “Delivered”</h4>
+  <p>When the customer receives the order and pays: 1. Change status from
+    <code>out_for_delivery</code> → <code>delivered</code> 2. Add note
+    confirming payment received 3. <strong>This is when you earn your
+      commission!</strong> 💰
+  </p>
+  <h3 id="adding-notes-to-status-changes">Adding Notes to Status
+    Changes</h3>
+  <p>When you update a status, there’s a notes field where you can add
+    context.</p>
+  <p><strong>Good examples:</strong> - “Customer confirmed order, delivery
+    address verified” - “Preparing 3 items, will be ready by 2pm” - “Out for
+    delivery with John, customer expects delivery after 5pm” - “Delivered
+    successfully, customer paid GHS 250 cash”</p>
+  <p>Adding notes helps everyone track what’s happening and provides a
+    clear record.</p>
+  <h3 id="no-restrictions">No Restrictions</h3>
+  <p>You have full control over order statuses: - ✅ You can change to
+    <strong>any status</strong> at any time - ✅ You can move backwards if
+    needed (e.g., confirmed back to pending) - ✅ You can skip steps if
+    necessary
+  </p>
+  <p>This flexibility helps you handle real-world situations. Just make
+    sure the status accurately reflects reality!</p>
+  <h3 id="real-time-updates">Real-Time Updates</h3>
+  <p>Status changes appear immediately in the system. If you update an
+    order: - The change shows up instantly - Other reps can see the update
+    in real-time - You can also refresh the page to confirm the change</p>
+  <h3 id="why-accurate-status-tracking-matters">Why Accurate Status
+    Tracking Matters</h3>
+  <p>Keeping statuses current is important because:</p>
+  <p>✅ <strong>Customer trust</strong> - Accurate tracking shows
+    professionalism ✅ <strong>Team coordination</strong> - Everyone knows
+    where each order stands ✅ <strong>Performance tracking</strong> - Your
+    metrics depend on accurate statuses ✅ <strong>Commission
+      calculation</strong> - You only earn when orders reach “delivered” ✅
+    <strong>Problem solving</strong> - Easy to spot stuck orders or
+    issues
+  </p>
+  <h3 id="best-practices-2">Best Practices</h3>
+  <p>✅ <strong>Update immediately</strong> - Don’t wait. Change status as
+    soon as something happens ✅ <strong>Be accurate</strong> - The status
+    should reflect the real situation ✅ <strong>Add notes</strong> -
+    Include helpful context for yourself and the team ✅ <strong>Check
+      regularly</strong> - Review your orders throughout the day and keep them
+    current ✅ <strong>Move orders forward</strong> - Your goal is to get
+    orders from pending → delivered as fast as possible</p>
+  <hr />
+  <h2 id="handling-cancelled-orders">7. Handling Cancelled Orders</h2>
+  <p>Sometimes orders need to be cancelled. This section explains when and
+    how to cancel orders properly.</p>
+  <h3 id="what-is-a-cancellation">What Is a Cancellation?</h3>
+  <p>A cancelled order is one that won’t be fulfilled or delivered. The
+    customer won’t receive the product and no payment will be collected.</p>
+  <p><strong>Important</strong>: Since all orders are Cash-on-Delivery
+    (COD), cancellations happen before payment. There are no refunds
+    involved in cancellations - that’s for returns (see <a href="#8-handling-returns">Section 8: Handling Returns</a>).
+  </p>
+  <h3 id="when-can-orders-be-cancelled">When Can Orders Be Cancelled?</h3>
+  <p>Orders can be cancelled at <strong>any status</strong>: - ✅
+    <code>pending_confirmation</code> - Most common - ✅
+    <code>confirmed</code> - Customer changed their mind - ✅
+    <code>preparing</code> - Before items are packed - ✅
+    <code>ready_for_pickup</code> - Before delivery starts - ✅
+    <code>out_for_delivery</code> - Even if already with delivery agent - ✅
+    Any other status
+  </p>
+  <p>You have full flexibility to cancel when needed.</p>
+  <h3 id="who-can-cancel-orders">Who Can Cancel Orders?</h3>
+  <ul>
+    <li><strong>Any rep</strong> can cancel any order (not just the one who
+      created it)</li>
+    <li><strong>Customers</strong> can request cancellations by calling
+      in</li>
+    <li><strong>Admins/Managers</strong> can also cancel orders</li>
+  </ul>
+  <h3 id="two-cancellation-scenarios">Two Cancellation Scenarios</h3>
+  <h4 id="scenario-1-customer-requests-cancellation">Scenario 1: Customer
+    Requests Cancellation</h4>
+  <p>Customer calls and says they don’t want the order anymore.</p>
+  <p><strong>What to do:</strong> 1. Ask why they want to cancel (helps
+    improve service) 2. Try to address their concerns if possible (wrong
+    address? we can update it!) 3. If they still want to cancel, confirm
+    you’ll cancel it 4. Open the order and change status to
+    <code>cancelled</code> 5. Add detailed notes about the reason
+  </p>
+  <h4 id="scenario-2-you-decide-to-cancel">Scenario 2: You Decide to
+    Cancel</h4>
+  <p>After multiple failed attempts to reach the customer, or other valid
+    reasons.</p>
+  <p><strong>What to do:</strong> 1. <strong>First, try to call the
+      customer</strong> to confirm they want to cancel 2. If they confirm,
+    proceed with cancellation 3. If they’re still unreachable after many
+    attempts (see <a href="#5-following-up-on-pending-orders">Section 5</a>
+    for guidance), you can cancel 4. Change status to <code>cancelled</code>
+    5. Add detailed notes explaining why</p>
+  <h3 id="how-to-cancel-an-order">How to Cancel an Order</h3>
+  <h4 id="step-1-open-the-order-1">Step 1: Open the Order</h4>
+  <p>Go to the <strong>Orders page</strong> and open the order you need to
+    cancel.</p>
+  <h4 id="step-2-change-status-to-cancelled">Step 2: Change Status to
+    Cancelled</h4>
+  <ol type="1">
+    <li>Click the <strong>Status dropdown</strong></li>
+    <li>Select <strong>“Cancelled”</strong></li>
+    <li><strong>Add notes</strong> - This is mandatory! Explain why the
+      order was cancelled</li>
+  </ol>
+  <p><strong>Good cancellation notes:</strong> - “Customer called and
+    changed mind, said product no longer needed” - “Wrong delivery address,
+    customer not in that city anymore” - “Customer unreachable after 5 call
+    attempts over 3 days” - “Out of stock - product unavailable” - “Customer
+    didn’t pick up product at delivery location after multiple attempts”</p>
+  <ol start="4" type="1">
+    <li>Save the status change</li>
+  </ol>
+  <p>The order is now cancelled and won’t be processed further.</p>
+  <h3 id="common-cancellation-reasons">Common Cancellation Reasons</h3>
+  <table>
+    <colgroup>
+      <col style="width: 21%" />
+      <col style="width: 34%" />
+      <col style="width: 44%" />
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Reason</th>
+        <th>Description</th>
+        <th>When It Happens</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Customer changed mind</strong></td>
+        <td>No longer wants the product</td>
+        <td>After follow-up call</td>
+      </tr>
+      <tr>
+        <td><strong>Customer unreachable</strong></td>
+        <td>Multiple call attempts failed</td>
+        <td>After 3-5 days of trying</td>
+      </tr>
+      <tr>
+        <td><strong>Wrong address</strong></td>
+        <td>Delivery address incorrect/invalid</td>
+        <td>During verification</td>
+      </tr>
+      <tr>
+        <td><strong>Out of stock</strong></td>
+        <td>Product not available</td>
+        <td>During preparation</td>
+      </tr>
+      <tr>
+        <td><strong>Customer not picking up</strong></td>
+        <td>Product delivered to location but customer won’t collect</td>
+        <td>After delivery attempt</td>
+      </tr>
+      <tr>
+        <td><strong>Duplicate order</strong></td>
+        <td>Same order created twice by mistake</td>
+        <td>After review</td>
+      </tr>
+      <tr>
+        <td><strong>Customer requested cancellation</strong></td>
+        <td>Customer called to cancel</td>
+        <td>Anytime</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3 id="impact-on-your-performance">Impact on Your Performance</h3>
+  <p>Cancellations affect you:</p>
+  <p>❌ <strong>Lower conversion rate</strong> - Cancelled orders count
+    against your success rate ❌ <strong>No commission</strong> - You don’t
+    earn anything on cancelled orders ❌ <strong>Wasted time</strong> - Time
+    spent on the order doesn’t generate income</p>
+  <p><strong>That’s why following up quickly matters!</strong> The faster
+    you confirm orders, the fewer cancellations you’ll have.</p>
+  <h3 id="restocking-prepared-items">Restocking Prepared Items</h3>
+  <p>If an order was already being prepared or packed: 1. Note in the
+    cancellation that items need restocking 2. Inform the
+    warehouse/inventory team 3. Items will be returned to inventory</p>
+  <p>Example note: “Cancelled - customer unreachable. 3 items prepared,
+    need restocking.”</p>
+  <h3 id="reopening-cancelled-orders">Reopening Cancelled Orders</h3>
+  <p><strong>Customer changed their mind again?</strong> You can
+    reactivate a cancelled order!</p>
+  <ol type="1">
+    <li>Open the cancelled order</li>
+    <li>Change status back to <code>pending_confirmation</code> or
+      <code>confirmed</code>
+    </li>
+    <li>Add note: “Customer called back, wants to proceed with order”</li>
+    <li>Continue with normal order processing</li>
+  </ol>
+  <p>This is much faster than creating a brand new order.</p>
+  <h3 id="when-to-cancel-vs-keep-trying">When to Cancel vs Keep
+    Trying</h3>
+  <p><strong>Keep trying when:</strong> - ✅ Order is still
+    <code>pending_confirmation</code> and it’s been less than 3 days - ✅
+    Customer asked for more time to decide - ✅ You’ve only tried calling
+    once or twice - ✅ There’s a simple fix to the problem (wrong address,
+    pricing question)
+  </p>
+  <p><strong>Cancel when:</strong> - ❌ Customer explicitly says they
+    don’t want it - ❌ Customer unreachable after multiple attempts over
+    several days - ❌ Address is invalid and customer won’t provide a
+    correct one - ❌ Product is out of stock with no restock date - ❌
+    Customer refuses to pick up product after it’s been delivered to pickup
+    location</p>
+  <p><strong>Rule of thumb</strong>: Don’t cancel too quickly! Exhaust
+    your follow-up attempts first (see <a href="#5-following-up-on-pending-orders">Section 5</a>).</p>
+  <h3 id="best-practices-for-minimizing-cancellations">Best Practices for
+    Minimizing Cancellations</h3>
+  <p>✅ <strong>Follow up within 1 hour</strong> - Strike while the
+    customer is still interested ✅ <strong>Call multiple times</strong> -
+    Don’t give up after one attempt ✅ <strong>Verify addresses
+      carefully</strong> - Wrong addresses lead to cancellations ✅
+    <strong>Address concerns immediately</strong> - If customer is hesitant,
+    work with them ✅ <strong>Confirm availability</strong> - Don’t create
+    orders for out-of-stock items ✅ <strong>Be professional</strong> - Good
+    service reduces cancellation requests ✅ <strong>Document
+      everything</strong> - Clear notes help everyone understand what
+    happened
+  </p>
+  <h3 id="remember">Remember</h3>
+  <p>Cancellations are part of the job - they happen. Don’t take them
+    personally! Focus on: - Minimizing cancellations through quick follow-up
+    - Documenting the reason clearly - Learning from patterns (are certain
+    products getting cancelled more? why?) - Moving forward to the next
+    order</p>
+  <hr />
+  <h2 id="handling-returns">8. Handling Returns</h2>
+  <p>Returns happen when a customer wants to send back a product they’ve
+    already received and paid for. This is different from cancellations.</p>
+  <h3 id="cancellation-vs-return-whats-the-difference">Cancellation vs
+    Return: What’s the Difference?</h3>
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th><strong>Cancellation</strong></th>
+        <th><strong>Return</strong></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>When?</strong></td>
+        <td>Before delivery</td>
+        <td>After delivery</td>
+      </tr>
+      <tr>
+        <td><strong>Payment?</strong></td>
+        <td>Before customer pays</td>
+        <td>After customer has paid</td>
+      </tr>
+      <tr>
+        <td><strong>Refund?</strong></td>
+        <td>No refund needed (no payment made)</td>
+        <td>Refund required</td>
+      </tr>
+      <tr>
+        <td><strong>Who initiates?</strong></td>
+        <td>Rep or customer</td>
+        <td>Customer only</td>
+      </tr>
+      <tr>
+        <td><strong>Status used</strong></td>
+        <td><code>cancelled</code></td>
+        <td><code>returned</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Key point</strong>: If the customer hasn’t received or paid
+    for the product yet, it’s a cancellation (see <a href="#7-handling-cancelled-orders">Section 7</a>). If they already
+    have
+    the product and paid, it’s a return.</p>
+  <h3 id="return-policy">Return Policy</h3>
+  <p>Customers can return products under these conditions:</p>
+  <p>✅ <strong>Within 30 days</strong> of delivery ✅ <strong>Product
+      must be unopened/unused</strong> ✅ <strong>Original packaging
+      intact</strong></p>
+  <p>If these conditions aren’t met, returns may not be approved.</p>
+  <h3 id="common-return-reasons">Common Return Reasons</h3>
+  <p>Customers request returns for various reasons:</p>
+  <ul>
+    <li><strong>Defective product</strong> - Product damaged or doesn’t work
+      properly</li>
+    <li><strong>Wrong item delivered</strong> - Received different product
+      than ordered</li>
+    <li><strong>Changed mind</strong> - Customer no longer wants the
+      product</li>
+    <li><strong>Doesn’t meet expectations</strong> - Product quality or
+      features not as expected</li>
+    <li><strong>Size/fit issues</strong> - Wrong size (clothing,
+      accessories)</li>
+  </ul>
+  <h3 id="how-to-handle-a-return-request">How to Handle a Return
+    Request</h3>
+  <p>When a customer calls requesting a return, follow these steps:</p>
+  <h4 id="step-1-listen-and-gather-information">Step 1: Listen and Gather
+    Information</h4>
+  <ol type="1">
+    <li>Let the customer explain why they want to return the product</li>
+    <li>Ask when they received the order</li>
+    <li>Ask about the product condition (opened? used? damaged
+      package?)</li>
+  </ol>
+  <h4 id="step-2-verify-return-eligibility">Step 2: Verify Return
+    Eligibility</h4>
+  <p>Check if the return qualifies:</p>
+  <ul>
+    <li>✅ Is it within 30 days of delivery?</li>
+    <li>✅ Is the product unopened/unused?</li>
+    <li>✅ Is the packaging intact?</li>
+  </ul>
+  <p><strong>If YES to all</strong>: Proceed to Step 3 <strong>If NO to
+      any</strong>: Explain the return policy to the customer. They may not be
+    eligible for a return.</p>
+  <h4 id="step-3-explain-the-refund-process">Step 3: Explain the Refund
+    Process</h4>
+  <p>Tell the customer: - “We’ll refund you the product cost minus the
+    delivery fee” - Example: If they paid GHS 100, and delivery was GHS 15,
+    they’ll get GHS 85 back - “A manager needs to approve the return first”
+    - “Once approved, we’ll arrange pickup and process your refund”</p>
+  <h4 id="step-4-request-manager-approval">Step 4: Request Manager
+    Approval</h4>
+  <p><strong>Important</strong>: You cannot approve returns yourself.
+    Manager approval is required.</p>
+  <ol type="1">
+    <li>Open the order in the system</li>
+    <li>Add notes documenting the return request:
+      <ul>
+        <li>Return reason</li>
+        <li>Customer’s explanation</li>
+        <li>Product condition (unopened/unused)</li>
+        <li>Date of delivery</li>
+      </ul>
+    </li>
+    <li>Contact your manager/admin with the order details</li>
+    <li>Wait for manager approval</li>
+  </ol>
+  <p>Example note: “Customer requesting return - product defective
+    (doesn’t turn on). Delivered 10 days ago. Product unopened. Requesting
+    manager approval for return.”</p>
+  <h4 id="step-5-once-approved---arrange-pickup">Step 5: Once Approved -
+    Arrange Pickup</h4>
+  <p>After your manager approves:</p>
+  <ol type="1">
+    <li>Call the customer to confirm approval</li>
+    <li>Arrange a pickup time with customer</li>
+    <li>Coordinate with delivery team to pick up the item</li>
+    <li>Provide customer’s address and contact info to delivery agent</li>
+  </ol>
+  <h4 id="step-6-after-pickup---update-status">Step 6: After Pickup -
+    Update Status</h4>
+  <p>Once the item has been physically picked up and returned:</p>
+  <ol type="1">
+    <li>Change the order status to <strong>“Returned”</strong></li>
+    <li>Add notes: “Item picked up on [date], condition verified, refund
+      processed”</li>
+    <li>Process the refund (cash back to customer)</li>
+  </ol>
+  <p><strong>Don’t change status to “returned” until the item is actually
+      picked up!</strong></p>
+  <h3 id="refund-calculation">Refund Calculation</h3>
+  <p><strong>Refund amount</strong> = Total paid - Delivery fee</p>
+  <p><strong>Example:</strong> - Customer paid: GHS 150 total - Product
+    cost: GHS 135 - Delivery fee: GHS 15 - <strong>Refund</strong>: GHS 135
+    (product cost only)</p>
+  <p>The delivery fee is not refunded because the delivery service was
+    already provided.</p>
+  <h3 id="impact-on-your-commission">Impact on Your Commission</h3>
+  <p>⚠️ <strong>You lose the commission on returned orders.</strong></p>
+  <p>Returns hurt your earnings because: - ❌ Commission is removed when
+    order status changes to “returned” - ❌ Your conversion rate drops - ❌
+    Time invested doesn’t generate income</p>
+  <p>This is why quality checking and accurate order creation is important
+    - it prevents returns!</p>
+  <h3 id="step-by-step-return-process-summary">Step-by-Step Return Process
+    Summary</h3>
+  <pre><code>1. Customer calls requesting return
+↓
+2. Verify eligibility (30 days, unopened/unused)
+↓
+3. Document return request in order notes
+↓
+4. Request manager approval
+↓
+5. Manager approves/denies
+↓
+6. If approved: Call customer, arrange pickup
+↓
+7. Delivery agent picks up item
+↓
+8. Change status to &quot;returned&quot;
+↓
+9. Process refund (total paid - delivery fee)</code></pre>
+  <h3 id="what-to-tell-customers">What to Tell Customers</h3>
+  <p>During a return request call, be professional and helpful:</p>
+  <p><strong>Good responses:</strong> - “I understand. Let me help you
+    with that return.” - “Can you tell me what’s wrong with the product?” -
+    “I need to get manager approval for the return. I’ll call you back
+    within [timeframe].” - “Once approved, we’ll arrange pickup at your
+    convenience.” - “You’ll receive [amount] as a refund - the product cost
+    minus the delivery fee.”</p>
+  <p><strong>Avoid:</strong> - ❌ Arguing with the customer about their
+    reason - ❌ Making promises you can’t keep (“I’ll approve it right now”)
+    - ❌ Telling them they’ll get a full refund including delivery fee</p>
+  <h3 id="best-practices-for-minimizing-returns">Best Practices for
+    Minimizing Returns</h3>
+  <p>Returns cost you commission! Here’s how to reduce them:</p>
+  <p>✅ <strong>Verify orders carefully</strong> - Make sure you create
+    the right order (correct products, quantities) ✅ <strong>Confirm
+      product details</strong> - During order creation, describe the product
+    to the customer clearly ✅ <strong>Set accurate expectations</strong> -
+    Don’t oversell or misrepresent products ✅ <strong>Double-check
+      addresses</strong> - Wrong deliveries lead to returns ✅ <strong>Quality
+      check before delivery</strong> - If you’re handling the product, inspect
+    it first</p>
+  <h3 id="remember-1">Remember</h3>
+  <p>Returns are frustrating because you lose commission, but they’re part
+    of COD business. Handle them professionally:</p>
+  <ul>
+    <li>Be empathetic to customer concerns</li>
+    <li>Follow the process (manager approval required)</li>
+    <li>Document everything clearly</li>
+    <li>Learn from returns to prevent future ones</li>
+    <li>Focus on creating quality orders upfront</li>
+  </ul>
+  <hr />
+  <h2 id="common-workflows">9. Common Workflows</h2>
+  <p>Your day involves two main types of workflows: handling incoming
+    calls from customers (inbound) and following up on orders that come
+    through the website or forms (outbound).</p>
+  <h3 id="workflow-1-inbound-calls-customer-calls-you">Workflow 1: Inbound
+    Calls (Customer Calls You)</h3>
+  <p>This is when a customer calls to place an order.</p>
+  <pre><code>Customer calls → Get customer info → Search/create customer → Create order → Follow up</code></pre>
+  <p><strong>Step-by-step:</strong></p>
+  <ol type="1">
+    <li><strong>Answer the call</strong>
+      <ul>
+        <li>Greet the customer professionally</li>
+        <li>Ask what they’d like to order</li>
+      </ul>
+    </li>
+    <li><strong>Get customer information</strong>
+      <ul>
+        <li>Name, phone number, delivery address</li>
+        <li>The customer already knows what product they want</li>
+      </ul>
+    </li>
+    <li><strong>Search for existing customer</strong>
+      <ul>
+        <li>Go to Customers page</li>
+        <li>Search by name or phone number</li>
+        <li>If found, use existing customer record</li>
+        <li>If not found, create new customer (see <a href="#3-customer-management">Section 3</a>)</li>
+      </ul>
+    </li>
+    <li><strong>Create the order</strong>
+      <ul>
+        <li>Go to Orders page → Click “Create Order”</li>
+        <li>Select the customer</li>
+        <li>Add products they requested</li>
+        <li>Enter delivery address (verify with customer)</li>
+        <li>Add any special notes</li>
+        <li>Submit the order (see <a href="#4-creating-orders">Section
+            4</a>)</li>
+      </ul>
+    </li>
+    <li><strong>Confirm details with customer</strong>
+      <ul>
+        <li>Read back: products, quantities, total price, delivery address</li>
+        <li>Thank them and let them know you’ll call back to confirm</li>
+      </ul>
+    </li>
+    <li><strong>Follow up within 1 hour</strong>
+      <ul>
+        <li>Call them back to confirm they still want the order</li>
+        <li>Change status to “confirmed” once they confirm (see <a href="#5-following-up-on-pending-orders">Section
+            5</a>)</li>
+      </ul>
+    </li>
+  </ol>
+  <p><strong>Time</strong>: Most inbound calls take less than 5 minutes
+    from start to finish.</p>
+  <hr />
+  <h3 id="workflow-2-outbound-calls-orders-come-from-webforms">Workflow 2:
+    Outbound Calls (Orders Come From Web/Forms)</h3>
+  <p>This is when orders appear in the system from your website or
+    checkout forms, and you need to call the customer to confirm.</p>
+  <pre><code>Order appears in system → Review details → Call customer → Confirm/update status</code></pre>
+  <p><strong>Step-by-step:</strong></p>
+  <ol type="1">
+    <li><strong>Order appears in your system</strong>
+      <ul>
+        <li>Orders come from website purchases or checkout form submissions</li>
+        <li>They appear in your Orders list with status
+          “pending_confirmation”</li>
+      </ul>
+    </li>
+    <li><strong>Review the order details</strong>
+      <ul>
+        <li>Open the order to see what the customer ordered</li>
+        <li>Note: customer name, phone number, products, delivery address</li>
+        <li>Check if anything looks unusual (invalid address, duplicate order,
+          etc.)</li>
+      </ul>
+    </li>
+    <li><strong>Call the customer</strong>
+      <ul>
+        <li>Use the phone number on file</li>
+        <li>Confirm their identity</li>
+        <li>Tell them their order is ready for processing</li>
+        <li>Verify all details: products, quantities, delivery address, total
+          price</li>
+      </ul>
+    </li>
+    <li><strong>Update the order status</strong>
+      <ul>
+        <li>If customer confirms: Change status to “confirmed” (see <a href="#6-updating-order-status">Section 6</a>)
+        </li>
+        <li>If customer declines: Cancel the order (see <a href="#7-handling-cancelled-orders">Section 7</a>)</li>
+        <li>If customer doesn’t answer: Log the call attempt, try again later
+          (see <a href="#5-following-up-on-pending-orders">Section 5</a>)</li>
+      </ul>
+    </li>
+    <li><strong>Continue processing</strong>
+      <ul>
+        <li>Move the order through statuses as needed (preparing → ready → out
+          for delivery → delivered)</li>
+      </ul>
+    </li>
+  </ol>
+  <p><strong>Time</strong>: Most outbound calls take less than 5
+    minutes.</p>
+  <hr />
+  <h3 id="your-daily-routine">Your Daily Routine</h3>
+  <p>Here’s what a typical day looks like:</p>
+  <h4 id="morning-start-of-shift">Morning (Start of Shift)</h4>
+  <ol type="1">
+    <li><strong>Check your dashboard</strong>
+      <ul>
+        <li>Look at “My Pending Orders” count</li>
+        <li>Review any pending orders from previous days</li>
+      </ul>
+    </li>
+    <li><strong>Filter pending orders</strong>
+      <ul>
+        <li>Go to Orders page → Click “Pending” filter</li>
+        <li>Prioritize orders that need follow-up today</li>
+      </ul>
+    </li>
+    <li><strong>Make your first follow-up calls</strong>
+      <ul>
+        <li>Start calling customers with pending orders</li>
+        <li>Goal: Convert pending → confirmed</li>
+      </ul>
+    </li>
+  </ol>
+  <h4 id="throughout-the-day">Throughout the Day</h4>
+  <p><strong>Priority 1: Answer incoming calls</strong> - When a customer
+    calls, answer immediately - Take their order following the inbound
+    workflow - Incoming calls are your #1 priority - customers are
+    waiting!</p>
+  <p><strong>Priority 2: Handle web/form orders</strong> - Check for new
+    orders from website/forms - Call customers to confirm (outbound
+    workflow)</p>
+  <p><strong>Priority 3: Follow up on pending orders</strong> - Between
+    incoming calls, work through your pending list - Call customers who
+    haven’t confirmed yet - Update statuses as orders progress</p>
+  <p><strong>Priority 4: Update order statuses</strong> - As orders move
+    through fulfillment, keep statuses current - Mark orders as preparing,
+    ready, out for delivery, delivered</p>
+  <h4 id="end-of-day">End of Day</h4>
+  <ol type="1">
+    <li><strong>Review your pending orders</strong>
+      <ul>
+        <li>Check how many pending orders remain</li>
+        <li>Note which ones need priority follow-up tomorrow</li>
+      </ul>
+    </li>
+    <li><strong>Update any outstanding statuses</strong>
+      <ul>
+        <li>Make sure all completed deliveries are marked “delivered”</li>
+        <li>Add notes for orders that need attention tomorrow</li>
+      </ul>
+    </li>
+    <li><strong>Check your metrics</strong>
+      <ul>
+        <li>Look at your dashboard to see today’s performance</li>
+        <li>Review conversion rate and earnings</li>
+      </ul>
+    </li>
+  </ol>
+  <hr />
+  <h3 id="priority-system">Priority System</h3>
+  <p>When multiple things need attention, follow this order:</p>
+  <p><strong>1st Priority: Incoming calls</strong> 📞 - Customer is on the
+    line waiting - Handle immediately</p>
+  <p><strong>2nd Priority: Pending orders</strong> ⏰ - Orders waiting for
+    follow-up - These are potential lost sales if you delay</p>
+  <p><strong>3rd Priority: Administrative tasks</strong> 📝 - Updating
+    statuses, adding notes, reviewing reports - Important but not as
+    urgent</p>
+  <p><strong>Why incoming calls come first</strong>: A customer calling is
+    an active, immediate opportunity. They’re interested right now. Pending
+    orders can wait a few more minutes while you help the live caller.</p>
+  <hr />
+  <h3 id="quick-reference-workflows-at-a-glance">Quick Reference:
+    Workflows at a Glance</h3>
+  <table>
+    <colgroup>
+      <col style="width: 33%" />
+      <col style="width: 20%" />
+      <col style="width: 28%" />
+      <col style="width: 17%" />
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Workflow Type</th>
+        <th>Trigger</th>
+        <th>Your Action</th>
+        <th>Result</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Inbound</strong></td>
+        <td>Customer calls you</td>
+        <td>Search/create customer → Create order → Follow up</td>
+        <td>New pending order</td>
+      </tr>
+      <tr>
+        <td><strong>Outbound</strong></td>
+        <td>Order from web/form</td>
+        <td>Call customer → Confirm details → Update status</td>
+        <td>Confirmed or cancelled order</td>
+      </tr>
+    </tbody>
+  </table>
+  <hr />
+  <h3 id="tips-for-efficient-workflow-management">Tips for Efficient
+    Workflow Management</h3>
+  <p>✅ <strong>Keep the dashboard open</strong> - Check “My Pending
+    Orders” count regularly ✅ <strong>Use filters</strong> - Filter orders
+    by status to focus on what needs attention ✅ <strong>Work in
+      batches</strong> - If no incoming calls, make 5-10 follow-up calls in a
+    row ✅ <strong>Set reminders</strong> - If customer asks to be called
+    later, note the time ✅ <strong>Stay organized</strong> - Add good notes
+    so you remember context for each order ✅ <strong>Move fast</strong> -
+    Most tasks take under 5 minutes - don’t overthink it</p>
+  <p>Remember: Your goal is to move orders from pending → confirmed →
+    delivered as quickly as possible. The faster you work, the more you
+    earn!</p>
+  <hr />
+  <h2 id="tips-and-best-practices">10. Tips and Best Practices</h2>
+  <p>Here are proven tips to help you succeed as a customer rep and
+    maximize your earnings.</p>
+  <h3 id="phone-communication-tips">Phone Communication Tips</h3>
+  <p>Your voice is your primary tool. Make it count:</p>
+  <p>✅ <strong>Professional greeting</strong> - “Hello, this is [your
+    name] from [company]. How can I help you?” ✅ <strong>Speak
+      clearly</strong> - Don’t rush. Enunciate so customers understand every
+    word ✅ <strong>Active listening</strong> - Let customers finish
+    speaking before responding ✅ <strong>Use their name</strong> - “Thanks
+    for your order, Mrs. Mensah” feels more personal ✅ <strong>Smile while
+      talking</strong> - It changes your tone and customers can hear it ✅
+    <strong>Confirm understanding</strong> - Repeat back important details
+    to avoid mistakes ✅ <strong>End positively</strong> - “Thank you for
+    your order! We’ll take good care of you.”
+  </p>
+  <p><strong>Avoid:</strong> - ❌ Eating or drinking while on calls - ❌
+    Background noise (find a quiet space) - ❌ Using slang or unprofessional
+    language - ❌ Rushing the customer off the phone</p>
+  <hr />
+  <h3 id="time-management">Time Management</h3>
+  <p>Work smarter, not just harder:</p>
+  <p>✅ <strong>Batch similar tasks</strong> - Make 10 follow-up calls in
+    a row rather than switching between tasks ✅ <strong>Use filters
+      efficiently</strong> - Filter by “pending” to focus on what needs
+    attention ✅ <strong>Set time blocks</strong> - “9-10am: Follow-up
+    calls, 10-12pm: Take incoming calls &amp; web orders” ✅ <strong>Use
+      downtime wisely</strong> - When no incoming calls, work through pending
+    orders ✅ <strong>Don’t overthink</strong> - Most tasks take under 5
+    minutes. Move fast and trust your judgment ✅ <strong>Track your
+      pace</strong> - Notice how many orders you complete per hour and try to
+    improve</p>
+  <hr />
+  <h3 id="accuracy-is-everything">Accuracy is Everything</h3>
+  <p>Mistakes cost time and money:</p>
+  <p>✅ <strong>Double-check addresses</strong> - Read the full address
+    back to the customer ✅ <strong>Verify phone numbers</strong> - “Your
+    number is 0XX XXX XXXX, correct?” ✅ <strong>Confirm product
+      details</strong> - “You want 2 units of [product name], right?” ✅
+    <strong>Review before submitting</strong> - Take 10 seconds to scan the
+    order before clicking “Create” ✅ <strong>Use correct spelling</strong>
+    - Misspelled names frustrate customers ✅ <strong>Note special
+      instructions</strong> - If customer mentions anything important, write
+    it down
+  </p>
+  <p><strong>One wrong digit in an address = failed delivery = cancelled
+      order = no commission</strong></p>
+  <hr />
+  <h3 id="customer-service-excellence">Customer Service Excellence</h3>
+  <p>Great service leads to repeat customers:</p>
+  <p>✅ <strong>Be patient</strong> - Some customers need more time to
+    decide ✅ <strong>Stay empathetic</strong> - “I understand your concern,
+    let me help with that” ✅ <strong>Be solution-focused</strong> - Don’t
+    just say “no”, offer alternatives ✅ <strong>Own mistakes</strong> - If
+    you made an error, apologize and fix it quickly ✅ <strong>Go the extra
+      mile</strong> - Help customers feel valued ✅ <strong>Stay
+      professional</strong> - Even if a customer is rude, remain calm and
+    courteous</p>
+  <p><strong>Happy customers = higher conversion rates = more
+      earnings</strong></p>
+  <hr />
+  <h3 id="maximizing-your-earnings">Maximizing Your Earnings</h3>
+  <p>Your income depends on delivered orders. Here’s how to maximize
+    it:</p>
+  <p>✅ <strong>Follow up within 1 hour</strong> - This is the #1 factor
+    in high conversion rates ✅ <strong>Call multiple times</strong> - Don’t
+    give up after one attempt ✅ <strong>Reduce cancellations</strong> -
+    Verify details carefully during order creation ✅ <strong>Minimize
+      returns</strong> - Set accurate expectations about products ✅
+    <strong>Update statuses quickly</strong> - Get orders from pending →
+    delivered faster ✅ <strong>Build rapport</strong> - Customers who like
+    you are more likely to buy ✅ <strong>Track your metrics</strong> -
+    Check your conversion rate daily and aim to improve
+  </p>
+  <p><strong>Top performers follow up fast, call persistently, and have
+      high accuracy</strong></p>
+  <hr />
+  <h3 id="organization-habits">Organization Habits</h3>
+  <p>Stay organized to avoid dropping balls:</p>
+  <p>✅ <strong>Add detailed notes</strong> - Future-you will thank
+    present-you ✅ <strong>Use order filters</strong> - Don’t scroll through
+    everything, filter by status ✅ <strong>Create a system</strong> - Track
+    which customers need callbacks today ✅ <strong>Review pending orders
+      daily</strong> - Make it a morning ritual ✅ <strong>Keep customer
+      records updated</strong> - If they mention a new phone number or
+    address, update it ✅ <strong>Log every call</strong> - Document your
+    attempts so there’s a record</p>
+  <hr />
+  <h3 id="dealing-with-difficult-customers">Dealing with Difficult
+    Customers</h3>
+  <p>Not every call goes smoothly. Stay professional:</p>
+  <p>✅ <strong>Stay calm</strong> - Don’t match their energy if they’re
+    upset ✅ <strong>Listen first</strong> - Let them vent before offering
+    solutions ✅ <strong>Don’t take it personally</strong> - They’re
+    frustrated with the situation, not you ✅ <strong>Acknowledge
+      feelings</strong> - “I understand this is frustrating” ✅ <strong>Focus
+      on solutions</strong> - “Here’s what I can do to help…” ✅ <strong>Know
+      when to escalate</strong> - If you can’t resolve it, involve your
+    manager</p>
+  <p><strong>Remember</strong>: Even difficult customers can become loyal
+    ones if you handle them well.</p>
+  <hr />
+  <h3 id="handling-rejection">Handling Rejection</h3>
+  <p>Cancellations and rejections are part of the job:</p>
+  <p>✅ <strong>Expect some rejection</strong> - Not every order will
+    convert. That’s normal ✅ <strong>Don’t take it personally</strong> -
+    Customer circumstances change ✅ <strong>Learn from it</strong> - If
+    multiple customers cancel for the same reason, note the pattern ✅
+    <strong>Move forward quickly</strong> - Don’t dwell on one cancelled
+    order ✅ <strong>Focus on what you control</strong> - You can’t force
+    customers to buy, but you can follow up quickly
+  </p>
+  <p><strong>Top reps have 70-80% conversion rates, meaning 20-30% of
+      their orders don’t work out. That’s expected!</strong></p>
+  <hr />
+  <h3 id="success-habits-of-top-performers">Success Habits of Top
+    Performers</h3>
+  <p>Here’s what the best reps do differently:</p>
+  <ol type="1">
+    <li><strong>Check pending orders first thing</strong> every morning</li>
+    <li><strong>Follow up on new orders within 30-60 minutes</strong> (not
+      hours)</li>
+    <li><strong>Call customers 2-3 times</strong> before giving up</li>
+    <li><strong>Add detailed notes</strong> on every call and status
+      change</li>
+    <li><strong>Review their metrics daily</strong> and set improvement
+      goals</li>
+    <li><strong>Ask for help</strong> when they’re unsure</li>
+    <li><strong>Stay positive</strong> even when facing cancellations</li>
+    <li><strong>Build relationships</strong> with repeat customers</li>
+    <li><strong>Keep learning</strong> and adapting their approach</li>
+    <li><strong>Celebrate wins</strong> - Every delivered order is a
+      success!</li>
+  </ol>
+  <hr />
+  <h3 id="common-mistakes-to-avoid-1">Common Mistakes to Avoid</h3>
+  <p>Learn from common pitfalls:</p>
+  <p>❌ <strong>Not following up fast enough</strong> - Orders go cold
+    after a few hours ❌ <strong>Giving up after one call</strong> - Many
+    successful orders happen on attempt 2 or 3 ❌ <strong>Skipping customer
+      verification</strong> - Wrong addresses lead to failed deliveries ❌
+    <strong>Creating duplicate customers</strong> - Always search first ❌
+    <strong>Forgetting to log calls</strong> - No record = confusion later
+    ❌ <strong>Poor note-taking</strong> - Future-you needs context ❌
+    <strong>Not updating statuses</strong> - Stale data hurts everyone ❌
+    <strong>Taking rejection personally</strong> - It’s just business
+  </p>
+  <hr />
+  <h3 id="daily-success-checklist">Daily Success Checklist</h3>
+  <p>Use this checklist to stay consistent:</p>
+  <p><strong>Morning:</strong> - [ ] Log into the system - [ ] Check “My
+    Pending Orders” count - [ ] Review pending orders from yesterday - [ ]
+    Make first 5-10 follow-up calls</p>
+  <p><strong>Throughout Day:</strong> - [ ] Answer incoming calls
+    immediately (Priority #1) - [ ] Follow up on new orders within 1 hour -
+    [ ] Check for web/form orders regularly - [ ] Update order statuses as
+    they progress - [ ] Add notes to all calls and status changes</p>
+  <p><strong>End of Day:</strong> - [ ] Review remaining pending orders -
+    [ ] Note priority follow-ups for tomorrow - [ ] Check your dashboard
+    metrics - [ ] Celebrate your wins!</p>
+  <hr />
+  <h3 id="tracking-your-improvement">Tracking Your Improvement</h3>
+  <p>Monitor these metrics to see your progress:</p>
+  <p><strong>Daily:</strong> - Conversion rate (aim for 70%+) - Number of
+    pending orders (keep it low) - Orders delivered (more = more
+    commission)</p>
+  <p><strong>Weekly:</strong> - Total earnings (trending up?) - Average
+    calls per order (fewer = more efficient) - Cancellation rate (trending
+    down?)</p>
+  <p><strong>Set goals</strong>: “This week I’ll improve my conversion
+    rate from 65% to 70%” or “I’ll reduce pending orders from 15 to 10”</p>
+  <hr />
+  <h3 id="building-customer-relationships">Building Customer
+    Relationships</h3>
+  <p>Repeat customers are easier sales:</p>
+  <p>✅ <strong>Remember details</strong> - Check past orders when they
+    call again ✅ <strong>Personalize service</strong> - “Great to hear from
+    you again, Mr. Asante!” ✅ <strong>Reference history</strong> - “Last
+    time you ordered [product], would you like that again?” ✅ <strong>Treat
+      them well</strong> - Excellent service turns one-time buyers into
+    regulars ✅ <strong>Ask for feedback</strong> - “How was your last
+    delivery?” shows you care</p>
+  <p><strong>Loyal customers = higher conversion rates = more predictable
+      income</strong></p>
+  <hr />
+  <h3 id="final-thoughts">Final Thoughts</h3>
+  <p>Success as a customer rep comes down to:</p>
+  <ol type="1">
+    <li><strong>Speed</strong> - Follow up fast</li>
+    <li><strong>Persistence</strong> - Call multiple times</li>
+    <li><strong>Accuracy</strong> - Get details right the first time</li>
+    <li><strong>Professionalism</strong> - Treat every customer well</li>
+    <li><strong>Organization</strong> - Stay on top of your orders</li>
+  </ol>
+  <p>You control your earnings. The more orders you convert and deliver,
+    the more you make. Stay focused, stay positive, and keep improving!</p>
+  <p><strong>You’ve got this! 💪</strong></p>
+  <hr />
+  <h2 id="troubleshooting">11. Troubleshooting</h2>
+  <p>Running into issues? Here are solutions to common problems you might
+    encounter.</p>
+  <h3 id="login-issues">Login Issues</h3>
+  <p><strong>Problem: Can’t log in / “Invalid credentials”
+      error</strong></p>
+  <p><strong>Solutions:</strong> 1. Double-check your email and password
+    (check for typos, caps lock) 2. Make sure you’re using the correct URL:
+    https://codadminpro.com 3. Contact your admin - only they can reset your
+    password 4. If your account is locked, your admin needs to unlock it</p>
+  <p><strong>Remember</strong>: You cannot change your own password. Only
+    admins can do this.</p>
+  <hr />
+  <h3 id="cant-find-a-customer">Can’t Find a Customer</h3>
+  <p><strong>Problem: Searching for a customer but they don’t
+      appear</strong></p>
+  <p><strong>Solutions:</strong> 1. Check your spelling - try searching by
+    phone number instead of name 2. Try partial search - search “Mensah”
+    instead of “Kwame Mensah” 3. The customer might not exist yet - create a
+    new customer record 4. Try searching without special characters (search
+    “0241234567” not “+233 24 123 4567”) 5. Refresh the page and try
+    again</p>
+  <hr />
+  <h3 id="cant-find-an-order">Can’t Find an Order</h3>
+  <p><strong>Problem: Looking for an order but can’t see it</strong></p>
+  <p><strong>Solutions:</strong> 1. Check your filters - click “All” to
+    see all orders, not just pending 2. Make sure you’re looking at the
+    right date range 3. Try searching by customer name or order number 4.
+    The order might belong to another rep (you only see your own orders) 5.
+    Refresh the page to load latest orders</p>
+  <hr />
+  <h3 id="order-wont-save-or-submit">Order Won’t Save or Submit</h3>
+  <p><strong>Problem: Clicking “Create Order” but nothing happens or you
+      get an error</strong></p>
+  <p><strong>Solutions:</strong> 1. Check for required fields - look for
+    red error messages or asterisks (*) 2. Make sure you selected a customer
+    3. Verify you added at least one product 4. Check that delivery address
+    is complete 5. Check your internet connection 6. Try refreshing the page
+    and re-entering the order</p>
+  <p><strong>Required fields reminder</strong>: Customer, at least one
+    product, delivery address</p>
+  <hr />
+  <h3 id="status-update-not-working">Status Update Not Working</h3>
+  <p><strong>Problem: Changed order status but it’s not
+      updating</strong></p>
+  <p><strong>Solutions:</strong> 1. Refresh the page - sometimes updates
+    need a manual refresh 2. Check if you saved the change (look for a
+    “Save” or “Update” button) 3. Make sure you have permission to update
+    that order 4. Try logging out and back in 5. If still not working,
+    contact your admin</p>
+  <hr />
+  <h3 id="dashboard-metrics-not-updating">Dashboard Metrics Not
+    Updating</h3>
+  <p><strong>Problem: Dashboard numbers seem wrong or
+      outdated</strong></p>
+  <p><strong>Solutions:</strong> 1. Refresh the page - metrics should
+    update in real-time but manual refresh helps 2. Remember: Dashboard
+    shows current month only (resets at the start of each month) 3. Check if
+    you’re looking at the right metric (Pending vs Total Orders) 4. Wait a
+    few seconds - sometimes there’s a small delay 5. If numbers are way off,
+    contact your admin</p>
+  <hr />
+  <h3 id="duplicate-customer-warning">Duplicate Customer Warning</h3>
+  <p><strong>Problem: System says customer already exists when trying to
+      create one</strong></p>
+  <p><strong>Solutions:</strong> 1. This is working correctly! The system
+    is preventing duplicates 2. Cancel the customer creation 3. Search for
+    the existing customer using their name or phone number 4. Use the
+    existing customer record for your order 5. If you truly need a new
+    record (maybe same name, different person), contact your admin</p>
+  <p><strong>Don’t create duplicates</strong> - it causes confusion and
+    data issues.</p>
+  <hr />
+  <h3 id="wrong-product-added-to-order">Wrong Product Added to Order</h3>
+  <p><strong>Problem: Added the wrong product to an order</strong></p>
+  <p><strong>Solutions:</strong></p>
+  <p><strong>If order not yet submitted:</strong> 1. Remove the wrong
+    product 2. Add the correct product 3. Submit the order</p>
+  <p><strong>If order already submitted:</strong> 1. Open the order 2. You
+    may be able to edit it if it’s still in “pending” or “confirmed” status
+    3. If you can’t edit, contact your admin 4. Alternatively: Cancel the
+    wrong order and create a new correct one</p>
+  <hr />
+  <h3 id="customer-unreachable">Customer Unreachable</h3>
+  <p><strong>Problem: Customer won’t answer calls, tried multiple
+      times</strong></p>
+  <p><strong>Solutions:</strong> 1. Try calling at different times of day
+    (morning, afternoon, evening) 2. Spread calls over multiple days (Day 1:
+    2-3 calls, Day 2-3: 1 call each day) 3. Log every call attempt with date
+    and time 4. After 3-5 days with no response, consider cancelling the
+    order 5. Document the reason: “Customer unreachable after [X] call
+    attempts over [Y] days”</p>
+  <p>See <a href="#5-following-up-on-pending-orders">Section 5: Following
+      Up on Pending Orders</a> for detailed guidance.</p>
+  <hr />
+  <h3 id="system-running-slow">System Running Slow</h3>
+  <p><strong>Problem: Pages loading slowly or system is laggy</strong></p>
+  <p><strong>Solutions:</strong> 1. Close unnecessary browser tabs 2.
+    Clear your browser cache: - Chrome: Settings → Privacy → Clear browsing
+    data - Firefox: Settings → Privacy → Clear Data 3. Check your internet
+    connection 4. Try using a different browser (Chrome recommended) 5.
+    Restart your browser 6. Restart your computer if very slow</p>
+  <hr />
+  <h3 id="page-not-loading">Page Not Loading</h3>
+  <p><strong>Problem: Page is blank, stuck loading, or showing an
+      error</strong></p>
+  <p><strong>Solutions:</strong> 1. Check your internet connection 2.
+    Refresh the page (press F5 or click the refresh button) 3. Clear your
+    browser cache 4. Try logging out and back in 5. Try a different browser
+    6. Contact your admin if the issue persists</p>
+  <hr />
+  <h3 id="search-not-finding-results">Search Not Finding Results</h3>
+  <p><strong>Problem: Searching but getting no results when you know the
+      item exists</strong></p>
+  <p><strong>Solutions:</strong> 1. Check your spelling 2. Try searching
+    with less text (search “Accra” instead of “Accra, Greater Accra Region”)
+    3. Try searching by different fields (phone number instead of name) 4.
+    Clear any active filters 5. Refresh the page and try again 6. Make sure
+    you’re searching in the right section (Customers page for customers,
+    Orders page for orders)</p>
+  <hr />
+  <h3 id="filter-not-working">Filter Not Working</h3>
+  <p><strong>Problem: Applied a filter but results don’t
+      match</strong></p>
+  <p><strong>Solutions:</strong> 1. Clear all filters and reapply the one
+    you want 2. Refresh the page 3. Check if you accidentally have multiple
+    filters active 4. Try clicking “All” first, then applying your filter 5.
+    Some filters work together - make sure your combination makes sense</p>
+  <hr />
+  <h3 id="real-time-updates-delayed">Real-Time Updates Delayed</h3>
+  <p><strong>Problem: Made a change but other reps or pages don’t show it
+      immediately</strong></p>
+  <p><strong>Solutions:</strong> 1. Refresh the page - most updates appear
+    instantly, but manual refresh ensures you see them 2. Wait 5-10 seconds
+    - sometimes there’s a small delay 3. Check your internet connection 4.
+    If delays persist, contact your admin (might be a system issue)</p>
+  <hr />
+  <h3 id="when-to-contact-adminit-support">When to Contact Admin/IT
+    Support</h3>
+  <p>Contact your admin when:</p>
+  <p>❗ You can’t log in (password reset needed) ❗ Your account is locked
+    ❗ You need permissions changed ❗ System errors persist after trying
+    solutions above ❗ You need a customer or order deleted ❗ Data looks
+    incorrect (metrics way off, orders missing) ❗ You’re seeing error
+    messages you don’t understand ❗ Internet is working but system won’t
+    load</p>
+  <p><strong>Don’t hesitate to ask for help!</strong> It’s better to get
+    support quickly than to struggle for hours.</p>
+  <hr />
+  <h3 id="quick-troubleshooting-checklist">Quick Troubleshooting
+    Checklist</h3>
+  <p>Before contacting support, try these:</p>
+  <ul class="task-list">
+    <li><label><input type="checkbox" />Refresh the page</label></li>
+    <li><label><input type="checkbox" />Check internet
+        connection</label></li>
+    <li><label><input type="checkbox" />Log out and log back in</label></li>
+    <li><label><input type="checkbox" />Clear browser cache</label></li>
+    <li><label><input type="checkbox" />Try a different browser</label></li>
+    <li><label><input type="checkbox" />Check for typos in
+        searches</label></li>
+    <li><label><input type="checkbox" />Verify you’re using the correct
+        filters</label></li>
+  </ul>
+  <p>If none of these work, reach out to your admin with: - What you were
+    trying to do - What happened instead - Any error messages you saw -
+    Screenshots if possible</p>
+  <hr />
+  <p><strong>Remember</strong>: Most issues can be solved with a simple
+    page refresh or re-checking your inputs. When in doubt, ask for
+    help!</p>
+  <hr />
+  <h2 id="getting-help">12. Getting Help</h2>
+  <p>You’re not alone! Help is available whenever you need it.</p>
+  <h3 id="who-to-contact">Who to Contact</h3>
+  <p>Different issues require different people:</p>
+  <p><strong>Contact Your Admin for:</strong> - ✅ Login issues (password
+    reset, account locked) - ✅ Permission problems (can’t access something
+    you should be able to) - ✅ Account settings changes - ✅ Deleting
+    customers or orders - ✅ User account questions</p>
+  <p><strong>Contact Your Manager for:</strong> - ✅ Return approvals
+    (returns require manager approval) - ✅ Policy questions (what’s
+    allowed, what’s not) - ✅ Performance feedback (how am I doing?) - ✅
+    Commission questions - ✅ Work schedule or shift issues - ✅ Escalating
+    difficult customer situations</p>
+  <p><strong>Contact IT Support for:</strong> - ✅ Technical problems
+    (system errors, pages not loading) - ✅ Browser or computer issues - ✅
+    Internet connectivity problems - ✅ System bugs or glitches</p>
+  <p><strong>Ask Fellow Reps for:</strong> - ✅ Quick tips and tricks - ✅
+    “How do I…?” questions - ✅ Workflow advice - ✅ Sharing best
+    practices</p>
+  <hr />
+  <h3 id="what-information-to-provide">What Information to Provide</h3>
+  <p>When asking for help, provide these details:</p>
+  <p>📋 <strong>What you were trying to do</strong> - Example: “I was
+    trying to create an order for customer John Doe”</p>
+  <p>📋 <strong>What happened instead</strong> - Example: “The order
+    wouldn’t submit when I clicked Create Order”</p>
+  <p>📋 <strong>Any error messages</strong> - Example: “I saw a red
+    message saying ‘Invalid address’”</p>
+  <p>📋 <strong>Screenshots (if possible)</strong> - Take a screenshot of
+    the error or issue - This helps support understand the problem
+    faster</p>
+  <p>📋 <strong>Order or customer details (if relevant)</strong> - Order
+    number, customer name, or other identifiers</p>
+  <p><strong>Good help request example:</strong> &gt; “Hi! I’m trying to
+    update order #1234 status to ‘delivered’, but when I select it from the
+    dropdown, nothing happens. I tried refreshing the page but it’s still
+    showing as ‘out_for_delivery’. Here’s a screenshot. Can you help?”</p>
+  <hr />
+  <h3 id="self-help-resources">Self-Help Resources</h3>
+  <p>Before reaching out, try these:</p>
+  <ol type="1">
+    <li><strong>Review this guide</strong> - Use the Table of Contents to
+      find the relevant section</li>
+    <li><strong>Check Section 11: Troubleshooting</strong> - Common issues
+      and solutions</li>
+    <li><strong>Try the basics</strong> - Refresh page, clear cache, log
+      out/in</li>
+    <li><strong>Search within this document</strong> - Press Ctrl+F
+      (Windows) or Cmd+F (Mac) to search for keywords</li>
+  </ol>
+  <hr />
+  <h3 id="questions-are-encouraged">Questions Are Encouraged!</h3>
+  <p><strong>Never hesitate to ask for help.</strong></p>
+  <p>❌ <strong>Don’t think</strong>: “This is a stupid question” or “I
+    should know this already” ✅ <strong>Do think</strong>: “I’ll ask now so
+    I can do it right”</p>
+  <p>It’s better to: - Ask a question and get it right - Than guess and
+    make a mistake that costs time and money</p>
+  <p><strong>Your admin and manager WANT you to succeed.</strong> Asking
+    questions helps you learn faster.</p>
+  <hr />
+  <h3 id="learning-takes-time">Learning Takes Time</h3>
+  <p>You won’t master everything on day 1, and that’s okay!</p>
+  <ul>
+    <li><strong>Week 1</strong>: Learning the system, making mistakes,
+      asking lots of questions</li>
+    <li><strong>Week 2-3</strong>: Getting more comfortable, building
+      confidence</li>
+    <li><strong>Month 2</strong>: Hitting your stride, developing your
+      rhythm</li>
+    <li><strong>Month 3+</strong>: Operating smoothly, helping new reps</li>
+  </ul>
+  <p><strong>Be patient with yourself.</strong> Every top performer was
+    once a beginner.</p>
+  <hr />
+  <h3 id="keep-this-guide-handy">Keep This Guide Handy</h3>
+  <p>Bookmark this guide and refer back to it whenever you need:</p>
+  <ul>
+    <li>A refresher on a process</li>
+    <li>Clarification on a workflow</li>
+    <li>Solutions to common problems</li>
+    <li>Best practices for success</li>
+  </ul>
+  <p>You don’t need to memorize everything - just know where to find the
+    information when you need it.</p>
+  <hr />
+  <h2 id="youre-ready">You’re Ready! 🎉</h2>
+  <p>Congratulations! You’ve completed the Customer Rep Onboarding
+    Guide.</p>
+  <p>You now know how to: - ✅ Navigate the dashboard and understand your
+    metrics - ✅ Manage customer records - ✅ Create and process orders - ✅
+    Follow up on pending orders (the most important skill!) - ✅ Update
+    order statuses through the entire lifecycle - ✅ Handle cancellations
+    and returns professionally - ✅ Work efficiently through daily workflows
+    - ✅ Troubleshoot common issues - ✅ Get help when you need it</p>
+  <h3 id="your-first-week-goals">Your First Week Goals</h3>
+  <p>Focus on these priorities:</p>
+  <p><strong>Day 1-2</strong>: Get comfortable navigating the system,
+    create a few test orders <strong>Day 3-4</strong>: Start taking real
+    calls and creating orders, ask lots of questions <strong>Day
+      5-7</strong>: Focus on following up on pending orders within 1 hour</p>
+  <h3 id="keys-to-success">Keys to Success</h3>
+  <p>Remember these core principles:</p>
+  <ol type="1">
+    <li><strong>Speed</strong> - Follow up on pending orders within 1
+      hour</li>
+    <li><strong>Persistence</strong> - Call customers multiple times</li>
+    <li><strong>Accuracy</strong> - Double-check addresses and details</li>
+    <li><strong>Professionalism</strong> - Treat every customer with
+      respect</li>
+    <li><strong>Organization</strong> - Keep good notes and update
+      statuses</li>
+  </ol>
+  <h3 id="final-encouragement">Final Encouragement</h3>
+  <p>You control your success in this role. The faster you follow up, the
+    more orders you convert. The more orders you convert, the more you
+    earn.</p>
+  <p><strong>Stay focused. Stay positive. Keep learning. Ask
+      questions.</strong></p>
+  <p>Welcome to the team - we’re glad you’re here! 💪</p>
+  <hr />
+  <p><strong>Need help?</strong> Contact your admin or manager.</p>
+  <p><strong>Found an error in this guide?</strong> Let your admin know so
+    we can update it for future reps.</p>
+  <hr />
+  <p><em>Last updated: January 2026</em></p>
+</body>
+
+</html>

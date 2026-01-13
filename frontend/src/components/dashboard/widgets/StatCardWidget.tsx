@@ -50,8 +50,18 @@ export const StatCardWidget: React.FC<StatCardWidgetProps> = ({
     );
   }
 
+  // Determine onboarding CSS classes based on config.id (for sales rep tour)
+  const getOnboardingClasses = () => {
+    if (config.id === 'my-commission') return 'onboarding-earnings-card';
+    if (config.id === 'my-pending-orders') return 'onboarding-pending-orders';
+    if (config.id === 'my-total-orders' || config.id === 'my-conversion-rate') {
+      return 'onboarding-stats-cards';
+    }
+    return '';
+  };
+
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden">
+    <div className={`bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden ${getOnboardingClasses()}`}>
       <div className="p-6">
         {/* Header with icon and title */}
         <div className="flex items-center justify-between mb-4">

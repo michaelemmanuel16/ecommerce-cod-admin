@@ -72,7 +72,7 @@ export const Customers: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
           <p className="text-sm text-gray-600 mt-1">View and manage your customer base and their order history.</p>
         </div>
-        <Button variant="primary" onClick={handleAddCustomer}>
+        <Button variant="primary" onClick={handleAddCustomer} className="onboarding-add-customer-btn">
           <Plus className="w-4 h-4 mr-2" />
           Add Customer
         </Button>

@@ -1,0 +1,149 @@
+/**
+ * Custom React Joyride Styles for Customer Rep Onboarding
+ *
+ * These styles customize the appearance of the onboarding tour
+ * to match the application's design system and improve visibility.
+ */
+
+/* Pulse animation for the pending orders card (Step 3) */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Custom spotlight effect for the pending orders card */
+.onboarding-pending-orders {
+  position: relative;
+}
+
+/* Add a subtle pulsing red border to the pending orders card during the tour */
+.__floater__open .onboarding-pending-orders {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4);
+}
+
+/* Global Joyride overrides */
+.__floater {
+  z-index: 10100 !important;
+}
+
+.__floater__body {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 0;
+}
+
+/* Tooltip content wrapper */
+.react-joyride__tooltip {
+  max-width: 400px;
+  padding: 20px;
+}
+
+/* Tooltip arrow */
+.react-joyride__tooltip__arrow {
+  background: #ffffff !important;
+}
+
+/* Progress dots */
+.react-joyride__spotlight {
+  border-radius: 8px;
+}
+
+/* Button styling */
+.react-joyride__button--primary {
+  background-color: #2563eb;
+  color: white;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.react-joyride__button--primary:hover {
+  background-color: #1d4ed8;
+}
+
+.react-joyride__button--secondary {
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+.react-joyride__button--secondary:hover {
+  color: #374151;
+}
+
+.react-joyride__button--skip {
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  padding: 4px 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.react-joyride__button--skip:hover {
+  color: #374151;
+}
+
+/* Progress indicator styling */
+.react-joyride__progress {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.react-joyride__progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #d1d5db;
+  transition: background-color 0.2s;
+}
+
+.react-joyride__progress-dot--active {
+  background-color: #2563eb;
+}
+
+/* Overlay styling */
+.react-joyride__overlay {
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 10050 !important;
+}
+
+/* Ensure onboarding elements are visible */
+.onboarding-earnings-card,
+.onboarding-pending-orders,
+.onboarding-stats-cards,
+.onboarding-new-order-btn,
+.onboarding-orders-table,
+.onboarding-status-dropdown,
+.onboarding-search-bar,
+.onboarding-add-customer-btn {
+  position: relative;
+  z-index: 1;
+}
+
+/* Add a subtle highlight when these elements are targeted during the tour */
+.__floater__open .onboarding-earnings-card,
+.__floater__open .onboarding-stats-cards,
+.__floater__open .onboarding-new-order-btn,
+.__floater__open .onboarding-orders-table,
+.__floater__open .onboarding-status-dropdown,
+.__floater__open .onboarding-search-bar,
+.__floater__open .onboarding-add-customer-btn {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.4);
+  border-radius: 8px;
+}

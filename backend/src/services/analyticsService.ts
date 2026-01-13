@@ -368,7 +368,9 @@ export class AnalyticsService {
         userName: `${rep.firstName} ${rep.lastName}`,
         totalAssigned: total,
         completed,
-        pending: total - completed,
+        pending: rep.assignedOrdersAsRep.filter((o) =>
+          !['delivered', 'cancelled', 'returned', 'failed_delivery'].includes(o.status)
+        ).length,
         successRate: total > 0 ? (completed / total) * 100 : 0,
         revenue,
         avgResponseTime

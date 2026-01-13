@@ -5,8 +5,10 @@ import { SalesTrendChart } from '../components/charts/SalesTrendChart';
 import { OrderFunnelChart } from '../components/charts/OrderFunnelChart';
 import { Card } from '../components/ui/Card';
 import { useAnalyticsStore } from '../stores/analyticsStore';
+import { useAuthStore } from '../stores/authStore';
 
 export const Dashboard: React.FC = () => {
+  const { user } = useAuthStore();
   const {
     metrics,
     trends,

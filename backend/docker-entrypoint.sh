@@ -19,7 +19,7 @@ echo "🌱 Checking if database needs seeding..."
 USER_COUNT=$(npx prisma db execute --stdin <<EOF
 SELECT COUNT(*) FROM users;
 EOF
-2>/dev/null | tail -n 1 || echo "0")
+2>/dev/null | grep -E '^[[:space:]]*[0-9]+[[:space:]]*$' | tr -d ' ' || echo "0")
 
 if [ "$USER_COUNT" = "0" ]; then
   echo "🌱 Database is empty, running seed..."
@@ -31,10 +31,10 @@ if [ "$USER_COUNT" = "0" ]; then
 
     async function createAdmin() {
       try {
-        const hashedPassword = await bcrypt.hash('admin123', 10);
+        const hashedPassword = await bcrypt.hash('password123', 10);
         await prisma.user.create({
           data: {
-            email: 'admin@example.com',
+            email: 'admin@codadmin.com',
             password: hashedPassword,
             firstName: 'Admin',
             lastName: 'User',

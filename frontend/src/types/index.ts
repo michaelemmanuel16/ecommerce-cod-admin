@@ -1,5 +1,7 @@
 export interface UserPreferences {
   ordersDefaultView?: 'kanban' | 'list';
+  onboardingCompleted?: boolean;
+  onboardingCompletedAt?: string;
 }
 
 export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'analytics' | 'workflows' | 'settings';

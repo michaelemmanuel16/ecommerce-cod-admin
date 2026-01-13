@@ -35,17 +35,122 @@ async function seedComprehensiveData() {
     await prisma.product.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.user.deleteMany();
+    await prisma.systemConfig.deleteMany();
     console.log('  ✅ Database cleared\n');
+
+    // 0. Create Super Admin and System Config
+    console.log('⚙️ Initializing System Config and Super Admin...');
+    const adminPassword = await bcrypt.hash('password123', 10);
+    await prisma.user.create({
+      data: {
+        email: 'admin@codadmin.com',
+        password: adminPassword,
+        firstName: 'Admin',
+        lastName: 'User',
+        phoneNumber: '+1234567890',
+        role: 'super_admin',
+        isActive: true,
+        isAvailable: true,
+      },
+    });
+    console.log('  ✅ Super Admin created (admin@codadmin.com)');
+
+    await prisma.systemConfig.create({
+      data: {
+        businessName: 'COD Admin Pro',
+        currency: 'GHS',
+        rolePermissions: {
+          super_admin: {
+            users: ['create', 'view', 'update', 'delete'],
+            orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign'],
+            customers: ['create', 'view', 'update', 'delete'],
+            products: ['create', 'view', 'update', 'delete', 'update_stock'],
+            financial: ['view', 'create', 'update', 'delete'],
+            analytics: ['view'],
+            workflows: ['create', 'view', 'update', 'delete', 'execute'],
+            settings: ['view', 'update'],
+            calls: ['create', 'view', 'update', 'delete'],
+          },
+          admin: {
+            users: ['create', 'view', 'update', 'delete'],
+            orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign'],
+            customers: ['create', 'view', 'update', 'delete'],
+            products: ['create', 'view', 'update', 'delete'],
+            financial: ['view', 'create'],
+            analytics: ['view'],
+            workflows: ['create', 'view', 'update', 'delete', 'execute'],
+            settings: ['view'],
+            calls: ['create', 'view', 'update', 'delete'],
+          },
+          manager: {
+            users: [],
+            orders: ['view', 'update', 'bulk_import', 'assign'],
+            customers: ['create', 'view', 'update', 'delete'],
+            products: ['view'],
+            financial: ['view'],
+            analytics: ['view'],
+            workflows: ['view', 'execute'],
+            settings: [],
+            calls: ['view'],
+          },
+          sales_rep: {
+            users: [],
+            orders: ['create', 'view', 'update'],
+            customers: ['create', 'view', 'update', 'delete'],
+            products: ['view'],
+            financial: [],
+            analytics: ['view'],
+            workflows: [],
+            settings: [],
+            calls: ['create', 'view'],
+          },
+          inventory_manager: {
+            users: [],
+            orders: ['view'],
+            customers: ['view'],
+            products: ['create', 'view', 'update', 'delete', 'update_stock'],
+            financial: [],
+            analytics: ['view'],
+            workflows: [],
+            settings: [],
+            calls: [],
+          },
+          delivery_agent: {
+            users: [],
+            orders: ['view', 'update'],
+            customers: ['view'],
+            products: ['view'],
+            financial: ['create'],
+            analytics: ['view'],
+            workflows: [],
+            settings: [],
+            calls: [],
+          },
+          accountant: {
+            users: [],
+            orders: ['view'],
+            customers: ['view'],
+            products: ['view'],
+            financial: ['view', 'create'],
+            analytics: ['view'],
+            workflows: [],
+            calls: [],
+            settings: [],
+          },
+        }
+      }
+    });
+    console.log('  ✅ System Config initialized with permissions\n');
 
     // 1. Create 5 Customer Reps
     console.log('👥 Creating 5 Customer Reps...');
     const customerReps = [];
     const repData = [
-      { firstName: 'Kwame', lastName: 'Mensah', email: 'kwame.mensah@company.com', phone: '0241234567', commission: 10 },
-      { firstName: 'Abena', lastName: 'Owusu', email: 'abena.owusu@company.com', phone: '0242345678', commission: 12 },
-      { firstName: 'Kofi', lastName: 'Asante', email: 'kofi.asante@company.com', phone: '0243456789', commission: 8 },
-      { firstName: 'Akua', lastName: 'Boateng', email: 'akua.boateng@company.com', phone: '0244567890', commission: 15 },
-      { firstName: 'Yaw', lastName: 'Appiah', email: 'yaw.appiah@company.com', phone: '0245678901', commission: 9 },
+      { firstName: 'Kwame', lastName: 'Mensah', email: 'rep1@codadmin.com', phone: '0241234567', commission: 10 },
+      { firstName: 'Abena', lastName: 'Owusu', email: 'rep2@codadmin.com', phone: '0242345678', commission: 12 },
+      { firstName: 'Kofi', lastName: 'Asante', email: 'rep3@codadmin.com', phone: '0243456789', commission: 8 },
+      { firstName: 'Akua', lastName: 'Boateng', email: 'rep4@codadmin.com', phone: '0244567890', commission: 15 },
+      { firstName: 'Yaw', lastName: 'Appiah', email: 'rep5@codadmin.com', phone: '0245678901', commission: 9 },
     ];
 
     for (const rep of repData) {
@@ -71,9 +176,9 @@ async function seedComprehensiveData() {
     console.log('\n🚚 Creating 3 Delivery Agents...');
     const deliveryAgents = [];
     const agentData = [
-      { firstName: 'Kwabena', lastName: 'Donkor', email: 'kwabena.donkor@company.com', phone: '0246789012' },
-      { firstName: 'Ama', lastName: 'Frimpong', email: 'ama.frimpong@company.com', phone: '0247890123' },
-      { firstName: 'Kwesi', lastName: 'Osei', email: 'kwesi.osei@company.com', phone: '0248901234' },
+      { firstName: 'Kwabena', lastName: 'Donkor', email: 'agent1@codadmin.com', phone: '0246789012' },
+      { firstName: 'Ama', lastName: 'Frimpong', email: 'agent2@codadmin.com', phone: '0247890123' },
+      { firstName: 'Kwesi', lastName: 'Osei', email: 'agent3@codadmin.com', phone: '0248901234' },
     ];
 
     for (const agent of agentData) {
@@ -124,9 +229,7 @@ async function seedComprehensiveData() {
           phoneNumber: custData.phone,
           alternatePhone: `025${Math.floor(Math.random() * 9000000 + 1000000)}`,
           address: `${Math.floor(Math.random() * 100 + 1)} ${['Main', 'High', 'Market', 'Station'][Math.floor(Math.random() * 4)]} Street`,
-          city: location.area,
           state: location.state,
-          zipCode: location.zipCode,
           area: location.area,
           landmark: ['Near Market', 'Opposite Bank', 'Behind Mall', 'Next to School'][Math.floor(Math.random() * 4)],
           isActive: true,
@@ -263,7 +366,6 @@ async function seedComprehensiveData() {
 
         const order = await prisma.order.create({
           data: {
-            orderNumber: `ORD-${new Date().getFullYear()}-${String(orderCounter).padStart(5, '0')}`,
             customerId: customer.id,
             customerRepId: customerRep.id,
             deliveryAgentId: deliveryAgent?.id,
@@ -275,9 +377,7 @@ async function seedComprehensiveData() {
             totalAmount,
             codAmount: totalAmount,
             deliveryAddress: customer.address,
-            deliveryCity: customer.city,
             deliveryState: customer.state,
-            deliveryZipCode: customer.zipCode,
             deliveryArea: customer.area,
             priority: Math.floor(Math.random() * 3),
             source: 'manual',
@@ -311,7 +411,7 @@ async function seedComprehensiveData() {
         });
 
         orders.push(order);
-        console.log(`  ✅ Order ${order.orderNumber} - ${customer.firstName} ${customer.lastName} (${status})`);
+        console.log(`  ✅ Order #${order.id} - ${customer.firstName} ${customer.lastName} (${status})`);
         orderCounter++;
       }
     }
@@ -370,11 +470,11 @@ async function seedComprehensiveData() {
 ║   Default password for all users: password123        ║
 ║                                                       ║
 ║   Sample Customer Rep Login:                          ║
-║   Email: kwame.mensah@company.com                     ║
+║   Email: rep1@codadmin.com                            ║
 ║   Password: password123                               ║
 ║                                                       ║
 ║   Sample Delivery Agent Login:                        ║
-║   Email: kwabena.donkor@company.com                   ║
+║   Email: agent1@codadmin.com                          ║
 ║   Password: password123                               ║
 ║                                                       ║
 ╚═══════════════════════════════════════════════════════╝
