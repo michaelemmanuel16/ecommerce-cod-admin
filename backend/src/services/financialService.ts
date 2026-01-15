@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, PaymentStatus } from '@prisma/client';
 import logger from '../utils/logger';
+import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { io } from '../server';
 import {
   emitExpenseCreated,
@@ -43,7 +44,7 @@ export class FinancialService {
   /**
    * Get financial summary
    */
-  async getFinancialSummary(filters: DateFilters) {
+  async getFinancialSummary(filters: DateFilters, requester?: Requester) {
     const { startDate, endDate } = filters;
 
     const dateWhere: any = {};
@@ -67,11 +68,42 @@ export class FinancialService {
       if (endDate) orderDateWhere.createdAt.lte = endDate;
     }
 
+    const orderWhere: Prisma.OrderWhereInput = {
+      status: 'delivered',
+      deletedAt: null
+    };
+
+    if (Object.keys(orderDateWhere).length > 0) {
+      orderWhere.createdAt = orderDateWhere.createdAt;
+    }
+
+    // Role-based filtering for financial summary
+    if (requester && requester.role === 'sales_rep') {
+      orderWhere.customerRepId = requester.id;
+    } else if (requester && requester.role === 'delivery_agent') {
+      orderWhere.deliveryAgentId = requester.id;
+    }
+
+    const transactionWhere: Prisma.TransactionWhereInput = {
+      type: 'cod_collection'
+    };
+    if (Object.keys(dateWhere).length > 0) {
+      transactionWhere.createdAt = dateWhere.createdAt;
+    }
+    if (requester && requester.role === 'delivery_agent') {
+      transactionWhere.order = { deliveryAgentId: requester.id };
+    }
+
+
+    // Role-based filtering for financial summary expenses
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      expenseDateWhere.recordedBy = requester.id;
+    }
+
     const [revenue, expenses, codCollections, pendingCOD, deliveredOrders, outForDeliveryOrders] = await Promise.all([
       prisma.transaction.aggregate({
         where: {
-          ...dateWhere,
-          type: 'cod_collection',
+          ...transactionWhere,
           status: 'collected'
         },
         _sum: { amount: true }
@@ -82,16 +114,14 @@ export class FinancialService {
       }),
       prisma.transaction.aggregate({
         where: {
-          ...dateWhere,
-          type: 'cod_collection',
+          ...transactionWhere,
           status: { in: ['collected', 'deposited', 'reconciled'] }
         },
         _sum: { amount: true }
       }),
       prisma.transaction.aggregate({
         where: {
-          ...dateWhere,
-          type: 'cod_collection',
+          ...transactionWhere,
           status: 'pending'
         },
         _sum: { amount: true }
@@ -99,21 +129,18 @@ export class FinancialService {
       // Count delivered orders where payment hasn't been collected (COD orders with codAmount)
       prisma.order.aggregate({
         where: {
-          ...orderDateWhere,
-          status: 'delivered',
+          ...orderWhere,
           codAmount: { not: null },
           paymentStatus: 'pending',
-          deletedAt: null
         },
         _sum: { totalAmount: true }
       }),
       // Count out-for-delivery orders (COD being collected)
       prisma.order.aggregate({
         where: {
-          ...orderDateWhere,
+          ...orderWhere,
           status: 'out_for_delivery',
           codAmount: { not: null },
-          deletedAt: null
         },
         _sum: { totalAmount: true }
       })
@@ -144,12 +171,19 @@ export class FinancialService {
   /**
    * Get all transactions with filters
    */
-  async getAllTransactions(filters: TransactionFilters) {
+  async getAllTransactions(filters: TransactionFilters, requester?: Requester) {
     const { type, status, page = 1, limit = 20 } = filters;
 
     const where: Prisma.TransactionWhereInput = {};
     if (type) where.type = type;
     if (status) where.status = status;
+
+    // Role-based filtering for transactions
+    if (requester && requester.role === 'sales_rep') {
+      where.order = { customerRepId: requester.id };
+    } else if (requester && requester.role === 'delivery_agent') {
+      where.order = { deliveryAgentId: requester.id };
+    }
 
     const skip = (page - 1) * limit;
 
@@ -196,14 +230,14 @@ export class FinancialService {
   /**
    * Create expense record
    */
-  async recordExpense(data: CreateExpenseData) {
+  async recordExpense(data: CreateExpenseData, requester?: Requester) {
     const expense = await prisma.expense.create({
       data: {
         category: data.category,
         amount: data.amount,
         description: data.description,
         expenseDate: data.expenseDate,
-        recordedBy: parseInt(data.recordedBy, 10),
+        recordedBy: requester ? requester.id : parseInt(data.recordedBy, 10),
         receiptUrl: data.receiptUrl
       },
       include: {
@@ -233,7 +267,7 @@ export class FinancialService {
   /**
    * Get all expenses
    */
-  async getAllExpenses(filters: DateFilters & { category?: string; page?: number; limit?: number }) {
+  async getAllExpenses(filters: DateFilters & { category?: string; page?: number; limit?: number }, requester?: Requester) {
     const { startDate, endDate, category, page = 1, limit = 20 } = filters;
 
     const where: Prisma.ExpenseWhereInput = {};
@@ -245,6 +279,11 @@ export class FinancialService {
     }
 
     if (category) where.category = category;
+
+    // Role-based filtering for expenses
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      where.recordedBy = requester.id;
+    }
 
     const skip = (page - 1) * limit;
 
@@ -285,7 +324,7 @@ export class FinancialService {
     status?: PaymentStatus;
     page?: number;
     limit?: number;
-  }) {
+  }, requester?: Requester) {
     const { agentId, status, page = 1, limit = 20 } = filters;
 
     const where: Prisma.TransactionWhereInput = {
@@ -293,6 +332,15 @@ export class FinancialService {
     };
 
     if (status) where.status = status;
+
+    if (agentId) {
+      where.order = { deliveryAgentId: parseInt(agentId, 10) };
+    }
+
+    // Role-based filtering for COD collections
+    if (requester && requester.role === 'delivery_agent') {
+      where.order = { deliveryAgentId: requester.id };
+    }
 
     const skip = (page - 1) * limit;
 
@@ -346,7 +394,12 @@ export class FinancialService {
   /**
    * Get COD collections by agent
    */
-  async getCODCollectionsByAgent(agentId: string, filters?: DateFilters) {
+  async getCODCollectionsByAgent(agentId: string, filters?: DateFilters, requester?: Requester) {
+    // Role-based ownership check for COD collections by agent
+    if (requester && requester.role === 'delivery_agent' && parseInt(agentId, 10) !== requester.id) {
+      throw new AppError('You do not have permission to view other agents collections', 403);
+    }
+
     const where: Prisma.TransactionWhereInput = {
       type: 'cod_collection',
       order: {
@@ -406,7 +459,7 @@ export class FinancialService {
   /**
    * Reconcile transaction (update status)
    */
-  async reconcileTransaction(data: ReconcileTransactionData) {
+  async reconcileTransaction(data: ReconcileTransactionData, requester?: Requester) {
     const { transactionId, status, reference, notes } = data;
 
     const transaction = await prisma.transaction.findUnique({
@@ -415,6 +468,11 @@ export class FinancialService {
 
     if (!transaction) {
       throw new AppError('Transaction not found', 404);
+    }
+
+    // Role-based ownership check for transaction
+    if (!checkResourceOwnership(requester!, transaction, 'transaction')) {
+      throw new AppError('You do not have permission to reconcile this transaction', 403);
     }
 
     const updated = await prisma.transaction.update({
@@ -455,18 +513,47 @@ export class FinancialService {
   /**
    * Mark COD as deposited
    */
-  async markCODAsDeposited(transactionIds: string[], depositReference?: string) {
+  async markCODAsDeposited(transactionIds: string[], depositReference?: string, requester?: Requester) {
     if (!transactionIds || transactionIds.length === 0) {
       throw new AppError('No transaction IDs provided', 400);
     }
 
     const transactionIdsAsNumbers = transactionIds.map((id) => parseInt(id, 10));
 
-    const updated = await prisma.transaction.updateMany({
+    // Get transactions to verify ownership/validity
+    const transactions = await prisma.transaction.findMany({
       where: {
         id: { in: transactionIdsAsNumbers },
         type: 'cod_collection',
         status: 'collected'
+      },
+      include: {
+        order: {
+          select: {
+            deliveryAgentId: true,
+            customerRepId: true
+          }
+        }
+      }
+    });
+
+    if (transactions.length === 0) {
+      throw new AppError('No matching collected transactions found.', 404);
+    }
+
+    // Verify ownership for ALL transactions in the batch
+    if (requester) {
+      for (const trans of transactions) {
+        const isOwner = checkResourceOwnership(requester, trans, 'transaction');
+        if (!isOwner) {
+          throw new AppError(`You do not have permission to deposit transaction ${trans.id}`, 403);
+        }
+      }
+    }
+
+    const updated = await prisma.transaction.updateMany({
+      where: {
+        id: { in: transactions.map(t => t.id) }
       },
       data: {
         status: 'deposited',
@@ -477,9 +564,7 @@ export class FinancialService {
     // Update corresponding orders
     await prisma.order.updateMany({
       where: {
-        transaction: {
-          id: { in: transactionIdsAsNumbers }
-        }
+        id: { in: transactions.filter(t => t.orderId).map(t => t.orderId as number) }
       },
       data: {
         paymentStatus: 'deposited'
@@ -506,31 +591,58 @@ export class FinancialService {
   /**
    * Get financial reports
    */
-  async getFinancialReports(filters: { period?: string; startDate?: Date; endDate?: Date }) {
+  async getFinancialReports(filters: { period?: string; startDate?: Date; endDate?: Date }, requester?: Requester) {
     const { period = 'daily', startDate, endDate } = filters;
 
     const start = startDate || new Date();
     const end = endDate || new Date();
 
+    const orderWhere: Prisma.OrderWhereInput = {
+      status: 'delivered',
+      updatedAt: {
+        gte: start,
+        lte: end
+      },
+      deletedAt: null
+    };
+
+    // Role-based filtering for financial reports
+    if (requester && requester.role === 'sales_rep') {
+      orderWhere.customerRepId = requester.id;
+    } else if (requester && requester.role === 'delivery_agent') {
+      orderWhere.deliveryAgentId = requester.id;
+    }
+
+    const transactionWhere: Prisma.TransactionWhereInput = {
+      createdAt: {
+        gte: start,
+        lte: end
+      }
+    };
+    if (requester && requester.role === 'delivery_agent') {
+      transactionWhere.order = { deliveryAgentId: requester.id };
+    }
+
+    const expenseWhere: Prisma.ExpenseWhereInput = {
+      expenseDate: {
+        gte: start,
+        lte: end
+      }
+    };
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      expenseWhere.recordedBy = requester.id;
+    }
+
+
     const [transactions, expenses] = await Promise.all([
       prisma.transaction.findMany({
-        where: {
-          createdAt: {
-            gte: start,
-            lte: end
-          }
-        },
+        where: transactionWhere,
         include: {
           order: true
         }
       }),
       prisma.expense.findMany({
-        where: {
-          expenseDate: {
-            gte: start,
-            lte: end
-          }
-        }
+        where: expenseWhere
       })
     ]);
 
@@ -580,13 +692,18 @@ export class FinancialService {
   /**
    * Get expense breakdown by category
    */
-  async getExpenseBreakdown(filters: DateFilters) {
+  async getExpenseBreakdown(filters: DateFilters, requester?: Requester) {
     const where: Prisma.ExpenseWhereInput = {};
 
     if (filters.startDate || filters.endDate) {
       where.expenseDate = {};
       if (filters.startDate) where.expenseDate.gte = filters.startDate;
       if (filters.endDate) where.expenseDate.lte = filters.endDate;
+    }
+
+    // Role-based filtering for expense breakdown
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      where.recordedBy = requester.id;
     }
 
     const breakdown = await prisma.expense.groupBy({
@@ -613,9 +730,14 @@ export class FinancialService {
   /**
    * Get agent settlement report
    */
-  async getAgentSettlement(agentId: string, filters?: DateFilters) {
+  async getAgentSettlement(agentId: string, filters?: DateFilters, requester?: Requester) {
+    // Role-based ownership check for agent settlement
+    if (requester && requester.role === 'delivery_agent' && parseInt(agentId, 10) !== requester.id) {
+      throw new AppError('You do not have permission to view other agents settlements', 403);
+    }
+
     // Get all COD collections by agent
-    const codData = await this.getCODCollectionsByAgent(agentId, filters);
+    const codData = await this.getCODCollectionsByAgent(agentId, filters, requester);
 
     // Calculate pending settlement
     const pendingAmount = codData.summary.totalCollected - codData.summary.totalDeposited;
@@ -632,15 +754,22 @@ export class FinancialService {
   /**
    * Calculate profit margins
    */
-  async calculateProfitMargins(filters: DateFilters) {
+  async calculateProfitMargins(filters: DateFilters, requester?: Requester) {
     const where: Prisma.OrderWhereInput = {
       status: 'delivered'
     };
 
     if (filters.startDate || filters.endDate) {
-      where.createdAt = {};
-      if (filters.startDate) where.createdAt.gte = filters.startDate;
-      if (filters.endDate) where.createdAt.lte = filters.endDate;
+      where.updatedAt = {};
+      if (filters.startDate) where.updatedAt.gte = filters.startDate;
+      if (filters.endDate) where.updatedAt.lte = filters.endDate;
+    }
+
+    // Role-based filtering for profit margins
+    if (requester && requester.role === 'sales_rep') {
+      where.customerRepId = requester.id;
+    } else if (requester && requester.role === 'delivery_agent') {
+      where.deliveryAgentId = requester.id;
     }
 
     const orders = await prisma.order.findMany({
@@ -663,8 +792,8 @@ export class FinancialService {
 
     orders.forEach((order) => {
       totalRevenue += order.totalAmount;
-      (order as any).orderItems?.forEach((item: any) => {
-        totalCost += item.product.cogs * item.quantity;
+      order.orderItems.forEach((item) => {
+        totalCost += (item.product.cogs || 0) * item.quantity;
       });
     });
 
@@ -691,13 +820,18 @@ export class FinancialService {
       description?: string;
       expenseDate?: Date;
     }
-  ) {
+    , requester?: Requester) {
     const expense = await prisma.expense.findUnique({
       where: { id: parseInt(expenseId, 10) }
     });
 
     if (!expense) {
       throw new AppError('Expense not found', 404);
+    }
+
+    // Role-based ownership check for updating expense
+    if (!checkResourceOwnership(requester!, expense, 'expense')) {
+      throw new AppError('You do not have permission to update this expense', 403);
     }
 
     const updated = await prisma.expense.update({
@@ -734,13 +868,18 @@ export class FinancialService {
   /**
    * Delete an expense
    */
-  async deleteExpense(expenseId: string) {
+  async deleteExpense(expenseId: string, requester?: Requester) {
     const expense = await prisma.expense.findUnique({
       where: { id: parseInt(expenseId, 10) }
     });
 
     if (!expense) {
       throw new AppError('Expense not found', 404);
+    }
+
+    // Role-based ownership check for deleting expense
+    if (!checkResourceOwnership(requester!, expense, 'expense')) {
+      throw new AppError('You do not have permission to delete this expense', 403);
     }
 
     await prisma.expense.delete({
@@ -764,7 +903,7 @@ export class FinancialService {
   /**
    * Get pipeline revenue (expected revenue from active orders)
    */
-  async getPipelineRevenue(filters: DateFilters) {
+  async getPipelineRevenue(filters: DateFilters, requester?: Requester) {
     const where: Prisma.OrderWhereInput = {
       status: {
         in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery']
@@ -776,6 +915,13 @@ export class FinancialService {
       where.createdAt = {};
       if (filters.startDate) where.createdAt.gte = filters.startDate;
       if (filters.endDate) where.createdAt.lte = filters.endDate;
+    }
+
+    // Role-based filtering for pipeline revenue
+    if (requester && requester.role === 'sales_rep') {
+      where.customerRepId = requester.id;
+    } else if (requester && requester.role === 'delivery_agent') {
+      where.deliveryAgentId = requester.id;
     }
 
     const orders = await prisma.order.findMany({
@@ -814,7 +960,7 @@ export class FinancialService {
   /**
    * Get agent cash holdings (collected but not deposited)
    */
-  async getAgentCashHoldings() {
+  async getAgentCashHoldings(requester?: Requester) {
     // Get all transactions where COD is collected but not deposited
     const collections = await prisma.transaction.findMany({
       where: {
@@ -838,15 +984,12 @@ export class FinancialService {
     });
 
     // Group by delivery agent
-    const holdingsMap: Record<
-      number,
-      {
-        agent: { id: number; firstName: string; lastName: string; email: string };
-        totalCollected: number;
-        orderCount: number;
-        oldestCollectionDate: Date;
-      }
-    > = {};
+    const holdingsMap: Record<number, {
+      agent: { id: number; firstName: string; lastName: string; email: string };
+      totalCollected: number;
+      orderCount: number;
+      oldestCollectionDate: Date;
+    }> = {};
 
     collections.forEach((collection) => {
       if (collection.order?.deliveryAgent) {
@@ -872,7 +1015,12 @@ export class FinancialService {
     });
 
     // Convert to array and sort by total collected (descending)
-    const holdings = Object.values(holdingsMap).sort((a, b) => b.totalCollected - a.totalCollected);
+    let holdings = Object.values(holdingsMap).sort((a, b) => b.totalCollected - a.totalCollected);
+
+    // Filter by ownership if delivery_agent
+    if (requester && requester.role === 'delivery_agent') {
+      holdings = holdings.filter(h => h.agent.id === requester.id);
+    }
 
     return holdings;
   }

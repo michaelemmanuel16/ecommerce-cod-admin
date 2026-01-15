@@ -1,125 +1,101 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import { adminService } from '../services/adminService';
 
-export const getSystemConfig = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getSystemConfig = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const config = await adminService.getSystemConfig();
+    const config = await adminService.getSystemConfig(req.user);
     res.json(config);
   } catch (error) {
-    console.error('Error fetching system config:', error);
-    res.status(500).json({ error: 'Failed to fetch system configuration' });
+    next(error);
   }
 };
 
-export const getPublicConfig = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getPublicConfig = async (_req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const config = await adminService.getPublicConfig();
     res.json(config);
   } catch (error) {
-    console.error('Error fetching public config:', error);
-    res.status(500).json({ error: 'Failed to fetch application configuration' });
+    next(error);
   }
 };
 
-export const updateSystemConfig = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updateSystemConfig = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const config = await adminService.updateSystemConfig(req.body);
+    const config = await adminService.updateSystemConfig(req.user!, req.body);
     res.json(config);
   } catch (error) {
-    console.error('Error updating system config:', error);
-    res.status(500).json({ error: 'Failed to update system configuration' });
+    next(error);
   }
 };
 
-export const getRolePermissions = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getRolePermissions = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const permissions = await adminService.getRolePermissions();
+    const permissions = await adminService.getRolePermissions(req.user!);
     res.json(permissions);
   } catch (error) {
-    console.error('Error fetching role permissions:', error);
-    res.status(500).json({ error: 'Failed to fetch role permissions' });
+    next(error);
   }
 };
 
-export const updateRolePermissions = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updateRolePermissions = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const config = await adminService.updateRolePermissions(req.body);
+    const config = await adminService.updateRolePermissions(req.user!, req.body);
 
-    // Clear permissions cache so new permissions take effect immediately
+    // Clear permissions cache
     const { clearPermissionsCache } = await import('../middleware/auth');
     clearPermissionsCache();
 
-    // Emit socket event to notify all connected users about permission changes
+    // Notify via socket
     const { getSocketInstance } = await import('../utils/socketInstance');
     const { emitPermissionsUpdated } = await import('../sockets');
     const io = getSocketInstance();
 
     if (io) {
-      // Get all roles that were updated
       const updatedRoles = Object.keys(req.body);
       emitPermissionsUpdated(io, updatedRoles);
     }
 
     res.json(config.rolePermissions);
   } catch (error) {
-    console.error('Error updating role permissions:', error);
-    res.status(500).json({ error: 'Failed to update role permissions' });
+    next(error);
   }
 };
 
-export const getAllUsers = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getAllUsers = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const role = req.query.role as any;
     const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
 
-    const result = await adminService.getAllUsers(page, limit, role, isActive);
+    const result = await adminService.getAllUsers(req.user!, page, limit, role, isActive);
     res.json(result);
   } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).json({ error: 'Failed to fetch users' });
+    next(error);
   }
 };
 
-export const createUser = async (req: AuthRequest, res: Response): Promise<void> => {
+export const createUser = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const user = await adminService.createUser(req.body);
+    const user = await adminService.createUser(req.user!, req.body);
     res.status(201).json(user);
-  } catch (error: any) {
-    console.error('Error creating user:', error);
-    if (error.code === 'P2002') {
-      res.status(409).json({ error: 'User with this email already exists' });
-    } else {
-      res.status(500).json({ error: 'Failed to create user' });
-    }
+  } catch (error) {
+    next(error);
   }
 };
 
-export const updateUser = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updateUser = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const userId = parseInt(req.params.id);
-
-    // Prevent non-super-admins from editing super_admin users
-    if (req.user?.role !== 'super_admin') {
-      const targetUser = await adminService.getAllUsers(1, 1, undefined, undefined);
-      const user = targetUser.users.find(u => u.id === userId);
-      if (user?.role === 'super_admin') {
-        res.status(403).json({ error: 'Cannot edit super admin users' });
-        return;
-      }
-    }
-
-    const user = await adminService.updateUser(userId, req.body);
+    const user = await adminService.updateUser(req.user!, userId, req.body);
     res.json(user);
   } catch (error) {
-    console.error('Error updating user:', error);
-    res.status(500).json({ error: 'Failed to update user' });
+    next(error);
   }
 };
 
-export const resetUserPassword = async (req: AuthRequest, res: Response): Promise<void> => {
+export const resetUserPassword = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const userId = parseInt(req.params.id);
     const { password } = req.body;
@@ -129,62 +105,42 @@ export const resetUserPassword = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    await adminService.resetUserPassword(userId, password);
+    await adminService.resetUserPassword(req.user!, userId, password);
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    console.error('Error resetting password:', error);
-    res.status(500).json({ error: 'Failed to reset password' });
+    next(error);
   }
 };
 
-export const deleteUser = async (req: AuthRequest, res: Response): Promise<void> => {
+export const deleteUser = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const userId = parseInt(req.params.id);
 
-    // Prevent deleting super_admin users
-    const targetUser = await adminService.getAllUsers(1, 1, undefined, undefined);
-    const user = targetUser.users.find(u => u.id === userId);
-    if (user?.role === 'super_admin') {
-      res.status(403).json({ error: 'Cannot delete super admin users' });
-      return;
-    }
-
-    // Prevent self-deletion
+    // Prevent self-deactivation (can still be handled in service, but good to have here too)
     if (userId === req.user?.id) {
-      res.status(403).json({ error: 'Cannot delete your own account' });
+      res.status(403).json({ error: 'Cannot deactivate your own account' });
       return;
     }
 
-    await adminService.deleteUser(userId);
+    await adminService.deleteUser(req.user!, userId);
     res.json({ message: 'User deactivated successfully' });
   } catch (error) {
-    console.error('Error deleting user:', error);
-    res.status(500).json({ error: 'Failed to delete user' });
+    next(error);
   }
 };
 
-export const permanentlyDeleteUser = async (req: AuthRequest, res: Response): Promise<void> => {
+export const permanentlyDeleteUser = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const userId = parseInt(req.params.id);
 
-    // Prevent deleting super_admin users
-    const targetUser = await adminService.getAllUsers(1, 1, undefined, undefined);
-    const user = targetUser.users.find(u => u.id === userId);
-    if (user?.role === 'super_admin') {
-      res.status(403).json({ error: 'Cannot delete super admin users' });
-      return;
-    }
-
-    // Prevent self-deletion
     if (userId === req.user?.id) {
       res.status(403).json({ error: 'Cannot delete your own account' });
       return;
     }
 
-    await adminService.permanentlyDeleteUser(userId);
+    await adminService.permanentlyDeleteUser(req.user!, userId);
     res.json({ message: 'User permanently deleted' });
   } catch (error) {
-    console.error('Error permanently deleting user:', error);
-    res.status(500).json({ error: 'Failed to permanently delete user' });
+    next(error);
   }
 };

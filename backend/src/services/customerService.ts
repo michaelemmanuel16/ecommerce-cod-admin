@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
+import { Requester } from '../utils/authUtils';
 
 interface CreateCustomerData {
   firstName: string;
@@ -30,10 +31,24 @@ export class CustomerService {
   /**
    * Get all customers with filters and pagination
    */
-  async getAllCustomers(filters: CustomerFilters) {
+  async getAllCustomers(filters: CustomerFilters, requester?: Requester) {
     const { search, area, tags, page = 1, limit = 20 } = filters;
 
     const where: Prisma.CustomerWhereInput = { isActive: true };
+
+    // Role-based filtering for customers
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      // For sales reps and delivery agents, they can only see customers they have orders with
+      where.orders = {
+        some: {
+          OR: [
+            { customerRepId: requester.id },
+            { deliveryAgentId: requester.id }
+          ],
+          deletedAt: null
+        }
+      };
+    }
 
     if (search) {
       where.OR = [
@@ -124,7 +139,7 @@ export class CustomerService {
   /**
    * Get customer by ID
    */
-  async getCustomerById(customerId: string) {
+  async getCustomerById(customerId: string, requester?: Requester) {
     const id = parseInt(customerId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid customer ID', 400);
@@ -151,13 +166,48 @@ export class CustomerService {
       throw new AppError('Customer not found', 404);
     }
 
+    // Role-based filtering of orders and ownership check
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      // For sales reps, check if they have any orders with this customer
+      const hasOrder = await prisma.order.findFirst({
+        where: {
+          customerId: customer.id,
+          customerRepId: requester.id,
+          deletedAt: null
+        }
+      });
+
+      if (!hasOrder) {
+        throw new AppError('You do not have permission to view this customer details', 403);
+      }
+
+      // Filter the orders in the result to only show the rep's orders
+      // Use re-fetching with filter for accuracy
+      const filteredOrders = await prisma.order.findMany({
+        where: {
+          customerId: customer.id,
+          customerRepId: requester.id,
+          deletedAt: null
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          status: true,
+          totalAmount: true,
+          createdAt: true
+        }
+      });
+      (customer as any).orders = filteredOrders;
+    }
+
     return customer;
   }
 
   /**
    * Get customer by phone number
    */
-  async getCustomerByPhone(phoneNumber: string) {
+  async getCustomerByPhone(phoneNumber: string, requester?: Requester) {
     const customer = await prisma.customer.findUnique({
       where: { phoneNumber },
       include: {
@@ -166,14 +216,25 @@ export class CustomerService {
           take: 5,
           select: {
             id: true,
-            // orderNumber removed - using id
             status: true,
             totalAmount: true,
-            createdAt: true
+            createdAt: true,
+            customerRepId: true,
+            deliveryAgentId: true
           }
         }
       }
     });
+
+    if (!customer) return null;
+
+    // Role-based filtering
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      const hasAccess = customer.orders.some(o => o.customerRepId === requester.id || o.deliveryAgentId === requester.id);
+      if (!hasAccess) {
+        throw new AppError('You do not have permission to view this customer', 403);
+      }
+    }
 
     return customer;
   }
@@ -181,7 +242,7 @@ export class CustomerService {
   /**
    * Update customer details
    */
-  async updateCustomer(customerId: string, updateData: Partial<CreateCustomerData>) {
+  async updateCustomer(customerId: string, updateData: Partial<CreateCustomerData>, requester?: Requester) {
     const id = parseInt(customerId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid customer ID', 400);
@@ -193,6 +254,21 @@ export class CustomerService {
 
     if (!customer) {
       throw new AppError('Customer not found', 404);
+    }
+
+    // Role-based ownership check for update
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      const hasOrder = await prisma.order.findFirst({
+        where: {
+          customerId: customer.id,
+          customerRepId: requester.id,
+          deletedAt: null
+        }
+      });
+
+      if (!hasOrder) {
+        throw new AppError('You do not have permission to update this customer', 403);
+      }
     }
 
     // If updating phone number, check for duplicates
@@ -211,6 +287,18 @@ export class CustomerService {
       data: updateData
     });
 
+    if (requester) {
+      await prisma.auditLog.create({
+        data: {
+          userId: requester.id,
+          action: 'update',
+          resource: 'customer',
+          resourceId: customerId,
+          metadata: { changes: Object.keys(updateData) }
+        }
+      });
+    }
+
     logger.info('Customer updated', { customerId });
     return updated;
   }
@@ -218,7 +306,7 @@ export class CustomerService {
   /**
    * Soft delete customer (deactivate)
    */
-  async deleteCustomer(customerId: string) {
+  async deleteCustomer(customerId: string, requester?: Requester) {
     const id = parseInt(customerId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid customer ID', 400);
@@ -232,10 +320,26 @@ export class CustomerService {
       throw new AppError('Customer not found', 404);
     }
 
+    // Role-based ownership check for delete
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      throw new AppError('You do not have permission to delete customers', 403);
+    }
+
     await prisma.customer.update({
       where: { id },
       data: { isActive: false }
     });
+
+    if (requester) {
+      await prisma.auditLog.create({
+        data: {
+          userId: requester.id,
+          action: 'deactivate',
+          resource: 'customer',
+          resourceId: customerId
+        }
+      });
+    }
 
     logger.info('Customer deactivated', { customerId: id });
     return { message: 'Customer deactivated successfully' };
@@ -244,7 +348,7 @@ export class CustomerService {
   /**
    * Update customer tags
    */
-  async updateCustomerTags(customerId: string, tags: string[]) {
+  async updateCustomerTags(customerId: string, tags: string[], requester?: Requester) {
     const id = parseInt(customerId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid customer ID', 400);
@@ -256,6 +360,24 @@ export class CustomerService {
 
     if (!customer) {
       throw new AppError('Customer not found', 404);
+    }
+
+    // Role-based ownership check for updating tags
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      const hasOrder = await prisma.order.findFirst({
+        where: {
+          customerId: customer.id,
+          OR: [
+            { customerRepId: requester.id },
+            { deliveryAgentId: requester.id }
+          ],
+          deletedAt: null
+        }
+      });
+
+      if (!hasOrder) {
+        throw new AppError('You do not have permission to update tags for this customer', 403);
+      }
     }
 
     const updated = await prisma.customer.update({
@@ -326,7 +448,7 @@ export class CustomerService {
   /**
    * Get customer analytics
    */
-  async getCustomerAnalytics(customerId: string) {
+  async getCustomerAnalytics(customerId: string, requester?: Requester) {
     const id = parseInt(customerId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid customer ID', 400);
@@ -348,6 +470,24 @@ export class CustomerService {
 
     if (!customer) {
       throw new AppError('Customer not found', 404);
+    }
+
+    // Role-based ownership check for analytics
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      const hasOrder = await prisma.order.findFirst({
+        where: {
+          customerId: customer.id,
+          OR: [
+            { customerRepId: requester.id },
+            { deliveryAgentId: requester.id }
+          ],
+          deletedAt: null
+        }
+      });
+
+      if (!hasOrder) {
+        throw new AppError('You do not have permission to view analytics for this customer', 403);
+      }
     }
 
     const analytics = {
@@ -377,7 +517,7 @@ export class CustomerService {
   /**
    * Get customer order history with full details
    */
-  async getCustomerOrderHistory(customerId: string, filters?: { page?: number; limit?: number }) {
+  async getCustomerOrderHistory(customerId: string, requester?: Requester, filters?: { page?: number; limit?: number }) {
     const id = parseInt(customerId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid customer ID', 400);
@@ -393,6 +533,16 @@ export class CustomerService {
 
     const { page = 1, limit = 20 } = filters || {};
     const skip = (page - 1) * limit;
+
+    const where: Prisma.OrderWhereInput = { customerId: id };
+
+    // Role-based filtering of order history
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      where.OR = [
+        { customerRepId: requester.id },
+        { deliveryAgentId: requester.id }
+      ];
+    }
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
@@ -436,7 +586,7 @@ export class CustomerService {
   /**
    * Search customers by multiple criteria
    */
-  async searchCustomers(query: string, filters?: { area?: string; limit?: number }) {
+  async searchCustomers(query: string, requester?: Requester, filters?: { area?: string; limit?: number }) {
     const where: Prisma.CustomerWhereInput = {
       isActive: true,
       OR: [
@@ -446,6 +596,19 @@ export class CustomerService {
         { email: { contains: query, mode: 'insensitive' } }
       ]
     };
+
+    // Role-based filtering for customer search
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      where.orders = {
+        some: {
+          OR: [
+            { customerRepId: requester.id },
+            { deliveryAgentId: requester.id }
+          ],
+          deletedAt: null
+        }
+      };
+    }
 
     if (filters?.area) where.area = filters.area;
 
@@ -471,8 +634,21 @@ export class CustomerService {
   /**
    * Get top customers by spending
    */
-  async getTopCustomers(limit: number = 10, filters?: { area?: string }) {
+  async getTopCustomers(limit: number = 10, requester?: Requester, filters?: { area?: string }) {
     const where: Prisma.CustomerWhereInput = { isActive: true };
+
+    // Role-based filtering for top customers
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      where.orders = {
+        some: {
+          OR: [
+            { customerRepId: requester.id },
+            { deliveryAgentId: requester.id }
+          ],
+          deletedAt: null
+        }
+      };
+    }
     if (filters?.area) where.area = filters.area;
 
     const topCustomers = await prisma.customer.findMany({
@@ -522,12 +698,17 @@ export class CustomerService {
   /**
    * Merge duplicate customers
    */
-  async mergeCustomers(primaryCustomerId: string, secondaryCustomerId: string) {
+  async mergeCustomers(primaryCustomerId: string, secondaryCustomerId: string, requester?: Requester) {
     const primaryId = parseInt(primaryCustomerId, 10);
     const secondaryId = parseInt(secondaryCustomerId, 10);
 
     if (isNaN(primaryId) || isNaN(secondaryId)) {
       throw new AppError('Invalid customer ID(s)', 400);
+    }
+
+    // Strict admin restriction for merging customers
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      throw new AppError('You do not have permission to merge customers', 403);
     }
 
     const [primaryCustomer, secondaryCustomer] = await Promise.all([
@@ -565,6 +746,18 @@ export class CustomerService {
         data: { isActive: false }
       });
     });
+
+    if (requester) {
+      await prisma.auditLog.create({
+        data: {
+          userId: requester.id,
+          action: 'merge',
+          resource: 'customer',
+          resourceId: primaryCustomerId,
+          metadata: { secondaryCustomerId: secondaryCustomerId }
+        }
+      });
+    }
 
     logger.info('Customers merged', {
       primaryCustomerId: primaryId,

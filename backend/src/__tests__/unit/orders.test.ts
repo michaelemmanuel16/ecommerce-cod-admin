@@ -110,7 +110,8 @@ describe('Orders Controller', () => {
       expect(orderService.getAllOrders).toHaveBeenCalledWith(
         expect.objectContaining({
           status: ['confirmed'],
-        })
+        }),
+        expect.anything()
       );
     });
 
@@ -209,7 +210,8 @@ describe('Orders Controller', () => {
           status: 'confirmed',
           notes: 'Order confirmed',
           changedBy: 'user-123',
-        })
+        }),
+        expect.anything()
       );
     });
   });

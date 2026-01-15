@@ -31,7 +31,11 @@ if [ "$USER_COUNT" = "0" ]; then
 
     async function createAdmin() {
       try {
-        const hashedPassword = await bcrypt.hash('password123', 10);
+        const defaultPassword = process.env.DEFAULT_SEED_PASSWORD || 'password123';
+        if (!process.env.DEFAULT_SEED_PASSWORD) {
+          console.warn('⚠️ WARNING: DEFAULT_SEED_PASSWORD not set. Using default insecure password!');
+        }
+        const hashedPassword = await bcrypt.hash(defaultPassword, 10);
         await prisma.user.create({
           data: {
             email: 'admin@codadmin.com',

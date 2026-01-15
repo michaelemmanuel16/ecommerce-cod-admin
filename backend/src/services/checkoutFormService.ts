@@ -109,15 +109,15 @@ export class CheckoutFormService {
           },
           upsells: data.upsells
             ? {
-                create: data.upsells.map((upsell) => ({
-                  name: upsell.name,
-                  description: upsell.description,
-                  imageUrl: upsell.imageUrl,
-                  price: upsell.price,
-                  items: upsell.items,
-                  sortOrder: upsell.sortOrder || 0
-                }))
-              }
+              create: data.upsells.map((upsell) => ({
+                name: upsell.name,
+                description: upsell.description,
+                imageUrl: upsell.imageUrl,
+                price: upsell.price,
+                items: upsell.items,
+                sortOrder: upsell.sortOrder || 0
+              }))
+            }
             : undefined
         },
         include: {
@@ -258,7 +258,6 @@ export class CheckoutFormService {
         regions: true,
         product: {
           select: {
-            id: true,
             name: true,
             description: true,
             price: true,
@@ -267,9 +266,6 @@ export class CheckoutFormService {
           }
         },
         packages: {
-          where: {
-            // Only return packages if product is in stock
-          },
           orderBy: { sortOrder: 'asc' },
           select: {
             id: true,
@@ -297,12 +293,17 @@ export class CheckoutFormService {
       throw new AppError('Checkout form not found or inactive', 404);
     }
 
-    // Check if product has sufficient stock
-    if (form.product.stockQuantity <= 0) {
-      throw new AppError('Product is currently out of stock', 400);
-    }
+    // Sanitize product data: hide exact stock quantity, return status
+    const { stockQuantity, ...productData } = form.product;
+    const sanitizedForm = {
+      ...form,
+      product: {
+        ...productData,
+        inStock: stockQuantity > 0
+      }
+    };
 
-    return form;
+    return sanitizedForm;
   }
 
   /**

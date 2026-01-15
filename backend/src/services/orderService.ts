@@ -6,6 +6,7 @@ import workflowService from './workflowService';
 import { io } from '../server';
 import { emitOrderAssigned, emitOrderCreated, emitOrderStatusChanged, emitOrderUpdated } from '../sockets/index';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
+import { checkResourceOwnership, Requester } from '../utils/authUtils';
 
 interface CreateOrderData {
   customerId?: number;
@@ -72,7 +73,7 @@ export class OrderService {
   /**
    * Get all orders with filters and pagination
    */
-  async getAllOrders(filters: OrderFilters) {
+  async getAllOrders(filters: OrderFilters, requester?: Requester) {
     const {
       status,
       customerId,
@@ -95,6 +96,15 @@ export class OrderService {
     if (customerRepId) where.customerRepId = customerRepId;
     if (deliveryAgentId) where.deliveryAgentId = deliveryAgentId;
     if (area) where.deliveryArea = area;
+
+    // Role-based filtering
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      if (requester.role === 'sales_rep') {
+        where.customerRepId = requester.id;
+      } else if (requester.role === 'delivery_agent') {
+        where.deliveryAgentId = requester.id;
+      }
+    }
 
     if (startDate || endDate) {
       where.createdAt = {};
@@ -224,26 +234,43 @@ export class OrderService {
       throw new AppError('Either customerId or customerPhone must be provided', 400);
     }
 
-    // Validate products exist and have sufficient stock
+    // Validate products and check stock
+    const productMap = new Map<number, any>();
     for (const item of data.orderItems) {
       const product = await prisma.product.findUnique({
         where: { id: item.productId }
       });
-
       if (!product) {
-        throw new AppError(`Product ${item.productId} not found`, 404);
+        throw new AppError(`Product ID ${item.productId} not found`, 404);
       }
-
-      if (product.stockQuantity < item.quantity) {
-        throw new AppError(
-          `Insufficient stock for product ${product.name}. Available: ${product.stockQuantity}`,
-          400
-        );
-      }
+      productMap.set(item.productId, product);
     }
 
     // Create order in transaction
     const order = await prisma.$transaction(async (tx) => {
+      // Update product stock and validate availability atomically
+      for (const item of data.orderItems) {
+        const result = await tx.product.updateMany({
+          where: {
+            id: item.productId,
+            stockQuantity: { gte: item.quantity }
+          },
+          data: {
+            stockQuantity: {
+              decrement: item.quantity
+            }
+          }
+        });
+
+        if (result.count === 0) {
+          throw new AppError(
+            `Insufficient stock for product ID ${item.productId}. It may have been sold out while you were processing.`,
+            400
+          );
+        }
+      }
+
+
       // Create order
       const newOrder = await tx.order.create({
         data: {
@@ -286,18 +313,6 @@ export class OrderService {
           }
         }
       });
-
-      // Update product stock
-      for (const item of data.orderItems) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            stockQuantity: {
-              decrement: item.quantity
-            }
-          }
-        });
-      }
 
       // Update customer stats
       await tx.customer.update({
@@ -454,6 +469,23 @@ export class OrderService {
               }
             });
 
+            // Update stock for imported items
+            for (const item of orderItemsData) {
+              const result = await tx.product.updateMany({
+                where: {
+                  id: item.productId,
+                  stockQuantity: { gte: item.quantity }
+                },
+                data: {
+                  stockQuantity: { decrement: item.quantity }
+                }
+              });
+
+              if (result.count === 0) {
+                throw new Error(`INSUFFICIENT_STOCK_PRODUCT_${item.productId}`);
+              }
+            }
+
             return createdOrder;
           });
         })
@@ -531,7 +563,7 @@ export class OrderService {
   /**
    * Get single order by ID
    */
-  async getOrderById(orderId: string) {
+  async getOrderById(orderId: string, requester?: Requester) {
     const id = parseInt(orderId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid order ID', 400);
@@ -580,13 +612,26 @@ export class OrderService {
       throw new AppError('Order has been deleted', 404);
     }
 
+    // Enforce ownership if requester is provided
+    if (requester) {
+      const isOwner = checkResourceOwnership(requester, {
+        assignedRepId: order.customerRepId,
+        deliveryAgentId: order.deliveryAgentId,
+        customerId: order.customerId
+      }, 'order');
+
+      if (!isOwner) {
+        throw new AppError('You do not have permission to view this order', 403);
+      }
+    }
+
     return order;
   }
 
   /**
    * Update order details
    */
-  async updateOrder(orderId: string, updateData: any) {
+  async updateOrder(orderId: string, updateData: any, requester?: Requester) {
     const id = parseInt(orderId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid order ID', 400);
@@ -599,6 +644,19 @@ export class OrderService {
 
     if (!order) {
       throw new AppError('Order not found', 404);
+    }
+
+    // Enforce ownership
+    if (requester) {
+      const isOwner = checkResourceOwnership(requester, {
+        assignedRepId: order.customerRepId,
+        deliveryAgentId: order.deliveryAgentId,
+        customerId: order.customerId
+      }, 'order');
+
+      if (!isOwner) {
+        throw new AppError('You do not have permission to update this order', 403);
+      }
     }
 
     // Extract fields that need special handling
@@ -648,8 +706,37 @@ export class OrderService {
         }
       }
 
-      // If orderItems are provided, update them
+      // If orderItems are provided, update them and adjust stock
       if (orderItems && Array.isArray(orderItems)) {
+        // Calculate stock changes
+        const oldItems = order.orderItems;
+        const newItems = orderItems;
+
+        // Restore old stock
+        for (const oldItem of oldItems) {
+          await tx.product.update({
+            where: { id: oldItem.productId },
+            data: { stockQuantity: { increment: oldItem.quantity } }
+          });
+        }
+
+        // Deduct new stock and validate atomically
+        for (const newItem of newItems) {
+          const result = await tx.product.updateMany({
+            where: {
+              id: newItem.productId,
+              stockQuantity: { gte: newItem.quantity }
+            },
+            data: {
+              stockQuantity: { decrement: newItem.quantity }
+            }
+          });
+
+          if (result.count === 0) {
+            throw new AppError(`Insufficient stock for product ID ${newItem.productId}`, 400);
+          }
+        }
+
         // Delete existing order items
         await tx.orderItem.deleteMany({
           where: { orderId: id }
@@ -684,14 +771,14 @@ export class OrderService {
       });
     });
 
-    logger.info(`Order updated: ${order.id} `, { orderId });
+    logger.info(`Order updated: ${id} `, { orderId: id });
     return updated;
   }
 
   /**
    * Update order status with history tracking
    */
-  async updateOrderStatus(orderId: string, data: UpdateOrderStatusData) {
+  async updateOrderStatus(orderId: string, data: UpdateOrderStatusData, requester?: Requester) {
     const id = parseInt(orderId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid order ID', 400);
@@ -703,6 +790,19 @@ export class OrderService {
 
     if (!order) {
       throw new AppError('Order not found', 404);
+    }
+
+    // Enforce ownership
+    if (requester) {
+      const isOwner = checkResourceOwnership(requester, {
+        assignedRepId: order.customerRepId,
+        deliveryAgentId: order.deliveryAgentId,
+        customerId: order.customerId
+      }, 'order');
+
+      if (!isOwner) {
+        throw new AppError('You do not have permission to update the status of this order', 403);
+      }
     }
 
     // Status validation removed - allow any status transition for admin flexibility
@@ -790,7 +890,7 @@ export class OrderService {
   /**
    * Cancel order
    */
-  async cancelOrder(orderId: string, changedBy?: number, notes?: string) {
+  async cancelOrder(orderId: string, changedBy?: number, notes?: string, requester?: Requester) {
     const id = parseInt(orderId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid order ID', 400);
@@ -805,8 +905,25 @@ export class OrderService {
       throw new AppError('Order not found', 404);
     }
 
+    // Enforce ownership
+    if (requester) {
+      const isOwner = checkResourceOwnership(requester, {
+        assignedRepId: order.customerRepId,
+        deliveryAgentId: order.deliveryAgentId,
+        customerId: order.customerId
+      }, 'order');
+
+      if (!isOwner) {
+        throw new AppError('You do not have permission to cancel this order', 403);
+      }
+    }
+
     if (['delivered', 'cancelled'].includes(order.status)) {
       throw new AppError('Cannot cancel order in current status', 400);
+    }
+
+    if (order.deletedAt) {
+      throw new AppError('Cannot cancel a deleted order', 400);
     }
 
     // Restock products and update order
@@ -855,7 +972,7 @@ export class OrderService {
   /**
    * Soft delete order (set deletedAt timestamp)
    */
-  async deleteOrder(orderId: string, userId?: number) {
+  async deleteOrder(orderId: string, userId?: number, requester?: Requester) {
     const id = parseInt(orderId, 10);
     if (isNaN(id)) {
       throw new AppError('Invalid order ID', 400);
@@ -868,6 +985,19 @@ export class OrderService {
 
     if (!order) {
       throw new AppError('Order not found', 404);
+    }
+
+    // Enforce ownership
+    if (requester) {
+      const isOwner = checkResourceOwnership(requester, {
+        assignedRepId: order.customerRepId,
+        deliveryAgentId: order.deliveryAgentId,
+        customerId: order.customerId
+      }, 'order');
+
+      if (!isOwner) {
+        throw new AppError('You do not have permission to delete this order', 403);
+      }
     }
 
     if (order.deletedAt) {
@@ -925,7 +1055,11 @@ export class OrderService {
   /**
    * Assign customer rep to order
    */
-  async assignCustomerRep(orderId: string, customerRepId: string, changedBy?: number) {
+  async assignCustomerRep(orderId: string, customerRepId: string, requester: Requester) {
+    // Only admin/manager can assign reps
+    if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      throw new AppError('Only administrators or managers can assign customer representatives', 403);
+    }
     const [order, rep] = await Promise.all([
       prisma.order.findUnique({ where: { id: parseInt(orderId, 10) } }),
       prisma.user.findUnique({ where: { id: parseInt(customerRepId, 10) } })
@@ -947,7 +1081,7 @@ export class OrderService {
           create: {
             status: order.status,
             notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName} `,
-            changedBy,
+            changedBy: requester.id,
             metadata: { assignedRepId: parseInt(customerRepId, 10) }
           }
         }
@@ -965,7 +1099,19 @@ export class OrderService {
 
     logger.info(`Customer rep assigned to order: ${order.id} `, {
       orderId,
-      repId: customerRepId
+      repId: customerRepId,
+      changedBy: requester.id
+    });
+
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: requester.id,
+        action: 'assign_rep',
+        resource: 'order',
+        resourceId: orderId,
+        metadata: { assignedRepId: parseInt(customerRepId, 10) }
+      }
     });
 
     // Emit socket events for real-time updates
@@ -978,7 +1124,16 @@ export class OrderService {
   /**
    * Assign delivery agent to order
    */
-  async assignDeliveryAgent(orderId: string, deliveryAgentId: string, changedBy?: number) {
+  async assignDeliveryAgent(orderId: string, deliveryAgentId: string, requester: Requester) {
+    // Only admin/manager/sales_rep can assign delivery agent (sometimes sales reps do it after confirmation)
+    // Actually, usually managers assign agents. Let's stick to manager+ for now, or check ownership.
+    if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      // Check if sales rep is assigned to this order
+      const order = await prisma.order.findUnique({ where: { id: parseInt(orderId, 10) } });
+      if (!order || order.customerRepId !== requester.id) {
+        throw new AppError('Only managers or the assigned sales representative can assign delivery agents', 403);
+      }
+    }
     const [order, agent] = await Promise.all([
       prisma.order.findUnique({ where: { id: parseInt(orderId, 10) } }),
       prisma.user.findUnique({ where: { id: parseInt(deliveryAgentId, 10) } })
@@ -1004,7 +1159,7 @@ export class OrderService {
           create: {
             status: order.status,
             notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName} `,
-            changedBy,
+            changedBy: requester.id,
             metadata: { assignedAgentId: parseInt(deliveryAgentId, 10) }
           }
         }
@@ -1022,7 +1177,19 @@ export class OrderService {
 
     logger.info(`Delivery agent assigned to order: ${order.id} `, {
       orderId,
-      agentId: deliveryAgentId
+      agentId: deliveryAgentId,
+      changedBy: requester.id
+    });
+
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: requester.id,
+        action: 'assign_agent',
+        resource: 'order',
+        resourceId: orderId,
+        metadata: { assignedAgentId: parseInt(deliveryAgentId, 10) }
+      }
     });
 
     // Emit socket events for real-time updates
@@ -1035,9 +1202,19 @@ export class OrderService {
   /**
    * Get Kanban board view
    */
-  async getKanbanView(filters: { area?: string; agentId?: string }) {
-    const where: Prisma.OrderWhereInput = {};
+  async getKanbanView(filters: { area?: string; agentId?: string }, requester?: Requester) {
+    const where: Prisma.OrderWhereInput = { deletedAt: null };
     if (filters.area) where.deliveryArea = filters.area;
+
+    // Role-based filtering for Kanban
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      if (requester.role === 'sales_rep') {
+        where.customerRepId = requester.id;
+      } else if (requester.role === 'delivery_agent') {
+        where.deliveryAgentId = requester.id;
+      }
+    }
+
     if (filters.agentId) where.deliveryAgentId = parseInt(filters.agentId, 10);
 
     const orders = await prisma.order.findMany({
@@ -1082,8 +1259,18 @@ export class OrderService {
   /**
    * Get order statistics
    */
-  async getOrderStats(filters: { startDate?: Date; endDate?: Date }) {
-    const where: Prisma.OrderWhereInput = {};
+  async getOrderStats(filters: { startDate?: Date; endDate?: Date }, requester?: Requester) {
+    const where: Prisma.OrderWhereInput = { deletedAt: null };
+
+    // Role-based filtering for stats
+    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      if (requester.role === 'sales_rep') {
+        where.customerRepId = requester.id;
+      } else if (requester.role === 'delivery_agent') {
+        where.deliveryAgentId = requester.id;
+      }
+    }
+
     if (filters.startDate || filters.endDate) {
       where.createdAt = {};
       if (filters.startDate) where.createdAt.gte = filters.startDate;

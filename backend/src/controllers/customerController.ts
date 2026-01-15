@@ -11,7 +11,7 @@ export const getAllCustomers = async (req: AuthRequest, res: Response): Promise<
       area: area as string | undefined,
       page: Number(page),
       limit: Number(limit)
-    });
+    }, req.user);
 
     res.json(result);
   } catch (error) {
@@ -32,7 +32,7 @@ export const createCustomer = async (req: AuthRequest, res: Response): Promise<v
 export const getCustomer = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const customer = await customerService.getCustomerById(id);
+    const customer = await customerService.getCustomerById(id, req.user);
     res.json({ customer });
   } catch (error) {
     throw error;
@@ -43,7 +43,7 @@ export const updateCustomer = async (req: AuthRequest, res: Response): Promise<v
   try {
     const { id } = req.params;
     const updateData = req.body;
-    const customer = await customerService.updateCustomer(id, updateData);
+    const customer = await customerService.updateCustomer(id, updateData, req.user);
     res.json({ customer });
   } catch (error) {
     throw error;
@@ -53,7 +53,7 @@ export const updateCustomer = async (req: AuthRequest, res: Response): Promise<v
 export const deleteCustomer = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const result = await customerService.deleteCustomer(id);
+    const result = await customerService.deleteCustomer(id, req.user);
     res.json(result);
   } catch (error) {
     throw error;
@@ -64,7 +64,7 @@ export const updateCustomerTags = async (req: AuthRequest, res: Response): Promi
   try {
     const { id } = req.params;
     const { tags } = req.body;
-    const customer = await customerService.updateCustomerTags(id, tags);
+    const customer = await customerService.updateCustomerTags(id, tags, req.user);
     res.json({ customer });
   } catch (error) {
     throw error;
@@ -74,7 +74,7 @@ export const updateCustomerTags = async (req: AuthRequest, res: Response): Promi
 export const getCustomerAnalytics = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const analytics = await customerService.getCustomerAnalytics(id);
+    const analytics = await customerService.getCustomerAnalytics(id, req.user);
     res.json({ analytics });
   } catch (error) {
     throw error;

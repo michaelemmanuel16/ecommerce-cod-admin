@@ -8,6 +8,11 @@ import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+const defaultPassword = process.env.DEFAULT_SEED_PASSWORD || 'password123';
+if (!process.env.DEFAULT_SEED_PASSWORD && process.env.NODE_ENV === 'production') {
+  console.warn('⚠️ WARNING: DEFAULT_SEED_PASSWORD not set. Using default insecure password in production!');
+}
+
 // Ghana regions and areas
 const ghanaLocations = [
   { state: 'Greater Accra', area: 'Osu', zipCode: 'GA-001' },
@@ -40,7 +45,7 @@ async function seedComprehensiveData() {
 
     // 0. Create Super Admin and System Config
     console.log('⚙️ Initializing System Config and Super Admin...');
-    const adminPassword = await bcrypt.hash('password123', 10);
+    const adminPassword = await bcrypt.hash(defaultPassword, 10);
     await prisma.user.create({
       data: {
         email: 'admin@codadmin.com',
@@ -154,7 +159,7 @@ async function seedComprehensiveData() {
     ];
 
     for (const rep of repData) {
-      const hashedPassword = await bcrypt.hash('password123', 10);
+      const hashedPassword = await bcrypt.hash(defaultPassword, 10);
       const user = await prisma.user.create({
         data: {
           email: rep.email,
@@ -182,7 +187,7 @@ async function seedComprehensiveData() {
     ];
 
     for (const agent of agentData) {
-      const hashedPassword = await bcrypt.hash('password123', 10);
+      const hashedPassword = await bcrypt.hash(defaultPassword, 10);
       const user = await prisma.user.create({
         data: {
           email: agent.email,
@@ -456,26 +461,17 @@ async function seedComprehensiveData() {
 
     // Summary
     console.log(`
-╔═══════════════════════════════════════════════════════╗
+╚═══════════════════════════════════════════════════════╝
 ║                                                       ║
-║   Comprehensive Data Seeded Successfully! 🎉          ║
-║                                                       ║
-║   Customer Reps:    ${customerReps.length}                                   ║
-║   Delivery Agents:  ${deliveryAgents.length}                                   ║
-║   Customers:        ${customers.length}                                  ║
-║   Products:         ${products.length}                                   ║
-║   Orders:           ${orders.length}                                  ║
-║   Deliveries:       ${deliveryCount}                                  ║
-║                                                       ║
-║   Default password for all users: password123        ║
+║   Default password for all users: ${defaultPassword === 'password123' ? 'password123 (INSECURE)' : '******'}        ║
 ║                                                       ║
 ║   Sample Customer Rep Login:                          ║
 ║   Email: rep1@codadmin.com                            ║
-║   Password: password123                               ║
+║   Password: ${defaultPassword === 'password123' ? 'password123' : '[REDACTED]'}                               ║
 ║                                                       ║
 ║   Sample Delivery Agent Login:                        ║
 ║   Email: agent1@codadmin.com                          ║
-║   Password: password123                               ║
+║   Password: ${defaultPassword === 'password123' ? 'password123' : '[REDACTED]'}                               ║
 ║                                                       ║
 ╚═══════════════════════════════════════════════════════╝
     `);
