@@ -114,6 +114,17 @@ export class GLService {
   }
 
   /**
+   * Parse ID string to number safely
+   */
+  private parseId(id: string, errorMessage: string = 'Invalid ID format'): number {
+    const parsed = parseInt(id, 10);
+    if (isNaN(parsed)) {
+      throw new AppError(errorMessage, 400);
+    }
+    return parsed;
+  }
+
+  /**
    * Check for circular parent-child relationships
    * Traverses the parent chain to detect if setting parentId would create a cycle
    */
@@ -147,16 +158,24 @@ export class GLService {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
 
-    const lastEntry = await prisma.journalEntry.findFirst({
-      where: { entryNumber: { startsWith: `JE-${dateStr}-` } },
-      orderBy: { entryNumber: 'desc' },
-      select: { entryNumber: true }
-    });
+    // Use raw SQL to find and lock the last entry for today to prevent race conditions
+    // This ensures only one process can generate the next sequence number at a time
+    const result = await prisma.$queryRaw<any[]>`
+      SELECT entry_number 
+      FROM journal_entries 
+      WHERE entry_number LIKE ${'JE-' + dateStr + '-%'} 
+      ORDER BY entry_number DESC 
+      LIMIT 1 
+      FOR UPDATE
+    `;
 
     let sequence = 1;
-    if (lastEntry) {
-      const lastSequence = parseInt(lastEntry.entryNumber.split('-')[2], 10);
-      sequence = lastSequence + 1;
+    if (result && result.length > 0) {
+      const lastEntryNumber = result[0].entry_number;
+      const lastSequence = parseInt(lastEntryNumber.split('-')[2], 10);
+      if (!isNaN(lastSequence)) {
+        sequence = lastSequence + 1;
+      }
     }
 
     return `JE-${dateStr}-${sequence.toString().padStart(5, '0')}`;
@@ -177,7 +196,15 @@ export class GLService {
     let totalDebits = new Decimal(0);
     let totalCredits = new Decimal(0);
 
-    // Validate each transaction and accumulate totals
+    // Verify accounts exist and are active in a single batch query (Fix N+1)
+    const accountIds = [...new Set(data.transactions.map(txn => txn.accountId))];
+    const accounts = await prisma.account.findMany({
+      where: { id: { in: accountIds } },
+      select: { id: true, isActive: true, name: true }
+    });
+
+    const accountMap = new Map(accounts.map(a => [a.id, a]));
+
     for (const txn of data.transactions) {
       const debit = new Decimal(txn.debitAmount);
       const credit = new Decimal(txn.creditAmount);
@@ -201,11 +228,7 @@ export class GLService {
       totalDebits = totalDebits.plus(debit);
       totalCredits = totalCredits.plus(credit);
 
-      // Verify account exists and is active
-      const account = await prisma.account.findUnique({
-        where: { id: txn.accountId },
-        select: { isActive: true, name: true }
-      });
+      const account = accountMap.get(txn.accountId);
 
       if (!account) {
         throw new AppError(`Account ${txn.accountId} not found`, 404);
@@ -334,10 +357,7 @@ export class GLService {
    * Get single account by ID
    */
   async getAccountById(accountId: string) {
-    const id = parseInt(accountId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid account ID', 400);
-    }
+    const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
       where: { id },
@@ -454,10 +474,7 @@ export class GLService {
   async updateAccount(accountId: string, data: UpdateAccountData, requester?: Requester) {
     const { name, description, parentId } = data;
 
-    const id = parseInt(accountId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid account ID', 400);
-    }
+    const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
       where: { id }
@@ -542,10 +559,7 @@ export class GLService {
    * Delete account (system accounts cannot be deleted)
    */
   async deleteAccount(accountId: string, requester?: Requester) {
-    const id = parseInt(accountId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid account ID', 400);
-    }
+    const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
       where: { id },
@@ -608,10 +622,7 @@ export class GLService {
    * Toggle account active status
    */
   async toggleAccountStatus(accountId: string, isActive: boolean, requester?: Requester) {
-    const id = parseInt(accountId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid account ID', 400);
-    }
+    const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
       where: { id }
@@ -813,10 +824,7 @@ export class GLService {
    * Get single journal entry by ID
    */
   async getJournalEntryById(entryId: string) {
-    const id = parseInt(entryId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid journal entry ID', 400);
-    }
+    const id = this.parseId(entryId, 'Invalid journal entry ID');
 
     const entry = await prisma.journalEntry.findUnique({
       where: { id },
@@ -870,11 +878,8 @@ export class GLService {
   /**
    * Void journal entry by creating reversing entry
    */
-  async voidJournalEntry(entryId: string, voidReason: string, requester?: Requester) {
-    const id = parseInt(entryId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid journal entry ID', 400);
-    }
+  async voidJournalEntry(entryId: string, reason: string, requester?: Requester) {
+    const id = this.parseId(entryId, 'Invalid journal entry ID');
 
     return await prisma.$transaction(async (tx) => {
       const entry = await tx.journalEntry.findUnique({
@@ -931,7 +936,7 @@ export class GLService {
           isVoided: true,
           voidedAt: new Date(),
           voidedBy: requester?.id,
-          voidReason,
+          voidReason: reason,
           reversingEntryId: reversingEntry.id
         },
         include: {
@@ -972,7 +977,7 @@ export class GLService {
           resourceId: entry.id.toString(),
           metadata: {
             entryNumber: entry.entryNumber,
-            voidReason,
+            voidReason: reason,
             reversingEntryId: reversingEntry.id,
             reversingEntryNumber: reversingEntry.entryNumber
           }
@@ -987,10 +992,7 @@ export class GLService {
    * Get account balance (cached from currentBalance field)
    */
   async getAccountBalance(accountId: string) {
-    const id = parseInt(accountId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid account ID', 400);
-    }
+    const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
       where: { id },
@@ -1016,10 +1018,7 @@ export class GLService {
    * Get account ledger (transaction history)
    */
   async getAccountLedger(accountId: string, filters: AccountLedgerFilters) {
-    const id = parseInt(accountId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid account ID', 400);
-    }
+    const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
       where: { id },
@@ -1045,9 +1044,10 @@ export class GLService {
 
     // Filter by journal entry date if provided
     if (startDate || endDate) {
-      where.journalEntry = {};
-      if (startDate) where.journalEntry.entryDate = { gte: new Date(startDate) };
-      if (endDate) where.journalEntry.entryDate = { lte: new Date(endDate) };
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (startDate) dateFilter.gte = new Date(startDate);
+      if (endDate) dateFilter.lte = new Date(endDate);
+      where.journalEntry = { entryDate: dateFilter };
     }
 
     const skip = (page - 1) * limit;
@@ -1090,10 +1090,7 @@ export class GLService {
    * Recalculate account balance from transactions (utility for verification/repair)
    */
   async recalculateAccountBalance(accountId: string) {
-    const id = parseInt(accountId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid account ID', 400);
-    }
+    const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
       where: { id },
