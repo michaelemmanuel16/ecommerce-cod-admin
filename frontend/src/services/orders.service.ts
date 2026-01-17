@@ -19,9 +19,9 @@ const transformOrder = (order: any): Order => {
     const shippingAddress = {
       street: order.deliveryAddress || '',
       state: order.deliveryState || '',
+      area: order.deliveryArea || '',
       country: 'USA', // Default country
       phone: order.customer?.alternatePhone || order.customer?.phoneNumber || '',
-      postalCode: '',
     };
 
     return {

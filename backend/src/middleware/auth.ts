@@ -49,6 +49,7 @@ function getDefaultPermissions() {
       workflows: ['create', 'view', 'update', 'delete', 'execute'],
       settings: ['view', 'update'],
       calls: ['create', 'view', 'update', 'delete'],
+      gl: ['create', 'view', 'update', 'delete'],
     },
     admin: {
       users: ['create', 'view', 'update', 'delete'],
@@ -60,6 +61,7 @@ function getDefaultPermissions() {
       workflows: ['create', 'view', 'update', 'delete', 'execute'],
       settings: ['view'],
       calls: ['create', 'view', 'update', 'delete'],
+      gl: ['create', 'view', 'update', 'delete'],
     },
     manager: {
       users: [],
@@ -71,6 +73,7 @@ function getDefaultPermissions() {
       workflows: ['view', 'execute'],
       settings: [],
       calls: ['view'],
+      gl: ['view'],
     },
     sales_rep: {
       users: [],
@@ -82,6 +85,7 @@ function getDefaultPermissions() {
       workflows: [],
       settings: [],
       calls: ['create', 'view'],
+      gl: [],
     },
     inventory_manager: {
       users: [],
@@ -93,6 +97,7 @@ function getDefaultPermissions() {
       workflows: [],
       settings: [],
       calls: [],
+      gl: [],
     },
     delivery_agent: {
       users: [],
@@ -104,6 +109,7 @@ function getDefaultPermissions() {
       workflows: [],
       settings: [],
       calls: [],
+      gl: [],
     },
     accountant: {
       users: [],
@@ -115,6 +121,7 @@ function getDefaultPermissions() {
       workflows: [],
       calls: [],
       settings: [],
+      gl: ['create', 'view', 'update'],
     },
   };
 }

@@ -194,24 +194,13 @@ export const ShippingAddressFormExample: React.FC = () => {
         error={getErrorMessage(errors.shippingAddress?.state)}
         {...register('shippingAddress.state')}
       />
-
-      <div className="grid grid-cols-2 gap-4">
-        <FormInput
-          label="Postal Code"
-          required
-          placeholder="10001"
-          error={getErrorMessage(errors.shippingAddress?.postalCode)}
-          {...register('shippingAddress.postalCode')}
-        />
-
-        <FormInput
-          label="Country"
-          required
-          placeholder="USA"
-          error={getErrorMessage(errors.shippingAddress?.country)}
-          {...register('shippingAddress.country')}
-        />
-      </div>
+      <FormInput
+        label="Area"
+        required
+        placeholder="Central Park"
+        error={getErrorMessage(errors.shippingAddress?.area)}
+        {...register('shippingAddress.area')}
+      />
 
       <FormInput
         label="Phone Number"

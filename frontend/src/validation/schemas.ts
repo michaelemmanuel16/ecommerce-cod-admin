@@ -26,8 +26,8 @@ export const orderItemSchema = z.object({
 
 export const shippingAddressSchema = z.object({
   street: z.string().min(5, 'Street address must be at least 5 characters'),
+  area: z.string().min(2, 'Area is required'),
   state: z.string().min(2, 'State must be at least 2 characters'),
-  postalCode: z.string().regex(/^[0-9]{5,10}$/, 'Invalid postal code'),
   country: z.string().min(2, 'Country is required'),
   phone: z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
 });

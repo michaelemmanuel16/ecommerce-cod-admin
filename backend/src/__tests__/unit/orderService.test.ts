@@ -330,8 +330,8 @@ describe('OrderService', () => {
         return callback({
           product: { update: jest.fn().mockResolvedValue({}) },
           customer: { update: jest.fn().mockResolvedValue({}) },
-          orderHistory: { create: jest.fn().mockResolvedValue({}) },
-          order: { update: jest.fn().mockResolvedValue({}) }
+          orderHistory: { createMany: jest.fn().mockResolvedValue({ count: 2 }) },
+          order: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) }
         });
       });
 

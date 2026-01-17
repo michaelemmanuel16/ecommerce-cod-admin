@@ -33,6 +33,7 @@ import adminRoutes from './routes/adminRoutes';
 import checkoutFormRoutes from './routes/checkoutFormRoutes';
 import publicOrderRoutes from './routes/publicOrderRoutes';
 import callRoutes from './routes/callRoutes';
+import glRoutes from './routes/glRoutes';
 
 // Initialize workflow queue worker
 import './queues/workflowQueue';
@@ -121,6 +122,7 @@ app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);
 app.use('/api/deliveries', apiLimiter, deliveryRoutes);
 app.use('/api/financial', apiLimiter, financialRoutes);
+app.use('/api/gl', apiLimiter, glRoutes);
 app.use('/api/workflows', apiLimiter, workflowRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/analytics', analyticsRoutes); // No rate limit - already cached & authenticated

@@ -62,7 +62,6 @@ export const createCustomerValidation: ValidationChain[] = [
   body('phoneNumber').isMobilePhone('any'),
   body('address').notEmpty(),
   body('state').notEmpty(),
-  body('zipCode').optional(),
   body('area').notEmpty()
 ];
 
@@ -85,7 +84,6 @@ export const createOrderValidation: ValidationChain[] = [
   body('totalAmount').isFloat({ min: 0 }),
   body('deliveryAddress').notEmpty(),
   body('deliveryState').notEmpty(),
-  body('deliveryZipCode').optional(),
   body('deliveryArea').notEmpty()
 ];
 
@@ -109,10 +107,55 @@ export const paginationValidation: ValidationChain[] = [
   query('limit').optional().isInt({ min: 1, max: 100 })
 ];
 
+export const bulkDeleteValidation: ValidationChain[] = [
+  body('ids')
+    .isArray({ min: 1 }).withMessage('Must provide an array of order IDs')
+    .custom((ids) => ids.every((id: any) => typeof id === 'number')).withMessage('All IDs must be numbers')
+];
+
 export const createCallValidation: ValidationChain[] = [
   body('customerId').isInt().withMessage('Customer ID is required'),
   body('orderId').optional().isInt(),
   body('outcome').isIn(['confirmed', 'rescheduled', 'no_answer', 'cancelled', 'other']).withMessage('Invalid call outcome'),
   body('duration').optional().isInt({ min: 0 }).withMessage('Duration must be a positive number'),
   body('notes').optional().isString().isLength({ max: 500 }).withMessage('Notes must be 500 characters or less')
+];
+
+export const createAccountValidation: ValidationChain[] = [
+  body('code')
+    .trim()
+    .notEmpty().withMessage('Account code is required')
+    .matches(/^\d{4}$/).withMessage('Account code must be exactly 4 digits'),
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Account name is required')
+    .isLength({ min: 3, max: 100 }).withMessage('Account name must be 3-100 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Description cannot exceed 500 characters'),
+  body('accountType')
+    .notEmpty().withMessage('Account type is required')
+    .isIn(['asset', 'liability', 'equity', 'revenue', 'expense']).withMessage('Invalid account type'),
+  body('normalBalance')
+    .notEmpty().withMessage('Normal balance is required')
+    .isIn(['debit', 'credit']).withMessage('Normal balance must be debit or credit'),
+  body('parentId')
+    .optional()
+    .isInt({ min: 1 }).withMessage('Parent ID must be a positive integer')
+];
+
+export const updateAccountValidation: ValidationChain[] = [
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 100 }).withMessage('Account name must be 3-100 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Description cannot exceed 500 characters'),
+  body('parentId')
+    .optional()
+    .custom((value) => value === null || (Number.isInteger(Number(value)) && Number(value) > 0))
+    .withMessage('Parent ID must be null or a positive integer')
 ];

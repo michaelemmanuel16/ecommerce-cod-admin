@@ -4,7 +4,13 @@ import { OrderStatus, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import workflowService from './workflowService';
 import { io } from '../server';
-import { emitOrderAssigned, emitOrderCreated, emitOrderStatusChanged, emitOrderUpdated } from '../sockets/index';
+import {
+  emitOrderAssigned,
+  emitOrderCreated,
+  emitOrderUpdated,
+  emitOrderStatusChanged,
+  emitOrdersDeleted,
+} from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
 
@@ -482,7 +488,7 @@ export class OrderService {
               });
 
               if (result.count === 0) {
-                throw new Error(`INSUFFICIENT_STOCK_PRODUCT_${item.productId}`);
+                throw new Error(`INSUFFICIENT_STOCK_PRODUCT_${item.productId} `);
               }
             }
 
@@ -733,7 +739,7 @@ export class OrderService {
           });
 
           if (result.count === 0) {
-            throw new AppError(`Insufficient stock for product ID ${newItem.productId}`, 400);
+            throw new AppError(`Insufficient stock for product ID ${newItem.productId} `, 400);
           }
         }
 
@@ -1055,7 +1061,7 @@ export class OrderService {
    * Bulk soft delete orders
    */
   async bulkDeleteOrders(orderIds: number[], userId?: number, requester?: Requester) {
-    if (!Array.from(orderIds).length) {
+    if (!orderIds || orderIds.length === 0) {
       throw new AppError('No order IDs provided', 400);
     }
 
@@ -1085,59 +1091,84 @@ export class OrderService {
         }, 'order');
 
         if (!isOwner) {
-          throw new AppError(`You do not have permission to delete order #${order.id}`, 403);
+          throw new AppError(`You do not have permission to delete order #${order.id} `, 403);
         }
       }
 
       if (order.status === 'delivered') {
-        throw new AppError(`Cannot delete delivered order #${order.id}`, 400);
+        throw new AppError(`Cannot delete delivered order #${order.id} `, 400);
       }
+    }
+
+    // Aggregate updates for performance
+    const productRestocks = new Map<number, number>();
+    const customerUpdates = new Map<number, { count: number, total: number }>();
+    const historyData: any[] = [];
+    const actualOrderIds = orders.map(o => o.id);
+
+    for (const order of orders) {
+      // Aggregate product restocks
+      for (const item of order.orderItems) {
+        const current = productRestocks.get(item.productId) || 0;
+        productRestocks.set(item.productId, current + item.quantity);
+      }
+
+      // Aggregate customer stats
+      const currentCust = customerUpdates.get(order.customerId) || { count: 0, total: 0 };
+      customerUpdates.set(order.customerId, {
+        count: currentCust.count + 1,
+        total: currentCust.total + order.totalAmount
+      });
+
+      // Prepare history data
+      historyData.push({
+        orderId: order.id,
+        status: order.status,
+        notes: `Order deleted in bulk by user ${userId || 'system'} `,
+        changedBy: userId
+      });
     }
 
     // Perform bulk deletion in a single transaction
     await prisma.$transaction(async (tx) => {
-      for (const order of orders) {
-        // Restock products
-        for (const item of order.orderItems) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: {
-              stockQuantity: {
-                increment: item.quantity
-              }
-            }
-          });
-        }
-
-        // Update customer stats
-        await tx.customer.update({
-          where: { id: order.customerId },
-          data: {
-            totalOrders: { decrement: 1 },
-            totalSpent: { decrement: order.totalAmount }
-          }
-        });
-
-        // Create audit trail
-        await tx.orderHistory.create({
-          data: {
-            orderId: order.id,
-            status: order.status,
-            notes: `Order deleted by user ${userId || 'system'} `,
-            changedBy: userId
-          }
-        });
-
-        // Soft delete the order
-        await tx.order.update({
-          where: { id: order.id },
-          data: { deletedAt: new Date() }
+      // 1. Batch restock products
+      for (const [productId, quantity] of productRestocks.entries()) {
+        await tx.product.update({
+          where: { id: productId },
+          data: { stockQuantity: { increment: quantity } }
         });
       }
+
+      // 2. Batch update customer stats
+      for (const [customerId, stats] of customerUpdates.entries()) {
+        await tx.customer.update({
+          where: { id: customerId },
+          data: {
+            totalOrders: { decrement: stats.count },
+            totalSpent: { decrement: stats.total }
+          }
+        });
+      }
+
+      // 3. Batch create audit trail
+      await tx.orderHistory.createMany({
+        data: historyData
+      });
+
+      // 4. Bulk soft delete orders
+      await tx.order.updateMany({
+        where: { id: { in: actualOrderIds } },
+        data: { deletedAt: new Date() }
+      });
     });
 
-    logger.info(`Bulk orders soft deleted: ${orders.map(o => o.id).join(', ')} `, {
-      orderIds: orders.map(o => o.id),
+    const io = (global as any).io;
+    if (io) {
+      emitOrdersDeleted(io, actualOrderIds);
+    }
+
+    logger.info(`Bulk orders soft deleted: ${actualOrderIds.join(', ')} `, {
+      orderIds: actualOrderIds,
       userId
     });
 
