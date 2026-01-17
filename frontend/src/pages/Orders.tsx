@@ -326,14 +326,13 @@ export const Orders: React.FC = () => {
     }
 
     try {
-      const deletePromises = Array.from(selectedOrderIds).map(id => ordersService.deleteOrder(id));
-      await Promise.all(deletePromises);
-      toast.success(`Successfully deleted ${selectedOrderIds.size} order(s)`);
+      const response = await ordersService.bulkDeleteOrders(Array.from(selectedOrderIds));
+      toast.success(response.message || `Successfully deleted ${selectedOrderIds.size} order(s)`);
       setSelectedOrderIds(new Set());
       fetchOrders();
     } catch (error: any) {
       console.error('Failed to bulk delete orders:', error);
-      toast.error('Failed to delete some orders');
+      toast.error(error.response?.data?.message || 'Failed to delete some orders');
     }
   };
 
@@ -504,7 +503,7 @@ export const Orders: React.FC = () => {
             <div className="bg-white rounded-lg shadow onboarding-orders-table">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-gray-50 onboarding-orders-table-header">
                     <tr>
                       <ResizableHeader
                         columnKey="checkbox"

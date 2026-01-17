@@ -147,6 +147,16 @@ export const deleteOrder = async (req: AuthRequest, res: Response): Promise<void
   }
 };
 
+export const bulkDeleteOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { ids } = req.body;
+    const result = await orderService.bulkDeleteOrders(ids, req.user?.id, req.user);
+    res.json(result);
+  } catch (error) {
+    throw error;
+  }
+};
+
 export const updateOrderStatus = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;

@@ -7,9 +7,12 @@
 
 /* Pulse animation for the pending orders card (Step 3) */
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.7;
   }
@@ -129,6 +132,7 @@
 .onboarding-stats-cards,
 .onboarding-new-order-btn,
 .onboarding-orders-table,
+.onboarding-orders-table-header,
 .onboarding-status-dropdown,
 .onboarding-search-bar,
 .onboarding-add-customer-btn {
@@ -141,6 +145,7 @@
 .__floater__open .onboarding-stats-cards,
 .__floater__open .onboarding-new-order-btn,
 .__floater__open .onboarding-orders-table,
+.__floater__open .onboarding-orders-table-header,
 .__floater__open .onboarding-status-dropdown,
 .__floater__open .onboarding-search-bar,
 .__floater__open .onboarding-add-customer-btn {

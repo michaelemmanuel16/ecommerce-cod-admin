@@ -305,6 +305,66 @@ describe('OrderService', () => {
     // TODO: Update tests to match new individual transaction per order structure
   });
 
+  describe('bulkDeleteOrders', () => {
+    const mockOrders = [
+      {
+        id: 1,
+        customerId: 1,
+        totalAmount: 100,
+        status: 'pending_confirmation' as OrderStatus,
+        orderItems: [{ productId: 1, quantity: 2 }]
+      },
+      {
+        id: 2,
+        customerId: 1,
+        totalAmount: 200,
+        status: 'confirmed' as OrderStatus,
+        orderItems: [{ productId: 2, quantity: 1 }]
+      }
+    ];
+
+    it('should bulk delete orders successfully', async () => {
+      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
+
+      (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
+        return callback({
+          product: { update: jest.fn().mockResolvedValue({}) },
+          customer: { update: jest.fn().mockResolvedValue({}) },
+          orderHistory: { create: jest.fn().mockResolvedValue({}) },
+          order: { update: jest.fn().mockResolvedValue({}) }
+        });
+      });
+
+      const result = await orderService.bulkDeleteOrders([1, 2], 1);
+
+      expect(result.message).toContain('Successfully deleted 2 order(s)');
+      expect(prismaMock.$transaction).toHaveBeenCalled();
+    });
+
+    it('should throw error if no order IDs provided', async () => {
+      await expect(orderService.bulkDeleteOrders([])).rejects.toThrow(
+        new AppError('No order IDs provided', 400)
+      );
+    });
+
+    it('should throw error if no valid orders found', async () => {
+      prismaMock.order.findMany.mockResolvedValue([]);
+      await expect(orderService.bulkDeleteOrders([999])).rejects.toThrow(
+        new AppError('No valid orders found to delete', 404)
+      );
+    });
+
+    it('should throw error if trying to delete delivered order', async () => {
+      prismaMock.order.findMany.mockResolvedValue([
+        { ...mockOrders[0], status: 'delivered' as OrderStatus }
+      ] as any);
+
+      await expect(orderService.bulkDeleteOrders([1])).rejects.toThrow(
+        /Cannot delete delivered order #1/
+      );
+    });
+  });
+
   describe('getOrderStats', () => {
     it('should calculate order statistics correctly', async () => {
       (prismaMock.order.count as any).mockResolvedValue(100);

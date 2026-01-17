@@ -138,7 +138,7 @@ export const customerRepTourSteps: Step[] = [
 
   // Step 7: Orders Table and Status Management
   {
-    target: '.onboarding-orders-table',
+    target: '.onboarding-orders-table-header',
     content: (
       <div>
         <h3 className="font-bold mb-2">📝 Your Orders List</h3>
@@ -159,7 +159,7 @@ export const customerRepTourSteps: Step[] = [
         </div>
       </div>
     ),
-    placement: 'top',
+    placement: 'bottom',
   },
 
   // Step 8: Search Bar

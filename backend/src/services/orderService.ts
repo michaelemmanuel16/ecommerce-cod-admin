@@ -1051,6 +1051,102 @@ export class OrderService {
     logger.info(`Order soft deleted: ${order.id} `, { orderId, userId });
     return { message: 'Order deleted successfully' };
   }
+  /**
+   * Bulk soft delete orders
+   */
+  async bulkDeleteOrders(orderIds: number[], userId?: number, requester?: Requester) {
+    if (!Array.from(orderIds).length) {
+      throw new AppError('No order IDs provided', 400);
+    }
+
+    // Fetch orders with items to check permissions and status
+    const orders = await prisma.order.findMany({
+      where: {
+        id: { in: orderIds },
+        deletedAt: null
+      },
+      include: {
+        orderItems: true
+      }
+    });
+
+    if (orders.length === 0) {
+      throw new AppError('No valid orders found to delete', 404);
+    }
+
+    // Validate each order
+    for (const order of orders) {
+      // Enforce ownership
+      if (requester) {
+        const isOwner = checkResourceOwnership(requester, {
+          assignedRepId: order.customerRepId,
+          deliveryAgentId: order.deliveryAgentId,
+          customerId: order.customerId
+        }, 'order');
+
+        if (!isOwner) {
+          throw new AppError(`You do not have permission to delete order #${order.id}`, 403);
+        }
+      }
+
+      if (order.status === 'delivered') {
+        throw new AppError(`Cannot delete delivered order #${order.id}`, 400);
+      }
+    }
+
+    // Perform bulk deletion in a single transaction
+    await prisma.$transaction(async (tx) => {
+      for (const order of orders) {
+        // Restock products
+        for (const item of order.orderItems) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stockQuantity: {
+                increment: item.quantity
+              }
+            }
+          });
+        }
+
+        // Update customer stats
+        await tx.customer.update({
+          where: { id: order.customerId },
+          data: {
+            totalOrders: { decrement: 1 },
+            totalSpent: { decrement: order.totalAmount }
+          }
+        });
+
+        // Create audit trail
+        await tx.orderHistory.create({
+          data: {
+            orderId: order.id,
+            status: order.status,
+            notes: `Order deleted by user ${userId || 'system'} `,
+            changedBy: userId
+          }
+        });
+
+        // Soft delete the order
+        await tx.order.update({
+          where: { id: order.id },
+          data: { deletedAt: new Date() }
+        });
+      }
+    });
+
+    logger.info(`Bulk orders soft deleted: ${orders.map(o => o.id).join(', ')} `, {
+      orderIds: orders.map(o => o.id),
+      userId
+    });
+
+    return {
+      message: `Successfully deleted ${orders.length} order(s)`,
+      deletedCount: orders.length
+    };
+  }
+
 
   /**
    * Assign customer rep to order

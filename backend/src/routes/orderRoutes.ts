@@ -20,6 +20,7 @@ router.get('/kanban', requireResourcePermission('orders', 'view'), orderControll
 router.get('/stats', requireResourcePermission('orders', 'view'), orderController.getOrderStats);
 router.get('/:id', requireResourcePermission('orders', 'view'), orderController.getOrder);
 router.put('/:id', requireResourcePermission('orders', 'update'), orderController.updateOrder);
+router.delete('/bulk', requireResourcePermission('orders', 'delete'), orderController.bulkDeleteOrders);
 router.delete('/:id', requireResourcePermission('orders', 'delete'), orderController.deleteOrder);
 router.patch('/:id/status', validateRequest(updateOrderStatusValidation), requireResourcePermission('orders', 'update'), orderController.updateOrderStatus);
 router.patch('/:id/assign-rep', requireResourcePermission('orders', 'assign'), orderController.assignCustomerRep);
