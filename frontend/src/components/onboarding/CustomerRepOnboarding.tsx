@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
-import { useOnboardingContext } from './OnboardingProvider';
+import { useOnboardingContext } from './OnboardingContext';
 import { customerRepTourSteps, tourConfig } from './tourSteps.tsx';
 import { useAuthStore } from '../../stores/authStore';
 import { useLocation, useNavigate } from 'react-router-dom';

@@ -19,6 +19,7 @@ const transformOrder = (order: any): Order => {
     const shippingAddress = {
       street: order.deliveryAddress || '',
       state: order.deliveryState || '',
+      area: order.deliveryArea || '',
       country: 'USA', // Default country
       phone: order.customer?.alternatePhone || order.customer?.phoneNumber || '',
     };
@@ -104,6 +105,11 @@ export const ordersService = {
 
   async deleteOrder(id: number): Promise<void> {
     await apiClient.delete(`/api/orders/${id}`);
+  },
+
+  async bulkDeleteOrders(ids: number[]): Promise<{ message: string; deletedCount: number }> {
+    const response = await apiClient.delete('/api/orders/bulk', { data: { ids } });
+    return response.data;
   },
 
   async assignOrder(id: number, userId: number, role: 'rep' | 'agent' = 'rep'): Promise<Order> {

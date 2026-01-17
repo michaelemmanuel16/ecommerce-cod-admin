@@ -169,14 +169,14 @@ export const OrderDetails: React.FC = () => {
                                 <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium">
                                   {item.metadata.discountType === 'percentage'
                                     ? `-${item.metadata.discountValue}%`
-                                    : `-${formatCurrency(item.metadata.discountValue)}`}
+                                    : `-${formatCurrency(item.metadata.discountValue || 0)}`}
                                 </span>
                               </div>
                             )}
                           </div>
                           <div className="text-right">
-                            <p className="font-medium text-gray-900">{formatCurrency(item.total || item.price * item.quantity)}</p>
-                            <p className="text-sm text-gray-500">{formatCurrency(item.price)} each</p>
+                            <p className="font-medium text-gray-900">{formatCurrency(item.total || (item.price || 0) * item.quantity)}</p>
+                            <p className="text-sm text-gray-500">{formatCurrency(item.price || 0)} each</p>
                           </div>
                         </div>
                       </div>
@@ -242,7 +242,7 @@ export const OrderDetails: React.FC = () => {
                       <p className="text-sm text-gray-500">Shipping Address</p>
                       <p className="font-medium text-gray-900">
                         {order.shippingAddress.street}<br />
-                        {order.shippingAddress.state}
+                        {order.shippingAddress.area}, {order.shippingAddress.state}
                       </p>
                     </div>
                   </div>
@@ -349,10 +349,10 @@ export const OrderDetails: React.FC = () => {
                     <div key={call.id} className="border-b pb-3 last:border-b-0">
                       <div className="flex justify-between items-start mb-1">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${call.outcome === 'confirmed' ? 'bg-green-100 text-green-800' :
-                            call.outcome === 'rescheduled' ? 'bg-blue-100 text-blue-800' :
-                              call.outcome === 'no_answer' ? 'bg-orange-100 text-orange-800' :
-                                call.outcome === 'cancelled' ? 'bg-red-100 text-red-800' :
-                                  'bg-gray-100 text-gray-800'
+                          call.outcome === 'rescheduled' ? 'bg-blue-100 text-blue-800' :
+                            call.outcome === 'no_answer' ? 'bg-orange-100 text-orange-800' :
+                              call.outcome === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                'bg-gray-100 text-gray-800'
                           }`}>
                           {call.outcome.replace(/_/g, ' ')}
                         </span>

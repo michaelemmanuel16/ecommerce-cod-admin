@@ -44,6 +44,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
       defaultCountry: initialData?.country || 'Ghana',
       buttonColor: initialData?.styling?.buttonColor || '#0f172a',
       accentColor: initialData?.styling?.accentColor || '#f97316',
+      currency: initialData?.currency || 'GHS',
     },
   });
 
@@ -60,6 +61,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
           defaultCountry: initialData.country || 'Ghana',
           buttonColor: initialData.styling?.buttonColor || '#0f172a',
           accentColor: initialData.styling?.accentColor || '#f97316',
+          currency: initialData.currency || 'GHS',
         });
         // Reset state arrays with initialData
         setFields(initialData.fields || defaultFields);
@@ -80,6 +82,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
           defaultCountry: 'Ghana',
           buttonColor: '#0f172a',
           accentColor: '#f97316',
+          currency: 'GHS',
         });
         // Reset state arrays to defaults
         setFields(defaultFields);
@@ -105,7 +108,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
   const countryValue = watch('defaultCountry');
   React.useEffect(() => {
     if (countryValue) {
-      const currency = getCurrencyForCountry(countryValue);
+      const currency = getCurrencyForCountry(countryValue as any);
       setValue('currency', currency);
     }
   }, [countryValue, setValue]);
@@ -541,7 +544,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
               const selectedProductId = watch('productId');
               const selectedProduct = products.find(p => p.id === Number(selectedProductId));
               const productPrice = pkg.productPrice || selectedProduct?.price || 0;
-              const currency = watch('currency') || getCurrencyForCountry(watch('defaultCountry'));
+              const currency = (watch as any)('currency') || getCurrencyForCountry(watch('defaultCountry') as any);
 
               return (
                 <PackageEditor
@@ -578,7 +581,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
           </div>
           <div className="space-y-2">
             {upsells.map(upsell => {
-              const currency = watch('currency') || getCurrencyForCountry(watch('defaultCountry'));
+              const currency = (watch as any)('currency') || getCurrencyForCountry(watch('defaultCountry') as any);
 
               return (
                 <UpsellEditor

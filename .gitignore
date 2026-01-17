@@ -109,6 +109,7 @@ playwright-report/
 .claude/
 .claude-plugin/
 .playwright-mcp/
+.agent
 
 # Large log files in backend
 backend/backend.log

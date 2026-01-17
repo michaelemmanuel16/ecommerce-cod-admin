@@ -156,6 +156,7 @@ model Order {
   @@index([source])
   @@index([customerId, createdAt])
   @@index([deliveryState, deliveryArea])
+  @@index([deletedAt])
   @@map("orders")
 }
 
@@ -256,6 +257,28 @@ model Expense {
   @@index([category])
   @@index([expenseDate])
   @@map("expenses")
+}
+
+model Account {
+  id            Int           @id @default(autoincrement())
+  code          String        @unique
+  name          String
+  description   String?
+  accountType   AccountType   @map("account_type")
+  normalBalance NormalBalance @map("normal_balance")
+  parentId      Int?          @map("parent_id")
+  isSystem      Boolean       @default(false) @map("is_system")
+  isActive      Boolean       @default(true) @map("is_active")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  parent        Account?      @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children      Account[]     @relation("AccountHierarchy")
+
+  @@index([accountType])
+  @@index([isActive])
+  @@index([parentId])
+  @@index([code])
+  @@map("accounts")
 }
 
 model Workflow {
@@ -533,6 +556,8 @@ model AuditLog {
   @@index([action])
   @@index([resource])
   @@index([createdAt])
+  @@index([resource, resourceId])
+  @@index([userId, createdAt])
   @@map("audit_logs")
 }
 
@@ -596,4 +621,17 @@ enum CallOutcome {
   no_answer
   cancelled
   other
+}
+
+enum AccountType {
+  asset
+  liability
+  equity
+  revenue
+  expense
+}
+
+enum NormalBalance {
+  debit
+  credit
 }

@@ -2,7 +2,7 @@ import { Response, Request, NextFunction } from 'express';
 import { PrismaClient, OrderStatus } from '@prisma/client';
 import workflowService from '../services/workflowService';
 import checkoutFormService from '../services/checkoutFormService';
-import { io } from '../server';
+import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 
 const prisma = new PrismaClient();
@@ -208,7 +208,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     });
 
     // Emit socket event for real-time update
-    emitOrderCreated(io, order);
+    emitOrderCreated(getSocketInstance() as any, order);
 
     res.status(201).json({
       success: true,

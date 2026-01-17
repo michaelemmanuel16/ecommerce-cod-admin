@@ -1,5 +1,5 @@
 import prisma from '../utils/prisma';
-import { io } from '../server';
+import { getSocketInstance } from '../utils/socketInstance';
 import { emitNotification } from '../sockets';
 
 export async function createNotification(
@@ -20,7 +20,7 @@ export async function createNotification(
   });
 
   // Emit real-time notification via Socket.io
-  emitNotification(io, userId, notification);
+  emitNotification(getSocketInstance() as any, userId, notification);
 
   return notification;
 }

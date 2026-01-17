@@ -1,4 +1,4 @@
-import { PrismaClient, OrderStatus } from '@prisma/client';
+import { PrismaClient, OrderStatus, AccountType, NormalBalance } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 
@@ -107,7 +107,7 @@ async function resetSequences() {
 
   const tables = [
     'users', 'customers', 'products', 'orders', 'order_items',
-    'deliveries', 'transactions', 'expenses', 'workflows',
+    'deliveries', 'transactions', 'expenses', 'accounts', 'workflows',
     'workflow_executions', 'webhook_configs', 'webhook_logs',
     'notifications', 'checkout_forms', 'form_packages',
     'form_upsells', 'form_submissions', 'order_history'
@@ -139,6 +139,7 @@ async function cleanDatabase() {
   await prisma.workflowExecution.deleteMany();
   await prisma.workflow.deleteMany();
   await prisma.expense.deleteMany();
+  await prisma.account.deleteMany();
   await prisma.transaction.deleteMany();
   await prisma.delivery.deleteMany();
   await prisma.orderHistory.deleteMany();
@@ -151,12 +152,53 @@ async function cleanDatabase() {
   console.log('Database cleaned successfully');
 }
 
+async function seedChartOfAccounts() {
+  console.log('\n💰 Seeding Chart of Accounts...');
+
+  const accounts = [
+    // Assets (1000-1999) - Debit Normal Balance
+    { code: '1010', name: 'Cash in Hand', description: 'Bank account cash balances', accountType: AccountType.asset, normalBalance: NormalBalance.debit, isSystem: true },
+    { code: '1020', name: 'Cash in Transit', description: 'Cash collected by delivery agents, not yet deposited', accountType: AccountType.asset, normalBalance: NormalBalance.debit, isSystem: true },
+    { code: '1030', name: 'Accounts Receivable - Agents', description: 'Amounts owed by delivery agents for COD collections', accountType: AccountType.asset, normalBalance: NormalBalance.debit, isSystem: true },
+    { code: '1040', name: 'Inventory', description: 'Value of products in stock', accountType: AccountType.asset, normalBalance: NormalBalance.debit, isSystem: true },
+
+    // Liabilities (2000-2999) - Credit Normal Balance
+    { code: '2010', name: 'Accounts Payable', description: 'Amounts owed to suppliers and vendors', accountType: AccountType.liability, normalBalance: NormalBalance.credit, isSystem: true },
+    { code: '2020', name: 'Agent Deposits Pending', description: 'Cash held by agents awaiting deposit', accountType: AccountType.liability, normalBalance: NormalBalance.credit, isSystem: true },
+
+    // Equity (3000-3999) - Credit Normal Balance
+    { code: '3010', name: 'Owner\'s Equity', description: 'Owner\'s investment in the business', accountType: AccountType.equity, normalBalance: NormalBalance.credit, isSystem: true },
+    { code: '3020', name: 'Retained Earnings', description: 'Accumulated profits retained in the business', accountType: AccountType.equity, normalBalance: NormalBalance.credit, isSystem: true },
+
+    // Revenue (4000-4999) - Credit Normal Balance
+    { code: '4010', name: 'Product Sales Revenue', description: 'Revenue from product sales', accountType: AccountType.revenue, normalBalance: NormalBalance.credit, isSystem: true },
+    { code: '4020', name: 'Shipping Revenue', description: 'Revenue from shipping fees', accountType: AccountType.revenue, normalBalance: NormalBalance.credit, isSystem: true },
+
+    // Expenses (5000-5999) - Debit Normal Balance
+    { code: '5010', name: 'Cost of Goods Sold (COGS)', description: 'Direct costs of products sold', accountType: AccountType.expense, normalBalance: NormalBalance.debit, isSystem: true },
+    { code: '5020', name: 'Delivery Expense', description: 'Costs associated with successful deliveries', accountType: AccountType.expense, normalBalance: NormalBalance.debit, isSystem: true },
+    { code: '5030', name: 'Failed Delivery Expense', description: 'Costs from failed delivery attempts', accountType: AccountType.expense, normalBalance: NormalBalance.debit, isSystem: true },
+    { code: '5040', name: 'Return Processing Expense', description: 'Costs for processing returned items', accountType: AccountType.expense, normalBalance: NormalBalance.debit, isSystem: true },
+    { code: '5050', name: 'Operating Expenses', description: 'General operational expenses', accountType: AccountType.expense, normalBalance: NormalBalance.debit, isSystem: true },
+  ];
+
+  await prisma.account.createMany({
+    data: accounts,
+    skipDuplicates: true
+  });
+
+  console.log(`✓ Created ${accounts.length} standard accounts`);
+}
+
 async function seed() {
   console.log('🌱 Starting comprehensive seed...');
 
   // Clean database and reset sequences
   await cleanDatabase();
   await resetSequences();
+
+  // ==================== SEED CHART OF ACCOUNTS ====================
+  await seedChartOfAccounts();
 
   // ==================== CREATE USERS ====================
   console.log('\n👥 Creating users...');
@@ -523,6 +565,7 @@ async function seed() {
   console.log(`   Orders: ${orders.length}`);
   console.log(`   Deliveries: ${deliveryCount}`);
   console.log(`   Transactions: ${paidOrders.length}`);
+  console.log(`   GL Accounts: 15`);
   console.log('\n🔑 Login credentials:');
   console.log('   Email: admin@codadmin.com');
   console.log('   Password: password123');

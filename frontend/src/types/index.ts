@@ -78,7 +78,7 @@ export interface OrderItem {
 export interface ShippingAddress {
   street: string;
   state: string;
-  postalCode: string;
+  area: string;
   country?: string;
   phone: string;
 }

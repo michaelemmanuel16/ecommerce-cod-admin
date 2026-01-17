@@ -213,8 +213,9 @@ export const CustomerDetails: React.FC = () => {
                   <p className="text-sm text-gray-600">Address</p>
                   <div className="text-sm text-gray-900">
                     <p>{customer.address.street}</p>
-                    <p>{customer.address.state} {customer.address.postalCode}</p>
-                    <p>{customer.address.country}</p>
+                    <p>{customer.address.area}</p>
+                    <p>{customer.address.state}</p>
+                    {/* <p>{customer.address.country}</p> */}
                   </div>
                 </div>
               </div>

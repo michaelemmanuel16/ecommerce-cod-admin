@@ -3,7 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma, PaymentStatus } from '@prisma/client';
 import logger from '../utils/logger';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
-import { io } from '../server';
+import { getSocketInstance } from '../utils/socketInstance';
 import {
   emitExpenseCreated,
   emitExpenseUpdated,
@@ -257,8 +257,9 @@ export class FinancialService {
     });
 
     // Emit Socket.io event
-    if (io) {
-      emitExpenseCreated(io, expense);
+    const ioInstance = getSocketInstance();
+    if (ioInstance) {
+      emitExpenseCreated(ioInstance as any, expense);
     }
 
     return expense;
@@ -503,8 +504,9 @@ export class FinancialService {
     });
 
     // Emit Socket.io event
-    if (io) {
-      emitTransactionReconciled(io, updated);
+    const ioInstance = getSocketInstance();
+    if (ioInstance) {
+      emitTransactionReconciled(ioInstance as any, updated);
     }
 
     return updated;
@@ -578,8 +580,9 @@ export class FinancialService {
     });
 
     // Emit Socket.io event
-    if (io) {
-      emitTransactionDeposited(io, transactionIds, depositReference);
+    const ioInstance = getSocketInstance();
+    if (ioInstance) {
+      emitTransactionDeposited(ioInstance as any, transactionIds, depositReference);
     }
 
     return {
@@ -858,8 +861,9 @@ export class FinancialService {
     });
 
     // Emit Socket.io event
-    if (io) {
-      emitExpenseUpdated(io, updated);
+    const ioInstance = getSocketInstance();
+    if (ioInstance) {
+      emitExpenseUpdated(ioInstance as any, updated);
     }
 
     return updated;
@@ -893,8 +897,9 @@ export class FinancialService {
     });
 
     // Emit Socket.io event
-    if (io) {
-      emitExpenseDeleted(io, expenseId);
+    const ioInstance = getSocketInstance();
+    if (ioInstance) {
+      emitExpenseDeleted(ioInstance as any, expenseId);
     }
 
     return { message: 'Expense deleted successfully' };

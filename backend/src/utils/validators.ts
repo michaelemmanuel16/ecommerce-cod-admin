@@ -62,7 +62,6 @@ export const createCustomerValidation: ValidationChain[] = [
   body('phoneNumber').isMobilePhone('any'),
   body('address').notEmpty(),
   body('state').notEmpty(),
-  body('zipCode').optional(),
   body('area').notEmpty()
 ];
 
@@ -85,7 +84,6 @@ export const createOrderValidation: ValidationChain[] = [
   body('totalAmount').isFloat({ min: 0 }),
   body('deliveryAddress').notEmpty(),
   body('deliveryState').notEmpty(),
-  body('deliveryZipCode').optional(),
   body('deliveryArea').notEmpty()
 ];
 
@@ -109,10 +107,91 @@ export const paginationValidation: ValidationChain[] = [
   query('limit').optional().isInt({ min: 1, max: 100 })
 ];
 
+export const bulkDeleteValidation: ValidationChain[] = [
+  body('ids')
+    .isArray({ min: 1, max: 100 }).withMessage('Cannot delete more than 100 orders at once')
+    .custom((ids) => ids.every((id: any) => typeof id === 'number')).withMessage('All IDs must be numbers')
+];
+
 export const createCallValidation: ValidationChain[] = [
   body('customerId').isInt().withMessage('Customer ID is required'),
   body('orderId').optional().isInt(),
   body('outcome').isIn(['confirmed', 'rescheduled', 'no_answer', 'cancelled', 'other']).withMessage('Invalid call outcome'),
   body('duration').optional().isInt({ min: 0 }).withMessage('Duration must be a positive number'),
   body('notes').optional().isString().isLength({ max: 500 }).withMessage('Notes must be 500 characters or less')
+];
+
+export const createAccountValidation: ValidationChain[] = [
+  body('code')
+    .trim()
+    .notEmpty().withMessage('Account code is required')
+    .matches(/^\d{4}$/).withMessage('Account code must be exactly 4 digits'),
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Account name is required')
+    .isLength({ min: 3, max: 100 }).withMessage('Account name must be 3-100 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Description cannot exceed 500 characters'),
+  body('accountType')
+    .notEmpty().withMessage('Account type is required')
+    .isIn(['asset', 'liability', 'equity', 'revenue', 'expense']).withMessage('Invalid account type'),
+  body('normalBalance')
+    .notEmpty().withMessage('Normal balance is required')
+    .isIn(['debit', 'credit']).withMessage('Normal balance must be debit or credit'),
+  body('parentId')
+    .optional()
+    .isInt({ min: 1 }).withMessage('Parent ID must be a positive integer')
+];
+
+export const updateAccountValidation: ValidationChain[] = [
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 100 }).withMessage('Account name must be 3-100 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 }).withMessage('Description cannot exceed 500 characters'),
+  body('parentId')
+    .optional()
+    .custom((value) => value === null || (Number.isInteger(Number(value)) && Number(value) > 0))
+    .withMessage('Parent ID must be null or a positive integer')
+];
+
+export const createJournalEntryValidation: ValidationChain[] = [
+  body('entryDate')
+    .notEmpty().withMessage('Entry date is required')
+    .isISO8601().withMessage('Entry date must be a valid ISO 8601 date'),
+  body('description')
+    .trim()
+    .notEmpty().withMessage('Description is required')
+    .isLength({ min: 3, max: 500 }).withMessage('Description must be 3-500 characters'),
+  body('sourceType')
+    .notEmpty().withMessage('Source type is required')
+    .isIn(['order_delivery', 'agent_deposit', 'expense', 'payout', 'manual', 'reversal'])
+    .withMessage('Invalid source type'),
+  body('sourceId')
+    .optional()
+    .isInt({ min: 1 }).withMessage('Source ID must be a positive integer'),
+  body('transactions')
+    .isArray({ min: 2 }).withMessage('At least 2 transactions are required'),
+  body('transactions.*.accountId')
+    .isInt({ min: 1 }).withMessage('Account ID must be a positive integer'),
+  body('transactions.*.debitAmount')
+    .isFloat({ min: 0 }).withMessage('Debit amount must be a non-negative number'),
+  body('transactions.*.creditAmount')
+    .isFloat({ min: 0 }).withMessage('Credit amount must be a non-negative number'),
+  body('transactions.*.description')
+    .optional()
+    .trim()
+    .isLength({ max: 255 }).withMessage('Transaction description cannot exceed 255 characters')
+];
+
+export const voidJournalEntryValidation: ValidationChain[] = [
+  body('voidReason')
+    .trim()
+    .notEmpty().withMessage('Void reason is required')
+    .isLength({ min: 3, max: 500 }).withMessage('Void reason must be 3-500 characters')
 ];

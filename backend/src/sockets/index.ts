@@ -129,6 +129,17 @@ export function emitDeliveryUpdated(io: SocketServer, delivery: any) {
   safeEmit(io, `order:${delivery.orderId}`, 'delivery:updated', delivery);
 }
 
+export function emitOrdersDeleted(io: SocketServer, orderIds: number[]) {
+  const event = {
+    orderIds,
+    timestamp: new Date()
+  };
+
+  safeEmit(io, 'role:admin', 'orders:deleted', event);
+  safeEmit(io, 'role:manager', 'orders:deleted', event);
+  safeEmit(io, 'role:sales_rep', 'orders:deleted', event);
+}
+
 export function emitNotification(io: SocketServer, userId: string, notification: any) {
   safeEmit(io, `user:${userId}`, 'notification', notification);
 }

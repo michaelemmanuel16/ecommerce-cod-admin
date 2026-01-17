@@ -119,7 +119,7 @@ export const bulkImportOrders = async (req: AuthRequest, res: Response): Promise
 export const getOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const order = await orderService.getOrderById(id, req.user);
+    const order = await orderService.getOrderById(Number(id), req.user);
     res.json({ order });
   } catch (error) {
     throw error;
@@ -130,7 +130,7 @@ export const updateOrder = async (req: AuthRequest, res: Response): Promise<void
   try {
     const { id } = req.params;
     const updateData = req.body;
-    const order = await orderService.updateOrder(id, updateData, req.user);
+    const order = await orderService.updateOrder(Number(id), updateData, req.user);
     res.json({ order });
   } catch (error) {
     throw error;
@@ -140,7 +140,17 @@ export const updateOrder = async (req: AuthRequest, res: Response): Promise<void
 export const deleteOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const result = await orderService.deleteOrder(id, req.user?.id, req.user);
+    const result = await orderService.deleteOrder(Number(id), req.user?.id, req.user);
+    res.json(result);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const bulkDeleteOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { ids } = req.body;
+    const result = await orderService.bulkDeleteOrders(ids, req.user?.id, req.user);
     res.json(result);
   } catch (error) {
     throw error;
@@ -152,7 +162,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
     const { id } = req.params;
     const { status, notes } = req.body;
 
-    const order = await orderService.updateOrderStatus(id, {
+    const order = await orderService.updateOrderStatus(Number(id), {
       status: status as OrderStatus,
       notes,
       changedBy: req.user?.id
@@ -168,7 +178,7 @@ export const assignCustomerRep = async (req: AuthRequest, res: Response): Promis
   try {
     const { id } = req.params;
     const { customerRepId } = req.body;
-    const order = await orderService.assignCustomerRep(id, customerRepId, req.user!);
+    const order = await orderService.assignCustomerRep(Number(id), Number(customerRepId), req.user!);
     res.json({ order });
   } catch (error) {
     throw error;
@@ -179,7 +189,7 @@ export const assignDeliveryAgent = async (req: AuthRequest, res: Response): Prom
   try {
     const { id } = req.params;
     const { deliveryAgentId } = req.body;
-    const order = await orderService.assignDeliveryAgent(id, deliveryAgentId, req.user!);
+    const order = await orderService.assignDeliveryAgent(Number(id), Number(deliveryAgentId), req.user!);
     res.json({ order });
   } catch (error) {
     throw error;

@@ -2,7 +2,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { CallOutcome, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
-import { io } from '../server';
+import { getSocketInstance } from '../utils/socketInstance';
 import { emitCallLogged } from '../sockets/index';
 
 interface CreateCallData {
@@ -121,7 +121,7 @@ export class CallService {
     // Emit real-time event (non-blocking)
     setImmediate(() => {
       try {
-        emitCallLogged(io, call);
+        emitCallLogged(getSocketInstance() as any, call);
       } catch (error) {
         logger.error('Failed to emit call logged event', { callId: call.id, error });
       }

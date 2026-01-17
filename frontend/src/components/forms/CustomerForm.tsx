@@ -32,7 +32,7 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({
   useEffect(() => {
     if (customer) {
       setFormData({
-        name: customer.name || '',
+        name: `${customer.firstName} ${customer.lastName}`.trim() || '',
         email: customer.email || '',
         phone: customer.phone || '',
         alternatePhone: customer.alternatePhone || '',
