@@ -156,6 +156,7 @@ model Order {
   @@index([source])
   @@index([customerId, createdAt])
   @@index([deliveryState, deliveryArea])
+  @@index([deletedAt])
   @@map("orders")
 }
 

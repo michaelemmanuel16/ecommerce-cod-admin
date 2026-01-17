@@ -18,6 +18,7 @@ To ensure system stability and prevent resource exhaustion, the following limits
 | **Export Record Limit** | 500 records | Prevents memory issues on the server and client. |
 | **Import File Size** | 10MB | Prevents DoS attacks and memory exhaustion. |
 | **Import Batch Size** | 50 orders | Optimizes database transactions and socket progress updates. |
+| **Bulk Delete Limit** | 100 orders | Ensures database transaction stability and prevents accidental mass-deletion and timeouts. |
 | **Duplicate Window** | 24 Hours | Prevents accidental double-imports of the same file. |
 
 ## Rate Limiting

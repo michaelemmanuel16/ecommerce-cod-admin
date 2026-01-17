@@ -1103,7 +1103,7 @@ export class OrderService {
     // Aggregate updates for performance
     const productRestocks = new Map<number, number>();
     const customerUpdates = new Map<number, { count: number, total: number }>();
-    const historyData: any[] = [];
+    const historyData: Prisma.OrderHistoryCreateManyInput[] = [];
     const actualOrderIds = orders.map(o => o.id);
 
     for (const order of orders) {
@@ -1131,29 +1131,31 @@ export class OrderService {
 
     // Perform bulk deletion in a single transaction
     await prisma.$transaction(async (tx) => {
-      // 1. Batch restock products using raw SQL for performance
+      // 1. Batch restock products
       if (productRestocks.size > 0) {
-        const productUpdates = Array.from(productRestocks.entries()).map(([id, qty]) => `(${id}, ${qty})`).join(',');
-        await tx.$executeRawUnsafe(`
-          UPDATE products 
-          SET stock_quantity = stock_quantity + data.qty 
-          FROM (VALUES ${productUpdates}) AS data(id, qty) 
-          WHERE products.id = data.id
-        `);
+        for (const [productId, quantity] of productRestocks.entries()) {
+          await tx.product.update({
+            where: { id: productId },
+            data: {
+              stockQuantity: {
+                increment: quantity
+              }
+            }
+          });
+        }
       }
 
       // 2. Batch update customer stats
       if (customerUpdates.size > 0) {
-        const customerStatsUpdates = Array.from(customerUpdates.entries())
-          .map(([id, stats]) => `(${id}, ${stats.count}, ${stats.total})`)
-          .join(',');
-        await tx.$executeRawUnsafe(`
-          UPDATE customers 
-          SET total_orders = total_orders - data.count,
-              total_spent = total_spent - data.total
-          FROM (VALUES ${customerStatsUpdates}) AS data(id, count, total) 
-          WHERE customers.id = data.id
-        `);
+        for (const [customerId, stats] of customerUpdates.entries()) {
+          await tx.customer.update({
+            where: { id: customerId },
+            data: {
+              totalOrders: { decrement: stats.count },
+              totalSpent: { decrement: stats.total }
+            }
+          });
+        }
       }
 
       // 3. Batch create audit trail
