@@ -38,6 +38,8 @@ model User {
   assignedOrdersAsAgent Order[]        @relation("OrderDeliveryAgent")
   payouts               Payout[]
   auditLogs             AuditLog[]
+  journalEntriesCreated JournalEntry[] @relation("JournalEntryCreator")
+  journalEntriesVoided  JournalEntry[] @relation("VoidedByUser")
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -157,6 +159,8 @@ model Order {
   @@index([customerId, createdAt])
   @@index([deliveryState, deliveryArea])
   @@index([deletedAt])
+  @@index([deletedAt, status])
+  @@index([deletedAt, customerId])
   @@map("orders")
 }
 
@@ -260,25 +264,75 @@ model Expense {
 }
 
 model Account {
-  id            Int           @id @default(autoincrement())
-  code          String        @unique
-  name          String
-  description   String?
-  accountType   AccountType   @map("account_type")
-  normalBalance NormalBalance @map("normal_balance")
-  parentId      Int?          @map("parent_id")
-  isSystem      Boolean       @default(false) @map("is_system")
-  isActive      Boolean       @default(true) @map("is_active")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-  parent        Account?      @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children      Account[]     @relation("AccountHierarchy")
+  id             Int                  @id @default(autoincrement())
+  code           String               @unique
+  name           String
+  description    String?
+  accountType    AccountType          @map("account_type")
+  normalBalance  NormalBalance        @map("normal_balance")
+  parentId       Int?                 @map("parent_id")
+  isSystem       Boolean              @default(false) @map("is_system")
+  isActive       Boolean              @default(true) @map("is_active")
+  currentBalance Decimal              @default(0) @map("current_balance") @db.Decimal(19, 4)
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  parent         Account?             @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children       Account[]            @relation("AccountHierarchy")
+  transactions   AccountTransaction[]
 
   @@index([accountType])
   @@index([isActive])
   @@index([parentId])
   @@index([code])
   @@map("accounts")
+}
+
+model JournalEntry {
+  id               Int               @id @default(autoincrement())
+  entryNumber      String            @unique @map("entry_number")
+  entryDate        DateTime          @map("entry_date")
+  description      String
+  sourceType       JournalSourceType @map("source_type")
+  sourceId         Int?              @map("source_id")
+  isVoided         Boolean           @default(false) @map("is_voided")
+  voidedAt         DateTime?         @map("voided_at")
+  voidedBy         Int?              @map("voided_by")
+  voidReason       String?           @map("void_reason")
+  reversingEntryId Int?              @unique @map("reversing_entry_id")
+  createdBy        Int               @map("created_by")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  transactions AccountTransaction[]
+  reversedBy   JournalEntry?        @relation("ReversalRelation", fields: [reversingEntryId], references: [id])
+  reverses     JournalEntry?        @relation("ReversalRelation")
+  creator      User                 @relation("JournalEntryCreator", fields: [createdBy], references: [id])
+  voider       User?                @relation("VoidedByUser", fields: [voidedBy], references: [id])
+
+  @@index([sourceType, sourceId])
+  @@index([entryDate])
+  @@index([createdAt])
+  @@index([isVoided])
+  @@index([sourceType, sourceId, isVoided])
+  @@map("journal_entries")
+}
+
+model AccountTransaction {
+  id             Int      @id @default(autoincrement())
+  journalEntryId Int      @map("journal_entry_id")
+  accountId      Int      @map("account_id")
+  debitAmount    Decimal  @default(0) @map("debit_amount") @db.Decimal(19, 4)
+  creditAmount   Decimal  @default(0) @map("credit_amount") @db.Decimal(19, 4)
+  description    String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id])
+
+  @@index([journalEntryId])
+  @@index([accountId])
+  @@index([accountId, createdAt])
+  @@map("account_transactions")
 }
 
 model Workflow {
@@ -539,7 +593,6 @@ model product_cost_entries {
   @@index([product_id])
 }
 
-
 model AuditLog {
   id         Int      @id @default(autoincrement())
   userId     Int?     @map("user_id")
@@ -634,4 +687,13 @@ enum AccountType {
 enum NormalBalance {
   debit
   credit
+}
+
+enum JournalSourceType {
+  order_delivery
+  agent_deposit
+  expense
+  payout
+  manual
+  reversal
 }
