@@ -555,6 +555,8 @@ model AuditLog {
   @@index([action])
   @@index([resource])
   @@index([createdAt])
+  @@index([resource, resourceId])
+  @@index([userId, createdAt])
   @@map("audit_logs")
 }
 

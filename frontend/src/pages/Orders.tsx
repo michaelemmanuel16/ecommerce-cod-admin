@@ -325,14 +325,16 @@ export const Orders: React.FC = () => {
       return;
     }
 
+    const loadingToast = toast.loading(`Deleting ${selectedOrderIds.size} order(s)...`);
     try {
       const response = await ordersService.bulkDeleteOrders(Array.from(selectedOrderIds));
-      toast.success(response.message || `Successfully deleted ${selectedOrderIds.size} order(s)`);
+      toast.success(response.message || `Successfully deleted ${selectedOrderIds.size} order(s)`, { id: loadingToast });
       setSelectedOrderIds(new Set());
       fetchOrders();
     } catch (error: any) {
       console.error('Failed to bulk delete orders:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete some orders');
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to delete orders';
+      toast.error(errorMessage, { id: loadingToast });
     }
   };
 

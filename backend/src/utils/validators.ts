@@ -109,7 +109,7 @@ export const paginationValidation: ValidationChain[] = [
 
 export const bulkDeleteValidation: ValidationChain[] = [
   body('ids')
-    .isArray({ min: 1 }).withMessage('Must provide an array of order IDs')
+    .isArray({ min: 1, max: 100 }).withMessage('Cannot delete more than 100 orders at once')
     .custom((ids) => ids.every((id: any) => typeof id === 'number')).withMessage('All IDs must be numbers')
 ];
 

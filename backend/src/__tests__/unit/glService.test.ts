@@ -56,8 +56,8 @@ describe('GLService', () => {
         },
       ];
 
-      prismaMock.account.findMany.mockResolvedValue(mockAccounts as any);
-      prismaMock.account.count.mockResolvedValue(1);
+      (prismaMock.account.findMany as any).mockResolvedValue([mockAccounts[0]]);
+      (prismaMock.account.count as any).mockResolvedValue(1);
 
       const result = await glService.getAllAccounts({
         accountType: AccountType.asset,
@@ -109,8 +109,8 @@ describe('GLService', () => {
         },
       ];
 
-      prismaMock.account.findMany.mockResolvedValue(mockAccounts as any);
-      prismaMock.account.count.mockResolvedValue(2);
+      (prismaMock.account.findMany as any).mockResolvedValue(mockAccounts);
+      (prismaMock.account.count as any).mockResolvedValue(2);
 
       const result = await glService.getAllAccounts({});
 
@@ -164,7 +164,7 @@ describe('GLService', () => {
     });
 
     it('should throw error if account not found', async () => {
-      prismaMock.account.findUnique.mockResolvedValue(null);
+      (prismaMock.account.findUnique as any).mockResolvedValue(null);
 
       await expect(glService.getAccountById('999')).rejects.toThrow(
         new AppError('Account not found', 404)
@@ -326,7 +326,7 @@ describe('GLService', () => {
         normalBalance: NormalBalance.debit,
       };
 
-      prismaMock.account.findUnique.mockResolvedValue({
+      (prismaMock.account.findUnique as any).mockResolvedValueOnce({
         id: 1,
         code: '1010',
         name: 'Cash in Hand',
@@ -346,7 +346,7 @@ describe('GLService', () => {
         parentId: 999,
       };
 
-      prismaMock.account.findUnique
+      (prismaMock.account.findUnique as any)
         .mockResolvedValueOnce(null) // Code check
         .mockResolvedValueOnce(null); // Parent check
 
@@ -364,7 +364,7 @@ describe('GLService', () => {
         parentId: 1,
       };
 
-      prismaMock.account.findUnique
+      (prismaMock.account.findUnique as any)
         .mockResolvedValueOnce(null) // Code check
         .mockResolvedValueOnce({
           id: 1,
@@ -400,20 +400,29 @@ describe('GLService', () => {
         updatedAt: new Date(),
       };
 
-      prismaMock.account.findUnique.mockResolvedValue(null); // No duplicate code
-      prismaMock.account.create.mockResolvedValue(mockCreatedAccount as any);
+      (prismaMock.account.findUnique as any).mockResolvedValueOnce(null); // No duplicate code
+      (prismaMock.account.create as any).mockResolvedValue(mockCreatedAccount as any);
+      (prismaMock.auditLog.create as any).mockResolvedValue({} as any);
 
       const result = await glService.createAccount(accountData, mockUser);
 
       expect(result).toEqual(mockCreatedAccount);
       expect(prismaMock.account.create).toHaveBeenCalled();
-      const createCall = prismaMock.account.create.mock.calls[0][0];
+      const createCall = (prismaMock.account.create as any).mock.calls[0][0];
       expect(createCall.data).toMatchObject({
         code: '1050',
         name: 'Petty Cash',
         accountType: AccountType.asset,
         normalBalance: NormalBalance.debit,
       });
+
+      expect(prismaMock.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'create_account',
+          resource: 'account',
+          resourceId: '1'
+        })
+      }));
     });
 
     it('should create account with valid parent', async () => {
@@ -442,12 +451,12 @@ describe('GLService', () => {
         updatedAt: new Date(),
       };
 
-      prismaMock.account.findUnique
+      (prismaMock.account.findUnique as any)
         .mockResolvedValueOnce(null) // Code check
         .mockResolvedValueOnce(mockParent as any) // Parent check
         .mockResolvedValueOnce({ id: 1, parentId: null } as any); // Circular check
 
-      prismaMock.account.create.mockResolvedValue(mockCreatedAccount as any);
+      (prismaMock.account.create as any).mockResolvedValue(mockCreatedAccount as any);
 
       const result = await glService.createAccount(accountData, mockUser);
 
@@ -481,8 +490,9 @@ describe('GLService', () => {
         ...updateData,
       };
 
-      prismaMock.account.findUnique.mockResolvedValue(mockExistingAccount as any);
-      prismaMock.account.update.mockResolvedValue(mockUpdatedAccount as any);
+      (prismaMock.account.findUnique as any).mockResolvedValue(mockExistingAccount as any);
+      (prismaMock.account.update as any).mockResolvedValue(mockUpdatedAccount as any);
+      (prismaMock.auditLog.create as any).mockResolvedValue({} as any);
 
       const result = await glService.updateAccount('1', updateData, mockUser);
 
@@ -511,7 +521,7 @@ describe('GLService', () => {
     });
 
     it('should throw error if account not found', async () => {
-      prismaMock.account.findUnique.mockResolvedValue(null);
+      (prismaMock.account.findUnique as any).mockResolvedValue(null);
 
       await expect(
         glService.updateAccount('999', { name: 'New Name' }, mockUser)
@@ -537,15 +547,17 @@ describe('GLService', () => {
         accountType: AccountType.asset,
       };
 
-      prismaMock.account.findUnique
+      (prismaMock.account.findUnique as any)
         .mockResolvedValueOnce(mockExistingAccount as any) // Existing account
         .mockResolvedValueOnce(mockNewParent as any) // New parent
         .mockResolvedValueOnce({ id: 1, parentId: null } as any); // Circular check
 
-      prismaMock.account.update.mockResolvedValue({
+      (prismaMock.account.update as any).mockResolvedValue({
         ...mockExistingAccount,
         parentId: 1,
       } as any);
+
+      (prismaMock.auditLog.create as any).mockResolvedValue({} as any);
 
       const result = await glService.updateAccount('2', { parentId: 1 }, mockUser);
 
@@ -568,7 +580,7 @@ describe('GLService', () => {
         accountType: AccountType.liability,
       };
 
-      prismaMock.account.findUnique
+      (prismaMock.account.findUnique as any)
         .mockResolvedValueOnce(mockExistingAccount as any)
         .mockResolvedValueOnce(mockNewParent as any);
 
@@ -580,7 +592,7 @@ describe('GLService', () => {
 
   describe('deleteAccount', () => {
     it('should throw error if account not found', async () => {
-      prismaMock.account.findUnique.mockResolvedValue(null);
+      (prismaMock.account.findUnique as any).mockResolvedValue(null);
 
       await expect(glService.deleteAccount('999', mockUser)).rejects.toThrow(
         new AppError('Account not found', 404)
@@ -596,7 +608,7 @@ describe('GLService', () => {
         children: [],
       };
 
-      prismaMock.account.findUnique.mockResolvedValue(mockSystemAccount as any);
+      (prismaMock.account.findUnique as any).mockResolvedValue(mockSystemAccount as any);
 
       await expect(glService.deleteAccount('1', mockUser)).rejects.toThrow(
         new AppError('System accounts cannot be deleted. Use deactivate instead.', 403)
@@ -612,7 +624,7 @@ describe('GLService', () => {
         children: [{ id: 2 }],
       };
 
-      prismaMock.account.findUnique.mockResolvedValue(mockAccountWithChildren as any);
+      (prismaMock.account.findUnique as any).mockResolvedValue(mockAccountWithChildren as any);
 
       await expect(glService.deleteAccount('1', mockUser)).rejects.toThrow(
         new AppError('Cannot delete account with child accounts. Delete or reassign children first.', 400)
@@ -628,8 +640,9 @@ describe('GLService', () => {
         children: [],
       };
 
-      prismaMock.account.findUnique.mockResolvedValue(mockAccount as any);
-      prismaMock.account.delete.mockResolvedValue(mockAccount as any);
+      (prismaMock.account.findUnique as any).mockResolvedValue(mockAccount);
+      (prismaMock.account.delete as any).mockResolvedValue(mockAccount);
+      (prismaMock.auditLog.create as any).mockResolvedValue({} as any);
 
       await glService.deleteAccount('1', mockUser);
 
@@ -654,7 +667,8 @@ describe('GLService', () => {
       };
 
       prismaMock.account.findUnique.mockResolvedValue(mockAccount as any);
-      prismaMock.account.update.mockResolvedValue(mockUpdatedAccount as any);
+      (prismaMock.account.update as any).mockResolvedValue(mockUpdatedAccount as any);
+      (prismaMock.auditLog.create as any).mockResolvedValue({} as any);
 
       const result = await glService.toggleAccountStatus('1', true, mockUser);
 
@@ -679,7 +693,8 @@ describe('GLService', () => {
       };
 
       prismaMock.account.findUnique.mockResolvedValue(mockAccount as any);
-      prismaMock.account.update.mockResolvedValue(mockUpdatedAccount as any);
+      (prismaMock.account.update as any).mockResolvedValue(mockUpdatedAccount as any);
+      (prismaMock.auditLog.create as any).mockResolvedValue({} as any);
 
       const result = await glService.toggleAccountStatus('1', false, mockUser);
 
@@ -687,7 +702,7 @@ describe('GLService', () => {
     });
 
     it('should throw error if account not found', async () => {
-      prismaMock.account.findUnique.mockResolvedValue(null);
+      (prismaMock.account.findUnique as any).mockResolvedValue(null);
 
       await expect(glService.toggleAccountStatus('999', true, mockUser)).rejects.toThrow(
         new AppError('Account not found', 404)

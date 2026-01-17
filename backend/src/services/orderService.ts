@@ -1091,12 +1091,12 @@ export class OrderService {
         }, 'order');
 
         if (!isOwner) {
-          throw new AppError(`You do not have permission to delete order #${order.id} `, 403);
+          throw new AppError(`You do not have permission to delete order #${order.id}`, 403);
         }
       }
 
       if (order.status === 'delivered') {
-        throw new AppError(`Cannot delete delivered order #${order.id} `, 400);
+        throw new AppError(`Cannot delete delivered order #${order.id}`, 400);
       }
     }
 
@@ -1124,30 +1124,36 @@ export class OrderService {
       historyData.push({
         orderId: order.id,
         status: order.status,
-        notes: `Order deleted in bulk by user ${userId || 'system'} `,
+        notes: `Order deleted in bulk by user ${userId || 'system'}`,
         changedBy: userId
       });
     }
 
     // Perform bulk deletion in a single transaction
     await prisma.$transaction(async (tx) => {
-      // 1. Batch restock products
-      for (const [productId, quantity] of productRestocks.entries()) {
-        await tx.product.update({
-          where: { id: productId },
-          data: { stockQuantity: { increment: quantity } }
-        });
+      // 1. Batch restock products using raw SQL for performance
+      if (productRestocks.size > 0) {
+        const productUpdates = Array.from(productRestocks.entries()).map(([id, qty]) => `(${id}, ${qty})`).join(',');
+        await tx.$executeRawUnsafe(`
+          UPDATE products 
+          SET stock_quantity = stock_quantity + data.qty 
+          FROM (VALUES ${productUpdates}) AS data(id, qty) 
+          WHERE products.id = data.id
+        `);
       }
 
       // 2. Batch update customer stats
-      for (const [customerId, stats] of customerUpdates.entries()) {
-        await tx.customer.update({
-          where: { id: customerId },
-          data: {
-            totalOrders: { decrement: stats.count },
-            totalSpent: { decrement: stats.total }
-          }
-        });
+      if (customerUpdates.size > 0) {
+        const customerStatsUpdates = Array.from(customerUpdates.entries())
+          .map(([id, stats]) => `(${id}, ${stats.count}, ${stats.total})`)
+          .join(',');
+        await tx.$executeRawUnsafe(`
+          UPDATE customers 
+          SET total_orders = total_orders - data.count,
+              total_spent = total_spent - data.total
+          FROM (VALUES ${customerStatsUpdates}) AS data(id, count, total) 
+          WHERE customers.id = data.id
+        `);
       }
 
       // 3. Batch create audit trail
@@ -1162,12 +1168,11 @@ export class OrderService {
       });
     });
 
-    const io = (global as any).io;
     if (io) {
       emitOrdersDeleted(io, actualOrderIds);
     }
 
-    logger.info(`Bulk orders soft deleted: ${actualOrderIds.join(', ')} `, {
+    logger.info(`Bulk orders soft deleted: ${actualOrderIds.join(', ')}`, {
       orderIds: actualOrderIds,
       userId
     });
@@ -1207,7 +1212,7 @@ export class OrderService {
         orderHistory: {
           create: {
             status: order.status,
-            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName} `,
+            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName}`,
             changedBy: requester.id,
             metadata: { assignedRepId: parseInt(customerRepId, 10) }
           }
@@ -1224,7 +1229,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Customer rep assigned to order: ${order.id} `, {
+    logger.info(`Customer rep assigned to order: ${order.id}`, {
       orderId,
       repId: customerRepId,
       changedBy: requester.id
@@ -1285,7 +1290,7 @@ export class OrderService {
         orderHistory: {
           create: {
             status: order.status,
-            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName} `,
+            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName}`,
             changedBy: requester.id,
             metadata: { assignedAgentId: parseInt(deliveryAgentId, 10) }
           }
@@ -1302,7 +1307,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Delivery agent assigned to order: ${order.id} `, {
+    logger.info(`Delivery agent assigned to order: ${order.id}`, {
       orderId,
       agentId: deliveryAgentId,
       changedBy: requester.id

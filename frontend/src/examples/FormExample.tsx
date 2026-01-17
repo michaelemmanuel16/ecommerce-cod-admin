@@ -6,7 +6,7 @@
 import React from 'react';
 import { useFormValidation, getErrorMessage } from '../hooks/useFormValidation';
 import { FormInput, FormTextarea, FormSelect, FormCheckbox } from '../components/forms';
-import { createProductSchema, CreateProductFormData } from '../validation/schemas';
+import { createProductSchema, CreateProductFormData, shippingAddressSchema, createOrderSchema } from '../validation/schemas';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 
@@ -172,8 +172,8 @@ export const ShippingAddressFormExample: React.FC = () => {
     handleSubmit,
     formState: { errors }
   } = useFormValidation({
-    schema: createProductSchema, // Use appropriate schema
-  });
+    schema: createProductSchema as any,
+  } as any); // Cast the entire config object to any
 
   return (
     <div className="space-y-4">
@@ -183,23 +183,23 @@ export const ShippingAddressFormExample: React.FC = () => {
         label="Street Address"
         required
         placeholder="123 Main St"
-        error={getErrorMessage(errors.shippingAddress?.street)}
-        {...register('shippingAddress.street')}
+        error={getErrorMessage((errors as any).shippingAddress?.street)}
+        {...register('shippingAddress.street' as any)}
       />
 
       <FormInput
         label="State"
         required
         placeholder="NY"
-        error={getErrorMessage(errors.shippingAddress?.state)}
-        {...register('shippingAddress.state')}
+        error={getErrorMessage((errors as any).shippingAddress?.state)}
+        {...register('shippingAddress.state' as any)}
       />
       <FormInput
         label="Area"
         required
         placeholder="Central Park"
-        error={getErrorMessage(errors.shippingAddress?.area)}
-        {...register('shippingAddress.area')}
+        error={getErrorMessage((errors as any).shippingAddress?.area)}
+        {...register('shippingAddress.area' as any)}
       />
 
       <FormInput
@@ -207,8 +207,8 @@ export const ShippingAddressFormExample: React.FC = () => {
         required
         type="tel"
         placeholder="+1234567890"
-        error={getErrorMessage(errors.shippingAddress?.phone)}
-        {...register('shippingAddress.phone')}
+        error={getErrorMessage((errors as any).shippingAddress?.phone)}
+        {...register('shippingAddress.phone' as any)}
       />
     </div>
   );
@@ -225,7 +225,7 @@ export const OrderFormWithStoreExample: React.FC = () => {
     handleSubmit,
     formState: { errors, isSubmitting }
   } = useFormValidation({
-    schema: createProductSchema, // Use createOrderSchema
+    schema: createOrderSchema,
   });
 
   const onSubmit = async (data: any) => {

@@ -259,6 +259,17 @@ export class GLService {
       userId: requester?.id
     });
 
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: requester?.id,
+        action: 'create_account',
+        resource: 'account',
+        resourceId: account.id.toString(),
+        metadata: { code, name, accountType }
+      }
+    });
+
     return account;
   }
 
@@ -338,6 +349,17 @@ export class GLService {
       userId: requester?.id
     });
 
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: requester?.id,
+        action: 'update_account',
+        resource: 'account',
+        resourceId: account.id.toString(),
+        metadata: data
+      }
+    });
+
     return updated;
   }
 
@@ -393,6 +415,17 @@ export class GLService {
       userId: requester?.id
     });
 
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: requester?.id,
+        action: 'delete_account',
+        resource: 'account',
+        resourceId: account.id.toString(),
+        metadata: { code: account.code, name: account.name }
+      }
+    });
+
     return { message: 'Account deleted successfully' };
   }
 
@@ -422,6 +455,17 @@ export class GLService {
       accountId: account.id,
       isActive,
       userId: requester?.id
+    });
+
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: requester?.id,
+        action: 'toggle_account_status',
+        resource: 'account',
+        resourceId: account.id.toString(),
+        metadata: { isActive }
+      }
     });
 
     return updated;

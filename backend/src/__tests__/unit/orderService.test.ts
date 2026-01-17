@@ -18,15 +18,15 @@ jest.mock('../../queues/workflowQueue', () => ({
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
-import { OrderService } from '../../services/orderService';
+import orderService from '../../services/orderService';
 import { AppError } from '../../middleware/errorHandler';
 import { OrderStatus } from '@prisma/client';
 
 describe('OrderService', () => {
-  let orderService: OrderService;
+  let serviceInstance: typeof orderService; // Renamed to avoid conflict with imported instance
 
   beforeEach(() => {
-    orderService = new OrderService();
+    serviceInstance = orderService; // Assign the imported instance
   });
 
   // generateOrderNumber is a private method and is tested indirectly through createOrder
@@ -92,9 +92,9 @@ describe('OrderService', () => {
     };
 
     it('should create order with valid data', async () => {
-      prismaMock.customer.findUnique.mockResolvedValue(mockCustomer);
-      prismaMock.product.findUnique.mockResolvedValue(mockProduct);
-      prismaMock.order.count.mockResolvedValue(0);
+      (prismaMock.customer.findUnique as any).mockResolvedValue(mockCustomer);
+      (prismaMock.product.findUnique as any).mockResolvedValue(mockProduct);
+      (prismaMock.order.count as any).mockResolvedValue(0);
 
       const mockOrder = {
         id: 1,
@@ -121,20 +121,20 @@ describe('OrderService', () => {
       (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
           order: {
-            create: jest.fn().mockResolvedValue(mockOrder),
-            count: jest.fn().mockResolvedValue(0)
+            create: jest.fn().mockResolvedValue(mockOrder) as any,
+            count: jest.fn().mockResolvedValue(0) as any
           },
           product: {
-            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-            update: jest.fn().mockResolvedValue(mockProduct)
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }) as any,
+            update: jest.fn().mockResolvedValue(mockProduct) as any
           },
           customer: {
-            update: jest.fn().mockResolvedValue(mockCustomer)
+            update: jest.fn().mockResolvedValue(mockCustomer) as any
           }
         });
       });
 
-      const order = await orderService.createOrder(createOrderData as any);
+      const order = await orderService.createOrder(createOrderData as any) as any;
 
       expect(order).toBeDefined();
       expect(order.orderNumber).toBeDefined();
@@ -142,7 +142,7 @@ describe('OrderService', () => {
     });
 
     it('should throw error when customer not found', async () => {
-      prismaMock.customer.findUnique.mockResolvedValue(null);
+      (prismaMock.customer.findUnique as any).mockResolvedValue(null);
 
       await expect(orderService.createOrder(createOrderData as any)).rejects.toThrow(
         new AppError('Customer not found', 404)
@@ -150,8 +150,8 @@ describe('OrderService', () => {
     });
 
     it('should throw error when product not found', async () => {
-      prismaMock.customer.findUnique.mockResolvedValue(mockCustomer);
-      prismaMock.product.findUnique.mockResolvedValue(null);
+      (prismaMock.customer.findUnique as any).mockResolvedValue(mockCustomer);
+      (prismaMock.product.findUnique as any).mockResolvedValue(null);
 
       await expect(orderService.createOrder(createOrderData as any)).rejects.toThrow(
         new AppError('Product ID 1 not found', 404)
@@ -159,13 +159,13 @@ describe('OrderService', () => {
     });
 
     it('should throw error when product is out of stock (atomic check)', async () => {
-      prismaMock.customer.findUnique.mockResolvedValue(mockCustomer);
-      prismaMock.product.findUnique.mockResolvedValue(mockProduct);
+      (prismaMock.customer.findUnique as any).mockResolvedValue(mockCustomer);
+      (prismaMock.product.findUnique as any).mockResolvedValue(mockProduct);
 
       (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
           product: {
-            updateMany: jest.fn().mockResolvedValue({ count: 0 })
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }) as any
           }
         });
       });
@@ -253,16 +253,16 @@ describe('OrderService', () => {
       (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
           product: {
-            update: jest.fn().mockResolvedValue({})
+            update: jest.fn().mockResolvedValue({}) as any
           },
           order: {
             update: jest.fn().mockResolvedValue({
               ...mockOrder,
               status: 'cancelled'
-            })
+            }) as any
           },
           customer: {
-            update: jest.fn().mockResolvedValue({})
+            update: jest.fn().mockResolvedValue({}) as any
           }
         });
       });
@@ -324,14 +324,15 @@ describe('OrderService', () => {
     ];
 
     it('should bulk delete orders successfully', async () => {
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
+      (prismaMock.order.findMany as any).mockResolvedValue(mockOrders as any);
 
       (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
-          product: { update: jest.fn().mockResolvedValue({}) },
-          customer: { update: jest.fn().mockResolvedValue({}) },
-          orderHistory: { createMany: jest.fn().mockResolvedValue({ count: 2 }) },
-          order: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) }
+          product: { update: jest.fn().mockResolvedValue({}) as any },
+          customer: { update: jest.fn().mockResolvedValue({}) as any },
+          orderHistory: { createMany: jest.fn().mockResolvedValue({ count: 2 }) as any },
+          order: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) as any },
+          $executeRawUnsafe: jest.fn().mockResolvedValue(1) as any
         });
       });
 
@@ -348,14 +349,14 @@ describe('OrderService', () => {
     });
 
     it('should throw error if no valid orders found', async () => {
-      prismaMock.order.findMany.mockResolvedValue([]);
+      (prismaMock.order.findMany as any).mockResolvedValue([]);
       await expect(orderService.bulkDeleteOrders([999])).rejects.toThrow(
         new AppError('No valid orders found to delete', 404)
       );
     });
 
     it('should throw error if trying to delete delivered order', async () => {
-      prismaMock.order.findMany.mockResolvedValue([
+      (prismaMock.order.findMany as any).mockResolvedValue([
         { ...mockOrders[0], status: 'delivered' as OrderStatus }
       ] as any);
 

@@ -18,8 +18,8 @@ interface OrdersState {
   setPage: (page: number) => void;
   setPageSize: (limit: number) => void;
   addOrder: (order: Order) => void;
-  updateOrder: (id: string, updates: Partial<Order>) => void;
-  deleteOrder: (id: string) => void;
+  updateOrder: (id: number, updates: Partial<Order>) => void;
+  deleteOrder: (id: number) => void;
   getOrdersByStatus: (status: OrderStatus) => Order[];
 }
 
@@ -105,7 +105,7 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     }));
   },
 
-  updateOrder: (id: string, updates: Partial<Order>) => {
+  updateOrder: (id: number, updates: Partial<Order>) => {
     set((state) => ({
       orders: state.orders.map((o) =>
         o.id === id ? { ...o, ...updates } : o
@@ -117,7 +117,7 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     }));
   },
 
-  deleteOrder: (id: string) => {
+  deleteOrder: (id: number) => {
     set((state) => ({
       orders: state.orders.filter((o) => o.id !== id),
       selectedOrder: state.selectedOrder?.id === id ? null : state.selectedOrder,
