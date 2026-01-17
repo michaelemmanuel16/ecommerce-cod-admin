@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Order, OrderStatus, FilterOptions, PaginationMeta } from '../types';
 import { ordersService } from '../services/orders.service';
+import { getSocket } from '../services/socket';
 
 interface OrdersState {
   orders: Order[];
@@ -21,6 +22,7 @@ interface OrdersState {
   updateOrder: (id: number, updates: Partial<Order>) => void;
   deleteOrder: (id: number) => void;
   getOrdersByStatus: (status: OrderStatus) => Order[];
+  setupSocketListeners: () => void;
 }
 
 export const useOrdersStore = create<OrdersState>((set, get) => ({
@@ -126,5 +128,35 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
 
   getOrdersByStatus: (status: OrderStatus) => {
     return get().orders.filter((order) => order.status === status);
+  },
+
+  setupSocketListeners: () => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    // Remove existing listeners to prevent duplicates
+    socket.off('orders:created');
+    socket.off('orders:updated');
+    socket.off('orders:deleted');
+
+    // Listen for order events
+    socket.on('orders:created', (data: { order: Order }) => {
+      console.log('[OrdersStore] Received orders:created event', data);
+      get().addOrder(data.order);
+    });
+
+    socket.on('orders:updated', (data: { order: Order }) => {
+      console.log('[OrdersStore] Received orders:updated event', data);
+      get().updateOrder(data.order.id, data.order);
+    });
+
+    socket.on('orders:deleted', (data: { ids: number[] }) => {
+      console.log('[OrdersStore] Received orders:deleted event', data);
+      if (Array.isArray(data.ids)) {
+        data.ids.forEach(id => get().deleteOrder(id));
+      }
+    });
+
+    console.log('[OrdersStore] Socket listeners setup complete');
   },
 }));

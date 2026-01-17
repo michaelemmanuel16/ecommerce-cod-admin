@@ -3,7 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { OrderStatus, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import workflowService from './workflowService';
-import { io } from '../server';
+import { getSocketInstance } from '../utils/socketInstance';
 import {
   emitOrderAssigned,
   emitOrderCreated,
@@ -335,7 +335,7 @@ export class OrderService {
     logger.info(`Order created`, { orderId: order.id });
 
     // Emit socket event for real-time update
-    emitOrderCreated(io, order);
+    emitOrderCreated(getSocketInstance() as any, order);
 
     // Trigger workflows with order_created trigger (async, don't block order creation)
     workflowService.triggerOrderCreatedWorkflows(order).catch(error => {
@@ -505,7 +505,7 @@ export class OrderService {
         if (result.status === 'fulfilled') {
           results.success++;
           const createdOrder = result.value;
-          emitOrderCreated(io, createdOrder);
+          emitOrderCreated(getSocketInstance() as any, createdOrder);
           workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
             logger.error('Failed to trigger workflow for bulk imported order', {
               orderId: createdOrder.id,
@@ -534,7 +534,7 @@ export class OrderService {
       const processed = Math.min(i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE, orders.length);
       const progress = Math.round((processed / orders.length) * 100);
 
-      io.emit('bulk_import_progress', {
+      getSocketInstance()?.emit('bulk_import_progress', {
         progress,
         processed,
         total: orders.length,
@@ -569,14 +569,9 @@ export class OrderService {
   /**
    * Get single order by ID
    */
-  async getOrderById(orderId: string, requester?: Requester) {
-    const id = parseInt(orderId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid order ID', 400);
-    }
-
+  async getOrderById(orderId: number, requester?: Requester) {
     const order = await prisma.order.findUnique({
-      where: { id },
+      where: { id: orderId, deletedAt: null },
       include: {
         customer: true,
         customerRep: {
@@ -637,14 +632,9 @@ export class OrderService {
   /**
    * Update order details
    */
-  async updateOrder(orderId: string, updateData: any, requester?: Requester) {
-    const id = parseInt(orderId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid order ID', 400);
-    }
-
+  async updateOrder(orderId: number, updateData: any, requester?: Requester) {
     const order = await prisma.order.findUnique({
-      where: { id },
+      where: { id: orderId, deletedAt: null },
       include: { customer: true, orderItems: true }
     });
 
@@ -745,13 +735,13 @@ export class OrderService {
 
         // Delete existing order items
         await tx.orderItem.deleteMany({
-          where: { orderId: id }
+          where: { orderId: orderId }
         });
 
         // Create new order items
         await tx.orderItem.createMany({
           data: orderItems.map((item: any) => ({
-            orderId: id,
+            orderId: orderId,
             productId: item.productId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
@@ -764,7 +754,7 @@ export class OrderService {
 
       // Update order
       return await tx.order.update({
-        where: { id },
+        where: { id: orderId },
         data: orderUpdateData,
         include: {
           customer: true,
@@ -777,21 +767,16 @@ export class OrderService {
       });
     });
 
-    logger.info(`Order updated: ${id} `, { orderId: id });
+    logger.info(`Order updated: ${orderId} `, { orderId: orderId });
     return updated;
   }
 
   /**
    * Update order status with history tracking
    */
-  async updateOrderStatus(orderId: string, data: UpdateOrderStatusData, requester?: Requester) {
-    const id = parseInt(orderId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid order ID', 400);
-    }
-
+  async updateOrderStatus(orderId: number, data: UpdateOrderStatusData, requester?: Requester) {
     const order = await prisma.order.findUnique({
-      where: { id }
+      where: { id: orderId, deletedAt: null },
     });
 
     if (!order) {
@@ -815,7 +800,7 @@ export class OrderService {
     // this.validateStatusTransition(order.status, data.status);
 
     const updated = await prisma.order.update({
-      where: { id },
+      where: { id: orderId },
       data: {
         status: data.status,
         orderHistory: {
@@ -878,8 +863,9 @@ export class OrderService {
     // Emit socket events for real-time updates (non-blocking)
     setImmediate(() => {
       try {
-        emitOrderUpdated(io, updated);
-        emitOrderStatusChanged(io, updated, order.status, data.status);
+        const ioInstance = getSocketInstance() as any;
+        emitOrderUpdated(ioInstance, updated);
+        emitOrderStatusChanged(ioInstance, updated, order.status, data.status);
       } catch (error) {
         logger.error('Failed to emit socket events', { orderId, error });
       }
@@ -896,14 +882,9 @@ export class OrderService {
   /**
    * Cancel order
    */
-  async cancelOrder(orderId: string, changedBy?: number, notes?: string, requester?: Requester) {
-    const id = parseInt(orderId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid order ID', 400);
-    }
-
+  async cancelOrder(orderId: number, changedBy?: number, notes?: string, requester?: Requester) {
     const order = await prisma.order.findUnique({
-      where: { id },
+      where: { id: orderId, deletedAt: null },
       include: { orderItems: true }
     });
 
@@ -948,7 +929,7 @@ export class OrderService {
 
       // Update order status
       await tx.order.update({
-        where: { id },
+        where: { id: orderId },
         data: {
           status: 'cancelled',
           orderHistory: {
@@ -978,14 +959,9 @@ export class OrderService {
   /**
    * Soft delete order (set deletedAt timestamp)
    */
-  async deleteOrder(orderId: string, userId?: number, requester?: Requester) {
-    const id = parseInt(orderId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid order ID', 400);
-    }
-
+  async deleteOrder(orderId: number, userId?: number, requester?: Requester) {
     const order = await prisma.order.findUnique({
-      where: { id },
+      where: { id: orderId, deletedAt: null },
       include: { orderItems: true, customer: true }
     });
 
@@ -1049,7 +1025,7 @@ export class OrderService {
 
       // Soft delete the order
       await tx.order.update({
-        where: { id },
+        where: { id: orderId },
         data: { deletedAt: new Date() }
       });
     });
@@ -1131,32 +1107,36 @@ export class OrderService {
 
     // Perform bulk deletion in a single transaction
     await prisma.$transaction(async (tx) => {
-      // 1. Batch restock products
+      // 1. Batch restock products & customer stats in parallel
+      const updatePromises: Promise<any>[] = [];
+
       if (productRestocks.size > 0) {
         for (const [productId, quantity] of productRestocks.entries()) {
-          await tx.product.update({
-            where: { id: productId },
-            data: {
-              stockQuantity: {
-                increment: quantity
-              }
-            }
-          });
+          updatePromises.push(
+            tx.product.update({
+              where: { id: productId },
+              data: { stockQuantity: { increment: quantity } }
+            })
+          );
         }
       }
 
-      // 2. Batch update customer stats
       if (customerUpdates.size > 0) {
         for (const [customerId, stats] of customerUpdates.entries()) {
-          await tx.customer.update({
-            where: { id: customerId },
-            data: {
-              totalOrders: { decrement: stats.count },
-              totalSpent: { decrement: stats.total }
-            }
-          });
+          updatePromises.push(
+            tx.customer.update({
+              where: { id: customerId },
+              data: {
+                totalOrders: { decrement: stats.count },
+                totalSpent: { decrement: stats.total }
+              }
+            })
+          );
         }
       }
+
+      // Execute all updates in parallel
+      await Promise.all(updatePromises);
 
       // 3. Batch create audit trail
       await tx.orderHistory.createMany({
@@ -1170,8 +1150,9 @@ export class OrderService {
       });
     });
 
-    if (io) {
-      emitOrdersDeleted(io, actualOrderIds);
+    const ioInstance = getSocketInstance();
+    if (ioInstance) {
+      emitOrdersDeleted(ioInstance as any, actualOrderIds);
     }
 
     logger.info(`Bulk orders soft deleted: ${actualOrderIds.join(', ')}`, {
@@ -1189,14 +1170,14 @@ export class OrderService {
   /**
    * Assign customer rep to order
    */
-  async assignCustomerRep(orderId: string, customerRepId: string, requester: Requester) {
+  async assignCustomerRep(orderId: number, customerRepId: number, requester: Requester) {
     // Only admin/manager can assign reps
     if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
       throw new AppError('Only administrators or managers can assign customer representatives', 403);
     }
     const [order, rep] = await Promise.all([
-      prisma.order.findUnique({ where: { id: parseInt(orderId, 10) } }),
-      prisma.user.findUnique({ where: { id: parseInt(customerRepId, 10) } })
+      prisma.order.findUnique({ where: { id: orderId, deletedAt: null } }),
+      prisma.user.findUnique({ where: { id: customerRepId } })
     ]);
 
     if (!order) {
@@ -1208,15 +1189,15 @@ export class OrderService {
     }
 
     const updated = await prisma.order.update({
-      where: { id: parseInt(orderId, 10) },
+      where: { id: orderId },
       data: {
-        customerRepId: parseInt(customerRepId, 10),
+        customerRepId: customerRepId,
         orderHistory: {
           create: {
             status: order.status,
             notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName}`,
             changedBy: requester.id,
-            metadata: { assignedRepId: parseInt(customerRepId, 10) }
+            metadata: { assignedRepId: customerRepId }
           }
         }
       },
@@ -1243,14 +1224,15 @@ export class OrderService {
         userId: requester.id,
         action: 'assign_rep',
         resource: 'order',
-        resourceId: orderId,
-        metadata: { assignedRepId: parseInt(customerRepId, 10) }
+        resourceId: orderId.toString(),
+        metadata: { assignedRepId: customerRepId }
       }
     });
 
     // Emit socket events for real-time updates
-    emitOrderAssigned(io, updated, customerRepId, 'sales_rep');
-    emitOrderUpdated(io, updated);
+    const ioInstance = getSocketInstance() as any;
+    emitOrderAssigned(ioInstance, updated, customerRepId.toString(), 'sales_rep');
+    emitOrderUpdated(ioInstance, updated);
 
     return updated;
   }
@@ -1258,19 +1240,19 @@ export class OrderService {
   /**
    * Assign delivery agent to order
    */
-  async assignDeliveryAgent(orderId: string, deliveryAgentId: string, requester: Requester) {
+  async assignDeliveryAgent(orderId: number, deliveryAgentId: number, requester: Requester) {
     // Only admin/manager/sales_rep can assign delivery agent (sometimes sales reps do it after confirmation)
     // Actually, usually managers assign agents. Let's stick to manager+ for now, or check ownership.
     if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
       // Check if sales rep is assigned to this order
-      const order = await prisma.order.findUnique({ where: { id: parseInt(orderId, 10) } });
+      const order = await prisma.order.findUnique({ where: { id: orderId } });
       if (!order || order.customerRepId !== requester.id) {
         throw new AppError('Only managers or the assigned sales representative can assign delivery agents', 403);
       }
     }
     const [order, agent] = await Promise.all([
-      prisma.order.findUnique({ where: { id: parseInt(orderId, 10) } }),
-      prisma.user.findUnique({ where: { id: parseInt(deliveryAgentId, 10) } })
+      prisma.order.findUnique({ where: { id: orderId, deletedAt: null } }),
+      prisma.user.findUnique({ where: { id: deliveryAgentId } })
     ]);
 
     if (!order) {
@@ -1286,15 +1268,15 @@ export class OrderService {
     }
 
     const updated = await prisma.order.update({
-      where: { id: parseInt(orderId, 10) },
+      where: { id: orderId },
       data: {
-        deliveryAgentId: parseInt(deliveryAgentId, 10),
+        deliveryAgentId: deliveryAgentId,
         orderHistory: {
           create: {
             status: order.status,
             notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName}`,
             changedBy: requester.id,
-            metadata: { assignedAgentId: parseInt(deliveryAgentId, 10) }
+            metadata: { assignedAgentId: deliveryAgentId }
           }
         }
       },
@@ -1321,14 +1303,15 @@ export class OrderService {
         userId: requester.id,
         action: 'assign_agent',
         resource: 'order',
-        resourceId: orderId,
-        metadata: { assignedAgentId: parseInt(deliveryAgentId, 10) }
+        resourceId: orderId.toString(),
+        metadata: { assignedAgentId: deliveryAgentId }
       }
     });
 
     // Emit socket events for real-time updates
-    emitOrderAssigned(io, updated, deliveryAgentId, 'delivery_agent');
-    emitOrderUpdated(io, updated);
+    const ioInstance = getSocketInstance() as any;
+    emitOrderAssigned(ioInstance, updated, deliveryAgentId.toString(), 'delivery_agent');
+    emitOrderUpdated(ioInstance, updated);
 
     return updated;
   }

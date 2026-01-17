@@ -181,7 +181,7 @@ describe('OrderService', () => {
       id: 1,
       orderNumber: '1001',
       status: 'pending_confirmation' as OrderStatus,
-      customerId: 'customer-1',
+      customerId: 1,
       subtotal: 200,
       totalAmount: 210
     };
@@ -193,7 +193,7 @@ describe('OrderService', () => {
         status: 'confirmed' as OrderStatus
       } as any);
 
-      const updated = await orderService.updateOrderStatus('1', {
+      const updated = await orderService.updateOrderStatus(1, {
         status: 'confirmed' as OrderStatus,
         notes: 'Order confirmed',
         changedBy: 1
@@ -211,7 +211,7 @@ describe('OrderService', () => {
       } as any);
 
       // Status validation is disabled to allow admin flexibility
-      const updated = await orderService.updateOrderStatus('1', {
+      const updated = await orderService.updateOrderStatus(1, {
         status: 'delivered' as OrderStatus
       });
 
@@ -223,7 +223,7 @@ describe('OrderService', () => {
       (prismaMock.order.findUnique as any).mockResolvedValue(null);
 
       await expect(
-        orderService.updateOrderStatus('999', {
+        orderService.updateOrderStatus(999, {
           status: 'confirmed' as OrderStatus
         })
       ).rejects.toThrow(new AppError('Order not found', 404));
@@ -235,12 +235,12 @@ describe('OrderService', () => {
       id: 1,
       orderNumber: '1001',
       status: 'confirmed' as OrderStatus,
-      customerId: 'customer-1',
+      customerId: 1,
       totalAmount: 210,
       orderItems: [
         {
-          id: 'item-1',
-          productId: 'product-1',
+          id: 1,
+          productId: 1,
           quantity: 2,
           unitPrice: 100,
           totalPrice: 200
@@ -267,7 +267,7 @@ describe('OrderService', () => {
         });
       });
 
-      const result = await orderService.cancelOrder('1', 1, 'Customer request');
+      const result = await orderService.cancelOrder(1, 1, 'Customer request');
 
       expect(result.message).toBe('Order cancelled successfully');
     });
@@ -279,7 +279,7 @@ describe('OrderService', () => {
       } as any);
 
       await expect(
-        orderService.cancelOrder('1')
+        orderService.cancelOrder(1)
       ).rejects.toThrow(
         new AppError('Cannot cancel order in current status', 400)
       );
@@ -292,7 +292,7 @@ describe('OrderService', () => {
       } as any);
 
       await expect(
-        orderService.cancelOrder('1')
+        orderService.cancelOrder(1)
       ).rejects.toThrow(
         new AppError('Cannot cancel order in current status', 400)
       );

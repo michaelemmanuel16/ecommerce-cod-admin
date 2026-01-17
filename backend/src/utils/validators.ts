@@ -159,3 +159,39 @@ export const updateAccountValidation: ValidationChain[] = [
     .custom((value) => value === null || (Number.isInteger(Number(value)) && Number(value) > 0))
     .withMessage('Parent ID must be null or a positive integer')
 ];
+
+export const createJournalEntryValidation: ValidationChain[] = [
+  body('entryDate')
+    .notEmpty().withMessage('Entry date is required')
+    .isISO8601().withMessage('Entry date must be a valid ISO 8601 date'),
+  body('description')
+    .trim()
+    .notEmpty().withMessage('Description is required')
+    .isLength({ min: 3, max: 500 }).withMessage('Description must be 3-500 characters'),
+  body('sourceType')
+    .notEmpty().withMessage('Source type is required')
+    .isIn(['order_delivery', 'agent_deposit', 'expense', 'payout', 'manual', 'reversal'])
+    .withMessage('Invalid source type'),
+  body('sourceId')
+    .optional()
+    .isInt({ min: 1 }).withMessage('Source ID must be a positive integer'),
+  body('transactions')
+    .isArray({ min: 2 }).withMessage('At least 2 transactions are required'),
+  body('transactions.*.accountId')
+    .isInt({ min: 1 }).withMessage('Account ID must be a positive integer'),
+  body('transactions.*.debitAmount')
+    .isFloat({ min: 0 }).withMessage('Debit amount must be a non-negative number'),
+  body('transactions.*.creditAmount')
+    .isFloat({ min: 0 }).withMessage('Credit amount must be a non-negative number'),
+  body('transactions.*.description')
+    .optional()
+    .trim()
+    .isLength({ max: 255 }).withMessage('Transaction description cannot exceed 255 characters')
+];
+
+export const voidJournalEntryValidation: ValidationChain[] = [
+  body('voidReason')
+    .trim()
+    .notEmpty().withMessage('Void reason is required')
+    .isLength({ min: 3, max: 500 }).withMessage('Void reason must be 3-500 characters')
+];

@@ -46,7 +46,7 @@ describe('Orders Controller', () => {
       query: {},
       params: {},
       body: {},
-      user: { id: 'user-123' },
+      user: { id: 123 },
     };
     mockRes = {
       status: jest.fn().mockReturnThis(),
@@ -176,6 +176,7 @@ describe('Orders Controller', () => {
       await getOrder(mockReq, mockRes);
 
       expect(mockRes.json).toHaveBeenCalledWith({ order: mockOrder });
+      expect(orderService.getOrderById).toHaveBeenCalledWith(123, expect.anything());
     });
 
     it('should throw error if order not found', async () => {
@@ -205,11 +206,11 @@ describe('Orders Controller', () => {
 
       expect(mockRes.json).toHaveBeenCalledWith({ order: mockOrder });
       expect(orderService.updateOrderStatus).toHaveBeenCalledWith(
-        '123',
+        123,
         expect.objectContaining({
           status: 'confirmed',
           notes: 'Order confirmed',
-          changedBy: 'user-123',
+          changedBy: 123,
         }),
         expect.anything()
       );

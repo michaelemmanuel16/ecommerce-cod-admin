@@ -7,6 +7,7 @@ import { connectSocket, disconnectSocket, getSocket } from '../services/socket';
 import { useAnalyticsStore } from './analyticsStore';
 import { useDeliveryAgentsStore } from './deliveryAgentsStore';
 import { useCustomerRepsStore } from './customerRepsStore';
+import { useOrdersStore } from './ordersStore';
 import toast from 'react-hot-toast';
 
 interface AuthState {
@@ -60,12 +61,12 @@ export const useAuthStore = create<AuthState>()(
       register: async (data: RegisterData) => {
         set({ isLoading: true });
         try {
-          const { user, tokens, permissions } = await authService.register(data);
+          const { user, tokens } = await authService.register(data);
           set({
             user,
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
-            permissions: permissions || null,
+            permissions: null,
             isAuthenticated: true,
             isLoading: false,
           });
@@ -166,12 +167,12 @@ export const useAuthStore = create<AuthState>()(
       },
 
       initSocket: () => {
-        let socket = getSocket();
-        if (!socket) {
-          socket = connectSocket();
+        let socketInstance = getSocket();
+        if (!socketInstance) {
+          socketInstance = connectSocket() || null;
         }
 
-        if (!socket) {
+        if (!socketInstance) {
           console.warn('[AuthStore] Failed to initialize socket connection');
           return;
         }
@@ -181,6 +182,7 @@ export const useAuthStore = create<AuthState>()(
         useAnalyticsStore.getState().setupSocketListeners();
         useDeliveryAgentsStore.getState().setupSocketListeners();
         useCustomerRepsStore.getState().setupSocketListeners();
+        useOrdersStore.getState().setupSocketListeners();
 
         console.log('[AuthStore] All socket listeners initialized');
       },

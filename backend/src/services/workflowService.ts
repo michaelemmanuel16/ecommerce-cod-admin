@@ -684,7 +684,7 @@ export class WorkflowService {
   /**
    * Status change workflows triggered
    */
-  async triggerStatusChangeWorkflows(orderId: string, oldStatus: string, newStatus: string) {
+  async triggerStatusChangeWorkflows(orderId: number, oldStatus: string, newStatus: string) {
     const workflows = await prisma.workflow.findMany({
       where: {
         isActive: true,
