@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as userController from '../controllers/userController';
 import * as payoutController from '../controllers/payoutController';
-import { authenticate, requirePermission } from '../middleware/auth';
+import { authenticate, requirePermission, requireSelf } from '../middleware/auth';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
 
@@ -20,7 +20,8 @@ router.post('/reps/:id/process-payout', requirePermission(['super_admin', 'admin
 router.get('/agents/performance', requirePermission(['super_admin', 'admin', 'manager']), userController.getAgentPerformance);
 router.get('/preferences', userController.getUserPreferences);
 router.put('/preferences', userController.updateUserPreferences);
-router.get('/:id', userController.getUser);
+router.get('/:id', requirePermission(['super_admin', 'admin', 'manager']), userController.getUser);
+router.get('/:id/profile', requireSelf, userController.getUser);
 router.put('/:id', requirePermission(['super_admin', 'admin']), userController.updateUser);
 router.delete('/:id', requirePermission(['super_admin', 'admin']), userController.deleteUser);
 router.patch('/:id/availability', userController.toggleAvailability);

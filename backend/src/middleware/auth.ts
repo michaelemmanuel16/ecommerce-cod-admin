@@ -189,14 +189,15 @@ export const requireResourcePermission = (resource: string, action: string) => {
         return;
       }
 
+      // Check permissions from database (or cache)
+      const permissions = await getPermissionsFromDatabase();
+
       // Super admin always has all permissions
       if (req.user.role === 'super_admin') {
         next();
         return;
       }
 
-      // Get permissions from database (or cache)
-      const permissions = await getPermissionsFromDatabase();
       const rolePermissions = permissions[req.user.role];
 
       if (!rolePermissions) {
@@ -227,13 +228,41 @@ export const requireResourcePermission = (resource: string, action: string) => {
         return;
       }
 
-      // User has permission
+      // User has the base permission. 
+      // Individual ownership checks are handled at the service/controller layer 
+      // for efficiency to avoid double-querying.
       next();
     } catch (error) {
       console.error('Error checking permissions:', error);
       res.status(500).json({ error: 'Failed to check permissions' });
     }
   };
+};
+
+/**
+ * Middleware to restrict access to the resource owner or an admin.
+ * Use this only for routes where ownership can be determined easily (e.g., self-profile).
+ */
+export const requireSelf = (req: AuthRequest, res: Response, next: NextFunction): void => {
+  const { id } = req.params;
+  const userId = parseInt(id, 10);
+
+  if (!req.user) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  if (req.user.role === 'super_admin' || req.user.role === 'admin') {
+    next();
+    return;
+  }
+
+  if (req.user.id !== userId) {
+    res.status(403).json({ error: 'Forbidden: You can only access your own profile' });
+    return;
+  }
+
+  next();
 };
 
 // Resource-action permission middleware that checks if user has ANY of the specified permissions

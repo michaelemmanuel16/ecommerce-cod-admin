@@ -10,7 +10,7 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response): Prom
     const summary = await financialService.getFinancialSummary({
       startDate: startDate ? new Date(startDate as string) : undefined,
       endDate: endDate ? new Date(endDate as string) : undefined
-    });
+    }, req.user);
 
     res.json({ summary });
   } catch (error) {
@@ -45,7 +45,7 @@ export const recordExpense = async (req: AuthRequest, res: Response): Promise<vo
       description,
       expenseDate: new Date(expenseDate),
       recordedBy: req.user!.id.toString()
-    });
+    }, req.user);
 
     res.status(201).json({ expense });
   } catch (error) {
@@ -159,7 +159,7 @@ export const updateExpense = async (req: AuthRequest, res: Response): Promise<vo
       amount,
       description,
       expenseDate: expenseDate ? new Date(expenseDate) : undefined
-    });
+    }, req.user);
 
     res.json({ expense });
   } catch (error) {
@@ -171,7 +171,7 @@ export const deleteExpense = async (req: AuthRequest, res: Response): Promise<vo
   try {
     const { id } = req.params;
 
-    await financialService.deleteExpense(id);
+    await financialService.deleteExpense(id, req.user);
 
     res.json({ message: 'Expense deleted successfully' });
   } catch (error) {
@@ -179,9 +179,9 @@ export const deleteExpense = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
-export const getAgentCashHoldings = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getAgentCashHoldings = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const holdings = await financialService.getAgentCashHoldings();
+    const holdings = await financialService.getAgentCashHoldings(req.user);
 
     res.json({ holdings });
   } catch (error) {
@@ -209,7 +209,7 @@ export const markCollectionsAsDeposited = async (req: AuthRequest, res: Response
   try {
     const { transactionIds, depositReference } = req.body;
 
-    await financialService.markCODAsDeposited(transactionIds, depositReference);
+    await financialService.markCODAsDeposited(transactionIds, depositReference, req.user);
 
     res.json({ message: 'Collections marked as deposited successfully' });
   } catch (error) {
@@ -227,7 +227,7 @@ export const reconcileTransaction = async (req: AuthRequest, res: Response): Pro
       status: status as PaymentStatus,
       reference,
       notes
-    });
+    }, req.user);
 
     res.json({ transaction });
   } catch (error) {

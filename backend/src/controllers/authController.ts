@@ -58,7 +58,7 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
     });
 
     // Get user permissions from system config
-    const allPermissions = await adminService.getRolePermissions() as Record<string, any>;
+    const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
     const userPermissions = allPermissions[user.role] || {};
 
     res.status(201).json({
@@ -114,7 +114,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
     });
 
     // Get user permissions from system config
-    const allPermissions = await adminService.getRolePermissions() as Record<string, any>;
+    const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
     const userPermissions = allPermissions[user.role] || {};
 
     res.json({
@@ -215,7 +215,7 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
     });
 
     // Get user permissions from system config
-    const allPermissions = await adminService.getRolePermissions() as Record<string, any>;
+    const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
     const userPermissions = allPermissions[user?.role || ''] || {};
 
     res.json({ user, permissions: userPermissions });

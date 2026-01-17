@@ -47,7 +47,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
       search: search as string | undefined,
       page: Number(page),
       limit: Number(limit)
-    });
+    }, req.user);
 
     res.json(result);
   } catch (error) {
@@ -119,7 +119,7 @@ export const bulkImportOrders = async (req: AuthRequest, res: Response): Promise
 export const getOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const order = await orderService.getOrderById(id);
+    const order = await orderService.getOrderById(id, req.user);
     res.json({ order });
   } catch (error) {
     throw error;
@@ -130,7 +130,7 @@ export const updateOrder = async (req: AuthRequest, res: Response): Promise<void
   try {
     const { id } = req.params;
     const updateData = req.body;
-    const order = await orderService.updateOrder(id, updateData);
+    const order = await orderService.updateOrder(id, updateData, req.user);
     res.json({ order });
   } catch (error) {
     throw error;
@@ -140,7 +140,7 @@ export const updateOrder = async (req: AuthRequest, res: Response): Promise<void
 export const deleteOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const result = await orderService.deleteOrder(id, req.user?.id);
+    const result = await orderService.deleteOrder(id, req.user?.id, req.user);
     res.json(result);
   } catch (error) {
     throw error;
@@ -156,7 +156,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
       status: status as OrderStatus,
       notes,
       changedBy: req.user?.id
-    });
+    }, req.user);
 
     res.json({ order });
   } catch (error) {
@@ -168,7 +168,7 @@ export const assignCustomerRep = async (req: AuthRequest, res: Response): Promis
   try {
     const { id } = req.params;
     const { customerRepId } = req.body;
-    const order = await orderService.assignCustomerRep(id, customerRepId, req.user?.id);
+    const order = await orderService.assignCustomerRep(id, customerRepId, req.user!);
     res.json({ order });
   } catch (error) {
     throw error;
@@ -179,7 +179,7 @@ export const assignDeliveryAgent = async (req: AuthRequest, res: Response): Prom
   try {
     const { id } = req.params;
     const { deliveryAgentId } = req.body;
-    const order = await orderService.assignDeliveryAgent(id, deliveryAgentId, req.user?.id);
+    const order = await orderService.assignDeliveryAgent(id, deliveryAgentId, req.user!);
     res.json({ order });
   } catch (error) {
     throw error;
@@ -192,7 +192,7 @@ export const getKanbanView = async (req: AuthRequest, res: Response): Promise<vo
     const kanban = await orderService.getKanbanView({
       area: area as string | undefined,
       agentId: agentId as string | undefined
-    });
+    }, req.user);
     res.json({ kanban });
   } catch (error) {
     throw error;
@@ -205,7 +205,7 @@ export const getOrderStats = async (req: AuthRequest, res: Response): Promise<vo
     const stats = await orderService.getOrderStats({
       startDate: startDate ? new Date(startDate as string) : undefined,
       endDate: endDate ? new Date(endDate as string) : undefined
-    });
+    }, req.user);
     res.json({ stats });
   } catch (error) {
     throw error;

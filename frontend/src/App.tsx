@@ -5,6 +5,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Layout } from './components/layout/Layout';
 import { Toast } from './components/ui/Toast';
 import { Loading } from './components/ui/Loading';
+import { OnboardingProvider } from './components/onboarding';
+import { CustomerRepOnboarding, OnboardingWelcomeModal } from './components/onboarding';
 
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
@@ -66,7 +68,8 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <BrowserRouter>
+      <OnboardingProvider>
+        <BrowserRouter>
         <Routes>
           {/* Public routes - no authentication required */}
           <Route path="/order/:slug" element={
@@ -178,8 +181,12 @@ function App() {
             } />
           </Route>
         </Routes>
+        {/* Onboarding Tour Components - Only visible for sales_rep role */}
+        <CustomerRepOnboarding />
+        <OnboardingWelcomeModal />
       </BrowserRouter>
       <Toast />
+    </OnboardingProvider>
     </ErrorBoundary>
   );
 }

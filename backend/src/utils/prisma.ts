@@ -1,8 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import logger from './logger';
+import { softDeleteExtension } from './prismaExtensions';
 
 // Performance monitoring extension
-const prisma = new PrismaClient({
+const prismaBase = new PrismaClient({
   log: [
     { emit: 'event', level: 'query' },
     { emit: 'event', level: 'error' },
@@ -16,8 +17,10 @@ const prisma = new PrismaClient({
   },
 });
 
+const prisma = prismaBase.$extends(softDeleteExtension);
+
 // Query performance logging
-prisma.$on('query' as never, (e: any) => {
+prismaBase.$on('query' as never, (e: any) => {
   const duration = e.duration;
 
   if (duration > 100) {
@@ -32,7 +35,7 @@ prisma.$on('query' as never, (e: any) => {
 });
 
 // Error logging
-prisma.$on('error' as never, (e: any) => {
+prismaBase.$on('error' as never, (e: any) => {
   logger.error('Prisma error:', {
     message: e.message,
     target: e.target,
@@ -40,7 +43,7 @@ prisma.$on('error' as never, (e: any) => {
 });
 
 // Warn logging
-prisma.$on('warn' as never, (e: any) => {
+prismaBase.$on('warn' as never, (e: any) => {
   logger.warn('Prisma warning:', {
     message: e.message,
   });
@@ -48,7 +51,7 @@ prisma.$on('warn' as never, (e: any) => {
 
 // Graceful shutdown
 process.on('beforeExit', async () => {
-  await prisma.$disconnect();
+  await prismaBase.$disconnect();
 });
 
 export default prisma;

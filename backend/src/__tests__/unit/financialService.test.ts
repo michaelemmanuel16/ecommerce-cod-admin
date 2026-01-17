@@ -138,7 +138,8 @@ describe('FinancialService', () => {
         .mockResolvedValueOnce({ _sum: { amount: 0 } } as any) // totalPending
         .mockResolvedValueOnce({ _sum: { amount: 0 } } as any); // totalDeposited
 
-      const result = await financialService.getCODCollectionsByAgent('agent-1');
+      const requester = { id: 1, role: 'admin' };
+      const result = await financialService.getCODCollectionsByAgent('1', undefined, requester as any);
 
       expect(result.collections).toHaveLength(2);
       expect(result.summary.totalCollected).toBe(300);
@@ -188,7 +189,8 @@ describe('FinancialService', () => {
         notes: 'Reconciled on bank statement'
       };
 
-      const result = await financialService.reconcileTransaction(reconcileData);
+      const requester = { id: 1, role: 'admin' };
+      const result = await financialService.reconcileTransaction(reconcileData, requester as any);
 
       expect(result.status).toBe('reconciled');
       expect(prismaMock.transaction.update).toHaveBeenCalled();
@@ -219,10 +221,11 @@ describe('FinancialService', () => {
         return Promise.resolve({} as any);
       });
 
+      const requester = { id: 1, role: 'admin' };
       await financialService.reconcileTransaction({
         transactionId: 'trans-1',
         status: 'deposited' as PaymentStatus
-      });
+      }, requester as any);
 
       expect(updatedPaymentStatus).toBe('deposited');
     });
@@ -230,20 +233,26 @@ describe('FinancialService', () => {
 
   describe('markCODAsDeposited', () => {
     it('should mark multiple transactions as deposited', async () => {
-      const transactionIds = ['trans-1', 'trans-2', 'trans-3'];
+      const transactionIds = ['1', '2'];
+      const mockTransactions = [
+        { id: 1, type: 'cod_collection', status: 'collected', orderId: 101 },
+        { id: 2, type: 'cod_collection', status: 'collected', orderId: 102 }
+      ];
 
-      prismaMock.transaction.updateMany.mockResolvedValue({ count: 3 } as any);
-      prismaMock.order.updateMany.mockResolvedValue({ count: 3 } as any);
+      prismaMock.transaction.findMany.mockResolvedValue(mockTransactions as any);
+      prismaMock.transaction.updateMany.mockResolvedValue({ count: 2 } as any);
+      prismaMock.order.updateMany.mockResolvedValue({ count: 2 } as any);
 
+      const requester = { id: 1, role: 'admin' };
       const result = await financialService.markCODAsDeposited(
         transactionIds,
-        'DEP-2024-001'
+        'DEP-2024-001',
+        requester as any
       );
 
-      expect(result.message).toContain('3 transactions marked as deposited');
-      expect(result.count).toBe(3);
+      expect(result.message).toContain('2 transactions marked as deposited');
+      expect(result.count).toBe(2);
       expect(prismaMock.transaction.updateMany).toHaveBeenCalled();
-      expect(prismaMock.order.updateMany).toHaveBeenCalled();
     });
 
     it('should throw error when no transaction IDs provided', async () => {
@@ -252,14 +261,15 @@ describe('FinancialService', () => {
       ).rejects.toThrow(new AppError('No transaction IDs provided', 400));
     });
 
-    it('should only update collected transactions', async () => {
-      prismaMock.transaction.updateMany.mockResolvedValue({ count: 2 } as any);
-      prismaMock.order.updateMany.mockResolvedValue({ count: 2 } as any);
+    it('should only update collected transactions via findMany verification', async () => {
+      prismaMock.transaction.findMany.mockResolvedValue([]);
 
-      await financialService.markCODAsDeposited(['trans-1', 'trans-2']);
+      await expect(
+        financialService.markCODAsDeposited(['1'])
+      ).rejects.toThrow(new AppError('No matching collected transactions found.', 404));
 
-      const callArgs = (prismaMock.transaction.updateMany as any).mock.calls[0][0];
-      expect(callArgs.where.status).toBe('collected');
+      const findManyArgs = (prismaMock.transaction.findMany as any).mock.calls[0][0];
+      expect(findManyArgs.where.status).toBe('collected');
     });
   });
 

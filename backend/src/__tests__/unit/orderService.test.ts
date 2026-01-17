@@ -121,9 +121,11 @@ describe('OrderService', () => {
       (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
           order: {
-            create: jest.fn().mockResolvedValue(mockOrder)
+            create: jest.fn().mockResolvedValue(mockOrder),
+            count: jest.fn().mockResolvedValue(0)
           },
           product: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
             update: jest.fn().mockResolvedValue(mockProduct)
           },
           customer: {
@@ -152,22 +154,24 @@ describe('OrderService', () => {
       prismaMock.product.findUnique.mockResolvedValue(null);
 
       await expect(orderService.createOrder(createOrderData as any)).rejects.toThrow(
-        new AppError('Product 1 not found', 404)
+        new AppError('Product ID 1 not found', 404)
       );
     });
 
-    it('should throw error when product is out of stock', async () => {
+    it('should throw error when product is out of stock (atomic check)', async () => {
       prismaMock.customer.findUnique.mockResolvedValue(mockCustomer);
-      prismaMock.product.findUnique.mockResolvedValue({
-        ...mockProduct,
-        stockQuantity: 1
+      prismaMock.product.findUnique.mockResolvedValue(mockProduct);
+
+      (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
+        return callback({
+          product: {
+            updateMany: jest.fn().mockResolvedValue({ count: 0 })
+          }
+        });
       });
 
       await expect(orderService.createOrder(createOrderData as any)).rejects.toThrow(
-        new AppError(
-          'Insufficient stock for product Test Product. Available: 1',
-          400
-        )
+        /Insufficient stock for product ID 1/
       );
     });
   });

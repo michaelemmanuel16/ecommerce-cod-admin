@@ -127,7 +127,8 @@ apiClient.interceptors.response.use(
         const refreshToken = useAuthStore.getState().refreshToken;
         if (!refreshToken) {
           useAuthStore.getState().logout(false);
-          if (window.location.pathname !== '/login') {
+          const publicPages = ['/login', '/register'];
+          if (!publicPages.includes(window.location.pathname)) {
             window.location.href = '/login';
           }
           return Promise.reject(error);
@@ -150,15 +151,18 @@ apiClient.interceptors.response.use(
         if (refreshError.response?.data?.code === 'TOKEN_FORMAT_OUTDATED') {
           useAuthStore.getState().logout(false);
           toast.error('Your session is outdated. Please log in again.');
-          if (window.location.pathname !== '/login') {
+          const publicPages = ['/login', '/register'];
+          if (!publicPages.includes(window.location.pathname)) {
             window.location.href = '/login';
           }
           return Promise.reject(refreshError);
         }
 
         useAuthStore.getState().logout(false);
-        toast.error('Session expired. Please login again.');
-        if (window.location.pathname !== '/login') {
+        // Only show session expired toast if we weren't already on a public page
+        const publicPages = ['/login', '/register'];
+        if (!publicPages.includes(window.location.pathname)) {
+          toast.error('Session expired. Please login again.');
           window.location.href = '/login';
         }
         return Promise.reject(refreshError);

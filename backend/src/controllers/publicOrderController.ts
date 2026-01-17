@@ -1,59 +1,23 @@
-import { Response, Request } from 'express';
+import { Response, Request, NextFunction } from 'express';
 import { PrismaClient, OrderStatus } from '@prisma/client';
 import workflowService from '../services/workflowService';
+import checkoutFormService from '../services/checkoutFormService';
 import { io } from '../server';
 import { emitOrderCreated } from '../sockets';
 
 const prisma = new PrismaClient();
 
-export const getPublicForm = async (req: Request, res: Response): Promise<void> => {
+export const getPublicForm = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { slug } = req.params;
-
-    const form = await prisma.checkoutForm.findFirst({
-      where: {
-        slug: slug,
-        isActive: true
-      },
-      include: {
-        product: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            price: true,
-            imageUrl: true,
-            isActive: true
-          }
-        },
-        packages: {
-          where: {},
-          orderBy: { sortOrder: 'asc' }
-        },
-        upsells: {
-          where: {},
-          orderBy: { sortOrder: 'asc' }
-        }
-      }
-    });
-
-    if (!form) {
-      res.status(404).json({ error: 'Form not found' });
-      return;
-    }
-
-    if (!form.product.isActive) {
-      res.status(404).json({ error: 'Product is no longer available' });
-      return;
-    }
-
+    const form = await checkoutFormService.getCheckoutFormBySlug(slug);
     res.json({ form });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const createPublicOrder = async (req: Request, res: Response): Promise<void> => {
+export const createPublicOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { slug } = req.params;
     const {
@@ -257,12 +221,11 @@ export const createPublicOrder = async (req: Request, res: Response): Promise<vo
       message: 'Order created successfully'
     });
   } catch (error) {
-    console.error('Error creating public order:', error);
-    throw error;
+    next(error);
   }
 };
 
-export const trackOrder = async (req: Request, res: Response): Promise<void> => {
+export const trackOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { orderId, phoneNumber } = req.body;
 
@@ -331,6 +294,6 @@ export const trackOrder = async (req: Request, res: Response): Promise<void> => 
       }
     });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };

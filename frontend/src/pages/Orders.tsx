@@ -402,7 +402,7 @@ export const Orders: React.FC = () => {
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
-            <Button variant="primary" onClick={handleNewOrder}>
+            <Button variant="primary" onClick={handleNewOrder} className="onboarding-new-order-btn">
               <Plus className="w-4 h-4 mr-2" />
               New Order
             </Button>
@@ -442,7 +442,7 @@ export const Orders: React.FC = () => {
           </div> */}
 
           <div className="flex items-center gap-3 flex-1">
-            <div className="flex-1 max-w-md">
+            <div className="flex-1 max-w-md onboarding-search-bar">
               <SearchBar onSearch={handleSearch} placeholder="Search orders..." />
             </div>
             <DateRangePicker
@@ -501,7 +501,7 @@ export const Orders: React.FC = () => {
           </div>
         ) : (
           <div className="h-full overflow-auto">
-            <div className="bg-white rounded-lg shadow">
+            <div className="bg-white rounded-lg shadow onboarding-orders-table">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -644,7 +644,7 @@ export const Orders: React.FC = () => {
                             <select
                               value={order.status}
                               onChange={(e) => handleStatusChange(order.id, e.target.value as OrderStatus)}
-                              className={`w-full px-2 py-1.5 text-xs font-medium rounded-md border-0 focus:ring-2 focus:ring-blue-500 ${statusColors[order.status]}`}
+                              className={`onboarding-status-dropdown w-full px-2 py-1.5 text-xs font-medium rounded-md border-0 focus:ring-2 focus:ring-blue-500 ${statusColors[order.status]}`}
                             >
                               {statusOptions.map((option) => (
                                 <option key={option.value} value={option.value}>
