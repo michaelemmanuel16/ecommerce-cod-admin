@@ -10,9 +10,11 @@ import {
   emitOrderUpdated,
   emitOrderStatusChanged,
   emitOrdersDeleted,
+  emitGLEntryCreated,
 } from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
+import { GLAutomationService } from './glAutomationService';
 
 interface CreateOrderData {
   customerId?: number;
@@ -799,65 +801,108 @@ export class OrderService {
     // Status validation removed - allow any status transition for admin flexibility
     // this.validateStatusTransition(order.status, data.status);
 
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: data.status,
-        orderHistory: {
-          create: {
-            status: data.status,
-            notes: data.notes || `Status changed to ${data.status} `,
-            changedBy: data.changedBy
-          }
-        }
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true,
-            alternatePhone: true,
-            email: true
-          }
-        },
-        customerRep: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            role: true
-          }
-        },
-        deliveryAgent: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true,
-            role: true
-          }
-        },
-        orderItems: {
+    // Handle return status with GL reversal and inventory restoration
+    const isReturnStatus = data.status === 'returned';
+    let glEntry: any = null;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // Handle return reversal if status changed to 'returned' and revenue was recognized
+      if (isReturnStatus && order.revenueRecognized) {
+        // Fetch order with items and products for GL reversal
+        const orderWithItems = await tx.order.findUnique({
+          where: { id: orderId },
           include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                sku: true
+            orderItems: {
+              include: {
+                product: true
+              }
+            },
+            glJournalEntry: true
+          }
+        });
+
+        if (orderWithItems) {
+          // Create return reversal GL entry
+          glEntry = await GLAutomationService.createReturnReversalEntry(
+            tx,
+            orderWithItems,
+            orderWithItems.glJournalEntry,
+            data.changedBy || 1,
+            undefined // No return processing fee - can be added manually later
+          );
+
+          // Restore inventory
+          await GLAutomationService.restoreInventory(tx, orderWithItems.orderItems);
+
+          logger.info(`GL reversal entry created for returned order ${orderId}: ${glEntry.entryNumber}`);
+        }
+      }
+
+      // Update order status
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: data.status,
+          ...(isReturnStatus && order.revenueRecognized ? { revenueRecognized: false } : {}),
+          orderHistory: {
+            create: {
+              status: data.status,
+              notes: data.notes || `Status changed to ${data.status} `,
+              changedBy: data.changedBy
+            }
+          }
+        },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true,
+              alternatePhone: true,
+              email: true
+            }
+          },
+          customerRep: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true
+            }
+          },
+          deliveryAgent: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true,
+              role: true
+            }
+          },
+          orderItems: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true
+                }
               }
             }
           }
         }
-      }
+      });
+
+      return updatedOrder;
     });
 
     logger.info(`Order status updated: ${order.id} `, {
       orderId,
       oldStatus: order.status,
-      newStatus: data.status
+      newStatus: data.status,
+      glReversalCreated: !!glEntry
     });
 
     // Emit socket events for real-time updates (non-blocking)
@@ -866,6 +911,15 @@ export class OrderService {
         const ioInstance = getSocketInstance() as any;
         emitOrderUpdated(ioInstance, updated);
         emitOrderStatusChanged(ioInstance, updated, order.status, data.status);
+
+        // Emit GL entry created event for return reversal
+        if (glEntry) {
+          emitGLEntryCreated(ioInstance, glEntry, {
+            orderId: order.id,
+            orderNumber: order.id.toString(),
+            type: 'return_reversal'
+          });
+        }
       } catch (error) {
         logger.error('Failed to emit socket events', { orderId, error });
       }

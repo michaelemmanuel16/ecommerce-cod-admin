@@ -187,11 +187,14 @@ describe('OrderService', () => {
     };
 
     it('should update order status with valid transition', async () => {
-      (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder as any);
-      (prismaMock.order.update as any).mockResolvedValue({
+      const updatedOrder = {
         ...mockOrder,
         status: 'confirmed' as OrderStatus
-      } as any);
+      };
+
+      (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder as any);
+      (prismaMock.$transaction as any).mockImplementation((callback: any) => callback(prismaMock));
+      (prismaMock.order.update as any).mockResolvedValue(updatedOrder as any);
 
       const updated = await orderService.updateOrderStatus(1, {
         status: 'confirmed' as OrderStatus,
@@ -204,11 +207,14 @@ describe('OrderService', () => {
     });
 
     it('should allow any status transition for admin flexibility', async () => {
-      (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder as any);
-      (prismaMock.order.update as any).mockResolvedValue({
+      const updatedOrder = {
         ...mockOrder,
         status: 'delivered' as OrderStatus
-      } as any);
+      };
+
+      (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder as any);
+      (prismaMock.$transaction as any).mockImplementation((callback: any) => callback(prismaMock));
+      (prismaMock.order.update as any).mockResolvedValue(updatedOrder as any);
 
       // Status validation is disabled to allow admin flexibility
       const updated = await orderService.updateOrderStatus(1, {

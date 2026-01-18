@@ -796,7 +796,8 @@ export class FinancialService {
     orders.forEach((order) => {
       totalRevenue += order.totalAmount;
       order.orderItems.forEach((item) => {
-        totalCost += (item.product.cogs || 0) * item.quantity;
+        const cogs = item.product.cogs ? Number(item.product.cogs) : 0;
+        totalCost += cogs * item.quantity;
       });
     });
 

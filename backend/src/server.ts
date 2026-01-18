@@ -14,6 +14,7 @@ import { apiLimiter } from './middleware/rateLimiter';
 import logger from './utils/logger';
 import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
+import { validateGLAccountCodes } from './config/glAccounts';
 
 // Routes
 import authRoutes from './routes/authRoutes';
@@ -44,6 +45,15 @@ try {
   logger.info('Environment variables validated successfully');
 } catch (error) {
   logger.error('Environment validation failed:', error);
+  process.exit(1);
+}
+
+// Validate GL account codes before starting server
+try {
+  validateGLAccountCodes();
+  logger.info('GL account codes validated successfully');
+} catch (error) {
+  logger.error('GL account code validation failed:', error);
   process.exit(1);
 }
 

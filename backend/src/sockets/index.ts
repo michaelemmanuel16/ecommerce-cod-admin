@@ -216,3 +216,23 @@ export function emitTransactionReconciled(io: SocketServer, transaction: any) {
   safeEmit(io, 'role:manager', 'transaction:reconciled', transaction);
   safeEmit(io, 'role:accountant', 'transaction:reconciled', transaction);
 }
+
+export function emitGLEntryCreated(io: SocketServer, entry: any, metadata?: any) {
+  const event = {
+    entry: {
+      id: entry.id,
+      entryNumber: entry.entryNumber,
+      entryDate: entry.entryDate,
+      description: entry.description,
+      sourceType: entry.sourceType,
+      sourceId: entry.sourceId,
+    },
+    metadata,
+    timestamp: new Date()
+  };
+
+  // Emit to roles with GL/financial permission
+  safeEmit(io, 'role:admin', 'gl:entry-created', event);
+  safeEmit(io, 'role:accountant', 'gl:entry-created', event);
+  safeEmit(io, 'role:manager', 'gl:entry-created', event);
+}

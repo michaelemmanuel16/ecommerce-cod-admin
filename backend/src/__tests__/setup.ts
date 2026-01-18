@@ -30,7 +30,7 @@ afterEach(() => {
 afterAll(async () => {
   // Import dynamically to avoid initialization issues
   try {
-    const { default: prisma } = await import('../config/database');
+    const { default: prisma } = await import('../utils/prisma');
     await prisma.$disconnect();
   } catch (error) {
     // Database connection may not be initialized in all tests

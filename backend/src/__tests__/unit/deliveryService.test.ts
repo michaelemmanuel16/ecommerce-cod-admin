@@ -3,6 +3,7 @@ import { prismaMock } from '../mocks/prisma.mock';
 import { DeliveryService } from '../../services/deliveryService';
 import { AppError } from '../../middleware/errorHandler';
 import { OrderStatus, DeliveryProofType } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 
 describe('DeliveryService', () => {
   let deliveryService: DeliveryService;
@@ -150,11 +151,40 @@ describe('DeliveryService', () => {
             update: jest.fn().mockResolvedValue(mockDelivery)
           },
           order: {
+            findUnique: jest.fn().mockResolvedValue({
+              id: 1,
+              totalAmount: 210,
+              orderItems: [{
+                quantity: 2,
+                unitPrice: 100,
+                product: {
+                  name: 'Test Product',
+                  cogs: new Decimal(50)
+                }
+              }],
+              customerRepId: 1
+            }),
             update: jest.fn().mockResolvedValue({})
           },
           transaction: {
             create: jest.fn().mockResolvedValue({})
-          }
+          },
+          journalEntry: {
+            create: jest.fn().mockResolvedValue({ id: 1, entryNumber: 'JE-001' })
+          },
+          accountTransaction: {
+            createMany: jest.fn().mockResolvedValue({})
+          },
+          product: {
+            update: jest.fn().mockResolvedValue({})
+          },
+          user: {
+            findUnique: jest.fn().mockResolvedValue({
+              id: 1,
+              commissionRate: new Decimal(10)
+            })
+          },
+          $queryRaw: jest.fn().mockResolvedValue([])
         });
       });
 
@@ -196,6 +226,19 @@ describe('DeliveryService', () => {
             update: jest.fn().mockResolvedValue(mockDelivery)
           },
           order: {
+            findUnique: jest.fn().mockResolvedValue({
+              id: 1,
+              totalAmount: 210,
+              orderItems: [{
+                quantity: 2,
+                unitPrice: 100,
+                product: {
+                  name: 'Test Product',
+                  cogs: new Decimal(50)
+                }
+              }],
+              customerRepId: 1
+            }),
             update: jest.fn().mockResolvedValue({})
           },
           transaction: {
@@ -203,7 +246,23 @@ describe('DeliveryService', () => {
               createdTransaction = data.data;
               return Promise.resolve({});
             })
-          }
+          },
+          journalEntry: {
+            create: jest.fn().mockResolvedValue({ id: 1, entryNumber: 'JE-001' })
+          },
+          accountTransaction: {
+            createMany: jest.fn().mockResolvedValue({})
+          },
+          product: {
+            update: jest.fn().mockResolvedValue({})
+          },
+          user: {
+            findUnique: jest.fn().mockResolvedValue({
+              id: 1,
+              commissionRate: new Decimal(10)
+            })
+          },
+          $queryRaw: jest.fn().mockResolvedValue([])
         });
       });
 

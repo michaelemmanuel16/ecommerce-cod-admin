@@ -90,7 +90,7 @@ model Product {
   createdAt            DateTime               @default(now()) @map("created_at")
   updatedAt            DateTime               @updatedAt @map("updated_at")
   batch_quantity       Int                    @default(1)
-  cogs                 Float                  @default(0)
+  cogs                 Decimal?               @default(0) @db.Decimal(10, 2)
   checkoutForms        CheckoutForm[]
   formUpsells          FormUpsell[]
   orderItems           OrderItem[]
@@ -132,6 +132,8 @@ model Order {
   deletedAt         DateTime?        @map("deleted_at")
   commissionPaid    Boolean          @default(false) @map("commission_paid")
   payoutId          Int?             @map("payout_id")
+  revenueRecognized Boolean          @default(false) @map("revenue_recognized")
+  glJournalEntryId  Int?             @map("gl_journal_entry_id")
   calls             Call[]
   delivery          Delivery?
   formSubmissions   FormSubmission[]
@@ -143,6 +145,7 @@ model Order {
   deliveryAgent     User?            @relation("OrderDeliveryAgent", fields: [deliveryAgentId], references: [id])
   transaction       Transaction?
   payout            Payout?          @relation(fields: [payoutId], references: [id])
+  glJournalEntry    JournalEntry?    @relation(fields: [glJournalEntryId], references: [id])
 
   @@index([customerId])
   @@index([status])
@@ -161,6 +164,8 @@ model Order {
   @@index([deletedAt])
   @@index([deletedAt, status])
   @@index([deletedAt, customerId])
+  @@index([revenueRecognized])
+  @@index([glJournalEntryId])
   @@map("orders")
 }
 
@@ -308,6 +313,7 @@ model JournalEntry {
   reverses     JournalEntry?        @relation("ReversalRelation")
   creator      User                 @relation("JournalEntryCreator", fields: [createdBy], references: [id])
   voider       User?                @relation("VoidedByUser", fields: [voidedBy], references: [id])
+  orders       Order[]
 
   @@index([sourceType, sourceId])
   @@index([entryDate])
@@ -696,4 +702,5 @@ enum JournalSourceType {
   payout
   manual
   reversal
+  order_return
 }
