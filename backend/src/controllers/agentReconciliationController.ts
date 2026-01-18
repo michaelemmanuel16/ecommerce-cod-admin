@@ -29,7 +29,7 @@ export class AgentReconciliationController {
             where,
             include: {
                 agent: {
-                    select: { id: true, name: true, email: true }
+                    select: { id: true, firstName: true, lastName: true, email: true }
                 },
                 order: {
                     select: { id: true, status: true, codAmount: true }

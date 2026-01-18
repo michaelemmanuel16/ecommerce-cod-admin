@@ -1,8 +1,10 @@
+import { describe, it, expect, beforeAll, beforeEach, jest } from '@jest/globals';
 import prisma from '../../utils/prisma';
 import { DeliveryService } from '../../services/deliveryService';
 import agentReconciliationService from '../../services/agentReconciliationService';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { Decimal } from '@prisma/client/runtime/library';
+import { AccountType, NormalBalance, Prisma } from '@prisma/client';
 
 // Mock socket instance
 jest.mock('../../utils/socketInstance', () => ({
@@ -41,15 +43,19 @@ describe('Agent Collection Workflow Integration', () => {
         });
 
         // Setup GL Accounts
-        const accounts = [
-            { id: parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT), code: GL_ACCOUNTS.CASH_IN_TRANSIT, name: 'Cash in Transit', accountType: 'asset', normalBalance: 'debit' },
-            { id: parseInt(GL_ACCOUNTS.AR_AGENTS), code: GL_ACCOUNTS.AR_AGENTS, name: 'Agent AR', accountType: 'asset', normalBalance: 'debit' },
-            { id: parseInt(GL_ACCOUNTS.PRODUCT_REVENUE), code: GL_ACCOUNTS.PRODUCT_REVENUE, name: 'Revenue', accountType: 'revenue', normalBalance: 'credit' },
-            { id: parseInt(GL_ACCOUNTS.COGS), code: GL_ACCOUNTS.COGS, name: 'COGS', accountType: 'expense', normalBalance: 'debit' },
-            { id: parseInt(GL_ACCOUNTS.INVENTORY), code: GL_ACCOUNTS.INVENTORY, name: 'Inventory', accountType: 'asset', normalBalance: 'debit' },
+        const accounts: Prisma.AccountUncheckedCreateInput[] = [
+            { id: parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT), code: GL_ACCOUNTS.CASH_IN_TRANSIT, name: 'Cash in Transit', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { id: parseInt(GL_ACCOUNTS.AR_AGENTS), code: GL_ACCOUNTS.AR_AGENTS, name: 'Agent AR', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { id: parseInt(GL_ACCOUNTS.PRODUCT_REVENUE), code: GL_ACCOUNTS.PRODUCT_REVENUE, name: 'Revenue', accountType: AccountType.revenue, normalBalance: NormalBalance.credit },
+            { id: parseInt(GL_ACCOUNTS.COGS), code: GL_ACCOUNTS.COGS, name: 'COGS', accountType: AccountType.expense, normalBalance: NormalBalance.debit },
+            { id: parseInt(GL_ACCOUNTS.INVENTORY), code: GL_ACCOUNTS.INVENTORY, name: 'Inventory', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
         ];
         for (const a of accounts) {
-            await prisma.account.create({ data: a as any });
+            await prisma.account.upsert({
+                where: { id: a.id as number },
+                update: a as Prisma.AccountUpdateInput,
+                create: a
+            });
         }
 
         // Create Users

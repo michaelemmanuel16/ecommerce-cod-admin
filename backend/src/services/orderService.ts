@@ -828,6 +828,7 @@ export class OrderService {
         const orderWithItems = await tx.order.findUnique({
           where: { id: orderId },
           include: {
+            customer: true,
             orderItems: {
               include: { product: true }
             }

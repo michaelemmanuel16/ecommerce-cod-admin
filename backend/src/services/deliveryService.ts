@@ -336,6 +336,7 @@ export class DeliveryService {
       const orderWithItems = await tx.order.findUnique({
         where: { id: delivery.orderId },
         include: {
+          customer: true,
           orderItems: {
             include: {
               product: true

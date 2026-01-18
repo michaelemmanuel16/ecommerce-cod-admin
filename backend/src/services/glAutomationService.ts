@@ -10,11 +10,12 @@
  * All methods are designed to be called from within Prisma transactions to ensure atomicity.
  */
 
-import { Prisma, Order, OrderItem, Product, Delivery } from '@prisma/client';
+import { Prisma, Order, OrderItem, Product, Delivery, Customer, User } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GL_ACCOUNTS, GL_DEFAULTS } from '../config/glAccounts';
 import logger from '../utils/logger';
 import prisma from '../utils/prisma';
+import { GLUtils } from '../utils/glUtils';
 // import { SYSTEM_USER_ID } from '../config/constants'; // Commented out unused variable to resolve lint error
 
 // Define JournalSourceType locally if not correctly imported or use string literal
@@ -24,7 +25,12 @@ import prisma from '../utils/prisma';
 type OrderItemWithProduct = OrderItem & { product: Product };
 
 // Type for orders with items and products
-type OrderWithItems = any; // Flexible type for now to avoid include issues
+export interface OrderWithItems extends Order {
+  orderItems: OrderItemWithProduct[];
+  customer: Customer;
+  deliveryAgent?: User | null;
+  customerRep?: User | null;
+}
 
 /**
  * GL Automation Service
@@ -33,38 +39,10 @@ type OrderWithItems = any; // Flexible type for now to avoid include issues
 export class GLAutomationService {
   /**
    * Generate unique journal entry number
-   * Format: JE-YYYYMMDD-XXXXX (e.g., JE-20260117-00001)
-   * Sequence resets daily
+   * @deprecated Use GLUtils.generateEntryNumber(tx) instead
    */
   private static async generateEntryNumber(tx: Prisma.TransactionClient): Promise<string> {
-    const today = new Date();
-    const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
-
-    // Find the last entry for today
-    const result = await tx.$queryRaw<any[]>`
-      SELECT entry_number
-      FROM journal_entries
-      WHERE entry_number LIKE ${'JE-' + dateStr + '-%'}
-      ORDER BY entry_number DESC
-      LIMIT 1
-      FOR UPDATE
-    `;
-
-    let sequence = 1;
-    if (result.length > 0) {
-      const lastNumber = result[0].entry_number;
-      // Handle the case where the entry_number format might be unexpected
-      try {
-        const lastSequence = parseInt(lastNumber.split('-')[2], 10);
-        if (!isNaN(lastSequence)) {
-          sequence = lastSequence + 1;
-        }
-      } catch (e) {
-        logger.warn('Failed to parse last journal entry sequence, starting from 1');
-      }
-    }
-
-    return `JE-${dateStr}-${sequence.toString().padStart(5, '0')}`;
+    return GLUtils.generateEntryNumber(tx);
   }
 
   /**

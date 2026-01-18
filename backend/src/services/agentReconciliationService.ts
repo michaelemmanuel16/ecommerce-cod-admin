@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { GL_ACCOUNTS } from '../config/glAccounts';
+import { GLUtils } from '../utils/glUtils';
 
 export class AgentReconciliationService {
     /**
@@ -159,44 +160,64 @@ export class AgentReconciliationService {
 
     /**
      * Bulk verify collections
+     * Optimized to use a single transaction for better performance and atomicity
      */
     async bulkVerifyCollections(collectionIds: number[], verifierId: number) {
-        const results = [];
-        for (const id of collectionIds) {
-            try {
-                const result = await this.verifyCollection(id, verifierId);
-                results.push({ id, success: true, result });
-            } catch (error: any) {
-                results.push({ id, success: false, error: error.message });
+        return await prisma.$transaction(async (tx) => {
+            const results = [];
+            for (const id of collectionIds) {
+                try {
+                    // Call verifyCollection logic but with the current transaction context
+                    const result = await this.verifyCollectionInternal(tx, id, verifierId);
+                    results.push({ id, success: true, result });
+                } catch (error: any) {
+                    results.push({ id, success: false, error: error.message });
+                }
             }
-        }
-        return results;
+            return results;
+        });
     }
 
     /**
-     * Helper to generate JE number (mimics GLAutomationService)
+     * Internal version of verifyCollection that accepts a transaction client
      */
-    private async generateEntryNumber(tx: any): Promise<string> {
-        const today = new Date();
-        const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
+    private async verifyCollectionInternal(tx: any, collectionId: number, verifierId: number) {
+        const collection = await tx.agentCollection.findUnique({
+            where: { id: collectionId },
+            include: { order: true }
+        });
 
-        const result = await tx.$queryRaw<any[]>`
-      SELECT entry_number
-      FROM journal_entries
-      WHERE entry_number LIKE ${'JE-' + dateStr + '-%'}
-      ORDER BY entry_number DESC
-      LIMIT 1
-      FOR UPDATE
-    `;
-
-        let sequence = 1;
-        if (result.length > 0) {
-            const lastNumber = result[0].entry_number;
-            const lastSequence = parseInt(lastNumber.split('-')[2], 10);
-            sequence = lastSequence + 1;
+        if (!collection) {
+            throw new AppError('Collection record not found', 404);
         }
 
-        return `JE-${dateStr}-${sequence.toString().padStart(5, '0')}`;
+        if (collection.status !== 'draft') {
+            throw new AppError(`Collection cannot be verified from status: ${collection.status}`, 400);
+        }
+
+        // Update collection status
+        const updated = await tx.agentCollection.update({
+            where: { id: collectionId },
+            data: {
+                status: 'verified',
+                verifiedAt: new Date(),
+                verifiedById: verifierId,
+            },
+        });
+
+        // Create GL Journal Entry using shared utility
+        await this.createVerificationGLEntry(tx, updated, verifierId);
+
+        logger.info(`Collection ${collectionId} verified by user ${verifierId}`);
+        return updated;
+    }
+
+    /**
+     * Helper to generate JE number
+     * @deprecated Use GLUtils.generateEntryNumber(tx) instead
+     */
+    private async generateEntryNumber(tx: any): Promise<string> {
+        return GLUtils.generateEntryNumber(tx);
     }
 }
 
