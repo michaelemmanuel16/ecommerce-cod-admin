@@ -22,7 +22,7 @@ export function useFormValidation<
   TContext = any
 >(
   props: UseFormProps<TFieldValues, TContext> & {
-    schema: z.ZodSchema<TFieldValues>;
+    schema: z.ZodType<TFieldValues, any, any>;
   }
 ) {
   const { schema, ...formProps } = props;

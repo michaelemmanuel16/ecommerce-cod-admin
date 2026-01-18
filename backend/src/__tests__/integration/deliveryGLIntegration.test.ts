@@ -4,6 +4,7 @@
  * Tests automated GL entry creation when delivery status changes
  */
 
+import { jest, describe, it, expect, beforeAll, beforeEach, afterAll } from '@jest/globals';
 import prisma from '../../utils/prisma';
 import { DeliveryService } from '../../services/deliveryService';
 import { OrderService } from '../../services/orderService';
