@@ -1,9 +1,10 @@
+import { Prisma, JournalSourceType } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { GL_ACCOUNTS } from '../config/glAccounts';
 import { GLUtils } from '../utils/glUtils';
+import { GLAccountService } from './glAccountService';
 
 export class AgentReconciliationService {
     /**
@@ -68,7 +69,7 @@ export class AgentReconciliationService {
             // Create GL Journal Entry
             // Debit: AR-Agents (1020)
             // Credit: Cash in Transit (1015)
-            await this.createVerificationGLEntry(tx, updated, verifierId);
+            await this.createVerificationGLEntry(tx as any, updated, verifierId);
 
             logger.info(`Collection ${collectionId} verified by user ${verifierId}`);
             return updated;
@@ -83,28 +84,28 @@ export class AgentReconciliationService {
         collection: any,
         userId: number
     ) {
-        const entryNumber = await this.generateEntryNumber(tx);
-        const amount = new Prisma.Decimal(collection.amount);
+        const entryNumber = await GLUtils.generateEntryNumber(tx);
+        const amount = new Prisma.Decimal(collection.amount.toString());
 
         await tx.journalEntry.create({
             data: {
                 entryNumber,
                 entryDate: new Date(),
                 description: `Collection verification - Order #${collection.orderId}`,
-                sourceType: 'agent_collection',
+                sourceType: JournalSourceType.agent_collection,
                 sourceId: collection.id,
                 createdBy: userId,
                 transactions: {
                     create: [
                         {
-                            accountId: parseInt(GL_ACCOUNTS.AR_AGENTS),
+                            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS),
                             debitAmount: amount,
-                            creditAmount: 0,
+                            creditAmount: new Prisma.Decimal(0),
                             description: `Agent AR for collection ${collection.id}`,
                         },
                         {
-                            accountId: parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT),
-                            debitAmount: 0,
+                            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
+                            debitAmount: new Prisma.Decimal(0),
                             creditAmount: amount,
                             description: `Moving cash from transit to agent AR`,
                         },
@@ -160,19 +161,15 @@ export class AgentReconciliationService {
 
     /**
      * Bulk verify collections
-     * Optimized to use a single transaction for better performance and atomicity
+     * Atomic: rolls back entirely if any verification fails
      */
     async bulkVerifyCollections(collectionIds: number[], verifierId: number) {
         return await prisma.$transaction(async (tx) => {
             const results = [];
             for (const id of collectionIds) {
-                try {
-                    // Call verifyCollection logic but with the current transaction context
-                    const result = await this.verifyCollectionInternal(tx, id, verifierId);
-                    results.push({ id, success: true, result });
-                } catch (error: any) {
-                    results.push({ id, success: false, error: error.message });
-                }
+                // Fail fast - any error will roll back the transaction
+                const result = await this.verifyCollectionInternal(tx, id, verifierId);
+                results.push(result);
             }
             return results;
         });
@@ -212,13 +209,6 @@ export class AgentReconciliationService {
         return updated;
     }
 
-    /**
-     * Helper to generate JE number
-     * @deprecated Use GLUtils.generateEntryNumber(tx) instead
-     */
-    private async generateEntryNumber(tx: any): Promise<string> {
-        return GLUtils.generateEntryNumber(tx);
-    }
 }
 
 export default new AgentReconciliationService();

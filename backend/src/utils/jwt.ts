@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
 import { JWTPayload } from '../types';
 
 // Enforce environment variables - no defaults for security

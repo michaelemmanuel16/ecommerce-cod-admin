@@ -1,6 +1,6 @@
+import { Prisma, DeliveryProofType } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { DeliveryProofType, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService } from './glAutomationService';
@@ -337,6 +337,8 @@ export class DeliveryService {
         where: { id: delivery.orderId },
         include: {
           customer: true,
+          deliveryAgent: true,
+          customerRep: true,
           orderItems: {
             include: {
               product: true
@@ -366,9 +368,9 @@ export class DeliveryService {
 
       const glEntry = await GLAutomationService.createRevenueRecognitionEntry(
         tx as any,
-        orderWithItems,
+        orderWithItems as any,
         totalCOGS,
-        userId ? parseInt(userId, 10) : SYSTEM_USER_ID // Default to system user ID if not provided
+        userId ? parseInt(userId, 10) : SYSTEM_USER_ID
       );
 
       // Update order with revenue recognized flag and GL entry link

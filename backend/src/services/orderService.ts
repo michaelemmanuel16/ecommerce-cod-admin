@@ -1,6 +1,6 @@
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { Prisma, OrderStatus, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
@@ -15,7 +15,7 @@ import {
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { SYSTEM_USER_ID } from '../config/constants';
-import { GLAutomationService } from './glAutomationService';
+import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
 
 interface CreateOrderData {
   customerId?: number;
@@ -813,9 +813,16 @@ export class OrderService {
         const latestEntry = await tx.journalEntry.findFirst({
           where: {
             sourceId: (orderId as any),
-            sourceType: 'order_delivery' as any,
+            sourceType: JournalSourceType.order_delivery,
             reversedBy: null,
             voidedBy: null
+          },
+          include: {
+            transactions: {
+              include: {
+                account: true
+              }
+            }
           },
           orderBy: { createdAt: 'desc' }
         });
@@ -829,6 +836,8 @@ export class OrderService {
           where: { id: orderId },
           include: {
             customer: true,
+            deliveryAgent: true,
+            customerRep: true,
             orderItems: {
               include: { product: true }
             }
@@ -836,19 +845,17 @@ export class OrderService {
         });
 
         if (orderWithItems && latestEntry) {
-          // Create return reversal GL entry
           glEntry = await GLAutomationService.createReturnReversalEntry(
-            (tx as any),
-            orderWithItems,
-            latestEntry,
-            data.changedBy || SYSTEM_USER_ID,
-            undefined // No return processing fee
+            tx as any,
+            orderWithItems as any,
+            latestEntry as JournalEntryWithTransactions,
+            data.changedBy || SYSTEM_USER_ID
           );
 
           // Restore inventory
           await GLAutomationService.restoreInventory((tx as any), (orderWithItems as any).orderItems);
 
-          logger.info(`GL reversal entry created for returned order ${orderId}: ${glEntry.entryNumber}`);
+          logger.info(`GL reversal entry created for returned order ${orderId}: ${glEntry.entryNumber} `);
         }
       }
 
@@ -1135,12 +1142,12 @@ export class OrderService {
         }, 'order');
 
         if (!isOwner) {
-          throw new AppError(`You do not have permission to delete order #${order.id}`, 403);
+          throw new AppError(`You do not have permission to delete order #${order.id} `, 403);
         }
       }
 
       if (order.status === 'delivered') {
-        throw new AppError(`Cannot delete delivered order #${order.id}`, 400);
+        throw new AppError(`Cannot delete delivered order #${order.id} `, 400);
       }
     }
 
@@ -1168,7 +1175,7 @@ export class OrderService {
       historyData.push({
         orderId: order.id,
         status: order.status,
-        notes: `Order deleted in bulk by user ${userId || 'system'}`,
+        notes: `Order deleted in bulk by user ${userId || 'system'} `,
         changedBy: userId
       });
     }
@@ -1223,7 +1230,7 @@ export class OrderService {
       emitOrdersDeleted(ioInstance as any, actualOrderIds);
     }
 
-    logger.info(`Bulk orders soft deleted: ${actualOrderIds.join(', ')}`, {
+    logger.info(`Bulk orders soft deleted: ${actualOrderIds.join(', ')} `, {
       orderIds: actualOrderIds,
       userId
     });
@@ -1263,7 +1270,7 @@ export class OrderService {
         orderHistory: {
           create: {
             status: order.status,
-            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName}`,
+            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName} `,
             changedBy: requester.id,
             metadata: { assignedRepId: customerRepId }
           }
@@ -1280,7 +1287,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Customer rep assigned to order: ${order.id}`, {
+    logger.info(`Customer rep assigned to order: ${order.id} `, {
       orderId,
       repId: customerRepId,
       changedBy: requester.id
@@ -1342,7 +1349,7 @@ export class OrderService {
         orderHistory: {
           create: {
             status: order.status,
-            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName}`,
+            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName} `,
             changedBy: requester.id,
             metadata: { assignedAgentId: deliveryAgentId }
           }
@@ -1359,7 +1366,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Delivery agent assigned to order: ${order.id}`, {
+    logger.info(`Delivery agent assigned to order: ${order.id} `, {
       orderId,
       agentId: deliveryAgentId,
       changedBy: requester.id

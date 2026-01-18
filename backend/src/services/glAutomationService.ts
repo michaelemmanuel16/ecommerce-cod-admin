@@ -10,9 +10,10 @@
  * All methods are designed to be called from within Prisma transactions to ensure atomicity.
  */
 
-import { Prisma, Order, OrderItem, Product, Delivery, Customer, User } from '@prisma/client';
+import { Prisma, Order, OrderItem, Product, Delivery, Customer, User, JournalEntry, AccountTransaction, JournalSourceType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GL_ACCOUNTS, GL_DEFAULTS } from '../config/glAccounts';
+import { GLAccountService } from './glAccountService';
 import logger from '../utils/logger';
 import prisma from '../utils/prisma';
 import { GLUtils } from '../utils/glUtils';
@@ -24,27 +25,50 @@ import { GLUtils } from '../utils/glUtils';
 // Type for order items with product information
 type OrderItemWithProduct = OrderItem & { product: Product };
 
-// Type for orders with items and products
+// Type for orders with items and products (now strictly required for GL automation)
 export interface OrderWithItems extends Order {
   orderItems: OrderItemWithProduct[];
   customer: Customer;
-  deliveryAgent?: User | null;
-  customerRep?: User | null;
+  deliveryAgent: User | null;
+  customerRep: User | null;
 }
+
+// Interface for transaction data before creation
+interface TransactionCreateData {
+  accountId: number;
+  debitAmount: Decimal;
+  creditAmount: Decimal;
+  description: string;
+}
+
+// Interface for journal entry data before creation
+interface JournalEntryCreateData {
+  entryDate: Date;
+  description: string;
+  sourceType: JournalSourceType;
+  sourceId: number;
+  createdBy: number;
+  transactions: {
+    create: TransactionCreateData[];
+  };
+}
+
+// Type for journal entry with its transactions and account info
+export type JournalEntryWithTransactions = JournalEntry & {
+  transactions: (AccountTransaction & {
+    account: {
+      id: number;
+      code: string;
+      name: string;
+    };
+  })[];
+};
 
 /**
  * GL Automation Service
  * Static methods for creating automated GL entries
  */
 export class GLAutomationService {
-  /**
-   * Generate unique journal entry number
-   * @deprecated Use GLUtils.generateEntryNumber(tx) instead
-   */
-  private static async generateEntryNumber(tx: Prisma.TransactionClient): Promise<string> {
-    return GLUtils.generateEntryNumber(tx);
-  }
-
   /**
    * Create journal entry with retry logic for handling race conditions
    *
@@ -54,15 +78,15 @@ export class GLAutomationService {
    */
   private static async createJournalEntryWithRetry(
     tx: Prisma.TransactionClient,
-    data: any
-  ): Promise<any> {
+    data: JournalEntryCreateData
+  ): Promise<JournalEntryWithTransactions> {
     const maxRetries = 5;
     let retries = 0;
     let lastError: any;
 
     while (retries < maxRetries) {
       try {
-        const entryNumber = await this.generateEntryNumber(tx);
+        const entryNumber = await GLUtils.generateEntryNumber(tx);
         return await tx.journalEntry.create({
           data: {
             ...data,
@@ -71,17 +95,11 @@ export class GLAutomationService {
           include: {
             transactions: {
               include: {
-                account: {
-                  select: {
-                    id: true,
-                    code: true,
-                    name: true,
-                  },
-                },
-              },
-            },
-          },
-        });
+                account: true
+              }
+            }
+          }
+        }) as JournalEntryWithTransactions;
       } catch (error: any) {
         lastError = error;
         // P2002 is Prisma's code for unique constraint violation
@@ -164,107 +182,82 @@ export class GLAutomationService {
     order: OrderWithItems,
     totalCOGS: Decimal,
     userId: number
-  ): Promise<any> {
-    const orderData = order as any;
-    const orderAmount = new Decimal(orderData.totalAmount);
+  ): Promise<JournalEntryWithTransactions> {
+    const orderAmount = new Decimal(order.totalAmount.toString());
 
-    // Fetch delivery agent's commission (stored in commissionAmount as fixed amount)
-    const deliveryAgent = order.deliveryAgentId
-      ? await tx.user.findUnique({
-        where: { id: order.deliveryAgentId },
-        select: { id: true, commissionAmount: true } as any,
-      })
-      : null;
+    const deliveryAgent = order.deliveryAgent;
+    const salesRep = order.customerRep;
 
-    // Fetch sales rep's commission (stored in commissionAmount as fixed amount)
-    const salesRep = order.customerRepId
-      ? await tx.user.findUnique({
-        where: { id: order.customerRepId },
-        select: { id: true, commissionAmount: true } as any,
-      })
-      : null;
-
-    // Commission amounts (stored in commissionAmount field as fixed amounts)
-    const deliveryCommission = deliveryAgent
-      ? (new Decimal((deliveryAgent as any).commissionAmount || 0))
+    const deliveryCommission: Decimal = deliveryAgent?.commissionAmount
+      ? new Decimal(deliveryAgent.commissionAmount.toString())
       : new Decimal(0);
-
-    const salesRepCommission = salesRep
-      ? (new Decimal((salesRep as any).commissionAmount || 0))
+    const salesRepCommission: Decimal = salesRep?.commissionAmount
+      ? new Decimal(salesRep.commissionAmount.toString())
       : new Decimal(0);
 
     // Calculate net cash company receives (order total - both commissions)
-    const totalCommissions = deliveryCommission.plus(salesRepCommission);
-    const cashInTransit = orderAmount.minus(totalCommissions);
+    const totalCommissions: Decimal = deliveryCommission.plus(salesRepCommission);
+    const cashInTransit: Decimal = orderAmount.minus(totalCommissions);
 
     // Build journal entry transactions
-    const transactions: any[] = [
+    const transactions: TransactionCreateData[] = [
       {
-        accountId: parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT),
-        debitAmount: cashInTransit.toString(),
-        creditAmount: '0',
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
+        debitAmount: cashInTransit,
+        creditAmount: new Decimal(0),
         description: `Cash from delivered order ${order.id} (net of commissions)`,
       },
       {
-        accountId: parseInt(GL_ACCOUNTS.PRODUCT_REVENUE),
-        debitAmount: '0',
-        creditAmount: orderAmount.toString(),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PRODUCT_REVENUE),
+        debitAmount: new Decimal(0),
+        creditAmount: orderAmount,
         description: 'Product sales revenue',
       },
     ];
 
-    // Add delivery agent commission expense if applicable
     if (deliveryCommission.greaterThan(0)) {
       transactions.push({
-        accountId: parseInt(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
-        debitAmount: deliveryCommission.toString(),
-        creditAmount: '0',
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
+        debitAmount: deliveryCommission,
+        creditAmount: new Decimal(0),
         description: 'Delivery agent commission expense',
       });
     }
 
-    // Add sales rep commission expense if applicable
     if (salesRepCommission.greaterThan(0)) {
       transactions.push({
-        accountId: parseInt(GL_ACCOUNTS.SALES_REP_COMMISSION),
-        debitAmount: salesRepCommission.toString(),
-        creditAmount: '0',
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION),
+        debitAmount: salesRepCommission,
+        creditAmount: new Decimal(0),
         description: 'Sales representative commission expense',
       });
     }
 
-    // Add COGS and inventory lines if COGS exceeds threshold
     if (totalCOGS.greaterThan(new Decimal(GL_DEFAULTS.MIN_COGS_THRESHOLD))) {
       transactions.push(
         {
-          accountId: parseInt(GL_ACCOUNTS.COGS),
-          debitAmount: totalCOGS.toString(),
-          creditAmount: '0',
+          accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COGS),
+          debitAmount: totalCOGS,
+          creditAmount: new Decimal(0),
           description: 'Cost of goods sold',
         },
         {
-          accountId: parseInt(GL_ACCOUNTS.INVENTORY),
-          debitAmount: '0',
-          creditAmount: totalCOGS.toString(),
+          accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.INVENTORY),
+          debitAmount: new Decimal(0),
+          creditAmount: totalCOGS,
           description: 'Inventory reduction',
         }
       );
     }
 
-    // Create journal entry with retry logic
     return await this.createJournalEntryWithRetry(tx, {
       entryDate: new Date(),
       description: `Revenue recognition - Order #${order.id}`,
-      sourceType: 'order_delivery',
+      sourceType: JournalSourceType.order_delivery,
       sourceId: order.id,
       createdBy: userId,
       transactions: {
-        create: transactions.map(txn => ({
-          accountId: txn.accountId,
-          debitAmount: new Prisma.Decimal(txn.debitAmount),
-          creditAmount: new Prisma.Decimal(txn.creditAmount),
-          description: txn.description,
-        })),
+        create: transactions,
       },
     });
   }
@@ -287,39 +280,33 @@ export class GLAutomationService {
     delivery: Delivery,
     order: Order,
     userId: number
-  ): Promise<any> {
+  ): Promise<JournalEntryWithTransactions> {
     // Use default failed delivery fee as operational cost
     const expenseAmount = new Decimal(GL_DEFAULTS.FAILED_DELIVERY_FEE);
 
-    const transactions = [
+    const transactions: TransactionCreateData[] = [
       {
-        accountId: parseInt(GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE),
-        debitAmount: expenseAmount.toString(),
-        creditAmount: '0',
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE),
+        debitAmount: expenseAmount,
+        creditAmount: new Decimal(0),
         description: `Failed delivery - Order #${order.id}`,
       },
       {
-        accountId: parseInt(GL_ACCOUNTS.CASH_IN_HAND),
-        debitAmount: '0',
-        creditAmount: expenseAmount.toString(),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
+        debitAmount: new Decimal(0),
+        creditAmount: expenseAmount,
         description: 'Cash impact of failed delivery',
       },
     ];
 
-    // Create journal entry with retry logic
     return await this.createJournalEntryWithRetry(tx, {
       entryDate: new Date(),
       description: `Failed delivery expense - Order #${order.id}`,
-      sourceType: 'order_delivery',
+      sourceType: JournalSourceType.order_delivery,
       sourceId: delivery.id,
       createdBy: userId,
       transactions: {
-        create: transactions.map(txn => ({
-          accountId: txn.accountId,
-          debitAmount: new Prisma.Decimal(txn.debitAmount),
-          creditAmount: new Prisma.Decimal(txn.creditAmount),
-          description: txn.description,
-        })),
+        create: transactions,
       },
     });
   }
@@ -347,131 +334,106 @@ export class GLAutomationService {
   static async createReturnReversalEntry(
     tx: Prisma.TransactionClient,
     order: OrderWithItems,
-    originalEntry: any,
+    originalEntry: JournalEntryWithTransactions,
     userId: number,
     returnProcessingFee?: number
-  ): Promise<any> {
-    const orderAmount = new Decimal(order.totalAmount);
+  ): Promise<JournalEntryWithTransactions> {
+    const orderAmount = new Decimal(order.totalAmount.toString());
 
-    // Fetch delivery agent's commission (same as original entry)
-    const deliveryAgent = order.deliveryAgentId
-      ? await tx.user.findUnique({
-        where: { id: order.deliveryAgentId },
-        select: { id: true, commissionAmount: true } as any,
-      })
-      : null;
+    const deliveryAgent = order.deliveryAgent;
+    const salesRep = order.customerRep;
 
-    // Fetch sales rep's commission (same as original entry)
-    const salesRep = order.customerRepId
-      ? await tx.user.findUnique({
-        where: { id: order.customerRepId },
-        select: { id: true, commissionAmount: true } as any,
-      })
-      : null;
-
-    // Commission amounts (same as original entry)
-    const deliveryCommission = deliveryAgent
-      ? (new Decimal((deliveryAgent as any).commissionAmount || 0))
+    const deliveryCommission: Decimal = deliveryAgent?.commissionAmount
+      ? new Decimal(deliveryAgent.commissionAmount.toString())
       : new Decimal(0);
-
-    const salesRepCommission = salesRep
-      ? (new Decimal((salesRep as any).commissionAmount || 0))
+    const salesRepCommission: Decimal = salesRep?.commissionAmount
+      ? new Decimal(salesRep.commissionAmount.toString())
       : new Decimal(0);
 
     // Calculate net cash (same as original entry)
-    const totalCommissions = deliveryCommission.plus(salesRepCommission);
-    const cashInTransit = orderAmount.minus(totalCommissions);
+    const totalCommissions: Decimal = deliveryCommission.plus(salesRepCommission);
+    const cashInTransit: Decimal = orderAmount.minus(totalCommissions);
 
     // Calculate total COGS to determine if we need to reverse COGS/inventory
     const totalCOGS = this.calculateTotalCOGS(order.orderItems);
 
     // Build reversal transactions (flip debits/credits from original entry)
-    const transactions: any[] = [
+    const transactions: TransactionCreateData[] = [
       {
-        accountId: parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT),
-        debitAmount: '0',
-        creditAmount: cashInTransit.toString(),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
+        debitAmount: new Decimal(0),
+        creditAmount: cashInTransit,
         description: 'Cash in transit reversal',
       },
       {
-        accountId: parseInt(GL_ACCOUNTS.PRODUCT_REVENUE),
-        debitAmount: orderAmount.toString(),
-        creditAmount: '0',
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PRODUCT_REVENUE),
+        debitAmount: orderAmount,
+        creditAmount: new Decimal(0),
         description: 'Product revenue reversal',
       },
     ];
 
-    // Reverse delivery agent commission expense if applicable
     if (deliveryCommission.greaterThan(0)) {
       transactions.push({
-        accountId: parseInt(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
-        debitAmount: '0',
-        creditAmount: deliveryCommission.toString(),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
+        debitAmount: new Decimal(0),
+        creditAmount: deliveryCommission,
         description: 'Delivery agent commission reversal',
       });
     }
 
-    // Reverse sales rep commission expense if applicable
     if (salesRepCommission.greaterThan(0)) {
       transactions.push({
-        accountId: parseInt(GL_ACCOUNTS.SALES_REP_COMMISSION),
-        debitAmount: '0',
-        creditAmount: salesRepCommission.toString(),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION),
+        debitAmount: new Decimal(0),
+        creditAmount: salesRepCommission,
         description: 'Sales representative commission reversal',
       });
     }
 
-    // Reverse COGS and restore inventory if COGS was recorded
     if (totalCOGS.greaterThan(new Decimal(GL_DEFAULTS.MIN_COGS_THRESHOLD))) {
       transactions.push(
         {
-          accountId: parseInt(GL_ACCOUNTS.INVENTORY),
-          debitAmount: totalCOGS.toString(),
-          creditAmount: '0',
+          accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.INVENTORY),
+          debitAmount: totalCOGS,
+          creditAmount: new Decimal(0),
           description: 'Inventory restoration',
         },
         {
-          accountId: parseInt(GL_ACCOUNTS.COGS),
-          debitAmount: '0',
-          creditAmount: totalCOGS.toString(),
+          accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COGS),
+          debitAmount: new Decimal(0),
+          creditAmount: totalCOGS,
           description: 'COGS reversal',
         }
       );
     }
 
-    // Add return processing expense if provided
     if (returnProcessingFee && returnProcessingFee > 0) {
       const processingFee = new Decimal(returnProcessingFee);
       transactions.push(
         {
-          accountId: parseInt(GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE),
-          debitAmount: processingFee.toString(),
-          creditAmount: '0',
+          accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE),
+          debitAmount: processingFee,
+          creditAmount: new Decimal(0),
           description: 'Return processing cost',
         },
         {
-          accountId: parseInt(GL_ACCOUNTS.REFUND_LIABILITY),
-          debitAmount: '0',
-          creditAmount: processingFee.toString(),
+          accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.REFUND_LIABILITY),
+          debitAmount: new Decimal(0),
+          creditAmount: processingFee,
           description: 'Customer refund pending',
         }
       );
     }
 
-    // Create journal entry with retry logic
     return await this.createJournalEntryWithRetry(tx, {
       entryDate: new Date(),
       description: `Return reversal - Order #${order.id} (Original JE: ${originalEntry?.entryNumber || 'N/A'})`,
-      sourceType: 'order_return' as any,
+      sourceType: JournalSourceType.order_return,
       sourceId: order.id,
       createdBy: userId,
       transactions: {
-        create: transactions.map(txn => ({
-          accountId: txn.accountId,
-          debitAmount: new Prisma.Decimal(txn.debitAmount),
-          creditAmount: new Prisma.Decimal(txn.creditAmount),
-          description: txn.description,
-        })),
+        create: transactions,
       },
     });
   }
@@ -509,7 +471,7 @@ export class GLAutomationService {
    * @param order - Order to check
    * @returns True if revenue already recognized
    */
-  static isRevenueAlreadyRecognized(order: any): boolean {
+  static isRevenueAlreadyRecognized(order: Order): boolean {
     return (order as any).revenueRecognized === true;
   }
 
@@ -532,16 +494,16 @@ export class GLAutomationService {
    */
   static async verifyGLAccounts(): Promise<boolean> {
     try {
-      const requiredAccounts = Object.values(GL_ACCOUNTS).map(acc => (acc as any).code);
+      const requiredAccountCodes = Object.values(GL_ACCOUNTS);
       const accounts = await prisma.account.findMany({
         where: {
-          code: { in: requiredAccounts }
+          code: { in: [...requiredAccountCodes] }
         },
         select: { code: true }
       });
 
       const foundAccountCodes = new Set(accounts.map(a => a.code));
-      const missingAccounts = requiredAccounts.filter(code => !foundAccountCodes.has(code));
+      const missingAccounts = [...requiredAccountCodes].filter(code => !foundAccountCodes.has(code));
 
       if (missingAccounts.length > 0) {
         logger.error('CRITICAL: Missing required GL accounts in database:', missingAccounts);
