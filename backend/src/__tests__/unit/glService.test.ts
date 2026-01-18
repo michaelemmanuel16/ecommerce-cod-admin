@@ -13,7 +13,7 @@ jest.mock('../../server', () => {
 import { prismaMock } from '../mocks/prisma.mock';
 import glService from '../../services/glService';
 import { AppError } from '../../middleware/errorHandler';
-import { AccountType, NormalBalance } from '@prisma/client';
+import { AccountType, NormalBalance, Prisma } from '@prisma/client';
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
@@ -137,7 +137,7 @@ describe('GLService', () => {
         children: [],
       };
 
-      prismaMock.account.findUnique.mockResolvedValue(mockAccount as any);
+      (prismaMock.account.findUnique as any).mockResolvedValue(mockAccount as any);
 
       const result = await glService.getAccountById('1');
 
@@ -666,7 +666,7 @@ describe('GLService', () => {
         isActive: true,
       };
 
-      prismaMock.account.findUnique.mockResolvedValue(mockAccount as any);
+      (prismaMock.account.findUnique as any).mockResolvedValue(mockAccount as any);
       (prismaMock.account.update as any).mockResolvedValue(mockUpdatedAccount as any);
       (prismaMock.auditLog.create as any).mockResolvedValue({} as any);
 
@@ -692,7 +692,7 @@ describe('GLService', () => {
         isActive: false,
       };
 
-      prismaMock.account.findUnique.mockResolvedValue(mockAccount as any);
+      (prismaMock.account.findUnique as any).mockResolvedValue(mockAccount as any);
       (prismaMock.account.update as any).mockResolvedValue(mockUpdatedAccount as any);
       (prismaMock.auditLog.create as any).mockResolvedValue({} as any);
 
@@ -706,6 +706,163 @@ describe('GLService', () => {
 
       await expect(glService.toggleAccountStatus('999', true, mockUser)).rejects.toThrow(
         new AppError('Account not found', 404)
+      );
+    });
+  });
+
+  describe('createJournalEntry', () => {
+    const entryData = {
+      entryDate: new Date().toISOString(),
+      description: 'Test Entry',
+      sourceType: 'manual' as any,
+      transactions: [
+        { accountId: 1, debitAmount: '100', creditAmount: '0', description: 'Debit' },
+        { accountId: 2, debitAmount: '0', creditAmount: '100', description: 'Credit' }
+      ]
+    };
+
+    it('should create balanced journal entry successfully', async () => {
+      // Mock generateEntryNumber (raw query)
+      (prismaMock.$queryRaw as any).mockResolvedValue([]);
+
+      // Mock account validation
+      (prismaMock.account.findMany as any).mockResolvedValue([
+        { id: 1, isActive: true, name: 'Cash', normalBalance: 'debit' },
+        { id: 2, isActive: true, name: 'Revenue', normalBalance: 'credit' }
+      ]);
+
+      // Mock transaction items
+      const mockCreatedEntry = {
+        id: 10,
+        entryNumber: 'JE-20260117-00001',
+        ...entryData,
+        transactions: [
+          { accountId: 1, debitAmount: new Prisma.Decimal('100'), creditAmount: new Prisma.Decimal('0') },
+          { accountId: 2, debitAmount: new Prisma.Decimal('0'), creditAmount: new Prisma.Decimal('100') }
+        ]
+      };
+      (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
+        return callback(prismaMock);
+      });
+
+      (prismaMock.journalEntry.create as any).mockResolvedValue(mockCreatedEntry);
+      (prismaMock.accountTransaction.createMany as any).mockResolvedValue({ count: 2 });
+      (prismaMock.account.findUnique as any).mockResolvedValue({
+        id: 1,
+        normalBalance: 'debit',
+        currentBalance: new Prisma.Decimal('0')
+      });
+      (prismaMock.account.update as any).mockResolvedValue({});
+      (prismaMock.auditLog.create as any).mockResolvedValue({});
+
+      const result = await glService.createJournalEntry(entryData, mockUser);
+
+      expect(result.id).toBe(10);
+      expect(prismaMock.journalEntry.create).toHaveBeenCalled();
+    });
+
+    it('should reject unbalanced journal entry', async () => {
+      const unbalancedData = {
+        ...entryData,
+        transactions: [
+          { accountId: 1, debitAmount: '100', creditAmount: '0' },
+          { accountId: 2, debitAmount: '0', creditAmount: '90' }
+        ]
+      };
+
+      (prismaMock.account.findMany as any).mockResolvedValue([
+        { id: 1, isActive: true, name: 'Cash' },
+        { id: 2, isActive: true, name: 'Revenue' }
+      ]);
+
+      await expect(glService.createJournalEntry(unbalancedData, mockUser)).rejects.toThrow(
+        /Journal entry not balanced/
+      );
+    });
+
+    it('should reject inactive account', async () => {
+      (prismaMock.account.findMany as any).mockResolvedValue([
+        { id: 1, isActive: false, name: 'Inactive Account' },
+        { id: 2, isActive: true, name: 'Active Account' }
+      ]);
+
+      await expect(glService.createJournalEntry(entryData, mockUser)).rejects.toThrow(
+        /is inactive and cannot be used/
+      );
+    });
+  });
+
+  describe('getAccountLedger - Date Filtering', () => {
+    it('should apply both startDate and endDate filters correctly', async () => {
+      const filters = {
+        startDate: '2026-01-01',
+        endDate: '2026-01-31'
+      };
+
+      (prismaMock.account.findUnique as any).mockResolvedValue({ id: 1, name: 'Cash' });
+      (prismaMock.accountTransaction.findMany as any).mockResolvedValue([]);
+      (prismaMock.accountTransaction.count as any).mockResolvedValue(0);
+
+      await glService.getAccountLedger('1', filters);
+
+      expect(prismaMock.accountTransaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            journalEntry: {
+              entryDate: {
+                gte: new Date(filters.startDate),
+                lte: new Date(filters.endDate)
+              }
+            }
+          })
+        })
+      );
+    });
+  });
+
+  describe('voidJournalEntry', () => {
+    it('should void entry and create reversing entry', async () => {
+      const mockEntry = {
+        id: 10,
+        entryNumber: 'JE-001',
+        description: 'Test',
+        transactions: [
+          { accountId: 1, debitAmount: new Prisma.Decimal('100'), creditAmount: new Prisma.Decimal('0') },
+          { accountId: 2, debitAmount: new Prisma.Decimal('0'), creditAmount: new Prisma.Decimal('100') }
+        ]
+      };
+
+      (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
+        return callback(prismaMock);
+      });
+
+      (prismaMock.journalEntry.findUnique as any).mockResolvedValue(mockEntry);
+      (prismaMock.journalEntry.create as any).mockResolvedValue({
+        id: 11,
+        entryNumber: 'JE-001-REV',
+        transactions: [
+          { accountId: 1, debitAmount: new Prisma.Decimal('0'), creditAmount: new Prisma.Decimal('100') },
+          { accountId: 2, debitAmount: new Prisma.Decimal('100'), creditAmount: new Prisma.Decimal('0') }
+        ]
+      });
+      (prismaMock.accountTransaction.createMany as any).mockResolvedValue({ count: 2 });
+      (prismaMock.journalEntry.update as any).mockResolvedValue({ ...mockEntry, isVoided: true });
+      (prismaMock.account.findUnique as any).mockResolvedValue({
+        id: 1,
+        normalBalance: 'debit',
+        currentBalance: new Prisma.Decimal('0')
+      });
+      (prismaMock.account.update as any).mockResolvedValue({});
+      (prismaMock.auditLog.create as any).mockResolvedValue({});
+
+      const result = await glService.voidJournalEntry('10', 'Mistake', mockUser);
+
+      expect(result.isVoided).toBe(true);
+      expect(prismaMock.journalEntry.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 10 },
+          data: expect.objectContaining({ isVoided: true })
+        })
       );
     });
   });

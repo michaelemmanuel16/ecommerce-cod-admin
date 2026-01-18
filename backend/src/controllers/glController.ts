@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import glService from '../services/glService';
-import { AccountType } from '@prisma/client';
+import { AccountType, JournalSourceType } from '@prisma/client';
 
 export const getAllAccounts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -91,6 +91,104 @@ export const activateAccount = async (req: AuthRequest, res: Response): Promise<
     const { id } = req.params;
     const account = await glService.toggleAccountStatus(id, true, req.user);
     res.json({ account, message: 'Account activated successfully' });
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Journal Entry Controllers
+
+export const createJournalEntry = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { entryDate, description, sourceType, sourceId, transactions } = req.body;
+
+    const entry = await glService.createJournalEntry({
+      entryDate,
+      description,
+      sourceType: sourceType as JournalSourceType,
+      sourceId: sourceId ? parseInt(sourceId, 10) : undefined,
+      transactions
+    }, req.user);
+
+    res.status(201).json({ entry });
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getJournalEntries = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const {
+      sourceType,
+      sourceId,
+      isVoided,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 50
+    } = req.query;
+
+    const result = await glService.getJournalEntries({
+      sourceType: sourceType as JournalSourceType | undefined,
+      sourceId: sourceId ? parseInt(sourceId as string, 10) : undefined,
+      isVoided: isVoided === 'true' ? true : isVoided === 'false' ? false : undefined,
+      startDate: startDate as string | undefined,
+      endDate: endDate as string | undefined,
+      page: Number(page),
+      limit: Number(limit)
+    });
+
+    res.json(result);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getJournalEntry = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const entry = await glService.getJournalEntryById(id);
+    res.json({ entry });
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const voidJournalEntry = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { voidReason } = req.body;
+
+    const entry = await glService.voidJournalEntry(id, voidReason, req.user);
+    res.json({ entry, message: 'Journal entry voided successfully' });
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getAccountBalance = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const balance = await glService.getAccountBalance(id);
+    res.json(balance);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getAccountLedger = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { startDate, endDate, page = 1, limit = 100 } = req.query;
+
+    const result = await glService.getAccountLedger(id, {
+      startDate: startDate as string | undefined,
+      endDate: endDate as string | undefined,
+      page: Number(page),
+      limit: Number(limit)
+    });
+
+    res.json(result);
   } catch (error) {
     throw error;
   }
