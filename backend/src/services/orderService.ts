@@ -1,6 +1,6 @@
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { Prisma, OrderStatus, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
@@ -10,9 +10,12 @@ import {
   emitOrderUpdated,
   emitOrderStatusChanged,
   emitOrdersDeleted,
+  emitGLEntryCreated,
 } from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
+import { SYSTEM_USER_ID } from '../config/constants';
+import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
 
 interface CreateOrderData {
   customerId?: number;
@@ -799,65 +802,128 @@ export class OrderService {
     // Status validation removed - allow any status transition for admin flexibility
     // this.validateStatusTransition(order.status, data.status);
 
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: data.status,
-        orderHistory: {
-          create: {
-            status: data.status,
-            notes: data.notes || `Status changed to ${data.status} `,
-            changedBy: data.changedBy
-          }
-        }
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true,
-            alternatePhone: true,
-            email: true
-          }
-        },
-        customerRep: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            role: true
-          }
-        },
-        deliveryAgent: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true,
-            role: true
-          }
-        },
-        orderItems: {
+    // Handle return status with GL reversal and inventory restoration
+    const isReturnStatus = data.status === 'returned';
+    let glEntry: any = null;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // Handle return reversal if status changed to 'returned' and revenue was recognized
+      if ((order as any).revenueRecognized) {
+        // Find the latest non-reversed order_delivery GL entry for this order
+        const latestEntry = await tx.journalEntry.findFirst({
+          where: {
+            sourceId: (orderId as any),
+            sourceType: JournalSourceType.order_delivery,
+            reversedBy: null,
+            voidedBy: null
+          },
           include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                sku: true
+            transactions: {
+              include: {
+                account: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        if (!latestEntry) {
+          logger.warn(`Order ${orderId} marked as revenue recognized but no active GL entry found.`);
+        }
+
+        // Fetch order with items and products for inventory restoration
+        const orderWithItems = await tx.order.findUnique({
+          where: { id: orderId },
+          include: {
+            customer: true,
+            deliveryAgent: true,
+            customerRep: true,
+            orderItems: {
+              include: { product: true }
+            }
+          }
+        });
+
+        if (orderWithItems && latestEntry) {
+          glEntry = await GLAutomationService.createReturnReversalEntry(
+            tx as any,
+            orderWithItems as any,
+            latestEntry as JournalEntryWithTransactions,
+            data.changedBy || SYSTEM_USER_ID
+          );
+
+          // Restore inventory
+          await GLAutomationService.restoreInventory((tx as any), (orderWithItems as any).orderItems);
+
+          logger.info(`GL reversal entry created for returned order ${orderId}: ${glEntry.entryNumber} `);
+        }
+      }
+
+      // Update order status
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: data.status,
+          ...(isReturnStatus && order.revenueRecognized ? { revenueRecognized: false } : {}),
+          orderHistory: {
+            create: {
+              status: data.status,
+              notes: data.notes || `Status changed to ${data.status} `,
+              changedBy: data.changedBy
+            }
+          }
+        },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true,
+              alternatePhone: true,
+              email: true
+            }
+          },
+          customerRep: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true
+            }
+          },
+          deliveryAgent: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true,
+              role: true
+            }
+          },
+          orderItems: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true
+                }
               }
             }
           }
         }
-      }
+      });
+
+      return updatedOrder;
     });
 
     logger.info(`Order status updated: ${order.id} `, {
       orderId,
       oldStatus: order.status,
-      newStatus: data.status
+      newStatus: data.status,
+      glReversalCreated: !!glEntry
     });
 
     // Emit socket events for real-time updates (non-blocking)
@@ -866,6 +932,15 @@ export class OrderService {
         const ioInstance = getSocketInstance() as any;
         emitOrderUpdated(ioInstance, updated);
         emitOrderStatusChanged(ioInstance, updated, order.status, data.status);
+
+        // Emit GL entry created event for return reversal
+        if (glEntry) {
+          emitGLEntryCreated(ioInstance, glEntry, {
+            orderId: order.id,
+            orderNumber: order.id.toString(),
+            type: 'return_reversal'
+          });
+        }
       } catch (error) {
         logger.error('Failed to emit socket events', { orderId, error });
       }
@@ -1067,12 +1142,12 @@ export class OrderService {
         }, 'order');
 
         if (!isOwner) {
-          throw new AppError(`You do not have permission to delete order #${order.id}`, 403);
+          throw new AppError(`You do not have permission to delete order #${order.id} `, 403);
         }
       }
 
       if (order.status === 'delivered') {
-        throw new AppError(`Cannot delete delivered order #${order.id}`, 400);
+        throw new AppError(`Cannot delete delivered order #${order.id} `, 400);
       }
     }
 
@@ -1100,7 +1175,7 @@ export class OrderService {
       historyData.push({
         orderId: order.id,
         status: order.status,
-        notes: `Order deleted in bulk by user ${userId || 'system'}`,
+        notes: `Order deleted in bulk by user ${userId || 'system'} `,
         changedBy: userId
       });
     }
@@ -1155,7 +1230,7 @@ export class OrderService {
       emitOrdersDeleted(ioInstance as any, actualOrderIds);
     }
 
-    logger.info(`Bulk orders soft deleted: ${actualOrderIds.join(', ')}`, {
+    logger.info(`Bulk orders soft deleted: ${actualOrderIds.join(', ')} `, {
       orderIds: actualOrderIds,
       userId
     });
@@ -1195,7 +1270,7 @@ export class OrderService {
         orderHistory: {
           create: {
             status: order.status,
-            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName}`,
+            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName} `,
             changedBy: requester.id,
             metadata: { assignedRepId: customerRepId }
           }
@@ -1212,7 +1287,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Customer rep assigned to order: ${order.id}`, {
+    logger.info(`Customer rep assigned to order: ${order.id} `, {
       orderId,
       repId: customerRepId,
       changedBy: requester.id
@@ -1274,7 +1349,7 @@ export class OrderService {
         orderHistory: {
           create: {
             status: order.status,
-            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName}`,
+            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName} `,
             changedBy: requester.id,
             metadata: { assignedAgentId: deliveryAgentId }
           }
@@ -1291,7 +1366,7 @@ export class OrderService {
       }
     });
 
-    logger.info(`Delivery agent assigned to order: ${order.id}`, {
+    logger.info(`Delivery agent assigned to order: ${order.id} `, {
       orderId,
       agentId: deliveryAgentId,
       changedBy: requester.id

@@ -130,17 +130,35 @@ describe('Bulk Order Controller', () => {
             );
         });
 
-        it('should respect export limit of 1000 records', async () => {
+        it('should respect export limit of 500 records', async () => {
             mockReq = {
                 query: {},
                 user: { id: 1, role: 'super_admin' }
             } as any;
 
+            const mockOrders = [{
+                id: 1,
+                createdAt: new Date(),
+                customer: { firstName: 'John', lastName: 'Doe', phoneNumber: '1234567890', alternatePhone: '' },
+                deliveryAddress: '123 Main St',
+                deliveryArea: 'Downtown',
+                deliveryState: 'CA',
+                orderItems: [{ product: { name: 'Product 1' }, quantity: 1 }],
+                totalAmount: 100,
+                status: 'pending_confirmation',
+                customerRep: null,
+                deliveryAgent: null,
+                notes: ''
+            }];
+
             (orderService.getAllOrders as jest.Mock).mockResolvedValue({
-                orders: [],
-                total: 0,
-                page: 1,
-                limit: 1000
+                orders: mockOrders,
+                pagination: {
+                    total: 1,
+                    page: 1,
+                    limit: 500,
+                    totalPages: 1
+                }
             });
 
             await bulkOrderController.exportOrders(mockReq as any, mockRes as Response);
@@ -150,6 +168,28 @@ describe('Bulk Order Controller', () => {
                     limit: 500
                 })
             );
+        });
+
+        it('should return 404 when no orders match export criteria', async () => {
+            mockReq = {
+                query: {},
+                user: { id: 1, role: 'super_admin' }
+            } as any;
+
+            (orderService.getAllOrders as jest.Mock).mockResolvedValue({
+                orders: [],
+                pagination: {
+                    total: 0,
+                    page: 1,
+                    limit: 500,
+                    totalPages: 0
+                }
+            });
+
+            await bulkOrderController.exportOrders(mockReq as any, mockRes as Response);
+
+            expect(statusMock).toHaveBeenCalledWith(404);
+            expect(jsonMock).toHaveBeenCalledWith({ message: 'No orders found matching the criteria' });
         });
     });
 

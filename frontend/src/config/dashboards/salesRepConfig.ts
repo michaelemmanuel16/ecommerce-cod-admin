@@ -48,7 +48,7 @@ export const salesRepConfig: DashboardConfig = {
         template: 'From {delivered} delivered orders @ {rate}',
         dataSources: {
           delivered: 'repPerformance.deliveredOrders',
-          rate: 'calculated.commissionRate',
+          rate: 'calculated.commissionAmount',
         },
       },
       trend: {

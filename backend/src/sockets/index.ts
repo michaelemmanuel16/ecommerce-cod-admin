@@ -216,3 +216,53 @@ export function emitTransactionReconciled(io: SocketServer, transaction: any) {
   safeEmit(io, 'role:manager', 'transaction:reconciled', transaction);
   safeEmit(io, 'role:accountant', 'transaction:reconciled', transaction);
 }
+
+export function emitGLEntryCreated(io: SocketServer, entry: any, metadata?: any) {
+  const event = {
+    entry: {
+      id: entry.id,
+      entryNumber: entry.entryNumber,
+      entryDate: entry.entryDate,
+      description: entry.description,
+      sourceType: entry.sourceType,
+      sourceId: entry.sourceId,
+    },
+    metadata,
+    timestamp: new Date()
+  };
+
+  // Emit to roles with GL/financial permission
+  safeEmit(io, 'role:admin', 'gl:entry-created', event);
+  safeEmit(io, 'role:accountant', 'gl:entry-created', event);
+  safeEmit(io, 'role:manager', 'gl:entry-created', event);
+}
+
+export function emitCollectionVerified(io: SocketServer, collection: any) {
+  const event = {
+    id: collection.id,
+    orderId: collection.orderId,
+    amount: collection.amount,
+    status: 'verified',
+    timestamp: new Date()
+  };
+
+  safeEmit(io, 'role:admin', 'collection:verified', event);
+  safeEmit(io, 'role:manager', 'collection:verified', event);
+  safeEmit(io, 'role:accountant', 'collection:verified', event);
+  safeEmit(io, `user:${collection.agentId}`, 'collection:verified', event);
+}
+
+export function emitCollectionApproved(io: SocketServer, collection: any) {
+  const event = {
+    id: collection.id,
+    orderId: collection.orderId,
+    amount: collection.amount,
+    status: 'approved',
+    timestamp: new Date()
+  };
+
+  safeEmit(io, 'role:admin', 'collection:approved', event);
+  safeEmit(io, 'role:manager', 'collection:approved', event);
+  safeEmit(io, 'role:accountant', 'collection:approved', event);
+  safeEmit(io, `user:${collection.agentId}`, 'collection:approved', event);
+}

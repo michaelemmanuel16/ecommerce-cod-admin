@@ -32,7 +32,7 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
         firstName: true,
         lastName: true,
         role: true,
-        commissionRate: true,
+        commissionAmount: true,
         deliveryRate: true,
         createdAt: true
       }
@@ -125,7 +125,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
-        commissionRate: user.commissionRate,
+        commissionAmount: (user as any).commissionAmount || 0,
         deliveryRate: user.deliveryRate
       },
       tokens: {

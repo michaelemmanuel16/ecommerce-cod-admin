@@ -166,7 +166,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
       }
     }
 
-    const agents = await prisma.user.findMany({
+    const agents = (await prisma.user.findMany({
       where,
       select: {
         id: true,
@@ -176,7 +176,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         vehicleType: true,
         vehicleId: true,
         deliveryRate: true,
-        commissionRate: true,
+        commissionAmount: true,
         totalEarnings: true,
         location: true,
         country: true,
@@ -187,13 +187,13 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
             status: true
           }
         }
-      }
-    });
+      } as any
+    })) as any[];
 
     const performance = agents.map(agent => {
       const total = agent.assignedOrdersAsAgent.length;
-      const delivered = agent.assignedOrdersAsAgent.filter(o => o.status === 'delivered').length;
-      const pending = agent.assignedOrdersAsAgent.filter(o =>
+      const delivered = agent.assignedOrdersAsAgent.filter((o: any) => o.status === 'delivered').length;
+      const pending = agent.assignedOrdersAsAgent.filter((o: any) =>
         !['delivered', 'cancelled', 'returned'].includes(o.status)
       ).length;
 

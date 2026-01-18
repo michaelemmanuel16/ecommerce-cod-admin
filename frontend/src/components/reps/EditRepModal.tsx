@@ -13,7 +13,7 @@ const editRepSchema = z.object({
   email: z.string().email('Invalid email address'),
   phoneNumber: z.string().min(1, 'Phone number is required'),
   country: z.string().min(1, 'Country is required'),
-  commissionRate: z.number().min(0, 'Commission must be 0 or greater'),
+  commissionAmount: z.number().min(0, 'Commission must be 0 or greater'),
   isActive: z.boolean(),
 });
 
@@ -70,7 +70,7 @@ export const EditRepModal: React.FC<EditRepModalProps> = ({
         email: rep.email,
         phoneNumber: rep.phoneNumber,
         country: rep.country,
-        commissionRate: rep.commissionRate,
+        commissionAmount: rep.commissionAmount,
         isActive: rep.isActive,
       });
     }
@@ -162,12 +162,12 @@ export const EditRepModal: React.FC<EditRepModalProps> = ({
             type="number"
             step="0.01"
             min="0"
-            {...register('commissionRate', { valueAsNumber: true })}
+            {...register('commissionAmount', { valueAsNumber: true })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="50.00"
           />
-          {errors.commissionRate && (
-            <p className="text-sm text-red-600 mt-1">{errors.commissionRate.message}</p>
+          {errors.commissionAmount && (
+            <p className="text-sm text-red-600 mt-1">{errors.commissionAmount.message}</p>
           )}
           <p className="text-sm text-gray-500 mt-1">
             Representative will earn this amount for each successful delivery
@@ -184,14 +184,12 @@ export const EditRepModal: React.FC<EditRepModalProps> = ({
           <button
             type="button"
             onClick={() => setValue('isActive', !isActive)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-              isActive ? 'bg-blue-600' : 'bg-gray-300'
-            }`}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isActive ? 'bg-blue-600' : 'bg-gray-300'
+              }`}
           >
             <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                isActive ? 'translate-x-6' : 'translate-x-1'
-              }`}
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isActive ? 'translate-x-6' : 'translate-x-1'
+                }`}
             />
           </button>
         </div>

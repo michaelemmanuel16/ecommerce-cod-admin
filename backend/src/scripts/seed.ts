@@ -268,7 +268,7 @@ async function seed() {
         lastName: randomElement(lastNames),
         phoneNumber: randomPhone(),
         role: 'sales_rep',
-        commissionRate: 5 + random() * 5, // 5-10%
+        commissionAmount: 5 + random() * 5, // 5-10
         isActive: true,
         isAvailable: random() > 0.2, // 80% available
       }
