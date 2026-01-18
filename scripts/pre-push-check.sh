@@ -47,7 +47,7 @@ run_check "Backend ESLint" "cd backend && npm run lint"
 run_check "Frontend ESLint" "cd frontend && npm run lint"
 
 # 3. Backend Tests
-run_check "Backend Tests" "cd backend && npm test -- --passWithNoTests"
+run_check "Backend Tests" "cd backend && npm test -- --passWithNoTests --runInBand"
 
 # 4. Frontend Tests
 run_check "Frontend Tests" "cd frontend && npm test -- --run"

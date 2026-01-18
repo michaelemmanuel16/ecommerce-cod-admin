@@ -14,6 +14,7 @@ import {
 } from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
+import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService } from './glAutomationService';
 
 interface CreateOrderData {
@@ -807,32 +808,44 @@ export class OrderService {
 
     const updated = await prisma.$transaction(async (tx) => {
       // Handle return reversal if status changed to 'returned' and revenue was recognized
-      if (isReturnStatus && order.revenueRecognized) {
-        // Fetch order with items and products for GL reversal
+      if ((order as any).revenueRecognized) {
+        // Find the latest non-reversed order_delivery GL entry for this order
+        const latestEntry = await tx.journalEntry.findFirst({
+          where: {
+            sourceId: (orderId as any),
+            sourceType: 'order_delivery' as any,
+            reversedBy: null,
+            voidedBy: null
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        if (!latestEntry) {
+          logger.warn(`Order ${orderId} marked as revenue recognized but no active GL entry found.`);
+        }
+
+        // Fetch order with items and products for inventory restoration
         const orderWithItems = await tx.order.findUnique({
           where: { id: orderId },
           include: {
             orderItems: {
-              include: {
-                product: true
-              }
-            },
-            glJournalEntry: true
+              include: { product: true }
+            }
           }
         });
 
-        if (orderWithItems) {
+        if (orderWithItems && latestEntry) {
           // Create return reversal GL entry
           glEntry = await GLAutomationService.createReturnReversalEntry(
-            tx,
+            (tx as any),
             orderWithItems,
-            orderWithItems.glJournalEntry,
-            data.changedBy || 1,
-            undefined // No return processing fee - can be added manually later
+            latestEntry,
+            data.changedBy || SYSTEM_USER_ID,
+            undefined // No return processing fee
           );
 
           // Restore inventory
-          await GLAutomationService.restoreInventory(tx, orderWithItems.orderItems);
+          await GLAutomationService.restoreInventory((tx as any), (orderWithItems as any).orderItems);
 
           logger.info(`GL reversal entry created for returned order ${orderId}: ${glEntry.entryNumber}`);
         }

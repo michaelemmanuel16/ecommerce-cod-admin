@@ -17,13 +17,14 @@ model User {
   isAvailable           Boolean        @default(true) @map("is_available")
   lastLogin             DateTime?      @map("last_login")
   refreshToken          String?        @map("refresh_token")
-  commissionRate        Float?         @default(0) @map("commission_rate")
+  commissionAmount      Float?         @default(0) @map("commission_amount")
   country               String?
   preferences           Json?
   vehicleType           String?        @map("vehicle_type")
   vehicleId             String?        @map("vehicle_id")
   deliveryRate          Float?         @default(0) @map("delivery_rate")
   totalEarnings         Float?         @default(0) @map("total_earnings")
+  totalCollected        Decimal        @default(0) @map("total_collected") @db.Decimal(19, 4)
   location              String?
   createdAt             DateTime       @default(now()) @map("created_at")
   updatedAt             DateTime       @updatedAt @map("updated_at")
@@ -40,6 +41,9 @@ model User {
   auditLogs             AuditLog[]
   journalEntriesCreated JournalEntry[] @relation("JournalEntryCreator")
   journalEntriesVoided  JournalEntry[] @relation("VoidedByUser")
+  collections           AgentCollection[] @relation("AgentCollections")
+  verifiedCollections   AgentCollection[] @relation("VerifiedCollections")
+  approvedCollections   AgentCollection[] @relation("ApprovedCollections")
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -146,6 +150,7 @@ model Order {
   transaction       Transaction?
   payout            Payout?          @relation(fields: [payoutId], references: [id])
   glJournalEntry    JournalEntry?    @relation(fields: [glJournalEntryId], references: [id])
+  agentCollection   AgentCollection?
 
   @@index([customerId])
   @@index([status])
@@ -703,4 +708,39 @@ enum JournalSourceType {
   manual
   reversal
   order_return
+  agent_collection
+}
+
+model AgentCollection {
+  id             Int              @id @default(autoincrement())
+  orderId        Int              @unique @map("order_id")
+  agentId        Int              @map("agent_id")
+  amount         Decimal          @map("amount") @db.Decimal(19, 4)
+  status         CollectionStatus @default(draft)
+  collectionDate DateTime         @map("collection_date")
+  verifiedAt     DateTime?        @map("verified_at")
+  verifiedById   Int?             @map("verified_by_id")
+  approvedAt     DateTime?        @map("approved_at")
+  approvedById   Int?             @map("approved_by_id")
+  notes          String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  order    Order @relation(fields: [orderId], references: [id])
+  agent    User  @relation("AgentCollections", fields: [agentId], references: [id])
+  verifier User? @relation("VerifiedCollections", fields: [verifiedById], references: [id])
+  approver User? @relation("ApprovedCollections", fields: [approvedById], references: [id])
+
+  @@index([agentId])
+  @@index([status])
+  @@index([collectionDate])
+  @@map("agent_collections")
+}
+
+enum CollectionStatus {
+  draft
+  verified
+  approved
+  deposited
+  reconciled
 }

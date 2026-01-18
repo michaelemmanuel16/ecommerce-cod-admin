@@ -2,7 +2,9 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { DeliveryProofType, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
+import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService } from './glAutomationService';
+import agentReconciliationService from './agentReconciliationService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitGLEntryCreated } from '../sockets/index';
 
@@ -361,12 +363,11 @@ export class DeliveryService {
         GLAutomationService.logMissingCOGS(orderWithItems.id, cogsValidation.missingProducts);
       }
 
-      // Create GL journal entry for revenue recognition
       const glEntry = await GLAutomationService.createRevenueRecognitionEntry(
-        tx,
+        tx as any,
         orderWithItems,
         totalCOGS,
-        userId ? parseInt(userId, 10) : 1 // Default to system user ID if not provided
+        userId ? parseInt(userId, 10) : SYSTEM_USER_ID // Default to system user ID if not provided
       );
 
       // Update order with revenue recognized flag and GL entry link
@@ -379,6 +380,17 @@ export class DeliveryService {
       });
 
       logger.info(`GL entry created for order ${orderWithItems.id}: ${glEntry.entryNumber}`);
+
+      // Create draft agent collection record
+      if (orderWithItems.deliveryAgentId && orderWithItems.codAmount) {
+        await agentReconciliationService.createDraftCollection(
+          tx,
+          orderWithItems.id,
+          orderWithItems.deliveryAgentId,
+          orderWithItems.codAmount,
+          updatedDelivery.actualDeliveryTime || new Date()
+        );
+      }
 
       return { delivery: updatedDelivery, glEntry };
     });
@@ -467,18 +479,13 @@ export class DeliveryService {
       // Create GL entry for failed delivery expense (only if not rescheduling)
       let glEntry = null;
       if (!reschedule) {
-        try {
-          glEntry = await GLAutomationService.createFailedDeliveryEntry(
-            tx,
-            updatedDelivery,
-            delivery.order,
-            userId ? parseInt(userId, 10) : 1
-          );
-          logger.info(`GL entry created for failed delivery ${deliveryId}: ${glEntry.entryNumber}`);
-        } catch (error) {
-          logger.error('Failed to create GL entry for failed delivery', { error, deliveryId });
-          // Don't throw - allow delivery failure to be recorded even if GL entry fails
-        }
+        glEntry = await GLAutomationService.createFailedDeliveryEntry(
+          tx as any,
+          updatedDelivery,
+          delivery.order as any, // Cast as any because of potential include mismatches
+          userId ? parseInt(userId, 10) : SYSTEM_USER_ID
+        );
+        logger.info(`GL entry created for failed delivery ${deliveryId}: ${glEntry.entryNumber}`);
       }
 
       return { glEntry };

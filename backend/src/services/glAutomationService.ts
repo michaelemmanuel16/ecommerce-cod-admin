@@ -14,14 +14,17 @@ import { Prisma, Order, OrderItem, Product, Delivery } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GL_ACCOUNTS, GL_DEFAULTS } from '../config/glAccounts';
 import logger from '../utils/logger';
+import prisma from '../utils/prisma';
+// import { SYSTEM_USER_ID } from '../config/constants'; // Commented out unused variable to resolve lint error
+
+// Define JournalSourceType locally if not correctly imported or use string literal
+// type JournalSourceType = 'order_delivery' | 'failed_delivery' | 'order_return' | 'manual' | 'agent_collection'; // Commented out unused type to resolve lint error
 
 // Type for order items with product information
 type OrderItemWithProduct = OrderItem & { product: Product };
 
 // Type for orders with items and products
-type OrderWithItems = Order & {
-  orderItems: OrderItemWithProduct[];
-};
+type OrderWithItems = any; // Flexible type for now to avoid include issues
 
 /**
  * GL Automation Service
@@ -33,7 +36,7 @@ export class GLAutomationService {
    * Format: JE-YYYYMMDD-XXXXX (e.g., JE-20260117-00001)
    * Sequence resets daily
    */
-  private static async generateEntryNumber(tx: any): Promise<string> {
+  private static async generateEntryNumber(tx: Prisma.TransactionClient): Promise<string> {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
 
@@ -50,11 +53,72 @@ export class GLAutomationService {
     let sequence = 1;
     if (result.length > 0) {
       const lastNumber = result[0].entry_number;
-      const lastSequence = parseInt(lastNumber.split('-')[2], 10);
-      sequence = lastSequence + 1;
+      // Handle the case where the entry_number format might be unexpected
+      try {
+        const lastSequence = parseInt(lastNumber.split('-')[2], 10);
+        if (!isNaN(lastSequence)) {
+          sequence = lastSequence + 1;
+        }
+      } catch (e) {
+        logger.warn('Failed to parse last journal entry sequence, starting from 1');
+      }
     }
 
     return `JE-${dateStr}-${sequence.toString().padStart(5, '0')}`;
+  }
+
+  /**
+   * Create journal entry with retry logic for handling race conditions
+   *
+   * @param tx - Prisma transaction client
+   * @param data - Journal entry data (without entryNumber)
+   * @returns Created journal entry with transactions included
+   */
+  private static async createJournalEntryWithRetry(
+    tx: Prisma.TransactionClient,
+    data: any
+  ): Promise<any> {
+    const maxRetries = 5;
+    let retries = 0;
+    let lastError: any;
+
+    while (retries < maxRetries) {
+      try {
+        const entryNumber = await this.generateEntryNumber(tx);
+        return await tx.journalEntry.create({
+          data: {
+            ...data,
+            entryNumber,
+          },
+          include: {
+            transactions: {
+              include: {
+                account: {
+                  select: {
+                    id: true,
+                    code: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+      } catch (error: any) {
+        lastError = error;
+        // P2002 is Prisma's code for unique constraint violation
+        if (error.code === 'P2002' && (error.meta?.target?.includes('entry_number') || error.message?.includes('entry_number'))) {
+          retries++;
+          logger.warn(`Unique constraint violation on journal entry_number, retrying (${retries}/${maxRetries})...`);
+          // Small random delay before retry to reduce contention
+          await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 50) + 10));
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw lastError || new Error(`Failed to create unique journal entry after ${maxRetries} retries`);
   }
 
   /**
@@ -67,7 +131,7 @@ export class GLAutomationService {
     let totalCOGS = new Decimal(0);
 
     for (const item of orderItems) {
-      const productCOGS = item.product.cogs || new Decimal(0);
+      const productCOGS = new Decimal(item.product.cogs || 0);
       const itemCOGS = productCOGS.times(item.quantity);
       totalCOGS = totalCOGS.plus(itemCOGS);
     }
@@ -88,8 +152,8 @@ export class GLAutomationService {
     const missingProducts: string[] = [];
 
     for (const item of orderItems) {
-      const cogs = item.product.cogs;
-      if (!cogs || cogs.equals(0)) {
+      const cogs = new Decimal(item.product.cogs || 0);
+      if (cogs.equals(0)) {
         missingProducts.push(item.product.name);
       }
     }
@@ -118,36 +182,37 @@ export class GLAutomationService {
    * @returns Created journal entry
    */
   static async createRevenueRecognitionEntry(
-    tx: any,
+    tx: Prisma.TransactionClient,
     order: OrderWithItems,
     totalCOGS: Decimal,
     userId: number
   ): Promise<any> {
-    const orderAmount = new Decimal(order.totalAmount);
+    const orderData = order as any;
+    const orderAmount = new Decimal(orderData.totalAmount);
 
-    // Fetch delivery agent's commission (stored in commissionRate as fixed amount)
+    // Fetch delivery agent's commission (stored in commissionAmount as fixed amount)
     const deliveryAgent = order.deliveryAgentId
       ? await tx.user.findUnique({
-          where: { id: order.deliveryAgentId },
-          select: { commissionRate: true },
-        })
+        where: { id: order.deliveryAgentId },
+        select: { id: true, commissionAmount: true } as any,
+      })
       : null;
 
-    // Fetch sales rep's commission (stored in commissionRate as fixed amount)
+    // Fetch sales rep's commission (stored in commissionAmount as fixed amount)
     const salesRep = order.customerRepId
       ? await tx.user.findUnique({
-          where: { id: order.customerRepId },
-          select: { commissionRate: true },
-        })
+        where: { id: order.customerRepId },
+        select: { id: true, commissionAmount: true } as any,
+      })
       : null;
 
-    // Commission amounts (stored in commissionRate field as fixed amounts, not percentages)
-    const deliveryCommission = deliveryAgent?.commissionRate
-      ? new Decimal(deliveryAgent.commissionRate)
+    // Commission amounts (stored in commissionAmount field as fixed amounts)
+    const deliveryCommission = deliveryAgent
+      ? (new Decimal((deliveryAgent as any).commissionAmount || 0))
       : new Decimal(0);
 
-    const salesRepCommission = salesRep?.commissionRate
-      ? new Decimal(salesRep.commissionRate)
+    const salesRepCommission = salesRep
+      ? (new Decimal((salesRep as any).commissionAmount || 0))
       : new Decimal(0);
 
     // Calculate net cash company receives (order total - both commissions)
@@ -208,43 +273,22 @@ export class GLAutomationService {
       );
     }
 
-    // Generate entry number
-    const entryNumber = await this.generateEntryNumber(tx);
-
-    // Create journal entry directly
-    const entry = await tx.journalEntry.create({
-      data: {
-        entryNumber,
-        entryDate: new Date(),
-        description: `Revenue recognition - Order #${order.id}`,
-        sourceType: 'order_delivery',
-        sourceId: order.id,
-        createdBy: userId,
-        transactions: {
-          create: transactions.map(txn => ({
-            accountId: txn.accountId,
-            debitAmount: new Prisma.Decimal(txn.debitAmount),
-            creditAmount: new Prisma.Decimal(txn.creditAmount),
-            description: txn.description,
-          })),
-        },
-      },
-      include: {
-        transactions: {
-          include: {
-            account: {
-              select: {
-                id: true,
-                code: true,
-                name: true,
-              },
-            },
-          },
-        },
+    // Create journal entry with retry logic
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Revenue recognition - Order #${order.id}`,
+      sourceType: 'order_delivery',
+      sourceId: order.id,
+      createdBy: userId,
+      transactions: {
+        create: transactions.map(txn => ({
+          accountId: txn.accountId,
+          debitAmount: new Prisma.Decimal(txn.debitAmount),
+          creditAmount: new Prisma.Decimal(txn.creditAmount),
+          description: txn.description,
+        })),
       },
     });
-
-    return entry;
   }
 
   /**
@@ -261,7 +305,7 @@ export class GLAutomationService {
    * @returns Created journal entry
    */
   static async createFailedDeliveryEntry(
-    tx: any,
+    tx: Prisma.TransactionClient,
     delivery: Delivery,
     order: Order,
     userId: number
@@ -284,43 +328,22 @@ export class GLAutomationService {
       },
     ];
 
-    // Generate entry number
-    const entryNumber = await this.generateEntryNumber(tx);
-
-    // Create journal entry directly
-    const entry = await tx.journalEntry.create({
-      data: {
-        entryNumber,
-        entryDate: new Date(),
-        description: `Failed delivery expense - Order #${order.id}`,
-        sourceType: 'order_delivery',
-        sourceId: delivery.id,
-        createdBy: userId,
-        transactions: {
-          create: transactions.map(txn => ({
-            accountId: txn.accountId,
-            debitAmount: new Prisma.Decimal(txn.debitAmount),
-            creditAmount: new Prisma.Decimal(txn.creditAmount),
-            description: txn.description,
-          })),
-        },
-      },
-      include: {
-        transactions: {
-          include: {
-            account: {
-              select: {
-                id: true,
-                code: true,
-                name: true,
-              },
-            },
-          },
-        },
+    // Create journal entry with retry logic
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Failed delivery expense - Order #${order.id}`,
+      sourceType: 'order_delivery',
+      sourceId: delivery.id,
+      createdBy: userId,
+      transactions: {
+        create: transactions.map(txn => ({
+          accountId: txn.accountId,
+          debitAmount: new Prisma.Decimal(txn.debitAmount),
+          creditAmount: new Prisma.Decimal(txn.creditAmount),
+          description: txn.description,
+        })),
       },
     });
-
-    return entry;
   }
 
   /**
@@ -344,7 +367,7 @@ export class GLAutomationService {
    * @returns Created journal entry
    */
   static async createReturnReversalEntry(
-    tx: any,
+    tx: Prisma.TransactionClient,
     order: OrderWithItems,
     originalEntry: any,
     userId: number,
@@ -355,26 +378,26 @@ export class GLAutomationService {
     // Fetch delivery agent's commission (same as original entry)
     const deliveryAgent = order.deliveryAgentId
       ? await tx.user.findUnique({
-          where: { id: order.deliveryAgentId },
-          select: { commissionRate: true },
-        })
+        where: { id: order.deliveryAgentId },
+        select: { id: true, commissionAmount: true } as any,
+      })
       : null;
 
     // Fetch sales rep's commission (same as original entry)
     const salesRep = order.customerRepId
       ? await tx.user.findUnique({
-          where: { id: order.customerRepId },
-          select: { commissionRate: true },
-        })
+        where: { id: order.customerRepId },
+        select: { id: true, commissionAmount: true } as any,
+      })
       : null;
 
     // Commission amounts (same as original entry)
-    const deliveryCommission = deliveryAgent?.commissionRate
-      ? new Decimal(deliveryAgent.commissionRate)
+    const deliveryCommission = deliveryAgent
+      ? (new Decimal((deliveryAgent as any).commissionAmount || 0))
       : new Decimal(0);
 
-    const salesRepCommission = salesRep?.commissionRate
-      ? new Decimal(salesRep.commissionRate)
+    const salesRepCommission = salesRep
+      ? (new Decimal((salesRep as any).commissionAmount || 0))
       : new Decimal(0);
 
     // Calculate net cash (same as original entry)
@@ -457,43 +480,22 @@ export class GLAutomationService {
       );
     }
 
-    // Generate entry number
-    const entryNumber = await this.generateEntryNumber(tx);
-
-    // Create journal entry directly
-    const entry = await tx.journalEntry.create({
-      data: {
-        entryNumber,
-        entryDate: new Date(),
-        description: `Return reversal - Order #${order.id} (Original JE: ${originalEntry?.entryNumber || 'N/A'})`,
-        sourceType: 'order_return',
-        sourceId: order.id,
-        createdBy: userId,
-        transactions: {
-          create: transactions.map(txn => ({
-            accountId: txn.accountId,
-            debitAmount: new Prisma.Decimal(txn.debitAmount),
-            creditAmount: new Prisma.Decimal(txn.creditAmount),
-            description: txn.description,
-          })),
-        },
-      },
-      include: {
-        transactions: {
-          include: {
-            account: {
-              select: {
-                id: true,
-                code: true,
-                name: true,
-              },
-            },
-          },
-        },
+    // Create journal entry with retry logic
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Return reversal - Order #${order.id} (Original JE: ${originalEntry?.entryNumber || 'N/A'})`,
+      sourceType: 'order_return' as any,
+      sourceId: order.id,
+      createdBy: userId,
+      transactions: {
+        create: transactions.map(txn => ({
+          accountId: txn.accountId,
+          debitAmount: new Prisma.Decimal(txn.debitAmount),
+          creditAmount: new Prisma.Decimal(txn.creditAmount),
+          description: txn.description,
+        })),
       },
     });
-
-    return entry;
   }
 
   /**
@@ -505,7 +507,7 @@ export class GLAutomationService {
    * @param orderItems - Array of order items with product information
    */
   static async restoreInventory(
-    tx: any,
+    tx: Prisma.TransactionClient,
     orderItems: OrderItemWithProduct[]
   ): Promise<void> {
     for (const item of orderItems) {
@@ -529,8 +531,8 @@ export class GLAutomationService {
    * @param order - Order to check
    * @returns True if revenue already recognized
    */
-  static isRevenueAlreadyRecognized(order: Order): boolean {
-    return order.revenueRecognized === true;
+  static isRevenueAlreadyRecognized(order: any): boolean {
+    return (order as any).revenueRecognized === true;
   }
 
   /**
@@ -544,5 +546,35 @@ export class GLAutomationService {
       `Order ${orderId}: Missing COGS for products: ${missingProducts.join(', ')}. ` +
       `Using COGS = 0 for these products. Update product COGS in admin panel.`
     );
+  }
+
+  /**
+   * Verify that all required GL accounts exist in the database
+   * Used at system startup
+   */
+  static async verifyGLAccounts(): Promise<boolean> {
+    try {
+      const requiredAccounts = Object.values(GL_ACCOUNTS).map(acc => (acc as any).code);
+      const accounts = await prisma.account.findMany({
+        where: {
+          code: { in: requiredAccounts }
+        },
+        select: { code: true }
+      });
+
+      const foundAccountCodes = new Set(accounts.map(a => a.code));
+      const missingAccounts = requiredAccounts.filter(code => !foundAccountCodes.has(code));
+
+      if (missingAccounts.length > 0) {
+        logger.error('CRITICAL: Missing required GL accounts in database:', missingAccounts);
+        return false;
+      }
+
+      logger.info('GL accounts validated successfully.');
+      return true;
+    } catch (error) {
+      logger.error('Failed to verify GL accounts:', error);
+      return false;
+    }
   }
 }

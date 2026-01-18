@@ -181,7 +181,7 @@ describe('DeliveryService', () => {
           user: {
             findUnique: jest.fn().mockResolvedValue({
               id: 1,
-              commissionRate: new Decimal(10)
+              commissionAmount: new Decimal(10)
             })
           },
           $queryRaw: jest.fn().mockResolvedValue([])
@@ -259,7 +259,7 @@ describe('DeliveryService', () => {
           user: {
             findUnique: jest.fn().mockResolvedValue({
               id: 1,
-              commissionRate: new Decimal(10)
+              commissionAmount: new Decimal(10)
             })
           },
           $queryRaw: jest.fn().mockResolvedValue([])
@@ -424,7 +424,8 @@ describe('DeliveryService', () => {
           },
           order: {
             update: jest.fn().mockResolvedValue({})
-          }
+          },
+          $queryRaw: jest.fn().mockResolvedValue([])
         });
       });
 
@@ -452,7 +453,14 @@ describe('DeliveryService', () => {
               updatedOrderStatus = args.data.status;
               return Promise.resolve({});
             })
-          }
+          },
+          journalEntry: {
+            create: jest.fn().mockResolvedValue({ id: 1, entryNumber: 'JE-001' })
+          },
+          accountTransaction: {
+            createMany: jest.fn().mockResolvedValue({})
+          },
+          $queryRaw: jest.fn().mockResolvedValue([])
         });
       });
 
@@ -480,7 +488,8 @@ describe('DeliveryService', () => {
               updatedOrderStatus = args.data.status;
               return Promise.resolve({});
             })
-          }
+          },
+          $queryRaw: jest.fn().mockResolvedValue([])
         });
       });
 

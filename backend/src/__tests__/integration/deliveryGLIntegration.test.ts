@@ -46,15 +46,17 @@ describe('Delivery GL Integration', () => {
   });
 
   beforeEach(async () => {
-    // Clean up test data
+    // Clean up test data in correct order to avoid FK issues
     await prisma.accountTransaction.deleteMany({});
     await prisma.journalEntry.deleteMany({});
-    await prisma.account.deleteMany({});
+    await prisma.transaction.deleteMany({});
+    await (prisma as any).agentCollection.deleteMany({});
     await prisma.delivery.deleteMany({});
     await prisma.orderItem.deleteMany({});
     await prisma.order.deleteMany({});
     await prisma.product.deleteMany({});
     await prisma.customer.deleteMany({});
+    await prisma.account.deleteMany({});
     await prisma.user.deleteMany({
       where: { email: { in: ['testuser@example.com', 'testagent@example.com'] } },
     });
@@ -165,6 +167,8 @@ describe('Delivery GL Integration', () => {
     // Clean up test data
     await prisma.accountTransaction.deleteMany({});
     await prisma.journalEntry.deleteMany({});
+    await prisma.transaction.deleteMany({});
+    await (prisma as any).agentCollection.deleteMany({});
     await prisma.delivery.deleteMany({});
     await prisma.orderItem.deleteMany({});
     await prisma.order.deleteMany({});

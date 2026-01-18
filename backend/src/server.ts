@@ -35,6 +35,8 @@ import checkoutFormRoutes from './routes/checkoutFormRoutes';
 import publicOrderRoutes from './routes/publicOrderRoutes';
 import callRoutes from './routes/callRoutes';
 import glRoutes from './routes/glRoutes';
+import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
+import { GLAutomationService } from './services/glAutomationService';
 
 // Initialize workflow queue worker
 import './queues/workflowQueue';
@@ -140,6 +142,7 @@ app.use('/api/notifications', apiLimiter, notificationRoutes);
 app.use('/api/upload', apiLimiter, uploadRoutes);
 app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);
+app.use('/api/agent-reconciliation', apiLimiter, agentReconciliationRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);
@@ -174,9 +177,21 @@ app.use(errorHandler);
 
 // Start server only if not in test environment
 if (process.env.NODE_ENV !== 'test') {
-  server.listen(PORT, () => {
+  server.listen(PORT, async () => {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+
+    // Verify GL accounts in database
+    const glAccountsOk = await GLAutomationService.verifyGLAccounts();
+    if (!glAccountsOk) {
+      logger.error('GL account validation failed on database. Please check Chart of Accounts.');
+      // In production, we might want to exit, but for now we just log a critical error
+      if (process.env.NODE_ENV === 'production') {
+        logger.error('CRITICAL: Exiting due to incomplete GL configuration in production');
+        process.exit(1);
+      }
+    }
+
     logger.info(`Socket.io initialized`);
     console.log(`
     ╔═══════════════════════════════════════════════════════════════╗

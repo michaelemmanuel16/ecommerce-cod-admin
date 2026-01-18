@@ -4,9 +4,11 @@
  * Tests automated GL entry creation logic for order lifecycle events
  */
 
+import { jest, describe, it, expect } from '@jest/globals';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GLAutomationService } from '../../services/glAutomationService';
 import { GL_ACCOUNTS, GL_DEFAULTS } from '../../config/glAccounts';
+import { prismaMock } from '../mocks/prisma.mock';
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
@@ -238,11 +240,11 @@ describe('GLAutomationService', () => {
           findUnique: jest.fn((args) => {
             // Mock delivery agent with 40 commission
             if (args.where.id === 2) {
-              return Promise.resolve({ commissionRate: new Decimal(40) });
+              return Promise.resolve({ commissionAmount: new Decimal(40) });
             }
             // Mock sales rep with 5 commission
             if (args.where.id === 3) {
-              return Promise.resolve({ commissionRate: new Decimal(5) });
+              return Promise.resolve({ commissionAmount: new Decimal(5) });
             }
             return Promise.resolve(null);
           }),
@@ -327,7 +329,7 @@ describe('GLAutomationService', () => {
               name: 'Product 1',
               description: null,
               price: new Decimal(70),
-                cogs: new Decimal(50),
+              cogs: new Decimal(50),
               stockQuantity: 10,
               sku: 'SKU1',
               imageUrl: null,
@@ -492,11 +494,11 @@ describe('GLAutomationService', () => {
           findUnique: jest.fn((args) => {
             // Mock delivery agent with 40 commission
             if (args.where.id === 2) {
-              return Promise.resolve({ commissionRate: new Decimal(40) });
+              return Promise.resolve({ commissionAmount: new Decimal(40) });
             }
             // Mock sales rep with 5 commission
             if (args.where.id === 3) {
-              return Promise.resolve({ commissionRate: new Decimal(5) });
+              return Promise.resolve({ commissionAmount: new Decimal(5) });
             }
             return Promise.resolve(null);
           }),
@@ -545,7 +547,7 @@ describe('GLAutomationService', () => {
               name: 'Product 1',
               description: null,
               price: new Decimal(70),
-                cogs: new Decimal(50),
+              cogs: new Decimal(50),
               stockQuantity: 10,
               sku: 'SKU1',
               imageUrl: null,
@@ -627,7 +629,7 @@ describe('GLAutomationService', () => {
               name: 'Product 1',
               description: null,
               price: new Decimal(70),
-                cogs: new Decimal(50),
+              cogs: new Decimal(50),
               stockQuantity: 10,
               sku: 'SKU1',
               imageUrl: null,

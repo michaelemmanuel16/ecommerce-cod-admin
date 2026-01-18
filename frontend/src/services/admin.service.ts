@@ -41,6 +41,7 @@ export interface AdminUser {
   lastName: string;
   phoneNumber?: string;
   role: string;
+  commissionAmount?: number;
   isActive: boolean;
   isAvailable?: boolean;
   lastLogin?: string;
@@ -54,6 +55,7 @@ export interface CreateUserData {
   lastName: string;
   phoneNumber?: string;
   role: string;
+  commissionAmount?: number;
 }
 
 export interface UpdateUserData {
@@ -62,6 +64,7 @@ export interface UpdateUserData {
   lastName?: string;
   phoneNumber?: string;
   role?: string;
+  commissionAmount?: number;
   isActive?: boolean;
 }
 

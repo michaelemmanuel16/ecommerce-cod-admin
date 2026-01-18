@@ -16,6 +16,7 @@ export const GL_ACCOUNTS = {
   // Asset Accounts (1000-1999)
   CASH_IN_TRANSIT: '1015',           // Cash from delivered orders (with delivery agents)
   CASH_IN_HAND: '1010',              // Cash collected by agents (not yet deposited)
+  AR_AGENTS: '1020',                 // Accounts Receivable - Delivery Agents
   INVENTORY: '1200',                 // Product inventory value
 
   // Revenue Accounts (4000-4999)
