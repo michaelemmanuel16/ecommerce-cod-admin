@@ -181,13 +181,11 @@ if (process.env.NODE_ENV !== 'test') {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 
-    // Verify GL accounts in database
-    const glAccountsOk = await GLAutomationService.verifyGLAccounts();
-    if (!glAccountsOk) {
-      logger.error('GL account validation failed on database. Please check Chart of Accounts.');
-      // In production, we might want to exit, but for now we just log a critical error
-      if (process.env.NODE_ENV === 'production') {
-        logger.error('CRITICAL: Exiting due to incomplete GL configuration in production');
+    // Verify GL Accounts (Production only requirement for financial stability)
+    if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') {
+      const glValidated = await GLAutomationService.asyncVerifyGLAccounts();
+      if (!glValidated) {
+        logger.error('Failed to validate/seed GL accounts. Exiting...');
         process.exit(1);
       }
     }

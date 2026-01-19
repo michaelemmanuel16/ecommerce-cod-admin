@@ -489,10 +489,11 @@ export class GLAutomationService {
   }
 
   /**
-   * Verify that all required GL accounts exist in the database
-   * Used at system startup
+   * Verify that all required GL accounts exist in the database.
+   * If missing, attempts to create them (auto-seeding).
+   * Used at system startup.
    */
-  static async verifyGLAccounts(): Promise<boolean> {
+  static async asyncVerifyGLAccounts(): Promise<boolean> {
     try {
       const requiredAccountCodes = Object.values(GL_ACCOUNTS);
       const accounts = await prisma.account.findMany({
@@ -506,14 +507,48 @@ export class GLAutomationService {
       const missingAccounts = [...requiredAccountCodes].filter(code => !foundAccountCodes.has(code));
 
       if (missingAccounts.length > 0) {
-        logger.error('CRITICAL: Missing required GL accounts in database:', missingAccounts);
-        return false;
+        logger.warn('Some required GL accounts are missing. Attempting to auto-seed:', missingAccounts);
+
+        // Map codes back to keys to get names/types for creation
+        const defaultNames: Record<string, { name: string; type: 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'; balance: 'debit' | 'credit' }> = {
+          [GL_ACCOUNTS.CASH_IN_HAND]: { name: 'Cash in Hand', type: 'asset', balance: 'debit' },
+          [GL_ACCOUNTS.CASH_IN_TRANSIT]: { name: 'Cash in Transit', type: 'asset', balance: 'debit' },
+          [GL_ACCOUNTS.AR_AGENTS]: { name: 'Accounts Receivable - Agents', type: 'asset', balance: 'debit' },
+          [GL_ACCOUNTS.INVENTORY]: { name: 'Inventory', type: 'asset', balance: 'debit' },
+          [GL_ACCOUNTS.PRODUCT_REVENUE]: { name: 'Product Sales Revenue', type: 'revenue', balance: 'credit' },
+          [GL_ACCOUNTS.COGS]: { name: 'Cost of Goods Sold', type: 'expense', balance: 'debit' },
+          [GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE]: { name: 'Failed Delivery Expense', type: 'expense', balance: 'debit' },
+          [GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE]: { name: 'Return Processing Expense', type: 'expense', balance: 'debit' },
+          [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION]: { name: 'Delivery Agent Commission', type: 'expense', balance: 'debit' },
+          [GL_ACCOUNTS.SALES_REP_COMMISSION]: { name: 'Sales Rep Commission', type: 'expense', balance: 'debit' },
+          [GL_ACCOUNTS.REFUND_LIABILITY]: { name: 'Refund Liability', type: 'liability', balance: 'credit' },
+        };
+
+        for (const code of missingAccounts) {
+          const info = defaultNames[code];
+          if (info) {
+            await prisma.account.create({
+              data: {
+                code,
+                name: info.name,
+                accountType: info.type,
+                normalBalance: info.balance,
+                description: `Automatically created during system startup: ${info.name}`,
+                isActive: true,
+              },
+            });
+            logger.info(`Successfully auto-seeded missing account: ${code} (${info.name})`);
+          } else {
+            logger.error(`Critical error: No metadata found for missing GL account code: ${code}`);
+            return false;
+          }
+        }
       }
 
-      logger.info('GL accounts validated successfully.');
+      logger.info('GL accounts validated and ready.');
       return true;
     } catch (error) {
-      logger.error('Failed to verify GL accounts:', error);
+      logger.error('Failed to verify/seed GL accounts:', error);
       return false;
     }
   }
