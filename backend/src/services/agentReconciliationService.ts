@@ -1,4 +1,4 @@
-import { Prisma, JournalSourceType, DepositStatus } from '@prisma/client';
+import { Prisma, JournalSourceType } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
@@ -144,8 +144,8 @@ export class AgentReconciliationService {
             });
 
             // Update agent balance
-            const balance = await this.getOrCreateBalance(collection.agentId, tx);
-            await tx.agentBalance.update({
+            const balance = await this.getOrCreateBalance(collection.agentId, tx as any);
+            await (tx as any).agentBalance.update({
                 where: { id: balance.id },
                 data: {
                     totalCollected: { increment: collection.amount },
@@ -172,7 +172,7 @@ export class AgentReconciliationService {
      * Get or create agent balance record
      */
     async getOrCreateBalance(agentId: number, tx?: Prisma.TransactionClient) {
-        const client = tx || prisma;
+        const client = (tx || prisma) as any;
         const balance = await client.agentBalance.findUnique({
             where: { agentId },
         });
@@ -197,7 +197,7 @@ export class AgentReconciliationService {
             throw new AppError('Deposit amount must be greater than zero', 400);
         }
 
-        const deposit = await prisma.agentDeposit.create({
+        const deposit = await (prisma as any).agentDeposit.create({
             data: {
                 agentId,
                 amount,
@@ -217,7 +217,7 @@ export class AgentReconciliationService {
      */
     async verifyDeposit(depositId: number, verifierId: number) {
         return await prisma.$transaction(async (tx) => {
-            const deposit = await tx.agentDeposit.findUnique({
+            const deposit = await (tx as any).agentDeposit.findUnique({
                 where: { id: depositId },
             });
 
@@ -230,7 +230,7 @@ export class AgentReconciliationService {
             }
 
             // Update deposit record
-            const updated = await tx.agentDeposit.update({
+            const updated = await (tx as any).agentDeposit.update({
                 where: { id: depositId },
                 data: {
                     status: 'verified',
@@ -247,7 +247,7 @@ export class AgentReconciliationService {
                 throw new AppError('Verification failed: Deposit amount exceeds current agent balance', 400);
             }
 
-            await tx.agentBalance.update({
+            await (tx as any).agentBalance.update({
                 where: { id: balance.id },
                 data: {
                     totalDeposited: { increment: deposit.amount },
@@ -305,14 +305,16 @@ export class AgentReconciliationService {
      * Get specific agent balance
      */
     async getAgentBalance(agentId: number) {
-        return await this.getOrCreateBalance(agentId);
+        return await (prisma as any).agentBalance.findUnique({
+            where: { agentId },
+        });
     }
 
     /**
      * Get all agent balances
      */
     async getAllAgentBalances() {
-        return await prisma.agentBalance.findMany({
+        return await (prisma as any).agentBalance.findMany({
             include: {
                 agent: {
                     select: {

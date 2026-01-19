@@ -148,7 +148,7 @@ export class AgentReconciliationController {
     /**
      * Get all agent balances (Manager/Admin only)
      */
-    async getBalances(req: Request, res: Response) {
+    async getBalances(_req: Request, res: Response) {
         const balances = await agentReconciliationService.getAllAgentBalances();
         res.json(balances);
     }
