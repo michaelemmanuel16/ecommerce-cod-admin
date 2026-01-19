@@ -266,3 +266,33 @@ export function emitCollectionApproved(io: SocketServer, collection: any) {
   safeEmit(io, 'role:accountant', 'collection:approved', event);
   safeEmit(io, `user:${collection.agentId}`, 'collection:approved', event);
 }
+
+export function emitAgentBalanceUpdated(io: SocketServer, userId: number, balance: any) {
+  const event = {
+    userId,
+    totalCollected: balance.totalCollected,
+    totalDeposited: balance.totalDeposited,
+    currentBalance: balance.currentBalance,
+    timestamp: new Date()
+  };
+
+  safeEmit(io, `user:${userId}`, 'agent:balance-updated', event);
+  safeEmit(io, 'role:admin', 'agent:balance-updated', event);
+  safeEmit(io, 'role:manager', 'agent:balance-updated', event);
+  safeEmit(io, 'role:accountant', 'agent:balance-updated', event);
+}
+
+export function emitDepositVerified(io: SocketServer, deposit: any) {
+  const event = {
+    id: deposit.id,
+    agentId: deposit.agentId,
+    amount: deposit.amount,
+    status: 'verified',
+    timestamp: new Date()
+  };
+
+  safeEmit(io, `user:${deposit.agentId}`, 'deposit:verified', event);
+  safeEmit(io, 'role:admin', 'deposit:verified', event);
+  safeEmit(io, 'role:manager', 'deposit:verified', event);
+  safeEmit(io, 'role:accountant', 'deposit:verified', event);
+}

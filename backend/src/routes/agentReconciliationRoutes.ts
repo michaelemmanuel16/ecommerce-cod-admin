@@ -18,4 +18,12 @@ router.post('/bulk-verify', requireRole('accountant'), agentReconciliationContro
 // Approval (Manager/Admin only)
 router.post('/:id/approve', requireRole('manager', 'admin'), agentReconciliationController.approveCollection);
 
+// Balance tracking (Agent, Manager, Admin)
+router.get('/agents/:id/balance', requireRole('delivery_agent', 'manager', 'admin', 'accountant'), agentReconciliationController.getAgentBalance);
+router.get('/agents/balances', requireRole('manager', 'admin', 'accountant'), agentReconciliationController.getBalances);
+
+// Deposits
+router.post('/deposits', requireRole('delivery_agent', 'manager', 'admin', 'accountant'), agentReconciliationController.createDeposit);
+router.post('/deposits/:id/verify', requireRole('accountant'), agentReconciliationController.verifyDeposit);
+
 export default router;

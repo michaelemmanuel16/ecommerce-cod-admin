@@ -1,8 +1,7 @@
+import { describe, it, expect, jest } from '@jest/globals';
 import agentReconciliationService from '../../services/agentReconciliationService';
 import prisma from '../../utils/prisma';
 import { AppError } from '../../middleware/errorHandler';
-import { GL_ACCOUNTS } from '../../config/glAccounts';
-import { Decimal } from '@prisma/client/runtime/library';
 
 // Mock prisma and dependecies
 jest.mock('../../utils/prisma', () => ({
@@ -17,13 +16,25 @@ jest.mock('../../utils/prisma', () => ({
         user: {
             update: jest.fn(),
         },
+        agentBalance: {
+            findUnique: jest.fn(),
+            update: jest.fn(),
+            create: jest.fn(),
+            findMany: jest.fn(),
+        },
+        agentDeposit: {
+            findUnique: jest.fn(),
+            update: jest.fn(),
+            create: jest.fn(),
+            findMany: jest.fn(),
+        },
         journalEntry: {
             create: jest.fn(),
         },
         account: {
             findUnique: jest.fn(),
         },
-        $queryRaw: jest.fn().mockResolvedValue([]),
+        $queryRaw: (jest.fn() as any).mockResolvedValue([]),
     },
 }));
 
@@ -39,6 +50,8 @@ describe('AgentReconciliationService', () => {
     const mockTx = {
         agentCollection: mockPrisma.agentCollection,
         user: mockPrisma.user,
+        agentBalance: mockPrisma.agentBalance,
+        agentDeposit: mockPrisma.agentDeposit,
         journalEntry: mockPrisma.journalEntry,
         account: mockPrisma.account,
         $queryRaw: mockPrisma.$queryRaw,
@@ -111,7 +124,7 @@ describe('AgentReconciliationService', () => {
     });
 
     describe('approveCollection', () => {
-        it('should approve a verified collection and increment agent balance', async () => {
+        it('should approve a verified collection and update agent balance', async () => {
             const collectionId = 1;
             const approverId = 999;
             const collection = {
@@ -121,22 +134,90 @@ describe('AgentReconciliationService', () => {
                 status: 'verified'
             };
 
+            const balance = { id: 10, agentId: 456, currentBalance: 0 };
+
             mockTx.agentCollection.findUnique.mockResolvedValue(collection);
             mockTx.agentCollection.update.mockResolvedValue({ ...collection, status: 'approved' });
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.agentBalance.update.mockResolvedValue({ ...balance, currentBalance: 1000 });
 
             const result = await agentReconciliationService.approveCollection(collectionId, approverId);
 
             expect(mockTx.agentCollection.update).toHaveBeenCalled();
-            expect(mockTx.user.update).toHaveBeenCalledWith({
-                where: { id: collection.agentId },
+            expect(mockTx.agentBalance.update).toHaveBeenCalledWith({
+                where: { id: balance.id },
                 data: {
-                    totalCollected: {
-                        increment: collection.amount,
-                    },
+                    totalCollected: { increment: collection.amount },
+                    currentBalance: { increment: collection.amount },
                 },
             });
 
             expect(result.status).toBe('approved');
+        });
+    });
+
+    describe('getOrCreateBalance', () => {
+        it('should return existing balance if found', async () => {
+            const agentId = 456;
+            const balance = { id: 1, agentId };
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+
+            const result = await agentReconciliationService.getOrCreateBalance(agentId, mockTx as any);
+
+            expect(result).toEqual(balance);
+            expect(mockTx.agentBalance.create).not.toHaveBeenCalled();
+        });
+
+        it('should create new balance if not found', async () => {
+            const agentId = 456;
+            mockTx.agentBalance.findUnique.mockResolvedValue(null);
+            mockTx.agentBalance.create.mockResolvedValue({ id: 2, agentId });
+
+            const result = await agentReconciliationService.getOrCreateBalance(agentId, mockTx as any);
+
+            expect(result.id).toBe(2);
+            expect(mockTx.agentBalance.create).toHaveBeenCalled();
+        });
+    });
+
+    describe('verifyDeposit', () => {
+        it('should verify deposit and update balance correctly', async () => {
+            const depositId = 1;
+            const verifierId = 789;
+            const deposit = { id: depositId, agentId: 456, amount: 500, status: 'pending' };
+            const balance = { id: 10, agentId: 456, currentBalance: 1000 };
+
+            mockTx.agentDeposit.findUnique.mockResolvedValue(deposit);
+            mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'verified' });
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.journalEntry.create.mockResolvedValue({ id: 99 });
+
+            const result = await agentReconciliationService.verifyDeposit(depositId, verifierId);
+
+            expect(mockTx.agentDeposit.update).toHaveBeenCalledWith({
+                where: { id: depositId },
+                data: expect.objectContaining({ status: 'verified' }),
+            });
+            expect(mockTx.agentBalance.update).toHaveBeenCalledWith({
+                where: { id: balance.id },
+                data: expect.objectContaining({
+                    totalDeposited: { increment: deposit.amount },
+                    currentBalance: { decrement: deposit.amount },
+                }),
+            });
+            expect(result.status).toBe('verified');
+        });
+
+        it('should throw error if deposit amount exceeds current balance', async () => {
+            const depositId = 1;
+            const deposit = { id: depositId, agentId: 456, amount: 2000, status: 'pending' };
+            const balance = { id: 10, agentId: 456, currentBalance: 1000 };
+
+            mockTx.agentDeposit.findUnique.mockResolvedValue(deposit);
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+
+            await expect(agentReconciliationService.verifyDeposit(depositId, 1))
+                .rejects.toThrow(/Deposit amount exceeds current agent balance/);
         });
     });
 
@@ -157,7 +238,7 @@ describe('AgentReconciliationService', () => {
                 .mockResolvedValueOnce({ ...collection2, status: 'verified' });
 
             mockTx.journalEntry.create.mockResolvedValue({ id: 99 });
-            mockTx.account.findUnique.mockResolvedValue({ id: 10 }); // Any ID for GLAccountService
+            mockTx.account.findUnique.mockResolvedValue({ id: 10 });
 
             const results = await agentReconciliationService.bulkVerifyCollections(collectionIds, verifierId);
 
@@ -174,17 +255,14 @@ describe('AgentReconciliationService', () => {
             const collection1 = { id: 1, orderId: 101, status: 'draft', amount: 1000 };
 
             mockTx.agentCollection.findUnique
-                .mockResolvedValueOnce(collection1) // First succeeds
-                .mockResolvedValueOnce(null);       // Second fails
+                .mockResolvedValueOnce(collection1)
+                .mockResolvedValueOnce(null);
 
             mockTx.agentCollection.update.mockResolvedValue({ ...collection1, status: 'verified' });
             mockTx.account.findUnique.mockResolvedValue({ id: 10 });
 
             await expect(agentReconciliationService.bulkVerifyCollections(collectionIds, verifierId))
                 .rejects.toThrow('Collection record not found');
-
-            // The first one might have been called, but the transaction will roll back in a real DB.
-            // In unit tests, we just check that the error Bubbles up.
         });
     });
 });

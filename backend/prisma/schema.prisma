@@ -44,6 +44,9 @@ model User {
   collections           AgentCollection[] @relation("AgentCollections")
   verifiedCollections   AgentCollection[] @relation("VerifiedCollections")
   approvedCollections   AgentCollection[] @relation("ApprovedCollections")
+  balance               AgentBalance?
+  deposits              AgentDeposit[]    @relation("AgentDeposits")
+  verifiedDeposits      AgentDeposit[]    @relation("VerifiedDeposits")
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -743,4 +746,46 @@ enum CollectionStatus {
   approved
   deposited
   reconciled
+}
+
+model AgentBalance {
+  id                 Int      @id @default(autoincrement())
+  agentId            Int      @unique @map("agent_id")
+  totalCollected     Decimal  @default(0) @map("total_collected") @db.Decimal(19, 4)
+  totalDeposited     Decimal  @default(0) @map("total_deposited") @db.Decimal(19, 4)
+  currentBalance     Decimal  @default(0) @map("current_balance") @db.Decimal(19, 4)
+  lastSettlementDate DateTime? @map("last_settlement_date")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  agent User @relation(fields: [agentId], references: [id])
+
+  @@map("agent_balances")
+}
+
+model AgentDeposit {
+  id              Int              @id @default(autoincrement())
+  agentId         Int              @map("agent_id")
+  amount          Decimal          @map("amount") @db.Decimal(19, 4)
+  status          DepositStatus    @default(pending)
+  depositDate     DateTime         @map("deposit_date")
+  referenceNumber String?          @map("reference_number")
+  verifiedAt      DateTime?        @map("verified_at")
+  verifiedById    Int?             @map("verified_by_id")
+  notes           String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  agent    User  @relation("AgentDeposits", fields: [agentId], references: [id])
+  verifier User? @relation("VerifiedDeposits", fields: [verifiedById], references: [id])
+
+  @@index([agentId])
+  @@index([status])
+  @@map("agent_deposits")
+}
+
+enum DepositStatus {
+  pending
+  verified
+  rejected
 }

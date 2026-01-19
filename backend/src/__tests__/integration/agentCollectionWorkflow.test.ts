@@ -5,6 +5,7 @@ import agentReconciliationService from '../../services/agentReconciliationServic
 import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AccountType, NormalBalance, Prisma } from '@prisma/client';
+import { GLAccountService } from '../../services/glAccountService';
 
 // Mock socket instance
 jest.mock('../../utils/socketInstance', () => ({
@@ -28,15 +29,18 @@ describe('Agent Collection Workflow Integration', () => {
     });
 
     beforeEach(async () => {
-        // Clean up
-        await prisma.accountTransaction.deleteMany({});
-        await prisma.journalEntry.deleteMany({});
-        await prisma.transaction.deleteMany({});
+        GLAccountService.clearCache();
+        // Clean up - Order matters due to foreign keys
+        await (prisma as any).agentDeposit.deleteMany({});
         await (prisma as any).agentCollection.deleteMany({});
+        await (prisma as any).agentBalance.deleteMany({});
         await prisma.delivery.deleteMany({});
         await prisma.orderItem.deleteMany({});
         await prisma.order.deleteMany({});
         await prisma.customer.deleteMany({});
+        await prisma.accountTransaction.deleteMany({});
+        await prisma.journalEntry.deleteMany({});
+        await prisma.transaction.deleteMany({});
         await prisma.account.deleteMany({});
         await prisma.user.deleteMany({
             where: { email: { in: ['admin@test.com', 'agent@test.com'] } }
@@ -52,7 +56,7 @@ describe('Agent Collection Workflow Integration', () => {
         ];
         for (const a of accounts) {
             await prisma.account.upsert({
-                where: { id: a.id as number },
+                where: { code: a.code },
                 update: a as Prisma.AccountUpdateInput,
                 create: a
             });

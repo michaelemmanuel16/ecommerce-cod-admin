@@ -1,4 +1,4 @@
-import { Prisma, JournalSourceType } from '@prisma/client';
+import { Prisma, JournalSourceType, DepositStatus } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
@@ -144,7 +144,16 @@ export class AgentReconciliationService {
             });
 
             // Update agent balance
-            // totalCollected += amount
+            const balance = await this.getOrCreateBalance(collection.agentId, tx);
+            await tx.agentBalance.update({
+                where: { id: balance.id },
+                data: {
+                    totalCollected: { increment: collection.amount },
+                    currentBalance: { increment: collection.amount },
+                },
+            });
+
+            // Legacy update for User model (if still needed)
             await tx.user.update({
                 where: { id: collection.agentId },
                 data: {
@@ -156,6 +165,167 @@ export class AgentReconciliationService {
 
             logger.info(`Collection ${collectionId} approved by user ${approverId}`);
             return updated;
+        });
+    }
+
+    /**
+     * Get or create agent balance record
+     */
+    async getOrCreateBalance(agentId: number, tx?: Prisma.TransactionClient) {
+        const client = tx || prisma;
+        const balance = await client.agentBalance.findUnique({
+            where: { agentId },
+        });
+
+        if (balance) return balance;
+
+        return await client.agentBalance.create({
+            data: {
+                agentId,
+                totalCollected: 0,
+                totalDeposited: 0,
+                currentBalance: 0,
+            },
+        });
+    }
+
+    /**
+     * Create a new deposit record
+     */
+    async createDeposit(agentId: number, amount: number, referenceNumber?: string, notes?: string) {
+        if (amount <= 0) {
+            throw new AppError('Deposit amount must be greater than zero', 400);
+        }
+
+        const deposit = await prisma.agentDeposit.create({
+            data: {
+                agentId,
+                amount,
+                depositDate: new Date(),
+                referenceNumber,
+                notes,
+                status: 'pending',
+            },
+        });
+
+        logger.info(`New deposit created for agent ${agentId}`, { depositId: deposit.id, amount });
+        return deposit;
+    }
+
+    /**
+     * Verify an agent deposit
+     */
+    async verifyDeposit(depositId: number, verifierId: number) {
+        return await prisma.$transaction(async (tx) => {
+            const deposit = await tx.agentDeposit.findUnique({
+                where: { id: depositId },
+            });
+
+            if (!deposit) {
+                throw new AppError('Deposit record not found', 404);
+            }
+
+            if (deposit.status !== 'pending') {
+                throw new AppError(`Deposit cannot be verified from status: ${deposit.status}`, 400);
+            }
+
+            // Update deposit record
+            const updated = await tx.agentDeposit.update({
+                where: { id: depositId },
+                data: {
+                    status: 'verified',
+                    verifiedAt: new Date(),
+                    verifiedById: verifierId,
+                },
+            });
+
+            // Update agent balance
+            const balance = await this.getOrCreateBalance(deposit.agentId, tx as any);
+
+            // Validation: Prevent negative balance
+            if (new Prisma.Decimal(balance.currentBalance.toString()).lessThan(deposit.amount)) {
+                throw new AppError('Verification failed: Deposit amount exceeds current agent balance', 400);
+            }
+
+            await tx.agentBalance.update({
+                where: { id: balance.id },
+                data: {
+                    totalDeposited: { increment: deposit.amount },
+                    currentBalance: { decrement: deposit.amount },
+                    lastSettlementDate: new Date(),
+                },
+            });
+
+            // Create GL Entry
+            // Debit: CASH_IN_HAND (1010) - Assuming direct cash handover or bank dep
+            // Credit: AR_AGENTS (1020)
+            await this.createDepositGLEntry(tx as any, updated, verifierId);
+
+            logger.info(`Deposit ${depositId} verified by user ${verifierId}`);
+            return updated;
+        });
+    }
+
+    /**
+     * Create GL entry for deposit verification
+     */
+    private async createDepositGLEntry(tx: any, deposit: any, userId: number) {
+        const entryNumber = await GLUtils.generateEntryNumber(tx);
+        const amount = new Prisma.Decimal(deposit.amount.toString());
+
+        await tx.journalEntry.create({
+            data: {
+                entryNumber,
+                entryDate: new Date(),
+                description: `Agent deposit verification - Deposit #${deposit.id}`,
+                sourceType: JournalSourceType.agent_deposit,
+                sourceId: deposit.id,
+                createdBy: userId,
+                transactions: {
+                    create: [
+                        {
+                            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
+                            debitAmount: amount,
+                            creditAmount: new Prisma.Decimal(0),
+                            description: `Cash received from agent ${deposit.agentId}`,
+                        },
+                        {
+                            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS),
+                            debitAmount: new Prisma.Decimal(0),
+                            creditAmount: amount,
+                            description: `Agent AR cleared for deposit ${deposit.id}`,
+                        },
+                    ],
+                },
+            },
+        });
+    }
+
+    /**
+     * Get specific agent balance
+     */
+    async getAgentBalance(agentId: number) {
+        return await this.getOrCreateBalance(agentId);
+    }
+
+    /**
+     * Get all agent balances
+     */
+    async getAllAgentBalances() {
+        return await prisma.agentBalance.findMany({
+            include: {
+                agent: {
+                    select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        email: true,
+                    },
+                },
+            },
+            orderBy: {
+                currentBalance: 'desc',
+            },
         });
     }
 

@@ -119,6 +119,86 @@ export class AgentReconciliationController {
         const io = getSocketInstance();
         if (io) {
             emitCollectionApproved(io, result);
+            // Also emit balance update
+            const balance = await agentReconciliationService.getAgentBalance(result.agentId);
+            io.emit(`agent:balance-updated`, { agentId: result.agentId, balance });
+        }
+
+        res.json(result);
+    }
+
+    /**
+     * Get specific agent balance
+     */
+    async getAgentBalance(req: Request, res: Response) {
+        const { id } = req.params;
+        const agentId = parseInt(id);
+        if (isNaN(agentId)) throw new AppError('Invalid agent ID', 400);
+
+        // RBAC: Agents can only view their own balance
+        const user = (req as any).user;
+        if (user.role === 'delivery_agent' && user.id !== agentId) {
+            throw new AppError('Access denied: You can only view your own balance', 403);
+        }
+
+        const balance = await agentReconciliationService.getAgentBalance(agentId);
+        res.json(balance);
+    }
+
+    /**
+     * Get all agent balances (Manager/Admin only)
+     */
+    async getBalances(req: Request, res: Response) {
+        const balances = await agentReconciliationService.getAllAgentBalances();
+        res.json(balances);
+    }
+
+    /**
+     * Create a deposit record (Agent/Accountant/Manager/Admin)
+     */
+    async createDeposit(req: Request, res: Response) {
+        const { amount, referenceNumber, notes, agentId: providedAgentId } = req.body;
+        const user = (req as any).user;
+
+        // If providedAgentId is set, check if user has permission to create for another agent
+        let targetAgentId = user.id;
+        if (providedAgentId && providedAgentId !== user.id) {
+            if (!['manager', 'admin', 'accountant'].includes(user.role)) {
+                throw new AppError('Access denied: You cannot create deposits for other agents', 403);
+            }
+            targetAgentId = parseInt(providedAgentId);
+        }
+
+        if (isNaN(targetAgentId)) throw new AppError('Invalid agent ID', 400);
+
+        const result = await agentReconciliationService.createDeposit(
+            targetAgentId,
+            parseFloat(amount),
+            referenceNumber,
+            notes
+        );
+
+        res.status(201).json(result);
+    }
+
+    /**
+     * Verify a deposit (Accountant only)
+     */
+    async verifyDeposit(req: Request, res: Response) {
+        const { id } = req.params;
+        const userId = (req as any).user.id;
+
+        const parsedId = parseInt(id);
+        if (isNaN(parsedId)) throw new AppError('Invalid deposit ID', 400);
+
+        const result = await agentReconciliationService.verifyDeposit(parsedId, userId);
+
+        // Emit socket event
+        const io = getSocketInstance();
+        if (io) {
+            const balance = await agentReconciliationService.getAgentBalance(result.agentId);
+            io.emit(`agent:balance-updated`, { agentId: result.agentId, balance });
+            io.emit('deposit:verified', result);
         }
 
         res.json(result);
