@@ -14,6 +14,10 @@ async function main() {
   await prisma.workflow.deleteMany();
   await prisma.webhookLog.deleteMany();
   await prisma.webhookConfig.deleteMany();
+  await prisma.agentAgingBucket.deleteMany();
+  await prisma.agentDeposit.deleteMany();
+  await prisma.agentCollection.deleteMany();
+  await prisma.agentBalance.deleteMany();
   await prisma.delivery.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.orderHistory.deleteMany();

@@ -38,7 +38,21 @@ agingQueue.process('refresh-buckets', async () => {
     }
 });
 
-// Setup the daily cron job (6:00 AM)
+// Process the auto-block job
+agingQueue.process('auto-block-overdue', async () => {
+    logger.info('Processing auto-block overdue agents job...');
+    try {
+        // Use system/admin user ID for auto-blocking (usually user ID 1 or a constant)
+        const SYSTEM_USER_ID = 1;
+        const blockedCount = await agingService.autoBlockOverdueAgents(SYSTEM_USER_ID);
+        logger.info(`Auto-block job completed. Blocked ${blockedCount} agents.`);
+    } catch (error: any) {
+        logger.error('Auto-block job failed:', error.message);
+        throw error;
+    }
+});
+
+// Setup the daily cron jobs
 export const setupAgingCron = async () => {
     if (process.env.NODE_ENV === 'test') return;
 
@@ -55,7 +69,14 @@ export const setupAgingCron = async () => {
         }
     });
 
-    logger.info('Agent aging daily cron job scheduled for 6:00 AM.');
+    // Add daily auto-block job at 10:00 AM
+    await agingQueue.add('auto-block-overdue', {}, {
+        repeat: {
+            cron: '0 10 * * *'
+        }
+    });
+
+    logger.info('Agent aging cron jobs scheduled (6:00 AM refresh, 10:00 AM auto-block).');
 };
 
 agingQueue.on('failed', (job: Bull.Job | undefined, err: Error) => {

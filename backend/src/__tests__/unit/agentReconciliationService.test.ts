@@ -45,6 +45,15 @@ jest.mock('../../utils/logger', () => ({
     debug: jest.fn(),
 }));
 
+jest.mock('../../services/notificationService', () => ({
+    notifyAgentBlocked: jest.fn(),
+    notifyAgentUnblocked: jest.fn(),
+}));
+
+jest.mock('../../utils/socketInstance', () => ({
+    getSocketInstance: jest.fn(),
+}));
+
 describe('AgentReconciliationService', () => {
     const mockPrisma = prisma as any;
     const mockTx = {
@@ -287,6 +296,87 @@ describe('AgentReconciliationService', () => {
 
             await expect(agentReconciliationService.bulkVerifyCollections(collectionIds, verifierId))
                 .rejects.toThrow('Collection record not found');
+        });
+    });
+    describe('blockAgent', () => {
+        it('should block an agent and record audit info', async () => {
+            const agentId = 456;
+            const userId = 1;
+            const reason = 'Test block';
+            const balance = { id: 1, agentId, isBlocked: false };
+
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.agentBalance.update.mockResolvedValue({
+                ...balance,
+                isBlocked: true,
+                blockReason: reason,
+                blockedAt: new Date(),
+                blockedById: userId
+            });
+
+            const result = await agentReconciliationService.blockAgent(agentId, userId, reason);
+
+            expect(mockTx.agentBalance.update).toHaveBeenCalledWith({
+                where: { id: balance.id },
+                data: expect.objectContaining({
+                    isBlocked: true,
+                    blockReason: reason,
+                    blockedById: userId
+                }),
+                include: expect.any(Object)
+            });
+            expect(result.isBlocked).toBe(true);
+        });
+    });
+
+    describe('unblockAgent', () => {
+        it('should unblock a blocked agent', async () => {
+            const agentId = 456;
+            const userId = 1;
+            const balance = { id: 1, agentId, isBlocked: true };
+
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.agentBalance.update.mockResolvedValue({
+                ...balance,
+                isBlocked: false,
+                blockReason: null,
+                blockedAt: null,
+                blockedById: null
+            });
+
+            const result = await agentReconciliationService.unblockAgent(agentId, userId);
+
+            expect(mockTx.agentBalance.update).toHaveBeenCalledWith({
+                where: { id: balance.id },
+                data: expect.objectContaining({
+                    isBlocked: false,
+                    blockReason: null
+                }),
+                include: expect.any(Object)
+            });
+            expect(result.isBlocked).toBe(false);
+        });
+
+        it('should throw error if agent is not blocked', async () => {
+            const balance = { id: 1, agentId: 456, isBlocked: false };
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+
+            await expect(agentReconciliationService.unblockAgent(456, 1))
+                .rejects.toThrow('Agent is not currently blocked');
+        });
+    });
+
+    describe('getBlockedAgents', () => {
+        it('should return all blocked agents', async () => {
+            const blockedAgents = [{ id: 1, isBlocked: true, agent: { firstName: 'Agent' } }];
+            mockPrisma.agentBalance.findMany.mockResolvedValue(blockedAgents);
+
+            const result = await agentReconciliationService.getBlockedAgents();
+
+            expect(mockPrisma.agentBalance.findMany).toHaveBeenCalledWith(expect.objectContaining({
+                where: { isBlocked: true }
+            }));
+            expect(result).toEqual(blockedAgents);
         });
     });
 });

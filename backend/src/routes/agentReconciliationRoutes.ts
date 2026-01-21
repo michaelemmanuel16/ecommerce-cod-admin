@@ -114,4 +114,29 @@ router.get('/aging/export',
     agentReconciliationController.exportAgingReport
 );
 
+// Agent Blocking
+router.post('/agents/:id/block',
+    requireRole('super_admin', 'admin', 'manager'),
+    [
+        param('id').isInt().toInt(),
+        body('reason').notEmpty().withMessage('Reason is required'),
+        validate
+    ],
+    agentReconciliationController.blockAgent
+);
+
+router.post('/agents/:id/unblock',
+    requireRole('super_admin', 'admin', 'manager'),
+    [
+        param('id').isInt().toInt(),
+        validate
+    ],
+    agentReconciliationController.unblockAgent
+);
+
+router.get('/agents/blocked',
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
+    agentReconciliationController.getBlockedAgents
+);
+
 export default router;

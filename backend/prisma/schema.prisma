@@ -48,6 +48,7 @@ model User {
   deposits              AgentDeposit[]    @relation("AgentDeposits")
   verifiedDeposits      AgentDeposit[]    @relation("VerifiedDeposits")
   agingBucket           AgentAgingBucket?
+  blockedBalances       AgentBalance[]    @relation("BlockedBy")
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -756,10 +757,15 @@ model AgentBalance {
   totalDeposited     Decimal  @default(0) @map("total_deposited") @db.Decimal(19, 4)
   currentBalance     Decimal  @default(0) @map("current_balance") @db.Decimal(19, 4)
   lastSettlementDate DateTime? @map("last_settlement_date")
+  isBlocked          Boolean  @default(false) @map("is_blocked")
+  blockReason        String?  @map("block_reason")
+  blockedAt          DateTime? @map("blocked_at")
+  blockedById        Int?     @map("blocked_by_id")
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  agent User @relation(fields: [agentId], references: [id])
+  agent     User  @relation(fields: [agentId], references: [id])
+  blockedBy User? @relation("BlockedBy", fields: [blockedById], references: [id])
 
   @@map("agent_balances")
 }
