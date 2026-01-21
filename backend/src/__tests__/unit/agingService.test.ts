@@ -19,6 +19,21 @@ jest.mock('../../utils/prisma', () => ({
     },
 }));
 
+jest.mock('../../services/agentReconciliationService', () => ({
+    __esModule: true,
+    default: {
+        getAgentBalance: jest.fn(),
+        blockAgent: jest.fn(),
+    },
+}));
+
+jest.mock('../../utils/logger', () => ({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+}));
+
 describe('AgingService', () => {
     const mockPrisma = prisma as any;
 
@@ -134,6 +149,27 @@ describe('AgingService', () => {
                     bucket_8_plus: 'desc',
                 },
             });
+        });
+    });
+
+    describe('autoBlockOverdueAgents', () => {
+        it('should block agents with overdue buckets', async () => {
+            const mockBuckets = [
+                { agentId: 1, bucket_4_7: new Prisma.Decimal(500), bucket_8_plus: new Prisma.Decimal(0) },
+                { agentId: 2, bucket_4_7: new Prisma.Decimal(0), bucket_8_plus: new Prisma.Decimal(1000) },
+            ];
+
+            mockPrisma.agentAgingBucket.findMany.mockResolvedValue(mockBuckets);
+
+            // Get the mocked service instance (it was mocked at the top)
+            const agentReconciliationService = (require('../../services/agentReconciliationService')).default;
+            agentReconciliationService.getAgentBalance.mockResolvedValue({ isBlocked: false });
+            agentReconciliationService.blockAgent.mockResolvedValue({});
+
+            const result = await agingService.autoBlockOverdueAgents(1);
+
+            expect(result).toBe(2); // Agent 1 and 2 should be blocked
+            expect(agentReconciliationService.blockAgent).toHaveBeenCalledTimes(2);
         });
     });
 });

@@ -418,6 +418,92 @@ export class AgentReconciliationService {
         return updated;
     }
 
+    /**
+     * Block an agent from receiving new deliveries
+     * Manager/Admin intervention required
+     */
+    async blockAgent(agentId: number, blockedById: number, reason: string) {
+        return await prisma.$transaction(async (tx) => {
+            const extTx = tx as any;
+            const balance = await this.getOrCreateBalance(agentId, extTx);
+
+            const updated = await extTx.agentBalance.update({
+                where: { id: balance.id },
+                data: {
+                    isBlocked: true,
+                    blockReason: reason,
+                    blockedAt: new Date(),
+                    blockedById: blockedById,
+                },
+                include: {
+                    agent: {
+                        select: { id: true, firstName: true, lastName: true, email: true }
+                    }
+                }
+            });
+
+            // Create in-app notification
+            const { notifyAgentBlocked } = await import('./notificationService');
+            await notifyAgentBlocked(agentId.toString(), reason);
+
+            logger.info(`Agent ${agentId} blocked by user ${blockedById}. Reason: ${reason}`);
+            return updated;
+        });
+    }
+
+    /**
+     * Unblock an agent to allow new deliveries
+     */
+    async unblockAgent(agentId: number, unblockedById: number) {
+        return await prisma.$transaction(async (tx) => {
+            const extTx = tx as any;
+            const balance = await this.getOrCreateBalance(agentId, extTx);
+
+            if (!balance.isBlocked) {
+                throw new AppError('Agent is not currently blocked', 400);
+            }
+
+            const updated = await extTx.agentBalance.update({
+                where: { id: balance.id },
+                data: {
+                    isBlocked: false,
+                    blockReason: null,
+                    blockedAt: null,
+                    blockedById: null,
+                },
+                include: {
+                    agent: {
+                        select: { id: true, firstName: true, lastName: true, email: true }
+                    }
+                }
+            });
+
+            // Create in-app notification
+            const { notifyAgentUnblocked } = await import('./notificationService');
+            await notifyAgentUnblocked(agentId.toString());
+
+            logger.info(`Agent ${agentId} unblocked by user ${unblockedById}`);
+            return updated;
+        });
+    }
+
+    /**
+     * Get all currently blocked agents
+     */
+    async getBlockedAgents() {
+        return await (prisma as any).agentBalance.findMany({
+            where: { isBlocked: true },
+            include: {
+                agent: {
+                    select: { id: true, firstName: true, lastName: true, email: true }
+                },
+                blockedBy: {
+                    select: { id: true, firstName: true, lastName: true }
+                }
+            },
+            orderBy: { blockedAt: 'desc' }
+        });
+    }
 }
 
 export default new AgentReconciliationService();

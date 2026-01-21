@@ -255,6 +255,76 @@ export class AgentReconciliationController {
         res.setHeader('Content-Disposition', `attachment; filename=agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
         res.status(200).send(csv);
     }
+
+    /**
+     * Block an agent (Manager/Admin only)
+     */
+    async blockAgent(req: Request, res: Response) {
+        const { id } = req.params;
+        const { reason } = req.body;
+        const userId = (req as any).user.id;
+
+        const parsedId = parseInt(id);
+        if (isNaN(parsedId)) throw new AppError('Invalid agent ID', 400);
+        if (!reason) throw new AppError('Block reason is required', 400);
+
+        const result = await agentReconciliationService.blockAgent(parsedId, userId, reason);
+
+        // Emit socket event
+        const io = getSocketInstance();
+        if (io) {
+            io.emit('agent:blocked', {
+                agentId: parsedId,
+                reason,
+                blockedAt: result.blockedAt,
+                blockedBy: userId
+            });
+            // Also notify the specific agent
+            io.to(`user:${parsedId}`).emit('notification', {
+                type: 'agent_blocked',
+                title: 'Account Blocked',
+                message: `Your account has been blocked: ${reason}`,
+                data: { reason }
+            });
+        }
+
+        res.json(result);
+    }
+
+    /**
+     * Unblock an agent (Manager/Admin only)
+     */
+    async unblockAgent(req: Request, res: Response) {
+        const { id } = req.params;
+        const userId = (req as any).user.id;
+
+        const parsedId = parseInt(id);
+        if (isNaN(parsedId)) throw new AppError('Invalid agent ID', 400);
+
+        const result = await agentReconciliationService.unblockAgent(parsedId, userId);
+
+        // Emit socket event
+        const io = getSocketInstance();
+        if (io) {
+            io.emit('agent:unblocked', { agentId: parsedId, unblockedBy: userId });
+            // Also notify the specific agent
+            io.to(`user:${parsedId}`).emit('notification', {
+                type: 'agent_unblocked',
+                title: 'Account Unblocked',
+                message: 'Your account has been unblocked. You can now receive new deliveries.',
+            });
+        }
+
+        res.json(result);
+    }
+
+    /**
+     * Get all blocked agents (Manager/Admin/Accountant)
+     */
+    async getBlockedAgents(_req: Request, res: Response) {
+        const result = await agentReconciliationService.getBlockedAgents();
+        res.json(result);
+    }
 }
 
 export default new AgentReconciliationController();

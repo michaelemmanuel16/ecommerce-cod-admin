@@ -72,7 +72,7 @@ export class AgingService {
       // 3. Upsert results into agent_aging_buckets
       await prisma.$transaction(async (tx) => {
         const extTx = tx as any;
-        
+
         // Remove buckets for agents who no longer have approved collections
         const currentAgentIds = Array.from(agentAgingMap.keys());
         await extTx.agentAgingBucket.deleteMany({
@@ -133,6 +133,52 @@ export class AgingService {
         bucket_8_plus: 'desc',
       }
     });
+  }
+  /**
+   * Automatically blocks agents who have collections in the 4-7 day or 8+ day buckets
+   */
+  async autoBlockOverdueAgents(managerUserId: number): Promise<number> {
+    logger.info('Checking for overdue agents to auto-block...');
+
+    // Find all buckets with values in overdue columns
+    const overdueBuckets = await (prisma as any).agentAgingBucket.findMany({
+      where: {
+        OR: [
+          { bucket_4_7: { gt: 0 } },
+          { bucket_8_plus: { gt: 0 } }
+        ]
+      },
+      include: {
+        agent: {
+          select: { id: true, firstName: true, lastName: true }
+        }
+      }
+    });
+
+    logger.info(`Found ${overdueBuckets.length} agents with overdue collections.`);
+
+    let blockedCount = 0;
+    const agentReconciliationService = (await import('./agentReconciliationService')).default;
+
+    for (const bucket of overdueBuckets) {
+      try {
+        // Double check they aren't already blocked to avoid redundant updates/notifications
+        const balance = await agentReconciliationService.getAgentBalance(bucket.agentId);
+        if (balance && !balance.isBlocked) {
+          await agentReconciliationService.blockAgent(
+            bucket.agentId,
+            managerUserId,
+            'Automatic block: Overdue collection balance (4+ days)'
+          );
+          blockedCount++;
+        }
+      } catch (error) {
+        logger.error(`Failed to auto-block agent ${bucket.agentId}:`, error);
+      }
+    }
+
+    logger.info(`Auto-block cycle completed. Blocked ${blockedCount} agents.`);
+    return blockedCount;
   }
 }
 
