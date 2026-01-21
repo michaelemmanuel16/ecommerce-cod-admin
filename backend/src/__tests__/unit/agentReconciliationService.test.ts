@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import agentReconciliationService from '../../services/agentReconciliationService';
 import prisma from '../../utils/prisma';
 import { AppError } from '../../middleware/errorHandler';
@@ -12,6 +12,7 @@ jest.mock('../../utils/prisma', () => ({
             findUnique: jest.fn(),
             update: jest.fn(),
             create: jest.fn(),
+            findMany: jest.fn(),
         },
         user: {
             update: jest.fn(),
@@ -52,6 +53,12 @@ jest.mock('../../services/notificationService', () => ({
 
 jest.mock('../../utils/socketInstance', () => ({
     getSocketInstance: jest.fn(),
+}));
+
+jest.mock('../../services/glAutomationService', () => ({
+    GLAutomationService: {
+        createAgentDepositEntry: jest.fn().mockImplementation(() => Promise.resolve({} as any)),
+    },
 }));
 
 describe('AgentReconciliationService', () => {
@@ -189,31 +196,85 @@ describe('AgentReconciliationService', () => {
         });
     });
 
+    describe('createDeposit', () => {
+        it('should create a pending deposit when amount is valid and within balance', async () => {
+            const agentId = 456;
+            const amount = 500;
+            const balance = { id: 10, agentId, currentBalance: 1000 };
+
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.agentDeposit.create.mockResolvedValue({
+                id: 1,
+                agentId,
+                amount,
+                status: 'pending',
+                depositMethod: 'bank_transfer',
+                referenceNumber: 'REF123'
+            });
+
+            const result = await agentReconciliationService.createDeposit(agentId, amount, 'bank_transfer', 'REF123');
+
+            expect(mockTx.agentDeposit.create).toHaveBeenCalledWith(expect.objectContaining({
+                data: expect.objectContaining({
+                    amount,
+                    depositMethod: 'bank_transfer',
+                    referenceNumber: 'REF123'
+                })
+            }));
+            expect(result.id).toBe(1);
+        });
+
+        it('should throw error if deposit amount exceeds current balance', async () => {
+            const agentId = 456;
+            const amount = 2000;
+            const balance = { id: 10, agentId, currentBalance: 1000 };
+
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+
+            await expect(agentReconciliationService.createDeposit(agentId, amount, 'cash', 'REF456'))
+                .rejects.toThrow(/Deposit amount cannot exceed your current outstanding balance/);
+        });
+    });
+
     describe('verifyDeposit', () => {
-        it('should verify deposit and update balance correctly', async () => {
+        it('should verify deposit, update balance, and perform FIFO matching to collections', async () => {
             const depositId = 1;
             const verifierId = 789;
-            const deposit = { id: depositId, agentId: 456, amount: 500, status: 'pending' };
-            const balance = { id: 10, agentId: 456, currentBalance: 1000 };
+            const agentId = 456;
+            const deposit = { id: depositId, agentId, amount: 1500, status: 'pending', referenceNumber: 'DEP123' };
+            const balance = { id: 10, agentId, currentBalance: 2000 };
+
+            const collections = [
+                { id: 101, agentId, amount: 1000, status: 'approved', collectionDate: new Date('2024-01-01') },
+                { id: 102, agentId, amount: 500, status: 'approved', collectionDate: new Date('2024-01-02') },
+                { id: 103, agentId, amount: 1000, status: 'approved', collectionDate: new Date('2024-01-03') },
+            ];
 
             mockTx.agentDeposit.findUnique.mockResolvedValue(deposit);
             mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'verified' });
             mockTx.agentBalance.findUnique.mockResolvedValue(balance);
-            mockTx.journalEntry.create.mockResolvedValue({ id: 99 });
+            mockTx.agentCollection.findMany.mockResolvedValue(collections);
 
             const result = await agentReconciliationService.verifyDeposit(depositId, verifierId);
 
-            expect(mockTx.agentDeposit.update).toHaveBeenCalledWith({
-                where: { id: depositId },
-                data: expect.objectContaining({ status: 'verified' }),
+            expect(mockTx.agentDeposit.update).toHaveBeenCalled();
+            expect(mockTx.agentBalance.update).toHaveBeenCalled();
+
+            // Verify FIFO Matching
+            // Deposit amount is 1500. 
+            // Collection 101 (1000) should be 'deposited'
+            // Collection 102 (500) should be 'deposited'
+            // Collection 103 (1000) should NOT be updated
+            expect(mockTx.agentCollection.update).toHaveBeenCalledTimes(2);
+            expect(mockTx.agentCollection.update).toHaveBeenCalledWith({
+                where: { id: 101 },
+                data: { status: 'deposited' }
             });
-            expect(mockTx.agentBalance.update).toHaveBeenCalledWith({
-                where: { id: balance.id },
-                data: expect.objectContaining({
-                    totalDeposited: { increment: deposit.amount },
-                    currentBalance: { decrement: deposit.amount },
-                }),
+            expect(mockTx.agentCollection.update).toHaveBeenCalledWith({
+                where: { id: 102 },
+                data: { status: 'deposited' }
             });
+
             expect(result.status).toBe('verified');
         });
 

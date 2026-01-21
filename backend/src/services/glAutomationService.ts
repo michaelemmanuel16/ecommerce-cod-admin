@@ -10,7 +10,7 @@
  * All methods are designed to be called from within Prisma transactions to ensure atomicity.
  */
 
-import { Prisma, Order, OrderItem, Product, Delivery, Customer, User, JournalEntry, AccountTransaction, JournalSourceType } from '@prisma/client';
+import { Prisma, Order, OrderItem, Product, Delivery, Customer, User, JournalEntry, AccountTransaction, JournalSourceType, AgentDeposit } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GL_ACCOUNTS, GL_DEFAULTS } from '../config/glAccounts';
 import { GLAccountService } from './glAccountService';
@@ -486,6 +486,52 @@ export class GLAutomationService {
       `Order ${orderId}: Missing COGS for products: ${missingProducts.join(', ')}. ` +
       `Using COGS = 0 for these products. Update product COGS in admin panel.`
     );
+  }
+
+  /**
+   * Create GL entry for agent deposit verification
+   *
+   * Records receipt of cash from agent and reduction of their receivable:
+   * - Debit: Cash in Hand (usually bank or actual cash vault)
+   * - Credit: Accounts Receivable - Agents
+   *
+   * @param tx - Prisma transaction client
+   * @param deposit - Agent deposit record
+   * @param userId - ID of user verifying the deposit
+   * @returns Created journal entry
+   */
+  static async createAgentDepositEntry(
+    tx: Prisma.TransactionClient,
+    deposit: AgentDeposit,
+    userId: number
+  ): Promise<JournalEntryWithTransactions> {
+    const depositAmount = new Decimal(deposit.amount.toString());
+
+    const transactions: TransactionCreateData[] = [
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
+        debitAmount: depositAmount,
+        creditAmount: new Decimal(0),
+        description: `Deposit verification - Agent #${deposit.agentId} (Ref: ${deposit.referenceNumber})`,
+      },
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS),
+        debitAmount: new Decimal(0),
+        creditAmount: depositAmount,
+        description: `Deposit matching - Agent #${deposit.agentId}`,
+      },
+    ];
+
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Agent deposit verification - Ref #${deposit.referenceNumber}`,
+      sourceType: JournalSourceType.agent_deposit,
+      sourceId: deposit.id,
+      createdBy: userId,
+      transactions: {
+        create: transactions,
+      },
+    });
   }
 
   /**

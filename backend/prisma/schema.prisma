@@ -776,7 +776,8 @@ model AgentDeposit {
   amount          Decimal          @map("amount") @db.Decimal(19, 4)
   status          DepositStatus    @default(pending)
   depositDate     DateTime         @map("deposit_date")
-  referenceNumber String?          @map("reference_number")
+  depositMethod   String           @map("deposit_method")
+  referenceNumber String           @unique @map("reference_number")
   verifiedAt      DateTime?        @map("verified_at")
   verifiedById    Int?             @map("verified_by_id")
   notes           String?

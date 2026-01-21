@@ -72,11 +72,23 @@ router.get('/agents/:id/balance',
 router.get('/agents/balances', requireRole('super_admin', 'admin', 'manager', 'accountant'), agentReconciliationController.getBalances);
 
 // Deposits
+router.get('/deposits',
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
+    [
+        query('agentId').optional().isInt().toInt(),
+        query('status').optional().isString(),
+        query('startDate').optional().isISO8601().toDate(),
+        query('endDate').optional().isISO8601().toDate(),
+        validate
+    ],
+    agentReconciliationController.getDeposits
+);
 router.post('/deposits',
     requireRole('super_admin', 'admin', 'manager', 'accountant', 'delivery_agent'),
     [
         body('amount').isNumeric().toFloat(),
-        body('referenceNumber').optional().isString(),
+        body('depositMethod').notEmpty().withMessage('Deposit method is required'),
+        body('referenceNumber').notEmpty().withMessage('Reference number is required'),
         body('notes').optional().isString(),
         body('agentId').optional().isInt().toInt(),
         validate
