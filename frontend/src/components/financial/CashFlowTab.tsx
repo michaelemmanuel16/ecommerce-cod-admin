@@ -108,12 +108,6 @@ export const CashFlowTab: React.FC = () => {
                 >
                   <Download className="w-5 h-5" />
                 </button>
-                <button
-                  className="p-2 text-gray-400 hover:text-blue-600 border border-gray-200 rounded-lg hover:border-blue-100 transition-colors"
-                  title="Email Report"
-                >
-                  <Mail className="w-5 h-5" />
-                </button>
               </div>
             </div>
             <CashFlowForecastChart data={forecast} height={350} />

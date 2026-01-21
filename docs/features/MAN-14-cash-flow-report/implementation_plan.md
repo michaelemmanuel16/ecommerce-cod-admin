@@ -6,7 +6,7 @@ Implement a real-time Cash Flow Report with KPI cards, a 30-day forecast, and an
 
 ### Backend
 
-#### [MODIFY] [financialService.ts](file:///Users/mac/Downloads/claude/ecommerce-cod-admin/backend/src/services/financialService.ts)
+#### [MODIFY] [financialService.ts](../../../backend/src/services/financialService.ts)
 - Implement `getCashFlowReport(filters: DateFilters)`:
     - **KPIs**:
         - `Cash in Hand`: Balance of GL account `1010`.
@@ -20,25 +20,23 @@ Implement a real-time Cash Flow Report with KPI cards, a 30-day forecast, and an
     - **Agent Breakdown**:
         - Aggregate pending collections (`reconciliationStatus: pending`) by agent.
         - Sort by descending amount.
-- Implement `exportCashFlowCSV()` and `exportCashFlowPDF()`.
-- Implement `emailCashFlowReport()`.
+- Implement `exportCashFlowCSV()`.
 
-#### [MODIFY] [financialController.ts](file:///Users/mac/Downloads/claude/ecommerce-cod-admin/backend/src/controllers/financialController.ts)
+#### [MODIFY] [financialController.ts](../../../backend/src/controllers/financialController.ts)
 - Add `getCashFlowReport` controller action.
-- Add export and email actions.
+- Add CSV export action.
 
-#### [MODIFY] [financialRoutes.ts](file:///Users/mac/Downloads/claude/ecommerce-cod-admin/backend/src/routes/financialRoutes.ts)
+#### [MODIFY] [financialRoutes.ts](../../../backend/src/routes/financialRoutes.ts)
 - Register `GET /cash-flow`.
-- Register export and email routes.
+- Register CSV export route.
 
 ### Frontend
 
-#### [MODIFY] [CashFlowTab.tsx](file:///Users/mac/Downloads/claude/ecommerce-cod-admin/frontend/src/components/financial/CashFlowTab.tsx)
 - Refactor to include:
     - **KPI Section**: 5 cards for the different cash positions.
     - **Forecast Section**: Line chart showing projected bank balance and collections.
     - **Agent Breakdown Section**: Table showing each agent's pending collections.
-    - **Export Actions**: Buttons for PDF, CSV, and Email.
+    - **Export Actions**: Button for CSV.
 
 #### [MODIFY] [financialStore.ts](file:///Users/mac/Downloads/claude/ecommerce-cod-admin/frontend/src/stores/financialStore.ts)
 - Add `cashFlowReport` state.
@@ -58,5 +56,4 @@ Implement a real-time Cash Flow Report with KPI cards, a 30-day forecast, and an
 1.  Navigate to **Financial Management** -> **Cash Flow** tab.
 2.  Verify KPI values match expected GL balances (can be checked via `prisma studio`).
 3.  Check the 30-day forecast chart for smooth projections.
-4.  Test "Export PDF" and "Export CSV" buttons.
-5.  Trigger "Email Report" and verify backend logs for email sending.
+4.  Test "Export CSV" button.

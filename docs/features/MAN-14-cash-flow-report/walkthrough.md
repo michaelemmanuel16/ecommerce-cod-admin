@@ -28,8 +28,8 @@ npm test src/__tests__/unit/cashFlow.test.ts
 - `generateCashFlowForecast`: PASSED (including cache verification)
 
 ### Frontend Components
-- [CashFlowTab.tsx](file:///Users/mac/Downloads/claude/ecommerce-cod-admin/frontend/src/components/financial/CashFlowTab.tsx): Main dashboard layout.
-- [CashFlowForecastChart.tsx](file:///Users/mac/Downloads/claude/ecommerce-cod-admin/frontend/src/components/financial/charts/CashFlowForecastChart.tsx): Forecast visualization.
+- [CashFlowTab.tsx](../../../frontend/src/components/financial/CashFlowTab.tsx): Main dashboard layout.
+- [CashFlowForecastChart.tsx](../../../frontend/src/components/financial/charts/CashFlowForecastChart.tsx): Forecast visualization.
 
 ### Full Suite Verification
 The project's pre-push check was executed to ensure build stability and lint compliance:

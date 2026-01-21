@@ -35,6 +35,18 @@ interface CashFlowForecast {
   projectedBalance: number;
 }
 
+interface AgentHolding {
+  agent: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  totalCollected: number;
+  orderCount: number;
+  OldestCollectionDate: Date;
+}
+
 interface TransactionFilters {
   type?: string;
   status?: PaymentStatus;
@@ -51,6 +63,14 @@ interface ReconcileTransactionData {
 
 export class FinancialService {
   private forecastCache: { data: CashFlowForecast[]; timestamp: number } | null = null;
+  private readonly FORECAST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
+
+  /**
+   * Safe conversion to number
+   */
+  private toNumber(value: string | number | null | undefined | Prisma.Decimal): number {
+    return Number(value || 0);
+  }
 
   /**
    * Get financial summary
@@ -157,12 +177,12 @@ export class FinancialService {
       })
     ]);
 
-    const totalRevenue = revenue._sum.amount || 0;
-    const totalExpenses = expenses._sum.amount || 0;
-    const totalCOD = codCollections._sum.amount || 0;
-    const transactionPending = pendingCOD._sum.amount || 0;
-    const deliveredPending = deliveredOrders._sum.totalAmount || 0;
-    const outForDelivery = outForDeliveryOrders._sum.totalAmount || 0;
+    const totalRevenue = this.toNumber(revenue._sum.amount);
+    const totalExpenses = this.toNumber(expenses._sum.amount);
+    const totalCOD = this.toNumber(codCollections._sum.amount);
+    const transactionPending = this.toNumber(pendingCOD._sum.amount);
+    const deliveredPending = this.toNumber(deliveredOrders._sum.totalAmount);
+    const outForDelivery = this.toNumber(outForDeliveryOrders._sum.totalAmount);
 
     // Outstanding COD = pending transactions + delivered orders awaiting collection + orders out for delivery
     const pendingCODAmount = transactionPending + deliveredPending + outForDelivery;
@@ -1000,33 +1020,34 @@ export class FinancialService {
       }
     });
 
-    if (!collections) return [];
+    if (!collections || collections.length === 0) return [];
 
     // Group by delivery agent
-    const holdingsMap: Record<number, {
-      agent: { id: number; firstName: string; lastName: string; email: string };
-      totalCollected: number;
-      orderCount: number;
-      oldestCollectionDate: Date;
-    }> = {};
+    const holdingsMap: Record<number, AgentHolding> = {};
 
     collections.forEach((collection) => {
-      if (collection.order && collection.order.deliveryAgent) {
-        const agentId = collection.order.deliveryAgent.id;
+      const agent = collection.order?.deliveryAgent;
+      if (agent) {
+        const agentId = agent.id;
 
         if (!holdingsMap[agentId]) {
           holdingsMap[agentId] = {
-            agent: collection.order.deliveryAgent as any,
+            agent: {
+              id: agent.id,
+              firstName: agent.firstName,
+              lastName: agent.lastName,
+              email: agent.email
+            },
             totalCollected: 0,
             orderCount: 0,
-            oldestCollectionDate: collection.createdAt
+            OldestCollectionDate: collection.createdAt
           };
         }
 
-        holdingsMap[agentId].totalCollected += Number(collection.amount);
+        holdingsMap[agentId].totalCollected += this.toNumber(collection.amount);
         holdingsMap[agentId].orderCount += 1;
-        if (collection.createdAt < holdingsMap[agentId].oldestCollectionDate) {
-          holdingsMap[agentId].oldestCollectionDate = collection.createdAt;
+        if (collection.createdAt < holdingsMap[agentId].OldestCollectionDate) {
+          holdingsMap[agentId].OldestCollectionDate = collection.createdAt;
         }
       }
     });
@@ -1039,7 +1060,8 @@ export class FinancialService {
       holdings = holdings.filter(h => h.agent.id === requester.id);
     }
 
-    return holdings;
+    // Limit to top 20 agents for performance as per PR feedback
+    return holdings.slice(0, 20);
   }
 
   /**
@@ -1064,10 +1086,10 @@ export class FinancialService {
     });
 
     const kpis = {
-      cashInHand: Number(cashInHand?.currentBalance || 0),
-      cashInTransit: Number(cashInTransit?.currentBalance || 0),
-      arAgents: Number(arAgents?.currentBalance || 0),
-      cashExpected: Number(outForDelivery._sum.totalAmount || 0),
+      cashInHand: this.toNumber(cashInHand?.currentBalance),
+      cashInTransit: this.toNumber(cashInTransit?.currentBalance),
+      arAgents: this.toNumber(arAgents?.currentBalance),
+      cashExpected: this.toNumber(outForDelivery._sum.totalAmount),
     };
 
     const totalCashPosition = kpis.cashInHand + kpis.cashInTransit + kpis.arAgents + kpis.cashExpected;
@@ -1090,8 +1112,7 @@ export class FinancialService {
    * Uses historical data (last 30 days) to project future flows
    */
   async generateCashFlowForecast() {
-    const hourly = 60 * 60 * 1000;
-    if (this.forecastCache && Date.now() - this.forecastCache.timestamp < hourly) {
+    if (this.forecastCache && Date.now() - this.forecastCache.timestamp < this.FORECAST_CACHE_DURATION_MS) {
       return this.forecastCache.data;
     }
 
@@ -1116,8 +1137,8 @@ export class FinancialService {
       })
     ]);
 
-    const avgDailyCollection = Number(historicalCollections._sum.amount || 0) / 30;
-    const avgDailyExpense = Number(historicalExpenses._sum.amount || 0) / 30;
+    const avgDailyCollection = this.toNumber(historicalCollections._sum.amount) / 30;
+    const avgDailyExpense = this.toNumber(historicalExpenses._sum.amount) / 30;
 
     // Start with current liquidity (Cash in Hand + Bank if existed)
     // For this implementation, we'll use Total Cash Position as starting balance
@@ -1126,7 +1147,7 @@ export class FinancialService {
       prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT } }),
     ]);
 
-    let runningBalance = Number(cashInHand?.currentBalance || 0) + Number(cashInTransit?.currentBalance || 0);
+    let runningBalance = this.toNumber(cashInHand?.currentBalance) + this.toNumber(cashInTransit?.currentBalance);
 
     const forecast: CashFlowForecast[] = [];
     const today = new Date();
