@@ -802,7 +802,7 @@ model AgentAgingBucket {
   oldestCollectionDate DateTime? @map("oldest_collection_date")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
-  agent User @relation(fields: [agentId], references: [id])
+  agent User @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@map("agent_aging_buckets")
 }
