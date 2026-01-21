@@ -196,34 +196,44 @@ export class AgentReconciliationController {
         const { amount, depositMethod, referenceNumber, notes, agentId: providedAgentId } = req.body;
         const user = (req as any).user;
 
-        // If providedAgentId is set, check if user has permission to create for another agent
+        // RBAC: Strengthened check for creating deposits for others
         let targetAgentId = user.id;
-        if (providedAgentId && parseInt(providedAgentId) !== user.id) {
-            if (!['manager', 'admin', 'accountant'].includes(user.role)) {
-                throw new AppError('Access denied: You cannot create deposits for other agents', 403);
+        if (providedAgentId) {
+            const parsedProvidedId = parseInt(providedAgentId);
+            if (isNaN(parsedProvidedId)) throw new AppError('Invalid agent ID format', 400);
+
+            if (parsedProvidedId !== user.id) {
+                const canManageOthers = ['manager', 'admin', 'accountant', 'super_admin'].includes(user.role);
+                if (!canManageOthers) {
+                    throw new AppError('Access denied: You cannot create deposits for other agents', 403);
+                }
+                targetAgentId = parsedProvidedId;
             }
-            targetAgentId = parseInt(providedAgentId);
         }
 
-        if (isNaN(targetAgentId)) throw new AppError('Invalid agent ID', 400);
-        if (!depositMethod) throw new AppError('Deposit method is required', 400);
-        if (!referenceNumber) throw new AppError('Reference number is required', 400);
+        try {
+            const result = await agentReconciliationService.createDeposit(
+                targetAgentId,
+                parseFloat(amount),
+                depositMethod,
+                referenceNumber,
+                notes
+            );
 
-        const result = await agentReconciliationService.createDeposit(
-            targetAgentId,
-            parseFloat(amount),
-            depositMethod,
-            referenceNumber,
-            notes
-        );
+            // Emit socket event for accountants to see the new pending deposit
+            const io = getSocketInstance();
+            if (io) {
+                io.emit('agent:deposit-submitted', result);
+            }
 
-        // Emit socket event for accountants to see the new pending deposit
-        const io = getSocketInstance();
-        if (io) {
-            io.emit('agent:deposit-submitted', result);
+            res.status(201).json(result);
+        } catch (error: any) {
+            // Handle Prisma unique constraint violation for reference_number
+            if (error.code === 'P2002' && error.meta?.target?.includes('reference_number')) {
+                throw new AppError('A deposit with this reference number already exists', 409);
+            }
+            throw error;
         }
-
-        res.status(201).json(result);
     }
 
     /**

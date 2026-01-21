@@ -305,8 +305,10 @@ export class AgentReconciliationService {
             const { GLAutomationService } = await import('./glAutomationService');
             await GLAutomationService.createAgentDepositEntry(extTx, updated, verifierId);
 
-            // FIFO Matching to Approved Collections
+            // FIFO Matching to Approved Collections (Optimized Bulk Update)
             let remainingAmount = depAmt;
+            const collectionIdsToVerify: number[] = [];
+
             const approvedCollections = await extTx.agentCollection.findMany({
                 where: {
                     agentId: deposit.agentId,
@@ -324,12 +326,29 @@ export class AgentReconciliationService {
 
                 // If the collection can be fully covered by the remaining deposit
                 if (remainingAmount.greaterThanOrEqualTo(collAmount)) {
-                    await extTx.agentCollection.update({
-                        where: { id: coll.id },
-                        data: { status: 'deposited' }
-                    });
+                    collectionIdsToVerify.push(coll.id);
                     remainingAmount = remainingAmount.minus(collAmount);
                 }
+            }
+
+            // Perform bulk update if there are collections to verify
+            if (collectionIdsToVerify.length > 0) {
+                await extTx.agentCollection.updateMany({
+                    where: { id: { in: collectionIdsToVerify } },
+                    data: { status: 'deposited' }
+                });
+            }
+
+            // If there's an unallocated remainder, update the deposit note
+            if (!remainingAmount.isZero()) {
+                await extTx.agentDeposit.update({
+                    where: { id: depositId },
+                    data: {
+                        notes: deposit.notes
+                            ? `${deposit.notes} (Unallocated remainder: ${remainingAmount.toString()})`
+                            : `Unallocated remainder: ${remainingAmount.toString()}`
+                    }
+                });
             }
 
             logger.info(`Deposit ${depositId} verified by user ${verifierId}`);

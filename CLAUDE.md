@@ -59,7 +59,7 @@ git push -u origin feature/descriptive-name
 **3. Deploy to staging (test first):**
 - Create PR on GitHub: `feature/descriptive-name` → `develop`
 - Merge PR → Auto-deploys to staging
-- Test at: http://143.110.197.200:5174
+- Test at: https://staging.codadminpro.com
 
 **4. Deploy to production (after testing):**
 - Create PR on GitHub: `develop` → `main`

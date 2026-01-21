@@ -86,10 +86,12 @@ router.get('/deposits',
 router.post('/deposits',
     requireRole('super_admin', 'admin', 'manager', 'accountant', 'delivery_agent'),
     [
-        body('amount').isNumeric().toFloat(),
-        body('depositMethod').notEmpty().withMessage('Deposit method is required'),
-        body('referenceNumber').notEmpty().withMessage('Reference number is required'),
-        body('notes').optional().isString(),
+        body('amount').isNumeric().withMessage('Amount must be a number').toFloat(),
+        body('depositMethod').isIn(['bank_transfer', 'cash', 'mobile_money', 'check'])
+            .withMessage('Invalid deposit method'),
+        body('referenceNumber').trim().notEmpty().withMessage('Reference number is required')
+            .isLength({ min: 1, max: 100 }).withMessage('Reference number is too long'),
+        body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes are too long'),
         body('agentId').optional().isInt().toInt(),
         validate
     ],

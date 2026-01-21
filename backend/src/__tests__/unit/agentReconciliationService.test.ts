@@ -11,6 +11,7 @@ jest.mock('../../utils/prisma', () => ({
         agentCollection: {
             findUnique: jest.fn(),
             update: jest.fn(),
+            updateMany: jest.fn(),
             create: jest.fn(),
             findMany: jest.fn(),
         },
@@ -26,6 +27,7 @@ jest.mock('../../utils/prisma', () => ({
         agentDeposit: {
             findUnique: jest.fn(),
             update: jest.fn(),
+            updateMany: jest.fn(),
             create: jest.fn(),
             findMany: jest.fn(),
         },
@@ -260,22 +262,42 @@ describe('AgentReconciliationService', () => {
             expect(mockTx.agentDeposit.update).toHaveBeenCalled();
             expect(mockTx.agentBalance.update).toHaveBeenCalled();
 
-            // Verify FIFO Matching
-            // Deposit amount is 1500. 
-            // Collection 101 (1000) should be 'deposited'
-            // Collection 102 (500) should be 'deposited'
-            // Collection 103 (1000) should NOT be updated
-            expect(mockTx.agentCollection.update).toHaveBeenCalledTimes(2);
-            expect(mockTx.agentCollection.update).toHaveBeenCalledWith({
-                where: { id: 101 },
+            // [FIX] Verify Optimized FIFO Matching (Bulk Update)
+            expect(mockTx.agentCollection.updateMany).toHaveBeenCalledWith({
+                where: { id: { in: [101, 102] } },
                 data: { status: 'deposited' }
             });
-            expect(mockTx.agentCollection.update).toHaveBeenCalledWith({
-                where: { id: 102 },
-                data: { status: 'deposited' }
-            });
+            expect(mockTx.agentCollection.update).not.toHaveBeenCalled();
 
             expect(result.status).toBe('verified');
+        });
+
+        it('should handle unallocated remainder by updating deposit notes', async () => {
+            const depositId = 1;
+            const verifierId = 789;
+            const agentId = 456;
+            // Deposit is 1000, but only 400 is matched
+            const deposit = { id: depositId, agentId, amount: 1000, status: 'pending', referenceNumber: 'DEP456', notes: 'Initial note' };
+            const balance = { id: 10, agentId, currentBalance: 2000 };
+            const collections = [
+                { id: 101, agentId, amount: 400, status: 'approved', collectionDate: new Date() }
+            ];
+
+            mockTx.agentDeposit.findUnique.mockResolvedValue(deposit);
+            mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'verified' });
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.agentCollection.findMany.mockResolvedValue(collections);
+
+            await agentReconciliationService.verifyDeposit(depositId, verifierId);
+
+            // Check if update was called to add unallocated remainder note
+            // Note: There are two update calls now: one for status='verified' and one for notes
+            expect(mockTx.agentDeposit.update).toHaveBeenCalledWith(expect.objectContaining({
+                where: { id: depositId },
+                data: expect.objectContaining({
+                    notes: expect.stringContaining('Unallocated remainder: 600')
+                })
+            }));
         });
 
         it('should throw error if deposit amount exceeds current balance', async () => {

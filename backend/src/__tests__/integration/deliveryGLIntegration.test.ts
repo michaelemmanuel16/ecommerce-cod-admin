@@ -53,7 +53,14 @@ describe('Delivery GL Integration', () => {
     await (prisma as any).agentCollection.deleteMany({});
     await prisma.delivery.deleteMany({});
     await prisma.orderItem.deleteMany({});
+    await (prisma as any).formSubmission.deleteMany({});
     await prisma.order.deleteMany({});
+    await (prisma as any).formUpsell.deleteMany({});
+    await (prisma as any).formPackage.deleteMany({});
+    await (prisma as any).checkoutForm.deleteMany({});
+    await (prisma as any).webhookLog.deleteMany({});
+    await (prisma as any).webhookConfig.deleteMany({});
+    await (prisma as any).product_cost_entries.deleteMany({});
     await prisma.product.deleteMany({});
     await prisma.customer.deleteMany({});
     await prisma.account.deleteMany({});
@@ -171,7 +178,14 @@ describe('Delivery GL Integration', () => {
     await (prisma as any).agentCollection.deleteMany({});
     await prisma.delivery.deleteMany({});
     await prisma.orderItem.deleteMany({});
+    await (prisma as any).formSubmission.deleteMany({});
     await prisma.order.deleteMany({});
+    await (prisma as any).formUpsell.deleteMany({});
+    await (prisma as any).formPackage.deleteMany({});
+    await (prisma as any).checkoutForm.deleteMany({});
+    await (prisma as any).webhookLog.deleteMany({});
+    await (prisma as any).webhookConfig.deleteMany({});
+    await (prisma as any).product_cost_entries.deleteMany({});
     await prisma.product.deleteMany({});
     await prisma.customer.deleteMany({});
     await prisma.user.deleteMany({

@@ -788,6 +788,8 @@ model AgentDeposit {
   verifier User? @relation("VerifiedDeposits", fields: [verifiedById], references: [id])
 
   @@index([agentId])
+  @@index([depositDate])
+  @@index([agentId, depositDate])
   @@index([status])
   @@map("agent_deposits")
 }
