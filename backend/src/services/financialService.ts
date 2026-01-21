@@ -1,3 +1,4 @@
+import { Parser } from 'json2csv';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, PaymentStatus } from '@prisma/client';
@@ -11,6 +12,7 @@ import {
   emitTransactionDeposited,
   emitTransactionReconciled
 } from '../sockets/index';
+import { GL_ACCOUNTS } from '../config/glAccounts';
 
 interface DateFilters {
   startDate?: Date;
@@ -24,6 +26,13 @@ interface CreateExpenseData {
   expenseDate: Date;
   recordedBy: string;
   receiptUrl?: string;
+}
+
+interface CashFlowForecast {
+  date: string;
+  expectedCollection: number;
+  expectedExpense: number;
+  projectedBalance: number;
 }
 
 interface TransactionFilters {
@@ -41,6 +50,8 @@ interface ReconcileTransactionData {
 }
 
 export class FinancialService {
+  private forecastCache: { data: CashFlowForecast[]; timestamp: number } | null = null;
+
   /**
    * Get financial summary
    */
@@ -989,6 +1000,8 @@ export class FinancialService {
       }
     });
 
+    if (!collections) return [];
+
     // Group by delivery agent
     const holdingsMap: Record<number, {
       agent: { id: number; firstName: string; lastName: string; email: string };
@@ -998,22 +1011,20 @@ export class FinancialService {
     }> = {};
 
     collections.forEach((collection) => {
-      if (collection.order?.deliveryAgent) {
+      if (collection.order && collection.order.deliveryAgent) {
         const agentId = collection.order.deliveryAgent.id;
 
         if (!holdingsMap[agentId]) {
           holdingsMap[agentId] = {
-            agent: collection.order.deliveryAgent,
+            agent: collection.order.deliveryAgent as any,
             totalCollected: 0,
             orderCount: 0,
             oldestCollectionDate: collection.createdAt
           };
         }
 
-        holdingsMap[agentId].totalCollected += collection.amount;
+        holdingsMap[agentId].totalCollected += Number(collection.amount);
         holdingsMap[agentId].orderCount += 1;
-
-        // Update oldest collection date
         if (collection.createdAt < holdingsMap[agentId].oldestCollectionDate) {
           holdingsMap[agentId].oldestCollectionDate = collection.createdAt;
         }
@@ -1029,6 +1040,139 @@ export class FinancialService {
     }
 
     return holdings;
+  }
+
+  /**
+   * Get Cash Flow Report
+   */
+  async getCashFlowReport(requester?: Requester) {
+    // 1. Get current cash position KPIs from GL
+    const [cashInHand, cashInTransit, arAgents] = await Promise.all([
+      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_HAND } }),
+      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT } }),
+      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.AR_AGENTS } }),
+    ]);
+
+    // 2. Calculate Cash Expected (Out for delivery orders - COD amount)
+    const outForDelivery = await prisma.order.aggregate({
+      where: {
+        status: 'out_for_delivery',
+        deletedAt: null,
+        codAmount: { not: null }
+      },
+      _sum: { totalAmount: true }
+    });
+
+    const kpis = {
+      cashInHand: Number(cashInHand?.currentBalance || 0),
+      cashInTransit: Number(cashInTransit?.currentBalance || 0),
+      arAgents: Number(arAgents?.currentBalance || 0),
+      cashExpected: Number(outForDelivery._sum.totalAmount || 0),
+    };
+
+    const totalCashPosition = kpis.cashInHand + kpis.cashInTransit + kpis.arAgents + kpis.cashExpected;
+
+    // 3. 30-day Forecast
+    const forecast = await this.generateCashFlowForecast();
+
+    // 4. Agent Breakdown (Pending collections)
+    const agentBreakdown = await this.getAgentCashHoldings(requester);
+
+    return {
+      kpis: { ...kpis, totalCashPosition },
+      forecast,
+      agentBreakdown
+    };
+  }
+
+  /**
+   * Generate 30-day Cash Flow Forecast
+   * Uses historical data (last 30 days) to project future flows
+   */
+  async generateCashFlowForecast() {
+    const hourly = 60 * 60 * 1000;
+    if (this.forecastCache && Date.now() - this.forecastCache.timestamp < hourly) {
+      return this.forecastCache.data;
+    }
+
+    // Calculate historical averages (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [historicalCollections, historicalExpenses] = await Promise.all([
+      prisma.transaction.aggregate({
+        where: {
+          type: 'cod_collection',
+          status: { in: ['collected', 'deposited', 'reconciled'] },
+          createdAt: { gte: thirtyDaysAgo }
+        },
+        _sum: { amount: true }
+      }),
+      prisma.expense.aggregate({
+        where: {
+          expenseDate: { gte: thirtyDaysAgo }
+        },
+        _sum: { amount: true }
+      })
+    ]);
+
+    const avgDailyCollection = Number(historicalCollections._sum.amount || 0) / 30;
+    const avgDailyExpense = Number(historicalExpenses._sum.amount || 0) / 30;
+
+    // Start with current liquidity (Cash in Hand + Bank if existed)
+    // For this implementation, we'll use Total Cash Position as starting balance
+    const [cashInHand, cashInTransit] = await Promise.all([
+      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_HAND } }),
+      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT } }),
+    ]);
+
+    let runningBalance = Number(cashInHand?.currentBalance || 0) + Number(cashInTransit?.currentBalance || 0);
+
+    const forecast: CashFlowForecast[] = [];
+    const today = new Date();
+
+    for (let i = 1; i <= 30; i++) {
+      const forecastDate = new Date(today);
+      forecastDate.setDate(today.getDate() + i);
+
+      runningBalance += (avgDailyCollection - avgDailyExpense);
+
+      forecast.push({
+        date: forecastDate.toISOString().split('T')[0],
+        expectedCollection: avgDailyCollection,
+        expectedExpense: avgDailyExpense,
+        projectedBalance: Math.max(0, runningBalance)
+      });
+    }
+
+    this.forecastCache = { data: forecast, timestamp: Date.now() };
+    return forecast;
+  }
+
+  /**
+   * Export Cash Flow Report as CSV
+   */
+  async exportCashFlowCSV(requester?: Requester) {
+    const report = await this.getCashFlowReport(requester);
+
+    // Prepare data for CSV
+    const csvData = [
+      { Section: 'KPIs', Label: 'Cash in Hand', Value: report.kpis.cashInHand },
+      { Section: 'KPIs', Label: 'Cash in Transit', Value: report.kpis.cashInTransit },
+      { Section: 'KPIs', Label: 'AR Agents', Value: report.kpis.arAgents },
+      { Section: 'KPIs', Label: 'Cash Expected', Value: report.kpis.cashExpected },
+      { Section: 'KPIs', Label: 'Total Cash Position', Value: report.kpis.totalCashPosition },
+      { Section: '---', Label: '---', Value: '---' },
+      { Section: 'Forecast (Next 30 Days)', Label: 'Date', Value: 'Projected Balance' },
+      ...report.forecast.map(f => ({
+        Section: 'Forecast',
+        Label: f.date,
+        Value: f.projectedBalance
+      }))
+    ];
+
+    const parser = new Parser();
+    return parser.parse(csvData);
   }
 }
 

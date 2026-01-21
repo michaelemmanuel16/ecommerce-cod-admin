@@ -234,3 +234,24 @@ export const reconcileTransaction = async (req: AuthRequest, res: Response): Pro
     throw error;
   }
 };
+
+export const getCashFlowReport = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const report = await financialService.getCashFlowReport(req.user);
+    res.json(report);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const exportCashFlowCSV = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const csv = await financialService.exportCashFlowCSV(req.user);
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=cash_flow_report_${Date.now()}.csv`);
+    res.send(csv);
+  } catch (error) {
+    throw error;
+  }
+};
