@@ -97,7 +97,7 @@ export class AgentReconciliationController {
         // Emit socket event for the whole batch
         const io = getSocketInstance();
         if (io) {
-            io.emit('collections:bulkVerified', { count: results.filter(r => r.success).length });
+            io.emit('collections:bulkVerified', { count: results.length });
         }
 
         res.json(results);
@@ -199,6 +199,28 @@ export class AgentReconciliationController {
             const balance = await agentReconciliationService.getAgentBalance(result.agentId);
             io.emit(`agent:balance-updated`, { agentId: result.agentId, balance });
             io.emit('deposit:verified', result);
+        }
+
+        res.json(result);
+    }
+
+    /**
+     * Reject a deposit (Accountant only)
+     */
+    async rejectDeposit(req: Request, res: Response) {
+        const { id } = req.params;
+        const { notes } = req.body;
+        const userId = (req as any).user.id;
+
+        const parsedId = parseInt(id);
+        if (isNaN(parsedId)) throw new AppError('Invalid deposit ID', 400);
+
+        const result = await agentReconciliationService.rejectDeposit(parsedId, userId, notes);
+
+        // Emit socket event (optional for rejection, but good for real-time status)
+        const io = getSocketInstance();
+        if (io) {
+            io.emit('deposit:rejected', result);
         }
 
         res.json(result);

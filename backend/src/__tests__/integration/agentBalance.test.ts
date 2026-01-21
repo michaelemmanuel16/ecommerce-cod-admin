@@ -153,6 +153,7 @@ describe('Agent Balance and Deposit Integration', () => {
     });
 
     it('should not allow deposit verification that leads to negative balance', async () => {
+        // ... previous test code ...
         // Initialize balance with 500
         const collection = await (prisma as any).agentCollection.create({
             data: {
@@ -171,5 +172,23 @@ describe('Agent Balance and Deposit Integration', () => {
         // Verify should fail
         await expect(agentReconciliationService.verifyDeposit(deposit.id, testUser.id))
             .rejects.toThrow(/Deposit amount exceeds current agent balance/);
+    });
+
+    it('should allow deposit rejection and not change balance', async () => {
+        // 1. Initialize balance
+        const initialBalance = await agentReconciliationService.getOrCreateBalance(testAgent.id);
+
+        // 2. Create deposit
+        const deposit = await agentReconciliationService.createDeposit(testAgent.id, 500);
+
+        // 3. Reject deposit
+        const rejected = await agentReconciliationService.rejectDeposit(deposit.id, testUser.id, 'Invalid deposit');
+        expect(rejected.status).toBe('rejected');
+        expect(rejected.notes).toContain('Invalid deposit');
+
+        // 4. Check balance - should still be 0
+        const finalBalance = await agentReconciliationService.getAgentBalance(testAgent.id);
+        expect(Number(finalBalance!.currentBalance)).toBe(0);
+        expect(Number(finalBalance!.totalDeposited)).toBe(0);
     });
 });

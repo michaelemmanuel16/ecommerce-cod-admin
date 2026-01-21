@@ -221,6 +221,30 @@ describe('AgentReconciliationService', () => {
         });
     });
 
+    describe('rejectDeposit', () => {
+        it('should reject a pending deposit', async () => {
+            const depositId = 1;
+            const userId = 789;
+            const deposit = { id: depositId, agentId: 456, amount: 1000, status: 'pending' };
+
+            mockTx.agentDeposit.findUnique.mockResolvedValue(deposit);
+            mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'rejected' });
+
+            const result = await agentReconciliationService.rejectDeposit(depositId, userId, 'Test rejection');
+
+            expect(mockTx.agentDeposit.update).toHaveBeenCalledWith({
+                where: { id: depositId },
+                data: expect.objectContaining({
+                    status: 'rejected',
+                    verifiedById: userId,
+                }),
+            });
+            expect(result.status).toBe('rejected');
+            // Agent balance should NOT be updated
+            expect(mockTx.agentBalance.update).not.toHaveBeenCalled();
+        });
+    });
+
     describe('bulkVerifyCollections', () => {
         it('should verify multiple collections successfully', async () => {
             const collectionIds = [1, 2];

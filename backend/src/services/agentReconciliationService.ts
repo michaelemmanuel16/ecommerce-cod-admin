@@ -18,7 +18,7 @@ export class AgentReconciliationService {
         amount: number,
         collectionDate: Date
     ) {
-        const collection = await tx.agentCollection.create({
+        const collection = await (tx as any).agentCollection.create({
             data: {
                 orderId,
                 agentId,
@@ -43,7 +43,7 @@ export class AgentReconciliationService {
      */
     async verifyCollection(collectionId: number, verifierId: number) {
         return await prisma.$transaction(async (tx) => {
-            const collection = await tx.agentCollection.findUnique({
+            const collection = await (tx as any).agentCollection.findUnique({
                 where: { id: collectionId },
                 include: { order: true }
             });
@@ -57,7 +57,7 @@ export class AgentReconciliationService {
             }
 
             // Update collection status
-            const updated = await tx.agentCollection.update({
+            const updated = await (tx as any).agentCollection.update({
                 where: { id: collectionId },
                 data: {
                     status: 'verified',
@@ -84,10 +84,11 @@ export class AgentReconciliationService {
         collection: any,
         userId: number
     ) {
+        const extTx = tx as any;
         const entryNumber = await GLUtils.generateEntryNumber(tx);
         const amount = new Prisma.Decimal(collection.amount.toString());
 
-        await tx.journalEntry.create({
+        await extTx.journalEntry.create({
             data: {
                 entryNumber,
                 entryDate: new Date(),
@@ -121,7 +122,7 @@ export class AgentReconciliationService {
      */
     async approveCollection(collectionId: number, approverId: number) {
         return await prisma.$transaction(async (tx) => {
-            const collection = await tx.agentCollection.findUnique({
+            const collection = await (tx as any).agentCollection.findUnique({
                 where: { id: collectionId },
             });
 
@@ -134,7 +135,7 @@ export class AgentReconciliationService {
             }
 
             // Update collection status
-            const updated = await tx.agentCollection.update({
+            const updated = await (tx as any).agentCollection.update({
                 where: { id: collectionId },
                 data: {
                     status: 'approved',
@@ -168,10 +169,7 @@ export class AgentReconciliationService {
         });
     }
 
-    /**
-     * Get or create agent balance record
-     */
-    async getOrCreateBalance(agentId: number, tx?: Prisma.TransactionClient) {
+    async getOrCreateBalance(agentId: number, tx?: any): Promise<any> {
         const client = (tx || prisma) as any;
         const balance = await client.agentBalance.findUnique({
             where: { agentId },
@@ -197,7 +195,7 @@ export class AgentReconciliationService {
             throw new AppError('Deposit amount must be greater than zero', 400);
         }
 
-        const deposit = await (prisma as any).agentDeposit.create({
+        const deposit = await (prisma as unknown as any).agentDeposit.create({
             data: {
                 agentId,
                 amount,
@@ -213,11 +211,49 @@ export class AgentReconciliationService {
     }
 
     /**
+     * Reject an agent deposit
+     */
+    async rejectDeposit(depositId: number, rejectedById: number, notes?: string): Promise<any> {
+        return await prisma.$transaction(async (tx) => {
+            const extTx = tx as any;
+            const deposit = await extTx.agentDeposit.findUnique({
+                where: { id: depositId },
+                include: { verifier: { select: { firstName: true, lastName: true } } }
+            });
+
+            if (!deposit) {
+                throw new AppError('Deposit record not found', 404);
+            }
+
+            if (deposit.status !== 'pending') {
+                throw new AppError(`Deposit cannot be rejected from status: ${deposit.status}`, 400);
+            }
+
+            const dateStr = new Date().toLocaleString();
+            const formattedNotes = notes ? `${deposit.notes ? deposit.notes + '\n' : ''}[REJECTED] ${dateStr}: ${notes}` : deposit.notes;
+
+            const updated = await extTx.agentDeposit.update({
+                where: { id: depositId },
+                data: {
+                    status: 'rejected',
+                    verifiedAt: new Date(),
+                    verifiedById: rejectedById,
+                    notes: formattedNotes,
+                },
+            });
+
+            logger.info(`Deposit ${depositId} rejected by user ${rejectedById}`);
+            return updated;
+        });
+    }
+
+    /**
      * Verify an agent deposit
      */
-    async verifyDeposit(depositId: number, verifierId: number) {
+    async verifyDeposit(depositId: number, verifierId: number): Promise<any> {
         return await prisma.$transaction(async (tx) => {
-            const deposit = await (tx as any).agentDeposit.findUnique({
+            const extTx = tx as any;
+            const deposit = await extTx.agentDeposit.findUnique({
                 where: { id: depositId },
             });
 
@@ -230,7 +266,7 @@ export class AgentReconciliationService {
             }
 
             // Update deposit record
-            const updated = await (tx as any).agentDeposit.update({
+            const updated = await extTx.agentDeposit.update({
                 where: { id: depositId },
                 data: {
                     status: 'verified',
@@ -240,14 +276,14 @@ export class AgentReconciliationService {
             });
 
             // Update agent balance
-            const balance = await this.getOrCreateBalance(deposit.agentId, tx as any);
+            const balance = await this.getOrCreateBalance(deposit.agentId, extTx);
 
             // Validation: Prevent negative balance
             if (new Prisma.Decimal(balance.currentBalance.toString()).lessThan(deposit.amount)) {
                 throw new AppError('Verification failed: Deposit amount exceeds current agent balance', 400);
             }
 
-            await (tx as any).agentBalance.update({
+            await extTx.agentBalance.update({
                 where: { id: balance.id },
                 data: {
                     totalDeposited: { increment: deposit.amount },
@@ -259,7 +295,7 @@ export class AgentReconciliationService {
             // Create GL Entry
             // Debit: CASH_IN_HAND (1010) - Assuming direct cash handover or bank dep
             // Credit: AR_AGENTS (1020)
-            await this.createDepositGLEntry(tx as any, updated, verifierId);
+            await this.createDepositGLEntry(extTx, updated, verifierId);
 
             logger.info(`Deposit ${depositId} verified by user ${verifierId}`);
             return updated;
@@ -270,13 +306,13 @@ export class AgentReconciliationService {
      * Create GL entry for deposit verification
      */
     private async createDepositGLEntry(tx: any, deposit: any, userId: number) {
+        const extTx = tx as any;
         const entryNumber = await GLUtils.generateEntryNumber(tx);
         const amount = new Prisma.Decimal(deposit.amount.toString());
 
-        await tx.journalEntry.create({
+        await extTx.journalEntry.create({
             data: {
-                entryNumber,
-                entryDate: new Date(),
+                entryNumber, entryDate: new Date(),
                 description: `Agent deposit verification - Deposit #${deposit.id}`,
                 sourceType: JournalSourceType.agent_deposit,
                 sourceId: deposit.id,
@@ -305,7 +341,7 @@ export class AgentReconciliationService {
      * Get specific agent balance
      */
     async getAgentBalance(agentId: number) {
-        return await (prisma as any).agentBalance.findUnique({
+        return await (prisma as unknown as any).agentBalance.findUnique({
             where: { agentId },
         });
     }
@@ -313,8 +349,8 @@ export class AgentReconciliationService {
     /**
      * Get all agent balances
      */
-    async getAllAgentBalances() {
-        return await (prisma as any).agentBalance.findMany({
+    async getAllAgentBalances(): Promise<any[]> {
+        return await (prisma as unknown as any).agentBalance.findMany({
             include: {
                 agent: {
                     select: {
@@ -337,10 +373,11 @@ export class AgentReconciliationService {
      */
     async bulkVerifyCollections(collectionIds: number[], verifierId: number) {
         return await prisma.$transaction(async (tx) => {
+            const extTx = tx as any;
             const results = [];
             for (const id of collectionIds) {
                 // Fail fast - any error will roll back the transaction
-                const result = await this.verifyCollectionInternal(tx, id, verifierId);
+                const result = await this.verifyCollectionInternal(extTx, id, verifierId);
                 results.push(result);
             }
             return results;
@@ -351,7 +388,7 @@ export class AgentReconciliationService {
      * Internal version of verifyCollection that accepts a transaction client
      */
     private async verifyCollectionInternal(tx: any, collectionId: number, verifierId: number) {
-        const collection = await tx.agentCollection.findUnique({
+        const collection = await (tx as any).agentCollection.findUnique({
             where: { id: collectionId },
             include: { order: true }
         });
@@ -365,7 +402,7 @@ export class AgentReconciliationService {
         }
 
         // Update collection status
-        const updated = await tx.agentCollection.update({
+        const updated = await (tx as any).agentCollection.update({
             where: { id: collectionId },
             data: {
                 status: 'verified',
@@ -375,7 +412,7 @@ export class AgentReconciliationService {
         });
 
         // Create GL Journal Entry using shared utility
-        await this.createVerificationGLEntry(tx, updated, verifierId);
+        await this.createVerificationGLEntry(tx as any, updated, verifierId);
 
         logger.info(`Collection ${collectionId} verified by user ${verifierId}`);
         return updated;
