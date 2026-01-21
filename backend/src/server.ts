@@ -40,6 +40,7 @@ import { GLAutomationService } from './services/glAutomationService';
 
 // Initialize workflow queue worker
 import './queues/workflowQueue';
+import { setupAgingCron } from './queues/agingQueue';
 
 // Validate environment variables before starting server
 try {
@@ -180,6 +181,9 @@ if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, async () => {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+
+    // Setup Agent Aging Cron Job
+    await setupAgingCron();
 
     // Verify GL Accounts (Production only requirement for financial stability)
     if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') {

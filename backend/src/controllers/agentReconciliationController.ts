@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import agentReconciliationService from '../services/agentReconciliationService';
+import agingService from '../services/agingService';
 import { AppError } from '../middleware/errorHandler';
 import prisma from '../utils/prisma';
 import { getSocketInstance } from '../utils/socketInstance';
@@ -224,6 +225,35 @@ export class AgentReconciliationController {
         }
 
         res.json(result);
+    }
+
+    /**
+     * Get agent aging report (Manager/Admin/Accountant)
+     */
+    async getAgingReport(_req: Request, res: Response) {
+        const report = await agingService.getAgingReport();
+        res.json(report);
+    }
+
+    /**
+     * Export aging report to CSV (Manager/Admin/Accountant)
+     */
+    async exportAgingReport(_req: Request, res: Response) {
+        const report = await agingService.getAgingReport();
+
+        // CSV Header
+        let csv = 'Agent,Total Balance,0-1 Day,2-3 Days,4-7 Days,8+ Days,Oldest Collection\n';
+
+        for (const entry of report) {
+            const agentName = `${entry.agent.firstName} ${entry.agent.lastName}`;
+            const oldestDate = entry.oldestCollectionDate ? new Date(entry.oldestCollectionDate).toLocaleDateString() : 'N/A';
+
+            csv += `"${agentName}",${entry.totalBalance},${entry.bucket_0_1},${entry.bucket_2_3},${entry.bucket_4_7},${entry.bucket_8_plus},"${oldestDate}"\n`;
+        }
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
+        res.status(200).send(csv);
     }
 }
 

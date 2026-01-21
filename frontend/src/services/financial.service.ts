@@ -99,6 +99,22 @@ export interface ProfitMargins {
   orderCount: number;
 }
 
+export interface AgentAgingBucket {
+  agent: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  totalBalance: number;
+  oldestCollectionDate: string;
+  bucket_0_1: number;
+  bucket_2_3: number;
+  bucket_4_7: number;
+  bucket_8_plus: number;
+  updatedAt: string;
+}
+
 export const financialService = {
   async getFinancialSummary(startDate?: string, endDate?: string): Promise<FinancialSummary> {
     const response = await apiClient.get('/api/financial/summary', {
@@ -226,6 +242,11 @@ export const financialService = {
     const response = await apiClient.get(`/api/financial/agents/settlement/${agentId}`, {
       params: { startDate, endDate }
     });
+    return response.data;
+  },
+
+  async getAgentAging(): Promise<AgentAgingBucket[]> {
+    const response = await apiClient.get('/api/agent-reconciliation/aging');
     return response.data;
   }
 };
