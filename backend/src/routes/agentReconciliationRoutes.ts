@@ -72,12 +72,27 @@ router.get('/agents/:id/balance',
 router.get('/agents/balances', requireRole('super_admin', 'admin', 'manager', 'accountant'), agentReconciliationController.getBalances);
 
 // Deposits
+router.get('/deposits',
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
+    [
+        query('agentId').optional().isInt().toInt(),
+        query('status').optional().isString(),
+        query('startDate').optional().isISO8601().toDate(),
+        query('endDate').optional().isISO8601().toDate(),
+        validate
+    ],
+    agentReconciliationController.getDeposits
+);
 router.post('/deposits',
     requireRole('super_admin', 'admin', 'manager', 'accountant', 'delivery_agent'),
     [
-        body('amount').isNumeric().toFloat(),
-        body('referenceNumber').optional().isString(),
-        body('notes').optional().isString(),
+        body('amount').isFloat({ min: 0.1, max: 999999999.99 })
+            .withMessage('Amount must be a positive number between 0.1 and 999,999,999.99').toFloat(),
+        body('depositMethod').isIn(['bank_transfer', 'cash', 'mobile_money', 'check'])
+            .withMessage('Invalid deposit method'),
+        body('referenceNumber').trim().notEmpty().withMessage('Reference number is required')
+            .isLength({ min: 1, max: 100 }).withMessage('Reference number is too long'),
+        body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes are too long'),
         body('agentId').optional().isInt().toInt(),
         validate
     ],

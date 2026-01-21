@@ -43,6 +43,41 @@ export class AgentReconciliationController {
     }
 
     /**
+     * Get deposits with filtering
+     */
+    async getDeposits(req: Request, res: Response) {
+        const { agentId, status, startDate, endDate } = req.query;
+
+        const where: any = {};
+        if (agentId) {
+            const parsedId = parseInt(agentId as string);
+            if (isNaN(parsedId)) throw new AppError('Invalid agentId', 400);
+            where.agentId = parsedId;
+        }
+        if (status) where.status = status;
+        if (startDate || endDate) {
+            where.depositDate = {};
+            if (startDate) where.depositDate.gte = new Date(startDate as string);
+            if (endDate) where.depositDate.lte = new Date(endDate as string);
+        }
+
+        const deposits = await (prisma as any).agentDeposit.findMany({
+            where,
+            include: {
+                agent: {
+                    select: { id: true, firstName: true, lastName: true, email: true }
+                },
+                verifier: {
+                    select: { id: true, firstName: true, lastName: true }
+                }
+            },
+            orderBy: { depositDate: 'desc' }
+        });
+
+        res.json(deposits);
+    }
+
+    /**
      * Get agent collection stats
      */
     async getAgentStats(req: Request, res: Response) {
@@ -158,28 +193,47 @@ export class AgentReconciliationController {
      * Create a deposit record (Agent/Accountant/Manager/Admin)
      */
     async createDeposit(req: Request, res: Response) {
-        const { amount, referenceNumber, notes, agentId: providedAgentId } = req.body;
+        const { amount, depositMethod, referenceNumber, notes, agentId: providedAgentId } = req.body;
         const user = (req as any).user;
 
-        // If providedAgentId is set, check if user has permission to create for another agent
+        // RBAC: Strengthened check for creating deposits for others
         let targetAgentId = user.id;
-        if (providedAgentId && providedAgentId !== user.id) {
-            if (!['manager', 'admin', 'accountant'].includes(user.role)) {
-                throw new AppError('Access denied: You cannot create deposits for other agents', 403);
+        if (providedAgentId) {
+            const parsedProvidedId = parseInt(providedAgentId);
+            if (isNaN(parsedProvidedId)) throw new AppError('Invalid agent ID format', 400);
+
+            if (parsedProvidedId !== user.id) {
+                const canManageOthers = ['manager', 'admin', 'accountant', 'super_admin'].includes(user.role);
+                if (!canManageOthers) {
+                    throw new AppError('Access denied: You cannot create deposits for other agents', 403);
+                }
+                targetAgentId = parsedProvidedId;
             }
-            targetAgentId = parseInt(providedAgentId);
         }
 
-        if (isNaN(targetAgentId)) throw new AppError('Invalid agent ID', 400);
+        try {
+            const result = await agentReconciliationService.createDeposit(
+                targetAgentId,
+                parseFloat(amount),
+                depositMethod,
+                referenceNumber,
+                notes
+            );
 
-        const result = await agentReconciliationService.createDeposit(
-            targetAgentId,
-            parseFloat(amount),
-            referenceNumber,
-            notes
-        );
+            // Emit socket event for accountants to see the new pending deposit
+            const io = getSocketInstance();
+            if (io) {
+                io.emit('agent:deposit-submitted', result);
+            }
 
-        res.status(201).json(result);
+            res.status(201).json(result);
+        } catch (error: any) {
+            // Handle Prisma unique constraint violation for reference_number
+            if (error.code === 'P2002' && error.meta?.target?.includes('reference_number')) {
+                throw new AppError('A deposit with this reference number already exists', 409);
+            }
+            throw error;
+        }
     }
 
     /**
@@ -199,7 +253,7 @@ export class AgentReconciliationController {
         if (io) {
             const balance = await agentReconciliationService.getAgentBalance(result.agentId);
             io.emit(`agent:balance-updated`, { agentId: result.agentId, balance });
-            io.emit('deposit:verified', result);
+            io.emit('agent:deposit-verified', result);
         }
 
         res.json(result);
@@ -221,7 +275,7 @@ export class AgentReconciliationController {
         // Emit socket event (optional for rejection, but good for real-time status)
         const io = getSocketInstance();
         if (io) {
-            io.emit('deposit:rejected', result);
+            io.emit('agent:deposit-rejected', result);
         }
 
         res.json(result);

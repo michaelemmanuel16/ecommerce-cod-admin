@@ -20,7 +20,8 @@ The heart of the application, designed for high-volume order processing.
 A comprehensive suite for tracking cash flow and ensuring agent accountability.
 
 - **Agent Collections**: System for tracking COD cash collected by delivery agents.
-- **Agent Deposits**: Management of cash deposits made by agents back to the business.
+- **Agent Deposits**: Management of cash deposits made by agents back to the business. (See [detailed doc](features/agent-deposit-reconciliation.md))
+- **Agent Blocking**: Automated and manual restriction of agents with overdue collections. (See [detailed doc](features/agent-blocking.md))
 - **Financial Reconciliation Dashboard**: Real-time monitoring of collected vs. pending COD, agent balances, and settlement status.
 - **Expense Tracking**: Categorized recording of operational costs (e.g., fuel, packaging) with support for receipt uploads.
 - **General Ledger (GL)**: A sophisticated double-entry accounting system with:

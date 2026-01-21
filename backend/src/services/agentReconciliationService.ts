@@ -190,24 +190,33 @@ export class AgentReconciliationService {
     /**
      * Create a new deposit record
      */
-    async createDeposit(agentId: number, amount: number, referenceNumber?: string, notes?: string) {
+    async createDeposit(agentId: number, amount: number, depositMethod: string, referenceNumber: string, notes?: string) {
         if (amount <= 0) {
             throw new AppError('Deposit amount must be greater than zero', 400);
         }
 
-        const deposit = await (prisma as unknown as any).agentDeposit.create({
-            data: {
-                agentId,
-                amount,
-                depositDate: new Date(),
-                referenceNumber,
-                notes,
-                status: 'pending',
-            },
-        });
+        return await prisma.$transaction(async (tx) => {
+            const extTx = tx as any;
+            const balance = await this.getOrCreateBalance(agentId, extTx);
+            if (new Prisma.Decimal(balance.currentBalance.toString()).lessThan(amount)) {
+                throw new AppError('Deposit amount cannot exceed your current outstanding balance', 400);
+            }
 
-        logger.info(`New deposit created for agent ${agentId}`, { depositId: deposit.id, amount });
-        return deposit;
+            const deposit = await extTx.agentDeposit.create({
+                data: {
+                    agentId,
+                    amount,
+                    depositMethod,
+                    depositDate: new Date(),
+                    referenceNumber,
+                    notes,
+                    status: 'pending',
+                },
+            });
+
+            logger.info(`New deposit created for agent ${agentId}`, { depositId: deposit.id, amount });
+            return deposit;
+        });
     }
 
     /**
@@ -265,6 +274,17 @@ export class AgentReconciliationService {
                 throw new AppError(`Deposit cannot be verified from status: ${deposit.status}`, 400);
             }
 
+            // Update agent balance using atomic transaction
+            const balance = await this.getOrCreateBalance(deposit.agentId, extTx);
+
+            // Use bank-friendly decimal for comparison
+            const depAmt = new Prisma.Decimal(deposit.amount.toString());
+            const currBal = new Prisma.Decimal(balance.currentBalance.toString());
+
+            if (currBal.lessThan(depAmt)) {
+                throw new AppError('Verification failed: Deposit amount exceeds current agent balance', 400);
+            }
+
             // Update deposit record
             const updated = await extTx.agentDeposit.update({
                 where: { id: depositId },
@@ -275,14 +295,6 @@ export class AgentReconciliationService {
                 },
             });
 
-            // Update agent balance
-            const balance = await this.getOrCreateBalance(deposit.agentId, extTx);
-
-            // Validation: Prevent negative balance
-            if (new Prisma.Decimal(balance.currentBalance.toString()).lessThan(deposit.amount)) {
-                throw new AppError('Verification failed: Deposit amount exceeds current agent balance', 400);
-            }
-
             await extTx.agentBalance.update({
                 where: { id: balance.id },
                 data: {
@@ -292,48 +304,73 @@ export class AgentReconciliationService {
                 },
             });
 
-            // Create GL Entry
-            // Debit: CASH_IN_HAND (1010) - Assuming direct cash handover or bank dep
-            // Credit: AR_AGENTS (1020)
-            await this.createDepositGLEntry(extTx, updated, verifierId);
+            // Create GL Entry via GLAutomationService
+            const { GLAutomationService } = await import('./glAutomationService');
+            await GLAutomationService.createAgentDepositEntry(extTx, updated, verifierId);
+
+            // FIFO Matching to Approved Collections (Partial Allocation Support)
+            let remainingAmount = depAmt;
+
+            const approvedCollections = await extTx.agentCollection.findMany({
+                where: {
+                    agentId: deposit.agentId,
+                    status: 'approved',
+                },
+                orderBy: {
+                    collectionDate: 'asc'
+                }
+            });
+
+            // Filter collections that are not yet fully covered
+            const pendingMatches = approvedCollections.filter((coll: any) => {
+                const amount = new Prisma.Decimal(coll.amount.toString());
+                const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
+                return allocated.lessThan(amount);
+            });
+
+            for (const coll of pendingMatches) {
+                if (remainingAmount.isZero()) break;
+
+                const collAmount = new Prisma.Decimal(coll.amount.toString());
+                const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
+                const outstanding = collAmount.minus(allocated);
+
+                if (remainingAmount.greaterThanOrEqualTo(outstanding)) {
+                    // Fully cover this collection
+                    await extTx.agentCollection.update({
+                        where: { id: coll.id },
+                        data: {
+                            status: 'deposited',
+                            allocatedAmount: collAmount
+                        }
+                    });
+                    remainingAmount = remainingAmount.minus(outstanding);
+                } else if (remainingAmount.greaterThan(0)) {
+                    // Partially cover this collection
+                    await extTx.agentCollection.update({
+                        where: { id: coll.id },
+                        data: {
+                            allocatedAmount: allocated.plus(remainingAmount)
+                        }
+                    });
+                    remainingAmount = new Prisma.Decimal(0);
+                }
+            }
+
+            // If there's an unallocated remainder, update the deposit note
+            if (!remainingAmount.isZero()) {
+                await extTx.agentDeposit.update({
+                    where: { id: depositId },
+                    data: {
+                        notes: deposit.notes
+                            ? `${deposit.notes} (Unallocated remainder: ${remainingAmount.toString()})`
+                            : `Unallocated remainder: ${remainingAmount.toString()}`
+                    }
+                });
+            }
 
             logger.info(`Deposit ${depositId} verified by user ${verifierId}`);
             return updated;
-        });
-    }
-
-    /**
-     * Create GL entry for deposit verification
-     */
-    private async createDepositGLEntry(tx: any, deposit: any, userId: number) {
-        const extTx = tx as any;
-        const entryNumber = await GLUtils.generateEntryNumber(tx);
-        const amount = new Prisma.Decimal(deposit.amount.toString());
-
-        await extTx.journalEntry.create({
-            data: {
-                entryNumber, entryDate: new Date(),
-                description: `Agent deposit verification - Deposit #${deposit.id}`,
-                sourceType: JournalSourceType.agent_deposit,
-                sourceId: deposit.id,
-                createdBy: userId,
-                transactions: {
-                    create: [
-                        {
-                            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
-                            debitAmount: amount,
-                            creditAmount: new Prisma.Decimal(0),
-                            description: `Cash received from agent ${deposit.agentId}`,
-                        },
-                        {
-                            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS),
-                            debitAmount: new Prisma.Decimal(0),
-                            creditAmount: amount,
-                            description: `Agent AR cleared for deposit ${deposit.id}`,
-                        },
-                    ],
-                },
-            },
         });
     }
 

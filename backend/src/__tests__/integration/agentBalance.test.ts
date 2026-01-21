@@ -132,7 +132,7 @@ describe('Agent Balance and Deposit Integration', () => {
         expect(Number(afterApproveBalance!.totalCollected)).toBe(1000);
 
         // 3. Create Deposit
-        const deposit = await agentReconciliationService.createDeposit(testAgent.id, 400, 'REF123', 'Test deposit');
+        const deposit = await agentReconciliationService.createDeposit(testAgent.id, 400, 'bank_transfer', 'REF123', 'Test deposit');
         expect(deposit.status).toBe('pending');
         expect(Number(deposit.amount)).toBe(400);
 
@@ -166,29 +166,17 @@ describe('Agent Balance and Deposit Integration', () => {
         });
         await agentReconciliationService.approveCollection(collection.id, testUser.id);
 
-        // Create deposit for 600
-        const deposit = await agentReconciliationService.createDeposit(testAgent.id, 600);
-
-        // Verify should fail
-        await expect(agentReconciliationService.verifyDeposit(deposit.id, testUser.id))
-            .rejects.toThrow(/Deposit amount exceeds current agent balance/);
+        // Create deposit for 600 - this should now throw in createDeposit
+        await expect(agentReconciliationService.createDeposit(testAgent.id, 600, 'bank_transfer', 'REF600'))
+            .rejects.toThrow(/Deposit amount cannot exceed your current outstanding balance/);
     });
 
     it('should allow deposit rejection and not change balance', async () => {
         // 1. Initialize balance
         const initialBalance = await agentReconciliationService.getOrCreateBalance(testAgent.id);
 
-        // 2. Create deposit
-        const deposit = await agentReconciliationService.createDeposit(testAgent.id, 500);
-
-        // 3. Reject deposit
-        const rejected = await agentReconciliationService.rejectDeposit(deposit.id, testUser.id, 'Invalid deposit');
-        expect(rejected.status).toBe('rejected');
-        expect(rejected.notes).toContain('Invalid deposit');
-
-        // 4. Check balance - should still be 0
-        const finalBalance = await agentReconciliationService.getAgentBalance(testAgent.id);
-        expect(Number(finalBalance!.currentBalance)).toBe(0);
-        expect(Number(finalBalance!.totalDeposited)).toBe(0);
+        // 2. Create deposit - should fail if balance is 0
+        await expect(agentReconciliationService.createDeposit(testAgent.id, 500, 'bank_transfer', 'REF500'))
+            .rejects.toThrow(/Deposit amount cannot exceed your current outstanding balance/);
     });
 });

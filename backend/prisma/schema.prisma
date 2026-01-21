@@ -720,16 +720,17 @@ model AgentCollection {
   id             Int              @id @default(autoincrement())
   orderId        Int              @unique @map("order_id")
   agentId        Int              @map("agent_id")
-  amount         Decimal          @map("amount") @db.Decimal(19, 4)
-  status         CollectionStatus @default(draft)
-  collectionDate DateTime         @map("collection_date")
-  verifiedAt     DateTime?        @map("verified_at")
-  verifiedById   Int?             @map("verified_by_id")
-  approvedAt     DateTime?        @map("approved_at")
-  approvedById   Int?             @map("approved_by_id")
-  notes          String?
-  createdAt      DateTime         @default(now()) @map("created_at")
-  updatedAt      DateTime         @updatedAt @map("updated_at")
+  amount          Decimal          @map("amount") @db.Decimal(19, 4)
+  allocatedAmount Decimal          @default(0) @map("allocated_amount") @db.Decimal(19, 4)
+  status          CollectionStatus @default(draft)
+  collectionDate  DateTime         @map("collection_date")
+  verifiedAt      DateTime?        @map("verified_at")
+  verifiedById    Int?             @map("verified_by_id")
+  approvedAt      DateTime?        @map("approved_at")
+  approvedById    Int?             @map("approved_by_id")
+  notes           String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
   order    Order @relation(fields: [orderId], references: [id])
   agent    User  @relation("AgentCollections", fields: [agentId], references: [id])
@@ -776,7 +777,8 @@ model AgentDeposit {
   amount          Decimal          @map("amount") @db.Decimal(19, 4)
   status          DepositStatus    @default(pending)
   depositDate     DateTime         @map("deposit_date")
-  referenceNumber String?          @map("reference_number")
+  depositMethod   String           @map("deposit_method")
+  referenceNumber String           @unique @map("reference_number")
   verifiedAt      DateTime?        @map("verified_at")
   verifiedById    Int?             @map("verified_by_id")
   notes           String?
@@ -787,6 +789,8 @@ model AgentDeposit {
   verifier User? @relation("VerifiedDeposits", fields: [verifiedById], references: [id])
 
   @@index([agentId])
+  @@index([depositDate])
+  @@index([agentId, depositDate])
   @@index([status])
   @@map("agent_deposits")
 }
