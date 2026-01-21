@@ -143,13 +143,16 @@ describe('AgingService', () => {
             ];
 
             mockPrisma.agentAgingBucket.findMany.mockResolvedValue(mockBuckets);
-            mockPrisma.agentBalance = { count: jest.fn().mockResolvedValue(1) };
+            mockPrisma.agentBalance = {
+                count: jest.fn().mockResolvedValue(1),
+            } as any;
 
             const result = await agingService.getAgingReport();
 
             expect(result.summary).toBeDefined();
             expect(result.buckets).toEqual(mockBuckets);
             expect(result.summary.totalOutstandingAmount).toBe(10000);
+            expect(result.summary.bucketTotals.bucket_8_plus).toBe(4000);
             expect(mockPrisma.agentAgingBucket.findMany).toHaveBeenCalledWith({
                 include: expect.any(Object),
                 orderBy: {

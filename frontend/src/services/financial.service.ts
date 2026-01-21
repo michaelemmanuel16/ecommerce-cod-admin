@@ -106,6 +106,12 @@ export interface AgingSummary {
   criticalOverdueAmount: number;
   warningOverdueAmount: number;
   blockedAgentsWithBalance: number;
+  bucketTotals: {
+    bucket_0_1: number;
+    bucket_2_3: number;
+    bucket_4_7: number;
+    bucket_8_plus: number;
+  };
 }
 
 export interface AgentAgingBucket {

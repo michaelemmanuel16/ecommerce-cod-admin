@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { Card } from '../ui/Card';
 import { formatCurrency } from '../../utils/format';
-import { Download, AlertCircle, Clock, Users, ShieldAlert, BarChart3, Filter, FileText, Mail, Ban, Eye } from 'lucide-react';
+import { Download, AlertCircle, Clock, Users, ShieldAlert, BarChart3, Filter, FileText, Mail, Ban, Eye, ChevronUp, ChevronDown } from 'lucide-react';
 import { financialService } from '../../services/financial.service';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import toast from 'react-hot-toast';
@@ -71,12 +71,13 @@ export const AgentAgingTab: React.FC = () => {
     }, [agentAging, filterOverdue, sortField, sortOrder]);
 
     const chartData = useMemo(() => {
-        if (!agentAging?.summary) return [];
+        if (!agentAging?.summary?.bucketTotals) return [];
+        const { bucketTotals } = agentAging.summary;
         return [
-            { name: '0-1 Day', value: agentAging.buckets.reduce((sum, b) => sum + b.bucket_0_1, 0), color: '#22c55e' },
-            { name: '2-3 Days', value: agentAging.buckets.reduce((sum, b) => sum + b.bucket_2_3, 0), color: '#3b82f6' },
-            { name: '4-7 Days', value: agentAging.summary.warningOverdueAmount, color: '#f97316' },
-            { name: '8+ Days', value: agentAging.summary.criticalOverdueAmount, color: '#ef4444' },
+            { name: '0-1 Day', value: bucketTotals.bucket_0_1, color: '#22c55e' },
+            { name: '2-3 Days', value: bucketTotals.bucket_2_3, color: '#3b82f6' },
+            { name: '4-7 Days', value: bucketTotals.bucket_4_7, color: '#f97316' },
+            { name: '8+ Days', value: bucketTotals.bucket_8_plus, color: '#ef4444' },
         ].filter(d => d.value > 0);
     }, [agentAging]);
 
@@ -213,10 +214,24 @@ export const AgentAgingTab: React.FC = () => {
                             <thead className="bg-white">
                                 <tr>
                                     <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-900 transition-colors group" onClick={() => { setSortField('name'); setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); }}>
-                                        <div className="flex items-center">Agent <Users className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100" /></div>
+                                        <div className="flex items-center">
+                                            Agent
+                                            {sortField === 'name' ? (
+                                                sortOrder === 'asc' ? <ChevronUp className="w-3 h-3 ml-1 text-primary-600" /> : <ChevronDown className="w-3 h-3 ml-1 text-primary-600" />
+                                            ) : (
+                                                <Users className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100" />
+                                            )}
+                                        </div>
                                     </th>
                                     <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-900 transition-colors group" onClick={() => { setSortField('totalBalance'); setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); }}>
-                                        <div className="flex items-center">Balance <BarChart3 className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100" /></div>
+                                        <div className="flex items-center">
+                                            Balance
+                                            {sortField === 'totalBalance' ? (
+                                                sortOrder === 'asc' ? <ChevronUp className="w-3 h-3 ml-1 text-primary-600" /> : <ChevronDown className="w-3 h-3 ml-1 text-primary-600" />
+                                            ) : (
+                                                <BarChart3 className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100" />
+                                            )}
+                                        </div>
                                     </th>
                                     <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">0-3 Days</th>
                                     <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">4-7 Days</th>
@@ -249,10 +264,12 @@ export const AgentAgingTab: React.FC = () => {
                                                         <span>{formatCurrency(entry.bucket_0_1 + entry.bucket_2_3)}</span>
                                                     </div>
                                                     <div className="w-16 h-1 bg-gray-100 rounded-full overflow-hidden">
-                                                        <div
-                                                            className="h-full bg-green-500 rounded-full"
-                                                            style={{ width: `${Math.min(100, ((entry.bucket_0_1 + entry.bucket_2_3) / entry.totalBalance) * 100)}%` }}
-                                                        />
+                                                        {entry.totalBalance > 0 && (
+                                                            <div
+                                                                className="h-full bg-green-500 rounded-full"
+                                                                style={{ width: `${Math.min(100, ((entry.bucket_0_1 + entry.bucket_2_3) / entry.totalBalance) * 100)}%` }}
+                                                            />
+                                                        )}
                                                     </div>
                                                 </div>
                                             </td>
@@ -276,6 +293,7 @@ export const AgentAgingTab: React.FC = () => {
                                                 <div className="flex items-center justify-end space-x-1">
                                                     <button
                                                         title="Send Reminder Email"
+                                                        aria-label={`Send reminder to ${entry.agent.firstName}`}
                                                         className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
                                                         onClick={() => toast.success(`Reminder sent to ${entry.agent.firstName}`)}
                                                     >
@@ -284,12 +302,14 @@ export const AgentAgingTab: React.FC = () => {
                                                     <Link
                                                         to={`/financial/reconciliation?agentId=${entry.agent.id}`}
                                                         title="View Collections"
+                                                        aria-label={`View collections for ${entry.agent.firstName}`}
                                                         className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                                     >
                                                         <Eye className="w-3.5 h-3.5" />
                                                     </Link>
                                                     <button
                                                         title="Block Agent"
+                                                        aria-label={`Block agent ${entry.agent.firstName}`}
                                                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                                                         onClick={() => toast.error(`Block functionality for ${entry.agent.firstName} triggered`)}
                                                     >

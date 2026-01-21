@@ -143,6 +143,25 @@ export class AgingService {
   }
 
   /**
+   * Generates a CSV string for the agent aging report
+   */
+  async generateAgingCSV(): Promise<string> {
+    const { buckets } = await this.getAgingReport();
+
+    // CSV Header
+    let csv = 'Agent,Total Balance,0-1 Day,2-3 Days,4-7 Days,8+ Days,Oldest Collection\n';
+
+    for (const entry of buckets) {
+      const agentName = `${entry.agent.firstName} ${entry.agent.lastName}`;
+      const oldestDate = entry.oldestCollectionDate ? new Date(entry.oldestCollectionDate).toLocaleDateString() : 'N/A';
+
+      csv += `"${agentName}",${entry.totalBalance},${entry.bucket_0_1},${entry.bucket_2_3},${entry.bucket_4_7},${entry.bucket_8_plus},"${oldestDate}"\n`;
+    }
+
+    return csv;
+  }
+
+  /**
    * Calculate summary KPIs from bucket data
    */
   private async getAgingSummary(buckets: any[]) {
@@ -151,13 +170,20 @@ export class AgingService {
     let overdueAgentsCount = 0;
     let criticalOverdueAmount = new Prisma.Decimal(0);
     let warningOverdueAmount = new Prisma.Decimal(0);
+    let bucket_0_1_total = new Prisma.Decimal(0);
+    let bucket_2_3_total = new Prisma.Decimal(0);
 
     for (const bucket of buckets) {
       const balance = new Prisma.Decimal(bucket.totalBalance.toString());
       totalOutstandingAmount = totalOutstandingAmount.add(balance);
 
+      const b01 = new Prisma.Decimal(bucket.bucket_0_1.toString());
+      const b23 = new Prisma.Decimal(bucket.bucket_2_3.toString());
       const critical = new Prisma.Decimal(bucket.bucket_8_plus.toString());
       const warning = new Prisma.Decimal(bucket.bucket_4_7.toString());
+
+      bucket_0_1_total = bucket_0_1_total.add(b01);
+      bucket_2_3_total = bucket_2_3_total.add(b23);
 
       if (critical.gt(0) || warning.gt(0)) {
         overdueAgentsCount++;
@@ -181,7 +207,13 @@ export class AgingService {
       overdueAgentsCount,
       criticalOverdueAmount: criticalOverdueAmount.toNumber(),
       warningOverdueAmount: warningOverdueAmount.toNumber(),
-      blockedAgentsWithBalance: blockedCount
+      blockedAgentsWithBalance: blockedCount,
+      bucketTotals: {
+        bucket_0_1: bucket_0_1_total.toNumber(),
+        bucket_2_3: bucket_2_3_total.toNumber(),
+        bucket_4_7: warningOverdueAmount.toNumber(),
+        bucket_8_plus: criticalOverdueAmount.toNumber(),
+      }
     };
   }
   /**
