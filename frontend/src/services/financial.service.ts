@@ -99,6 +99,21 @@ export interface ProfitMargins {
   orderCount: number;
 }
 
+export interface AgingSummary {
+  totalAgentsWithBalance: number;
+  totalOutstandingAmount: number;
+  overdueAgentsCount: number;
+  criticalOverdueAmount: number;
+  warningOverdueAmount: number;
+  blockedAgentsWithBalance: number;
+  bucketTotals: {
+    bucket_0_1: number;
+    bucket_2_3: number;
+    bucket_4_7: number;
+    bucket_8_plus: number;
+  };
+}
+
 export interface AgentAgingBucket {
   agent: {
     id: number;
@@ -113,6 +128,11 @@ export interface AgentAgingBucket {
   bucket_4_7: number;
   bucket_8_plus: number;
   updatedAt: string;
+}
+
+export interface AgentAgingReport {
+  summary: AgingSummary;
+  buckets: AgentAgingBucket[];
 }
 
 export interface CashFlowKPI {
@@ -266,9 +286,22 @@ export const financialService = {
     return response.data;
   },
 
-  async getAgentAging(): Promise<AgentAgingBucket[]> {
-    const response = await apiClient.get('/api/agent-reconciliation/aging');
+  async getAgentAging(): Promise<AgentAgingReport> {
+    const response = await apiClient.get('/api/financial/agent-aging');
     return response.data;
+  },
+
+  async downloadAgentAgingCSV(): Promise<void> {
+    const response = await apiClient.get('/api/financial/agent-aging/export/csv', {
+      responseType: 'blob'
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   },
 
   async getCashFlowReport(): Promise<CashFlowReport> {

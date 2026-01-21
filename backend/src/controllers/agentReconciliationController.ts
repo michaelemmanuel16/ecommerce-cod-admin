@@ -293,21 +293,15 @@ export class AgentReconciliationController {
      * Export aging report to CSV (Manager/Admin/Accountant)
      */
     async exportAgingReport(_req: Request, res: Response) {
-        const report = await agingService.getAgingReport();
+        try {
+            const csv = await agingService.generateAgingCSV();
 
-        // CSV Header
-        let csv = 'Agent,Total Balance,0-1 Day,2-3 Days,4-7 Days,8+ Days,Oldest Collection\n';
-
-        for (const entry of report) {
-            const agentName = `${entry.agent.firstName} ${entry.agent.lastName}`;
-            const oldestDate = entry.oldestCollectionDate ? new Date(entry.oldestCollectionDate).toLocaleDateString() : 'N/A';
-
-            csv += `"${agentName}",${entry.totalBalance},${entry.bucket_0_1},${entry.bucket_2_3},${entry.bucket_4_7},${entry.bucket_8_plus},"${oldestDate}"\n`;
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename=agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
+            res.status(200).send(csv);
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to export aging report' });
         }
-
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename=agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
-        res.status(200).send(csv);
     }
 
     /**

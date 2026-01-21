@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { PaymentStatus } from '@prisma/client';
 import financialService from '../services/financialService';
+import agingService from '../services/agingService';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -186,4 +187,25 @@ export const exportCashFlowCSV = async (req: AuthRequest, res: Response): Promis
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename=cash_flow_report_${Date.now()}.csv`);
   res.send(csv);
+};
+
+export const getAgentAgingReport = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const report = await agingService.getAgingReport();
+    res.json(report);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch agent aging report' });
+  }
+};
+
+export const exportAgentAgingCSV = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const csv = await agingService.generateAgingCSV();
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
+    res.status(200).send(csv);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to export agent aging report' });
+  }
 };

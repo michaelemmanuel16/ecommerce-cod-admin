@@ -9,6 +9,7 @@ import {
   ExpenseCategory,
   AgentCashHolding,
   AgentAgingBucket,
+  AgentAgingReport,
   PipelineRevenue,
   ProfitMargins,
   CashFlowReport
@@ -40,7 +41,7 @@ interface FinancialState {
   agentCashHoldings: AgentCashHolding[];
   pipelineRevenue: PipelineRevenue | null;
   profitMargins: ProfitMargins | null;
-  agentAging: AgentAgingBucket[];
+  agentAging: AgentAgingReport | null;
   cashFlowReport: CashFlowReport | null;
 
   // Filters and UI state
@@ -173,7 +174,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     agentCashHoldings: [],
     pipelineRevenue: null,
     profitMargins: null,
-    agentAging: [],
+    agentAging: null,
     cashFlowReport: null,
 
     // Filters and UI state
@@ -367,9 +368,9 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     fetchAgentAging: async () => {
       set((state) => ({ loadingStates: { ...state.loadingStates, agents: true }, error: null }));
       try {
-        const aging = await financialService.getAgentAging();
+        const report = await financialService.getAgentAging();
         set((state) => ({
-          agentAging: aging,
+          agentAging: report,
           loadingStates: { ...state.loadingStates, agents: false }
         }));
       } catch (error: any) {
