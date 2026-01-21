@@ -8,6 +8,7 @@ import {
   Expense,
   ExpenseCategory,
   AgentCashHolding,
+  AgentAgingBucket,
   PipelineRevenue,
   ProfitMargins
 } from '../services/financial.service';
@@ -38,6 +39,7 @@ interface FinancialState {
   agentCashHoldings: AgentCashHolding[];
   pipelineRevenue: PipelineRevenue | null;
   profitMargins: ProfitMargins | null;
+  agentAging: AgentAgingBucket[];
 
   // Filters and UI state
   filters: FinancialFilters;
@@ -78,6 +80,7 @@ interface FinancialState {
   fetchAgentCashHoldings: () => Promise<void>;
   fetchPipelineRevenue: (startDate?: string, endDate?: string) => Promise<void>;
   fetchProfitMargins: (startDate?: string, endDate?: string) => Promise<void>;
+  fetchAgentAging: () => Promise<void>;
   updateExpense: (id: string, data: {
     category?: string;
     amount?: number;
@@ -165,6 +168,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     agentCashHoldings: [],
     pipelineRevenue: null,
     profitMargins: null,
+    agentAging: [],
 
     // Filters and UI state
     filters: {},
@@ -348,6 +352,22 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         set({ profitMargins });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch profit margins';
+        toast.error(errorMessage);
+        throw error;
+      }
+    },
+
+    fetchAgentAging: async () => {
+      set((state) => ({ loadingStates: { ...state.loadingStates, agents: true }, error: null }));
+      try {
+        const aging = await financialService.getAgentAging();
+        set((state) => ({
+          agentAging: aging,
+          loadingStates: { ...state.loadingStates, agents: false }
+        }));
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch agent aging data';
+        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, agents: false } }));
         toast.error(errorMessage);
         throw error;
       }

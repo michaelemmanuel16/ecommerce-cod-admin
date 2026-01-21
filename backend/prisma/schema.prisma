@@ -47,6 +47,7 @@ model User {
   balance               AgentBalance?
   deposits              AgentDeposit[]    @relation("AgentDeposits")
   verifiedDeposits      AgentDeposit[]    @relation("VerifiedDeposits")
+  agingBucket           AgentAgingBucket?
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -788,4 +789,20 @@ enum DepositStatus {
   pending
   verified
   rejected
+}
+
+model AgentAgingBucket {
+  id                  Int      @id @default(autoincrement())
+  agentId             Int      @unique @map("agent_id")
+  bucket_0_1          Decimal  @default(0) @map("bucket_0_1") @db.Decimal(19, 4)
+  bucket_2_3          Decimal  @default(0) @map("bucket_2_3") @db.Decimal(19, 4)
+  bucket_4_7          Decimal  @default(0) @map("bucket_4_7") @db.Decimal(19, 4)
+  bucket_8_plus       Decimal  @default(0) @map("bucket_8_plus") @db.Decimal(19, 4)
+  totalBalance        Decimal  @default(0) @map("total_balance") @db.Decimal(19, 4)
+  oldestCollectionDate DateTime? @map("oldest_collection_date")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  agent User @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("agent_aging_buckets")
 }

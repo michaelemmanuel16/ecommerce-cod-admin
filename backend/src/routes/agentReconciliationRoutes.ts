@@ -11,7 +11,7 @@ router.use(authenticate);
 
 // Listing and stats (Available to Accountant, Manager, Admin)
 router.get('/',
-    requireRole('accountant', 'manager', 'admin'),
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
     [
         query('agentId').optional().isInt().toInt(),
         query('status').optional().isString(),
@@ -22,7 +22,7 @@ router.get('/',
     agentReconciliationController.getCollections
 );
 router.get('/stats/:agentId',
-    requireRole('accountant', 'manager', 'admin'),
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
     [
         param('agentId').isInt().toInt(),
         validate
@@ -32,7 +32,7 @@ router.get('/stats/:agentId',
 
 // Verification (Accountant only)
 router.post('/:id/verify',
-    requireRole('accountant'),
+    requireRole('super_admin', 'accountant'),
     [
         param('id').isInt().toInt(),
         validate
@@ -41,7 +41,7 @@ router.post('/:id/verify',
 );
 
 router.post('/bulk-verify',
-    requireRole('accountant'),
+    requireRole('super_admin', 'accountant'),
     [
         body('ids').isArray({ min: 1 }),
         body('ids.*').isInt().toInt(),
@@ -52,7 +52,7 @@ router.post('/bulk-verify',
 
 // Approval (Manager/Admin only)
 router.post('/:id/approve',
-    requireRole('manager', 'admin'),
+    requireRole('super_admin', 'admin', 'manager'),
     [
         param('id').isInt().toInt(),
         validate
@@ -62,18 +62,18 @@ router.post('/:id/approve',
 
 // Balance tracking (Agent, Manager, Admin)
 router.get('/agents/:id/balance',
-    requireRole('delivery_agent', 'manager', 'admin', 'accountant'),
+    requireRole('super_admin', 'admin', 'manager', 'accountant', 'delivery_agent'),
     [
         param('id').isInt().toInt(),
         validate
     ],
     agentReconciliationController.getAgentBalance
 );
-router.get('/agents/balances', requireRole('manager', 'admin', 'accountant'), agentReconciliationController.getBalances);
+router.get('/agents/balances', requireRole('super_admin', 'admin', 'manager', 'accountant'), agentReconciliationController.getBalances);
 
 // Deposits
 router.post('/deposits',
-    requireRole('delivery_agent', 'manager', 'admin', 'accountant'),
+    requireRole('super_admin', 'admin', 'manager', 'accountant', 'delivery_agent'),
     [
         body('amount').isNumeric().toFloat(),
         body('referenceNumber').optional().isString(),
@@ -85,7 +85,7 @@ router.post('/deposits',
 );
 
 router.post('/deposits/:id/verify',
-    requireRole('accountant'),
+    requireRole('super_admin', 'accountant'),
     [
         param('id').isInt().toInt(),
         validate
@@ -94,13 +94,24 @@ router.post('/deposits/:id/verify',
 );
 
 router.post('/deposits/:id/reject',
-    requireRole('accountant'),
+    requireRole('super_admin', 'accountant'),
     [
         param('id').isInt().toInt(),
         body('notes').notEmpty().withMessage('Rejection notes are required').isLength({ min: 5 }),
         validate
     ],
     agentReconciliationController.rejectDeposit
+);
+
+// Aging Report
+router.get('/aging',
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
+    agentReconciliationController.getAgingReport
+);
+
+router.get('/aging/export',
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
+    agentReconciliationController.exportAgingReport
 );
 
 export default router;
