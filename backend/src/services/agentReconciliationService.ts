@@ -195,25 +195,28 @@ export class AgentReconciliationService {
             throw new AppError('Deposit amount must be greater than zero', 400);
         }
 
-        const balance = await this.getOrCreateBalance(agentId);
-        if (new Prisma.Decimal(balance.currentBalance.toString()).lessThan(amount)) {
-            throw new AppError('Deposit amount cannot exceed your current outstanding balance', 400);
-        }
+        return await prisma.$transaction(async (tx) => {
+            const extTx = tx as any;
+            const balance = await this.getOrCreateBalance(agentId, extTx);
+            if (new Prisma.Decimal(balance.currentBalance.toString()).lessThan(amount)) {
+                throw new AppError('Deposit amount cannot exceed your current outstanding balance', 400);
+            }
 
-        const deposit = await (prisma as unknown as any).agentDeposit.create({
-            data: {
-                agentId,
-                amount,
-                depositMethod,
-                depositDate: new Date(),
-                referenceNumber,
-                notes,
-                status: 'pending',
-            },
+            const deposit = await extTx.agentDeposit.create({
+                data: {
+                    agentId,
+                    amount,
+                    depositMethod,
+                    depositDate: new Date(),
+                    referenceNumber,
+                    notes,
+                    status: 'pending',
+                },
+            });
+
+            logger.info(`New deposit created for agent ${agentId}`, { depositId: deposit.id, amount });
+            return deposit;
         });
-
-        logger.info(`New deposit created for agent ${agentId}`, { depositId: deposit.id, amount });
-        return deposit;
     }
 
     /**
@@ -271,17 +274,7 @@ export class AgentReconciliationService {
                 throw new AppError(`Deposit cannot be verified from status: ${deposit.status}`, 400);
             }
 
-            // Update deposit record
-            const updated = await extTx.agentDeposit.update({
-                where: { id: depositId },
-                data: {
-                    status: 'verified',
-                    verifiedAt: new Date(),
-                    verifiedById: verifierId,
-                },
-            });
-
-            // Update agent balance
+            // Update agent balance using atomic transaction
             const balance = await this.getOrCreateBalance(deposit.agentId, extTx);
 
             // Use bank-friendly decimal for comparison
@@ -291,6 +284,16 @@ export class AgentReconciliationService {
             if (currBal.lessThan(depAmt)) {
                 throw new AppError('Verification failed: Deposit amount exceeds current agent balance', 400);
             }
+
+            // Update deposit record
+            const updated = await extTx.agentDeposit.update({
+                where: { id: depositId },
+                data: {
+                    status: 'verified',
+                    verifiedAt: new Date(),
+                    verifiedById: verifierId,
+                },
+            });
 
             await extTx.agentBalance.update({
                 where: { id: balance.id },
@@ -305,38 +308,53 @@ export class AgentReconciliationService {
             const { GLAutomationService } = await import('./glAutomationService');
             await GLAutomationService.createAgentDepositEntry(extTx, updated, verifierId);
 
-            // FIFO Matching to Approved Collections (Optimized Bulk Update)
+            // FIFO Matching to Approved Collections (Partial Allocation Support)
             let remainingAmount = depAmt;
-            const collectionIdsToVerify: number[] = [];
 
             const approvedCollections = await extTx.agentCollection.findMany({
                 where: {
                     agentId: deposit.agentId,
-                    status: 'approved'
+                    status: 'approved',
                 },
                 orderBy: {
                     collectionDate: 'asc'
                 }
             });
 
-            for (const coll of approvedCollections) {
+            // Filter collections that are not yet fully covered
+            const pendingMatches = approvedCollections.filter((coll: any) => {
+                const amount = new Prisma.Decimal(coll.amount.toString());
+                const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
+                return allocated.lessThan(amount);
+            });
+
+            for (const coll of pendingMatches) {
                 if (remainingAmount.isZero()) break;
 
                 const collAmount = new Prisma.Decimal(coll.amount.toString());
+                const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
+                const outstanding = collAmount.minus(allocated);
 
-                // If the collection can be fully covered by the remaining deposit
-                if (remainingAmount.greaterThanOrEqualTo(collAmount)) {
-                    collectionIdsToVerify.push(coll.id);
-                    remainingAmount = remainingAmount.minus(collAmount);
+                if (remainingAmount.greaterThanOrEqualTo(outstanding)) {
+                    // Fully cover this collection
+                    await extTx.agentCollection.update({
+                        where: { id: coll.id },
+                        data: {
+                            status: 'deposited',
+                            allocatedAmount: collAmount
+                        }
+                    });
+                    remainingAmount = remainingAmount.minus(outstanding);
+                } else if (remainingAmount.greaterThan(0)) {
+                    // Partially cover this collection
+                    await extTx.agentCollection.update({
+                        where: { id: coll.id },
+                        data: {
+                            allocatedAmount: allocated.plus(remainingAmount)
+                        }
+                    });
+                    remainingAmount = new Prisma.Decimal(0);
                 }
-            }
-
-            // Perform bulk update if there are collections to verify
-            if (collectionIdsToVerify.length > 0) {
-                await extTx.agentCollection.updateMany({
-                    where: { id: { in: collectionIdsToVerify } },
-                    data: { status: 'deposited' }
-                });
             }
 
             // If there's an unallocated remainder, update the deposit note

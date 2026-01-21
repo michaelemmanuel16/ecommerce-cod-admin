@@ -86,7 +86,8 @@ router.get('/deposits',
 router.post('/deposits',
     requireRole('super_admin', 'admin', 'manager', 'accountant', 'delivery_agent'),
     [
-        body('amount').isNumeric().withMessage('Amount must be a number').toFloat(),
+        body('amount').isFloat({ min: 0.1, max: 999999999.99 })
+            .withMessage('Amount must be a positive number between 0.1 and 999,999,999.99').toFloat(),
         body('depositMethod').isIn(['bank_transfer', 'cash', 'mobile_money', 'check'])
             .withMessage('Invalid deposit method'),
         body('referenceNumber').trim().notEmpty().withMessage('Reference number is required')

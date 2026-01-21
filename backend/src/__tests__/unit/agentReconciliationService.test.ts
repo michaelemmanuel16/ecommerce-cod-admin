@@ -1,4 +1,5 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { Prisma } from '@prisma/client';
 import agentReconciliationService from '../../services/agentReconciliationService';
 import prisma from '../../utils/prisma';
 import { AppError } from '../../middleware/errorHandler';
@@ -262,14 +263,76 @@ describe('AgentReconciliationService', () => {
             expect(mockTx.agentDeposit.update).toHaveBeenCalled();
             expect(mockTx.agentBalance.update).toHaveBeenCalled();
 
-            // [FIX] Verify Optimized FIFO Matching (Bulk Update)
-            expect(mockTx.agentCollection.updateMany).toHaveBeenCalledWith({
-                where: { id: { in: [101, 102] } },
-                data: { status: 'deposited' }
+            // [FIX] Verify FIFO Matching with individual updates (Partial Support)
+            expect(mockTx.agentCollection.update).toHaveBeenCalledWith({
+                where: { id: 101 },
+                data: { status: 'deposited', allocatedAmount: expect.any(Prisma.Decimal) }
             });
-            expect(mockTx.agentCollection.update).not.toHaveBeenCalled();
+            expect(mockTx.agentCollection.update).toHaveBeenCalledWith({
+                where: { id: 102 },
+                data: { status: 'deposited', allocatedAmount: expect.any(Prisma.Decimal) }
+            });
 
             expect(result.status).toBe('verified');
+        });
+
+        it('should perform partial allocation when deposit amount is less than collection outstanding', async () => {
+            const depositId = 1;
+            const agentId = 456;
+            const deposit = { id: depositId, agentId, amount: 500, status: 'pending' };
+            const balance = { id: 10, agentId, currentBalance: 1000 };
+            const collections = [
+                { id: 101, agentId, amount: 1000, allocatedAmount: 0, status: 'approved', collectionDate: new Date() }
+            ];
+
+            mockTx.agentDeposit.findUnique.mockResolvedValue(deposit);
+            mockTx.agentDeposit.update.mockResolvedValue({ ...deposit, status: 'verified' });
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.agentCollection.findMany.mockResolvedValue(collections);
+
+            await agentReconciliationService.verifyDeposit(depositId, 789);
+
+            // Verify partial update
+            const updateCall = mockTx.agentCollection.update.mock.calls.find((call: any) => call[0].where.id === 101);
+            expect(updateCall[0].data.allocatedAmount.toString()).toBe('500');
+
+            // Should NOT be marked as deposited
+            expect(updateCall[0].data.status).toBeUndefined();
+        });
+
+        it('should handle multiple deposits covering one collection fully', async () => {
+            const agentId = 456;
+            const balance = { id: 10, agentId, currentBalance: 1000 };
+
+            // First deposit (partial)
+            const dep1 = { id: 1, agentId, amount: 400, status: 'pending' };
+            const coll = { id: 101, agentId, amount: 1000, allocatedAmount: 0, status: 'approved', collectionDate: new Date() };
+
+            mockTx.agentDeposit.findUnique.mockResolvedValue(dep1);
+            mockTx.agentDeposit.update.mockResolvedValue({ ...dep1, status: 'verified' });
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.agentCollection.findMany.mockResolvedValue([coll]);
+
+            await agentReconciliationService.verifyDeposit(1, 789);
+
+            const firstUpdate = mockTx.agentCollection.update.mock.calls.find((call: any) => call[0].where.id === 101);
+            expect(firstUpdate[0].data.allocatedAmount.toString()).toBe('400');
+
+            // Second deposit (completes it)
+            const dep2 = { id: 2, agentId, amount: 600, status: 'pending' };
+            const partiallyAllocatedColl = { ...coll, allocatedAmount: 400 };
+
+            mockTx.agentDeposit.findUnique.mockResolvedValue(dep2);
+            mockTx.agentDeposit.update.mockResolvedValue({ ...dep2, status: 'verified' });
+            mockTx.agentCollection.findMany.mockResolvedValue([partiallyAllocatedColl]);
+
+            await agentReconciliationService.verifyDeposit(2, 789);
+
+            const secondUpdate = mockTx.agentCollection.update.mock.calls.find((call: any) =>
+                call[0].where.id === 101 && call[0].data.status === 'deposited'
+            );
+            expect(secondUpdate[0].data.allocatedAmount.toString()).toBe('1000');
+            expect(secondUpdate[0].data.status).toBe('deposited');
         });
 
         it('should handle unallocated remainder by updating deposit notes', async () => {
@@ -280,7 +343,7 @@ describe('AgentReconciliationService', () => {
             const deposit = { id: depositId, agentId, amount: 1000, status: 'pending', referenceNumber: 'DEP456', notes: 'Initial note' };
             const balance = { id: 10, agentId, currentBalance: 2000 };
             const collections = [
-                { id: 101, agentId, amount: 400, status: 'approved', collectionDate: new Date() }
+                { id: 101, agentId, amount: 400, allocatedAmount: 0, status: 'approved', collectionDate: new Date() }
             ];
 
             mockTx.agentDeposit.findUnique.mockResolvedValue(deposit);
@@ -291,7 +354,6 @@ describe('AgentReconciliationService', () => {
             await agentReconciliationService.verifyDeposit(depositId, verifierId);
 
             // Check if update was called to add unallocated remainder note
-            // Note: There are two update calls now: one for status='verified' and one for notes
             expect(mockTx.agentDeposit.update).toHaveBeenCalledWith(expect.objectContaining({
                 where: { id: depositId },
                 data: expect.objectContaining({

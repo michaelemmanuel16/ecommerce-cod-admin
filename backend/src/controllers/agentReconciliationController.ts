@@ -275,7 +275,7 @@ export class AgentReconciliationController {
         // Emit socket event (optional for rejection, but good for real-time status)
         const io = getSocketInstance();
         if (io) {
-            io.emit('deposit:rejected', result);
+            io.emit('agent:deposit-rejected', result);
         }
 
         res.json(result);
