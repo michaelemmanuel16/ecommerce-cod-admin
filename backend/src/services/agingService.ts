@@ -115,10 +115,10 @@ export class AgingService {
   }
 
   /**
-   * Get the aging report from cached buckets
+   * Get the aging report from cached buckets with summary statistics
    */
   async getAgingReport() {
-    return await (prisma as any).agentAgingBucket.findMany({
+    const buckets = await (prisma as any).agentAgingBucket.findMany({
       include: {
         agent: {
           select: {
@@ -133,6 +133,56 @@ export class AgingService {
         bucket_8_plus: 'desc',
       }
     });
+
+    const summary = await this.getAgingSummary(buckets);
+
+    return {
+      summary,
+      buckets
+    };
+  }
+
+  /**
+   * Calculate summary KPIs from bucket data
+   */
+  private async getAgingSummary(buckets: any[]) {
+    const totalAgentsWithBalance = buckets.length;
+    let totalOutstandingAmount = new Prisma.Decimal(0);
+    let overdueAgentsCount = 0;
+    let criticalOverdueAmount = new Prisma.Decimal(0);
+    let warningOverdueAmount = new Prisma.Decimal(0);
+
+    for (const bucket of buckets) {
+      const balance = new Prisma.Decimal(bucket.totalBalance.toString());
+      totalOutstandingAmount = totalOutstandingAmount.add(balance);
+
+      const critical = new Prisma.Decimal(bucket.bucket_8_plus.toString());
+      const warning = new Prisma.Decimal(bucket.bucket_4_7.toString());
+
+      if (critical.gt(0) || warning.gt(0)) {
+        overdueAgentsCount++;
+      }
+
+      criticalOverdueAmount = criticalOverdueAmount.add(critical);
+      warningOverdueAmount = warningOverdueAmount.add(warning);
+    }
+
+    // Get blocked agents count
+    const blockedCount = await (prisma as any).agentBalance.count({
+      where: {
+        isBlocked: true,
+        currentBalance: { gt: 0 }
+      }
+    });
+
+    return {
+      totalAgentsWithBalance,
+      totalOutstandingAmount: totalOutstandingAmount.toNumber(),
+      overdueAgentsCount,
+      criticalOverdueAmount: criticalOverdueAmount.toNumber(),
+      warningOverdueAmount: warningOverdueAmount.toNumber(),
+      blockedAgentsWithBalance: blockedCount
+    };
   }
   /**
    * Automatically blocks agents who have collections in the 4-7 day or 8+ day buckets

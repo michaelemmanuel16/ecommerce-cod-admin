@@ -293,12 +293,12 @@ export class AgentReconciliationController {
      * Export aging report to CSV (Manager/Admin/Accountant)
      */
     async exportAgingReport(_req: Request, res: Response) {
-        const report = await agingService.getAgingReport();
+        const { buckets } = await agingService.getAgingReport();
 
         // CSV Header
         let csv = 'Agent,Total Balance,0-1 Day,2-3 Days,4-7 Days,8+ Days,Oldest Collection\n';
 
-        for (const entry of report) {
+        for (const entry of buckets) {
             const agentName = `${entry.agent.firstName} ${entry.agent.lastName}`;
             const oldestDate = entry.oldestCollectionDate ? new Date(entry.oldestCollectionDate).toLocaleDateString() : 'N/A';
 

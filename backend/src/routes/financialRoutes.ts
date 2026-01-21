@@ -15,6 +15,8 @@ router.get('/profit-margins', requireResourcePermission('financial', 'view'), fi
 router.get('/pipeline-revenue', requireResourcePermission('financial', 'view'), financialController.getPipelineRevenue);
 router.get('/cash-flow', requireResourcePermission('financial', 'view'), financialController.getCashFlowReport);
 router.get('/cash-flow/export/csv', requireResourcePermission('financial', 'view'), financialController.exportCashFlowCSV);
+router.get('/agent-aging', requireResourcePermission('financial', 'view'), financialController.getAgentAgingReport);
+router.get('/agent-aging/export/csv', requireResourcePermission('financial', 'view'), financialController.exportAgentAgingCSV);
 
 // Transactions and collections
 router.get('/transactions', requireResourcePermission('financial', 'view'), paginationValidation, validate, financialController.getAllTransactions);

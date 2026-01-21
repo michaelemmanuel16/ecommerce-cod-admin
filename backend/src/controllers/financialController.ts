@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { PaymentStatus } from '@prisma/client';
 import financialService from '../services/financialService';
+import agingService from '../services/agingService';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -186,4 +187,27 @@ export const exportCashFlowCSV = async (req: AuthRequest, res: Response): Promis
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename=cash_flow_report_${Date.now()}.csv`);
   res.send(csv);
+};
+
+export const getAgentAgingReport = async (_req: AuthRequest, res: Response): Promise<void> => {
+  const report = await agingService.getAgingReport();
+  res.json(report);
+};
+
+export const exportAgentAgingCSV = async (_req: AuthRequest, res: Response): Promise<void> => {
+  const { buckets } = await agingService.getAgingReport();
+
+  // CSV Header
+  let csv = 'Agent,Total Balance,0-1 Day,2-3 Days,4-7 Days,8+ Days,Oldest Collection\n';
+
+  for (const entry of buckets) {
+    const agentName = `${entry.agent.firstName} ${entry.agent.lastName}`;
+    const oldestDate = entry.oldestCollectionDate ? new Date(entry.oldestCollectionDate).toLocaleDateString() : 'N/A';
+
+    csv += `"${agentName}",${entry.totalBalance},${entry.bucket_0_1},${entry.bucket_2_3},${entry.bucket_4_7},${entry.bucket_8_plus},"${oldestDate}"\n`;
+  }
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename=agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
+  res.status(200).send(csv);
 };
