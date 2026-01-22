@@ -60,6 +60,8 @@ export interface BulkImportOrderData {
   // User assignments from CSV
   assignedRepName?: string;
   assignedAgentName?: string;
+  // Order date from CSV
+  orderDate?: Date;
 }
 
 interface OrderFilters {
@@ -481,6 +483,7 @@ export class OrderService {
                 createdById,
                 customerRepId,
                 deliveryAgentId,
+                createdAt: orderData.orderDate, // Use date from CSV if provided
                 orderItems: orderItemsData.length > 0 ? { create: orderItemsData } : undefined,
                 orderHistory: {
                   create: {

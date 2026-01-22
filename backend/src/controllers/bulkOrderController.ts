@@ -282,6 +282,25 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             const assignedRepName = getColumnValue(row, 'Assigned Rep', 'ASSIGNED REP', 'Customer Rep');
             const assignedAgentName = getColumnValue(row, 'Assigned Agent', 'ASSIGNED AGENT', 'Delivery Agent');
 
+            // Parse date from CSV (format: dd/mm/yyyy)
+            let orderDate: Date | undefined;
+            const dateStr = getColumnValue(row, 'DATE [dd/mm/yyyy]', 'DATE', 'Date', 'date');
+            if (dateStr) {
+                const dateParts = dateStr.split('/');
+                if (dateParts.length === 3) {
+                    const day = parseInt(dateParts[0]);
+                    const month = parseInt(dateParts[1]) - 1; // JS months are 0-indexed
+                    const year = parseInt(dateParts[2]);
+                    if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+                        orderDate = new Date(year, month, day);
+                        // Validate the date is reasonable
+                        if (orderDate.getTime() > Date.now() || orderDate.getFullYear() < 2020) {
+                            orderDate = undefined; // Invalid date, will use current time
+                        }
+                    }
+                }
+            }
+
             return {
                 customerPhone: sanitizePhoneNumber(getColumnValue(row, 'PHONE NUMBER', 'Phone', 'phone')),
                 customerFirstName: nameParts[0] || 'Unknown',
@@ -298,7 +317,8 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
                 status: status,
                 notes: sanitizeString(getColumnValue(row, 'Notes', 'NOTES', 'notes'), BULK_ORDER_CONFIG.NOTES.MAX_LENGTH),
                 assignedRepName,
-                assignedAgentName
+                assignedAgentName,
+                orderDate
             };
         });
 
