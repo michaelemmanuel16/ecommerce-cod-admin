@@ -26,11 +26,10 @@ export const BULK_ORDER_CONFIG = {
     }
   },
 
-  // Validation
   PHONE_NUMBER: {
     MIN_LENGTH: 10,
     MAX_LENGTH: 20,
-    DIGITS_MIN: 10,
+    DIGITS_MIN: 9, // Changed from 10 to support Ghanaian numbers without leading 0
     DIGITS_MAX: 15
   },
 

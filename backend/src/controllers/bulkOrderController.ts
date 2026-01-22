@@ -347,9 +347,16 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             return;
         }
 
+
         const validOrders = sanitizedOrders.filter((order: BulkImportOrderData) => {
             // Basic presence check
             if (!order.customerPhone || !order.totalAmount || !order.deliveryAddress) {
+                logger.warn('Order filtered: missing required fields', {
+                    hasPhone: !!order.customerPhone,
+                    hasAmount: !!order.totalAmount,
+                    hasAddress: !!order.deliveryAddress,
+                    order
+                });
                 return false;
             }
 
@@ -357,24 +364,49 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             const digitsOnly = order.customerPhone.replace(/\D/g, '');
             if (digitsOnly.length < BULK_ORDER_CONFIG.PHONE_NUMBER.DIGITS_MIN ||
                 digitsOnly.length > BULK_ORDER_CONFIG.PHONE_NUMBER.DIGITS_MAX) {
+                logger.warn('Order filtered: invalid phone number', {
+                    phone: order.customerPhone,
+                    digitsCount: digitsOnly.length,
+                    order
+                });
                 return false;
             }
 
             // 2. Address validation: Minimum length after sanitization
             if (order.deliveryAddress.length < BULK_ORDER_CONFIG.ADDRESS.MIN_LENGTH) {
+                logger.warn('Order filtered: address too short', {
+                    address: order.deliveryAddress,
+                    length: order.deliveryAddress.length,
+                    minRequired: BULK_ORDER_CONFIG.ADDRESS.MIN_LENGTH,
+                    order
+                });
                 return false;
             }
 
             // 3. Amount validation (already in schema but good to catch early)
             if (isNaN(Number(order.totalAmount)) || Number(order.totalAmount) <= 0) {
+                logger.warn('Order filtered: invalid amount', {
+                    amount: order.totalAmount,
+                    order
+                });
                 return false;
             }
 
             return true;
         });
 
+        logger.info('Order validation summary', {
+            totalParsed: sanitizedOrders.length,
+            validOrders: validOrders.length,
+            filteredOut: sanitizedOrders.length - validOrders.length
+        });
 
         if (validOrders.length === 0) {
+            logger.error('No valid orders found in file', {
+                totalRows: rawData.length,
+                sanitizedRows: sanitizedOrders.length,
+                sampleRow: sanitizedOrders[0]
+            });
             res.status(400).json({ message: 'No valid orders found in file' });
             return;
         }
