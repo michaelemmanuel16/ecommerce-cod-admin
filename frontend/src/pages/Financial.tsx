@@ -5,6 +5,7 @@ import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { OverviewTab } from '../components/financial/OverviewTab';
 import { CashFlowTab } from '../components/financial/CashFlowTab';
 import { AgentReconciliationTab } from '../components/financial/AgentReconciliationTab';
+import { AgentAgingTab } from '../components/financial/AgentAgingTab';
 import { ExpenseManagementTab } from '../components/financial/ExpenseManagementTab';
 import { ReportsTab } from '../components/financial/ReportsTab';
 import { ProfitabilityTab } from '../components/financial/ProfitabilityTab';
@@ -31,6 +32,11 @@ export const Financial: React.FC = () => {
       id: 'agent-reconciliation',
       label: 'Agent Reconciliation',
       content: <AgentReconciliationTab />
+    },
+    {
+      id: 'agent-aging',
+      label: 'Agent Aging',
+      content: <AgentAgingTab />
     },
     {
       id: 'expense-management',

@@ -99,8 +99,8 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          JWT_SECRET: test-secret
-          JWT_REFRESH_SECRET: test-refresh-secret
+          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.TEST_JWT_REFRESH_SECRET }}
         run: npm run test:unit -- --forceExit --detectOpenHandles
 
       - name: Run integration tests
@@ -109,8 +109,8 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          JWT_SECRET: test-secret
-          JWT_REFRESH_SECRET: test-refresh-secret
+          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.TEST_JWT_REFRESH_SECRET }}
         run: npm run test:integration -- --forceExit --detectOpenHandles
 
       - name: Generate coverage report
@@ -119,8 +119,8 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          JWT_SECRET: test-secret
-          JWT_REFRESH_SECRET: test-refresh-secret
+          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.TEST_JWT_REFRESH_SECRET }}
         run: npm run test:coverage -- --forceExit --detectOpenHandles
 
       - name: Upload coverage to Codecov

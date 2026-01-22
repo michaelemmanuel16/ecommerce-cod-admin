@@ -8,9 +8,11 @@ import {
   Expense,
   ExpenseCategory,
   AgentCashHolding,
+  AgentAgingBucket,
   PipelineRevenue,
   ProfitMargins,
-  ProfitabilityAnalysis
+  ProfitabilityAnalysis,
+  CashFlowReport
 } from '../services/financial.service';
 import { getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
@@ -40,6 +42,8 @@ interface FinancialState {
   pipelineRevenue: PipelineRevenue | null;
   profitMargins: ProfitMargins | null;
   profitabilityAnalysis: ProfitabilityAnalysis | null;
+  agentAging: AgentAgingBucket[];
+  cashFlowReport: CashFlowReport | null;
 
   // Filters and UI state
   filters: FinancialFilters;
@@ -53,6 +57,7 @@ interface FinancialState {
     agents: boolean;
     reports: boolean;
     profitability: boolean;
+    cashFlow: boolean;
   };
   pagination: {
     transactions: { page: number; totalPages: number; total: number } | null;
@@ -82,6 +87,7 @@ interface FinancialState {
   fetchProfitMargins: (startDate?: string, endDate?: string) => Promise<void>;
   fetchProfitabilityAnalysis: (params: { startDate?: string; endDate?: string; productId?: number }) => Promise<void>;
   exportProfitability: (params: { startDate?: string; endDate?: string; productId?: number; format: 'csv' | 'xlsx' }) => Promise<void>;
+  fetchAgentAging: () => Promise<void>;
   updateExpense: (id: string, data: {
     category?: string;
     amount?: number;
@@ -95,6 +101,8 @@ interface FinancialState {
     reference?: string;
     notes?: string;
   }) => Promise<void>;
+  fetchCashFlowReport: () => Promise<void>;
+  downloadCashFlowCSV: () => Promise<void>;
   setDateRange: (startDate?: string, endDate?: string) => void;
 }
 
@@ -170,6 +178,8 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     pipelineRevenue: null,
     profitMargins: null,
     profitabilityAnalysis: null,
+    agentAging: [],
+    cashFlowReport: null,
 
     // Filters and UI state
     filters: {},
@@ -183,6 +193,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
       agents: false,
       reports: false,
       profitability: false,
+      cashFlow: false,
     },
     pagination: {
       transactions: null,
@@ -394,6 +405,22 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
       }
     },
 
+    fetchAgentAging: async () => {
+      set((state) => ({ loadingStates: { ...state.loadingStates, agents: true }, error: null }));
+      try {
+        const aging = await financialService.getAgentAging();
+        set((state) => ({
+          agentAging: aging,
+          loadingStates: { ...state.loadingStates, agents: false }
+        }));
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch agent aging data';
+        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, agents: false } }));
+        toast.error(errorMessage);
+        throw error;
+      }
+    },
+
     updateExpense: async (id: string, data: {
       category?: string;
       amount?: number;
@@ -461,6 +488,33 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         ]);
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to reconcile transaction';
+        toast.error(errorMessage);
+        throw error;
+      }
+    },
+
+    fetchCashFlowReport: async () => {
+      set((state) => ({ loadingStates: { ...state.loadingStates, cashFlow: true }, error: null }));
+      try {
+        const report = await financialService.getCashFlowReport();
+        set((state) => ({
+          cashFlowReport: report,
+          loadingStates: { ...state.loadingStates, cashFlow: false }
+        }));
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch cash flow report';
+        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, cashFlow: false } }));
+        toast.error(errorMessage);
+        throw error;
+      }
+    },
+
+    downloadCashFlowCSV: async () => {
+      try {
+        await financialService.downloadCashFlowCSV();
+        toast.success('Cash Flow Report downloaded');
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to download CSV';
         toast.error(errorMessage);
         throw error;
       }

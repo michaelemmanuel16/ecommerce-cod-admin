@@ -69,3 +69,28 @@ export async function notifyDeliveryScheduled(
     { orderId, orderNumber, scheduledTime }
   );
 }
+
+export async function notifyAgentBlocked(
+  userId: string,
+  reason: string
+) {
+  return createNotification(
+    userId,
+    'agent_blocked',
+    'Account Blocked',
+    `Your account has been blocked: ${reason}`,
+    { reason }
+  );
+}
+
+export async function notifyAgentUnblocked(
+  userId: string
+) {
+  return createNotification(
+    userId,
+    'agent_unblocked',
+    'Account Unblocked',
+    'Your account has been unblocked. You can now receive new deliveries.',
+    {}
+  );
+}

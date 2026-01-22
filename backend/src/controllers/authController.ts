@@ -125,7 +125,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
-        commissionAmount: user.commissionAmount,
+        commissionAmount: user.commissionAmount || 0,
         deliveryRate: user.deliveryRate
       },
       tokens: {

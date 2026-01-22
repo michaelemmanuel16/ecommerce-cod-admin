@@ -17,7 +17,7 @@ export interface User {
   role: 'super_admin' | 'admin' | 'manager' | 'sales_rep' | 'inventory_manager' | 'delivery_agent' | 'accountant' | 'customer_rep';
   avatar?: string;
   preferences?: UserPreferences;
-  commissionRate?: number;
+  commissionAmount?: number;
   deliveryRate?: number;
   createdAt: string;
   updatedAt: string;

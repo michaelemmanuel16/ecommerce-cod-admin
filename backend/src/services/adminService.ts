@@ -239,7 +239,7 @@ export const adminService = {
         location: true,
         createdAt: true,
         updatedAt: true
-      }
+      } as any,
     });
 
     if (!user) {
@@ -276,7 +276,7 @@ export const adminService = {
           country: true,
           commissionAmount: true,
           createdAt: true,
-        },
+        } as any,
         orderBy: { createdAt: 'desc' },
       }),
       prisma.user.count({ where }),
@@ -333,7 +333,7 @@ export const adminService = {
         country: true,
         commissionAmount: true,
         createdAt: true,
-      },
+      } as any,
     });
 
     await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
@@ -401,7 +401,7 @@ export const adminService = {
         country: true,
         commissionAmount: true,
         createdAt: true,
-      },
+      } as any,
     });
 
     await this.createAuditLog(requester, 'update', 'user', userId.toString(), { changes: Object.keys(data) });

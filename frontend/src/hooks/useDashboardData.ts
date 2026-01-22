@@ -153,11 +153,11 @@ export function useDashboardData(
         }
 
         // Earnings (for sales reps)
-        if (dashboardData.repPerformance && user?.commissionRate) {
+        if (dashboardData.repPerformance && (user as any)?.commissionAmount) {
           calculated.myCommission = (
-            dashboardData.repPerformance.deliveredOrders * user.commissionRate
+            dashboardData.repPerformance.deliveredOrders * (user as any).commissionAmount
           ).toFixed(2);
-          calculated.commissionRate = user.commissionRate;
+          calculated.commissionAmount = (user as any).commissionAmount;
         }
 
         // Conversion rate (for sales reps)

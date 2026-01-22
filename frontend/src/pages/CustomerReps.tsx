@@ -45,7 +45,7 @@ export const CustomerReps: React.FC = () => {
       email: rep.email,
       phoneNumber: rep.phoneNumber,
       country: rep.country || 'N/A',
-      commissionRate: rep.commissionRate || 0,
+      commissionAmount: rep.commissionAmount || 0,
       totalEarnings: perfData?.totalEarnings || 0,
       monthlyEarnings: perfData?.monthlyEarnings || 0,
       successRate: perfData?.successRate || 0,

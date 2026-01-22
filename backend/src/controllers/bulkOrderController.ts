@@ -96,6 +96,12 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
             };
         });
 
+        // Handle empty results
+        if (orders.length === 0) {
+            res.status(404).json({ message: 'No orders found matching the criteria' });
+            return;
+        }
+
         if (format === 'xlsx') {
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Orders');

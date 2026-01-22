@@ -14,14 +14,14 @@ const commonSettings = {
 
 export const authLimiter = isDevelopment ? (_req: any, _res: any, next: any) => next() : rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: 300,
   message: { message: 'Too many authentication attempts, please try again later' },
   ...commonSettings
 });
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 50000 : 200, // Significantly increased for development
+  max: isDevelopment ? 50000 : 300, // Increased to 300 in production
   message: { message: 'Too many requests, please try again later' },
   ...commonSettings
 });

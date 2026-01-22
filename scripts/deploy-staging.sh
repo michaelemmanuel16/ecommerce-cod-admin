@@ -71,7 +71,7 @@ if curl -f http://localhost:3001/health > /dev/null 2>&1; then
 else
     echo -e "${RED}✗ Backend (staging) health check failed${NC}"
     echo -e "${YELLOW}Checking logs...${NC}"
-    docker-compose -p staging -f docker-compose.staging.yml logs --tail=50 backend-staging
+    docker-compose -p staging -f docker-compose.staging.yml logs --tail=50 backend
     exit 1
 fi
 

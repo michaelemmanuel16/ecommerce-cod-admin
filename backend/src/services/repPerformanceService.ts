@@ -110,8 +110,7 @@ export const getRepPerformanceDetails = async (
         ? parseFloat(((deliveredCount / totalAssigned) * 100).toFixed(2))
         : 0;
 
-      // Calculate total earnings: number of delivered orders × commission amount
-      const commissionAmountValue = rep.commissionAmount || 0; // Fixed amount per order
+      const commissionAmountValue = (rep as any).commissionAmount || 0;
       const totalEarnings = deliveredCount * commissionAmountValue;
 
       // Calculate monthly earnings (current month)
@@ -204,7 +203,7 @@ export const getRepEarningsByPeriod = async (
     }
 
     // Calculate earnings: number of orders × commission amount
-    const commissionAmountValue = rep.commissionAmount || 0;
+    const commissionAmountValue = (rep as any).commissionAmount || 0;
     const earnings = rep.assignedOrdersAsRep.length * commissionAmountValue;
 
     return {

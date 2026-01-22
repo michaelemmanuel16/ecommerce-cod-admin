@@ -1,0 +1,8 @@
+src/controllers/agentReconciliationController.ts(151,23): error TS6133: 'req' is declared but its value is never read.
+src/services/agentReconciliationService.ts(1,37): error TS6133: 'DepositStatus' is declared but its value is never read.
+src/services/agentReconciliationService.ts(147,79): error TS2345: Argument of type 'Omit<DynamicClientExtensionThis<TypeMap<InternalArgs & { result: {}; model: {}; query: {}; client: {}; }, PrismaClientOptions>, TypeMapCb, { result: {}; model: {}; query: {}; client: {}; }, {}>, "$extends" | ... 4 more ... | "$use">' is not assignable to parameter of type 'TransactionClient'.
+  The types of 'notification.findUnique' are incompatible between these types.
+    Type '<A extends NotificationFindUniqueArgs<InternalArgs & { result: {}; model: {}; query: {}; client: {}; }>>(args: Exact<A, NotificationFindUniqueArgs<InternalArgs & { ...; }>>) => DynamicModelExtensionFluentApi<...> & PrismaPromise<...>' is not assignable to type '<T extends NotificationFindUniqueArgs>(args: SelectSubset<T, NotificationFindUniqueArgs<DefaultArgs>>) => Prisma__NotificationClient<GetFindResult<$NotificationPayload<DefaultArgs>, T, {}> | null, null, DefaultArgs>'.
+      Types of parameters 'args' and 'args' are incompatible.
+        Type 'SelectSubset<T, NotificationFindUniqueArgs<DefaultArgs>>' is not assignable to type 'Exact<T, NotificationFindUniqueArgs<InternalArgs & { result: {}; model: {}; query: {}; client: {}; }>>'.
+          Type 'SelectSubset<T, NotificationFindUniqueArgs<DefaultArgs>>' is not assignable to type 'T extends Narrowable ? T : never'.

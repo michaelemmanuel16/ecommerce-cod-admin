@@ -59,7 +59,7 @@ git push -u origin feature/descriptive-name
 **3. Deploy to staging (test first):**
 - Create PR on GitHub: `feature/descriptive-name` → `develop`
 - Merge PR → Auto-deploys to staging
-- Test at: http://143.110.197.200:5174
+- Test at: https://staging.codadminpro.com
 
 **4. Deploy to production (after testing):**
 - Create PR on GitHub: `develop` → `main`
@@ -76,8 +76,8 @@ git push -u origin feature/descriptive-name
 
 ### Deployment URLs
 - Production: https://codadminpro.com (main branch)
-- Staging Frontend: http://143.110.197.200:5174 (develop branch)
-- Staging Backend: http://143.110.197.200:3001 (develop branch)
+- Staging Frontend: https://staging.codadminpro.com (develop branch)
+- Staging Backend: https://staging.codadminpro.com/api (develop branch)
 
 ### Rules
 ✅ Always create feature branches from `develop`
@@ -295,7 +295,7 @@ Can branch to: cancelled, returned, failed_delivery
 - Recharts - Analytics charts
 
 **Pages:**
-- Dashboard, Orders (Kanban/List), Customers, Products
+- Dashboard, Orders (List), Customers, Products
 - Delivery Agents, Customer Reps, Financial, Analytics
 - Workflows, Checkout Forms, Settings
 - Public Checkout (unauthenticated, embeddable)
@@ -410,10 +410,6 @@ See Development Commands section for test commands.
 - Vitest + Testing Library
 - Mock API calls with MSW
 - Colocate tests with components
-
-**E2E (Playwright):**
-- Located in `e2e/` directory
-- Run specific test suites (auth, orders, kanban, customers, realtime)
 
 ## Common Issues
 

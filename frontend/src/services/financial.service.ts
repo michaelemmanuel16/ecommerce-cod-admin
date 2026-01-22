@@ -131,6 +131,43 @@ export interface ProfitabilityAnalysis {
   }[];
 }
 
+export interface AgentAgingBucket {
+  agent: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  totalBalance: number;
+  oldestCollectionDate: string;
+  bucket_0_1: number;
+  bucket_2_3: number;
+  bucket_4_7: number;
+  bucket_8_plus: number;
+  updatedAt: string;
+}
+
+export interface CashFlowKPI {
+  cashInHand: number;
+  cashInTransit: number;
+  arAgents: number;
+  cashExpected: number;
+  totalCashPosition: number;
+}
+
+export interface CashFlowForecastPoint {
+  date: string;
+  expectedCollection: number;
+  expectedExpense: number;
+  projectedBalance: number;
+}
+
+export interface CashFlowReport {
+  kpis: CashFlowKPI;
+  forecast: CashFlowForecastPoint[];
+  agentBreakdown: AgentCashHolding[];
+}
+
 export const financialService = {
   async getFinancialSummary(startDate?: string, endDate?: string): Promise<FinancialSummary> {
     const response = await apiClient.get('/api/financial/summary', {
@@ -281,5 +318,28 @@ export const financialService = {
       responseType: 'blob'
     });
     return response.data;
+  },
+
+  async getAgentAging(): Promise<AgentAgingBucket[]> {
+    const response = await apiClient.get('/api/agent-reconciliation/aging');
+    return response.data;
+  },
+
+  async getCashFlowReport(): Promise<CashFlowReport> {
+    const response = await apiClient.get('/api/financial/cash-flow');
+    return response.data;
+  },
+
+  async downloadCashFlowCSV(): Promise<void> {
+    const response = await apiClient.get('/api/financial/cash-flow/export/csv', {
+      responseType: 'blob'
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `cash_flow_report_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
 };

@@ -36,6 +36,7 @@ export const UserManagementTable: React.FC = () => {
     lastName: '',
     phoneNumber: '',
     role: 'sales_rep',
+    commissionAmount: 0,
   });
 
   const [newPassword, setNewPassword] = useState('');
@@ -76,6 +77,7 @@ export const UserManagementTable: React.FC = () => {
         lastName: '',
         phoneNumber: '',
         role: 'sales_rep',
+        commissionAmount: 0,
       });
       fetchUsers();
     } catch (error) {
@@ -94,6 +96,7 @@ export const UserManagementTable: React.FC = () => {
         lastName: formData.lastName,
         phoneNumber: formData.phoneNumber,
         role: formData.role,
+        commissionAmount: formData.commissionAmount,
       });
       setShowEditModal(false);
       setSelectedUser(null);
@@ -151,6 +154,7 @@ export const UserManagementTable: React.FC = () => {
       lastName: user.lastName,
       phoneNumber: user.phoneNumber || '',
       role: user.role,
+      commissionAmount: user.commissionAmount || 0,
     });
     setShowEditModal(true);
   };
@@ -219,6 +223,9 @@ export const UserManagementTable: React.FC = () => {
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Commission
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -244,6 +251,9 @@ export const UserManagementTable: React.FC = () => {
                       }`}>
                       {user.isActive ? 'Active' : 'Inactive'}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{user.commissionAmount || 0}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                     <button
@@ -417,6 +427,16 @@ export const UserManagementTable: React.FC = () => {
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Commission Amount</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.commissionAmount}
+                  onChange={(e) => setFormData({ ...formData, commissionAmount: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
               <div className="flex justify-end gap-2 mt-6">
                 <Button variant="secondary" type="button" onClick={() => setShowCreateModal(false)}>
                   Cancel
@@ -488,6 +508,16 @@ export const UserManagementTable: React.FC = () => {
                     <option key={role.value} value={role.value}>{role.label}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Commission Amount</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.commissionAmount}
+                  onChange={(e) => setFormData({ ...formData, commissionAmount: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
               <div className="flex justify-end gap-2 mt-6">
                 <Button variant="secondary" type="button" onClick={() => setShowEditModal(false)}>

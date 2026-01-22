@@ -14,6 +14,7 @@ import { apiLimiter } from './middleware/rateLimiter';
 import logger from './utils/logger';
 import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
+import { validateGLAccountCodes } from './config/glAccounts';
 
 // Routes
 import authRoutes from './routes/authRoutes';
@@ -34,9 +35,12 @@ import checkoutFormRoutes from './routes/checkoutFormRoutes';
 import publicOrderRoutes from './routes/publicOrderRoutes';
 import callRoutes from './routes/callRoutes';
 import glRoutes from './routes/glRoutes';
+import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
+import { GLAutomationService } from './services/glAutomationService';
 
 // Initialize workflow queue worker
 import './queues/workflowQueue';
+import { setupAgingCron } from './queues/agingQueue';
 
 // Validate environment variables before starting server
 try {
@@ -44,6 +48,15 @@ try {
   logger.info('Environment variables validated successfully');
 } catch (error) {
   logger.error('Environment validation failed:', error);
+  process.exit(1);
+}
+
+// Validate GL account codes before starting server
+try {
+  validateGLAccountCodes();
+  logger.info('GL account codes validated successfully');
+} catch (error) {
+  logger.error('GL account code validation failed:', error);
   process.exit(1);
 }
 
@@ -130,6 +143,7 @@ app.use('/api/notifications', apiLimiter, notificationRoutes);
 app.use('/api/upload', apiLimiter, uploadRoutes);
 app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);
+app.use('/api/agent-reconciliation', apiLimiter, agentReconciliationRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);
@@ -164,9 +178,22 @@ app.use(errorHandler);
 
 // Start server only if not in test environment
 if (process.env.NODE_ENV !== 'test') {
-  server.listen(PORT, () => {
+  server.listen(PORT, async () => {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+
+    // Setup Agent Aging Cron Job
+    await setupAgingCron();
+
+    // Verify GL Accounts (Production only requirement for financial stability)
+    if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') {
+      const glValidated = await GLAutomationService.asyncVerifyGLAccounts();
+      if (!glValidated) {
+        logger.error('Failed to validate/seed GL accounts. Exiting...');
+        process.exit(1);
+      }
+    }
+
     logger.info(`Socket.io initialized`);
     console.log(`
     ╔═══════════════════════════════════════════════════════════════╗

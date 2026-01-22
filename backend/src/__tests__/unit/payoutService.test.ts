@@ -19,8 +19,8 @@ describe('PayoutService', () => {
                 }
             ];
 
-            prismaMock.user.findUnique.mockResolvedValue(mockRep as any);
-            prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
+            (prismaMock.user.findUnique as any).mockResolvedValue(mockRep as any);
+            (prismaMock.order.findMany as any).mockResolvedValue(mockOrders as any);
 
             const result = await payoutService.getPendingPayments(repId);
 
@@ -37,7 +37,7 @@ describe('PayoutService', () => {
         });
 
         it('should throw error if representative not found', async () => {
-            prismaMock.user.findUnique.mockResolvedValue(null);
+            (prismaMock.user.findUnique as any).mockResolvedValue(null);
 
             await expect(payoutService.getPendingPayments(repId))
                 .rejects.toThrow('Representative not found');
@@ -71,7 +71,7 @@ describe('PayoutService', () => {
                 { id: 1, amount: 500, repId, payoutDate: new Date(), _count: { orders: 5 } }
             ];
 
-            prismaMock.payout.findMany.mockResolvedValue(mockPayouts as any);
+            (prismaMock.payout.findMany as any).mockResolvedValue(mockPayouts as any);
 
             const result = await payoutService.getPayoutHistory(repId);
 
@@ -95,12 +95,12 @@ describe('PayoutService', () => {
 
             const mockPayout = { id: 50, ...payoutData };
 
-            prismaMock.$transaction.mockImplementation(async (callback) => {
+            (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
                 return callback(prismaMock);
             });
 
-            prismaMock.payout.create.mockResolvedValue(mockPayout as any);
-            prismaMock.order.updateMany.mockResolvedValue({ count: 3 } as any);
+            (prismaMock.payout.create as any).mockResolvedValue(mockPayout as any);
+            (prismaMock.order.updateMany as any).mockResolvedValue({ count: 3 } as any);
 
             const result = await payoutService.processPayout(payoutData);
 
