@@ -6,7 +6,7 @@ export interface RepPerformanceDetails {
   repName: string;
   email: string;
   phoneNumber: string | null;
-  commissionRate: number;
+  commissionAmount: number;
   isActive: boolean;
   isAvailable: boolean;
   country: string | null;
@@ -76,7 +76,7 @@ export const getRepPerformanceDetails = async (
         firstName: true,
         lastName: true,
         phoneNumber: true,
-        commissionRate: true,
+        commissionAmount: true,
         isActive: true,
         isAvailable: true,
         country: true,
@@ -111,8 +111,8 @@ export const getRepPerformanceDetails = async (
         : 0;
 
       // Calculate total earnings: number of delivered orders × commission amount
-      const commissionAmount = rep.commissionRate || 0; // Fixed amount per order
-      const totalEarnings = deliveredCount * commissionAmount;
+      const commissionAmountValue = rep.commissionAmount || 0; // Fixed amount per order
+      const totalEarnings = deliveredCount * commissionAmountValue;
 
       // Calculate monthly earnings (current month)
       const currentMonth = new Date();
@@ -122,7 +122,7 @@ export const getRepPerformanceDetails = async (
         order => new Date(order.createdAt) >= startOfMonth
       );
 
-      const monthlyEarnings = monthlyDeliveredOrders.length * commissionAmount;
+      const monthlyEarnings = monthlyDeliveredOrders.length * commissionAmountValue;
 
       // Count orders by status
       const ordersByStatus = rep.assignedOrdersAsRep.reduce((acc, order) => {
@@ -145,7 +145,7 @@ export const getRepPerformanceDetails = async (
         repName: `${rep.firstName} ${rep.lastName}`,
         email: rep.email,
         phoneNumber: rep.phoneNumber,
-        commissionRate: rep.commissionRate || 0,
+        commissionAmount: rep.commissionAmount || 0,
         isActive: rep.isActive,
         isAvailable: rep.isAvailable,
         country: rep.country,
@@ -183,7 +183,7 @@ export const getRepEarningsByPeriod = async (
     const rep = await prisma.user.findUnique({
       where: { id: parseInt(repId, 10) },
       select: {
-        commissionRate: true,
+        commissionAmount: true,
         assignedOrdersAsRep: {
           where: {
             status: OrderStatus.delivered,
@@ -204,8 +204,8 @@ export const getRepEarningsByPeriod = async (
     }
 
     // Calculate earnings: number of orders × commission amount
-    const commissionAmount = rep.commissionRate || 0;
-    const earnings = rep.assignedOrdersAsRep.length * commissionAmount;
+    const commissionAmountValue = rep.commissionAmount || 0;
+    const earnings = rep.assignedOrdersAsRep.length * commissionAmountValue;
 
     return {
       earnings: parseFloat(earnings.toFixed(2)),

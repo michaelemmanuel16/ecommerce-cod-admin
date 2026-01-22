@@ -99,6 +99,38 @@ export interface ProfitMargins {
   orderCount: number;
 }
 
+export interface ProfitabilityAnalysis {
+  summary: {
+    totalRevenue: number;
+    totalCOGS: number;
+    totalShippingCost: number;
+    totalDiscount: number;
+    totalMarketingExpense: number;
+    grossProfit: number;
+    grossMargin: number;
+    netProfit: number;
+    netMargin: number;
+    orderCount: number;
+  };
+  products: {
+    id: number;
+    name: string;
+    sku: string;
+    revenue: number;
+    cogs: number;
+    quantity: number;
+    grossProfit: number;
+    grossMargin: number;
+  }[];
+  daily: {
+    date: string;
+    revenue: number;
+    cogs: number;
+    grossProfit: number;
+    grossMargin: number;
+  }[];
+}
+
 export const financialService = {
   async getFinancialSummary(startDate?: string, endDate?: string): Promise<FinancialSummary> {
     const response = await apiClient.get('/api/financial/summary', {
@@ -225,6 +257,28 @@ export const financialService = {
   ): Promise<any> {
     const response = await apiClient.get(`/api/financial/agents/settlement/${agentId}`, {
       params: { startDate, endDate }
+    });
+    return response.data;
+  },
+
+  async getProfitabilityAnalysis(params: {
+    startDate?: string;
+    endDate?: string;
+    productId?: number;
+  }): Promise<ProfitabilityAnalysis> {
+    const response = await apiClient.get('/api/financial/profitability', { params });
+    return response.data;
+  },
+
+  async exportProfitability(params: {
+    startDate?: string;
+    endDate?: string;
+    productId?: number;
+    format: 'csv' | 'xlsx';
+  }): Promise<Blob> {
+    const response = await apiClient.get('/api/financial/profitability/export', {
+      params,
+      responseType: 'blob'
     });
     return response.data;
   }

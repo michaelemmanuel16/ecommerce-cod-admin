@@ -8,7 +8,7 @@ describe('PayoutService', () => {
 
     describe('getPendingPayments', () => {
         it('should return pending payments for a valid representative', async () => {
-            const mockRep = { id: repId, commissionRate: 10 };
+            const mockRep = { id: repId, commissionAmount: 10 };
             const mockOrders = [
                 {
                     id: 1,
@@ -44,7 +44,7 @@ describe('PayoutService', () => {
         });
 
         it('should use updatedAt if actualDeliveryTime is missing', async () => {
-            const mockRep = { id: repId, commissionRate: 10 };
+            const mockRep = { id: repId, commissionAmount: 10 };
             const updatedAt = new Date('2024-01-01');
             const mockOrders = [
                 {

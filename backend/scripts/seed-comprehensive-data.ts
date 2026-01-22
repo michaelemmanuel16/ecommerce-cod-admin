@@ -170,7 +170,7 @@ async function seedComprehensiveData() {
           role: 'sales_rep',
           isActive: true,
           isAvailable: true,
-          commissionRate: rep.commission,
+          commissionAmount: rep.commission,
         },
       });
       customerReps.push(user);
@@ -395,6 +395,7 @@ async function seedComprehensiveData() {
                   quantity,
                   unitPrice: product.price,
                   totalPrice: product.price * quantity,
+                  itemType: 'package',
                 };
               }),
             },

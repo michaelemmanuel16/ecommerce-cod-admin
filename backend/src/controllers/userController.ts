@@ -176,7 +176,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         vehicleType: true,
         vehicleId: true,
         deliveryRate: true,
-        commissionRate: true,
+        commissionAmount: true,
         totalEarnings: true,
         location: true,
         country: true,

@@ -796,7 +796,7 @@ export class FinancialService {
     orders.forEach((order) => {
       totalRevenue += order.totalAmount;
       order.orderItems.forEach((item) => {
-        totalCost += (item.product.cogs || 0) * item.quantity;
+        totalCost += (Number(item.product.cogs) || 0) * item.quantity;
       });
     });
 
@@ -809,6 +809,160 @@ export class FinancialService {
       grossProfit,
       profitMargin,
       orderCount: orders.length
+    };
+  }
+
+  /**
+   * Get comprehensive profitability analysis
+   */
+  async getProfitabilityAnalysis(filters: { startDate?: Date; endDate?: Date; productId?: number }) {
+    const { startDate, endDate, productId } = filters;
+
+    // Filters for delivered orders
+    const orderWhere: Prisma.OrderWhereInput = {
+      status: 'delivered',
+      deletedAt: null,
+    };
+
+    if (startDate || endDate) {
+      orderWhere.deliveryDate = {};
+      if (startDate) orderWhere.deliveryDate.gte = startDate;
+      if (endDate) orderWhere.deliveryDate.lte = endDate;
+    }
+
+    if (productId) {
+      orderWhere.orderItems = {
+        some: {
+          productId: productId,
+        },
+      };
+    }
+
+    // Fetch orders with items and products (to get COGS)
+    const orders = await prisma.order.findMany({
+      where: orderWhere,
+      include: {
+        orderItems: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    // Calculate revenue and COGS
+    let totalRevenue = 0;
+    let totalCOGS = 0;
+    let totalShippingCost = 0;
+    let totalDiscount = 0;
+
+    const productProfitability: Record<number, {
+      id: number,
+      name: string,
+      sku: string,
+      revenue: number,
+      cogs: number,
+      quantity: number,
+      grossProfit: number
+    }> = {};
+
+    const dailyProfitability: Record<string, {
+      date: string,
+      revenue: number,
+      cogs: number,
+      grossProfit: number
+    }> = {};
+
+    for (const order of orders) {
+      totalRevenue += order.subtotal;
+      totalShippingCost += order.shippingCost;
+      totalDiscount += order.discount;
+
+      const dateStr = order.deliveryDate ? order.deliveryDate.toISOString().split('T')[0] : 'unknown';
+      if (!dailyProfitability[dateStr]) {
+        dailyProfitability[dateStr] = {
+          date: dateStr,
+          revenue: 0,
+          cogs: 0,
+          grossProfit: 0
+        };
+      }
+      dailyProfitability[dateStr].revenue += order.subtotal;
+
+      for (const item of order.orderItems) {
+        const itemCOGS = (Number(item.product.cogs) || 0) * item.quantity;
+        totalCOGS += itemCOGS;
+        dailyProfitability[dateStr].cogs += itemCOGS;
+
+        if (!productProfitability[item.productId]) {
+          productProfitability[item.productId] = {
+            id: item.productId,
+            name: item.product.name,
+            sku: item.product.sku,
+            revenue: 0,
+            cogs: 0,
+            quantity: 0,
+            grossProfit: 0
+          };
+        }
+
+        productProfitability[item.productId].revenue += item.unitPrice * item.quantity;
+        productProfitability[item.productId].cogs += itemCOGS;
+        productProfitability[item.productId].quantity += item.quantity;
+      }
+    }
+
+    // Calculate marketing expenses
+    const expenseWhere: Prisma.ExpenseWhereInput = {
+      category: 'marketing',
+    };
+    if (startDate || endDate) {
+      expenseWhere.expenseDate = {};
+      if (startDate) expenseWhere.expenseDate.gte = startDate;
+      if (endDate) expenseWhere.expenseDate.lte = endDate;
+    }
+
+    const marketingExpenses = await prisma.expense.findMany({
+      where: expenseWhere,
+    });
+
+    const totalMarketingExpense = marketingExpenses.reduce((sum, e) => sum + e.amount, 0);
+
+    const grossProfit = totalRevenue - totalCOGS;
+    const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+
+    const netProfit = grossProfit - totalMarketingExpense;
+    const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+
+    // Format product profitability
+    const products = Object.values(productProfitability).map(p => ({
+      ...p,
+      grossProfit: p.revenue - p.cogs,
+      grossMargin: p.revenue > 0 ? ((p.revenue - p.cogs) / p.revenue) * 100 : 0
+    })).sort((a, b) => b.grossProfit - a.grossProfit);
+
+    // Format daily profitability
+    const daily = Object.values(dailyProfitability).map(d => ({
+      ...d,
+      grossProfit: d.revenue - d.cogs,
+      grossMargin: d.revenue > 0 ? ((d.revenue - d.cogs) / d.revenue) * 100 : 0
+    })).sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      summary: {
+        totalRevenue,
+        totalCOGS,
+        totalShippingCost,
+        totalDiscount,
+        totalMarketingExpense,
+        grossProfit,
+        grossMargin,
+        netProfit,
+        netMargin,
+        orderCount: orders.length
+      },
+      products,
+      daily,
     };
   }
 

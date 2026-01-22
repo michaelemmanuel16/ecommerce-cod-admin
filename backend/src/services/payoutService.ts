@@ -19,7 +19,7 @@ class PayoutService {
     async getPendingPayments(repId: number) {
         const rep = await prisma.user.findUnique({
             where: { id: repId },
-            select: { commissionRate: true }
+            select: { commissionAmount: true }
         });
 
         if (!rep) throw new Error('Representative not found');
@@ -45,12 +45,12 @@ class PayoutService {
             }
         });
 
-        const commissionRate = rep.commissionRate || 0;
+        const commissionAmount = rep.commissionAmount || 0;
 
         return pendingOrders.map(order => ({
             orderId: order.id,
             totalAmount: order.totalAmount,
-            commissionAmount: commissionRate,
+            commissionAmount: commissionAmount,
             customerName: `${order.customer.firstName} ${order.customer.lastName}`,
             deliveredAt: order.delivery?.actualDeliveryTime || order.updatedAt
         }));
