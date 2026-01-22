@@ -57,6 +57,9 @@ export interface BulkImportOrderData {
   quantity?: number;
   unitPrice?: number;
   status?: OrderStatus;
+  // User assignments from CSV
+  assignedRepName?: string;
+  assignedAgentName?: string;
 }
 
 interface OrderFilters {
@@ -357,7 +360,12 @@ export class OrderService {
  * Orders are processed in batches for better performance
  * Each batch is processed in its own transaction to allow partial success
  */
-  async bulkImportOrders(orders: BulkImportOrderData[], createdById?: number) {
+  async bulkImportOrders(
+    orders: BulkImportOrderData[],
+    createdById?: number,
+    repMap?: Map<string, number>,
+    agentMap?: Map<string, number>
+  ) {
     const results = {
       success: 0,
       failed: 0,
@@ -454,6 +462,10 @@ export class OrderService {
               }
             }
 
+            // Get user assignments from maps
+            const customerRepId = orderData.assignedRepName && repMap ? repMap.get(orderData.assignedRepName) : undefined;
+            const deliveryAgentId = orderData.assignedAgentName && agentMap ? agentMap.get(orderData.assignedAgentName) : undefined;
+
             const createdOrder = await tx.order.create({
               data: {
                 customerId: customer.id,
@@ -467,6 +479,8 @@ export class OrderService {
                 status: orderData.status || 'pending_confirmation',
                 source: 'bulk_import',
                 createdById,
+                customerRepId,
+                deliveryAgentId,
                 orderItems: orderItemsData.length > 0 ? { create: orderItemsData } : undefined,
                 orderHistory: {
                   create: {

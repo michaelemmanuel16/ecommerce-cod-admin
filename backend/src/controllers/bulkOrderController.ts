@@ -11,6 +11,7 @@ import { z } from 'zod';
 import fileType from 'file-type';
 import { sanitizeName, sanitizePhoneNumber, sanitizeAddress, sanitizeString } from '../utils/sanitizer';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
+import prisma from '../utils/prisma';
 
 export const exportOrders = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
@@ -139,6 +140,62 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
     }
 };
 
+// Helper to find column value case-insensitively
+const getColumnValue = (row: any, ...possibleNames: string[]): string => {
+    for (const name of possibleNames) {
+        // Try exact match first
+        if (row[name] !== undefined && row[name] !== null) {
+            return String(row[name]).trim();
+        }
+        // Try case-insensitive match
+        const key = Object.keys(row).find(k => k.toLowerCase() === name.toLowerCase());
+        if (key && row[key] !== undefined && row[key] !== null) {
+            return String(row[key]).trim();
+        }
+    }
+    return '';
+};
+
+// Helper to find user by full name
+const findUserByName = async (fullName: string, role: 'sales_rep' | 'delivery_agent') => {
+    if (!fullName) return null;
+
+    const nameParts = fullName.trim().split(/\s+/);
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ');
+
+    const users = await prisma.user.findMany({
+        where: {
+            role,
+            isActive: true,
+            OR: [
+                // Try exact match on concatenated name
+                {
+                    AND: [
+                        { firstName: { equals: firstName, mode: 'insensitive' as const } },
+                        ...(lastName ? [{ lastName: { equals: lastName, mode: 'insensitive' as const } }] : [])
+                    ]
+                },
+                // Try partial match
+                {
+                    OR: [
+                        { firstName: { contains: fullName, mode: 'insensitive' as const } },
+                        { lastName: { contains: fullName, mode: 'insensitive' as const } }
+                    ]
+                }
+            ]
+        },
+        select: { id: true, firstName: true, lastName: true }
+    });
+
+    // Return best match (exact match preferred)
+    const exactMatch = users.find(u =>
+        `${u.firstName} ${u.lastName}`.toLowerCase() === fullName.toLowerCase()
+    );
+
+    return exactMatch || users[0] || null;
+};
+
 export const uploadOrders = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         if (!req.file) {
@@ -206,38 +263,89 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
 
         // Map raw data to BulkImportOrderData interface with input sanitization
         const sanitizedOrders = rawData.map((row: any) => {
-            const customerNameInput = String(row['CUSTOMER NAME'] || row['Customer Name'] || row['name'] || '').trim();
+            const customerNameInput = getColumnValue(row, 'CUSTOMER NAME', 'Customer Name', 'name');
             const sanitizedName = sanitizeName(customerNameInput, BULK_ORDER_CONFIG.NAME.MAX_LENGTH);
             const nameParts = sanitizedName.split(' ');
 
-            const price = Number(row['PRICE'] || row['Price'] || row['Total Amount'] || row['total'] || 0);
-            const quantity = Number(row['QUANTITY'] || row['Quantity'] || 1);
+            const price = Number(getColumnValue(row, 'PRICE', 'Price', 'Total Amount', 'total')) || 0;
+            const quantity = Number(getColumnValue(row, 'QUANTITY', 'Quantity', 'qty')) || 1;
             const totalAmount = price * quantity;
 
             // Validate status
             let status: OrderStatus | undefined;
-            const rawStatus = String(row['ORDER STATUS'] || row['Status'] || '').toLowerCase().replace(/ /g, '_');
+            const rawStatus = getColumnValue(row, 'ORDER STATUS', 'Status', 'status').toLowerCase().replace(/ /g, '_');
             if (Object.values(OrderStatus).includes(rawStatus as OrderStatus)) {
                 status = rawStatus as OrderStatus;
             }
 
+            // Extract user assignments
+            const assignedRepName = getColumnValue(row, 'Assigned Rep', 'ASSIGNED REP', 'Customer Rep');
+            const assignedAgentName = getColumnValue(row, 'Assigned Agent', 'ASSIGNED AGENT', 'Delivery Agent');
+
             return {
-                customerPhone: sanitizePhoneNumber(String(row['PHONE NUMBER'] || row['Phone'] || row['phone'] || '')),
+                customerPhone: sanitizePhoneNumber(getColumnValue(row, 'PHONE NUMBER', 'Phone', 'phone')),
                 customerFirstName: nameParts[0] || 'Unknown',
                 customerLastName: nameParts.slice(1).join(' ') || '',
-                customerAlternatePhone: sanitizePhoneNumber(String(row['ALTERNATIVE PHONE NUMBER'] || row['Alt Phone'] || '')),
+                customerAlternatePhone: sanitizePhoneNumber(getColumnValue(row, 'ALTERNATIVE PHONE NUMBER', 'Alt Phone', 'Alternate Phone')),
                 subtotal: totalAmount,
                 totalAmount: totalAmount,
-                deliveryAddress: sanitizeAddress(String(row['CUSTOMER ADDRESS'] || row['Address'] || ''), BULK_ORDER_CONFIG.ADDRESS.MAX_LENGTH),
-                deliveryState: sanitizeString(String(row['REGION'] || row['Region'] || row['State'] || ''), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
-                deliveryArea: sanitizeString(String(row['REGION'] || row['Region'] || row['Area'] || ''), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
-                productName: sanitizeString(String(row['PRODUCT NAME'] || row['Product'] || ''), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
+                deliveryAddress: sanitizeAddress(getColumnValue(row, 'CUSTOMER ADDRESS', 'Address', 'address'), BULK_ORDER_CONFIG.ADDRESS.MAX_LENGTH),
+                deliveryState: sanitizeString(getColumnValue(row, 'REGION', 'Region', 'State', 'state'), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
+                deliveryArea: sanitizeString(getColumnValue(row, 'REGION', 'Region', 'Area', 'area'), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
+                productName: sanitizeString(getColumnValue(row, 'PRODUCT NAME', 'Product', 'product'), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
                 quantity: quantity,
                 unitPrice: price,
                 status: status,
-                notes: sanitizeString(String(row['Notes'] || ''), BULK_ORDER_CONFIG.NOTES.MAX_LENGTH)
+                notes: sanitizeString(getColumnValue(row, 'Notes', 'NOTES', 'notes'), BULK_ORDER_CONFIG.NOTES.MAX_LENGTH),
+                assignedRepName,
+                assignedAgentName
             };
         });
+
+        // Validate assigned users before processing
+        const repNames = new Set(sanitizedOrders.map(o => o.assignedRepName).filter(Boolean));
+        const agentNames = new Set(sanitizedOrders.map(o => o.assignedAgentName).filter(Boolean));
+
+        const invalidReps: string[] = [];
+        const invalidAgents: string[] = [];
+        const repMap = new Map<string, number>();
+        const agentMap = new Map<string, number>();
+
+        // Validate all reps exist
+        for (const repName of repNames) {
+            const user = await findUserByName(repName, 'sales_rep');
+            if (!user) {
+                invalidReps.push(repName);
+            } else {
+                repMap.set(repName, user.id);
+            }
+        }
+
+        // Validate all agents exist
+        for (const agentName of agentNames) {
+            const user = await findUserByName(agentName, 'delivery_agent');
+            if (!user) {
+                invalidAgents.push(agentName);
+            } else {
+                agentMap.set(agentName, user.id);
+            }
+        }
+
+        // Return error if any users don't exist
+        if (invalidReps.length > 0 || invalidAgents.length > 0) {
+            const errors = [];
+            if (invalidReps.length > 0) {
+                errors.push(`Assigned Rep(s) not found: ${invalidReps.join(', ')}`);
+            }
+            if (invalidAgents.length > 0) {
+                errors.push(`Assigned Agent(s) not found: ${invalidAgents.join(', ')}`);
+            }
+            res.status(400).json({
+                message: 'User validation failed',
+                errors
+            });
+            return;
+        }
 
         const validOrders = sanitizedOrders.filter((order: BulkImportOrderData) => {
             // Basic presence check
@@ -271,7 +379,7 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             return;
         }
 
-        const results = await orderService.bulkImportOrders(validOrders, req.user?.id);
+        const results = await orderService.bulkImportOrders(validOrders, req.user?.id, repMap, agentMap);
 
 
         // Return results
