@@ -76,7 +76,6 @@ export const adminDashboardConfig: DashboardConfig = {
   ],
 
   // Row 2: Charts (60% Revenue Trend + 40% Order Status Distribution)
-  // Row 3: Orders Awaiting Action + Recent Activity
   charts: [
     {
       id: 'fulfillment-trend',
@@ -110,22 +109,6 @@ export const adminDashboardConfig: DashboardConfig = {
         showLabels: false,
       },
     },
-    {
-      id: 'orders-awaiting',
-      type: 'ordersAwaiting',
-      title: 'Orders Awaiting Action',
-      gridPosition: { row: 2, col: 1, colSpan: 2 },
-      height: 400,
-      dataSource: 'pendingOrders',
-    },
-    {
-      id: 'recent-activity',
-      type: 'recentActivity',
-      title: 'Recent Activity',
-      gridPosition: { row: 2, col: 3, colSpan: 1 },
-      height: 400,
-      dataSource: 'recentActivity',
-    },
   ],
 
   // Real-time Socket.io events to listen for
@@ -143,7 +126,5 @@ export const adminDashboardConfig: DashboardConfig = {
     'fetchSalesTrends',
     'fetchConversionFunnel',
     'fetchCustomerInsights',
-    'fetchPendingOrders',
-    'fetchRecentActivity',
   ],
 };
