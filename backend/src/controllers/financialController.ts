@@ -2,9 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { PaymentStatus } from '@prisma/client';
 import financialService from '../services/financialService';
-import { Parser } from 'json2csv';
-import ExcelJS from 'exceljs';
-import logger from '../utils/logger';
+import agingService from '../services/agingService';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -78,77 +76,6 @@ export const getProfitMargins = async (req: AuthRequest, res: Response): Promise
   });
 
   res.json(profitMargins);
-};
-
-export const getProfitabilityAnalysis = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { startDate, endDate, productId } = req.query;
-
-    const analysis = await financialService.getProfitabilityAnalysis({
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
-      productId: productId ? parseInt(productId as string, 10) : undefined
-    });
-
-    res.json(analysis);
-  } catch (error) {
-    throw error;
-  }
-};
-
-export const exportProfitabilityAnalysis = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { startDate, endDate, productId, format = 'csv' } = req.query;
-
-    const analysis = await financialService.getProfitabilityAnalysis({
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
-      productId: productId ? parseInt(productId as string, 10) : undefined
-    });
-
-    const exportData = analysis.products.map(p => ({
-      'Product Name': p.name,
-      'SKU': p.sku,
-      'Quantity Sold': p.quantity,
-      'Total Revenue': p.revenue,
-      'Total COGS': p.cogs,
-      'Gross Profit': p.grossProfit,
-      'Gross Margin %': p.grossMargin.toFixed(2)
-    }));
-
-    if (format === 'xlsx') {
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('Profitability');
-
-      worksheet.columns = [
-        { header: 'Product Name', key: 'Product Name', width: 30 },
-        { header: 'SKU', key: 'SKU', width: 15 },
-        { header: 'Quantity Sold', key: 'Quantity Sold', width: 15 },
-        { header: 'Total Revenue', key: 'Total Revenue', width: 15 },
-        { header: 'Total COGS', key: 'Total COGS', width: 15 },
-        { header: 'Gross Profit', key: 'Gross Profit', width: 15 },
-        { header: 'Gross Margin %', key: 'Gross Margin %', width: 15 }
-      ];
-
-      worksheet.addRows(exportData);
-
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename=profitability_report_${Date.now()}.xlsx`);
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      res.send(buffer);
-    } else {
-      const json2csvParser = new Parser();
-      const csv = json2csvParser.parse(exportData);
-
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=profitability_report_${Date.now()}.csv`);
-      res.send(csv);
-    }
-  } catch (error) {
-    logger.error('Export profitability analysis failed', { error });
-    res.status(500).json({ message: 'Export failed' });
-  }
 };
 
 export const getPipelineRevenue = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -260,4 +187,25 @@ export const exportCashFlowCSV = async (req: AuthRequest, res: Response): Promis
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename=cash_flow_report_${Date.now()}.csv`);
   res.send(csv);
+};
+
+export const getAgentAgingReport = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const report = await agingService.getAgingReport();
+    res.json(report);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch agent aging report' });
+  }
+};
+
+export const exportAgentAgingCSV = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const csv = await agingService.generateAgingCSV();
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
+    res.status(200).send(csv);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to export agent aging report' });
+  }
 };

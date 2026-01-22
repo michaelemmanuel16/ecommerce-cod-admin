@@ -99,36 +99,19 @@ export interface ProfitMargins {
   orderCount: number;
 }
 
-export interface ProfitabilityAnalysis {
-  summary: {
-    totalRevenue: number;
-    totalCOGS: number;
-    totalShippingCost: number;
-    totalDiscount: number;
-    totalMarketingExpense: number;
-    grossProfit: number;
-    grossMargin: number;
-    netProfit: number;
-    netMargin: number;
-    orderCount: number;
+export interface AgingSummary {
+  totalAgentsWithBalance: number;
+  totalOutstandingAmount: number;
+  overdueAgentsCount: number;
+  criticalOverdueAmount: number;
+  warningOverdueAmount: number;
+  blockedAgentsWithBalance: number;
+  bucketTotals: {
+    bucket_0_1: number;
+    bucket_2_3: number;
+    bucket_4_7: number;
+    bucket_8_plus: number;
   };
-  products: {
-    id: number;
-    name: string;
-    sku: string;
-    revenue: number;
-    cogs: number;
-    quantity: number;
-    grossProfit: number;
-    grossMargin: number;
-  }[];
-  daily: {
-    date: string;
-    revenue: number;
-    cogs: number;
-    grossProfit: number;
-    grossMargin: number;
-  }[];
 }
 
 export interface AgentAgingBucket {
@@ -145,6 +128,11 @@ export interface AgentAgingBucket {
   bucket_4_7: number;
   bucket_8_plus: number;
   updatedAt: string;
+}
+
+export interface AgentAgingReport {
+  summary: AgingSummary;
+  buckets: AgentAgingBucket[];
 }
 
 export interface CashFlowKPI {
@@ -298,31 +286,22 @@ export const financialService = {
     return response.data;
   },
 
-  async getProfitabilityAnalysis(params: {
-    startDate?: string;
-    endDate?: string;
-    productId?: number;
-  }): Promise<ProfitabilityAnalysis> {
-    const response = await apiClient.get('/api/financial/profitability', { params });
+  async getAgentAging(): Promise<AgentAgingReport> {
+    const response = await apiClient.get('/api/financial/agent-aging');
     return response.data;
   },
 
-  async exportProfitability(params: {
-    startDate?: string;
-    endDate?: string;
-    productId?: number;
-    format: 'csv' | 'xlsx';
-  }): Promise<Blob> {
-    const response = await apiClient.get('/api/financial/profitability/export', {
-      params,
+  async downloadAgentAgingCSV(): Promise<void> {
+    const response = await apiClient.get('/api/financial/agent-aging/export/csv', {
       responseType: 'blob'
     });
-    return response.data;
-  },
-
-  async getAgentAging(): Promise<AgentAgingBucket[]> {
-    const response = await apiClient.get('/api/agent-reconciliation/aging');
-    return response.data;
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   },
 
   async getCashFlowReport(): Promise<CashFlowReport> {
