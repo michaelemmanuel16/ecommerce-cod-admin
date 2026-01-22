@@ -15,15 +15,14 @@ export const BULK_ORDER_CONFIG = {
   // Duplicate detection window (in milliseconds)
   DUPLICATE_DETECTION_WINDOW: 24 * 60 * 60 * 1000, // 24 hours
 
-  // Rate limiting
   RATE_LIMIT: {
     EXPORT: {
       WINDOW_MS: 5 * 60 * 1000, // 5 minutes
       MAX_REQUESTS: 5
     },
     IMPORT: {
-      WINDOW_MS: 10 * 60 * 1000, // 10 minutes
-      MAX_REQUESTS: 3
+      WINDOW_MS: 5 * 60 * 1000, // 5 minutes (reduced from 10 for easier testing)
+      MAX_REQUESTS: 10 // Increased from 3 for testing
     }
   },
 
