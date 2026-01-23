@@ -8,39 +8,39 @@ datasource db {
 }
 
 model User {
-  id                    Int            @id @default(autoincrement())
-  email                 String         @unique
+  id                    Int               @id @default(autoincrement())
+  email                 String            @unique
   password              String
-  phoneNumber           String?        @map("phone_number")
+  phoneNumber           String?           @map("phone_number")
   role                  UserRole
-  isActive              Boolean        @default(true) @map("is_active")
-  isAvailable           Boolean        @default(true) @map("is_available")
-  lastLogin             DateTime?      @map("last_login")
-  refreshToken          String?        @map("refresh_token")
-  commissionAmount      Float?         @default(0) @map("commission_amount") /// Fixed commission amount per delivery (GHS)
+  isActive              Boolean           @default(true) @map("is_active")
+  isAvailable           Boolean           @default(true) @map("is_available")
+  lastLogin             DateTime?         @map("last_login")
+  refreshToken          String?           @map("refresh_token")
+  commissionAmount      Float?            @default(0) @map("commission_amount") /// Fixed commission amount per delivery (GHS)
   country               String?
   preferences           Json?
-  vehicleType           String?        @map("vehicle_type")
-  vehicleId             String?        @map("vehicle_id")
-  deliveryRate          Float?         @default(0) @map("delivery_rate")
-  totalEarnings         Float?         @default(0) @map("total_earnings")
-  totalCollected        Decimal        @default(0) @map("total_collected") @db.Decimal(19, 4)
+  vehicleType           String?           @map("vehicle_type")
+  vehicleId             String?           @map("vehicle_id")
+  deliveryRate          Float?            @default(0) @map("delivery_rate")
+  totalEarnings         Float?            @default(0) @map("total_earnings")
+  totalCollected        Decimal           @default(0) @map("total_collected") @db.Decimal(19, 4)
   location              String?
-  createdAt             DateTime       @default(now()) @map("created_at")
-  updatedAt             DateTime       @updatedAt @map("updated_at")
-  firstName             String         @map("first_name")
-  lastName              String         @map("last_name")
-  calls                 Call[]         @relation("CallSalesRep")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  firstName             String            @map("first_name")
+  lastName              String            @map("last_name")
+  calls                 Call[]            @relation("CallSalesRep")
   deliveries            Delivery[]
   expenses              Expense[]
   notifications         Notification[]
-  createdOrders         Order[]        @relation("OrderCreatedBy")
-  assignedOrdersAsRep   Order[]        @relation("OrderCustomerRep")
-  assignedOrdersAsAgent Order[]        @relation("OrderDeliveryAgent")
+  createdOrders         Order[]           @relation("OrderCreatedBy")
+  assignedOrdersAsRep   Order[]           @relation("OrderCustomerRep")
+  assignedOrdersAsAgent Order[]           @relation("OrderDeliveryAgent")
   payouts               Payout[]
   auditLogs             AuditLog[]
-  journalEntriesCreated JournalEntry[] @relation("JournalEntryCreator")
-  journalEntriesVoided  JournalEntry[] @relation("VoidedByUser")
+  journalEntriesCreated JournalEntry[]    @relation("JournalEntryCreator")
+  journalEntriesVoided  JournalEntry[]    @relation("VoidedByUser")
   collections           AgentCollection[] @relation("AgentCollections")
   verifiedCollections   AgentCollection[] @relation("VerifiedCollections")
   approvedCollections   AgentCollection[] @relation("ApprovedCollections")
@@ -143,15 +143,16 @@ model Order {
   payoutId          Int?             @map("payout_id")
   revenueRecognized Boolean          @default(false) @map("revenue_recognized")
   glJournalEntryId  Int?             @map("gl_journal_entry_id")
+  deliveryDate      DateTime?        @map("delivery_date")
   calls             Call[]
   delivery          Delivery?
   formSubmissions   FormSubmission[]
   orderHistory      OrderHistory[]
-  orderItems        OrderItem[]
+  orderItems          OrderItem[]
   createdBy         User?            @relation("OrderCreatedBy", fields: [createdById], references: [id])
-  customer          Customer         @relation(fields: [customerId], references: [id])
-  customerRep       User?            @relation("OrderCustomerRep", fields: [customerRepId], references: [id])
-  deliveryAgent     User?            @relation("OrderDeliveryAgent", fields: [deliveryAgentId], references: [id])
+  customer            Customer           @relation(fields: [customerId], references: [id])
+  customerRep         User?              @relation("OrderCustomerRep", fields: [customerRepId], references: [id])
+  deliveryAgent       User?              @relation("OrderDeliveryAgent", fields: [deliveryAgentId], references: [id])
   transaction       Transaction?
   payout            Payout?          @relation(fields: [payoutId], references: [id])
   glJournalEntry    JournalEntry?    @relation(fields: [glJournalEntryId], references: [id])
@@ -176,6 +177,7 @@ model Order {
   @@index([deletedAt, customerId])
   @@index([revenueRecognized])
   @@index([glJournalEntryId])
+  @@index([status, deliveryDate])
   @@map("orders")
 }
 
@@ -584,9 +586,8 @@ model Payout {
   notes      String?
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
-
-  rep    User    @relation(fields: [repId], references: [id])
-  orders Order[]
+  orders     Order[]
+  rep        User     @relation(fields: [repId], references: [id])
 
   @@index([repId])
   @@index([payoutDate])
@@ -628,6 +629,93 @@ model AuditLog {
   @@index([resource, resourceId])
   @@index([userId, createdAt])
   @@map("audit_logs")
+}
+
+model AgentAgingBucket {
+  id                   Int       @id @default(autoincrement())
+  agentId              Int       @unique @map("agent_id")
+  bucket_0_1           Decimal   @default(0) @map("bucket_0_1") @db.Decimal(19, 4)
+  bucket_2_3           Decimal   @default(0) @map("bucket_2_3") @db.Decimal(19, 4)
+  bucket_4_7           Decimal   @default(0) @map("bucket_4_7") @db.Decimal(19, 4)
+  bucket_8_plus        Decimal   @default(0) @map("bucket_8_plus") @db.Decimal(19, 4)
+  totalBalance         Decimal   @default(0) @map("total_balance") @db.Decimal(19, 4)
+  oldestCollectionDate DateTime? @map("oldest_collection_date")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  agent User @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("agent_aging_buckets")
+}
+
+model AgentBalance {
+  id                 Int       @id @default(autoincrement())
+  agentId            Int       @unique @map("agent_id")
+  totalCollected     Decimal   @default(0) @map("total_collected") @db.Decimal(19, 4)
+  totalDeposited     Decimal   @default(0) @map("total_deposited") @db.Decimal(19, 4)
+  currentBalance     Decimal   @default(0) @map("current_balance") @db.Decimal(19, 4)
+  lastSettlementDate DateTime? @map("last_settlement_date")
+  isBlocked          Boolean   @default(false) @map("is_blocked")
+  blockReason        String?   @map("block_reason")
+  blockedAt          DateTime? @map("blocked_at")
+  blockedById        Int?      @map("blocked_by_id")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  agent     User  @relation(fields: [agentId], references: [id])
+  blockedBy User? @relation("BlockedBy", fields: [blockedById], references: [id])
+
+  @@map("agent_balances")
+}
+
+model AgentCollection {
+  id              Int              @id @default(autoincrement())
+  orderId         Int              @unique @map("order_id")
+  agentId         Int              @map("agent_id")
+  amount          Decimal          @map("amount") @db.Decimal(19, 4)
+  allocatedAmount Decimal          @default(0) @map("allocated_amount") @db.Decimal(19, 4)
+  status          CollectionStatus @default(draft)
+  collectionDate  DateTime         @map("collection_date")
+  verifiedAt      DateTime?        @map("verified_at")
+  verifiedById    Int?             @map("verified_by_id")
+  approvedAt      DateTime?        @map("approved_at")
+  approvedById    Int?             @map("approved_by_id")
+  notes           String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  order    Order @relation(fields: [orderId], references: [id])
+  agent    User  @relation("AgentCollections", fields: [agentId], references: [id])
+  verifier User? @relation("VerifiedCollections", fields: [verifiedById], references: [id])
+  approver User? @relation("ApprovedCollections", fields: [approvedById], references: [id])
+
+  @@index([agentId])
+  @@index([status])
+  @@index([collectionDate])
+  @@map("agent_collections")
+}
+
+model AgentDeposit {
+  id              Int           @id @default(autoincrement())
+  agentId         Int           @map("agent_id")
+  amount          Decimal       @map("amount") @db.Decimal(19, 4)
+  status          DepositStatus @default(pending)
+  depositDate     DateTime      @map("deposit_date")
+  depositMethod   String        @map("deposit_method")
+  referenceNumber String        @unique @map("reference_number")
+  verifiedAt      DateTime?     @map("verified_at")
+  verifiedById    Int?          @map("verified_by_id")
+  notes           String?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  agent    User  @relation("AgentDeposits", fields: [agentId], references: [id])
+  verifier User? @relation("VerifiedDeposits", fields: [verifiedById], references: [id])
+
+  @@index([agentId])
+  @@index([depositDate])
+  @@index([agentId, depositDate])
+  @@index([status])
+  @@map("agent_deposits")
 }
 
 enum UserRole {
@@ -705,6 +793,20 @@ enum NormalBalance {
   credit
 }
 
+enum CollectionStatus {
+  draft
+  verified
+  approved
+  deposited
+  reconciled
+}
+
+enum DepositStatus {
+  pending
+  verified
+  rejected
+}
+
 enum JournalSourceType {
   order_delivery
   agent_deposit
@@ -714,105 +816,4 @@ enum JournalSourceType {
   reversal
   order_return
   agent_collection
-}
-
-model AgentCollection {
-  id             Int              @id @default(autoincrement())
-  orderId        Int              @unique @map("order_id")
-  agentId        Int              @map("agent_id")
-  amount          Decimal          @map("amount") @db.Decimal(19, 4)
-  allocatedAmount Decimal          @default(0) @map("allocated_amount") @db.Decimal(19, 4)
-  status          CollectionStatus @default(draft)
-  collectionDate  DateTime         @map("collection_date")
-  verifiedAt      DateTime?        @map("verified_at")
-  verifiedById    Int?             @map("verified_by_id")
-  approvedAt      DateTime?        @map("approved_at")
-  approvedById    Int?             @map("approved_by_id")
-  notes           String?
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-
-  order    Order @relation(fields: [orderId], references: [id])
-  agent    User  @relation("AgentCollections", fields: [agentId], references: [id])
-  verifier User? @relation("VerifiedCollections", fields: [verifiedById], references: [id])
-  approver User? @relation("ApprovedCollections", fields: [approvedById], references: [id])
-
-  @@index([agentId])
-  @@index([status])
-  @@index([collectionDate])
-  @@map("agent_collections")
-}
-
-enum CollectionStatus {
-  draft
-  verified
-  approved
-  deposited
-  reconciled
-}
-
-model AgentBalance {
-  id                 Int      @id @default(autoincrement())
-  agentId            Int      @unique @map("agent_id")
-  totalCollected     Decimal  @default(0) @map("total_collected") @db.Decimal(19, 4)
-  totalDeposited     Decimal  @default(0) @map("total_deposited") @db.Decimal(19, 4)
-  currentBalance     Decimal  @default(0) @map("current_balance") @db.Decimal(19, 4)
-  lastSettlementDate DateTime? @map("last_settlement_date")
-  isBlocked          Boolean  @default(false) @map("is_blocked")
-  blockReason        String?  @map("block_reason")
-  blockedAt          DateTime? @map("blocked_at")
-  blockedById        Int?     @map("blocked_by_id")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-
-  agent     User  @relation(fields: [agentId], references: [id])
-  blockedBy User? @relation("BlockedBy", fields: [blockedById], references: [id])
-
-  @@map("agent_balances")
-}
-
-model AgentDeposit {
-  id              Int              @id @default(autoincrement())
-  agentId         Int              @map("agent_id")
-  amount          Decimal          @map("amount") @db.Decimal(19, 4)
-  status          DepositStatus    @default(pending)
-  depositDate     DateTime         @map("deposit_date")
-  depositMethod   String           @map("deposit_method")
-  referenceNumber String           @unique @map("reference_number")
-  verifiedAt      DateTime?        @map("verified_at")
-  verifiedById    Int?             @map("verified_by_id")
-  notes           String?
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-
-  agent    User  @relation("AgentDeposits", fields: [agentId], references: [id])
-  verifier User? @relation("VerifiedDeposits", fields: [verifiedById], references: [id])
-
-  @@index([agentId])
-  @@index([depositDate])
-  @@index([agentId, depositDate])
-  @@index([status])
-  @@map("agent_deposits")
-}
-
-enum DepositStatus {
-  pending
-  verified
-  rejected
-}
-
-model AgentAgingBucket {
-  id                  Int      @id @default(autoincrement())
-  agentId             Int      @unique @map("agent_id")
-  bucket_0_1          Decimal  @default(0) @map("bucket_0_1") @db.Decimal(19, 4)
-  bucket_2_3          Decimal  @default(0) @map("bucket_2_3") @db.Decimal(19, 4)
-  bucket_4_7          Decimal  @default(0) @map("bucket_4_7") @db.Decimal(19, 4)
-  bucket_8_plus       Decimal  @default(0) @map("bucket_8_plus") @db.Decimal(19, 4)
-  totalBalance        Decimal  @default(0) @map("total_balance") @db.Decimal(19, 4)
-  oldestCollectionDate DateTime? @map("oldest_collection_date")
-  updatedAt           DateTime @updatedAt @map("updated_at")
-
-  agent User @relation(fields: [agentId], references: [id], onDelete: Cascade)
-
-  @@map("agent_aging_buckets")
 }

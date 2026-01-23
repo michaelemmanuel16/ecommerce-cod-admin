@@ -8,6 +8,7 @@ import { AgentReconciliationTab } from '../components/financial/AgentReconciliat
 import { AgentAgingTab } from '../components/financial/AgentAgingTab';
 import { ExpenseManagementTab } from '../components/financial/ExpenseManagementTab';
 import { ReportsTab } from '../components/financial/ReportsTab';
+import { ProfitabilityTab } from '../components/financial/ProfitabilityTab';
 
 export const Financial: React.FC = () => {
   const { dateRange, setDateRange } = useFinancialStore();
@@ -46,6 +47,11 @@ export const Financial: React.FC = () => {
       id: 'reports',
       label: 'Reports & Analytics',
       content: <ReportsTab />
+    },
+    {
+      id: 'profitability',
+      label: 'Profitability Analysis',
+      content: <ProfitabilityTab />
     }
   ];
 
