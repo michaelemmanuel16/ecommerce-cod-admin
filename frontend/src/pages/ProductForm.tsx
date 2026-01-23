@@ -146,7 +146,7 @@ export const ProductForm: React.FC = () => {
             return;
         }
         if (!formData.cogs || parseFloat(formData.cogs) <= 0) {
-            alert('Valid cost price is required');
+            alert('Valid COGS is required');
             return;
         }
         if (!formData.stockQuantity || parseInt(formData.stockQuantity) < 0) {
@@ -348,7 +348,7 @@ export const ProductForm: React.FC = () => {
                                 required
                             />
                             <Input
-                                label={`Cost Price (${currencySymbol})`}
+                                label={`COGS (${currencySymbol})`}
                                 name="cogs"
                                 type="number"
                                 step="0.01"

@@ -232,7 +232,14 @@ export const adminService = {
         lastLogin: true,
         country: true,
         commissionAmount: true,
-      } as any
+        vehicleType: true,
+        vehicleId: true,
+        deliveryRate: true,
+        totalEarnings: true,
+        location: true,
+        createdAt: true,
+        updatedAt: true
+      } as any,
     });
 
     if (!user) {
