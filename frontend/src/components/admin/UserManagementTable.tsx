@@ -37,6 +37,7 @@ export const UserManagementTable: React.FC = () => {
     phoneNumber: '',
     role: 'sales_rep',
     commissionAmount: 0,
+    deliveryRate: 0,
   });
 
   const [newPassword, setNewPassword] = useState('');
@@ -78,6 +79,7 @@ export const UserManagementTable: React.FC = () => {
         phoneNumber: '',
         role: 'sales_rep',
         commissionAmount: 0,
+        deliveryRate: 0,
       });
       fetchUsers();
     } catch (error) {
@@ -97,6 +99,7 @@ export const UserManagementTable: React.FC = () => {
         phoneNumber: formData.phoneNumber,
         role: formData.role,
         commissionAmount: formData.commissionAmount,
+        deliveryRate: formData.commissionAmount,
       });
       setShowEditModal(false);
       setSelectedUser(null);
@@ -154,7 +157,8 @@ export const UserManagementTable: React.FC = () => {
       lastName: user.lastName,
       phoneNumber: user.phoneNumber || '',
       role: user.role,
-      commissionAmount: user.commissionAmount || 0,
+      commissionAmount: user.commissionAmount || (user as any).deliveryRate || 0,
+      deliveryRate: (user as any).deliveryRate || user.commissionAmount || 0,
     });
     setShowEditModal(true);
   };
@@ -433,7 +437,10 @@ export const UserManagementTable: React.FC = () => {
                   type="number"
                   step="0.01"
                   value={formData.commissionAmount}
-                  onChange={(e) => setFormData({ ...formData, commissionAmount: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setFormData({ ...formData, commissionAmount: val, deliveryRate: val });
+                  }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -515,7 +522,10 @@ export const UserManagementTable: React.FC = () => {
                   type="number"
                   step="0.01"
                   value={formData.commissionAmount}
-                  onChange={(e) => setFormData({ ...formData, commissionAmount: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setFormData({ ...formData, commissionAmount: val, deliveryRate: val });
+                  }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>

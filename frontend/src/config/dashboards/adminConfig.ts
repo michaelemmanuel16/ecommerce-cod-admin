@@ -42,6 +42,7 @@ export const adminDashboardConfig: DashboardConfig = {
       trend: {
         enabled: true,
         comparison: 'previousPeriod',
+        comparisonSource: 'metrics.previousPeriodTotalOrders', // Added comparisonSource
       },
       subtitle: undefined,
     },
@@ -56,6 +57,7 @@ export const adminDashboardConfig: DashboardConfig = {
       trend: {
         enabled: true,
         comparison: 'previousPeriod',
+        comparisonSource: 'customerInsights.previousPeriodTotalCustomers', // Added comparisonSource
       },
       subtitle: undefined,
     },
@@ -118,6 +120,7 @@ export const adminDashboardConfig: DashboardConfig = {
     'order:assigned',
     'order:status_changed',
     'delivery:completed',
+    'bulk_import_completed',
   ],
 
   // Data fetchers to call on mount

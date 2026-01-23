@@ -232,6 +232,8 @@ export const adminService = {
         lastLogin: true,
         country: true,
         commissionAmount: true,
+        deliveryRate: true,
+        totalEarnings: true,
       } as any
     });
 
@@ -268,6 +270,8 @@ export const adminService = {
           lastLogin: true,
           country: true,
           commissionAmount: true,
+          deliveryRate: true,
+          totalEarnings: true,
           createdAt: true,
         } as any,
         orderBy: { createdAt: 'desc' },
@@ -291,6 +295,8 @@ export const adminService = {
     lastName: string;
     phoneNumber?: string;
     role: UserRole;
+    commissionAmount?: number;
+    deliveryRate?: number;
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
@@ -306,6 +312,8 @@ export const adminService = {
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
+    const commission = data.commissionAmount !== undefined ? data.commissionAmount : data.deliveryRate;
+
     const user = await prisma.user.create({
       data: {
         email: data.email,
@@ -314,6 +322,8 @@ export const adminService = {
         phoneNumber: data.phoneNumber,
         role: data.role,
         password: hashedPassword,
+        commissionAmount: commission || 0,
+        deliveryRate: commission || 0,
       },
       select: {
         id: true,
@@ -340,6 +350,8 @@ export const adminService = {
     phoneNumber?: string;
     role?: UserRole;
     isActive?: boolean;
+    commissionAmount?: number;
+    deliveryRate?: number;
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
@@ -378,6 +390,15 @@ export const adminService = {
       updateData.firstName = nameParts[0] || 'Unknown';
       updateData.lastName = nameParts.slice(1).join(' ') || '';
       delete updateData.name;
+    }
+
+    // Synchronize commissionAmount and deliveryRate
+    if (data.commissionAmount !== undefined) {
+      updateData.commissionAmount = data.commissionAmount;
+      updateData.deliveryRate = data.commissionAmount;
+    } else if (data.deliveryRate !== undefined) {
+      updateData.commissionAmount = data.deliveryRate;
+      updateData.deliveryRate = data.deliveryRate;
     }
 
     const updatedUser = await prisma.user.update({

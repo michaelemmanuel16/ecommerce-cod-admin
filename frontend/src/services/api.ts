@@ -147,6 +147,16 @@ apiClient.interceptors.response.use(
 
         return apiClient(originalRequest);
       } catch (refreshError: any) {
+        // If the error is a 5xx error or network error, don't log out
+        // The server might be temporarily down (e.g., EADDRINUSE restart issue)
+        const isServerError = !refreshError.response || (refreshError.response.status >= 500 && refreshError.response.status <= 599);
+
+        if (isServerError && !originalRequest.url?.includes('/api/auth/refresh')) {
+          console.log('[API Interceptor] Server error during refresh, skipping auto-logout');
+          toast.error('Server connection lost. Retrying...');
+          return Promise.reject(refreshError);
+        }
+
         // Check if refresh token is also outdated
         if (refreshError.response?.data?.code === 'TOKEN_FORMAT_OUTDATED') {
           useAuthStore.getState().logout(false);

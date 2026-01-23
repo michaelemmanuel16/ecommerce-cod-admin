@@ -431,7 +431,13 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             return;
         }
 
-        const results = await orderService.bulkImportOrders(validOrders, req.user?.id, repMap, agentMap);
+        const results = await orderService.bulkImportOrders(
+            validOrders,
+            req.user?.id,
+            repMap,
+            agentMap,
+            validOrders.length > 10 // Enable silent mode for imports > 10 orders to prevent event storms
+        );
 
 
         // Return results

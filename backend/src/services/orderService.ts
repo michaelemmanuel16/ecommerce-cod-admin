@@ -1,4 +1,4 @@
-import prisma from '../utils/prisma';
+import prisma, { prismaBase } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
@@ -262,23 +262,12 @@ export class OrderService {
 
     // Create order in transaction
     const order = await prisma.$transaction(async (tx) => {
-      // Update product stock and validate availability atomically
+      // Validate product availability (optional, as we already checked existence)
       for (const item of data.orderItems) {
-        const result = await tx.product.updateMany({
-          where: {
-            id: item.productId,
-            stockQuantity: { gte: item.quantity }
-          },
-          data: {
-            stockQuantity: {
-              decrement: item.quantity
-            }
-          }
-        });
-
-        if (result.count === 0) {
+        const product = productMap.get(item.productId);
+        if (product.stockQuantity < item.quantity) {
           throw new AppError(
-            `Insufficient stock for product ID ${item.productId}. It may have been sold out while you were processing.`,
+            `Insufficient stock for product ${product.name}. Current stock: ${product.stockQuantity}`,
             400
           );
         }
@@ -366,8 +355,10 @@ export class OrderService {
     orders: BulkImportOrderData[],
     createdById?: number,
     repMap?: Map<string, number>,
-    agentMap?: Map<string, number>
+    agentMap?: Map<string, number>,
+    silent: boolean = false
   ) {
+    logger.info('🔥🔥🔥 CANARY: Starting bulkImportOrders with sequential processing V3 🔥🔥🔥');
     const results = {
       success: 0,
       failed: 0,
@@ -375,52 +366,99 @@ export class OrderService {
       errors: [] as Array<{ order: BulkImportOrderData; error: string }>
     };
 
+    // Track duplicates WITHIN the current import to catch them before they hit the DB
+    const processedInImport = new Set<string>();
+
+    const normalize = (val: string | number | null | undefined) =>
+      String(val || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+
+    // Aggressive phone normalization: Take last 9 digits for comparison
+    // This handles 055... vs +23355... vs 23355...
+    const normalizePhone = (phone: string | null | undefined) => {
+      const digits = String(phone || '').replace(/[^0-9]/g, '');
+      return digits.length >= 9 ? digits.slice(-9) : digits;
+    };
+
     // Process orders in batches for better performance
     for (let i = 0; i < orders.length; i += BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) {
       const batch = orders.slice(i, i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE);
 
-      // Process orders in the current batch in parallel
-      const batchResults = await Promise.allSettled(
-        batch.map(async (orderData) => {
-          return prisma.$transaction(async (tx) => {
-            // Find or create customer
+      // Process orders in the current batch SEQUENTIALLY to prevent race conditions
+      for (const orderData of batch) {
+        try {
+          // 1. Check for duplicates within the SAME import first
+          const normalizedPhone = normalizePhone(orderData.customerPhone);
+          const orderDateValue = orderData.orderDate || new Date();
+          const orderDateString = orderDateValue.toDateString();
+          const orderFingerprint = `${normalizedPhone}|${orderData.totalAmount}|${normalize(orderData.deliveryAddress)}|${orderDateString}`;
+
+          if (processedInImport.has(orderFingerprint)) {
+            logger.warn('🚫 CANARY: DUPLICATE FOUND IN SAME BATCH', {
+              phone: orderData.customerPhone,
+              amount: orderData.totalAmount,
+              date: orderDateString
+            });
+            results.duplicates++;
+            continue;
+          }
+
+          // 2. Check for duplicates in DB (User's Logic: same phone, address, amount, date)
+          const startOfCurrentDay = new Date(orderDateValue);
+          startOfCurrentDay.setHours(0, 0, 0, 0);
+          const endOfCurrentDay = new Date(orderDateValue);
+          endOfCurrentDay.setHours(23, 59, 59, 999);
+
+          // Use prismaBase to include soft-deleted orders in duplicate check
+          const existingOrders = await prismaBase.order.findMany({
+            where: {
+              customer: {
+                OR: [
+                  { phoneNumber: orderData.customerPhone },
+                  { phoneNumber: { endsWith: normalizedPhone } }
+                ]
+              },
+              createdAt: {
+                gte: startOfCurrentDay,
+                lte: endOfCurrentDay
+              },
+              totalAmount: orderData.totalAmount
+            },
+            select: { id: true, deliveryAddress: true, deletedAt: true },
+            orderBy: { createdAt: 'desc' },
+            take: 20
+          });
+
+          const isDuplicateInDB = existingOrders.some(existing => {
+            const sameAddr = normalize(existing.deliveryAddress) === normalize(orderData.deliveryAddress);
+
+            // It's a match if addresses match. 
+            // We ignore if deleted more than 5 mins ago (standard delete flow).
+            // But if it was deleted just now (re-import case), it counts as a duplicate.
+            const isRelevantRecord = !existing.deletedAt || (Date.now() - new Date(existing.deletedAt).getTime() < 5 * 60 * 1000);
+
+            return sameAddr && isRelevantRecord;
+          });
+
+          if (isDuplicateInDB) {
+            logger.warn('🚫 CANARY: DUPLICATE FOUND IN DB', {
+              phone: orderData.customerPhone,
+              amount: orderData.totalAmount,
+              date: orderDateString
+            });
+            throw new Error('DUPLICATE_ORDER');
+          }
+
+          const createdOrder = await prisma.$transaction(async (tx) => {
+            // 3. Find or Create Customer
             let customer = await tx.customer.findUnique({
               where: { phoneNumber: orderData.customerPhone }
             });
 
-            // Enhanced duplicate detection - check multiple criteria
-            if (customer) {
-              const duplicateWindow = new Date(Date.now() - BULK_ORDER_CONFIG.DUPLICATE_DETECTION_WINDOW);
-              const duplicates = await tx.order.findMany({
-                where: {
-                  customerId: customer.id,
-                  totalAmount: orderData.totalAmount,
-                  deliveryAddress: orderData.deliveryAddress,
-                  deliveryArea: orderData.deliveryArea,
-                  createdAt: { gte: duplicateWindow },
-                  deletedAt: null
-                },
-                include: {
-                  orderItems: {
-                    include: { product: true }
-                  }
-                }
+            if (!customer) {
+              const potentialCustomers = await tx.customer.findMany({
+                where: { phoneNumber: { endsWith: normalizedPhone } }
               });
-
-              for (const duplicate of duplicates) {
-                // If no product name in imported order, and we found an order with same amount/address/area, it's a duplicate
-                if (!orderData.productName) {
-                  throw new Error('DUPLICATE_ORDER');
-                }
-
-                // If product name is provided, check if any existing order item matches it
-                const duplicateProductName = duplicate.orderItems?.[0]?.product?.name;
-                if (duplicateProductName &&
-                  (duplicateProductName.toLowerCase().includes(orderData.productName.toLowerCase()) ||
-                    orderData.productName.toLowerCase().includes(duplicateProductName.toLowerCase()))) {
-                  throw new Error('DUPLICATE_ORDER');
-                }
-              }
+              customer = potentialCustomers[0] || null;
             }
 
             if (!customer) {
@@ -442,7 +480,7 @@ export class OrderService {
               });
             }
 
-            // Handle product lookup
+            // 4. Handle product lookup
             let orderItemsData: any[] = [];
             if (orderData.productName) {
               const product = await tx.product.findFirst({
@@ -464,11 +502,11 @@ export class OrderService {
               }
             }
 
-            // Get user assignments from maps
+            // 5. Create Order
             const customerRepId = orderData.assignedRepName && repMap ? repMap.get(orderData.assignedRepName) : undefined;
             const deliveryAgentId = orderData.assignedAgentName && agentMap ? agentMap.get(orderData.assignedAgentName) : undefined;
 
-            const createdOrder = await tx.order.create({
+            return await tx.order.create({
               data: {
                 customerId: customer.id,
                 subtotal: orderData.subtotal,
@@ -483,7 +521,7 @@ export class OrderService {
                 createdById,
                 customerRepId,
                 deliveryAgentId,
-                createdAt: orderData.orderDate, // Use date from CSV if provided
+                createdAt: orderDateValue,
                 orderItems: orderItemsData.length > 0 ? { create: orderItemsData } : undefined,
                 orderHistory: {
                   create: {
@@ -494,48 +532,27 @@ export class OrderService {
                 }
               }
             });
-
-            // Update stock for imported items
-            for (const item of orderItemsData) {
-              const result = await tx.product.updateMany({
-                where: {
-                  id: item.productId,
-                  stockQuantity: { gte: item.quantity }
-                },
-                data: {
-                  stockQuantity: { decrement: item.quantity }
-                }
-              });
-
-              if (result.count === 0) {
-                throw new Error(`INSUFFICIENT_STOCK_PRODUCT_${item.productId} `);
-              }
-            }
-
-            return createdOrder;
           });
-        })
-      );
 
-      // Handle batch results
-      for (let idx = 0; idx < batchResults.length; idx++) {
-        const result = batchResults[idx];
-        const orderData = batch[idx];
-
-        if (result.status === 'fulfilled') {
+          // Success - track it and emit events
+          processedInImport.add(orderFingerprint);
           results.success++;
-          const createdOrder = result.value;
-          emitOrderCreated(getSocketInstance() as any, createdOrder);
+
+          if (!silent) {
+            emitOrderCreated(getSocketInstance() as any, createdOrder);
+          }
+
           workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
             logger.error('Failed to trigger workflow for bulk imported order', {
               orderId: createdOrder.id,
               error: err.message
             });
           });
-        } else {
-          const error = result.reason;
+
+        } catch (error: any) {
           if (error.message === 'DUPLICATE_ORDER') {
             results.duplicates++;
+            logger.info('Duplicate order skipped', { phone: orderData.customerPhone });
           } else {
             results.failed++;
             results.errors.push({
@@ -551,27 +568,23 @@ export class OrderService {
       }
 
       // Emit progress update after each batch
-      const processed = Math.min(i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE, orders.length);
-      const progress = Math.round((processed / orders.length) * 100);
+      const processedCount = Math.min(i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE, orders.length);
+      const progress = Math.round((processedCount / orders.length) * 100);
 
       getSocketInstance()?.emit('bulk_import_progress', {
         progress,
-        processed,
+        processed: processedCount,
         total: orders.length,
         success: results.success,
         failed: results.failed,
         duplicates: results.duplicates
       });
 
-      // Log progress after each batch
-      logger.info('Batch processed', {
+      logger.info('Batch handled', {
         progress,
-        processed,
-        total: orders.length,
-        batchNumber: Math.floor(i / BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE) + 1,
-        totalBatches: Math.ceil(orders.length / BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE),
-        successSoFar: results.success,
-        failedSoFar: results.failed
+        processedCount,
+        success: results.success,
+        duplicates: results.duplicates
       });
     }
 
@@ -581,6 +594,14 @@ export class OrderService {
       failed: results.failed,
       duplicates: results.duplicates,
       userId: createdById
+    });
+
+    // Always emit completion event for dashboard refreshing
+    getSocketInstance()?.emit('bulk_import_completed', {
+      success: results.success,
+      failed: results.failed,
+      duplicates: results.duplicates,
+      total: orders.length
     });
 
     return results;
@@ -722,34 +743,39 @@ export class OrderService {
         }
       }
 
-      // If orderItems are provided, update them and adjust stock
+      // If orderItems are provided, update them and adjust stock if needed
       if (orderItems && Array.isArray(orderItems)) {
-        // Calculate stock changes
-        const oldItems = order.orderItems;
-        const newItems = orderItems;
+        // Only adjust stock if the order status is 'out_for_delivery' or further
+        const statusesWithStockDeduction = ['out_for_delivery', 'delivered'];
+        const shouldAdjustStock = statusesWithStockDeduction.includes(order.status);
 
-        // Restore old stock
-        for (const oldItem of oldItems) {
-          await tx.product.update({
-            where: { id: oldItem.productId },
-            data: { stockQuantity: { increment: oldItem.quantity } }
-          });
-        }
+        if (shouldAdjustStock) {
+          const oldItems = order.orderItems;
+          const newItems = orderItems;
 
-        // Deduct new stock and validate atomically
-        for (const newItem of newItems) {
-          const result = await tx.product.updateMany({
-            where: {
-              id: newItem.productId,
-              stockQuantity: { gte: newItem.quantity }
-            },
-            data: {
-              stockQuantity: { decrement: newItem.quantity }
+          // Restore old stock
+          for (const oldItem of oldItems) {
+            await tx.product.update({
+              where: { id: oldItem.productId },
+              data: { stockQuantity: { increment: oldItem.quantity } }
+            });
+          }
+
+          // Deduct new stock and validate atomically
+          for (const newItem of newItems) {
+            const result = await tx.product.updateMany({
+              where: {
+                id: newItem.productId,
+                stockQuantity: { gte: newItem.quantity }
+              },
+              data: {
+                stockQuantity: { decrement: newItem.quantity }
+              }
+            });
+
+            if (result.count === 0) {
+              throw new AppError(`Insufficient stock for product ID ${newItem.productId} `, 400);
             }
-          });
-
-          if (result.count === 0) {
-            throw new AppError(`Insufficient stock for product ID ${newItem.productId} `, 400);
           }
         }
 
@@ -824,8 +850,54 @@ export class OrderService {
     let glEntry: any = null;
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Handle inventory based on status change
+      const deductedStatuses = ['out_for_delivery', 'delivered'];
+      const isOldDeducted = deductedStatuses.includes(order.status);
+      const isNewDeducted = deductedStatuses.includes(data.status);
+
+      // Fetch order items if we need to adjust stock
+      if (isOldDeducted !== isNewDeducted) {
+        const orderWithItems = await tx.order.findUnique({
+          where: { id: orderId },
+          include: { orderItems: true }
+        });
+
+        if (orderWithItems) {
+          if (!isOldDeducted && isNewDeducted) {
+            // Deduct stock
+            for (const item of orderWithItems.orderItems) {
+              const result = await tx.product.updateMany({
+                where: {
+                  id: item.productId,
+                  stockQuantity: { gte: item.quantity }
+                },
+                data: {
+                  stockQuantity: { decrement: item.quantity }
+                }
+              });
+
+              if (result.count === 0) {
+                throw new AppError(`Insufficient stock for product ID ${item.productId} `, 400);
+              }
+            }
+          } else if (isOldDeducted && !isNewDeducted) {
+            // Restore stock (avoid double restoration if it's already a return handled below)
+            if (!isReturnStatus) {
+              for (const item of orderWithItems.orderItems) {
+                await tx.product.update({
+                  where: { id: item.productId },
+                  data: {
+                    stockQuantity: { increment: item.quantity }
+                  }
+                });
+              }
+            }
+          }
+        }
+      }
+
       // Handle return reversal if status changed to 'returned' and revenue was recognized
-      if ((order as any).revenueRecognized) {
+      if ((order as any).revenueRecognized && isReturnStatus) {
         // Find the latest non-reversed order_delivery GL entry for this order
         const latestEntry = await tx.journalEntry.findFirst({
           where: {
@@ -881,6 +953,7 @@ export class OrderService {
         where: { id: orderId },
         data: {
           status: data.status,
+          paymentStatus: data.status === 'delivered' ? 'collected' : order.paymentStatus,
           ...(isReturnStatus && order.revenueRecognized ? { revenueRecognized: false } : {}),
           orderHistory: {
             create: {
@@ -1007,18 +1080,19 @@ export class OrderService {
 
     // Restock products and update order
     await prisma.$transaction(async (tx) => {
-      // Restock products
-      for (const item of order.orderItems) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            stockQuantity: {
-              increment: item.quantity
+      // Restock products ONLY if they were deducted (out_for_delivery, delivered)
+      if (["out_for_delivery", "delivered"].includes(order.status)) {
+        for (const item of order.orderItems) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stockQuantity: {
+                increment: item.quantity
+              }
             }
-          }
-        });
+          });
+        }
       }
-
       // Update order status
       await tx.order.update({
         where: { id: orderId },
@@ -1084,18 +1158,19 @@ export class OrderService {
 
     // Soft delete with transaction (restock products, update customer stats)
     await prisma.$transaction(async (tx) => {
-      // Restock products
-      for (const item of order.orderItems) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            stockQuantity: {
-              increment: item.quantity
+      // Restock products ONLY if they were deducted (out_for_delivery, delivered)
+      if (["out_for_delivery", "delivered"].includes(order.status)) {
+        for (const item of order.orderItems) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stockQuantity: {
+                increment: item.quantity
+              }
             }
-          }
-        });
+          });
+        }
       }
-
       // Update customer stats
       await tx.customer.update({
         where: { id: order.customerId },
@@ -1175,10 +1250,13 @@ export class OrderService {
     const actualOrderIds = orders.map(o => o.id);
 
     for (const order of orders) {
-      // Aggregate product restocks
-      for (const item of order.orderItems) {
-        const current = productRestocks.get(item.productId) || 0;
-        productRestocks.set(item.productId, current + item.quantity);
+      // Aggregate product restocks ONLY if they were deducted (out_for_delivery, delivered)
+      const deductedStatuses = ['out_for_delivery', 'delivered'];
+      if (deductedStatuses.includes(order.status)) {
+        for (const item of order.orderItems) {
+          const current = productRestocks.get(item.productId) || 0;
+          productRestocks.set(item.productId, current + item.quantity);
+        }
       }
 
       // Aggregate customer stats
