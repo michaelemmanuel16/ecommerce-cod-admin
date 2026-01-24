@@ -155,7 +155,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
       isActive: true
     };
 
-    const orderWhere: any = {};
+    const orderWhere: any = { deletedAt: null };
     if (startDate || endDate) {
       orderWhere.createdAt = {};
       if (startDate) {

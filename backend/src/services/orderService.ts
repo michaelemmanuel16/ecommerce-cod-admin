@@ -881,16 +881,14 @@ export class OrderService {
               }
             }
           } else if (isOldDeducted && !isNewDeducted) {
-            // Restore stock (avoid double restoration if it's already a return handled below)
-            if (!isReturnStatus) {
-              for (const item of orderWithItems.orderItems) {
-                await tx.product.update({
-                  where: { id: item.productId },
-                  data: {
-                    stockQuantity: { increment: item.quantity }
-                  }
-                });
-              }
+            // Restore stock
+            for (const item of orderWithItems.orderItems) {
+              await tx.product.update({
+                where: { id: item.productId },
+                data: {
+                  stockQuantity: { increment: item.quantity }
+                }
+              });
             }
           }
         }
@@ -941,8 +939,8 @@ export class OrderService {
             data.changedBy || SYSTEM_USER_ID
           );
 
-          // Restore inventory
-          await GLAutomationService.restoreInventory((tx as any), (orderWithItems as any).orderItems);
+          // GL Automation handles the reversal entry, skip redundant inventory restoration here
+          // as it's now handled by the generic restoration logic above
 
           logger.info(`GL reversal entry created for returned order ${orderId}: ${glEntry.entryNumber} `);
         }
