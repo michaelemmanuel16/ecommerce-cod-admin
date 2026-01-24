@@ -61,6 +61,53 @@ interface ReconcileTransactionData {
   notes?: string;
 }
 
+interface FinancialStatementAccount {
+  id: number;
+  code: string;
+  name: string;
+  balance: number;
+}
+
+interface BalanceSheetData {
+  asOfDate: Date;
+  assets: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  liabilities: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  equity: {
+    accounts: FinancialStatementAccount[];
+    retainedEarnings: number;
+    total: number;
+  };
+  totalLiabilitiesAndEquity: number;
+  isBalanced: boolean;
+}
+
+interface ProfitLossData {
+  startDate: Date;
+  endDate: Date;
+  revenue: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  cogs: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  expenses: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  grossProfit: number;
+  grossMarginPercentage: number;
+  netIncome: number;
+  netMarginPercentage: number;
+}
+
 export class FinancialService {
   private forecastCache: { data: CashFlowForecast[]; timestamp: number } | null = null;
   private readonly FORECAST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
@@ -1348,6 +1395,162 @@ export class FinancialService {
 
     const parser = new Parser();
     return parser.parse(csvData);
+  }
+
+  /**
+   * Get Balance Sheet as of a specific date
+   */
+  async getBalanceSheet(asOfDateValue?: string | Date) {
+    const asOfDate = asOfDateValue ? new Date(asOfDateValue) : new Date();
+
+    // Query all active accounts
+    const accounts = await prisma.account.findMany({
+      where: { isActive: true },
+      include: {
+        transactions: {
+          where: {
+            createdAt: { lte: asOfDate }
+          }
+        }
+      }
+    });
+
+    const categories: Record<string, { accounts: FinancialStatementAccount[]; total: number }> = {
+      asset: { accounts: [], total: 0 },
+      liability: { accounts: [], total: 0 },
+      equity: { accounts: [], total: 0 },
+      revenue: { accounts: [], total: 0 },
+      expense: { accounts: [], total: 0 }
+    };
+
+    // Calculate balances as of date
+    accounts.forEach(account => {
+      let balance = 0;
+      if (!asOfDateValue) {
+        // If today, use current balance Optimized
+        balance = this.toNumber(account.currentBalance);
+      } else {
+        // Calculate from transactions
+        const totalDebit = account.transactions.reduce((sum, t) => sum + this.toNumber(t.debitAmount), 0);
+        const totalCredit = account.transactions.reduce((sum, t) => sum + this.toNumber(t.creditAmount), 0);
+
+        if (account.normalBalance === 'debit') {
+          balance = totalDebit - totalCredit;
+        } else {
+          balance = totalCredit - totalDebit;
+        }
+      }
+
+      const financialAccount = {
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        balance
+      };
+
+      if (categories[account.accountType]) {
+        categories[account.accountType].accounts.push(financialAccount);
+        categories[account.accountType].total += balance;
+      }
+    });
+
+    // Calculate Retained Earnings: Total Revenue - Total Expense (all time up to asOfDate)
+    const retainedEarnings = categories.revenue.total - categories.expense.total;
+
+    // Equity: System Equity Accounts + Retained Earnings
+    const totalEquity = categories.equity.total + retainedEarnings;
+    const totalLiabilitiesAndEquity = categories.liability.total + totalEquity;
+    const totalAssets = categories.asset.total;
+
+    return {
+      asOfDate,
+      assets: categories.asset,
+      liabilities: categories.liability,
+      equity: {
+        accounts: categories.equity.accounts,
+        retainedEarnings,
+        total: totalEquity
+      },
+      totalLiabilitiesAndEquity,
+      isBalanced: Math.abs(totalAssets - totalLiabilitiesAndEquity) < 0.01
+    } as BalanceSheetData;
+  }
+
+  /**
+   * Get Profit and Loss Statement for a specific period
+   */
+  async getProfitLoss(startDateValue: string | Date, endDateValue: string | Date) {
+    const startDate = new Date(startDateValue);
+    const endDate = new Date(endDateValue);
+
+    // Query all revenue and expense accounts
+    const accounts = await prisma.account.findMany({
+      where: {
+        isActive: true,
+        accountType: { in: ['revenue', 'expense'] }
+      },
+      include: {
+        transactions: {
+          where: {
+            createdAt: {
+              gte: startDate,
+              lte: endDate
+            }
+          }
+        }
+      }
+    });
+
+    const result: ProfitLossData = {
+      startDate,
+      endDate,
+      revenue: { accounts: [], total: 0 },
+      cogs: { accounts: [], total: 0 },
+      expenses: { accounts: [], total: 0 },
+      grossProfit: 0,
+      grossMarginPercentage: 0,
+      netIncome: 0,
+      netMarginPercentage: 0
+    };
+
+    accounts.forEach(account => {
+      const totalDebit = account.transactions.reduce((sum, t) => sum + this.toNumber(t.debitAmount), 0);
+      const totalCredit = account.transactions.reduce((sum, t) => sum + this.toNumber(t.creditAmount), 0);
+
+      let balance = 0;
+      if (account.normalBalance === 'debit') {
+        balance = totalDebit - totalCredit;
+      } else {
+        balance = totalCredit - totalDebit;
+      }
+
+      const financialAccount = {
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        balance
+      };
+
+      if (account.accountType === 'revenue') {
+        result.revenue.accounts.push(financialAccount);
+        result.revenue.total += balance;
+      } else if (account.accountType === 'expense') {
+        if (account.code === GL_ACCOUNTS.COGS) {
+          result.cogs.accounts.push(financialAccount);
+          result.cogs.total += balance;
+        } else {
+          result.expenses.accounts.push(financialAccount);
+          result.expenses.total += balance;
+        }
+      }
+    });
+
+    result.grossProfit = result.revenue.total - result.cogs.total;
+    result.grossMarginPercentage = result.revenue.total > 0 ? (result.grossProfit / result.revenue.total) * 100 : 0;
+    result.netIncome = result.grossProfit - result.expenses.total;
+    result.netMarginPercentage = result.revenue.total > 0 ? (result.netIncome / result.revenue.total) * 100 : 0;
+
+    return result;
   }
 
   /**

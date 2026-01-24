@@ -517,4 +517,75 @@ describe('FinancialService', () => {
       expect(callArgs.where.status).toBe('collected');
     });
   });
+
+  describe('getBalanceSheet', () => {
+    it('should calculate balance sheet correctly', async () => {
+      const mockAccounts = [
+        { id: 1, code: '1000', name: 'Cash', accountType: 'asset', normalBalance: 'debit', currentBalance: 10000, transactions: [] },
+        { id: 2, code: '2000', name: 'AP', accountType: 'liability', normalBalance: 'credit', currentBalance: 2000, transactions: [] },
+        { id: 3, code: '3000', name: 'Equity', accountType: 'equity', normalBalance: 'credit', currentBalance: 5000, transactions: [] },
+        { id: 4, code: '4000', name: 'Sales', accountType: 'revenue', normalBalance: 'credit', currentBalance: 4000, transactions: [] },
+        { id: 5, code: '5000', name: 'Rent', accountType: 'expense', normalBalance: 'debit', currentBalance: 1000, transactions: [] }
+      ];
+
+      prismaMock.account.findMany.mockResolvedValue(mockAccounts as any);
+
+      const bs = await financialService.getBalanceSheet();
+
+      expect(bs.assets.total).toBe(10000);
+      expect(bs.liabilities.total).toBe(2000);
+      expect(bs.equity.retainedEarnings).toBe(3000); // 4000 - 1000
+      expect(bs.equity.total).toBe(8000); // 5000 + 3000
+      expect(bs.totalLiabilitiesAndEquity).toBe(10000);
+      expect(bs.isBalanced).toBe(true);
+    });
+
+    it('should calculate historical balance correctly', async () => {
+      const mockAccounts = [
+        {
+          id: 1, code: '1000', name: 'Cash', accountType: 'asset', normalBalance: 'debit',
+          transactions: [
+            { debitAmount: 1000, creditAmount: 0 },
+            { debitAmount: 500, creditAmount: 200 }
+          ]
+        }
+      ];
+
+      prismaMock.account.findMany.mockResolvedValue(mockAccounts as any);
+
+      const bs = await financialService.getBalanceSheet(new Date());
+
+      expect(bs.assets.total).toBe(1300); // (1000-0) + (500-200)
+    });
+  });
+
+  describe('getProfitLoss', () => {
+    it('should calculate profit and loss correctly', async () => {
+      const mockAccounts = [
+        {
+          id: 1, code: '4000', name: 'Sales', accountType: 'revenue', normalBalance: 'credit',
+          transactions: [{ debitAmount: 0, creditAmount: 5000 }]
+        },
+        {
+          id: 2, code: '5010', name: 'COGS', accountType: 'expense', normalBalance: 'debit',
+          transactions: [{ debitAmount: 2000, creditAmount: 0 }]
+        },
+        {
+          id: 3, code: '5200', name: 'Rent', accountType: 'expense', normalBalance: 'debit',
+          transactions: [{ debitAmount: 500, creditAmount: 0 }]
+        }
+      ];
+
+      prismaMock.account.findMany.mockResolvedValue(mockAccounts as any);
+
+      const pl = await financialService.getProfitLoss(new Date(), new Date());
+
+      expect(pl.revenue.total).toBe(5000);
+      expect(pl.cogs.total).toBe(2000);
+      expect(pl.expenses.total).toBe(500);
+      expect(pl.grossProfit).toBe(3000);
+      expect(pl.netIncome).toBe(2500);
+      expect(pl.grossMarginPercentage).toBe(60);
+    });
+  });
 });

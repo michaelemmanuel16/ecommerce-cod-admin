@@ -7,8 +7,8 @@ import { CashFlowTab } from '../components/financial/CashFlowTab';
 import { AgentReconciliationTab } from '../components/financial/AgentReconciliationTab';
 import { AgentAgingTab } from '../components/financial/AgentAgingTab';
 import { ExpenseManagementTab } from '../components/financial/ExpenseManagementTab';
-import { ReportsTab } from '../components/financial/ReportsTab';
 import { ProfitabilityTab } from '../components/financial/ProfitabilityTab';
+import { FinancialStatementsTab } from '../components/financial/FinancialStatementsTab';
 
 export const Financial: React.FC = () => {
   const { dateRange, setDateRange } = useFinancialStore();
@@ -44,14 +44,14 @@ export const Financial: React.FC = () => {
       content: <ExpenseManagementTab />
     },
     {
-      id: 'reports',
-      label: 'Reports & Analytics',
-      content: <ReportsTab />
-    },
-    {
       id: 'profitability',
       label: 'Profitability Analysis',
       content: <ProfitabilityTab />
+    },
+    {
+      id: 'statements',
+      label: 'Financial Statements',
+      content: <FinancialStatementsTab />
     }
   ];
 

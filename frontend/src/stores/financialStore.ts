@@ -12,7 +12,10 @@ import {
   AgentAgingReport,
   PipelineRevenue,
   ProfitMargins,
-  CashFlowReport
+  CashFlowReport,
+  BalanceSheetData,
+  ProfitLossData,
+  FinancialStatementAccount
 } from '../services/financial.service';
 import { getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
@@ -43,6 +46,8 @@ interface FinancialState {
   profitMargins: ProfitMargins | null;
   agentAging: AgentAgingReport | null;
   cashFlowReport: CashFlowReport | null;
+  balanceSheet: BalanceSheetData | null;
+  profitLoss: ProfitLossData | null;
 
   // Filters and UI state
   filters: FinancialFilters;
@@ -56,6 +61,7 @@ interface FinancialState {
     agents: boolean;
     reports: boolean;
     cashFlow: boolean;
+    statements: boolean;
   };
   pagination: {
     transactions: { page: number; totalPages: number; total: number } | null;
@@ -100,6 +106,8 @@ interface FinancialState {
   }) => Promise<void>;
   fetchCashFlowReport: () => Promise<void>;
   downloadCashFlowCSV: () => Promise<void>;
+  fetchBalanceSheet: (asOfDate?: string) => Promise<void>;
+  fetchProfitLoss: (startDate: string, endDate: string) => Promise<void>;
   setDateRange: (startDate?: string, endDate?: string) => void;
 }
 
@@ -176,6 +184,8 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     profitMargins: null,
     agentAging: null,
     cashFlowReport: null,
+    balanceSheet: null,
+    profitLoss: null,
 
     // Filters and UI state
     filters: {},
@@ -189,6 +199,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
       agents: false,
       reports: false,
       cashFlow: false,
+      statements: false,
     },
     pagination: {
       transactions: null,
@@ -475,6 +486,32 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         toast.success('Cash Flow Report downloaded');
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to download CSV';
+        toast.error(errorMessage);
+        throw error;
+      }
+    },
+
+    fetchBalanceSheet: async (asOfDate?: string) => {
+      set((state) => ({ loadingStates: { ...state.loadingStates, statements: true }, error: null }));
+      try {
+        const balanceSheet = await financialService.getBalanceSheet(asOfDate);
+        set((state) => ({ balanceSheet, loadingStates: { ...state.loadingStates, statements: false } }));
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch balance sheet';
+        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, statements: false } }));
+        toast.error(errorMessage);
+        throw error;
+      }
+    },
+
+    fetchProfitLoss: async (startDate: string, endDate: string) => {
+      set((state) => ({ loadingStates: { ...state.loadingStates, statements: true }, error: null }));
+      try {
+        const profitLoss = await financialService.getProfitLoss(startDate, endDate);
+        set((state) => ({ profitLoss, loadingStates: { ...state.loadingStates, statements: false } }));
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch profit & loss statement';
+        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, statements: false } }));
         toast.error(errorMessage);
         throw error;
       }
