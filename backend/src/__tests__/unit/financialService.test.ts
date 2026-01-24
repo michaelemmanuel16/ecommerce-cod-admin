@@ -521,14 +521,23 @@ describe('FinancialService', () => {
   describe('getBalanceSheet', () => {
     it('should calculate balance sheet correctly', async () => {
       const mockAccounts = [
-        { id: 1, code: '1000', name: 'Cash', accountType: 'asset', normalBalance: 'debit', currentBalance: 10000, transactions: [] },
-        { id: 2, code: '2000', name: 'AP', accountType: 'liability', normalBalance: 'credit', currentBalance: 2000, transactions: [] },
-        { id: 3, code: '3000', name: 'Equity', accountType: 'equity', normalBalance: 'credit', currentBalance: 5000, transactions: [] },
-        { id: 4, code: '4000', name: 'Sales', accountType: 'revenue', normalBalance: 'credit', currentBalance: 4000, transactions: [] },
-        { id: 5, code: '5000', name: 'Rent', accountType: 'expense', normalBalance: 'debit', currentBalance: 1000, transactions: [] }
+        { id: 1, code: '1000', name: 'Cash', accountType: 'asset', normalBalance: 'debit', currentBalance: 10000 },
+        { id: 2, code: '2000', name: 'AP', accountType: 'liability', normalBalance: 'credit', currentBalance: 2000 },
+        { id: 3, code: '3000', name: 'Equity', accountType: 'equity', normalBalance: 'credit', currentBalance: 5000 },
+        { id: 4, code: '4000', name: 'Sales', accountType: 'revenue', normalBalance: 'credit', currentBalance: 4000 },
+        { id: 5, code: '5000', name: 'Rent', accountType: 'expense', normalBalance: 'debit', currentBalance: 1000 }
       ];
 
       prismaMock.account.findMany.mockResolvedValue(mockAccounts as any);
+
+      // Mock aggregations using groupBy
+      prismaMock.accountTransaction.groupBy.mockResolvedValue([
+        { accountId: 1, _sum: { debitAmount: 10000, creditAmount: 0 } },
+        { accountId: 2, _sum: { debitAmount: 0, creditAmount: 2000 } },
+        { accountId: 3, _sum: { debitAmount: 0, creditAmount: 5000 } },
+        { accountId: 4, _sum: { debitAmount: 0, creditAmount: 4000 } },
+        { accountId: 5, _sum: { debitAmount: 1000, creditAmount: 0 } }
+      ] as any);
 
       const bs = await financialService.getBalanceSheet();
 
@@ -543,40 +552,37 @@ describe('FinancialService', () => {
     it('should calculate historical balance correctly', async () => {
       const mockAccounts = [
         {
-          id: 1, code: '1000', name: 'Cash', accountType: 'asset', normalBalance: 'debit',
-          transactions: [
-            { debitAmount: 1000, creditAmount: 0 },
-            { debitAmount: 500, creditAmount: 200 }
-          ]
+          id: 1, code: '1000', name: 'Cash', accountType: 'asset', normalBalance: 'debit'
         }
       ];
 
       prismaMock.account.findMany.mockResolvedValue(mockAccounts as any);
 
+      prismaMock.accountTransaction.groupBy.mockResolvedValue([
+        { accountId: 1, _sum: { debitAmount: 1500, creditAmount: 200 } }
+      ] as any);
+
       const bs = await financialService.getBalanceSheet(new Date());
 
-      expect(bs.assets.total).toBe(1300); // (1000-0) + (500-200)
+      expect(bs.assets.total).toBe(1300); // 1500 - 200
     });
   });
 
   describe('getProfitLoss', () => {
     it('should calculate profit and loss correctly', async () => {
       const mockAccounts = [
-        {
-          id: 1, code: '4000', name: 'Sales', accountType: 'revenue', normalBalance: 'credit',
-          transactions: [{ debitAmount: 0, creditAmount: 5000 }]
-        },
-        {
-          id: 2, code: '5010', name: 'COGS', accountType: 'expense', normalBalance: 'debit',
-          transactions: [{ debitAmount: 2000, creditAmount: 0 }]
-        },
-        {
-          id: 3, code: '5200', name: 'Rent', accountType: 'expense', normalBalance: 'debit',
-          transactions: [{ debitAmount: 500, creditAmount: 0 }]
-        }
+        { id: 1, code: '4000', name: 'Sales', accountType: 'revenue', normalBalance: 'credit' },
+        { id: 2, code: '5010', name: 'COGS', accountType: 'expense', normalBalance: 'debit' },
+        { id: 3, code: '5200', name: 'Rent', accountType: 'expense', normalBalance: 'debit' }
       ];
 
       prismaMock.account.findMany.mockResolvedValue(mockAccounts as any);
+
+      prismaMock.accountTransaction.groupBy.mockResolvedValue([
+        { accountId: 1, _sum: { debitAmount: 0, creditAmount: 5000 } },
+        { accountId: 2, _sum: { debitAmount: 2000, creditAmount: 0 } },
+        { accountId: 3, _sum: { debitAmount: 500, creditAmount: 0 } }
+      ] as any);
 
       const pl = await financialService.getProfitLoss(new Date(), new Date());
 

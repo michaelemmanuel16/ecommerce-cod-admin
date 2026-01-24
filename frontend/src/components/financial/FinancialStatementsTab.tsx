@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { Card } from '../ui/Card';
 import { formatCurrency } from '../../utils/format';
-import { FileText, Download, Calendar, RefreshCw, Layers, PieChart } from 'lucide-react';
-import { Tabs } from '../ui/Tabs';
+import { FileText, Download, RefreshCw, Layers, PieChart } from 'lucide-react';
 
 export const FinancialStatementsTab: React.FC = () => {
     const [activeStatement, setActiveStatement] = useState<'balance-sheet' | 'profit-loss'>('profit-loss');
@@ -20,9 +19,12 @@ export const FinancialStatementsTab: React.FC = () => {
         if (activeStatement === 'balance-sheet') {
             fetchBalanceSheet(dateRange.endDate);
         } else {
-            fetchProfitLoss(dateRange.startDate || new Date(new Date().getFullYear(), 0, 1).toISOString(), dateRange.endDate || new Date().toISOString());
+            fetchProfitLoss(
+                dateRange.startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
+                dateRange.endDate || new Date().toISOString()
+            );
         }
-    }, [activeStatement, dateRange.startDate, dateRange.endDate]);
+    }, [activeStatement, dateRange.startDate, dateRange.endDate, fetchBalanceSheet, fetchProfitLoss]);
 
     const renderAccountRow = (name: string, balance: number, isSubtotal: boolean = false) => (
         <div key={name} className={`flex justify-between py-2 ${isSubtotal ? 'font-bold border-t border-gray-200 mt-1' : 'text-gray-700'}`}>
@@ -155,8 +157,8 @@ export const FinancialStatementsTab: React.FC = () => {
                             key={tab.id}
                             onClick={() => setActiveStatement(tab.id as any)}
                             className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeStatement === tab.id
-                                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                                 }`}
                         >
                             <tab.icon className="w-4 h-4 mr-2" />

@@ -195,7 +195,10 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
 
     // Filters and UI state
     filters: {},
-    dateRange: {},
+    dateRange: {
+      startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
+      endDate: new Date().toISOString()
+    },
     isLoading: false,
     error: null,
     loadingStates: {

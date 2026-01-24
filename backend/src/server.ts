@@ -185,13 +185,11 @@ if (process.env.NODE_ENV !== 'test') {
     // Setup Agent Aging Cron Job
     await setupAgingCron();
 
-    // Verify GL Accounts (Production only requirement for financial stability)
-    if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') {
-      const glValidated = await GLAutomationService.asyncVerifyGLAccounts();
-      if (!glValidated) {
-        logger.error('Failed to validate/seed GL accounts. Exiting...');
-        process.exit(1);
-      }
+    // Verify GL Accounts (Required for financial statements correctness)
+    const glValidated = await GLAutomationService.asyncVerifyGLAccounts();
+    if (!glValidated) {
+      logger.error('Failed to validate/seed GL accounts. Exiting...');
+      process.exit(1);
     }
 
     logger.info(`Socket.io initialized`);

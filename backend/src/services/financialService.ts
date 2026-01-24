@@ -1402,17 +1402,40 @@ export class FinancialService {
    */
   async getBalanceSheet(asOfDateValue?: string | Date) {
     const asOfDate = asOfDateValue ? new Date(asOfDateValue) : new Date();
+    // Ensure asOfDate includes the entire day
+    asOfDate.setHours(23, 59, 59, 999);
 
     // Query all active accounts
     const accounts = await prisma.account.findMany({
       where: { isActive: true },
-      include: {
-        transactions: {
-          where: {
-            createdAt: { lte: asOfDate }
-          }
-        }
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        accountType: true,
+        normalBalance: true
       }
+    });
+
+    // Use Prisma groupBy to aggregate transactions for all accounts at once
+    const aggregations = await prisma.accountTransaction.groupBy({
+      by: ['accountId'],
+      where: {
+        createdAt: { lte: asOfDate }
+      },
+      _sum: {
+        debitAmount: true,
+        creditAmount: true
+      }
+    });
+
+    // Create a map for quick lookup
+    const aggregationMap = new Map();
+    aggregations.forEach(agg => {
+      aggregationMap.set(agg.accountId, {
+        debit: this.toNumber(agg._sum.debitAmount),
+        credit: this.toNumber(agg._sum.creditAmount)
+      });
     });
 
     const categories: Record<string, { accounts: FinancialStatementAccount[]; total: number }> = {
@@ -1423,22 +1446,15 @@ export class FinancialService {
       expense: { accounts: [], total: 0 }
     };
 
-    // Calculate balances as of date
+    // Process accounts using pre-calculated aggregations
     accounts.forEach(account => {
-      let balance = 0;
-      if (!asOfDateValue) {
-        // If today, use current balance Optimized
-        balance = this.toNumber(account.currentBalance);
-      } else {
-        // Calculate from transactions
-        const totalDebit = account.transactions.reduce((sum, t) => sum + this.toNumber(t.debitAmount), 0);
-        const totalCredit = account.transactions.reduce((sum, t) => sum + this.toNumber(t.creditAmount), 0);
+      const agg = aggregationMap.get(account.id) || { debit: 0, credit: 0 };
 
-        if (account.normalBalance === 'debit') {
-          balance = totalDebit - totalCredit;
-        } else {
-          balance = totalCredit - totalDebit;
-        }
+      let balance = 0;
+      if (account.normalBalance === 'debit') {
+        balance = agg.debit - agg.credit;
+      } else {
+        balance = agg.credit - agg.debit;
       }
 
       const financialAccount = {
@@ -1482,6 +1498,8 @@ export class FinancialService {
   async getProfitLoss(startDateValue: string | Date, endDateValue: string | Date) {
     const startDate = new Date(startDateValue);
     const endDate = new Date(endDateValue);
+    // Ensure endDate includes the entire day
+    endDate.setHours(23, 59, 59, 999);
 
     // Query all revenue and expense accounts
     const accounts = await prisma.account.findMany({
@@ -1489,16 +1507,36 @@ export class FinancialService {
         isActive: true,
         accountType: { in: ['revenue', 'expense'] }
       },
-      include: {
-        transactions: {
-          where: {
-            createdAt: {
-              gte: startDate,
-              lte: endDate
-            }
-          }
-        }
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        accountType: true,
+        normalBalance: true
       }
+    });
+
+    // Use Prisma groupBy for efficient aggregation
+    const aggregations = await prisma.accountTransaction.groupBy({
+      by: ['accountId'],
+      where: {
+        createdAt: {
+          gte: startDate,
+          lte: endDate
+        }
+      },
+      _sum: {
+        debitAmount: true,
+        creditAmount: true
+      }
+    });
+
+    const aggregationMap = new Map();
+    aggregations.forEach(agg => {
+      aggregationMap.set(agg.accountId, {
+        debit: this.toNumber(agg._sum.debitAmount),
+        credit: this.toNumber(agg._sum.creditAmount)
+      });
     });
 
     const result: ProfitLossData = {
@@ -1514,14 +1552,13 @@ export class FinancialService {
     };
 
     accounts.forEach(account => {
-      const totalDebit = account.transactions.reduce((sum, t) => sum + this.toNumber(t.debitAmount), 0);
-      const totalCredit = account.transactions.reduce((sum, t) => sum + this.toNumber(t.creditAmount), 0);
+      const agg = aggregationMap.get(account.id) || { debit: 0, credit: 0 };
 
       let balance = 0;
       if (account.normalBalance === 'debit') {
-        balance = totalDebit - totalCredit;
+        balance = agg.debit - agg.credit;
       } else {
-        balance = totalCredit - totalDebit;
+        balance = agg.credit - agg.debit;
       }
 
       const financialAccount = {
