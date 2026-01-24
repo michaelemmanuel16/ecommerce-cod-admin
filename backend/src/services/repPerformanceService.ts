@@ -56,7 +56,7 @@ export const getRepPerformanceDetails = async (
     }
 
     // Build order filter for the include/select
-    const orderWhere: any = {};
+    const orderWhere: any = { deletedAt: null };
     if (startDate || endDate) {
       orderWhere.createdAt = {};
       if (startDate) {
@@ -186,6 +186,7 @@ export const getRepEarningsByPeriod = async (
         assignedOrdersAsRep: {
           where: {
             status: OrderStatus.delivered,
+            deletedAt: null,
             createdAt: {
               gte: startDate,
               lte: endDate

@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { OrderStatus } from '@prisma/client';
 import orderService from '../services/orderService';
+import { clearCache } from '../middleware/cache';
 
 export const getAllOrders = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -94,6 +95,9 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       createdById: req.user?.id
     });
 
+    // Invalidate analytics cache
+    clearCache('/api/analytics');
+
     res.status(201).json({ order });
   } catch (error) {
     throw error;
@@ -108,7 +112,10 @@ export const bulkImportOrders = async (req: AuthRequest, res: Response): Promise
       throw new Error('Invalid orders data');
     }
 
-    const results = await orderService.bulkImportOrders(orders, req.user?.id);
+    const results = await orderService.bulkImportOrders(orders, req.user?.id, undefined, undefined, true);
+
+    // Invalidate analytics cache after bulk import
+    clearCache('/api/analytics');
 
     res.json({ results });
   } catch (error) {
@@ -131,6 +138,10 @@ export const updateOrder = async (req: AuthRequest, res: Response): Promise<void
     const { id } = req.params;
     const updateData = req.body;
     const order = await orderService.updateOrder(Number(id), updateData, req.user);
+
+    // Invalidate analytics cache
+    clearCache('/api/analytics');
+
     res.json({ order });
   } catch (error) {
     throw error;
@@ -141,6 +152,10 @@ export const deleteOrder = async (req: AuthRequest, res: Response): Promise<void
   try {
     const { id } = req.params;
     const result = await orderService.deleteOrder(Number(id), req.user?.id, req.user);
+
+    // Invalidate analytics cache
+    clearCache('/api/analytics');
+
     res.json(result);
   } catch (error) {
     throw error;
@@ -151,6 +166,10 @@ export const bulkDeleteOrders = async (req: AuthRequest, res: Response): Promise
   try {
     const { ids } = req.body;
     const result = await orderService.bulkDeleteOrders(ids, req.user?.id, req.user);
+
+    // Invalidate analytics cache
+    clearCache('/api/analytics');
+
     res.json(result);
   } catch (error) {
     throw error;
@@ -168,11 +187,15 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
       changedBy: req.user?.id
     }, req.user);
 
+    // Invalidate analytics cache as status change affects metrics
+    clearCache('/api/analytics');
+
     res.json({ order });
   } catch (error) {
     throw error;
   }
 };
+// ... rest of file (assignCustomerRep, etc)
 
 export const assignCustomerRep = async (req: AuthRequest, res: Response): Promise<void> => {
   try {

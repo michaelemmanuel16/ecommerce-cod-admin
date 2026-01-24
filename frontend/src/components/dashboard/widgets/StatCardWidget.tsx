@@ -8,7 +8,7 @@ import * as LucideIcons from 'lucide-react';
 import { StatCardConfig, WidgetProps, DashboardData } from '../../../config/types/dashboard';
 import { formatValue } from '../../../utils/dashboard/formatters';
 import { calculateTrend, getTrendColorClass, getTrendIcon } from '../../../utils/dashboard/trendCalculator';
-import { resolveTemplate } from '../../../utils/dashboard/dataResolver';
+import { resolveTemplate, resolveDataSource } from '../../../utils/dashboard/dataResolver';
 
 interface StatCardWidgetProps extends WidgetProps {
   config: StatCardConfig;
@@ -30,12 +30,17 @@ export const StatCardWidget: React.FC<StatCardWidgetProps> = ({
   // Calculate trend if enabled
   let trendData = null;
   if (config.trend?.enabled && fullDashboardData) {
-    // For now, we'll use a placeholder previous value
-    // In production, this would come from historical data
     const currentValue = typeof data === 'number' ? data : parseFloat(String(data));
-    const previousValue = currentValue * 0.9; // Placeholder: assume 10% less
 
-    if (!isNaN(currentValue) && !isNaN(previousValue)) {
+    // Determine the previous value (comparison value)
+    let previousValue = undefined;
+    const comparisonPath = config.trend.comparisonSource || config.trend.dataSource;
+
+    if (comparisonPath) {
+      previousValue = resolveDataSource(fullDashboardData, comparisonPath);
+    }
+
+    if (!isNaN(currentValue) && previousValue !== undefined && !isNaN(previousValue)) {
       trendData = calculateTrend(currentValue, previousValue, config.trend.inverted);
     }
   }

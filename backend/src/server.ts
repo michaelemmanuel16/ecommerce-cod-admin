@@ -208,21 +208,43 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
-  });
-});
+const shutdown = async (signal: string) => {
+  logger.info(`${signal} signal received: closing HTTP server`);
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT signal received: closing HTTP server');
-  server.close(() => {
-    logger.info('HTTP server closed');
-    process.exit(0);
-  });
-});
+  // Set a force-kill timeout
+  const forceKillTimeout = setTimeout(() => {
+    logger.error('Could not close connections in time, forcefully shutting down');
+    process.exit(1);
+  }, 5000);
+
+  try {
+    // 1. Close Socket.io connections
+    if (io) {
+      logger.info('Closing Socket.io connections...');
+      io.close();
+    }
+
+    // 2. Close HTTP server
+    server.close(() => {
+      logger.info('HTTP server closed');
+
+      // 3. Disconnect from database
+      import('./utils/prisma').then(({ default: prismaBase }) => {
+        prismaBase.$disconnect().finally(() => {
+          logger.info('Database disconnected');
+          clearTimeout(forceKillTimeout);
+          process.exit(0);
+        });
+      });
+    });
+  } catch (error) {
+    logger.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Unhandled rejection handler
 process.on('unhandledRejection', (reason, promise) => {

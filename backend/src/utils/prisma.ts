@@ -57,4 +57,5 @@ process.on('beforeExit', async () => {
   await prismaBase.$disconnect();
 });
 
+export { prismaBase };
 export default prisma;
