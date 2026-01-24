@@ -14,18 +14,21 @@ interface Account {
 
 interface AccountsListProps {
     onSelectAccount: (accountId: number) => void;
+    refreshKey?: number;
 }
 
-export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount }) => {
+export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, refreshKey = 0 }) => {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
+    const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 1 });
+
     useEffect(() => {
         fetchAccounts();
-    }, []);
+    }, [refreshKey, pagination.page]);
 
     const fetchAccounts = async () => {
         try {
@@ -34,8 +37,12 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount }) =
             } else {
                 setLoading(true);
             }
-            const data = await financialService.getAllGLAccounts();
+            const data = await financialService.getAllGLAccounts({
+                page: pagination.page,
+                limit: pagination.limit
+            });
             setAccounts(data.accounts);
+            setPagination(prev => ({ ...prev, total: data.pagination.total, pages: data.pagination.pages }));
             setError(null);
         } catch (err: any) {
             setError('Failed to load chart of accounts');
@@ -96,8 +103,8 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount }) =
                             onClick={fetchAccounts}
                             disabled={refreshing || loading}
                             className={`text-sm font-semibold transition-colors ${refreshing || loading
-                                    ? 'text-gray-400 cursor-not-allowed'
-                                    : 'text-indigo-600 hover:text-indigo-900'
+                                ? 'text-gray-400 cursor-not-allowed'
+                                : 'text-indigo-600 hover:text-indigo-900'
                                 }`}
                         >
                             Refresh
@@ -173,6 +180,30 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount }) =
                     </tbody>
                 </table>
             </div>
+
+            {pagination.pages > 1 && (
+                <div className="p-4 border-t border-gray-200 flex items-center justify-between bg-gray-50 rounded-b-lg">
+                    <div className="text-sm text-gray-700">
+                        Showing page <span className="font-semibold">{pagination.page}</span> of <span className="font-semibold">{pagination.pages}</span> ({pagination.total} total accounts)
+                    </div>
+                    <div className="flex space-x-2">
+                        <button
+                            onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                            disabled={pagination.page === 1 || loading}
+                            className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Previous
+                        </button>
+                        <button
+                            onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
+                            disabled={pagination.page === pagination.pages || loading}
+                            className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

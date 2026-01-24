@@ -30,9 +30,10 @@ interface AccountInfo {
 interface AccountLedgerProps {
     accountId: number;
     onBack: () => void;
+    refreshKey?: number;
 }
 
-export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack }) => {
+export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack, refreshKey = 0 }) => {
     const [data, setData] = useState<LedgerTransaction[]>([]);
     const [account, setAccount] = useState<AccountInfo | null>(null);
     const [loading, setLoading] = useState(true);
@@ -43,7 +44,7 @@ export const AccountLedger: React.FC<AccountLedgerProps> = ({ accountId, onBack 
 
     useEffect(() => {
         fetchLedger();
-    }, [accountId, dateRange, page]);
+    }, [accountId, dateRange, page, refreshKey]);
 
     const fetchLedger = async () => {
         try {

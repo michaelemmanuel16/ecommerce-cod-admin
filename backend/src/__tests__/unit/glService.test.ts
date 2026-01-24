@@ -747,11 +747,13 @@ describe('GLService', () => {
 
       (prismaMock.journalEntry.create as any).mockResolvedValue(mockCreatedEntry);
       (prismaMock.accountTransaction.createMany as any).mockResolvedValue({ count: 2 });
-      (prismaMock.account.findUnique as any).mockResolvedValue({
-        id: 1,
-        normalBalance: 'debit',
-        currentBalance: new Prisma.Decimal('0')
-      });
+      // Mock $queryRaw calls: first for generateEntryNumber, then for each updateAccountBalance
+      (prismaMock.$queryRaw as any)
+        .mockResolvedValueOnce([]) // generateEntryNumber - no previous entries
+        .mockResolvedValue([{ // updateAccountBalance - account data for all subsequent calls
+          normalBalance: 'debit',
+          currentBalance: new Prisma.Decimal('0')
+        }]);
       (prismaMock.account.update as any).mockResolvedValue({});
       (prismaMock.auditLog.create as any).mockResolvedValue({});
 
@@ -847,11 +849,13 @@ describe('GLService', () => {
       });
       (prismaMock.accountTransaction.createMany as any).mockResolvedValue({ count: 2 });
       (prismaMock.journalEntry.update as any).mockResolvedValue({ ...mockEntry, isVoided: true });
-      (prismaMock.account.findUnique as any).mockResolvedValue({
-        id: 1,
-        normalBalance: 'debit',
-        currentBalance: new Prisma.Decimal('0')
-      });
+      // Mock $queryRaw calls: first for generateEntryNumber, then for each updateAccountBalance
+      (prismaMock.$queryRaw as any)
+        .mockResolvedValueOnce([]) // generateEntryNumber - no previous entries
+        .mockResolvedValue([{ // updateAccountBalance - account data for all subsequent calls
+          normalBalance: 'debit',
+          currentBalance: new Prisma.Decimal('0')
+        }]);
       (prismaMock.account.update as any).mockResolvedValue({});
       (prismaMock.auditLog.create as any).mockResolvedValue({});
 

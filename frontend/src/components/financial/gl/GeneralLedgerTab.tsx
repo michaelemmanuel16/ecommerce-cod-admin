@@ -6,6 +6,9 @@ import { JournalEntryModal } from './JournalEntryModal';
 export const GeneralLedgerTab: React.FC = () => {
     const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
     const [isJournalModalOpen, setIsJournalModalOpen] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    const triggerRefresh = () => setRefreshTrigger(prev => prev + 1);
 
     return (
         <div className="space-y-6">
@@ -28,11 +31,15 @@ export const GeneralLedgerTab: React.FC = () => {
             </div>
 
             {!selectedAccountId ? (
-                <AccountsList onSelectAccount={setSelectedAccountId} />
+                <AccountsList
+                    onSelectAccount={setSelectedAccountId}
+                    refreshKey={refreshTrigger}
+                />
             ) : (
                 <AccountLedger
                     accountId={selectedAccountId}
                     onBack={() => setSelectedAccountId(null)}
+                    refreshKey={refreshTrigger}
                 />
             )}
 
@@ -40,9 +47,8 @@ export const GeneralLedgerTab: React.FC = () => {
                 isOpen={isJournalModalOpen}
                 onClose={() => setIsJournalModalOpen(false)}
                 onSuccess={() => {
-                    // Re-fetch logic would go here if we were using a centralized store for GL
-                    // For now, the components handle their own state on mount
-                    window.location.reload(); // Simple way to refresh all balances for now
+                    // Update the refresh key to trigger re-fetch in child components
+                    triggerRefresh();
                 }}
             />
         </div>
