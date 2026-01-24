@@ -277,7 +277,7 @@ export class GLService {
     debitAmount: Prisma.Decimal,
     creditAmount: Prisma.Decimal,
     tx: Prisma.TransactionClient
-  ): Promise<void> {
+  ): Promise<Prisma.Decimal> {
     // Get account to determine normal balance
     const account = await tx.account.findUnique({
       where: { id: accountId },
@@ -295,13 +295,17 @@ export class GLService {
       creditAmount
     );
 
+    const newBalance = account.currentBalance.plus(balanceChange);
+
     // Update account balance
     await tx.account.update({
       where: { id: accountId },
       data: {
-        currentBalance: account.currentBalance.plus(balanceChange)
+        currentBalance: newBalance
       }
     });
+
+    return newBalance;
   }
 
   /**
@@ -668,6 +672,28 @@ export class GLService {
       // Generate unique entry number
       const entryNumber = await this.generateEntryNumber();
 
+      // Update account balances and create transactions with running balance
+      const transactionsWithRunningBalance = [];
+      for (const txn of data.transactions) {
+        const debitAmount = new Prisma.Decimal(txn.debitAmount);
+        const creditAmount = new Prisma.Decimal(txn.creditAmount);
+
+        const runningBalance = await this.updateAccountBalance(
+          txn.accountId,
+          debitAmount,
+          creditAmount,
+          tx as Prisma.TransactionClient
+        );
+
+        transactionsWithRunningBalance.push({
+          accountId: txn.accountId,
+          debitAmount,
+          creditAmount,
+          runningBalance,
+          description: txn.description
+        });
+      }
+
       // Create journal entry with transactions
       const entry = await tx.journalEntry.create({
         data: {
@@ -678,12 +704,7 @@ export class GLService {
           sourceId: data.sourceId,
           createdBy: requester?.id || 0,
           transactions: {
-            create: data.transactions.map(txn => ({
-              accountId: txn.accountId,
-              debitAmount: new Prisma.Decimal(txn.debitAmount),
-              creditAmount: new Prisma.Decimal(txn.creditAmount),
-              description: txn.description
-            }))
+            create: transactionsWithRunningBalance
           }
         },
         include: {
@@ -708,16 +729,6 @@ export class GLService {
           }
         }
       });
-
-      // Update account balances for all transactions
-      for (const txn of entry.transactions) {
-        await this.updateAccountBalance(
-          txn.accountId,
-          txn.debitAmount,
-          txn.creditAmount,
-          tx as Prisma.TransactionClient
-        );
-      }
 
       logger.info('Journal entry created', {
         entryId: entry.id,
@@ -1161,6 +1172,45 @@ export class GLService {
       newBalance: calculatedBalance,
       difference: calculatedBalance.minus(account.currentBalance),
       transactionCount: transactions.length
+    };
+  }
+  /**
+   * Export account ledger to CSV
+   */
+  async exportAccountLedgerToCSV(accountId: string, filters: AccountLedgerFilters) {
+    const { transactions, account } = await this.getAccountLedger(accountId, {
+      ...filters,
+      page: 1,
+      limit: 10000 // Large limit for export
+    });
+
+    const data = transactions.map((t) => ({
+      Date: t.journalEntry.entryDate.toISOString().split('T')[0],
+      EntryNumber: t.journalEntry.entryNumber,
+      Description: t.description || t.journalEntry.description,
+      Source: t.journalEntry.sourceType,
+      Debit: t.debitAmount.toNumber(),
+      Credit: t.creditAmount.toNumber(),
+      RunningBalance: t.runningBalance.toNumber()
+    }));
+
+    const fields = [
+      'Date',
+      'EntryNumber',
+      'Description',
+      'Source',
+      'Debit',
+      'Credit',
+      'RunningBalance'
+    ];
+
+    const { Parser } = require('json2csv');
+    const parser = new Parser({ fields });
+    const csv = parser.parse(data);
+
+    return {
+      csv,
+      filename: `ledger-${account.code}-${new Date().toISOString().split('T')[0]}.csv`
     };
   }
 }

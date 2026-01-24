@@ -9,6 +9,7 @@ import { AgentAgingTab } from '../components/financial/AgentAgingTab';
 import { ExpenseManagementTab } from '../components/financial/ExpenseManagementTab';
 import { ProfitabilityTab } from '../components/financial/ProfitabilityTab';
 import { FinancialStatementsTab } from '../components/financial/FinancialStatementsTab';
+import { GeneralLedgerTab } from '../components/financial/gl/GeneralLedgerTab';
 
 export const Financial: React.FC = () => {
   const { dateRange, setDateRange } = useFinancialStore();
@@ -18,6 +19,11 @@ export const Financial: React.FC = () => {
   };
 
   const tabs = [
+    {
+      id: 'gl',
+      label: 'General Ledger',
+      content: <GeneralLedgerTab />
+    },
     {
       id: 'overview',
       label: 'Overview',

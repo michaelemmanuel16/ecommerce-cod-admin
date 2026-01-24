@@ -26,6 +26,7 @@ router.patch('/accounts/:id/activate', requireResourcePermission('gl', 'update')
 // Account Balance & Ledger
 router.get('/accounts/:id/balance', requireResourcePermission('gl', 'view'), glController.getAccountBalance);
 router.get('/accounts/:id/ledger', requireResourcePermission('gl', 'view'), paginationValidation, validate, glController.getAccountLedger);
+router.get('/accounts/:id/ledger/export', requireResourcePermission('gl', 'view'), glController.exportAccountLedger);
 
 // Journal Entries
 router.post('/journal-entries', requireSuperAdmin, createJournalEntryValidation, validate, glController.createJournalEntry);

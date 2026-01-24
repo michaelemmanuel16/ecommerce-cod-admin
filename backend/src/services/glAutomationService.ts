@@ -70,6 +70,49 @@ export type JournalEntryWithTransactions = JournalEntry & {
  */
 export class GLAutomationService {
   /**
+   * Update account balance atomically within a transaction
+   * 
+   * @param tx - Prisma transaction client
+   * @param accountId - ID of account to update
+   * @param debitAmount - Amount to debit
+   * @param creditAmount - Amount to credit
+   * @returns The new account balance
+   */
+  private static async updateAccountBalance(
+    tx: Prisma.TransactionClient,
+    accountId: number,
+    debitAmount: Decimal,
+    creditAmount: Decimal
+  ): Promise<Decimal> {
+    const account = await tx.account.findUnique({
+      where: { id: accountId },
+      select: { normalBalance: true, currentBalance: true }
+    });
+
+    if (!account) {
+      throw new Error(`Account ${accountId} not found during balance update`);
+    }
+
+    let balanceChange: Decimal;
+    if (account.normalBalance === 'debit') {
+      balanceChange = debitAmount.minus(creditAmount);
+    } else {
+      balanceChange = creditAmount.minus(debitAmount);
+    }
+
+    const newBalance = (account.currentBalance as unknown as Decimal).plus(balanceChange);
+
+    await tx.account.update({
+      where: { id: accountId },
+      data: {
+        currentBalance: newBalance as any
+      }
+    });
+
+    return newBalance;
+  }
+
+  /**
    * Create journal entry with retry logic for handling race conditions
    *
    * @param tx - Prisma transaction client
@@ -87,10 +130,30 @@ export class GLAutomationService {
     while (retries < maxRetries) {
       try {
         const entryNumber = await GLUtils.generateEntryNumber(tx);
+
+        // First, update account balances and get running balances
+        const transactionsWithRunningBalances = [];
+        for (const txn of data.transactions.create) {
+          const runningBalance = await this.updateAccountBalance(
+            tx,
+            txn.accountId,
+            txn.debitAmount,
+            txn.creditAmount
+          );
+
+          transactionsWithRunningBalances.push({
+            ...txn,
+            runningBalance
+          });
+        }
+
         return await tx.journalEntry.create({
           data: {
             ...data,
             entryNumber,
+            transactions: {
+              create: transactionsWithRunningBalances
+            }
           },
           include: {
             transactions: {

@@ -341,6 +341,7 @@ model AccountTransaction {
   accountId      Int      @map("account_id")
   debitAmount    Decimal  @default(0) @map("debit_amount") @db.Decimal(19, 4)
   creditAmount   Decimal  @default(0) @map("credit_amount") @db.Decimal(19, 4)
+  runningBalance Decimal  @default(0) @map("running_balance") @db.Decimal(19, 4)
   description    String?
   createdAt      DateTime @default(now()) @map("created_at")
 

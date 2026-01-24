@@ -106,6 +106,13 @@ describe('GLAutomationService', () => {
             transactions: [],
           }),
         },
+        account: {
+          findUnique: jest.fn().mockResolvedValue({
+            normalBalance: 'debit',
+            currentBalance: new Decimal(0)
+          }),
+          update: jest.fn().mockResolvedValue({})
+        },
         $queryRaw: jest.fn().mockResolvedValue([]),
       };
 
@@ -147,6 +154,13 @@ describe('GLAutomationService', () => {
         journalEntry: {
           create: jest.fn().mockResolvedValue({ id: 1, transactions: [] }),
         },
+        account: {
+          findUnique: jest.fn().mockResolvedValue({
+            normalBalance: 'debit',
+            currentBalance: new Decimal(0)
+          }),
+          update: jest.fn().mockResolvedValue({})
+        },
         $queryRaw: jest.fn().mockResolvedValue([]),
       };
 
@@ -176,6 +190,13 @@ describe('GLAutomationService', () => {
         journalEntry: {
           create: jest.fn().mockResolvedValue({ id: 1, transactions: [] }),
         },
+        account: {
+          findUnique: jest.fn().mockResolvedValue({
+            normalBalance: 'debit',
+            currentBalance: new Decimal(0)
+          }),
+          update: jest.fn().mockResolvedValue({})
+        },
         $queryRaw: jest.fn().mockResolvedValue([]),
       };
 
@@ -193,6 +214,13 @@ describe('GLAutomationService', () => {
       const mockTx: any = {
         journalEntry: {
           create: jest.fn().mockResolvedValue({ id: 2, transactions: [] }),
+        },
+        account: {
+          findUnique: jest.fn().mockResolvedValue({
+            normalBalance: 'debit',
+            currentBalance: new Decimal(0)
+          }),
+          update: jest.fn().mockResolvedValue({})
         },
         $queryRaw: jest.fn().mockResolvedValue([]),
       };
