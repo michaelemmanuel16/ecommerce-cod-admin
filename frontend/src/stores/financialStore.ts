@@ -12,6 +12,7 @@ import {
   AgentAgingReport,
   PipelineRevenue,
   ProfitMargins,
+  ProfitabilityAnalysis,
   CashFlowReport
 } from '../services/financial.service';
 import { getSocket } from '../services/socket';
@@ -41,6 +42,7 @@ interface FinancialState {
   agentCashHoldings: AgentCashHolding[];
   pipelineRevenue: PipelineRevenue | null;
   profitMargins: ProfitMargins | null;
+  profitabilityAnalysis: ProfitabilityAnalysis | null;
   agentAging: AgentAgingReport | null;
   cashFlowReport: CashFlowReport | null;
 
@@ -55,6 +57,7 @@ interface FinancialState {
     expenses: boolean;
     agents: boolean;
     reports: boolean;
+    profitability: boolean;
     cashFlow: boolean;
   };
   pagination: {
@@ -84,6 +87,8 @@ interface FinancialState {
   fetchAgentCashHoldings: () => Promise<void>;
   fetchPipelineRevenue: (startDate?: string, endDate?: string) => Promise<void>;
   fetchProfitMargins: (startDate?: string, endDate?: string) => Promise<void>;
+  fetchProfitabilityAnalysis: (params: { startDate?: string; endDate?: string; productId?: number }) => Promise<void>;
+  exportProfitability: (params: { startDate?: string; endDate?: string; productId?: number; format: 'csv' | 'xlsx' }) => Promise<void>;
   fetchAgentAging: () => Promise<void>;
   updateExpense: (id: string, data: {
     category?: string;
@@ -174,6 +179,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     agentCashHoldings: [],
     pipelineRevenue: null,
     profitMargins: null,
+    profitabilityAnalysis: null,
     agentAging: null,
     cashFlowReport: null,
 
@@ -188,6 +194,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
       expenses: false,
       agents: false,
       reports: false,
+      profitability: false,
       cashFlow: false,
     },
     pagination: {
@@ -360,6 +367,41 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         set({ profitMargins });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch profit margins';
+        toast.error(errorMessage);
+        throw error;
+      }
+    },
+
+    fetchProfitabilityAnalysis: async (params) => {
+      set((state) => ({ loadingStates: { ...state.loadingStates, profitability: true }, error: null }));
+      try {
+        const profitabilityAnalysis = await financialService.getProfitabilityAnalysis(params);
+        set((state) => ({
+          profitabilityAnalysis,
+          loadingStates: { ...state.loadingStates, profitability: false }
+        }));
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch profitability analysis';
+        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, profitability: false } }));
+        toast.error(errorMessage);
+        throw error;
+      }
+    },
+
+    exportProfitability: async (params) => {
+      try {
+        const data = await financialService.exportProfitability(params);
+        const url = window.URL.createObjectURL(new Blob([data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `profitability_report_${Date.now()}.${params.format}`);
+        document.body.appendChild(link);
+        link.click();
+        link.parentNode?.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        toast.success(`Exporting profitability analysis as ${params.format.toUpperCase()}`);
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to export profitability analysis';
         toast.error(errorMessage);
         throw error;
       }

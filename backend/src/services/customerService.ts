@@ -74,6 +74,7 @@ export class CustomerService {
         orderBy: { createdAt: 'desc' },
         include: {
           orders: {
+            where: { deletedAt: null },
             select: {
               id: true,
               totalAmount: true
@@ -149,11 +150,11 @@ export class CustomerService {
       where: { id },
       include: {
         orders: {
+          where: { deletedAt: null },
           orderBy: { createdAt: 'desc' },
           take: 10,
           select: {
             id: true,
-            // orderNumber removed - using id
             status: true,
             totalAmount: true,
             createdAt: true
@@ -212,6 +213,7 @@ export class CustomerService {
       where: { phoneNumber },
       include: {
         orders: {
+          where: { deletedAt: null },
           orderBy: { createdAt: 'desc' },
           take: 5,
           select: {
@@ -458,6 +460,7 @@ export class CustomerService {
       where: { id },
       include: {
         orders: {
+          where: { deletedAt: null },
           select: {
             id: true,
             totalAmount: true,
@@ -546,7 +549,7 @@ export class CustomerService {
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
-        where: { customerId: id },
+        where: { customerId: id, deletedAt: null },
         skip,
         take: limit,
         include: {
@@ -569,7 +572,7 @@ export class CustomerService {
         },
         orderBy: { createdAt: 'desc' }
       }),
-      prisma.order.count({ where: { customerId: id } })
+      prisma.order.count({ where: { customerId: id, deletedAt: null } })
     ]);
 
     return {

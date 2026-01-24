@@ -265,7 +265,10 @@ ${longName},+233123456789,123 Main St,Accra,250,1`;
                         customerFirstName: 'A'.repeat(100)
                     })
                 ]),
-                expect.any(Number)
+                expect.any(Number),
+                expect.any(Map),
+                expect.any(Map),
+                false
             );
         });
 

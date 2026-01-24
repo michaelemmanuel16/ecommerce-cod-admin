@@ -46,14 +46,16 @@ export const DynamicDashboard: React.FC = () => {
   }
 
   return (
-    <DashboardLayout
-      config={config}
-      data={data}
-      loading={loading}
-      error={error}
-      dateRange={dateRange}
-      onDateRangeChange={setDateRange}
-      onRefresh={refetch}
-    />
+    <div className="relative">
+      <DashboardLayout
+        config={config}
+        data={data}
+        loading={loading}
+        error={error}
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+        onRefresh={refetch}
+      />
+    </div>
   );
 };

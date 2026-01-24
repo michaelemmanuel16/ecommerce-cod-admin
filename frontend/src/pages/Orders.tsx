@@ -607,7 +607,9 @@ export const Orders: React.FC = () => {
                             {order.id}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900" style={{ width: columnWidths.customerName, minWidth: columnWidths.customerName, maxWidth: columnWidths.customerName }}>
-                            {order.customerName}
+                            <div className="truncate" title={order.customerName}>
+                              {order.customerName}
+                            </div>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600" style={{ width: columnWidths.phone, minWidth: columnWidths.phone, maxWidth: columnWidths.phone }}>
                             {order.customerPhone || '—'}

@@ -42,6 +42,7 @@ export interface AdminUser {
   phoneNumber?: string;
   role: string;
   commissionAmount?: number;
+  deliveryRate?: number;
   isActive: boolean;
   isAvailable?: boolean;
   lastLogin?: string;
@@ -56,6 +57,7 @@ export interface CreateUserData {
   phoneNumber?: string;
   role: string;
   commissionAmount?: number;
+  deliveryRate?: number;
 }
 
 export interface UpdateUserData {
@@ -65,6 +67,7 @@ export interface UpdateUserData {
   phoneNumber?: string;
   role?: string;
   commissionAmount?: number;
+  deliveryRate?: number;
   isActive?: boolean;
 }
 

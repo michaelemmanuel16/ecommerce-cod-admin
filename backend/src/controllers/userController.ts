@@ -155,7 +155,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
       isActive: true
     };
 
-    const orderWhere: any = {};
+    const orderWhere: any = { deletedAt: null };
     if (startDate || endDate) {
       orderWhere.createdAt = {};
       if (startDate) {
@@ -197,6 +197,9 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         !['delivered', 'cancelled', 'returned'].includes(o.status)
       ).length;
 
+      const rate = agent.deliveryRate || agent.commissionAmount || 0;
+      const calculatedEarnings = delivered * rate;
+
       return {
         userId: agent.id,
         userName: `${agent.firstName} ${agent.lastName}`,
@@ -207,8 +210,8 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         successRate: total > 0 ? (delivered / total) * 100 : 0,
         vehicleType: agent.vehicleType,
         vehicleId: agent.vehicleId,
-        deliveryRate: agent.deliveryRate || 0,
-        totalEarnings: agent.totalEarnings || 0,
+        deliveryRate: rate,
+        totalEarnings: calculatedEarnings,
         location: agent.location
       };
     });

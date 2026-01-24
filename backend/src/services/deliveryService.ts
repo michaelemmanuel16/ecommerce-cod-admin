@@ -646,24 +646,32 @@ export class DeliveryService {
     }
 
     const [totalDeliveries, completedDeliveries, failedDeliveries, deliveries] = await Promise.all([
-      prisma.delivery.count({ where }),
       prisma.delivery.count({
         where: {
           ...where,
-          actualDeliveryTime: { not: null }
+          order: { deletedAt: null }
         }
       }),
       prisma.delivery.count({
         where: {
           ...where,
-          deliveryAttempts: { gt: 1 }
+          actualDeliveryTime: { not: null },
+          order: { deletedAt: null }
+        }
+      }),
+      prisma.delivery.count({
+        where: {
+          ...where,
+          deliveryAttempts: { gt: 1 },
+          order: { deletedAt: null }
         }
       }),
       prisma.delivery.findMany({
         where: {
           ...where,
           actualDeliveryTime: { not: null },
-          scheduledTime: { not: null }
+          scheduledTime: { not: null },
+          order: { deletedAt: null }
         },
         select: {
           scheduledTime: true,

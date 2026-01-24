@@ -96,6 +96,16 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
         get().fetchDashboardMetrics();
         get().fetchAgentPerformance();
       });
+
+      socket.on('bulk_import_completed', (payload) => {
+        console.log('[analyticsStore] bulk_import_completed event received', payload);
+        get().refreshAll();
+      });
+
+      socket.on('orders:deleted', (payload) => {
+        console.log('[analyticsStore] orders:deleted event received', payload);
+        get().refreshAll();
+      });
     },
 
     fetchDashboardMetrics: async (startDate?: string, endDate?: string) => {
