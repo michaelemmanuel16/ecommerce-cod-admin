@@ -63,17 +63,31 @@ docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging 
 
 # Step 6: Health checks
 echo -e "${BLUE}[6/6] Performing health checks...${NC}"
-sleep 15  # Wait for services to start
+echo -e "${YELLOW}Waiting 45 seconds for services to fully start...${NC}"
+sleep 45  # Wait for services to start (backend has 40s start_period)
 
 # Check backend health
-if curl -f http://localhost:3001/health > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ Backend (staging) is healthy${NC}"
-else
-    echo -e "${RED}✗ Backend (staging) health check failed${NC}"
-    echo -e "${YELLOW}Checking logs...${NC}"
-    docker-compose -p staging -f docker-compose.staging.yml logs --tail=50 backend
-    exit 1
-fi
+MAX_RETRIES=3
+RETRY_COUNT=0
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if curl -f http://localhost:3001/health > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Backend (staging) is healthy${NC}"
+        break
+    else
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            echo -e "${YELLOW}⚠ Backend health check failed (attempt $RETRY_COUNT/$MAX_RETRIES), retrying in 10 seconds...${NC}"
+            sleep 10
+        else
+            echo -e "${RED}✗ Backend (staging) health check failed after $MAX_RETRIES attempts${NC}"
+            echo -e "${YELLOW}Checking backend container status...${NC}"
+            docker-compose -p staging -f docker-compose.staging.yml ps backend
+            echo -e "${YELLOW}Checking backend logs...${NC}"
+            docker-compose -p staging -f docker-compose.staging.yml logs --tail=100 backend
+            exit 1
+        fi
+    fi
+done
 
 # Check frontend health (via nginx)
 if curl -f http://localhost:8080/health > /dev/null 2>&1; then
