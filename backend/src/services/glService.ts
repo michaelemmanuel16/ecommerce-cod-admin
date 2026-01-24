@@ -76,7 +76,8 @@ export class GLService {
     if (validationRules[accountType] !== normalBalance) {
       throw new AppError(
         `Invalid normal balance for ${accountType} account. Expected ${validationRules[accountType]}, got ${normalBalance}`,
-        400
+        400,
+        'GL_INVALID_NORMAL_BALANCE'
       );
     }
   }
@@ -89,11 +90,11 @@ export class GLService {
     const codeNum = parseInt(code, 10);
 
     if (isNaN(codeNum) || code !== codeNum.toString()) {
-      throw new AppError('Account code must be a numeric string (e.g., "1010")', 400);
+      throw new AppError('Account code must be a numeric string (e.g., "1010")', 400, 'GL_INVALID_CODE_FORMAT');
     }
 
     if (code.length !== 4) {
-      throw new AppError('Account code must be exactly 4 digits', 400);
+      throw new AppError('Account code must be exactly 4 digits', 400, 'GL_INVALID_CODE_LENGTH');
     }
 
     const validRanges: Record<AccountType, { min: number; max: number }> = {
@@ -108,7 +109,8 @@ export class GLService {
     if (codeNum < range.min || codeNum > range.max) {
       throw new AppError(
         `Account code ${code} is invalid for ${accountType}. Must be between ${range.min}-${range.max}`,
-        400
+        400,
+        'GL_CODE_OUT_OF_RANGE'
       );
     }
   }
@@ -134,7 +136,7 @@ export class GLService {
 
     while (currentId !== null) {
       if (visited.has(currentId)) {
-        throw new AppError('Circular parent-child relationship detected', 400);
+        throw new AppError('Circular parent-child relationship detected', 400, 'GL_CIRCULAR_REFERENCE');
       }
 
       visited.add(currentId);
@@ -154,14 +156,15 @@ export class GLService {
    * Format: JE-YYYYMMDD-XXXXX (e.g., JE-20260117-00001)
    * Sequence resets daily
    */
-  private async generateEntryNumber(): Promise<string> {
+  private async generateEntryNumber(tx?: Prisma.TransactionClient): Promise<string> {
+    const client = tx || prisma;
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
 
     // Use raw SQL to find and lock the last entry for today to prevent race conditions
     // This ensures only one process can generate the next sequence number at a time
-    const result = await prisma.$queryRaw<any[]>`
-      SELECT entry_number 
+    const result = await client.$queryRaw<any[]>`
+      SELECT entry_number as "entryNumber"
       FROM journal_entries 
       WHERE entry_number LIKE ${'JE-' + dateStr + '-%'} 
       ORDER BY entry_number DESC 
@@ -171,14 +174,17 @@ export class GLService {
 
     let sequence = 1;
     if (result && result.length > 0) {
-      const lastEntryNumber = result[0].entry_number;
+      const lastEntryNumber = result[0].entryNumber;
       const lastSequence = parseInt(lastEntryNumber.split('-')[2], 10);
       if (!isNaN(lastSequence)) {
         sequence = lastSequence + 1;
       }
     }
 
-    return `JE-${dateStr}-${sequence.toString().padStart(5, '0')}`;
+    // Add a random 2-character suffix to practically eliminate collisions 
+    // even if the lock is released or bypassed.
+    const entropy = Math.random().toString(36).substring(2, 4).toUpperCase();
+    return `JE-${dateStr}-${sequence.toString().padStart(5, '0')}-${entropy}`;
   }
 
   /**
@@ -189,7 +195,7 @@ export class GLService {
    */
   private async validateJournalEntry(data: CreateJournalEntryData): Promise<void> {
     if (data.transactions.length < 2) {
-      throw new AppError('Minimum 2 transactions required for a journal entry', 400);
+      throw new AppError('Minimum 2 transactions required for a journal entry', 400, 'GL_MIN_TRANSACTIONS');
     }
 
     const Decimal = Prisma.Decimal;
@@ -244,7 +250,8 @@ export class GLService {
     if (difference.greaterThan(new Decimal(0.01))) {
       throw new AppError(
         `Journal entry not balanced. Debits: ${totalDebits.toString()}, Credits: ${totalCredits.toString()}`,
-        400
+        400,
+        'GL_UNBALANCED_ENTRY'
       );
     }
   }
@@ -277,31 +284,42 @@ export class GLService {
     debitAmount: Prisma.Decimal,
     creditAmount: Prisma.Decimal,
     tx: Prisma.TransactionClient
-  ): Promise<void> {
-    // Get account to determine normal balance
-    const account = await tx.account.findUnique({
-      where: { id: accountId },
-      select: { normalBalance: true, currentBalance: true }
-    });
+  ): Promise<Prisma.Decimal> {
+    // Get account with row-level lock to prevent concurrent updates (FOR UPDATE)
+    // This ensures that when multiple transactions try to update the same account, 
+    // they are serialized to prevent race conditions.
+    const accounts: any[] = await tx.$queryRaw`
+      SELECT normal_balance as "normalBalance", current_balance as "currentBalance"
+      FROM accounts
+      WHERE id = ${accountId}
+      FOR UPDATE
+    `;
 
-    if (!account) {
+    if (!accounts || accounts.length === 0) {
       throw new AppError(`Account ${accountId} not found`, 404);
     }
 
+    const normalBalance = accounts[0].normalBalance as NormalBalance;
+    const currentBalance = new Prisma.Decimal(accounts[0].currentBalance);
+
     // Calculate balance change
     const balanceChange = this.calculateBalanceChange(
-      account.normalBalance,
+      normalBalance,
       debitAmount,
       creditAmount
     );
+
+    const newBalance = currentBalance.plus(balanceChange);
 
     // Update account balance
     await tx.account.update({
       where: { id: accountId },
       data: {
-        currentBalance: account.currentBalance.plus(balanceChange)
+        currentBalance: newBalance
       }
     });
+
+    return newBalance;
   }
 
   /**
@@ -586,13 +604,14 @@ export class GLService {
       );
     }
 
-    // TODO: Future - check for existing journal entries
-    // const hasEntries = await prisma.journalEntry.count({
-    //   where: { accountId: account.id }
-    // });
-    // if (hasEntries > 0) {
-    //   throw new AppError('Cannot delete account with existing journal entries', 400);
-    // }
+    // Check for existing transactions before deletion
+    const hasTransactions = await prisma.accountTransaction.count({
+      where: { accountId: account.id }
+    });
+
+    if (hasTransactions > 0) {
+      throw new AppError('Cannot delete account with existing transactions. Deactivate it instead.', 400);
+    }
 
     await prisma.account.delete({
       where: { id }
@@ -665,8 +684,30 @@ export class GLService {
     await this.validateJournalEntry(data);
 
     return await prisma.$transaction(async (tx) => {
-      // Generate unique entry number
-      const entryNumber = await this.generateEntryNumber();
+      // Generate entry number using the transaction client to maintain the lock
+      const entryNumber = await this.generateEntryNumber(tx as Prisma.TransactionClient);
+
+      // Update account balances and create transactions with running balance
+      const transactionsWithRunningBalance = [];
+      for (const txn of data.transactions) {
+        const debitAmount = new Prisma.Decimal(txn.debitAmount);
+        const creditAmount = new Prisma.Decimal(txn.creditAmount);
+
+        const runningBalance = await this.updateAccountBalance(
+          txn.accountId,
+          debitAmount,
+          creditAmount,
+          tx as Prisma.TransactionClient
+        );
+
+        transactionsWithRunningBalance.push({
+          accountId: txn.accountId,
+          debitAmount,
+          creditAmount,
+          runningBalance,
+          description: txn.description
+        });
+      }
 
       // Create journal entry with transactions
       const entry = await tx.journalEntry.create({
@@ -678,12 +719,7 @@ export class GLService {
           sourceId: data.sourceId,
           createdBy: requester?.id || 0,
           transactions: {
-            create: data.transactions.map(txn => ({
-              accountId: txn.accountId,
-              debitAmount: new Prisma.Decimal(txn.debitAmount),
-              creditAmount: new Prisma.Decimal(txn.creditAmount),
-              description: txn.description
-            }))
+            create: transactionsWithRunningBalance
           }
         },
         include: {
@@ -708,16 +744,6 @@ export class GLService {
           }
         }
       });
-
-      // Update account balances for all transactions
-      for (const txn of entry.transactions) {
-        await this.updateAccountBalance(
-          txn.accountId,
-          txn.debitAmount,
-          txn.creditAmount,
-          tx as Prisma.TransactionClient
-        );
-      }
 
       logger.info('Journal entry created', {
         entryId: entry.id,
@@ -896,7 +922,7 @@ export class GLService {
       }
 
       // Create reversing entry with swapped debits/credits
-      const reversingEntryNumber = await this.generateEntryNumber();
+      const reversingEntryNumber = await this.generateEntryNumber(tx as Prisma.TransactionClient);
       const reversingEntry = await tx.journalEntry.create({
         data: {
           entryNumber: reversingEntryNumber,
@@ -1161,6 +1187,103 @@ export class GLService {
       newBalance: calculatedBalance,
       difference: calculatedBalance.minus(account.currentBalance),
       transactionCount: transactions.length
+    };
+  }
+  /**
+   * Export account ledger to CSV
+   * Optimized for large datasets by fetching in chunks
+   */
+  async exportAccountLedgerToCSV(accountId: string, filters: AccountLedgerFilters) {
+    const id = this.parseId(accountId, 'Invalid account ID');
+
+    // Get account info first
+    const account = await prisma.account.findUnique({
+      where: { id },
+      select: { code: true }
+    });
+
+    if (!account) {
+      throw new AppError('Account not found', 404);
+    }
+
+    const { startDate, endDate } = filters;
+    const where: Prisma.AccountTransactionWhereInput = { accountId: id };
+
+    if (startDate || endDate) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (startDate) dateFilter.gte = new Date(startDate);
+      if (endDate) dateFilter.lte = new Date(endDate);
+      where.journalEntry = { entryDate: dateFilter };
+    }
+
+    // Fetch in chunks of 2000 to avoid memory overflow but keep performance
+    const chunkSize = 2000;
+    let skip = 0;
+    let allData: any[] = [];
+    let hasMore = true;
+
+    while (hasMore) {
+      const chunk = await prisma.accountTransaction.findMany({
+        where,
+        skip,
+        take: chunkSize,
+        include: {
+          journalEntry: {
+            select: {
+              entryNumber: true,
+              entryDate: true,
+              description: true,
+              sourceType: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      }) as any[];
+
+      if (chunk.length === 0) {
+        hasMore = false;
+      } else {
+        const mappedChunk = chunk.map((t) => ({
+          Date: t.journalEntry.entryDate.toISOString().split('T')[0],
+          EntryNumber: t.journalEntry.entryNumber,
+          Description: t.description || t.journalEntry.description,
+          Source: t.journalEntry.sourceType,
+          Debit: t.debitAmount.toNumber(),
+          Credit: t.creditAmount.toNumber(),
+          RunningBalance: t.runningBalance.toNumber()
+        }));
+
+        allData = allData.concat(mappedChunk);
+        skip += chunkSize;
+
+        // Safety cap for extremely large exports to prevent timeout (can be adjusted)
+        if (allData.length >= 50000) {
+          hasMore = false;
+        }
+
+        if (chunk.length < chunkSize) {
+          hasMore = false;
+        }
+      }
+    }
+
+    const fields = [
+      'Date',
+      'EntryNumber',
+      'Description',
+      'Source',
+      'Debit',
+      'Credit',
+      'RunningBalance'
+    ];
+
+    const { Parser } = require('json2csv');
+    const parser = new Parser({ fields });
+    const csv = parser.parse(allData);
+
+    return {
+      csv,
+      filename: `ledger-${account.code}-${new Date().toISOString().split('T')[0]}.csv`
     };
   }
 }

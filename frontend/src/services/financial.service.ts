@@ -435,5 +435,39 @@ export const financialService = {
       params: { startDate, endDate }
     });
     return response.data;
+  },
+
+  // General Ledger Methods
+  async getAllGLAccounts(params?: {
+    accountType?: string;
+    isActive?: boolean;
+    page?: number;
+    limit?: number;
+  }): Promise<{ accounts: any[]; pagination: any }> {
+    const response = await apiClient.get('/api/gl/accounts', { params });
+    return response.data;
+  },
+
+  async getAccountLedger(accountId: number, params?: {
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
+    const response = await apiClient.get(`/api/gl/accounts/${accountId}/ledger`, { params });
+    return response.data;
+  },
+
+  async recordJournalEntry(entry: any): Promise<any> {
+    const response = await apiClient.post('/api/gl/journal-entries', entry);
+    return response.data.entry;
+  },
+
+  async getAccountLedgerExport(accountId: number, params: { startDate?: string; endDate?: string }): Promise<any> {
+    const response = await apiClient.get(`/api/gl/accounts/${accountId}/ledger/export`, {
+      params,
+      responseType: 'blob'
+    });
+    return response.data;
   }
 };
