@@ -27,6 +27,16 @@ ecommerce-cod-admin/
 - Save plans in `.claude/plans/` or `.claude/docs/` (not `~/.claude/plans/`)
 - Keep plans focused on this project only
 
+## Git Worktree Configuration
+
+**Worktree Directory:** `.worktrees/` (project-local, hidden)
+
+When using git worktrees for isolated development:
+- Create worktrees in `.worktrees/` directory (already in `.gitignore`)
+- Copy `.env` files from main workspace to worktree after creation
+- Install dependencies in both backend and frontend
+- Verify tests pass before beginning work
+
 ## Git Workflow & Deployment
 
 **IMPORTANT: Always follow this workflow when making changes.**
