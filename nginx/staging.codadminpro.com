@@ -58,3 +58,4 @@ location /health {
      proxy_pass http://localhost:5174/health;
      access_log off;
 }
+}
