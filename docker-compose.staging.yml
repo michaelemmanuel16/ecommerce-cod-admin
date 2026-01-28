@@ -23,7 +23,7 @@ services:
     image: redis:7-alpine
     container_name: ecommerce-cod-redis-staging
     restart: always
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_data_staging:/data
     networks:
