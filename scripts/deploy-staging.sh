@@ -24,8 +24,13 @@ if [ ! -f .env.staging ]; then
     exit 1
 fi
 
-# Load environment variables
-export $(cat .env.staging | grep -v '^#' | xargs)
+# Load environment variables (safely handle comments and whitespace)
+if [ -f .env.staging ]; then
+    # We use a temp file to avoid export issues with comments
+    set -a
+    source <(grep -v '^#' .env.staging | sed -e 's/ = /=/g' -e 's/=[[:space:]]*/=/g' -e 's/[[:space:]]*=/=/g')
+    set +a
+fi
 
 echo -e "${GREEN}Starting staging deployment...${NC}"
 
@@ -89,8 +94,8 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     fi
 done
 
-# Check frontend health (via nginx)
-if curl -f http://localhost:8080/health > /dev/null 2>&1; then
+# Check frontend health (direct)
+if curl -f http://localhost:5174/health > /dev/null 2>&1; then
     echo -e "${GREEN}✓ Frontend (staging) is healthy${NC}"
 else
     echo -e "${YELLOW}⚠ Frontend health check failed (may need nginx configuration)${NC}"
