@@ -38,6 +38,9 @@ jest.mock('../../utils/prisma', () => ({
         account: {
             findUnique: jest.fn(),
         },
+        order: {
+            update: jest.fn(),
+        },
         $queryRaw: (jest.fn() as any).mockResolvedValue([]),
     },
 }));
@@ -61,6 +64,7 @@ jest.mock('../../utils/socketInstance', () => ({
 jest.mock('../../services/glAutomationService', () => ({
     GLAutomationService: {
         createAgentDepositEntry: jest.fn().mockImplementation(() => Promise.resolve({} as any)),
+        createCollectionVerificationEntry: jest.fn().mockImplementation(() => Promise.resolve({} as any)),
     },
 }));
 
@@ -73,6 +77,7 @@ describe('AgentReconciliationService', () => {
         agentDeposit: mockPrisma.agentDeposit,
         journalEntry: mockPrisma.journalEntry,
         account: mockPrisma.account,
+        order: mockPrisma.order,
         $queryRaw: mockPrisma.$queryRaw,
     };
 
@@ -125,8 +130,9 @@ describe('AgentReconciliationService', () => {
 
             const result = await agentReconciliationService.verifyCollection(collectionId, verifierId);
 
+            const { GLAutomationService } = require('../../services/glAutomationService');
             expect(mockTx.agentCollection.update).toHaveBeenCalled();
-            expect(mockTx.journalEntry.create).toHaveBeenCalled();
+            expect(GLAutomationService.createCollectionVerificationEntry).toHaveBeenCalled();
             expect(result.status).toBe('verified');
         });
 

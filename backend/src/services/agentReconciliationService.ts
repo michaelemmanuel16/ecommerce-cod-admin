@@ -1,10 +1,10 @@
-import { Prisma, JournalSourceType } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
-import { GL_ACCOUNTS } from '../config/glAccounts';
-import { GLUtils } from '../utils/glUtils';
-import { GLAccountService } from './glAccountService';
+// import { GL_ACCOUNTS } from '../config/glAccounts'; // Removed unused import
+// import { GLUtils } from '../utils/glUtils'; // Removed unused import
+// import { GLAccountService } from './glAccountService'; // Removed unused import
 
 export class AgentReconciliationService {
     /**
@@ -38,83 +38,30 @@ export class AgentReconciliationService {
     }
 
     /**
-     * Verify a collection record
-     * Only accountants can perform this action
+     * Verify a collection record - this completes reconciliation
+     * Updates order paymentStatus to 'reconciled' and clears agent balance
+     */
+    /**
+     * Verify a collection record - this is a step towards full reconciliation
+     * Internal version that handles state transitions and GL integration
      */
     async verifyCollection(collectionId: number, verifierId: number) {
         return await prisma.$transaction(async (tx) => {
-            const collection = await (tx as any).agentCollection.findUnique({
-                where: { id: collectionId },
-                include: { order: true }
-            });
-
-            if (!collection) {
-                throw new AppError('Collection record not found', 404);
-            }
-
-            if (collection.status !== 'draft') {
-                throw new AppError(`Collection cannot be verified from status: ${collection.status}`, 400);
-            }
-
-            // Update collection status
-            const updated = await (tx as any).agentCollection.update({
-                where: { id: collectionId },
-                data: {
-                    status: 'verified',
-                    verifiedAt: new Date(),
-                    verifiedById: verifierId,
-                },
-            });
-
-            // Create GL Journal Entry
-            // Debit: AR-Agents (1020)
-            // Credit: Cash in Transit (1015)
-            await this.createVerificationGLEntry(tx as any, updated, verifierId);
-
-            logger.info(`Collection ${collectionId} verified by user ${verifierId}`);
-            return updated;
+            return await this.verifyCollectionInternal(tx, collectionId, verifierId);
         });
     }
 
     /**
-     * Create GL entry for collection verification
+     * Create GL entry for collection verification - DEPRECATED
+     * Replaced by GLAutomationService.createCollectionVerificationEntry
      */
-    private async createVerificationGLEntry(
+    /* private async createVerificationGLEntry(
         tx: any,
         collection: any,
         userId: number
     ) {
-        const extTx = tx as any;
-        const entryNumber = await GLUtils.generateEntryNumber(tx);
-        const amount = new Prisma.Decimal(collection.amount.toString());
-
-        await extTx.journalEntry.create({
-            data: {
-                entryNumber,
-                entryDate: new Date(),
-                description: `Collection verification - Order #${collection.orderId}`,
-                sourceType: JournalSourceType.agent_collection,
-                sourceId: collection.id,
-                createdBy: userId,
-                transactions: {
-                    create: [
-                        {
-                            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS),
-                            debitAmount: amount,
-                            creditAmount: new Prisma.Decimal(0),
-                            description: `Agent AR for collection ${collection.id}`,
-                        },
-                        {
-                            accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
-                            debitAmount: new Prisma.Decimal(0),
-                            creditAmount: amount,
-                            description: `Moving cash from transit to agent AR`,
-                        },
-                    ],
-                },
-            },
-        });
-    }
+       // ... deprecated content removed ...
+    } */
 
     /**
      * Approve a verified collection record
@@ -424,6 +371,9 @@ export class AgentReconciliationService {
     /**
      * Internal version of verifyCollection that accepts a transaction client
      */
+    /**
+     * Internal version of verifyCollection that accepts a transaction client
+     */
     private async verifyCollectionInternal(tx: any, collectionId: number, verifierId: number) {
         const collection = await (tx as any).agentCollection.findUnique({
             where: { id: collectionId },
@@ -439,6 +389,7 @@ export class AgentReconciliationService {
         }
 
         // Update collection status
+        // Transition: draft -> verified
         const updated = await (tx as any).agentCollection.update({
             where: { id: collectionId },
             data: {
@@ -448,8 +399,17 @@ export class AgentReconciliationService {
             },
         });
 
+        // Update order paymentStatus to collected
+        if (collection.orderId) {
+            await tx.order.update({
+                where: { id: collection.orderId },
+                data: { paymentStatus: 'collected' }
+            });
+        }
+
         // Create GL Journal Entry using shared utility
-        await this.createVerificationGLEntry(tx as any, updated, verifierId);
+        const { GLAutomationService } = await import('./glAutomationService');
+        await GLAutomationService.createCollectionVerificationEntry(tx as any, updated, verifierId);
 
         logger.info(`Collection ${collectionId} verified by user ${verifierId}`);
         return updated;

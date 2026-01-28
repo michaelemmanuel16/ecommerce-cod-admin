@@ -38,10 +38,19 @@ describe('FinancialService Cash Flow Report', () => {
                 return Promise.resolve(null);
             });
 
-            // Mock out-for-delivery orders
-            prismaMock.order.aggregate.mockResolvedValue({
-                _sum: { totalAmount: 4000 }
-            } as any);
+            // Mock operational figures from actual order status
+            prismaMock.order.aggregate.mockImplementation(({ where }: any) => {
+                if (where.status === 'delivered') {
+                    return Promise.resolve({ _sum: { totalAmount: 2000 } }) as any;
+                }
+                if (where.status === 'out_for_delivery') {
+                    return Promise.resolve({ _sum: { totalAmount: 4000 } }) as any;
+                }
+                return Promise.resolve({ _sum: { totalAmount: 0 } }) as any;
+            });
+
+            // Mock agent collections for holdings
+            (prismaMock as any).agentCollection.findMany.mockResolvedValue([]);
 
             // Mock historical data for forecast
             prismaMock.transaction.aggregate.mockResolvedValue({
@@ -51,15 +60,13 @@ describe('FinancialService Cash Flow Report', () => {
                 _sum: { amount: 15000 } // Total expenses last 30 days
             } as any);
 
-            // Mock agent holdings (using prisma.transaction.findMany as per implementation)
-            prismaMock.transaction.findMany.mockResolvedValue([
+            // Mock agent balances for getAgentCashHoldings
+            prismaMock.agentBalance.findMany.mockResolvedValue([
                 {
-                    id: 't1',
-                    amount: 500,
-                    createdAt: new Date(),
-                    order: {
-                        deliveryAgent: { id: 1, firstName: 'Agent', lastName: 'One', email: 'agent1@example.com' }
-                    }
+                    agentId: 1,
+                    currentBalance: 500,
+                    updatedAt: new Date(),
+                    agent: { id: 1, firstName: 'Agent', lastName: 'One', email: 'agent1@example.com' }
                 }
             ] as any);
 
