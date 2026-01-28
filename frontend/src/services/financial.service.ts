@@ -510,5 +510,4 @@ export const financialService = {
   async bulkVerifyCollections(ids: number[]): Promise<void> {
     await apiClient.post('/api/agent-reconciliation/bulk-verify', { ids });
   }
-}
 };
