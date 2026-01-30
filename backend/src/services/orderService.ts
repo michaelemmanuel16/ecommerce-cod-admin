@@ -545,7 +545,7 @@ export class OrderService {
             if (newOrder.status === 'delivered' && newOrder.codAmount) {
               try {
                 const syncResult = await FinancialSyncService.syncOrderFinancialData(
-                  tx,
+                  tx as any,
                   newOrder as any,
                   createdById || SYSTEM_USER_ID
                 );
@@ -1037,10 +1037,10 @@ export class OrderService {
       });
 
       // Auto-sync financial data when order is delivered
-      if (data.status === 'delivered' && updatedOrder.paymentMethod === 'cod') {
+      if (data.status === 'delivered' && updatedOrder.codAmount) {
         try {
           const syncResult = await FinancialSyncService.syncOrderFinancialData(
-            tx,
+            tx as any,
             updatedOrder as any,
             data.changedBy || SYSTEM_USER_ID
           );
