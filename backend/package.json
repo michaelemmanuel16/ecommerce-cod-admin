@@ -17,6 +17,8 @@
     "prisma:migrate": "prisma migrate dev",
     "seed": "ts-node scripts/seed-comprehensive-data.ts",
     "seed:gl": "ts-node scripts/seed-gl-accounts.ts",
+    "sync-financial": "ts-node scripts/sync-financial-data-simple.ts",
+    "update-delivery-dates": "ts-node scripts/update-delivery-dates.ts",
     "lint": "eslint . --ext .ts",
     "test:performance": "ts-node src/scripts/test-query-performance.ts",
     "db:verify-indexes": "psql $DATABASE_URL -f src/scripts/verify-indexes.sql"

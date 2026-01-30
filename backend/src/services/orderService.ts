@@ -16,6 +16,7 @@ import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
+import FinancialSyncService from './financialSyncService';
 
 interface CreateOrderData {
   customerId?: number;
@@ -506,7 +507,7 @@ export class OrderService {
             const customerRepId = orderData.assignedRepName && repMap ? repMap.get(orderData.assignedRepName) : undefined;
             const deliveryAgentId = orderData.assignedAgentName && agentMap ? agentMap.get(orderData.assignedAgentName) : undefined;
 
-            return await tx.order.create({
+            const newOrder = await tx.order.create({
               data: {
                 customerId: customer.id,
                 subtotal: orderData.subtotal,
@@ -517,6 +518,7 @@ export class OrderService {
                 deliveryArea: orderData.deliveryArea,
                 notes: orderData.notes,
                 status: orderData.status || 'pending_confirmation',
+                deliveryDate: orderData.status === 'delivered' ? orderDateValue : null,
                 source: 'bulk_import',
                 createdById,
                 customerRepId,
@@ -530,8 +532,38 @@ export class OrderService {
                     changedBy: createdById
                   }
                 }
+              },
+              include: {
+                orderItems: { include: { product: true } },
+                customer: true,
+                deliveryAgent: true,
+                customerRep: true
               }
             });
+
+            // 6. Auto-sync financial data if order is imported as delivered
+            if (newOrder.status === 'delivered' && newOrder.codAmount) {
+              try {
+                const syncResult = await FinancialSyncService.syncOrderFinancialData(
+                  tx,
+                  newOrder as any,
+                  createdById || SYSTEM_USER_ID
+                );
+
+                if (syncResult.transaction || syncResult.journalEntry) {
+                  logger.info(`Financial data auto-synced for imported order ${newOrder.id}`, {
+                    transactionId: syncResult.transaction?.id,
+                    journalEntryNumber: syncResult.journalEntry?.entryNumber
+                  });
+                }
+              } catch (syncError: any) {
+                // Log error but don't fail the import
+                logger.error(`Failed to auto-sync financial data for imported order ${newOrder.id}:`, syncError);
+                // Continue - order is still created
+              }
+            }
+
+            return newOrder;
           });
 
           // Success - track it and emit events
@@ -1003,6 +1035,28 @@ export class OrderService {
           }
         }
       });
+
+      // Auto-sync financial data when order is delivered
+      if (data.status === 'delivered' && updatedOrder.paymentMethod === 'cod') {
+        try {
+          const syncResult = await FinancialSyncService.syncOrderFinancialData(
+            tx,
+            updatedOrder as any,
+            data.changedBy || SYSTEM_USER_ID
+          );
+
+          if (syncResult.transaction || syncResult.journalEntry) {
+            logger.info(`Financial data auto-synced for order ${orderId}`, {
+              transactionId: syncResult.transaction?.id,
+              journalEntryNumber: syncResult.journalEntry?.entryNumber
+            });
+          }
+        } catch (syncError: any) {
+          // Log error but don't fail the status update
+          logger.error(`Failed to auto-sync financial data for order ${orderId}:`, syncError);
+          // Continue - order status is still updated
+        }
+      }
 
       return updatedOrder;
     });
