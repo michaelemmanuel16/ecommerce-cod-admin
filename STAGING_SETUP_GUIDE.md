@@ -81,7 +81,7 @@ server {
 
     # Frontend (React app)
     location / {
-        proxy_pass http://localhost:8080;
+        proxy_pass http://localhost:5174;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -115,7 +115,7 @@ server {
 
     # Health check endpoint
     location /health {
-        proxy_pass http://localhost:8080/health;
+        proxy_pass http://localhost:5174/health;
         access_log off;
     }
 }
@@ -142,7 +142,7 @@ systemctl status nginx
 
 The staging containers will run on different ports:
 - **Backend:** Internal 3000, exposed as 3001 (vs production 3000)
-- **Frontend/Nginx:** Internal 80, exposed as 8080 (vs production 80)
+- **Frontend:** Internal 8080, exposed as 5174 (vs production 80)
 
 This is already configured in `docker-compose.staging.yml`.
 

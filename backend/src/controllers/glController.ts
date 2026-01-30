@@ -193,3 +193,21 @@ export const getAccountLedger = async (req: AuthRequest, res: Response): Promise
     throw error;
   }
 };
+
+export const exportAccountLedger = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { startDate, endDate } = req.query;
+
+    const { csv, filename } = await glService.exportAccountLedgerToCSV(id, {
+      startDate: startDate as string | undefined,
+      endDate: endDate as string | undefined
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    res.send(csv);
+  } catch (error) {
+    throw error;
+  }
+};

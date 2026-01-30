@@ -283,3 +283,27 @@ export const exportAgentAgingCSV = async (_req: AuthRequest, res: Response): Pro
     res.status(500).json({ error: 'Failed to export agent aging report' });
   }
 };
+
+export const getBalanceSheet = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { asOfDate } = req.query;
+    const balanceSheet = await financialService.getBalanceSheet(asOfDate as string);
+    res.json(balanceSheet);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getProfitLoss = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) {
+      res.status(400).json({ message: 'Start date and end date are required' });
+      return;
+    }
+    const profitLoss = await financialService.getProfitLoss(startDate as string, endDate as string);
+    res.json(profitLoss);
+  } catch (error) {
+    throw error;
+  }
+};

@@ -144,6 +144,13 @@ describe('DeliveryService', () => {
               commissionAmount: new Decimal(10)
             })
           },
+          account: {
+            findUnique: jest.fn().mockResolvedValue({
+              normalBalance: 'debit',
+              currentBalance: new Decimal(0)
+            }),
+            update: jest.fn().mockResolvedValue({})
+          },
           $queryRaw: jest.fn().mockResolvedValue([])
         });
       });
@@ -178,6 +185,13 @@ describe('DeliveryService', () => {
           order: {
             update: jest.fn().mockResolvedValue({})
           },
+          account: {
+            findUnique: jest.fn().mockResolvedValue({
+              normalBalance: 'debit',
+              currentBalance: new Decimal(0)
+            }),
+            update: jest.fn().mockResolvedValue({})
+          },
           $queryRaw: jest.fn().mockResolvedValue([])
         });
       });
@@ -208,6 +222,13 @@ describe('DeliveryService', () => {
           },
           accountTransaction: {
             createMany: jest.fn().mockResolvedValue({})
+          },
+          account: {
+            findUnique: jest.fn().mockResolvedValue({
+              normalBalance: 'debit',
+              currentBalance: new Decimal(0)
+            }),
+            update: jest.fn().mockResolvedValue({})
           },
           $queryRaw: jest.fn().mockResolvedValue([])
         });

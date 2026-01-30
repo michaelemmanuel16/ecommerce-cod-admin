@@ -11,6 +11,8 @@ router.use(authenticate);
 // Financial summary and reports
 router.get('/summary', requireResourcePermission('financial', 'view'), financialController.getFinancialSummary);
 router.get('/reports', requireResourcePermission('financial', 'view'), financialController.getFinancialReports);
+router.get('/balance-sheet', requireResourcePermission('financial', 'view'), financialController.getBalanceSheet);
+router.get('/profit-loss', requireResourcePermission('financial', 'view'), financialController.getProfitLoss);
 router.get('/profit-margins', requireResourcePermission('financial', 'view'), financialController.getProfitMargins);
 router.get('/profitability', requireResourcePermission('financial', 'view'), financialController.getProfitabilityAnalysis);
 router.get('/profitability/export', requireResourcePermission('financial', 'view'), financialController.exportProfitabilityAnalysis);

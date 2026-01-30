@@ -188,6 +188,53 @@ export interface CashFlowReport {
   agentBreakdown: AgentCashHolding[];
 }
 
+export interface FinancialStatementAccount {
+  id: number;
+  code: string;
+  name: string;
+  balance: number;
+}
+
+export interface BalanceSheetData {
+  asOfDate: string;
+  assets: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  liabilities: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  equity: {
+    accounts: FinancialStatementAccount[];
+    retainedEarnings: number;
+    total: number;
+  };
+  totalLiabilitiesAndEquity: number;
+  isBalanced: boolean;
+}
+
+export interface ProfitLossData {
+  startDate: string;
+  endDate: string;
+  revenue: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  cogs: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  expenses: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  grossProfit: number;
+  grossMarginPercentage: number;
+  netIncome: number;
+  netMarginPercentage: number;
+}
+
 export const financialService = {
   async getFinancialSummary(startDate?: string, endDate?: string): Promise<FinancialSummary> {
     const response = await apiClient.get('/api/financial/summary', {
@@ -374,5 +421,53 @@ export const financialService = {
     document.body.appendChild(link);
     link.click();
     link.remove();
+  },
+
+  async getBalanceSheet(asOfDate?: string): Promise<BalanceSheetData> {
+    const response = await apiClient.get('/api/financial/balance-sheet', {
+      params: { asOfDate }
+    });
+    return response.data;
+  },
+
+  async getProfitLoss(startDate: string, endDate: string): Promise<ProfitLossData> {
+    const response = await apiClient.get('/api/financial/profit-loss', {
+      params: { startDate, endDate }
+    });
+    return response.data;
+  },
+
+  // General Ledger Methods
+  async getAllGLAccounts(params?: {
+    accountType?: string;
+    isActive?: boolean;
+    page?: number;
+    limit?: number;
+  }): Promise<{ accounts: any[]; pagination: any }> {
+    const response = await apiClient.get('/api/gl/accounts', { params });
+    return response.data;
+  },
+
+  async getAccountLedger(accountId: number, params?: {
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
+    const response = await apiClient.get(`/api/gl/accounts/${accountId}/ledger`, { params });
+    return response.data;
+  },
+
+  async recordJournalEntry(entry: any): Promise<any> {
+    const response = await apiClient.post('/api/gl/journal-entries', entry);
+    return response.data.entry;
+  },
+
+  async getAccountLedgerExport(accountId: number, params: { startDate?: string; endDate?: string }): Promise<any> {
+    const response = await apiClient.get(`/api/gl/accounts/${accountId}/ledger/export`, {
+      params,
+      responseType: 'blob'
+    });
+    return response.data;
   }
 };
