@@ -37,7 +37,7 @@ const transformOrder = (order: any): Order => {
       totalAmount: order.totalAmount || 0,
       status: order.status || 'pending_confirmation',
       priority: order.priority || 'medium',
-      paymentStatus: (order.paymentStatus === 'collected' ? 'paid' : order.paymentStatus) || 'pending',
+      paymentStatus: order.paymentStatus || 'pending',
       paymentMethod: order.paymentMethod || 'cod',
       shippingAddress,
       notes: order.notes || '',

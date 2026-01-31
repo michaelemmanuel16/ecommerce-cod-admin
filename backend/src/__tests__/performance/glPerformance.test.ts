@@ -11,6 +11,20 @@ describe('GL Performance Test', () => {
 
     beforeAll(async () => {
         systemUser = await prisma.user.findFirst({ where: { role: 'admin' } });
+        if (!systemUser) {
+            systemUser = await prisma.user.findFirst({ where: { role: 'super_admin' } });
+        }
+        if (!systemUser) {
+            systemUser = await prisma.user.create({
+                data: {
+                    email: 'gl-perf-tester@example.com',
+                    password: 'hashed-password',
+                    firstName: 'GL',
+                    lastName: 'PerfTester',
+                    role: 'admin'
+                }
+            });
+        }
 
         perfAccount = await prisma.account.create({
             data: {

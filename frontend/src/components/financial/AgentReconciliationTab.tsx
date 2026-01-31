@@ -4,6 +4,8 @@ import { useFinancialStore } from '../../stores/financialStore';
 import { FinancialKPICard } from './cards/FinancialKPICard';
 import { AgentSettlementChart } from './charts/AgentSettlementChart';
 import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { CollectionActionModal } from './modals/CollectionActionModal';
 import { formatCurrency } from '../../utils/format';
 
 export const AgentReconciliationTab: React.FC = () => {
@@ -12,6 +14,8 @@ export const AgentReconciliationTab: React.FC = () => {
     loadingStates,
     fetchAgentCashHoldings
   } = useFinancialStore();
+
+  const [selectedAgent, setSelectedAgent] = React.useState<{ id: number; name: string } | null>(null);
 
   useEffect(() => {
     fetchAgentCashHoldings();
@@ -144,6 +148,9 @@ export const AgentReconciliationTab: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -178,6 +185,18 @@ export const AgentReconciliationTab: React.FC = () => {
                             {daysSince > 7 ? 'Overdue' : daysSince > 3 ? 'Due Soon' : 'On Time'}
                           </span>
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => setSelectedAgent({
+                              id: holding.agent.id,
+                              name: `${holding.agent.firstName} ${holding.agent.lastName}`
+                            })}
+                          >
+                            Manage
+                          </Button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -187,6 +206,15 @@ export const AgentReconciliationTab: React.FC = () => {
           </div>
         </div>
       </Card>
+
+      {selectedAgent && (
+        <CollectionActionModal
+          isOpen={!!selectedAgent}
+          onClose={() => setSelectedAgent(null)}
+          agentId={selectedAgent.id}
+          agentName={selectedAgent.name}
+        />
+      )}
     </div>
   );
 };

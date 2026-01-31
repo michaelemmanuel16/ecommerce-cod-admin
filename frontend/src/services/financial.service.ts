@@ -135,6 +135,26 @@ export interface AgentAgingReport {
   buckets: AgentAgingBucket[];
 }
 
+export interface CollectionRecord {
+  id: number;
+  orderId: number;
+  agentId: number;
+  amount: number;
+  status: 'draft' | 'reconciled';
+  collectionDate: string;
+
+  verifiedAt?: string;
+  approvedAt?: string;
+  order: {
+    id: number;
+    totalAmount: number;
+    customer: {
+      firstName: string;
+      lastName: string;
+    }
+  }
+}
+
 export interface CashFlowKPI {
   cashInHand: number;
   cashInTransit: number;
@@ -469,5 +489,25 @@ export const financialService = {
       responseType: 'blob'
     });
     return response.data;
+  },
+
+  // Agent Reconciliation Methods
+  async getAgentCollections(agentId: number, params?: { status?: string }): Promise<CollectionRecord[]> {
+    const response = await apiClient.get('/api/agent-reconciliation', {
+      params: { agentId, ...params }
+    });
+    return response.data;
+  },
+
+  async verifyCollection(collectionId: number): Promise<void> {
+    await apiClient.post(`/api/agent-reconciliation/${collectionId}/verify`);
+  },
+
+  async approveCollection(collectionId: number): Promise<void> {
+    await apiClient.post(`/api/agent-reconciliation/${collectionId}/approve`);
+  },
+
+  async bulkVerifyCollections(ids: number[]): Promise<void> {
+    await apiClient.post('/api/agent-reconciliation/bulk-verify', { ids });
   }
 };

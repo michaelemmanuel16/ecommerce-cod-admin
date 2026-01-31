@@ -1,15 +1,10 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useFinancialStore } from '../stores/financialStore';
 import { Tabs } from '../components/ui/Tabs';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
-import { OverviewTab } from '../components/financial/OverviewTab';
-import { CashFlowTab } from '../components/financial/CashFlowTab';
-import { AgentReconciliationTab } from '../components/financial/AgentReconciliationTab';
-import { AgentAgingTab } from '../components/financial/AgentAgingTab';
-import { ExpenseManagementTab } from '../components/financial/ExpenseManagementTab';
-import { ProfitabilityTab } from '../components/financial/ProfitabilityTab';
-import { FinancialStatementsTab } from '../components/financial/FinancialStatementsTab';
-import { GeneralLedgerTab } from '../components/financial/gl/GeneralLedgerTab';
+import { FinancialDashboard } from './financial/FinancialDashboard';
+import { AgentCollections } from './financial/AgentCollections';
+import { AccountingAnalysis } from './financial/AccountingAnalysis';
 
 export const Financial: React.FC = () => {
   const { dateRange, setDateRange } = useFinancialStore();
@@ -20,44 +15,19 @@ export const Financial: React.FC = () => {
 
   const tabs = [
     {
-      id: 'gl',
-      label: 'General Ledger',
-      content: <GeneralLedgerTab />
-    },
-    {
       id: 'overview',
       label: 'Overview',
-      content: <OverviewTab />
+      content: <FinancialDashboard />
     },
     {
-      id: 'cash-flow',
-      label: 'Cash Flow',
-      content: <CashFlowTab />
+      id: 'agent-collections',
+      label: 'Agent Collections',
+      content: <AgentCollections />
     },
     {
-      id: 'agent-reconciliation',
-      label: 'Agent Reconciliation',
-      content: <AgentReconciliationTab />
-    },
-    {
-      id: 'agent-aging',
-      label: 'Agent Aging',
-      content: <AgentAgingTab />
-    },
-    {
-      id: 'expense-management',
-      label: 'Expense Management',
-      content: <ExpenseManagementTab />
-    },
-    {
-      id: 'profitability',
-      label: 'Profitability Analysis',
-      content: <ProfitabilityTab />
-    },
-    {
-      id: 'statements',
-      label: 'Financial Statements',
-      content: <FinancialStatementsTab />
+      id: 'accounting-analysis',
+      label: 'Accounting & Analysis',
+      content: <AccountingAnalysis />
     }
   ];
 

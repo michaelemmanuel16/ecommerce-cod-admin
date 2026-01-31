@@ -552,6 +552,52 @@ export class GLAutomationService {
   }
 
   /**
+   * Create GL entry for collection verification (Reconciliation)
+   *
+   * Moves funds from Cash in Transit to Cash in Hand:
+   * - Debit: Cash in Hand
+   * - Credit: Cash in Transit
+   *
+   * @param tx - Prisma transaction client
+   * @param collection - Agent collection record
+   * @param userId - ID of user verifying the collection
+   * @returns Created journal entry
+   */
+  static async createCollectionVerificationEntry(
+    tx: Prisma.TransactionClient,
+    collection: any,
+    userId: number
+  ): Promise<JournalEntryWithTransactions> {
+    const amount = new Decimal(collection.amount.toString());
+
+    const transactions: TransactionCreateData[] = [
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
+        debitAmount: amount,
+        creditAmount: new Decimal(0),
+        description: `Collection reconciled - Order #${collection.orderId}`,
+      },
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
+        debitAmount: new Decimal(0),
+        creditAmount: amount,
+        description: `Movement from transit to hand - Order #${collection.orderId}`,
+      },
+    ];
+
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Collection reconciliation - Order #${collection.orderId}`,
+      sourceType: JournalSourceType.agent_collection,
+      sourceId: collection.id,
+      createdBy: userId,
+      transactions: {
+        create: transactions,
+      },
+    });
+  }
+
+  /**
    * Create GL entry for agent deposit verification
    *
    * Records receipt of cash from agent and reduction of their receivable:

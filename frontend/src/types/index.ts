@@ -55,7 +55,7 @@ export type OrderStatus =
 
 export type OrderPriority = 'low' | 'medium' | 'high' | 'urgent';
 
-export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
+export type PaymentStatus = 'pending' | 'collected' | 'reconciled';
 
 export interface OrderItem {
   id: number;

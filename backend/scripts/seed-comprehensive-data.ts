@@ -24,30 +24,34 @@ async function seedComprehensiveData() {
     console.log('🚀 Starting Comprehensive Seeding...');
 
     // Clear existing data
-    console.log('Lines clearing existing data...');
-    await prisma.notification.deleteMany();
-    await prisma.workflowExecution.deleteMany();
-    await prisma.workflow.deleteMany();
-    await prisma.webhookLog.deleteMany();
-    await prisma.webhookConfig.deleteMany();
-    await prisma.agentAgingBucket.deleteMany();
-    await prisma.agentDeposit.deleteMany();
-    await prisma.agentCollection.deleteMany();
-    await prisma.agentBalance.deleteMany();
-    await prisma.delivery.deleteMany();
-    await prisma.orderItem.deleteMany();
-    await prisma.orderHistory.deleteMany();
-    await prisma.order.deleteMany();
-    await prisma.checkoutForm.deleteMany();
-    await prisma.product.deleteMany();
-    await prisma.customer.deleteMany();
-    await prisma.expense.deleteMany();
-    await prisma.accountTransaction.deleteMany();
-    await prisma.journalEntry.deleteMany();
-    await prisma.account.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.systemConfig.deleteMany();
-    console.log('  ✅ Database cleared\n');
+    if (process.env.ALLOW_DB_CLEANUP !== 'true') {
+      console.warn('⚠️  Skipping data cleanup. Set ALLOW_DB_CLEANUP=true to enable.');
+    } else {
+      console.log('🧹 Clearing existing data...');
+      await prisma.notification.deleteMany();
+      await prisma.workflowExecution.deleteMany();
+      await prisma.workflow.deleteMany();
+      await prisma.webhookLog.deleteMany();
+      await prisma.webhookConfig.deleteMany();
+      await prisma.agentAgingBucket.deleteMany();
+      await prisma.agentDeposit.deleteMany();
+      await prisma.agentCollection.deleteMany();
+      await prisma.agentBalance.deleteMany();
+      await prisma.delivery.deleteMany();
+      await prisma.orderItem.deleteMany();
+      await prisma.orderHistory.deleteMany();
+      await prisma.order.deleteMany();
+      await prisma.checkoutForm.deleteMany();
+      await prisma.product.deleteMany();
+      await prisma.customer.deleteMany();
+      await prisma.expense.deleteMany();
+      await prisma.accountTransaction.deleteMany();
+      await prisma.journalEntry.deleteMany();
+      await prisma.account.deleteMany();
+      await prisma.user.deleteMany();
+      await prisma.systemConfig.deleteMany();
+      console.log('  ✅ Database cleared\n');
+    }
 
     // 0. Create Super Admin and System Config
     console.log('⚙️ Initializing System Config and Super Admin...');

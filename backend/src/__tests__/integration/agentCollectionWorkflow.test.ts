@@ -48,11 +48,12 @@ describe('Agent Collection Workflow Integration', () => {
 
         // Setup GL Accounts
         const accounts: Prisma.AccountUncheckedCreateInput[] = [
-            { id: parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT), code: GL_ACCOUNTS.CASH_IN_TRANSIT, name: 'Cash in Transit', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
-            { id: parseInt(GL_ACCOUNTS.AR_AGENTS), code: GL_ACCOUNTS.AR_AGENTS, name: 'Agent AR', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
-            { id: parseInt(GL_ACCOUNTS.PRODUCT_REVENUE), code: GL_ACCOUNTS.PRODUCT_REVENUE, name: 'Revenue', accountType: AccountType.revenue, normalBalance: NormalBalance.credit },
-            { id: parseInt(GL_ACCOUNTS.COGS), code: GL_ACCOUNTS.COGS, name: 'COGS', accountType: AccountType.expense, normalBalance: NormalBalance.debit },
-            { id: parseInt(GL_ACCOUNTS.INVENTORY), code: GL_ACCOUNTS.INVENTORY, name: 'Inventory', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { code: '1015', name: 'Cash in Transit', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { code: '1020', name: 'Agent AR', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { code: '4010', name: 'Revenue', accountType: AccountType.revenue, normalBalance: NormalBalance.credit },
+            { code: '5010', name: 'COGS', accountType: AccountType.expense, normalBalance: NormalBalance.debit },
+            { code: '1200', name: 'Inventory', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { code: '1010', name: 'Cash in Hand', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
         ];
         for (const a of accounts) {
             await prisma.account.upsert({
@@ -156,10 +157,13 @@ describe('Agent Collection Workflow Integration', () => {
         expect(glEntry).not.toBeNull();
         expect(glEntry!.transactions).toHaveLength(2);
 
-        const arTrans = glEntry!.transactions.find(t => t.accountId === parseInt(GL_ACCOUNTS.AR_AGENTS));
-        const citTrans = glEntry!.transactions.find(t => t.accountId === parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT));
+        const cihAccount = await prisma.account.findUnique({ where: { code: '1010' } });
+        const citAccount = await prisma.account.findUnique({ where: { code: '1015' } });
 
-        expect(Number(arTrans!.debitAmount)).toBe(5000);
+        const cihTrans = glEntry!.transactions.find(t => t.accountId === cihAccount!.id);
+        const citTrans = glEntry!.transactions.find(t => t.accountId === citAccount!.id);
+
+        expect(Number(cihTrans!.debitAmount)).toBe(5000);
         expect(Number(citTrans!.creditAmount)).toBe(5000);
 
         // 3. Approve Collection -> Should status 'approved' and update agent balance

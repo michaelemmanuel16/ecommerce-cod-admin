@@ -16,7 +16,8 @@ import {
   CashFlowReport,
   BalanceSheetData,
   ProfitLossData,
-  FinancialStatementAccount
+  FinancialStatementAccount,
+  CollectionRecord
 } from '../services/financial.service';
 import { getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
@@ -56,6 +57,7 @@ interface FinancialState {
   dateRange: { startDate?: string; endDate?: string };
   isLoading: boolean;
   error: string | null;
+  currentAgentCollections: CollectionRecord[];
   loadingStates: {
     summary: boolean;
     collections: boolean;
@@ -114,6 +116,10 @@ interface FinancialState {
   fetchBalanceSheet: (asOfDate?: string) => Promise<void>;
   fetchProfitLoss: (startDate: string, endDate: string) => Promise<void>;
   setDateRange: (startDate?: string, endDate?: string) => void;
+  fetchAgentCollections: (agentId: number, status?: string) => Promise<void>;
+  verifyCollection: (id: number) => Promise<void>;
+  approveCollection: (id: number) => Promise<void>;
+  bulkVerifyCollections: (ids: number[]) => Promise<void>;
 }
 
 export const useFinancialStore = create<FinancialState>((set, get) => {
@@ -201,6 +207,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     },
     isLoading: false,
     error: null,
+    currentAgentCollections: [],
     loadingStates: {
       summary: false,
       collections: false,
@@ -565,5 +572,53 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     setDateRange: (startDate?: string, endDate?: string) => {
       set({ dateRange: { startDate, endDate } });
     },
+
+    fetchAgentCollections: async (agentId: number, status?: string) => {
+      set({ isLoading: true, error: null });
+      try {
+        const collections = await financialService.getAgentCollections(agentId, { status });
+        set({ currentAgentCollections: collections, isLoading: false });
+      } catch (error: any) {
+        set({ isLoading: false, error: error.message });
+        toast.error('Failed to fetch agent collections');
+      }
+    },
+
+    verifyCollection: async (id: number) => {
+      try {
+        await financialService.verifyCollection(id);
+        toast.success('Collection verified');
+        const agentId = get().currentAgentCollections[0]?.agentId;
+        if (agentId) await get().fetchAgentCollections(agentId);
+        await get().fetchAgentCashHoldings();
+      } catch (error: any) {
+        toast.error('Failed to verify collection');
+      }
+    },
+
+    approveCollection: async (id: number) => {
+      try {
+        await financialService.approveCollection(id);
+        toast.success('Collection approved');
+        const agentId = get().currentAgentCollections[0]?.agentId;
+        if (agentId) await get().fetchAgentCollections(agentId);
+        await get().fetchAgentCashHoldings();
+        await get().fetchSummary();
+      } catch (error: any) {
+        toast.error('Failed to approve collection');
+      }
+    },
+
+    bulkVerifyCollections: async (ids: number[]) => {
+      try {
+        await financialService.bulkVerifyCollections(ids);
+        toast.success('Collections verified');
+        const agentId = get().currentAgentCollections[0]?.agentId;
+        if (agentId) await get().fetchAgentCollections(agentId);
+        await get().fetchAgentCashHoldings();
+      } catch (error: any) {
+        toast.error('Failed to bulk verify collections');
+      }
+    }
   };
 });
