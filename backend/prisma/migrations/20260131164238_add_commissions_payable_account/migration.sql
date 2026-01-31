@@ -2,7 +2,7 @@
 -- This account tracks commissions owed to Sales Representatives
 -- Agents are accountable for Gross - Agent Commission, so Sales Rep commissions become a liability
 
-INSERT INTO "Account" (code, name, "accountType", "normalBalance", "currentBalance", "createdAt", "updatedAt")
+INSERT INTO accounts (code, name, account_type, normal_balance, current_balance, created_at, updated_at)
 VALUES (
   '2020', 
   'Commissions Payable', 
