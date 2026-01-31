@@ -107,11 +107,58 @@ export class FinancialSyncService {
 
       logger.info(`Created GL journal entry for order ${order.id} (Entry: ${journalEntry.entryNumber})`);
 
-      // Step 4: Mark order as revenue recognized
+      // Step 4: Mark order as revenue recognized and set payment status to collected
       await tx.order.update({
         where: { id: order.id },
-        data: { revenueRecognized: true }
+        data: {
+          revenueRecognized: true,
+          paymentStatus: 'collected'
+        }
       });
+
+      // Step 5: Create AgentCollection record if it has a delivery agent
+      // This is crucial for the Agent Reconciliation module
+      // Agents are held accountable for NET amount: Gross - Agent Commission
+      if (order.deliveryAgentId) {
+        const agentComm = order.deliveryAgent?.commissionAmount
+          ? new Decimal(order.deliveryAgent.commissionAmount.toString())
+          : new Decimal(0);
+        const grossAmount = new Decimal(order.totalAmount.toString());
+        const netAmount = grossAmount.minus(agentComm);
+
+        const existingCollection = await tx.agentCollection.findUnique({
+          where: { orderId: order.id }
+        });
+
+        if (!existingCollection) {
+          await (tx as any).agentCollection.create({
+            data: {
+              orderId: order.id,
+              agentId: order.deliveryAgentId,
+              amount: netAmount, // Record net amount
+              status: 'draft',
+              collectionDate: order.deliveryDate || order.updatedAt || new Date(),
+            }
+          });
+          logger.info(`Created draft AgentCollection for order ${order.id} (Net: ${netAmount})`);
+
+          // Update AgentBalance atomically within the transaction
+          await (tx as any).agentBalance.upsert({
+            where: { agentId: order.deliveryAgentId },
+            update: {
+              totalCollected: { increment: netAmount },
+              currentBalance: { increment: netAmount }
+            },
+            create: {
+              agentId: order.deliveryAgentId,
+              totalCollected: netAmount,
+              currentBalance: netAmount,
+              totalDeposited: 0
+            }
+          });
+          logger.info(`Updated AgentBalance for Agent ${order.deliveryAgentId} (Net: +${netAmount})`);
+        }
+      }
 
       return {
         transaction,

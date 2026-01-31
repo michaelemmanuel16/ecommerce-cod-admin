@@ -65,54 +65,13 @@ export class AgentReconciliationService {
 
     /**
      * Approve a verified collection record
+     * This is now an alias for verifyCollection as both steps are merged.
+     * It will settle the balance and ensure reconciled status.
      * Only managers/admins can perform this action
      */
     async approveCollection(collectionId: number, approverId: number) {
         return await prisma.$transaction(async (tx) => {
-            const collection = await (tx as any).agentCollection.findUnique({
-                where: { id: collectionId },
-            });
-
-            if (!collection) {
-                throw new AppError('Collection record not found', 404);
-            }
-
-            if (collection.status !== 'verified') {
-                throw new AppError(`Collection cannot be approved from status: ${collection.status}`, 400);
-            }
-
-            // Update collection status
-            const updated = await (tx as any).agentCollection.update({
-                where: { id: collectionId },
-                data: {
-                    status: 'approved',
-                    approvedAt: new Date(),
-                    approvedById: approverId,
-                },
-            });
-
-            // Update agent balance
-            const balance = await this.getOrCreateBalance(collection.agentId, tx as any);
-            await (tx as any).agentBalance.update({
-                where: { id: balance.id },
-                data: {
-                    totalCollected: { increment: collection.amount },
-                    currentBalance: { increment: collection.amount },
-                },
-            });
-
-            // Legacy update for User model (if still needed)
-            await tx.user.update({
-                where: { id: collection.agentId },
-                data: {
-                    totalCollected: {
-                        increment: collection.amount,
-                    },
-                },
-            });
-
-            logger.info(`Collection ${collectionId} approved by user ${approverId}`);
-            return updated;
+            return await this.verifyCollectionInternal(tx, collectionId, approverId);
         });
     }
 
@@ -317,6 +276,11 @@ export class AgentReconciliationService {
             }
 
             logger.info(`Deposit ${depositId} verified by user ${verifierId}`);
+
+            // Trigger proactive aging refresh (non-blocking)
+            const agingService = (await import('./agingService')).default;
+            agingService.refreshAll().catch(err => logger.error('Proactive aging refresh failed after deposit verification:', err));
+
             return updated;
         });
     }
@@ -370,9 +334,11 @@ export class AgentReconciliationService {
 
     /**
      * Internal version of verifyCollection that accepts a transaction client
-     */
-    /**
-     * Internal version of verifyCollection that accepts a transaction client
+     * This now completes the reconciliation in one step:
+     * 1. Status: draft -> reconciled
+     * 2. Order: paymentStatus -> reconciled
+     * 3. Balance: totalDeposited+, currentBalance-
+     * 4. GL Entry: Cash in Transit -> Cash in Hand
      */
     private async verifyCollectionInternal(tx: any, collectionId: number, verifierId: number) {
         const collection = await (tx as any).agentCollection.findUnique({
@@ -384,34 +350,64 @@ export class AgentReconciliationService {
             throw new AppError('Collection record not found', 404);
         }
 
-        if (collection.status !== 'draft') {
-            throw new AppError(`Collection cannot be verified from status: ${collection.status}`, 400);
+        // Allow verification from draft or verified (if the flow was partially completed)
+        if (collection.status !== 'draft' && collection.status !== 'verified') {
+            throw new AppError(`Collection cannot be reconciled from status: ${collection.status}`, 400);
         }
 
-        // Update collection status
-        // Transition: draft -> verified
+        // 1. Update collection status to reconciled
         const updated = await (tx as any).agentCollection.update({
             where: { id: collectionId },
             data: {
-                status: 'verified',
-                verifiedAt: new Date(),
-                verifiedById: verifierId,
+                status: 'reconciled',
+                verifiedAt: collection.verifiedAt || new Date(),
+                verifiedById: collection.verifiedById || verifierId,
+                approvedAt: new Date(),
+                approvedById: verifierId,
             },
         });
 
-        // Update order paymentStatus to collected
+        // 2. Update associated order paymentStatus to reconciled
         if (collection.orderId) {
-            await tx.order.update({
+            await (tx as any).order.update({
                 where: { id: collection.orderId },
-                data: { paymentStatus: 'collected' }
+                data: { paymentStatus: 'reconciled' }
             });
         }
 
-        // Create GL Journal Entry using shared utility
-        const { GLAutomationService } = await import('./glAutomationService');
-        await GLAutomationService.createCollectionVerificationEntry(tx as any, updated, verifierId);
+        // 3. Update agent balance - this is a settlement/reconciliation
+        const balance = await this.getOrCreateBalance(collection.agentId, tx as any);
+        await (tx as any).agentBalance.update({
+            where: { id: balance.id },
+            data: {
+                totalDeposited: { increment: collection.amount }, // Reflects money settled
+                currentBalance: { decrement: collection.amount }, // Removes from agent's current holding
+            },
+        });
 
-        logger.info(`Collection ${collectionId} verified by user ${verifierId}`);
+        // 4. Update for User model (legacy)
+        await tx.user.update({
+            where: { id: collection.agentId },
+            data: {
+                totalCollected: {
+                    increment: collection.amount,
+                },
+            },
+        });
+
+        // 5. Create GL Journal Entry (Transit -> Hand)
+        // Only if it wasn't already verified (to avoid duplicate entries)
+        if (collection.status === 'draft') {
+            const { GLAutomationService } = await import('./glAutomationService');
+            await GLAutomationService.createCollectionVerificationEntry(tx as any, updated, verifierId);
+        }
+
+        logger.info(`Collection ${collectionId} reconciled by user ${verifierId}`);
+
+        // Trigger proactive aging refresh (non-blocking)
+        const agingService = (await import('./agingService')).default;
+        agingService.refreshAll().catch(err => logger.error('Proactive aging refresh failed after reconciliation:', err));
+
         return updated;
     }
 

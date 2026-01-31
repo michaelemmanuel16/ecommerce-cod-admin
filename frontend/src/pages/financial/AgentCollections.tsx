@@ -6,6 +6,7 @@ import { formatCurrency } from '../../utils/format';
 import { financialService } from '../../services/financial.service';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import toast from 'react-hot-toast';
+import { CollectionActionModal } from '../../components/financial/modals/CollectionActionModal';
 
 export const AgentCollections: React.FC = () => {
   const {
@@ -17,6 +18,9 @@ export const AgentCollections: React.FC = () => {
   const [filterOverdue, setFilterOverdue] = useState(false);
   const [sortField, setSortField] = useState<string>('totalBalance');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  // Selection state for reconciliation
+  const [selectedAgent, setSelectedAgent] = useState<{ id: number; name: string } | null>(null);
 
   useEffect(() => {
     fetchAgentAging();
@@ -61,9 +65,9 @@ export const AgentCollections: React.FC = () => {
     if (!agentAging?.summary?.bucketTotals) return [];
     const { bucketTotals } = agentAging.summary;
     return [
-      { name: '0-3 Days', value: bucketTotals.bucket_0_1 + bucketTotals.bucket_2_3, color: '#22c55e' },
-      { name: '4-7 Days', value: bucketTotals.bucket_4_7, color: '#f97316' },
-      { name: '8+ Days', value: bucketTotals.bucket_8_plus, color: '#ef4444' },
+      { name: '0-3 Days', value: Number(bucketTotals.bucket_0_1) + Number(bucketTotals.bucket_2_3), color: '#22c55e' },
+      { name: '4-7 Days', value: Number(bucketTotals.bucket_4_7), color: '#f97316' },
+      { name: '8+ Days', value: Number(bucketTotals.bucket_8_plus), color: '#ef4444' },
     ].filter(d => d.value > 0);
   }, [agentAging]);
 
@@ -196,7 +200,7 @@ export const AgentCollections: React.FC = () => {
         <Card className="lg:col-span-3 p-0">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
             <div className="flex items-center space-x-3">
-              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Agent Details</h3>
+              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Agent Aging & Collections</h3>
               <div className="h-4 w-px bg-gray-200" />
               <div className="flex items-center bg-white border border-gray-200 rounded-md px-2 py-1">
                 <Filter className="w-3.5 h-3.5 text-gray-400 mr-2" />
@@ -275,7 +279,7 @@ export const AgentCollections: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          {formatCurrency(bucket.bucket_0_1 + bucket.bucket_2_3)}
+                          {formatCurrency(Number(bucket.bucket_0_1) + Number(bucket.bucket_2_3))}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -297,10 +301,14 @@ export const AgentCollections: React.FC = () => {
                             <Mail className="w-4 h-4" />
                           </button>
                           <button
-                            className="text-gray-400 hover:text-blue-600 transition-colors"
-                            title="View collections"
+                            className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                            onClick={() => setSelectedAgent({
+                              id: bucket.agentId,
+                              name: `${bucket.agent.firstName} ${bucket.agent.lastName}`
+                            })}
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-4 h-4 mr-1 text-gray-400" />
+                            Verify Collections
                           </button>
                         </div>
                       </td>
@@ -312,6 +320,16 @@ export const AgentCollections: React.FC = () => {
           </div>
         </Card>
       </div>
+
+      {/* Collection Action Modal */}
+      {selectedAgent && (
+        <CollectionActionModal
+          isOpen={!!selectedAgent}
+          onClose={() => setSelectedAgent(null)}
+          agentId={selectedAgent.id}
+          agentName={selectedAgent.name}
+        />
+      )}
     </div>
   );
 };

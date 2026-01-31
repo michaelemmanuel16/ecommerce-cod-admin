@@ -125,7 +125,10 @@ describe('AgentReconciliationService', () => {
             };
 
             mockTx.agentCollection.findUnique.mockResolvedValue(collection);
-            mockTx.agentCollection.update.mockResolvedValue({ ...collection, status: 'verified' });
+            mockTx.agentCollection.update.mockResolvedValue({ ...collection, status: 'reconciled' });
+            mockTx.agentBalance.findUnique.mockResolvedValue({ id: 10, agentId: 456 });
+            mockTx.agentBalance.update.mockResolvedValue({});
+            mockTx.user.update.mockResolvedValue({});
             mockTx.journalEntry.create.mockResolvedValue({ id: 99 });
 
             const result = await agentReconciliationService.verifyCollection(collectionId, verifierId);
@@ -133,7 +136,7 @@ describe('AgentReconciliationService', () => {
             const { GLAutomationService } = require('../../services/glAutomationService');
             expect(mockTx.agentCollection.update).toHaveBeenCalled();
             expect(GLAutomationService.createCollectionVerificationEntry).toHaveBeenCalled();
-            expect(result.status).toBe('verified');
+            expect(result.status).toBe('reconciled');
         });
 
         it('should throw error if collection not found', async () => {
@@ -141,10 +144,10 @@ describe('AgentReconciliationService', () => {
             await expect(agentReconciliationService.verifyCollection(999, 1)).rejects.toThrow('Collection record not found');
         });
 
-        it('should throw error if collection is not in draft status', async () => {
-            const collection = { id: 1, status: 'verified' };
+        it('should throw error if collection is already reconciled', async () => {
+            const collection = { id: 1, status: 'reconciled' };
             mockTx.agentCollection.findUnique.mockResolvedValue(collection);
-            await expect(agentReconciliationService.verifyCollection(1, 1)).rejects.toThrow(/Collection cannot be verified/);
+            await expect(agentReconciliationService.verifyCollection(1, 1)).rejects.toThrow(/Collection cannot be reconciled from status: reconciled/);
         });
     });
 
@@ -172,8 +175,8 @@ describe('AgentReconciliationService', () => {
             expect(mockTx.agentBalance.update).toHaveBeenCalledWith({
                 where: { id: balance.id },
                 data: {
-                    totalCollected: { increment: collection.amount },
-                    currentBalance: { increment: collection.amount },
+                    totalDeposited: { increment: collection.amount },
+                    currentBalance: { decrement: collection.amount },
                 },
             });
 
@@ -418,17 +421,21 @@ describe('AgentReconciliationService', () => {
                 .mockResolvedValueOnce(collection2);
 
             mockTx.agentCollection.update
-                .mockResolvedValueOnce({ ...collection1, status: 'verified' })
-                .mockResolvedValueOnce({ ...collection2, status: 'verified' });
+                .mockResolvedValueOnce({ ...collection1, status: 'reconciled' })
+                .mockResolvedValueOnce({ ...collection2, status: 'reconciled' });
 
             mockTx.journalEntry.create.mockResolvedValue({ id: 99 });
             mockTx.account.findUnique.mockResolvedValue({ id: 10 });
 
+            mockTx.agentBalance.findUnique.mockResolvedValue({ id: 10, agentId: 456 });
+            mockTx.agentBalance.update.mockResolvedValue({});
+            mockTx.user.update.mockResolvedValue({});
+
             const results = await agentReconciliationService.bulkVerifyCollections(collectionIds, verifierId);
 
             expect(results).toHaveLength(2);
-            expect(results[0].status).toBe('verified');
-            expect(results[1].status).toBe('verified');
+            expect(results[0].status).toBe('reconciled');
+            expect(results[1].status).toBe('reconciled');
             expect(mockTx.agentCollection.update).toHaveBeenCalledTimes(2);
         });
 
@@ -442,7 +449,10 @@ describe('AgentReconciliationService', () => {
                 .mockResolvedValueOnce(collection1)
                 .mockResolvedValueOnce(null);
 
-            mockTx.agentCollection.update.mockResolvedValue({ ...collection1, status: 'verified' });
+            mockTx.agentCollection.update.mockResolvedValue({ ...collection1, status: 'reconciled' });
+            mockTx.agentBalance.findUnique.mockResolvedValue({ id: 10, agentId: 456 });
+            mockTx.agentBalance.update.mockResolvedValue({});
+            mockTx.user.update.mockResolvedValue({});
             mockTx.account.findUnique.mockResolvedValue({ id: 10 });
 
             await expect(agentReconciliationService.bulkVerifyCollections(collectionIds, verifierId))

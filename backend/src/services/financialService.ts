@@ -184,7 +184,7 @@ export class FinancialService {
       expenseDateWhere.recordedBy = requester.id;
     }
 
-    const [revenueData, expenses, codCollections, , outForDeliveryOrders] = await Promise.all([
+    const [revenueData, expenses, codCollections, , outForDeliveryOrders, ordersForCommissions] = await Promise.all([
       // Total Revenue = all delivered orders (Accrual basis)
       prisma.order.aggregate({
         where: orderWhere,
@@ -219,21 +219,51 @@ export class FinancialService {
           codAmount: { not: null },
         },
         _sum: { totalAmount: true }
+      }),
+      // Accrued Commissions (on delivered orders in this period)
+      prisma.order.findMany({
+        where: orderWhere,
+        include: {
+          deliveryAgent: { select: { commissionAmount: true } },
+          customerRep: { select: { commissionAmount: true } }
+        }
       })
     ]);
 
+    // Calculate commissions manually from orders
+    let calculatedCommissions = 0;
+    (ordersForCommissions as any || []).forEach((o: any) => {
+      calculatedCommissions += Number(o.deliveryAgent?.commissionAmount || 0);
+      calculatedCommissions += Number(o.customerRep?.commissionAmount || 0);
+    });
+
+    // Actually, let's use a more robust way to get COGS
+    const cogsAggr = await prisma.orderItem.findMany({
+      where: { order: orderWhere },
+      include: { product: { select: { cogs: true } } }
+    });
+
+    let calculatedCOGS = 0;
+    if (cogsAggr && Array.isArray(cogsAggr)) {
+      cogsAggr.forEach(item => {
+        calculatedCOGS += Number(item.product?.cogs || 0) * item.quantity;
+      });
+    }
+
     const totalRevenue = this.toNumber(revenueData._sum.totalAmount);
-    const totalExpenses = this.toNumber(expenses._sum.amount);
-    const totalCOD = this.toNumber(codCollections._sum.amount);
+    const totalExpenses = this.toNumber(expenses._sum.amount) + calculatedCommissions + calculatedCOGS;
+    let totalCOD = this.toNumber(codCollections._sum.amount);
     const outForDelivery = this.toNumber(outForDeliveryOrders._sum.totalAmount);
 
-    /**
-     * Outstanding COD calculation:
-     * We need to find everything that HAS BEEN DELIVERED but NOT YET COLLECTED/RECONCILED.
-     * Accrual Revenue - Actual Collections - Out of Delivery (which are in revenue but not yet delivered? Wait)
-     * Actually, Outstanding COD = (Delivered Orders Total) - (Collected/Deposited/Reconciled Transactions)
-     * Plus we should add 'out_for_delivery' if we want to show expected collection.
-     */
+    // If no date range is provided, we should include the actual cash held by agents 
+    // (un-deposited collections) in the "COD Collected" metric
+    if (!startDate && !endDate) {
+      const agentBalances = await prisma.agentBalance.aggregate({
+        _sum: { currentBalance: true }
+      });
+      totalCOD += this.toNumber(agentBalances?._sum?.currentBalance);
+    }
+
     const pendingCODAmount = (totalRevenue - totalCOD) + outForDelivery;
 
     const summary = {

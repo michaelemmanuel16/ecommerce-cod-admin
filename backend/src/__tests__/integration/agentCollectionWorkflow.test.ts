@@ -125,7 +125,9 @@ describe('Agent Collection Workflow Integration', () => {
     });
 
     it('should complete full collection workflow', async () => {
-        // 1. Complete Delivery -> Should create Draft Collection
+        // 1. Complete Delivery -> Should create Draft Collection (Net of Commission)
+        // Order is 5000. For the test, we didn't specify commission, so let's assume 0 for now
+        // to keep it simple, or mock it if needed.
         await deliveryService.completeDelivery(testDelivery.id.toString(), {
             recipientName: 'Test Recipient',
             proofType: 'signature',
@@ -138,16 +140,19 @@ describe('Agent Collection Workflow Integration', () => {
 
         expect(draftCollection).not.toBeNull();
         expect(draftCollection.status).toBe('draft');
+
+        // In the new logic, syncOrderFinancialData calculates netAmount = gross - agentComm
+        // Since testAgent.commissionAmount is not set in beforeEach, netAmount = 5000
         expect(Number(draftCollection.amount)).toBe(5000);
 
-        // 2. Verify Collection -> Should status 'verified' and create GL Entry
+        // 2. Reconcile (Verify) Collection -> Should move directly to 'reconciled' and create GL Entry
         await agentReconciliationService.verifyCollection(draftCollection.id, testUser.id);
 
-        const verifiedColl = await (prisma as any).agentCollection.findUnique({
+        const reconciledColl = await (prisma as any).agentCollection.findUnique({
             where: { id: draftCollection.id }
         });
-        expect(verifiedColl.status).toBe('verified');
-        expect(verifiedColl.verifiedById).toBe(testUser.id);
+        expect(reconciledColl.status).toBe('reconciled');
+        expect(reconciledColl.verifiedById).toBe(testUser.id);
 
         // Check GL Entry
         const glEntry = await prisma.journalEntry.findFirst({
@@ -166,17 +171,8 @@ describe('Agent Collection Workflow Integration', () => {
         expect(Number(cihTrans!.debitAmount)).toBe(5000);
         expect(Number(citTrans!.creditAmount)).toBe(5000);
 
-        // 3. Approve Collection -> Should status 'approved' and update agent balance
-        await agentReconciliationService.approveCollection(verifiedColl.id, testUser.id);
-
-        const approvedColl = await (prisma as any).agentCollection.findUnique({
-            where: { id: draftCollection.id }
-        });
-        expect(approvedColl.status).toBe('approved');
-
-        const updatedAgent = await prisma.user.findUnique({
-            where: { id: testAgent.id }
-        });
-        expect(Number(updatedAgent!.totalCollected)).toBe(5000);
+        // 3. Agent Balance would be updated in real flow via FinancialSyncService
+        // For this test, we're only verifying the collection workflow itself
+        // Balance updates are tested separately in agentBalance.test.ts
     });
 });

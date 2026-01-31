@@ -15,6 +15,7 @@ interface CollectionActionModalProps {
 
 const statusColors = {
     draft: 'bg-yellow-100 text-yellow-800',
+    verified: 'bg-blue-100 text-blue-800',
     reconciled: 'bg-green-100 text-green-800',
 };
 
@@ -91,14 +92,14 @@ export const CollectionActionModal: React.FC<CollectionActionModalProps> = ({
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                                                 <div className="flex justify-end gap-2">
-                                                    {collection.status === 'draft' && (
+                                                    {(collection.status === 'draft' || collection.status === 'verified') && (
                                                         <Button
                                                             size="sm"
                                                             variant="primary"
                                                             onClick={() => handleVerify(collection.id)}
                                                         >
                                                             <CheckCircle className="w-4 h-4 mr-1" />
-                                                            Verify
+                                                            Reconcile
                                                         </Button>
                                                     )}
                                                     {collection.status === 'reconciled' && (

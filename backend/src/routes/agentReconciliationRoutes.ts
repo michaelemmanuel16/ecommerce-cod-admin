@@ -32,7 +32,7 @@ router.get('/stats/:agentId',
 
 // Verification (Accountant only)
 router.post('/:id/verify',
-    requireRole('super_admin', 'accountant'),
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
     [
         param('id').isInt().toInt(),
         validate
@@ -41,7 +41,7 @@ router.post('/:id/verify',
 );
 
 router.post('/bulk-verify',
-    requireRole('super_admin', 'accountant'),
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
     [
         body('ids').isArray({ min: 1 }),
         body('ids.*').isInt().toInt(),

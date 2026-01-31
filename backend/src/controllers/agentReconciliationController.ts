@@ -112,6 +112,9 @@ export class AgentReconciliationController {
         const io = getSocketInstance();
         if (io) {
             emitCollectionVerified(io, result);
+            // Also emit balance update
+            const balance = await agentReconciliationService.getAgentBalance(result.agentId);
+            io.emit(`agent:balance-updated`, { agentId: result.agentId, balance });
         }
 
         res.json(result);

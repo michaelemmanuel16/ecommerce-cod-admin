@@ -587,12 +587,14 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     verifyCollection: async (id: number) => {
       try {
         await financialService.verifyCollection(id);
-        toast.success('Collection verified');
+        toast.success('Collection reconciled');
         const agentId = get().currentAgentCollections[0]?.agentId;
         if (agentId) await get().fetchAgentCollections(agentId);
         await get().fetchAgentCashHoldings();
+        await get().fetchAgentAging();
+        await get().fetchSummary();
       } catch (error: any) {
-        toast.error('Failed to verify collection');
+        toast.error('Failed to reconcile collection');
       }
     },
 
@@ -604,6 +606,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         if (agentId) await get().fetchAgentCollections(agentId);
         await get().fetchAgentCashHoldings();
         await get().fetchSummary();
+        await get().fetchAgentAging();
       } catch (error: any) {
         toast.error('Failed to approve collection');
       }
@@ -616,6 +619,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         const agentId = get().currentAgentCollections[0]?.agentId;
         if (agentId) await get().fetchAgentCollections(agentId);
         await get().fetchAgentCashHoldings();
+        await get().fetchAgentAging();
       } catch (error: any) {
         toast.error('Failed to bulk verify collections');
       }

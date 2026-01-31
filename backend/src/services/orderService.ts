@@ -1247,7 +1247,21 @@ export class OrderService {
         where: { id: orderId },
         data: { deletedAt: new Date() }
       });
+
+      // Remove any associated AgentCollection record that isn't yet fully processed
+      // (If it's already 'deposited', we might want to keep it or handle it separately, 
+      // but usually deleting an order means its collection is invalid)
+      await (tx as any).agentCollection.deleteMany({
+        where: {
+          orderId,
+          status: { in: ['draft', 'verified', 'approved'] }
+        }
+      });
     });
+
+    // Trigger proactive aging refresh (non-blocking)
+    const agingService = (await import('./agingService')).default;
+    agingService.refreshAll().catch(err => logger.error('Proactive aging refresh failed after order deletion:', err));
 
     logger.info(`Order soft deleted: ${order.id} `, { orderId, userId });
     return { message: 'Order deleted successfully' };

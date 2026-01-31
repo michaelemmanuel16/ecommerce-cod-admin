@@ -11,10 +11,14 @@ export class AgingService {
     const now = new Date();
 
     try {
-      // 1. Get all approved collections that are NOT yet deposited or reconciled
+      // 1. Get all pending collections (draft, verified, approved) 
+      // and ensure the associated order is not soft-deleted
       const collections = await (prisma as any).agentCollection.findMany({
         where: {
-          status: 'approved',
+          status: { in: ['draft', 'verified', 'approved'] },
+          order: {
+            deletedAt: null
+          }
         },
         include: {
           agent: {
