@@ -17,6 +17,7 @@
     "prisma:migrate": "prisma migrate dev",
     "seed": "ts-node scripts/seed-comprehensive-data.ts",
     "seed:gl": "ts-node scripts/seed-gl-accounts.ts",
+    "create-admin": "ts-node create-admin.ts",
     "sync-financial": "ts-node scripts/sync-financial-data-simple.ts",
     "update-delivery-dates": "ts-node scripts/update-delivery-dates.ts",
     "lint": "eslint . --ext .ts",
