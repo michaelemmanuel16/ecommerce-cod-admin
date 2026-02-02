@@ -15,8 +15,8 @@ echo "📦 Running Prisma migrations..."
 npx prisma migrate deploy
 
 # Note: Auto-seeding removed for security
-# To create the first admin user, run: npm run create-admin
-echo "ℹ️  Migrations complete. If this is a fresh database, create an admin user with: npm run create-admin"
+# Create users via the sign-up page
+echo "ℹ️  Migrations complete. Create users via the sign-up page."
 
 echo "🎉 Starting application..."
 # Start the application
