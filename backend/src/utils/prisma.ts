@@ -19,6 +19,9 @@ const prismaBase = new PrismaClient({
 
 const prisma = prismaBase.$extends(softDeleteExtension);
 
+// Define type for extended client to be used across the app
+export type PrismaClientExtended = typeof prisma;
+
 // Query performance logging
 prismaBase.$on('query' as never, (e: any) => {
   const duration = e.duration;
@@ -54,4 +57,5 @@ process.on('beforeExit', async () => {
   await prismaBase.$disconnect();
 });
 
+export { prismaBase };
 export default prisma;

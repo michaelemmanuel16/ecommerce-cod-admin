@@ -43,6 +43,7 @@ export interface TrendConfig {
   comparison?: TrendComparison;
   dataSource?: string;
   compareKey?: string; // Support for older config format
+  comparisonSource?: string; // Path to comparison data
   inverted?: boolean; // True if lower values are better (e.g., cancellation rate)
 }
 

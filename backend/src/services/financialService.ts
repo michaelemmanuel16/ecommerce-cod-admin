@@ -1,3 +1,4 @@
+import { Parser } from 'json2csv';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, PaymentStatus } from '@prisma/client';
@@ -11,6 +12,7 @@ import {
   emitTransactionDeposited,
   emitTransactionReconciled
 } from '../sockets/index';
+import { GL_ACCOUNTS } from '../config/glAccounts';
 
 interface DateFilters {
   startDate?: Date;
@@ -24,6 +26,25 @@ interface CreateExpenseData {
   expenseDate: Date;
   recordedBy: string;
   receiptUrl?: string;
+}
+
+interface CashFlowForecast {
+  date: string;
+  expectedCollection: number;
+  expectedExpense: number;
+  projectedBalance: number;
+}
+
+interface AgentHolding {
+  agent: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  totalCollected: number;
+  orderCount: number;
+  OldestCollectionDate: Date;
 }
 
 interface TransactionFilters {
@@ -40,7 +61,64 @@ interface ReconcileTransactionData {
   notes?: string;
 }
 
+interface FinancialStatementAccount {
+  id: number;
+  code: string;
+  name: string;
+  balance: number;
+}
+
+interface BalanceSheetData {
+  asOfDate: Date;
+  assets: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  liabilities: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  equity: {
+    accounts: FinancialStatementAccount[];
+    retainedEarnings: number;
+    total: number;
+  };
+  totalLiabilitiesAndEquity: number;
+  isBalanced: boolean;
+}
+
+interface ProfitLossData {
+  startDate: Date;
+  endDate: Date;
+  revenue: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  cogs: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  expenses: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  grossProfit: number;
+  grossMarginPercentage: number;
+  netIncome: number;
+  netMarginPercentage: number;
+}
+
 export class FinancialService {
+  private forecastCache: { data: CashFlowForecast[]; timestamp: number } | null = null;
+  private readonly FORECAST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
+
+  /**
+   * Safe conversion to number
+   */
+  private toNumber(value: string | number | null | undefined | Prisma.Decimal): number {
+    return Number(value || 0);
+  }
+
   /**
    * Get financial summary
    */
@@ -63,9 +141,9 @@ export class FinancialService {
 
     const orderDateWhere: any = {};
     if (startDate || endDate) {
-      orderDateWhere.createdAt = {};
-      if (startDate) orderDateWhere.createdAt.gte = startDate;
-      if (endDate) orderDateWhere.createdAt.lte = endDate;
+      orderDateWhere.updatedAt = {};
+      if (startDate) orderDateWhere.updatedAt.gte = startDate;
+      if (endDate) orderDateWhere.updatedAt.lte = endDate;
     }
 
     const orderWhere: Prisma.OrderWhereInput = {
@@ -74,7 +152,7 @@ export class FinancialService {
     };
 
     if (Object.keys(orderDateWhere).length > 0) {
-      orderWhere.createdAt = orderDateWhere.createdAt;
+      orderWhere.updatedAt = orderDateWhere.updatedAt;
     }
 
     // Role-based filtering for financial summary
@@ -85,13 +163,19 @@ export class FinancialService {
     }
 
     const transactionWhere: Prisma.TransactionWhereInput = {
-      type: 'cod_collection'
+      type: 'cod_collection',
+      order: {
+        deletedAt: null
+      }
     };
     if (Object.keys(dateWhere).length > 0) {
       transactionWhere.createdAt = dateWhere.createdAt;
     }
     if (requester && requester.role === 'delivery_agent') {
-      transactionWhere.order = { deliveryAgentId: requester.id };
+      transactionWhere.order = {
+        ...transactionWhere.order as any,
+        deliveryAgentId: requester.id
+      };
     }
 
 
@@ -100,18 +184,18 @@ export class FinancialService {
       expenseDateWhere.recordedBy = requester.id;
     }
 
-    const [revenue, expenses, codCollections, pendingCOD, deliveredOrders, outForDeliveryOrders] = await Promise.all([
-      prisma.transaction.aggregate({
-        where: {
-          ...transactionWhere,
-          status: 'collected'
-        },
-        _sum: { amount: true }
+    const [revenueData, expenses, codCollections, , outForDeliveryOrders, ordersForCommissions] = await Promise.all([
+      // Total Revenue = all delivered orders (Accrual basis)
+      prisma.order.aggregate({
+        where: orderWhere,
+        _sum: { totalAmount: true }
       }),
+      // Total Expenses
       prisma.expense.aggregate({
         where: expenseDateWhere,
         _sum: { amount: true }
       }),
+      // Actual COD Collected = transactions that are collected/deposited/reconciled
       prisma.transaction.aggregate({
         where: {
           ...transactionWhere,
@@ -119,6 +203,7 @@ export class FinancialService {
         },
         _sum: { amount: true }
       }),
+      // Pending Transactions (collections made but not yet processed)
       prisma.transaction.aggregate({
         where: {
           ...transactionWhere,
@@ -126,16 +211,7 @@ export class FinancialService {
         },
         _sum: { amount: true }
       }),
-      // Count delivered orders where payment hasn't been collected (COD orders with codAmount)
-      prisma.order.aggregate({
-        where: {
-          ...orderWhere,
-          codAmount: { not: null },
-          paymentStatus: 'pending',
-        },
-        _sum: { totalAmount: true }
-      }),
-      // Count out-for-delivery orders (COD being collected)
+      // Out-for-delivery orders (expected collection in pipeline)
       prisma.order.aggregate({
         where: {
           ...orderWhere,
@@ -143,18 +219,52 @@ export class FinancialService {
           codAmount: { not: null },
         },
         _sum: { totalAmount: true }
+      }),
+      // Accrued Commissions (on delivered orders in this period)
+      prisma.order.findMany({
+        where: orderWhere,
+        include: {
+          deliveryAgent: { select: { commissionAmount: true } },
+          customerRep: { select: { commissionAmount: true } }
+        }
       })
     ]);
 
-    const totalRevenue = revenue._sum.amount || 0;
-    const totalExpenses = expenses._sum.amount || 0;
-    const totalCOD = codCollections._sum.amount || 0;
-    const transactionPending = pendingCOD._sum.amount || 0;
-    const deliveredPending = deliveredOrders._sum.totalAmount || 0;
-    const outForDelivery = outForDeliveryOrders._sum.totalAmount || 0;
+    // Calculate commissions manually from orders
+    let calculatedCommissions = 0;
+    (ordersForCommissions as any || []).forEach((o: any) => {
+      calculatedCommissions += Number(o.deliveryAgent?.commissionAmount || 0);
+      calculatedCommissions += Number(o.customerRep?.commissionAmount || 0);
+    });
 
-    // Outstanding COD = pending transactions + delivered orders awaiting collection + orders out for delivery
-    const pendingCODAmount = transactionPending + deliveredPending + outForDelivery;
+    // Actually, let's use a more robust way to get COGS
+    const cogsAggr = await prisma.orderItem.findMany({
+      where: { order: orderWhere },
+      include: { product: { select: { cogs: true } } }
+    });
+
+    let calculatedCOGS = 0;
+    if (cogsAggr && Array.isArray(cogsAggr)) {
+      cogsAggr.forEach(item => {
+        calculatedCOGS += Number(item.product?.cogs || 0) * item.quantity;
+      });
+    }
+
+    const totalRevenue = this.toNumber(revenueData._sum.totalAmount);
+    const totalExpenses = this.toNumber(expenses._sum.amount) + calculatedCommissions + calculatedCOGS;
+    let totalCOD = this.toNumber(codCollections._sum.amount);
+    const outForDelivery = this.toNumber(outForDeliveryOrders._sum.totalAmount);
+
+    // If no date range is provided, we should include the actual cash held by agents 
+    // (un-deposited collections) in the "COD Collected" metric
+    if (!startDate && !endDate) {
+      const agentBalances = await prisma.agentBalance.aggregate({
+        _sum: { currentBalance: true }
+      });
+      totalCOD += this.toNumber(agentBalances?._sum?.currentBalance);
+    }
+
+    const pendingCODAmount = (totalRevenue - totalCOD) + outForDelivery;
 
     const summary = {
       totalRevenue,
@@ -329,13 +439,19 @@ export class FinancialService {
     const { agentId, status, page = 1, limit = 20 } = filters;
 
     const where: Prisma.TransactionWhereInput = {
-      type: 'cod_collection'
+      type: 'cod_collection',
+      order: {
+        deletedAt: null
+      }
     };
 
     if (status) where.status = status;
 
     if (agentId) {
-      where.order = { deliveryAgentId: parseInt(agentId, 10) };
+      where.order = {
+        ...where.order as any,
+        deliveryAgentId: parseInt(agentId, 10)
+      };
     }
 
     // Role-based filtering for COD collections
@@ -404,7 +520,8 @@ export class FinancialService {
     const where: Prisma.TransactionWhereInput = {
       type: 'cod_collection',
       order: {
-        deliveryAgentId: parseInt(agentId, 10)
+        deliveryAgentId: parseInt(agentId, 10),
+        deletedAt: null
       }
     };
 
@@ -527,7 +644,10 @@ export class FinancialService {
       where: {
         id: { in: transactionIdsAsNumbers },
         type: 'cod_collection',
-        status: 'collected'
+        status: 'collected',
+        order: {
+          deletedAt: null
+        }
       },
       include: {
         order: {
@@ -620,6 +740,9 @@ export class FinancialService {
       createdAt: {
         gte: start,
         lte: end
+      },
+      order: {
+        deletedAt: null
       }
     };
     if (requester && requester.role === 'delivery_agent') {
@@ -637,13 +760,7 @@ export class FinancialService {
     }
 
 
-    const [transactions, expenses] = await Promise.all([
-      prisma.transaction.findMany({
-        where: transactionWhere,
-        include: {
-          order: true
-        }
-      }),
+    const [expenses] = await Promise.all([
       prisma.expense.findMany({
         where: expenseWhere
       })
@@ -652,20 +769,26 @@ export class FinancialService {
     // Group by period
     const groupedData: Record<string, { revenue: number; expenses: number; orders: number }> = {};
 
-    transactions.forEach((t) => {
+    // Fetch delivered orders for the same period to get Accrual Revenue trends
+    const deliveredOrders = await prisma.order.findMany({
+      where: orderWhere,
+      select: {
+        totalAmount: true,
+        updatedAt: true
+      }
+    });
+    (deliveredOrders || []).forEach((order) => {
       const key =
         period === 'daily'
-          ? t.createdAt.toISOString().split('T')[0]
-          : `${t.createdAt.getFullYear()}-${String(t.createdAt.getMonth() + 1).padStart(2, '0')}`;
+          ? order.updatedAt.toISOString().split('T')[0]
+          : `${order.updatedAt.getFullYear()}-${String(order.updatedAt.getMonth() + 1).padStart(2, '0')}`;
 
       if (!groupedData[key]) {
         groupedData[key] = { revenue: 0, expenses: 0, orders: 0 };
       }
 
-      if (t.type === 'cod_collection' && ['collected', 'deposited', 'reconciled'].includes(t.status)) {
-        groupedData[key].revenue += t.amount;
-        groupedData[key].orders += 1;
-      }
+      groupedData[key].revenue += Number(order.totalAmount);
+      groupedData[key].orders += 1;
     });
 
     expenses.forEach((e) => {
@@ -687,7 +810,7 @@ export class FinancialService {
       expenses: data.expenses,
       profit: data.revenue - data.expenses,
       orders: data.orders
-    }));
+    })).sort((a, b) => a.date.localeCompare(b.date));
 
     return reports;
   }
@@ -709,25 +832,28 @@ export class FinancialService {
       where.recordedBy = requester.id;
     }
 
-    const breakdown = await prisma.expense.groupBy({
-      by: ['category'],
-      where,
-      _sum: {
-        amount: true
-      },
-      _count: true,
-      orderBy: {
-        _sum: {
-          amount: 'desc'
-        }
+    const breakdown = await prisma.expense.findMany({
+      where
+    }) || [];
+
+    const normalizedBreakdown: Record<string, { totalAmount: number; count: number }> = {};
+
+    breakdown.forEach((item) => {
+      const category = item.category.trim().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
+      if (!normalizedBreakdown[category]) {
+        normalizedBreakdown[category] = { totalAmount: 0, count: 0 };
       }
+      normalizedBreakdown[category].totalAmount += item.amount;
+      normalizedBreakdown[category].count += 1;
     });
 
-    return breakdown.map((item) => ({
-      category: item.category,
-      totalAmount: item._sum.amount || 0,
-      count: item._count
-    }));
+    return Object.entries(normalizedBreakdown)
+      .map(([category, stats]) => ({
+        category,
+        totalAmount: stats.totalAmount,
+        count: stats.count
+      }))
+      .sort((a, b) => b.totalAmount - a.totalAmount);
   }
 
   /**
@@ -796,7 +922,8 @@ export class FinancialService {
     orders.forEach((order) => {
       totalRevenue += order.totalAmount;
       order.orderItems.forEach((item) => {
-        totalCost += (item.product.cogs || 0) * item.quantity;
+        const cogs = item.product.cogs ? Number(item.product.cogs) : 0;
+        totalCost += cogs * item.quantity;
       });
     });
 
@@ -809,6 +936,160 @@ export class FinancialService {
       grossProfit,
       profitMargin,
       orderCount: orders.length
+    };
+  }
+
+  /**
+   * Get comprehensive profitability analysis
+   */
+  async getProfitabilityAnalysis(filters: { startDate?: Date; endDate?: Date; productId?: number }) {
+    const { startDate, endDate, productId } = filters;
+
+    // Filters for delivered orders
+    const orderWhere: Prisma.OrderWhereInput = {
+      status: 'delivered',
+      deletedAt: null,
+    };
+
+    if (startDate || endDate) {
+      orderWhere.deliveryDate = {};
+      if (startDate) orderWhere.deliveryDate.gte = startDate;
+      if (endDate) orderWhere.deliveryDate.lte = endDate;
+    }
+
+    if (productId) {
+      orderWhere.orderItems = {
+        some: {
+          productId: productId,
+        },
+      };
+    }
+
+    // Fetch orders with items and products (to get COGS)
+    const orders = await prisma.order.findMany({
+      where: orderWhere,
+      include: {
+        orderItems: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    // Calculate revenue and COGS
+    let totalRevenue = 0;
+    let totalCOGS = 0;
+    let totalShippingCost = 0;
+    let totalDiscount = 0;
+
+    const productProfitability: Record<number, {
+      id: number,
+      name: string,
+      sku: string,
+      revenue: number,
+      cogs: number,
+      quantity: number,
+      grossProfit: number
+    }> = {};
+
+    const dailyProfitability: Record<string, {
+      date: string,
+      revenue: number,
+      cogs: number,
+      grossProfit: number
+    }> = {};
+
+    for (const order of orders) {
+      totalRevenue += order.subtotal;
+      totalShippingCost += order.shippingCost;
+      totalDiscount += order.discount;
+
+      const dateStr = order.deliveryDate ? order.deliveryDate.toISOString().split('T')[0] : 'unknown';
+      if (!dailyProfitability[dateStr]) {
+        dailyProfitability[dateStr] = {
+          date: dateStr,
+          revenue: 0,
+          cogs: 0,
+          grossProfit: 0
+        };
+      }
+      dailyProfitability[dateStr].revenue += order.subtotal;
+
+      for (const item of order.orderItems) {
+        const itemCOGS = (Number(item.product.cogs) || 0) * item.quantity;
+        totalCOGS += itemCOGS;
+        dailyProfitability[dateStr].cogs += itemCOGS;
+
+        if (!productProfitability[item.productId]) {
+          productProfitability[item.productId] = {
+            id: item.productId,
+            name: item.product.name,
+            sku: item.product.sku,
+            revenue: 0,
+            cogs: 0,
+            quantity: 0,
+            grossProfit: 0
+          };
+        }
+
+        productProfitability[item.productId].revenue += item.unitPrice * item.quantity;
+        productProfitability[item.productId].cogs += itemCOGS;
+        productProfitability[item.productId].quantity += item.quantity;
+      }
+    }
+
+    // Calculate marketing expenses
+    const expenseWhere: Prisma.ExpenseWhereInput = {
+      category: 'marketing',
+    };
+    if (startDate || endDate) {
+      expenseWhere.expenseDate = {};
+      if (startDate) expenseWhere.expenseDate.gte = startDate;
+      if (endDate) expenseWhere.expenseDate.lte = endDate;
+    }
+
+    const marketingExpenses = await prisma.expense.findMany({
+      where: expenseWhere,
+    });
+
+    const totalMarketingExpense = marketingExpenses.reduce((sum, e) => sum + e.amount, 0);
+
+    const grossProfit = totalRevenue - totalCOGS;
+    const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+
+    const netProfit = grossProfit - totalMarketingExpense;
+    const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+
+    // Format product profitability
+    const products = Object.values(productProfitability).map(p => ({
+      ...p,
+      grossProfit: p.revenue - p.cogs,
+      grossMargin: p.revenue > 0 ? ((p.revenue - p.cogs) / p.revenue) * 100 : 0
+    })).sort((a, b) => b.grossProfit - a.grossProfit);
+
+    // Format daily profitability
+    const daily = Object.values(dailyProfitability).map(d => ({
+      ...d,
+      grossProfit: d.revenue - d.cogs,
+      grossMargin: d.revenue > 0 ? ((d.revenue - d.cogs) / d.revenue) * 100 : 0
+    })).sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      summary: {
+        totalRevenue,
+        totalCOGS,
+        totalShippingCost,
+        totalDiscount,
+        totalMarketingExpense,
+        grossProfit,
+        grossMargin,
+        netProfit,
+        netMargin,
+        orderCount: orders.length
+      },
+      products,
+      daily,
     };
   }
 
@@ -966,68 +1247,428 @@ export class FinancialService {
    * Get agent cash holdings (collected but not deposited)
    */
   async getAgentCashHoldings(requester?: Requester) {
-    // Get all transactions where COD is collected but not deposited
-    const collections = await prisma.transaction.findMany({
-      where: {
-        type: 'cod_collection',
-        status: 'collected'
-      },
+    // 1. Get all agents with a non-zero balance from AgentBalance
+    const query: Prisma.AgentBalanceWhereInput = {
+      currentBalance: { gt: 0 }
+    };
+
+    if (requester && requester.role === 'delivery_agent') {
+      query.agentId = requester.id;
+    }
+
+    const balances = await prisma.agentBalance.findMany({
+      where: query,
       include: {
-        order: {
-          include: {
-            deliveryAgent: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true
-              }
-            }
+        agent: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true
           }
         }
       }
+    }) || [];
+
+    if (balances.length === 0) return [];
+
+    // 2. For each agent, get details from AgentCollection
+    const holdings: AgentHolding[] = await Promise.all(balances.map(async (b) => {
+      // Find order count and oldest collection date among non-deposited collections
+      const collections = await (prisma as any).agentCollection.findMany({
+        where: {
+          agentId: b.agentId,
+          status: { in: ['draft', 'verified', 'approved'] }
+        },
+        orderBy: { collectionDate: 'asc' },
+        select: { collectionDate: true }
+      });
+
+      return {
+        agent: {
+          id: b.agent.id,
+          firstName: b.agent.firstName,
+          lastName: b.agent.lastName,
+          email: b.agent.email
+        },
+        totalCollected: this.toNumber(b.currentBalance),
+        orderCount: collections.length,
+        OldestCollectionDate: collections[0]?.collectionDate || b.updatedAt
+      };
+    }));
+
+    // Sort by total collected (descending)
+    return holdings.sort((a, b) => b.totalCollected - a.totalCollected).slice(0, 20);
+  }
+
+  /**
+   * Get Cash Flow Report
+   */
+  async getCashFlowReport(requester?: Requester) {
+    // 1. Get current cash position KPIs from GL
+    const [cashInHand, , arAgents] = await Promise.all([
+      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_HAND } }),
+      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT } }),
+      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.AR_AGENTS } }),
+    ]);
+
+    // 2. Calculate operational figures from actual order status
+    const [cashInTransitData, cashExpectedData] = await Promise.all([
+      prisma.order.aggregate({
+        where: {
+          status: 'delivered',
+          paymentStatus: { notIn: ['reconciled', 'deposited'] },
+          deletedAt: null
+        },
+        _sum: { totalAmount: true }
+      }),
+      prisma.order.aggregate({
+        where: {
+          status: 'out_for_delivery',
+          deletedAt: null,
+          codAmount: { not: null }
+        },
+        _sum: { totalAmount: true }
+      })
+    ]);
+
+    const kpis = {
+      cashInHand: this.toNumber(cashInHand?.currentBalance),
+      cashInTransit: this.toNumber(cashInTransitData._sum.totalAmount),
+      arAgents: this.toNumber(arAgents?.currentBalance),
+      cashExpected: this.toNumber(cashExpectedData._sum.totalAmount),
+    };
+
+    const totalCashPosition = kpis.cashInHand + kpis.cashInTransit + kpis.arAgents + kpis.cashExpected;
+
+    // 3. 30-day Forecast
+    const forecast = await this.generateCashFlowForecast();
+
+    // 4. Agent Breakdown (Pending collections)
+    const agentBreakdown = await this.getAgentCashHoldings(requester);
+
+    return {
+      kpis: { ...kpis, totalCashPosition },
+      forecast,
+      agentBreakdown
+    };
+  }
+
+  /**
+   * Generate 30-day Cash Flow Forecast
+   * Uses historical data (last 30 days) to project future flows
+   */
+  async generateCashFlowForecast() {
+    if (this.forecastCache && Date.now() - this.forecastCache.timestamp < this.FORECAST_CACHE_DURATION_MS) {
+      return this.forecastCache.data;
+    }
+
+    // Calculate historical averages (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [historicalCollections, historicalExpenses] = await Promise.all([
+      prisma.transaction.aggregate({
+        where: {
+          type: 'cod_collection',
+          status: { in: ['collected', 'deposited', 'reconciled'] },
+          createdAt: { gte: thirtyDaysAgo },
+          order: {
+            deletedAt: null
+          }
+        },
+        _sum: { amount: true }
+      }),
+      prisma.expense.aggregate({
+        where: {
+          expenseDate: { gte: thirtyDaysAgo }
+        },
+        _sum: { amount: true }
+      })
+    ]);
+
+    const avgDailyCollection = this.toNumber(historicalCollections._sum.amount) / 30;
+    const avgDailyExpense = this.toNumber(historicalExpenses._sum.amount) / 30;
+
+    // Start with current liquidity (Cash in Hand + Bank if existed)
+    // For this implementation, we'll use Total Cash Position as starting balance
+    const [cashInHand, cashInTransit] = await Promise.all([
+      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_HAND } }),
+      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT } }),
+    ]);
+
+    let runningBalance = this.toNumber(cashInHand?.currentBalance) + this.toNumber(cashInTransit?.currentBalance);
+
+    const forecast: CashFlowForecast[] = [];
+    const today = new Date();
+
+    for (let i = 1; i <= 30; i++) {
+      const forecastDate = new Date(today);
+      forecastDate.setDate(today.getDate() + i);
+
+      runningBalance += (avgDailyCollection - avgDailyExpense);
+
+      forecast.push({
+        date: forecastDate.toISOString().split('T')[0],
+        expectedCollection: avgDailyCollection,
+        expectedExpense: avgDailyExpense,
+        projectedBalance: Math.max(0, runningBalance)
+      });
+    }
+
+    this.forecastCache = { data: forecast, timestamp: Date.now() };
+    return forecast;
+  }
+
+  /**
+   * Export Cash Flow Report as CSV
+   */
+  async exportCashFlowCSV(requester?: Requester) {
+    const report = await this.getCashFlowReport(requester);
+
+    // Prepare data for CSV
+    const csvData = [
+      { Section: 'KPIs', Label: 'Cash in Hand', Value: report.kpis.cashInHand },
+      { Section: 'KPIs', Label: 'Cash in Transit', Value: report.kpis.cashInTransit },
+      { Section: 'KPIs', Label: 'AR Agents', Value: report.kpis.arAgents },
+      { Section: 'KPIs', Label: 'Cash Expected', Value: report.kpis.cashExpected },
+      { Section: 'KPIs', Label: 'Total Cash Position', Value: report.kpis.totalCashPosition },
+      { Section: '---', Label: '---', Value: '---' },
+      { Section: 'Forecast (Next 30 Days)', Label: 'Date', Value: 'Projected Balance' },
+      ...report.forecast.map(f => ({
+        Section: 'Forecast',
+        Label: f.date,
+        Value: f.projectedBalance
+      }))
+    ];
+
+    const parser = new Parser();
+    return parser.parse(csvData);
+  }
+
+  /**
+   * Get Balance Sheet as of a specific date
+   */
+  async getBalanceSheet(asOfDateValue?: string | Date) {
+    const asOfDate = asOfDateValue ? new Date(asOfDateValue) : new Date();
+    // Ensure asOfDate includes the entire day
+    asOfDate.setHours(23, 59, 59, 999);
+
+    // Query all active accounts
+    const accounts = await prisma.account.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        accountType: true,
+        normalBalance: true
+      }
     });
 
-    // Group by delivery agent
-    const holdingsMap: Record<number, {
-      agent: { id: number; firstName: string; lastName: string; email: string };
-      totalCollected: number;
-      orderCount: number;
-      oldestCollectionDate: Date;
-    }> = {};
+    // Use Prisma groupBy to aggregate transactions for all accounts at once
+    const aggregations = await prisma.accountTransaction.groupBy({
+      by: ['accountId'],
+      where: {
+        createdAt: { lte: asOfDate }
+      },
+      _sum: {
+        debitAmount: true,
+        creditAmount: true
+      }
+    });
 
-    collections.forEach((collection) => {
-      if (collection.order?.deliveryAgent) {
-        const agentId = collection.order.deliveryAgent.id;
+    // Create a map for quick lookup
+    const aggregationMap = new Map();
+    aggregations.forEach(agg => {
+      aggregationMap.set(agg.accountId, {
+        debit: this.toNumber(agg._sum.debitAmount),
+        credit: this.toNumber(agg._sum.creditAmount)
+      });
+    });
 
-        if (!holdingsMap[agentId]) {
-          holdingsMap[agentId] = {
-            agent: collection.order.deliveryAgent,
-            totalCollected: 0,
-            orderCount: 0,
-            oldestCollectionDate: collection.createdAt
-          };
+    const categories: Record<string, { accounts: FinancialStatementAccount[]; total: number }> = {
+      asset: { accounts: [], total: 0 },
+      liability: { accounts: [], total: 0 },
+      equity: { accounts: [], total: 0 },
+      revenue: { accounts: [], total: 0 },
+      expense: { accounts: [], total: 0 }
+    };
+
+    // Process accounts using pre-calculated aggregations
+    accounts.forEach(account => {
+      const agg = aggregationMap.get(account.id) || { debit: 0, credit: 0 };
+
+      let balance = 0;
+      if (account.normalBalance === 'debit') {
+        balance = agg.debit - agg.credit;
+      } else {
+        balance = agg.credit - agg.debit;
+      }
+
+      const financialAccount = {
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        balance
+      };
+
+      if (categories[account.accountType]) {
+        categories[account.accountType].accounts.push(financialAccount);
+        categories[account.accountType].total += balance;
+      }
+    });
+
+    // Calculate Retained Earnings: Total Revenue - Total Expense (all time up to asOfDate)
+    const retainedEarnings = categories.revenue.total - categories.expense.total;
+
+    // Equity: System Equity Accounts + Retained Earnings
+    const totalEquity = categories.equity.total + retainedEarnings;
+    const totalLiabilitiesAndEquity = categories.liability.total + totalEquity;
+    const totalAssets = categories.asset.total;
+
+    return {
+      asOfDate,
+      assets: categories.asset,
+      liabilities: categories.liability,
+      equity: {
+        accounts: categories.equity.accounts,
+        retainedEarnings,
+        total: totalEquity
+      },
+      totalLiabilitiesAndEquity,
+      isBalanced: Math.abs(totalAssets - totalLiabilitiesAndEquity) < 0.01
+    } as BalanceSheetData;
+  }
+
+  /**
+   * Get Profit and Loss Statement for a specific period
+   */
+  async getProfitLoss(startDateValue: string | Date, endDateValue: string | Date) {
+    const startDate = new Date(startDateValue);
+    const endDate = new Date(endDateValue);
+    // Ensure endDate includes the entire day
+    endDate.setHours(23, 59, 59, 999);
+
+    // Query all revenue and expense accounts
+    const accounts = await prisma.account.findMany({
+      where: {
+        isActive: true,
+        accountType: { in: ['revenue', 'expense'] }
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        accountType: true,
+        normalBalance: true
+      }
+    });
+
+    // Use Prisma groupBy for efficient aggregation
+    const aggregations = await prisma.accountTransaction.groupBy({
+      by: ['accountId'],
+      where: {
+        createdAt: {
+          gte: startDate,
+          lte: endDate
         }
+      },
+      _sum: {
+        debitAmount: true,
+        creditAmount: true
+      }
+    });
 
-        holdingsMap[agentId].totalCollected += collection.amount;
-        holdingsMap[agentId].orderCount += 1;
+    const aggregationMap = new Map();
+    aggregations.forEach(agg => {
+      aggregationMap.set(agg.accountId, {
+        debit: this.toNumber(agg._sum.debitAmount),
+        credit: this.toNumber(agg._sum.creditAmount)
+      });
+    });
 
-        // Update oldest collection date
-        if (collection.createdAt < holdingsMap[agentId].oldestCollectionDate) {
-          holdingsMap[agentId].oldestCollectionDate = collection.createdAt;
+    const result: ProfitLossData = {
+      startDate,
+      endDate,
+      revenue: { accounts: [], total: 0 },
+      cogs: { accounts: [], total: 0 },
+      expenses: { accounts: [], total: 0 },
+      grossProfit: 0,
+      grossMarginPercentage: 0,
+      netIncome: 0,
+      netMarginPercentage: 0
+    };
+
+    accounts.forEach(account => {
+      const agg = aggregationMap.get(account.id) || { debit: 0, credit: 0 };
+
+      let balance = 0;
+      if (account.normalBalance === 'debit') {
+        balance = agg.debit - agg.credit;
+      } else {
+        balance = agg.credit - agg.debit;
+      }
+
+      const financialAccount = {
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        balance
+      };
+
+      if (account.accountType === 'revenue') {
+        result.revenue.accounts.push(financialAccount);
+        result.revenue.total += balance;
+      } else if (account.accountType === 'expense') {
+        if (account.code === GL_ACCOUNTS.COGS) {
+          result.cogs.accounts.push(financialAccount);
+          result.cogs.total += balance;
+        } else {
+          result.expenses.accounts.push(financialAccount);
+          result.expenses.total += balance;
         }
       }
     });
 
-    // Convert to array and sort by total collected (descending)
-    let holdings = Object.values(holdingsMap).sort((a, b) => b.totalCollected - a.totalCollected);
+    result.grossProfit = result.revenue.total - result.cogs.total;
+    result.grossMarginPercentage = result.revenue.total > 0 ? (result.grossProfit / result.revenue.total) * 100 : 0;
+    result.netIncome = result.grossProfit - result.expenses.total;
+    result.netMarginPercentage = result.revenue.total > 0 ? (result.netIncome / result.revenue.total) * 100 : 0;
 
-    // Filter by ownership if delivery_agent
-    if (requester && requester.role === 'delivery_agent') {
-      holdings = holdings.filter(h => h.agent.id === requester.id);
-    }
+    return result;
+  }
 
-    return holdings;
+  /**
+   * Get agent aging analysis
+   */
+  async getAgentAgingAnalysis() {
+    const agents = await prisma.user.findMany({
+      where: {
+        role: 'delivery_agent',
+        isActive: true,
+      },
+      include: {
+        agingBucket: true,
+        balance: true,
+      }
+    });
+
+    return agents.map(agent => ({
+      agentId: agent.id,
+      name: `${agent.firstName} ${agent.lastName}`,
+      email: agent.email,
+      balance: this.toNumber(agent.balance?.currentBalance),
+      buckets: {
+        '0-1 days': this.toNumber(agent.agingBucket?.bucket_0_1),
+        '2-3 days': this.toNumber(agent.agingBucket?.bucket_2_3),
+        '4-7 days': this.toNumber(agent.agingBucket?.bucket_4_7),
+        '8+ days': this.toNumber(agent.agingBucket?.bucket_8_plus),
+      },
+      totalBalance: this.toNumber(agent.agingBucket?.totalBalance),
+      oldestCollectionDate: agent.agingBucket?.oldestCollectionDate,
+      isBlocked: agent.balance?.isBlocked || false,
+    }));
   }
 }
 

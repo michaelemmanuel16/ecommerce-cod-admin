@@ -155,7 +155,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
       isActive: true
     };
 
-    const orderWhere: any = {};
+    const orderWhere: any = { deletedAt: null };
     if (startDate || endDate) {
       orderWhere.createdAt = {};
       if (startDate) {
@@ -166,7 +166,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
       }
     }
 
-    const agents = await prisma.user.findMany({
+    const agents = (await prisma.user.findMany({
       where,
       select: {
         id: true,
@@ -176,7 +176,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         vehicleType: true,
         vehicleId: true,
         deliveryRate: true,
-        commissionRate: true,
+        commissionAmount: true,
         totalEarnings: true,
         location: true,
         country: true,
@@ -187,15 +187,18 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
             status: true
           }
         }
-      }
-    });
+      } as any
+    })) as any[];
 
     const performance = agents.map(agent => {
       const total = agent.assignedOrdersAsAgent.length;
-      const delivered = agent.assignedOrdersAsAgent.filter(o => o.status === 'delivered').length;
-      const pending = agent.assignedOrdersAsAgent.filter(o =>
+      const delivered = agent.assignedOrdersAsAgent.filter((o: any) => o.status === 'delivered').length;
+      const pending = agent.assignedOrdersAsAgent.filter((o: any) =>
         !['delivered', 'cancelled', 'returned'].includes(o.status)
       ).length;
+
+      const rate = agent.deliveryRate || agent.commissionAmount || 0;
+      const calculatedEarnings = delivered * rate;
 
       return {
         userId: agent.id,
@@ -207,8 +210,8 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         successRate: total > 0 ? (delivered / total) * 100 : 0,
         vehicleType: agent.vehicleType,
         vehicleId: agent.vehicleId,
-        deliveryRate: agent.deliveryRate || 0,
-        totalEarnings: agent.totalEarnings || 0,
+        deliveryRate: rate,
+        totalEarnings: calculatedEarnings,
         location: agent.location
       };
     });

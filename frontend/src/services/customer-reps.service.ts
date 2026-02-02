@@ -13,7 +13,7 @@ export interface CustomerRep {
   lastLogin?: string;
   createdAt: string;
   country?: string;
-  commissionRate?: number;
+  commissionAmount?: number;
 }
 
 export interface RepWorkload {
@@ -41,7 +41,7 @@ export interface UpdateRepData {
   email?: string;
   phoneNumber?: string;
   country?: string;
-  commissionRate?: number;
+  commissionAmount?: number;
   isActive?: boolean;
 }
 

@@ -231,7 +231,7 @@ export const adminService = {
         isAvailable: true,
         lastLogin: true,
         country: true,
-        commissionRate: true,
+        commissionAmount: true,
         vehicleType: true,
         vehicleId: true,
         deliveryRate: true,
@@ -239,7 +239,7 @@ export const adminService = {
         location: true,
         createdAt: true,
         updatedAt: true
-      }
+      } as any,
     });
 
     if (!user) {
@@ -274,9 +274,11 @@ export const adminService = {
           isAvailable: true,
           lastLogin: true,
           country: true,
-          commissionRate: true,
+          commissionAmount: true,
+          deliveryRate: true,
+          totalEarnings: true,
           createdAt: true,
-        },
+        } as any,
         orderBy: { createdAt: 'desc' },
       }),
       prisma.user.count({ where }),
@@ -298,6 +300,8 @@ export const adminService = {
     lastName: string;
     phoneNumber?: string;
     role: UserRole;
+    commissionAmount?: number;
+    deliveryRate?: number;
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
@@ -313,6 +317,8 @@ export const adminService = {
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
+    const commission = data.commissionAmount !== undefined ? data.commissionAmount : data.deliveryRate;
+
     const user = await prisma.user.create({
       data: {
         email: data.email,
@@ -321,6 +327,8 @@ export const adminService = {
         phoneNumber: data.phoneNumber,
         role: data.role,
         password: hashedPassword,
+        commissionAmount: commission || 0,
+        deliveryRate: commission || 0,
       },
       select: {
         id: true,
@@ -331,9 +339,9 @@ export const adminService = {
         role: true,
         isActive: true,
         country: true,
-        commissionRate: true,
+        commissionAmount: true,
         createdAt: true,
-      },
+      } as any,
     });
 
     await this.createAuditLog(requester, 'create', 'user', user.id.toString(), { email: user.email, role: user.role });
@@ -347,6 +355,8 @@ export const adminService = {
     phoneNumber?: string;
     role?: UserRole;
     isActive?: boolean;
+    commissionAmount?: number;
+    deliveryRate?: number;
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
@@ -387,6 +397,15 @@ export const adminService = {
       delete updateData.name;
     }
 
+    // Synchronize commissionAmount and deliveryRate
+    if (data.commissionAmount !== undefined) {
+      updateData.commissionAmount = data.commissionAmount;
+      updateData.deliveryRate = data.commissionAmount;
+    } else if (data.deliveryRate !== undefined) {
+      updateData.commissionAmount = data.deliveryRate;
+      updateData.deliveryRate = data.deliveryRate;
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: updateData,
@@ -399,9 +418,9 @@ export const adminService = {
         role: true,
         isActive: true,
         country: true,
-        commissionRate: true,
+        commissionAmount: true,
         createdAt: true,
-      },
+      } as any,
     });
 
     await this.createAuditLog(requester, 'update', 'user', userId.toString(), { changes: Object.keys(data) });

@@ -17,7 +17,7 @@ export interface User {
   role: 'super_admin' | 'admin' | 'manager' | 'sales_rep' | 'inventory_manager' | 'delivery_agent' | 'accountant' | 'customer_rep';
   avatar?: string;
   preferences?: UserPreferences;
-  commissionRate?: number;
+  commissionAmount?: number;
   deliveryRate?: number;
   createdAt: string;
   updatedAt: string;
@@ -55,7 +55,7 @@ export type OrderStatus =
 
 export type OrderPriority = 'low' | 'medium' | 'high' | 'urgent';
 
-export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
+export type PaymentStatus = 'pending' | 'collected' | 'reconciled';
 
 export interface OrderItem {
   id: number;

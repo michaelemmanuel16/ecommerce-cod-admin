@@ -57,7 +57,7 @@ export class AnalyticsService {
     userId?: number,
     userRole?: string
   ) {
-    console.log('[analyticsService.getDashboardMetrics] Called with filters:', filters, 'userId:', userId, 'userRole:', userRole);
+    console.log('[DEBUG] analyticsService.getDashboardMetrics inputs:', { filters, userId, userRole });
 
     const today = new Date();
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
@@ -76,7 +76,16 @@ export class AnalyticsService {
     // Build user scope filter (sales reps only see their assigned orders)
     const userFilter = buildUserScopeFilter(userId, userRole);
 
+    const baseWhere: Prisma.OrderWhereInput = {
+      ...dateFilter,
+      ...userFilter,
+      deletedAt: null
+    };
+
     console.log('[analyticsService.getDashboardMetrics] Date filter:', dateFilter, 'User filter:', userFilter);
+
+    console.log('📊 CANARY: Starting getDashboardMetrics...');
+    const startTime = Date.now();
 
     const [
       totalOrders,
@@ -89,42 +98,41 @@ export class AnalyticsService {
       deliveries
     ] = await Promise.all([
       prisma.order.count({
-        where: { ...dateFilter, ...userFilter }
-      }),
+        where: baseWhere
+      }).then(res => { console.log(`⏱️ CANARY: totalOrders query took ${Date.now() - startTime}ms`); return res; }),
       prisma.order.count({
         where: {
           ...userFilter,
+          deletedAt: null,
           createdAt: {
             gte: startOfDay,
             lte: endOfDay
           }
         }
-      }),
+      }).then(res => { console.log(`⏱️ CANARY: todayOrders query took ${Date.now() - startTime}ms`); return res; }),
       prisma.order.count({
         where: {
-          ...dateFilter,
-          ...userFilter,
+          ...baseWhere,
           status: 'pending_confirmation'
         }
-      }),
+      }).then(res => { console.log(`⏱️ CANARY: pendingOrders query took ${Date.now() - startTime}ms`); return res; }),
       prisma.order.count({
         where: {
-          ...dateFilter,
-          ...userFilter,
+          ...baseWhere,
           status: 'delivered'
         }
-      }),
+      }).then(res => { console.log(`⏱️ CANARY: deliveredOrders query took ${Date.now() - startTime}ms`); return res; }),
       prisma.order.aggregate({
         where: {
-          ...dateFilter,
-          ...userFilter,
+          ...baseWhere,
           status: 'delivered'
         },
         _sum: { totalAmount: true }
-      }),
+      }).then(res => { console.log(`⏱️ CANARY: totalRevenue query took ${Date.now() - startTime}ms`); return res; }),
       prisma.order.aggregate({
         where: {
           ...userFilter,
+          deletedAt: null,
           status: 'delivered',
           createdAt: {
             gte: startOfDay,
@@ -132,28 +140,40 @@ export class AnalyticsService {
           }
         },
         _sum: { totalAmount: true }
-      }),
+      }).then(res => { console.log(`⏱️ CANARY: todayRevenue query took ${Date.now() - startTime}ms`); return res; }),
       prisma.user.count({
         where: {
           role: 'delivery_agent',
           isActive: true,
           isAvailable: true
         }
-      }),
-      // Fetch recent deliveries for avg time calculation
+      }).then(res => { console.log(`⏱️ CANARY: activeAgents query took ${Date.now() - startTime}ms`); return res; }),
+      // Fetch recent deliveries for avg time calculation - reduced sample for speed
       prisma.delivery.findMany({
         where: {
           actualDeliveryTime: { not: null },
-          scheduledTime: { not: null }
+          scheduledTime: { not: null },
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // Only last 7 days
         },
         select: {
           scheduledTime: true,
           actualDeliveryTime: true
         },
         orderBy: { actualDeliveryTime: 'desc' },
-        take: 1000
-      })
+        take: 100 // Reduced from 1000
+      }).then(res => { console.log(`⏱️ CANARY: deliveries query took ${Date.now() - startTime}ms`); return res; })
     ]);
+
+    console.log('[DEBUG] analyticsService.getDashboardMetrics raw results:', {
+      totalOrders,
+      todayOrders,
+      pendingOrders,
+      deliveredOrders,
+      totalRevenue: totalRevenue._sum.totalAmount,
+      todayRevenue: todayRevenue._sum.totalAmount,
+      activeAgents,
+      deliverySamples: deliveries.length
+    });
 
     // Calculate average delivery time from recent deliveries
     let totalDeliveryTime = 0;
@@ -223,6 +243,7 @@ export class AnalyticsService {
     const orders = await prisma.order.findMany({
       where: {
         ...userFilter,
+        deletedAt: null,
         createdAt: {
           gte: startDate,
           lte: endDate
@@ -277,7 +298,7 @@ export class AnalyticsService {
   ) {
     const { startDate, endDate } = filters;
 
-    const where: Prisma.OrderWhereInput = {};
+    const where: Prisma.OrderWhereInput = { deletedAt: null };
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = startDate;
@@ -317,9 +338,10 @@ export class AnalyticsService {
         createdAt: {
           ...(filters.startDate && { gte: new Date(filters.startDate) }),
           ...(filters.endDate && { lte: new Date(filters.endDate) })
-        }
+        },
+        deletedAt: null
       }
-      : undefined;
+      : { deletedAt: null };
 
     const reps = await prisma.user.findMany({
       where: {
@@ -394,6 +416,7 @@ export class AnalyticsService {
         firstName: true,
         lastName: true,
         assignedOrdersAsAgent: {
+          where: { deletedAt: null },
           select: {
             id: true,
             status: true,
@@ -451,7 +474,9 @@ export class AnalyticsService {
       const [totalCustomers, activeCustomers, topCustomers, customersByArea, avgOrderValue] =
         await withTimeout(
           Promise.all([
-            prisma.customer.count(),
+            prisma.customer.count({
+              where: { isActive: true }
+            }),
             prisma.customer.count({
               where: { isActive: true }
             }),
@@ -470,12 +495,13 @@ export class AnalyticsService {
             }),
             prisma.customer.groupBy({
               by: ['area'],
+              where: { isActive: true },
               _count: { area: true },
               orderBy: { _count: { area: 'desc' } },
               take: 20
             }),
             prisma.order.aggregate({
-              where: { status: 'delivered' },
+              where: { status: 'delivered', deletedAt: null },
               _avg: { totalAmount: true }
             })
           ]),
@@ -516,10 +542,13 @@ export class AnalyticsService {
 
     if (filters?.startDate || filters?.endDate) {
       where.order = {
-        createdAt: {}
+        createdAt: {},
+        deletedAt: null
       } as any;
       if (filters.startDate) (where.order as any).createdAt.gte = filters.startDate;
       if (filters.endDate) (where.order as any).createdAt.lte = filters.endDate;
+    } else {
+      where.order = { deletedAt: null } as any;
     }
 
     const productSales = await prisma.orderItem.groupBy({
@@ -569,7 +598,7 @@ export class AnalyticsService {
    * Get area-wise order distribution
    */
   async getAreaDistribution(filters?: DateFilters) {
-    const where: Prisma.OrderWhereInput = {};
+    const where: Prisma.OrderWhereInput = { deletedAt: null };
 
     if (filters?.startDate || filters?.endDate) {
       where.createdAt = {};
@@ -610,7 +639,8 @@ export class AnalyticsService {
       where: {
         createdAt: {
           gte: startDate
-        }
+        },
+        deletedAt: null
       },
       select: {
         createdAt: true,
@@ -663,6 +693,7 @@ export class AnalyticsService {
     const [ordersLastHour, deliveriesInProgress, avgOrderValue] = await Promise.all([
       prisma.order.count({
         where: {
+          deletedAt: null,
           createdAt: {
             gte: lastHour
           }
@@ -670,11 +701,13 @@ export class AnalyticsService {
       }),
       prisma.order.count({
         where: {
+          deletedAt: null,
           status: 'out_for_delivery'
         }
       }),
       prisma.order.aggregate({
         where: {
+          deletedAt: null,
           createdAt: {
             gte: lastHour
           }
@@ -703,6 +736,7 @@ export class AnalyticsService {
     const orders = await prisma.order.findMany({
       where: {
         status: 'pending_confirmation',
+        deletedAt: null,
         ...userFilter
       },
       orderBy: {

@@ -47,7 +47,7 @@ jobs:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_DB: test_db
+          POSTGRES_DB: ecommerce_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         options: >-
@@ -90,37 +90,37 @@ jobs:
       - name: Run migrations
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
         run: npx prisma migrate deploy
 
       - name: Run unit tests
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          JWT_SECRET: test-secret
-          JWT_REFRESH_SECRET: test-refresh-secret
+          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.TEST_JWT_REFRESH_SECRET }}
         run: npm run test:unit -- --forceExit --detectOpenHandles
 
       - name: Run integration tests
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          JWT_SECRET: test-secret
-          JWT_REFRESH_SECRET: test-refresh-secret
+          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.TEST_JWT_REFRESH_SECRET }}
         run: npm run test:integration -- --forceExit --detectOpenHandles
 
       - name: Generate coverage report
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          JWT_SECRET: test-secret
-          JWT_REFRESH_SECRET: test-refresh-secret
+          JWT_SECRET: ${{ secrets.TEST_JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.TEST_JWT_REFRESH_SECRET }}
         run: npm run test:coverage -- --forceExit --detectOpenHandles
 
       - name: Upload coverage to Codecov

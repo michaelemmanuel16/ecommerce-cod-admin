@@ -1,7 +1,12 @@
+import { Prisma, DeliveryProofType } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { DeliveryProofType, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
+import { SYSTEM_USER_ID } from '../config/constants';
+import { GLAutomationService } from './glAutomationService';
+import agentReconciliationService from './agentReconciliationService';
+import { getSocketInstance } from '../utils/socketInstance';
+import { emitGLEntryCreated } from '../sockets/index';
 
 interface CreateDeliveryData {
   orderId: number;
@@ -281,9 +286,9 @@ export class DeliveryService {
     const orderId = delivery.order.id;
 
     // Complete delivery and update order in transaction
-    await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // Update delivery
-      await tx.delivery.update({
+      const updatedDelivery = await tx.delivery.update({
         where: { id: parseInt(deliveryId, 10) },
         data: {
           actualDeliveryTime: new Date(),
@@ -326,14 +331,104 @@ export class DeliveryService {
           }
         }
       });
+
+      // Fetch order with items and products for GL entry creation
+      const orderWithItems = await tx.order.findUnique({
+        where: { id: delivery.orderId },
+        include: {
+          customer: true,
+          deliveryAgent: true,
+          customerRep: true,
+          orderItems: {
+            include: {
+              product: true
+            }
+          }
+        }
+      });
+
+      if (!orderWithItems) {
+        throw new AppError('Order not found for GL entry creation', 404);
+      }
+
+      // Check if revenue already recognized (prevent duplicate GL entries)
+      if (GLAutomationService.isRevenueAlreadyRecognized(orderWithItems)) {
+        logger.warn(`Order ${orderWithItems.id} revenue already recognized. Skipping GL entry.`);
+        return { delivery: updatedDelivery, glEntry: null };
+      }
+
+      // Calculate total COGS
+      const totalCOGS = GLAutomationService.calculateTotalCOGS(orderWithItems.orderItems);
+
+      // Validate COGS and log warnings for missing values
+      const cogsValidation = GLAutomationService.validateCOGS(orderWithItems.orderItems);
+      if (!cogsValidation.valid) {
+        GLAutomationService.logMissingCOGS(orderWithItems.id, cogsValidation.missingProducts);
+      }
+
+      const glEntry = await GLAutomationService.createRevenueRecognitionEntry(
+        tx as any,
+        orderWithItems as any,
+        totalCOGS,
+        userId ? parseInt(userId, 10) : SYSTEM_USER_ID
+      );
+
+      // Update order with revenue recognized flag and GL entry link
+      await tx.order.update({
+        where: { id: delivery.orderId },
+        data: {
+          revenueRecognized: true,
+          glJournalEntryId: glEntry.id
+        }
+      });
+
+      logger.info(`GL entry created for order ${orderWithItems.id}: ${glEntry.entryNumber}`);
+
+      // Create draft agent collection record
+      if (orderWithItems.deliveryAgentId && orderWithItems.codAmount) {
+        await agentReconciliationService.createDraftCollection(
+          tx,
+          orderWithItems.id,
+          orderWithItems.deliveryAgentId,
+          orderWithItems.codAmount,
+          updatedDelivery.actualDeliveryTime || new Date()
+        );
+      }
+
+      return { delivery: updatedDelivery, glEntry };
     });
 
     logger.info(`Delivery completed for order: ${orderId}`, {
       deliveryId,
-      orderId: delivery.orderId
+      orderId: delivery.orderId,
+      glEntryCreated: !!result.glEntry
     });
 
-    return { message: 'Delivery completed successfully' };
+    // Emit Socket.io event for GL entry creation (non-blocking)
+    if (result.glEntry) {
+      setImmediate(() => {
+        try {
+          const ioInstance = getSocketInstance() as any;
+          if (ioInstance) {
+            emitGLEntryCreated(ioInstance, result.glEntry, {
+              orderId: delivery.order.id,
+              orderNumber: delivery.order.id.toString(),
+              type: 'revenue_recognition'
+            });
+          }
+        } catch (error) {
+          logger.error('Failed to emit GL entry created event', { error, deliveryId });
+        }
+      });
+    }
+
+    return {
+      message: 'Delivery completed successfully',
+      glEntry: result.glEntry ? {
+        id: result.glEntry.id,
+        entryNumber: result.glEntry.entryNumber
+      } : null
+    };
   }
 
   /**
@@ -357,9 +452,9 @@ export class DeliveryService {
     // Store order ID before transaction
     const orderId = delivery.order.id;
 
-    await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // Increment delivery attempts
-      await tx.delivery.update({
+      const updatedDelivery = await tx.delivery.update({
         where: { id: parseInt(deliveryId, 10) },
         data: {
           deliveryAttempts: { increment: 1 },
@@ -383,15 +478,54 @@ export class DeliveryService {
           }
         }
       });
+
+      // Create GL entry for failed delivery expense (only if not rescheduling)
+      let glEntry = null;
+      if (!reschedule) {
+        glEntry = await GLAutomationService.createFailedDeliveryEntry(
+          tx as any,
+          updatedDelivery,
+          delivery.order as any, // Cast as any because of potential include mismatches
+          userId ? parseInt(userId, 10) : SYSTEM_USER_ID
+        );
+        logger.info(`GL entry created for failed delivery ${deliveryId}: ${glEntry.entryNumber}`);
+      }
+
+      return { glEntry };
     });
 
     logger.warn(`Delivery failed for order: ${orderId}`, {
       deliveryId,
       reason,
-      reschedule
+      reschedule,
+      glEntryCreated: !!result.glEntry
     });
 
-    return { message: 'Delivery marked as failed' };
+    // Emit Socket.io event for GL entry creation (non-blocking)
+    if (result.glEntry) {
+      setImmediate(() => {
+        try {
+          const ioInstance = getSocketInstance() as any;
+          if (ioInstance) {
+            emitGLEntryCreated(ioInstance, result.glEntry, {
+              orderId: delivery.order.id,
+              orderNumber: delivery.order.id.toString(),
+              type: 'failed_delivery'
+            });
+          }
+        } catch (error) {
+          logger.error('Failed to emit GL entry created event', { error, deliveryId });
+        }
+      });
+    }
+
+    return {
+      message: 'Delivery marked as failed',
+      glEntry: result.glEntry ? {
+        id: result.glEntry.id,
+        entryNumber: result.glEntry.entryNumber
+      } : null
+    };
   }
 
   /**
@@ -512,24 +646,32 @@ export class DeliveryService {
     }
 
     const [totalDeliveries, completedDeliveries, failedDeliveries, deliveries] = await Promise.all([
-      prisma.delivery.count({ where }),
       prisma.delivery.count({
         where: {
           ...where,
-          actualDeliveryTime: { not: null }
+          order: { deletedAt: null }
         }
       }),
       prisma.delivery.count({
         where: {
           ...where,
-          deliveryAttempts: { gt: 1 }
+          actualDeliveryTime: { not: null },
+          order: { deletedAt: null }
+        }
+      }),
+      prisma.delivery.count({
+        where: {
+          ...where,
+          deliveryAttempts: { gt: 1 },
+          order: { deletedAt: null }
         }
       }),
       prisma.delivery.findMany({
         where: {
           ...where,
           actualDeliveryTime: { not: null },
-          scheduledTime: { not: null }
+          scheduledTime: { not: null },
+          order: { deletedAt: null }
         },
         select: {
           scheduledTime: true,

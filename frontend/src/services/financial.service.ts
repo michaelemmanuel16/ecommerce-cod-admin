@@ -99,6 +99,162 @@ export interface ProfitMargins {
   orderCount: number;
 }
 
+export interface AgingSummary {
+  totalAgentsWithBalance: number;
+  totalOutstandingAmount: number;
+  overdueAgentsCount: number;
+  criticalOverdueAmount: number;
+  warningOverdueAmount: number;
+  blockedAgentsWithBalance: number;
+  bucketTotals: {
+    bucket_0_1: number;
+    bucket_2_3: number;
+    bucket_4_7: number;
+    bucket_8_plus: number;
+  };
+}
+
+export interface AgentAgingBucket {
+  agent: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  totalBalance: number;
+  oldestCollectionDate: string;
+  bucket_0_1: number;
+  bucket_2_3: number;
+  bucket_4_7: number;
+  bucket_8_plus: number;
+  updatedAt: string;
+}
+
+export interface AgentAgingReport {
+  summary: AgingSummary;
+  buckets: AgentAgingBucket[];
+}
+
+export interface CollectionRecord {
+  id: number;
+  orderId: number;
+  agentId: number;
+  amount: number;
+  status: 'draft' | 'reconciled';
+  collectionDate: string;
+
+  verifiedAt?: string;
+  approvedAt?: string;
+  order: {
+    id: number;
+    totalAmount: number;
+    customer: {
+      firstName: string;
+      lastName: string;
+    }
+  }
+}
+
+export interface CashFlowKPI {
+  cashInHand: number;
+  cashInTransit: number;
+  arAgents: number;
+  cashExpected: number;
+  totalCashPosition: number;
+}
+
+export interface CashFlowForecastPoint {
+  date: string;
+  expectedCollection: number;
+  expectedExpense: number;
+  projectedBalance: number;
+}
+
+export interface ProfitabilityAnalysis {
+  summary: {
+    totalRevenue: number;
+    totalCOGS: number;
+    totalShippingCost: number;
+    totalDiscount: number;
+    totalMarketingExpense: number;
+    grossProfit: number;
+    grossMargin: number;
+    netProfit: number;
+    netMargin: number;
+    orderCount: number;
+  };
+  products: {
+    id: number;
+    name: string;
+    sku: string;
+    revenue: number;
+    cogs: number;
+    quantity: number;
+    grossProfit: number;
+    grossMargin: number;
+  }[];
+  daily: {
+    date: string;
+    revenue: number;
+    cogs: number;
+    grossProfit: number;
+    grossMargin: number;
+  }[];
+}
+
+export interface CashFlowReport {
+  kpis: CashFlowKPI;
+  forecast: CashFlowForecastPoint[];
+  agentBreakdown: AgentCashHolding[];
+}
+
+export interface FinancialStatementAccount {
+  id: number;
+  code: string;
+  name: string;
+  balance: number;
+}
+
+export interface BalanceSheetData {
+  asOfDate: string;
+  assets: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  liabilities: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  equity: {
+    accounts: FinancialStatementAccount[];
+    retainedEarnings: number;
+    total: number;
+  };
+  totalLiabilitiesAndEquity: number;
+  isBalanced: boolean;
+}
+
+export interface ProfitLossData {
+  startDate: string;
+  endDate: string;
+  revenue: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  cogs: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  expenses: {
+    accounts: FinancialStatementAccount[];
+    total: number;
+  };
+  grossProfit: number;
+  grossMarginPercentage: number;
+  netIncome: number;
+  netMarginPercentage: number;
+}
+
 export const financialService = {
   async getFinancialSummary(startDate?: string, endDate?: string): Promise<FinancialSummary> {
     const response = await apiClient.get('/api/financial/summary', {
@@ -200,6 +356,28 @@ export const financialService = {
     return response.data;
   },
 
+  async getProfitabilityAnalysis(params: {
+    startDate?: string;
+    endDate?: string;
+    productId?: number;
+  }): Promise<ProfitabilityAnalysis> {
+    const response = await apiClient.get('/api/financial/profitability', { params });
+    return response.data;
+  },
+
+  async exportProfitability(params: {
+    startDate?: string;
+    endDate?: string;
+    productId?: number;
+    format: 'csv' | 'xlsx';
+  }): Promise<any> {
+    const response = await apiClient.get('/api/financial/profitability/export', {
+      params,
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+
   async markAsDeposited(transactionIds: string[], depositReference?: string): Promise<void> {
     await apiClient.post('/api/financial/collections/deposit', {
       transactionIds,
@@ -227,5 +405,109 @@ export const financialService = {
       params: { startDate, endDate }
     });
     return response.data;
+  },
+
+  async getAgentAging(): Promise<AgentAgingReport> {
+    const response = await apiClient.get('/api/financial/agent-aging');
+    return response.data;
+  },
+
+  async downloadAgentAgingCSV(): Promise<void> {
+    const response = await apiClient.get('/api/financial/agent-aging/export/csv', {
+      responseType: 'blob'
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `agent-aging-report-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  },
+
+  async getCashFlowReport(): Promise<CashFlowReport> {
+    const response = await apiClient.get('/api/financial/cash-flow');
+    return response.data;
+  },
+
+  async downloadCashFlowCSV(): Promise<void> {
+    const response = await apiClient.get('/api/financial/cash-flow/export/csv', {
+      responseType: 'blob'
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `cash_flow_report_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  },
+
+  async getBalanceSheet(asOfDate?: string): Promise<BalanceSheetData> {
+    const response = await apiClient.get('/api/financial/balance-sheet', {
+      params: { asOfDate }
+    });
+    return response.data;
+  },
+
+  async getProfitLoss(startDate: string, endDate: string): Promise<ProfitLossData> {
+    const response = await apiClient.get('/api/financial/profit-loss', {
+      params: { startDate, endDate }
+    });
+    return response.data;
+  },
+
+  // General Ledger Methods
+  async getAllGLAccounts(params?: {
+    accountType?: string;
+    isActive?: boolean;
+    page?: number;
+    limit?: number;
+  }): Promise<{ accounts: any[]; pagination: any }> {
+    const response = await apiClient.get('/api/gl/accounts', { params });
+    return response.data;
+  },
+
+  async getAccountLedger(accountId: number, params?: {
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
+    const response = await apiClient.get(`/api/gl/accounts/${accountId}/ledger`, { params });
+    return response.data;
+  },
+
+  async recordJournalEntry(entry: any): Promise<any> {
+    const response = await apiClient.post('/api/gl/journal-entries', entry);
+    return response.data.entry;
+  },
+
+  async getAccountLedgerExport(accountId: number, params: { startDate?: string; endDate?: string }): Promise<any> {
+    const response = await apiClient.get(`/api/gl/accounts/${accountId}/ledger/export`, {
+      params,
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+
+  // Agent Reconciliation Methods
+  async getAgentCollections(agentId: number, params?: { status?: string }): Promise<CollectionRecord[]> {
+    const response = await apiClient.get('/api/agent-reconciliation', {
+      params: { agentId, ...params }
+    });
+    return response.data;
+  },
+
+  async verifyCollection(collectionId: number): Promise<void> {
+    await apiClient.post(`/api/agent-reconciliation/${collectionId}/verify`);
+  },
+
+  async approveCollection(collectionId: number): Promise<void> {
+    await apiClient.post(`/api/agent-reconciliation/${collectionId}/approve`);
+  },
+
+  async bulkVerifyCollections(ids: number[]): Promise<void> {
+    await apiClient.post('/api/agent-reconciliation/bulk-verify', { ids });
   }
 };

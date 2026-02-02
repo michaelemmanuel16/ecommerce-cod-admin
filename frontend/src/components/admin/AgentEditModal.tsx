@@ -26,7 +26,7 @@ export const AgentEditModal: React.FC<AgentEditModalProps> = ({
     phoneNumber: agent.phoneNumber || '',
     vehicleType: agent.vehicleType || '',
     vehicleId: agent.vehicleId || '',
-    deliveryRate: agent.deliveryRate?.toString() || '',
+    deliveryRate: (agent.deliveryRate ?? (agent as any).commissionAmount)?.toString() || '',
     location: agent.location || '',
     isActive: agent.isActive
   });
@@ -40,7 +40,7 @@ export const AgentEditModal: React.FC<AgentEditModalProps> = ({
       phoneNumber: agent.phoneNumber || '',
       vehicleType: agent.vehicleType || '',
       vehicleId: agent.vehicleId || '',
-      deliveryRate: agent.deliveryRate?.toString() || '',
+      deliveryRate: (agent.deliveryRate ?? (agent as any).commissionAmount)?.toString() || '',
       location: agent.location || '',
       isActive: agent.isActive
     });
@@ -99,6 +99,7 @@ export const AgentEditModal: React.FC<AgentEditModalProps> = ({
         vehicleType: formData.vehicleType || undefined,
         vehicleId: formData.vehicleId || undefined,
         deliveryRate: formData.deliveryRate ? Number(formData.deliveryRate) : undefined,
+        commissionAmount: formData.deliveryRate ? Number(formData.deliveryRate) : undefined,
         location: formData.location || undefined,
         isActive: formData.isActive
       };

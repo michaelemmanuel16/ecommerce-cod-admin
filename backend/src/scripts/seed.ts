@@ -126,6 +126,11 @@ async function resetSequences() {
 }
 
 async function cleanDatabase() {
+  if (process.env.ALLOW_DB_CLEANUP !== 'true') {
+    console.warn('⚠️  Skipping data cleanup. Set ALLOW_DB_CLEANUP=true to enable.');
+    return;
+  }
+
   console.log('Cleaning database...');
 
   // Delete in correct order to respect foreign key constraints
@@ -268,7 +273,7 @@ async function seed() {
         lastName: randomElement(lastNames),
         phoneNumber: randomPhone(),
         role: 'sales_rep',
-        commissionRate: 5 + random() * 5, // 5-10%
+        commissionAmount: 5 + random() * 5, // 5-10
         isActive: true,
         isAvailable: random() > 0.2, // 80% available
       }

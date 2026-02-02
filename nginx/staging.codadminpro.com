@@ -20,17 +20,17 @@ add_header X-Content-Type-Options "nosniff" always;
 add_header X-XSS-Protection "1; mode=block" always;
 
 # Frontend (React app)
-location / {
-     proxy_pass http://localhost:8080;
-     proxy_http_version 1.1;
-     proxy_set_header Upgrade $http_upgrade;
-     proxy_set_header Connection 'upgrade';
-     proxy_set_header Host $host;
-     proxy_set_header X-Real-IP $remote_addr;
-     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-     proxy_set_header X-Forwarded-Proto $scheme;
-     proxy_cache_bypass $http_upgrade;
-}
+    location / {
+         proxy_pass http://localhost:5174;
+         proxy_http_version 1.1;
+         proxy_set_header Upgrade $http_upgrade;
+         proxy_set_header Connection 'upgrade';
+         proxy_set_header Host $host;
+         proxy_set_header X-Real-IP $remote_addr;
+         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+         proxy_set_header X-Forwarded-Proto $scheme;
+         proxy_cache_bypass $http_upgrade;
+    }
 
 # Backend API
 location /api {
@@ -55,6 +55,7 @@ location /socket.io {
 
 # Health check endpoint
 location /health {
-     proxy_pass http://localhost:8080/health;
+     proxy_pass http://localhost:5174/health;
      access_log off;
+}
 }

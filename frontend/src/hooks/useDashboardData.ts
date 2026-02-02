@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import debounce from 'lodash/debounce';
 import { DashboardConfig, DashboardData } from '../config/types/dashboard';
 import { useAnalyticsStore } from '../stores/analyticsStore';
 import { useAuthStore } from '../stores/authStore';
@@ -153,11 +154,11 @@ export function useDashboardData(
         }
 
         // Earnings (for sales reps)
-        if (dashboardData.repPerformance && user?.commissionRate) {
+        if (dashboardData.repPerformance && (user as any)?.commissionAmount) {
           calculated.myCommission = (
-            dashboardData.repPerformance.deliveredOrders * user.commissionRate
+            dashboardData.repPerformance.deliveredOrders * (user as any).commissionAmount
           ).toFixed(2);
-          calculated.commissionRate = user.commissionRate;
+          calculated.commissionAmount = (user as any).commissionAmount;
         }
 
         // Conversion rate (for sales reps)
@@ -210,26 +211,42 @@ export function useDashboardData(
 
   // Setup real-time updates if configured
   useEffect(() => {
-    if (!config.realtimeEvents || config.realtimeEvents.length === 0) {
-      return;
-    }
-
     const socket = getSocket();
     if (!socket) return;
 
-    // Listen to all configured events
-    config.realtimeEvents.forEach((eventName) => {
-      socket.on(eventName, () => {
-        console.log(`Real-time event received: ${eventName}`);
-        fetchData(); // Refetch data on event
+    // List of events that should trigger a full dashboard refresh
+    const refreshEvents = [
+      ...(config.realtimeEvents || []),
+      'bulk_import_completed',
+      'orders:deleted'
+    ];
+
+    // Throttled version of fetchData to prevent event storms
+    // We use a longer window for bulk operations to ensure data is ready
+    const throttledFetch = debounce(() => {
+      console.log('🔄 Throttled dashboard refresh triggered');
+      fetchData();
+    }, 5000, { leading: true, trailing: true });
+
+    refreshEvents.forEach((eventName) => {
+      socket.on(eventName, (payload: any) => {
+        console.log(`🔌 Real-time event received: ${eventName}`, payload || '');
+
+        // If it's a completion event, trigger a refresh immediately (but still respect throttle leading/trailing)
+        if (eventName === 'bulk_import_completed' || eventName === 'orders:deleted') {
+          console.log(`✅ Bulk operation completed: ${eventName}. Refreshing...`);
+        }
+
+        throttledFetch();
       });
     });
 
     // Cleanup
     return () => {
-      config.realtimeEvents?.forEach((eventName) => {
+      refreshEvents.forEach((eventName) => {
         socket.off(eventName);
       });
+      throttledFetch.cancel();
     };
   }, [config.realtimeEvents, fetchData]);
 

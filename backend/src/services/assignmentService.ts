@@ -160,6 +160,15 @@ export class AssignmentService {
         role: role as any,
         isActive: true,
         isAvailable: true,
+        // If it's a delivery agent, check if they are blocked in AgentBalance
+        ...(role === 'delivery_agent' ? {
+          balance: {
+            OR: [
+              { isBlocked: false },
+              { isBlocked: null } // Handle if balance doesn't exist yet
+            ]
+          }
+        } : {}),
         ...additionalFilters
       },
       orderBy: { firstName: 'asc' }

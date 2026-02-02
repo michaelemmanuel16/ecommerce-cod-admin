@@ -1,12 +1,10 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useFinancialStore } from '../stores/financialStore';
 import { Tabs } from '../components/ui/Tabs';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
-import { OverviewTab } from '../components/financial/OverviewTab';
-import { CashFlowTab } from '../components/financial/CashFlowTab';
-import { AgentReconciliationTab } from '../components/financial/AgentReconciliationTab';
-import { ExpenseManagementTab } from '../components/financial/ExpenseManagementTab';
-import { ReportsTab } from '../components/financial/ReportsTab';
+import { FinancialDashboard } from './financial/FinancialDashboard';
+import { AgentCollections } from './financial/AgentCollections';
+import { AccountingAnalysis } from './financial/AccountingAnalysis';
 
 export const Financial: React.FC = () => {
   const { dateRange, setDateRange } = useFinancialStore();
@@ -19,27 +17,17 @@ export const Financial: React.FC = () => {
     {
       id: 'overview',
       label: 'Overview',
-      content: <OverviewTab />
+      content: <FinancialDashboard />
     },
     {
-      id: 'cash-flow',
-      label: 'Cash Flow',
-      content: <CashFlowTab />
+      id: 'agent-collections',
+      label: 'Agent Collections',
+      content: <AgentCollections />
     },
     {
-      id: 'agent-reconciliation',
-      label: 'Agent Reconciliation',
-      content: <AgentReconciliationTab />
-    },
-    {
-      id: 'expense-management',
-      label: 'Expense Management',
-      content: <ExpenseManagementTab />
-    },
-    {
-      id: 'reports',
-      label: 'Reports & Analytics',
-      content: <ReportsTab />
+      id: 'accounting-analysis',
+      label: 'Accounting & Analysis',
+      content: <AccountingAnalysis />
     }
   ];
 

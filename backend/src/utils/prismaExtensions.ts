@@ -7,26 +7,20 @@ export const softDeleteExtension = Prisma.defineExtension({
       async delete({ model, args, query }) {
         const modelsWithIsActive = ['User', 'Customer', 'Product', 'CheckoutForm', 'Workflow', 'Automation'];
         const modelsWithDeletedAt = ['Order'];
+        const client = Prisma.getExtensionContext(this);
+        const modelClient = (client as any)[model.charAt(0).toLowerCase() + model.slice(1)];
 
-        if (modelsWithIsActive.includes(model)) {
-          return (query as any)({
-            ...args,
-            operation: 'update',
-            args: {
-              ...args,
-              data: { isActive: false },
-            },
+        if (modelsWithIsActive.includes(model) && modelClient) {
+          return modelClient.update({
+            where: args.where,
+            data: { isActive: false },
           });
         }
 
-        if (modelsWithDeletedAt.includes(model)) {
-          return (query as any)({
-            ...args,
-            operation: 'update',
-            args: {
-              ...args,
-              data: { deletedAt: new Date() },
-            },
+        if (modelsWithDeletedAt.includes(model) && modelClient) {
+          return modelClient.update({
+            where: args.where,
+            data: { deletedAt: new Date() },
           });
         }
 
@@ -35,26 +29,20 @@ export const softDeleteExtension = Prisma.defineExtension({
       async deleteMany({ model, args, query }) {
         const modelsWithIsActive = ['User', 'Customer', 'Product', 'CheckoutForm', 'Workflow', 'Automation'];
         const modelsWithDeletedAt = ['Order'];
+        const client = Prisma.getExtensionContext(this);
+        const modelClient = (client as any)[model.charAt(0).toLowerCase() + model.slice(1)];
 
-        if (modelsWithIsActive.includes(model)) {
-          return (query as any)({
-            ...args,
-            operation: 'updateMany',
-            args: {
-              ...args,
-              data: { isActive: false },
-            },
+        if (modelsWithIsActive.includes(model) && modelClient) {
+          return modelClient.updateMany({
+            where: args.where,
+            data: { isActive: false },
           });
         }
 
-        if (modelsWithDeletedAt.includes(model)) {
-          return (query as any)({
-            ...args,
-            operation: 'updateMany',
-            args: {
-              ...args,
-              data: { deletedAt: new Date() },
-            },
+        if (modelsWithDeletedAt.includes(model) && modelClient) {
+          return modelClient.updateMany({
+            where: args.where,
+            data: { deletedAt: new Date() },
           });
         }
 

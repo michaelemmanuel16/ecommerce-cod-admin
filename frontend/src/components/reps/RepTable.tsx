@@ -13,7 +13,7 @@ export interface RepTableData {
   email: string;
   phoneNumber: string;
   country: string;
-  commissionRate: number;
+  commissionAmount: number;
   totalEarnings: number;
   monthlyEarnings: number;
   successRate: number;

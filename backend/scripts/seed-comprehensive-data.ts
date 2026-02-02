@@ -1,47 +1,57 @@
-/* eslint-disable */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import dotenv from 'dotenv';
-dotenv.config();
-
 import { PrismaClient, OrderStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import { Decimal } from '@prisma/client/runtime/library';
 
 const prisma = new PrismaClient();
 
-const defaultPassword = process.env.DEFAULT_SEED_PASSWORD || 'password123';
-if (!process.env.DEFAULT_SEED_PASSWORD && process.env.NODE_ENV === 'production') {
-  console.warn('⚠️ WARNING: DEFAULT_SEED_PASSWORD not set. Using default insecure password in production!');
-}
+const defaultPassword = 'password123';
 
-// Ghana regions and areas
 const ghanaLocations = [
-  { state: 'Greater Accra', area: 'Osu', zipCode: 'GA-001' },
-  { state: 'Greater Accra', area: 'Tema', zipCode: 'GA-002' },
-  { state: 'Greater Accra', area: 'Madina', zipCode: 'GA-003' },
-  { state: 'Greater Accra', area: 'Dansoman', zipCode: 'GA-004' },
-  { state: 'Ashanti', area: 'Adum', zipCode: 'AK-001' },
-  { state: 'Ashanti', area: 'Asokwa', zipCode: 'AK-002' },
-  { state: 'Western', area: 'Takoradi', zipCode: 'WR-001' },
-  { state: 'Eastern', area: 'Koforidua', zipCode: 'ER-001' },
-  { state: 'Northern', area: 'Tamale', zipCode: 'NR-001' },
-  { state: 'Central', area: 'Cape Coast', zipCode: 'CR-001' },
+  { state: 'Greater Accra', area: 'East Legon' },
+  { state: 'Greater Accra', area: 'Madina' },
+  { state: 'Greater Accra', area: 'Tema Community 1' },
+  { state: 'Ashanti', area: 'Adum, Kumasi' },
+  { state: 'Ashanti', area: 'Bantama' },
+  { state: 'Western', area: 'Takoradi Market Circle' },
+  { state: 'Central', area: 'Cape Coast Metropolis' },
+  { state: 'Northern', area: 'Tamale Central' },
+  { state: 'Greater Accra', area: 'Spintex' },
+  { state: 'Greater Accra', area: 'Dansoman' },
 ];
 
 async function seedComprehensiveData() {
   try {
-    console.log('🌱 Starting comprehensive database seeding...\n');
+    console.log('🚀 Starting Comprehensive Seeding...');
 
     // Clear existing data
-    console.log('🧹 Clearing existing data...');
-    await prisma.delivery.deleteMany();
-    await prisma.orderHistory.deleteMany();
-    await prisma.orderItem.deleteMany();
-    await prisma.order.deleteMany();
-    await prisma.product.deleteMany();
-    await prisma.customer.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.systemConfig.deleteMany();
-    console.log('  ✅ Database cleared\n');
+    if (process.env.ALLOW_DB_CLEANUP !== 'true') {
+      console.warn('⚠️  Skipping data cleanup. Set ALLOW_DB_CLEANUP=true to enable.');
+    } else {
+      console.log('🧹 Clearing existing data...');
+      await prisma.notification.deleteMany();
+      await prisma.workflowExecution.deleteMany();
+      await prisma.workflow.deleteMany();
+      await prisma.webhookLog.deleteMany();
+      await prisma.webhookConfig.deleteMany();
+      await prisma.agentAgingBucket.deleteMany();
+      await prisma.agentDeposit.deleteMany();
+      await prisma.agentCollection.deleteMany();
+      await prisma.agentBalance.deleteMany();
+      await prisma.delivery.deleteMany();
+      await prisma.orderItem.deleteMany();
+      await prisma.orderHistory.deleteMany();
+      await prisma.order.deleteMany();
+      await prisma.checkoutForm.deleteMany();
+      await prisma.product.deleteMany();
+      await prisma.customer.deleteMany();
+      await prisma.expense.deleteMany();
+      await prisma.accountTransaction.deleteMany();
+      await prisma.journalEntry.deleteMany();
+      await prisma.account.deleteMany();
+      await prisma.user.deleteMany();
+      await prisma.systemConfig.deleteMany();
+      console.log('  ✅ Database cleared\n');
+    }
 
     // 0. Create Super Admin and System Config
     console.log('⚙️ Initializing System Config and Super Admin...');
@@ -170,7 +180,7 @@ async function seedComprehensiveData() {
           role: 'sales_rep',
           isActive: true,
           isAvailable: true,
-          commissionRate: rep.commission,
+          commissionAmount: rep.commission,
         },
       });
       customerReps.push(user);
@@ -244,76 +254,70 @@ async function seedComprehensiveData() {
       console.log(`  ✅ Created customer: ${custData.firstName} ${custData.lastName} (${location.area}, ${location.state})`);
     }
 
-    // 4. Get existing products or create some
-    console.log('\n📦 Checking for products...');
-    let products = await prisma.product.findMany({ where: { isActive: true } });
+    // 4. Create Products
+    console.log('\n📦 Creating products...');
+    const productData = [
+      {
+        sku: 'MAGIC-COPY-001',
+        name: 'Magic Copybook',
+        description: 'Reusable handwriting practice copybook',
+        category: 'Educational',
+        price: 250.00,
+        cogs: new Decimal(150.00),
+        stockQuantity: 100,
+      },
+      {
+        sku: 'DICT-CREAM-001',
+        name: 'Dictamni Hemorrhoid Cream',
+        description: 'Effective hemorrhoid treatment',
+        category: 'Health',
+        price: 200.00,
+        cogs: new Decimal(120.00),
+        stockQuantity: 50,
+      },
+      {
+        sku: 'WATCH-001',
+        name: 'Smart Watch Pro',
+        description: 'Fitness tracking smartwatch',
+        category: 'Electronics',
+        price: 450.00,
+        cogs: new Decimal(280.00),
+        stockQuantity: 30,
+      },
+      {
+        sku: 'POWERBANK-001',
+        name: 'Power Bank 20000mAh',
+        description: 'Fast charging portable battery',
+        category: 'Electronics',
+        price: 180.00,
+        cogs: new Decimal(100.00),
+        stockQuantity: 75,
+      },
+      {
+        sku: 'HEADSET-001',
+        name: 'Wireless Bluetooth Headset',
+        description: 'Noise canceling wireless headphones',
+        category: 'Electronics',
+        price: 320.00,
+        cogs: new Decimal(190.00),
+        stockQuantity: 45,
+      },
+    ];
 
-    if (products.length < 5) {
-      console.log('Creating additional products...');
-      const newProducts = [
-        {
-          sku: 'MAGIC-COPY-001',
-          name: 'Magic Copybook',
-          description: 'Reusable handwriting practice copybook',
-          category: 'Educational',
-          price: 250.00,
-          cogs: 150.00,
-          stockQuantity: 100,
+    const products = [];
+    for (const prod of productData) {
+      const product = await prisma.product.create({
+        data: {
+          ...prod,
+          lowStockThreshold: 10,
+          isActive: true,
         },
-        {
-          sku: 'DICT-CREAM-001',
-          name: 'Dictamni Hemorrhoid Cream',
-          description: 'Effective hemorrhoid treatment',
-          category: 'Health',
-          price: 200.00,
-          cogs: 120.00,
-          stockQuantity: 50,
-        },
-        {
-          sku: 'WATCH-001',
-          name: 'Smart Watch Pro',
-          description: 'Fitness tracking smartwatch',
-          category: 'Electronics',
-          price: 450.00,
-          cogs: 280.00,
-          stockQuantity: 30,
-        },
-        {
-          sku: 'POWERBANK-001',
-          name: 'Power Bank 20000mAh',
-          description: 'Fast charging portable battery',
-          category: 'Electronics',
-          price: 180.00,
-          cogs: 100.00,
-          stockQuantity: 75,
-        },
-        {
-          sku: 'HEADSET-001',
-          name: 'Wireless Bluetooth Headset',
-          description: 'Noise canceling wireless headphones',
-          category: 'Electronics',
-          price: 320.00,
-          cogs: 190.00,
-          stockQuantity: 45,
-        },
-      ];
-
-      for (const prod of newProducts) {
-        const product = await prisma.product.create({
-          data: {
-            ...prod,
-            lowStockThreshold: 10,
-            isActive: true,
-          },
-        });
-        products.push(product);
-        console.log(`  ✅ Created product: ${prod.name}`);
-      }
-    } else {
-      console.log(`  ℹ️  Found ${products.length} existing products`);
+      });
+      products.push(product);
+      console.log(`  ✅ Created product: ${prod.name}`);
     }
 
-    // 5. Create Orders (some customers with multiple orders)
+    // 5. Create Orders
     console.log('\n📋 Creating 25 Orders...');
     const orderStatuses: OrderStatus[] = [
       'pending_confirmation',
@@ -327,22 +331,19 @@ async function seedComprehensiveData() {
     ];
 
     const orders = [];
-    let orderCounter = 1;
-
-    // Create orders - some customers will have multiple orders
     const orderDistribution = [
-      { customerId: 0, count: 3 }, // First customer gets 3 orders
-      { customerId: 1, count: 2 }, // Second customer gets 2 orders
-      { customerId: 2, count: 3 }, // Third customer gets 3 orders
-      { customerId: 3, count: 1 }, // Fourth customer gets 1 order
-      { customerId: 4, count: 2 }, // Fifth customer gets 2 orders
+      { customerId: 0, count: 3 },
+      { customerId: 1, count: 2 },
+      { customerId: 2, count: 3 },
+      { customerId: 3, count: 1 },
+      { customerId: 4, count: 2 },
       { customerId: 5, count: 1 },
       { customerId: 6, count: 2 },
       { customerId: 7, count: 1 },
       { customerId: 8, count: 3 },
       { customerId: 9, count: 1 },
       { customerId: 10, count: 2 },
-      { customerId: 11, count: 4 }, // Last customer gets 4 orders
+      { customerId: 11, count: 4 },
     ];
 
     for (const dist of orderDistribution) {
@@ -350,14 +351,11 @@ async function seedComprehensiveData() {
         const customer = customers[dist.customerId];
         const status = orderStatuses[Math.floor(Math.random() * orderStatuses.length)];
         const customerRep = customerReps[Math.floor(Math.random() * customerReps.length)];
-
-        // Assign delivery agent for orders that are out for delivery or delivered
         const needsDeliveryAgent = ['ready_for_pickup', 'out_for_delivery', 'delivered'].includes(status);
         const deliveryAgent = needsDeliveryAgent
           ? deliveryAgents[Math.floor(Math.random() * deliveryAgents.length)]
           : undefined;
 
-        // Random number of products (1-3)
         const numProducts = Math.floor(Math.random() * 3) + 1;
         const selectedProducts = [];
         for (let k = 0; k < numProducts; k++) {
@@ -368,6 +366,11 @@ async function seedComprehensiveData() {
         const shippingCost = Math.random() > 0.5 ? 20.00 : 0;
         const discount = Math.random() > 0.7 ? 25.00 : 0;
         const totalAmount = subtotal + shippingCost - discount;
+
+        // For delivered orders, set a delivery date in the last 7 days
+        const deliveryDate = status === 'delivered'
+          ? new Date(Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000))
+          : null;
 
         const order = await prisma.order.create({
           data: {
@@ -387,6 +390,7 @@ async function seedComprehensiveData() {
             priority: Math.floor(Math.random() * 3),
             source: 'manual',
             createdById: customerRep.id,
+            deliveryDate,
             orderItems: {
               create: selectedProducts.map((product) => {
                 const quantity = Math.floor(Math.random() * 2) + 1;
@@ -395,6 +399,7 @@ async function seedComprehensiveData() {
                   quantity,
                   unitPrice: product.price,
                   totalPrice: product.price * quantity,
+                  itemType: 'package',
                 };
               }),
             },
@@ -417,7 +422,6 @@ async function seedComprehensiveData() {
 
         orders.push(order);
         console.log(`  ✅ Order #${order.id} - ${customer.firstName} ${customer.lastName} (${status})`);
-        orderCounter++;
       }
     }
 
@@ -437,7 +441,7 @@ async function seedComprehensiveData() {
       console.log(`  ✅ Updated ${customer.firstName} ${customer.lastName}: ${customerOrders.length} orders, GHS ${totalSpent.toFixed(2)}`);
     }
 
-    // 7. Create deliveries for orders that need them
+    // 7. Create deliveries
     console.log('\n🚚 Creating delivery records...');
     let deliveryCount = 0;
     for (const order of orders) {
@@ -447,9 +451,7 @@ async function seedComprehensiveData() {
             orderId: order.id,
             agentId: order.deliveryAgentId,
             scheduledTime: new Date(Date.now() + Math.random() * 24 * 60 * 60 * 1000),
-            actualDeliveryTime: order.status === 'delivered'
-              ? new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000)
-              : undefined,
+            actualDeliveryTime: order.status === 'delivered' ? order.deliveryDate : undefined,
             proofType: order.status === 'delivered' ? 'signature' : undefined,
             deliveryAttempts: order.status === 'delivered' ? 1 : 0,
           },
@@ -459,24 +461,22 @@ async function seedComprehensiveData() {
     }
     console.log(`  ✅ Created ${deliveryCount} delivery records`);
 
-    // Summary
-    console.log(`
-╚═══════════════════════════════════════════════════════╝
-║                                                       ║
-║   Default password for all users: ${defaultPassword === 'password123' ? 'password123 (INSECURE)' : '******'}        ║
-║                                                       ║
-║   Sample Customer Rep Login:                          ║
-║   Email: rep1@codadmin.com                            ║
-║   Password: ${defaultPassword === 'password123' ? 'password123' : '[REDACTED]'}                               ║
-║                                                       ║
-║   Sample Delivery Agent Login:                        ║
-║   Email: agent1@codadmin.com                          ║
-║   Password: ${defaultPassword === 'password123' ? 'password123' : '[REDACTED]'}                               ║
-║                                                       ║
-╚═══════════════════════════════════════════════════════╝
-    `);
+    // 8. Create Expenses (for marketing & net profit testing)
+    console.log('\n💸 Creating expenses...');
+    const expenseCategories = ['marketing', 'logistics', 'office', 'other'];
+    for (let i = 0; i < 10; i++) {
+      await prisma.expense.create({
+        data: {
+          category: expenseCategories[i % expenseCategories.length],
+          amount: Math.floor(Math.random() * 500) + 50,
+          description: `Monthly ${expenseCategories[i % expenseCategories.length]} payment`,
+          expenseDate: new Date(Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000)),
+        }
+      });
+    }
+    console.log('  ✅ Created 10 sample expenses');
 
-    console.log('\n✨ Refresh your browser to see all the new data!\n');
+    console.log('\n✨ Database seeding complete!\n');
 
   } catch (error) {
     console.error('❌ Error seeding data:', error);

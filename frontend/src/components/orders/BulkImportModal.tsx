@@ -33,6 +33,7 @@ interface ApiError {
     response?: {
         data?: {
             message?: string;
+            errors?: string[];
         };
     };
     message?: string;
@@ -81,7 +82,15 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
         } catch (error) {
             const apiError = error as ApiError;
             console.error('Upload failed:', apiError);
-            toast.error(apiError.response?.data?.message || apiError.message || 'Upload failed');
+
+            // Handle user validation errors
+            if (apiError.response?.data?.errors && Array.isArray(apiError.response.data.errors)) {
+                apiError.response.data.errors.forEach((errorMsg: string) => {
+                    toast.error(errorMsg, { duration: 5000 });
+                });
+            } else {
+                toast.error(apiError.response?.data?.message || apiError.message || 'Upload failed');
+            }
         } finally {
             setIsUploading(false);
         }
@@ -99,7 +108,8 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
             'QUANTITY',
             'PRICE',
             'ORDER STATUS',
-            'Assigned Rep'
+            'Assigned Rep',
+            'Assigned Agent'
         ];
         const csvContent = "data:text/csv;charset=utf-8," + headers.join(",");
         const encodedUri = encodeURI(csvContent);
@@ -265,8 +275,17 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
                             disabled={!file || isUploading}
                             isLoading={isUploading}
                         >
-                            <Upload className="w-4 h-4 mr-2" />
-                            Start Import
+                            {isUploading ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Importing...
+                                </>
+                            ) : (
+                                <>
+                                    <Upload className="w-4 h-4 mr-2" />
+                                    Start Import
+                                </>
+                            )}
                         </Button>
                     )}
                 </div>

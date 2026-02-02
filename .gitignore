@@ -3,6 +3,8 @@
 .env.local
 .env.*.local
 .env.development
+*.env.test 
+.env.example
 .env.staging
 .env.production
 
@@ -82,6 +84,9 @@ tmp/
 temp/
 *.tmp
 
+# Git worktrees
+.worktrees/
+
 # Lock files (keep package-lock.json, yarn.lock for reproducibility)
 # Uncomment the following if using yarn
 # yarn.lock
@@ -109,7 +114,8 @@ playwright-report/
 .claude/
 .claude-plugin/
 .playwright-mcp/
-.agent
+.agent/
+.agents
 
 # Large log files in backend
 backend/backend.log

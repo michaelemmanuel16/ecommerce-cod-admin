@@ -15,8 +15,10 @@ export const getDashboardMetrics = async (req: AuthRequest, res: Response): Prom
       req.user?.role
     );
 
+    console.log('[DEBUG] analyticsController.getDashboardMetrics response:', metrics);
     res.json({ metrics });
   } catch (error) {
+    console.error('[DEBUG] analyticsController.getDashboardMetrics error:', error);
     throw error;
   }
 };
