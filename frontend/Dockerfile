@@ -43,8 +43,8 @@ RUN chown -R nginx:nginx /usr/share/nginx/html && \
 RUN touch /var/run/nginx.pid && \
     chown -R nginx:nginx /var/run/nginx.pid
 
-# Test nginx configuration (must run as root before switching users)
-RUN nginx -t
+# Note: nginx config validation happens automatically at container startup
+# Cannot validate during build because upstream 'backend' doesn't exist yet
 
 # Switch to non-root user
 USER nginx
