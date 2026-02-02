@@ -218,6 +218,8 @@ if [ "$FRONTEND_HEALTHY" = false ]; then
 
     # Test health endpoint directly
     echo -e "${YELLOW}Testing health endpoint directly:${NC}"
+    # Wait a bit for container to initialize
+    sleep 5
     docker exec ecommerce-cod-frontend curl -v http://localhost:8080/health 2>&1 || echo "Health check curl failed"
 
     if [ "$ROLLBACK_ENABLED" = true ]; then
