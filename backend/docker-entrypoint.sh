@@ -31,10 +31,12 @@ if [ "$USER_COUNT" = "0" ] && [ "${ALLOW_ADMIN_AUTO_CREATE:-true}" = "true" ]; t
 
     async function createAdmin() {
       try {
-        const defaultPassword = process.env.DEFAULT_SEED_PASSWORD || 'password123';
         if (!process.env.DEFAULT_SEED_PASSWORD) {
-          console.warn('⚠️ WARNING: DEFAULT_SEED_PASSWORD not set. Using default insecure password!');
+          console.error('❌ FATAL: DEFAULT_SEED_PASSWORD environment variable is required');
+          console.error('Set DEFAULT_SEED_PASSWORD in your .env or k8s secrets');
+          process.exit(1);
         }
+        const defaultPassword = process.env.DEFAULT_SEED_PASSWORD;
         const hashedPassword = await bcrypt.hash(defaultPassword, 10);
         await prisma.user.create({
           data: {

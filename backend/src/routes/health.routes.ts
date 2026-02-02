@@ -6,14 +6,37 @@ import { healthLimiter } from '../middleware/rateLimiter';
 const router = Router();
 const prisma = new PrismaClient();
 
-// Create singleton Redis instance for health checks (prevents connection leak)
-const redisClient = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  password: process.env.REDIS_PASSWORD,
-  lazyConnect: true,
-  maxRetriesPerRequest: 1,
-  enableReadyCheck: false
+// Lazy Redis client with proper cleanup
+let redisClient: Redis | null = null;
+
+const getRedisClient = (): Redis => {
+  if (!redisClient) {
+    redisClient = new Redis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379'),
+      password: process.env.REDIS_PASSWORD,
+      lazyConnect: true,
+      maxRetriesPerRequest: 2,
+      enableReadyCheck: false,
+      retryStrategy: (times) => Math.min(times * 50, 500),
+    });
+  }
+  return redisClient;
+};
+
+// Cleanup on shutdown
+process.on('SIGTERM', async () => {
+  if (redisClient) {
+    await redisClient.quit();
+    redisClient = null;
+  }
+});
+
+process.on('SIGINT', async () => {
+  if (redisClient) {
+    await redisClient.quit();
+    redisClient = null;
+  }
 });
 
 // Health check endpoint - Basic
@@ -33,7 +56,7 @@ router.get('/ready', healthLimiter, async (_req: Request, res: Response) => {
     await prisma.$queryRaw`SELECT 1`;
 
     // Check Redis connection (use singleton instance)
-    await redisClient.ping();
+    await getRedisClient().ping();
 
     res.status(200).json({
       status: 'ready',
@@ -113,7 +136,7 @@ router.get('/health/detailed', healthLimiter, async (_req: Request, res: Respons
   // Check Redis (use singleton instance)
   try {
     const redisStart = Date.now();
-    await redisClient.ping();
+    await getRedisClient().ping();
     const redisEnd = Date.now();
 
     healthStatus.checks.redis = {
