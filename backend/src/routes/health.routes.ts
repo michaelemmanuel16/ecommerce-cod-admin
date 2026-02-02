@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
 import { healthLimiter } from '../middleware/rateLimiter';
+import logger from '../utils/logger';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -56,7 +57,15 @@ router.get('/ready', healthLimiter, async (_req: Request, res: Response) => {
     await prisma.$queryRaw`SELECT 1`;
 
     // Check Redis connection (use singleton instance)
-    await getRedisClient().ping();
+    try {
+      await getRedisClient().ping();
+    } catch (redisError) {
+      logger.error('Redis connection failed during readiness check', {
+        error: redisError instanceof Error ? redisError.message : 'Unknown error',
+        stack: redisError instanceof Error ? redisError.stack : undefined,
+      });
+      throw redisError;
+    }
 
     res.status(200).json({
       status: 'ready',
@@ -145,6 +154,10 @@ router.get('/health/detailed', healthLimiter, async (_req: Request, res: Respons
     };
   } catch (error) {
     isHealthy = false;
+    logger.error('Redis connection failed during detailed health check', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     healthStatus.checks.redis = {
       status: 'error',
       responseTime: 0,

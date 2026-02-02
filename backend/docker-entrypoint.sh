@@ -14,9 +14,9 @@ echo "✅ PostgreSQL is ready!"
 echo "📦 Running Prisma migrations..."
 npx prisma migrate deploy
 
-# Note: Auto-seeding removed for security
-# Create users via the sign-up page
-echo "ℹ️  Migrations complete. Create users via the sign-up page."
+# Bootstrap admin user if database is empty
+echo "🔐 Checking if admin bootstrap is needed..."
+npm run bootstrap
 
 echo "🎉 Starting application..."
 # Start the application
