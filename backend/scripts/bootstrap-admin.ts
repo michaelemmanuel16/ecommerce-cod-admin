@@ -37,6 +37,59 @@ async function promptForInput(question: string): Promise<string> {
   });
 }
 
+/**
+ * Prompt for password with masked input (shows * for each character)
+ * Uses Node.js readline in raw mode for secure input
+ */
+async function promptForPassword(question: string): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    let password = '';
+    process.stdout.write(question);
+
+    // Enable raw mode to capture individual keystrokes
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+
+    process.stdin.on('data', (char) => {
+      const str = char.toString('utf-8');
+
+      // Handle different key inputs
+      if (str === '\n' || str === '\r' || str === '\u0004') {
+        // Enter or Ctrl+D - finish input
+        if (process.stdin.isTTY) {
+          process.stdin.setRawMode(false);
+        }
+        rl.close();
+        process.stdout.write('\n');
+        resolve(password);
+      } else if (str === '\u0003') {
+        // Ctrl+C - cancel
+        if (process.stdin.isTTY) {
+          process.stdin.setRawMode(false);
+        }
+        process.stdout.write('\n');
+        process.exit(0);
+      } else if (str === '\u007f' || str === '\b') {
+        // Backspace - remove last character
+        if (password.length > 0) {
+          password = password.slice(0, -1);
+          process.stdout.write('\b \b');
+        }
+      } else if (str >= ' ' && str <= '~') {
+        // Printable character - add to password
+        password += str;
+        process.stdout.write('*');
+      }
+    });
+  });
+}
+
 async function getAdminInputFromEnv(): Promise<AdminInput | null> {
   const email = process.env.BOOTSTRAP_ADMIN_EMAIL;
   const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
@@ -56,7 +109,7 @@ async function getAdminInputInteractive(): Promise<AdminInput> {
   console.log('━'.repeat(50));
 
   const email = await promptForInput('Email address: ');
-  const password = await promptForInput('Password (min 8 characters): ');
+  const password = await promptForPassword('Password (min 8 characters): ');
   const firstName = await promptForInput('First name (default: Admin): ') || 'Admin';
   const lastName = await promptForInput('Last name (default: User): ') || 'User';
   const phoneNumber = await promptForInput('Phone number (default: +1234567890): ') || '+1234567890';

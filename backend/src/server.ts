@@ -207,42 +207,66 @@ if (process.env.NODE_ENV !== 'test') {
 
 // Graceful shutdown
 const shutdown = async (signal: string) => {
-  logger.info(`${signal} signal received: closing HTTP server`);
+  logger.info(`${signal} signal received, starting graceful shutdown`);
 
   // Set a force-kill timeout
   const forceKillTimeout = setTimeout(() => {
-    logger.error('Could not close connections in time, forcefully shutting down');
+    logger.error('Shutdown timeout reached, forcing exit');
     process.exit(1);
   }, 5000);
 
   try {
     // 1. Close Socket.io connections
     if (io) {
-      logger.info('Closing Socket.io connections...');
+      logger.info('Closing Socket.io connections');
       io.close();
     }
 
     // 2. Close HTTP server
     server.close(() => {
       logger.info('HTTP server closed');
-
-      // 3. Disconnect from database
-      import('./utils/prisma').then(({ default: prismaBase }) => {
-        prismaBase.$disconnect().finally(() => {
-          logger.info('Database disconnected');
-          clearTimeout(forceKillTimeout);
-          process.exit(0);
-        });
-      });
     });
+
+    // 3. Close Redis connections
+    try {
+      const { getRedisClient: getHealthRedisClient } = await import('./routes/health.routes');
+      const healthRedis = getHealthRedisClient();
+      if (healthRedis) {
+        logger.info('Closing health route Redis connection');
+        await healthRedis.quit();
+      }
+    } catch (error) {
+      logger.error('Error closing health Redis:', error);
+    }
+
+    try {
+      const { redis: cacheRedis } = await import('./middleware/cache.middleware');
+      if (cacheRedis) {
+        logger.info('Closing cache middleware Redis connection');
+        await cacheRedis.quit();
+      }
+    } catch (error) {
+      logger.error('Error closing cache Redis:', error);
+    }
+
+    // 4. Disconnect from database
+    const { default: prismaBase } = await import('./utils/prisma');
+    logger.info('Disconnecting from database');
+    await prismaBase.$disconnect();
+    logger.info('Database disconnected');
+
+    clearTimeout(forceKillTimeout);
+    logger.info('Graceful shutdown completed');
+    process.exit(0);
   } catch (error) {
-    logger.error('Error during shutdown:', error);
+    logger.error('Error during graceful shutdown:', error);
+    clearTimeout(forceKillTimeout);
     process.exit(1);
   }
 };
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
 
 // Unhandled rejection handler
 process.on('unhandledRejection', (reason, promise) => {

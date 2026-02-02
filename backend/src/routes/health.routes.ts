@@ -25,20 +25,8 @@ const getRedisClient = (): Redis => {
   return redisClient;
 };
 
-// Cleanup on shutdown
-process.on('SIGTERM', async () => {
-  if (redisClient) {
-    await redisClient.quit();
-    redisClient = null;
-  }
-});
-
-process.on('SIGINT', async () => {
-  if (redisClient) {
-    await redisClient.quit();
-    redisClient = null;
-  }
-});
+// Note: Signal handlers removed - shutdown is handled centrally in server.ts
+// This prevents duplicate handlers and ensures consistent cleanup order
 
 // Health check endpoint - Basic
 router.get('/health', async (_req: Request, res: Response) => {
@@ -209,3 +197,4 @@ router.get('/metrics', async (_req: Request, res: Response) => {
 });
 
 export default router;
+export { getRedisClient };
