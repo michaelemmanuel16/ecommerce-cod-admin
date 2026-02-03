@@ -141,11 +141,5 @@ export const getCacheStats = async (): Promise<any> => {
   }
 };
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  await redis.quit();
-});
-
-process.on('SIGINT', async () => {
-  await redis.quit();
-});
+// Note: Signal handlers removed - shutdown is handled centrally in server.ts
+export const getRedisClient = () => redis;

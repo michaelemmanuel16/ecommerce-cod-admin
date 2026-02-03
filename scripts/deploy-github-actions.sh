@@ -187,25 +187,40 @@ if [ "$BACKEND_HEALTHY" = false ]; then
     fi
 fi
 
-# Check frontend health via nginx using Docker's built-in health status
+# Check frontend health using Docker's built-in health status
 echo -e "${YELLOW}Checking frontend health...${NC}"
 FRONTEND_HEALTHY=false
 for i in {1..12}; do
-    HEALTH_STATUS=$(docker inspect --format='{{.State.Health.Status}}' ecommerce-cod-nginx 2>/dev/null || echo "unknown")
+    HEALTH_STATUS=$(docker inspect --format='{{.State.Health.Status}}' ecommerce-cod-frontend 2>/dev/null || echo "unknown")
     if [ "$HEALTH_STATUS" = "healthy" ]; then
         FRONTEND_HEALTHY=true
         echo -e "${GREEN}✓ Frontend is healthy${NC}"
         break
     fi
-    echo -e "${YELLOW}Attempt $i/12: Frontend/Nginx status is '$HEALTH_STATUS', waiting...${NC}"
-    sleep 5
+    echo -e "${YELLOW}Attempt $i/12: Frontend status is '$HEALTH_STATUS', waiting...${NC}"
+    sleep 10
 done
 
 if [ "$FRONTEND_HEALTHY" = false ]; then
     echo -e "${RED}✗ Frontend health check failed${NC}"
-    # Show container logs for debugging
-    echo -e "${YELLOW}Recent nginx logs:${NC}"
+
+    # Show frontend container logs for debugging
+    echo -e "${YELLOW}Recent frontend logs:${NC}"
+    docker logs ecommerce-cod-frontend --tail 50 2>&1 || true
+
+    # Also show nginx reverse proxy logs
+    echo -e "${YELLOW}Recent nginx (reverse proxy) logs:${NC}"
     docker logs ecommerce-cod-nginx --tail 30 2>&1 || true
+
+    # Check if nginx is actually running in frontend container
+    echo -e "${YELLOW}Checking nginx process in frontend container:${NC}"
+    docker exec ecommerce-cod-frontend ps aux 2>&1 || echo "Cannot exec into container"
+
+    # Test health endpoint directly
+    echo -e "${YELLOW}Testing health endpoint directly:${NC}"
+    # Wait a bit for container to initialize
+    sleep 5
+    docker exec ecommerce-cod-frontend curl -v http://localhost:8080/health 2>&1 || echo "Health check curl failed"
 
     if [ "$ROLLBACK_ENABLED" = true ]; then
         echo -e "${YELLOW}Initiating rollback due to failed health checks...${NC}"
