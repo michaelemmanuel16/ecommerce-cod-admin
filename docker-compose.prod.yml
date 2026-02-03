@@ -64,6 +64,8 @@ services:
     image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/backend:main
     container_name: ecommerce-cod-backend
     restart: always
+    ports:
+      - "3000:3000"  # Expose backend to host for nginx proxy
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -105,6 +107,8 @@ services:
     image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:main
     container_name: ecommerce-cod-frontend
     restart: always
+    ports:
+      - "8080:8080"  # Expose frontend to host for nginx proxy
     # ⚠️ IMPORTANT: VITE_API_URL and VITE_WS_URL are baked into the static build at IMAGE BUILD TIME
     # The environment variables below have NO EFFECT on Vite builds - they are here for documentation only
     # To change API URLs, you must rebuild the Docker image with correct --build-arg values:
