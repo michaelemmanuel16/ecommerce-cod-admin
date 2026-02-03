@@ -16,7 +16,7 @@ npx prisma migrate deploy
 
 # Bootstrap admin user if database is empty
 echo "🔐 Checking if admin bootstrap is needed..."
-npm run bootstrap
+npm run bootstrap || echo "⚠️  Bootstrap skipped (not needed for existing deployment)"
 
 echo "🎉 Starting application..."
 # Start the application
