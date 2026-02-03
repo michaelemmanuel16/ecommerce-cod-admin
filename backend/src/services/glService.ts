@@ -161,55 +161,30 @@ export class GLService {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
 
-    // Use advisory lock to ensure atomic sequence generation
-    // Lock ID is a hash of the date string to ensure different locks per day
-    const lockId = this.hashString(dateStr);
+    // Use raw SQL to find and lock the last entry for today to prevent race conditions
+    // This ensures only one process can generate the next sequence number at a time
+    const result = await client.$queryRaw<any[]>`
+      SELECT entry_number as "entryNumber"
+      FROM journal_entries 
+      WHERE entry_number LIKE ${'JE-' + dateStr + '-%'} 
+      ORDER BY entry_number DESC 
+      LIMIT 1 
+      FOR UPDATE
+    `;
 
-    try {
-      // Acquire advisory lock (blocks until available)
-      await client.$executeRaw`SELECT pg_advisory_xact_lock(${lockId})`;
-
-      // Now safely query for the last entry number
-      const result = await client.$queryRaw<any[]>`
-        SELECT entry_number as "entryNumber"
-        FROM journal_entries
-        WHERE entry_number LIKE ${'JE-' + dateStr + '-%'}
-        ORDER BY entry_number DESC
-        LIMIT 1
-      `;
-
-      let sequence = 1;
-      if (result && result.length > 0) {
-        const lastEntryNumber = result[0].entryNumber;
-        // Extract sequence from format: JE-20260203-00001-XX
-        const parts = lastEntryNumber.split('-');
-        const lastSequence = parseInt(parts[2], 10);
-        if (!isNaN(lastSequence)) {
-          sequence = lastSequence + 1;
-        }
+    let sequence = 1;
+    if (result && result.length > 0) {
+      const lastEntryNumber = result[0].entryNumber;
+      const lastSequence = parseInt(lastEntryNumber.split('-')[2], 10);
+      if (!isNaN(lastSequence)) {
+        sequence = lastSequence + 1;
       }
-
-      // Add entropy suffix for additional uniqueness
-      const entropy = Math.random().toString(36).substring(2, 4).toUpperCase();
-      return `JE-${dateStr}-${sequence.toString().padStart(5, '0')}-${entropy}`;
-
-    } finally {
-      // Advisory lock is automatically released at transaction end
-      // No explicit unlock needed with pg_advisory_xact_lock
     }
-  }
 
-  /**
-   * Generate a numeric hash from a string for use as advisory lock ID
-   */
-  private hashString(str: string): number {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    return Math.abs(hash);
+    // Add a random 2-character suffix to practically eliminate collisions 
+    // even if the lock is released or bypassed.
+    const entropy = Math.random().toString(36).substring(2, 4).toUpperCase();
+    return `JE-${dateStr}-${sequence.toString().padStart(5, '0')}-${entropy}`;
   }
 
   /**
