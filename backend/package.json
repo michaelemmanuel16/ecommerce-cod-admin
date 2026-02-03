@@ -15,6 +15,7 @@
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
     "prisma:migrate": "prisma migrate dev",
+    "bootstrap": "ts-node scripts/bootstrap-admin.ts",
     "seed": "ts-node scripts/seed-comprehensive-data.ts",
     "seed:gl": "ts-node scripts/seed-gl-accounts.ts",
     "sync-financial": "ts-node scripts/sync-financial-data-simple.ts",

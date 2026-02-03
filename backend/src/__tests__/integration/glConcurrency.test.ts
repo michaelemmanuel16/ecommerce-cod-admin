@@ -45,14 +45,65 @@ describe('GL Concurrency Integration Test', () => {
     });
 
     afterAll(async () => {
-        // Cleanup
+        // Cleanup in correct order: delete child records before parents
+
+        // Step 1: Find all journal entries that touched these accounts
+        const entriesToDelete = await prisma.journalEntry.findMany({
+            where: {
+                transactions: {
+                    some: {
+                        OR: [
+                            { accountId: testAccount?.id },
+                            { accountId: offsetAccount?.id }
+                        ]
+                    }
+                }
+            },
+            select: { id: true }
+        });
+
+        const entryIds = entriesToDelete.map(e => e.id);
+
+        // Step 2: Delete journal entry lines (child records)
+        if (entryIds.length > 0) {
+            await prisma.accountTransaction.deleteMany({
+                where: { journalEntryId: { in: entryIds } }
+            });
+
+            // Step 3: Delete journal entries
+            await prisma.journalEntry.deleteMany({
+                where: { id: { in: entryIds } }
+            });
+        }
+
+        // Step 4: Delete any remaining account transactions (shouldn't be any, but safe)
         if (testAccount) {
             await prisma.accountTransaction.deleteMany({ where: { accountId: testAccount.id } });
-            await prisma.account.delete({ where: { id: testAccount.id } });
         }
         if (offsetAccount) {
             await prisma.accountTransaction.deleteMany({ where: { accountId: offsetAccount.id } });
+        }
+
+        // Step 5: Now safe to delete accounts
+        if (testAccount) {
+            await prisma.account.delete({ where: { id: testAccount.id } });
+        }
+        if (offsetAccount) {
             await prisma.account.delete({ where: { id: offsetAccount.id } });
+        }
+
+        // Step 6: Cleanup test user if created (after all journal entries are deleted)
+        if (systemUser && systemUser.email === 'gl-tester@example.com') {
+            // Double-check: delete any remaining journal entries created by this user
+            await prisma.accountTransaction.deleteMany({
+                where: { journalEntry: { createdBy: systemUser.id } }
+            });
+            await prisma.journalEntry.deleteMany({
+                where: { createdBy: systemUser.id }
+            });
+
+            // Now safe to delete user
+            await prisma.user.delete({ where: { id: systemUser.id } });
         }
     });
 
