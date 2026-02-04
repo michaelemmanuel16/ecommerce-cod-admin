@@ -57,7 +57,9 @@ export class AnalyticsService {
     userId?: number,
     userRole?: string
   ) {
-    console.log('[DEBUG] analyticsService.getDashboardMetrics inputs:', { filters, userId, userRole });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[DEBUG] analyticsService.getDashboardMetrics inputs:', { filters, userId, userRole });
+    }
 
     const today = new Date();
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
@@ -82,10 +84,9 @@ export class AnalyticsService {
       deletedAt: null
     };
 
-    console.log('[analyticsService.getDashboardMetrics] Date filter:', dateFilter, 'User filter:', userFilter);
-
-    console.log('📊 CANARY: Starting getDashboardMetrics...');
-    const startTime = Date.now();
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[analyticsService.getDashboardMetrics] Date filter:', dateFilter, 'User filter:', userFilter);
+    }
 
     const [
       totalOrders,
@@ -99,7 +100,7 @@ export class AnalyticsService {
     ] = await Promise.all([
       prisma.order.count({
         where: baseWhere
-      }).then(res => { console.log(`⏱️ CANARY: totalOrders query took ${Date.now() - startTime}ms`); return res; }),
+      }),
       prisma.order.count({
         where: {
           ...userFilter,
@@ -109,26 +110,26 @@ export class AnalyticsService {
             lte: endOfDay
           }
         }
-      }).then(res => { console.log(`⏱️ CANARY: todayOrders query took ${Date.now() - startTime}ms`); return res; }),
+      }),
       prisma.order.count({
         where: {
           ...baseWhere,
           status: 'pending_confirmation'
         }
-      }).then(res => { console.log(`⏱️ CANARY: pendingOrders query took ${Date.now() - startTime}ms`); return res; }),
+      }),
       prisma.order.count({
         where: {
           ...baseWhere,
           status: 'delivered'
         }
-      }).then(res => { console.log(`⏱️ CANARY: deliveredOrders query took ${Date.now() - startTime}ms`); return res; }),
+      }),
       prisma.order.aggregate({
         where: {
           ...baseWhere,
           status: 'delivered'
         },
         _sum: { totalAmount: true }
-      }).then(res => { console.log(`⏱️ CANARY: totalRevenue query took ${Date.now() - startTime}ms`); return res; }),
+      }),
       prisma.order.aggregate({
         where: {
           ...userFilter,
@@ -140,14 +141,14 @@ export class AnalyticsService {
           }
         },
         _sum: { totalAmount: true }
-      }).then(res => { console.log(`⏱️ CANARY: todayRevenue query took ${Date.now() - startTime}ms`); return res; }),
+      }),
       prisma.user.count({
         where: {
           role: 'delivery_agent',
           isActive: true,
           isAvailable: true
         }
-      }).then(res => { console.log(`⏱️ CANARY: activeAgents query took ${Date.now() - startTime}ms`); return res; }),
+      }),
       // Fetch recent deliveries for avg time calculation - reduced sample for speed
       prisma.delivery.findMany({
         where: {
@@ -161,19 +162,21 @@ export class AnalyticsService {
         },
         orderBy: { actualDeliveryTime: 'desc' },
         take: 100 // Reduced from 1000
-      }).then(res => { console.log(`⏱️ CANARY: deliveries query took ${Date.now() - startTime}ms`); return res; })
+      })
     ]);
 
-    console.log('[DEBUG] analyticsService.getDashboardMetrics raw results:', {
-      totalOrders,
-      todayOrders,
-      pendingOrders,
-      deliveredOrders,
-      totalRevenue: totalRevenue._sum.totalAmount,
-      todayRevenue: todayRevenue._sum.totalAmount,
-      activeAgents,
-      deliverySamples: deliveries.length
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[DEBUG] analyticsService.getDashboardMetrics raw results:', {
+        totalOrders,
+        todayOrders,
+        pendingOrders,
+        deliveredOrders,
+        totalRevenue: totalRevenue._sum.totalAmount,
+        todayRevenue: todayRevenue._sum.totalAmount,
+        activeAgents,
+        deliverySamples: deliveries.length
+      });
+    }
 
     // Calculate average delivery time from recent deliveries
     let totalDeliveryTime = 0;
