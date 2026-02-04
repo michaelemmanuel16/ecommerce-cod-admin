@@ -4,6 +4,20 @@ import agentReconciliationService from '../../services/agentReconciliationServic
 import prisma from '../../utils/prisma';
 import { AppError } from '../../middleware/errorHandler';
 
+// Mock appEvents
+jest.mock('../../utils/appEvents', () => ({
+    __esModule: true,
+    default: {
+        emit: jest.fn(),
+    },
+    AppEvent: {
+        AGENT_COLLECTION_RECONCILED: 'AGENT_COLLECTION_RECONCILED',
+        BULK_ORDERS_IMPORTED: 'BULK_ORDERS_IMPORTED',
+        ORDERS_DELETED: 'ORDERS_DELETED',
+    },
+}));
+import appEvents, { AppEvent } from '../../utils/appEvents';
+
 // Mock prisma and dependecies
 jest.mock('../../utils/prisma', () => ({
     __esModule: true,
@@ -18,6 +32,7 @@ jest.mock('../../utils/prisma', () => ({
         },
         user: {
             update: jest.fn(),
+            findUnique: jest.fn(),
         },
         agentBalance: {
             findUnique: jest.fn(),
@@ -538,6 +553,163 @@ describe('AgentReconciliationService', () => {
                 where: { isBlocked: true }
             }));
             expect(result).toEqual(blockedAgents);
+        });
+    });
+
+    describe('bulkVerifyDeposits', () => {
+        const verifierId = 789;
+        const agentId = 456;
+        const balance = { id: 10, agentId, currentBalance: 5000 };
+
+        beforeEach(() => {
+            mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.agentBalance.update.mockResolvedValue({});
+            mockTx.agentCollection.findMany.mockResolvedValue([]);
+            mockTx.user.findUnique.mockResolvedValue({ id: agentId, firstName: 'Test', lastName: 'Agent' });
+        });
+
+        it('should verify multiple deposits successfully', async () => {
+            const depositIds = [1, 2, 3];
+            const mockDeposits = [
+                { id: 1, agentId, amount: 1000, status: 'pending', referenceNumber: 'REF1' },
+                { id: 2, agentId, amount: 1000, status: 'pending', referenceNumber: 'REF2' },
+                { id: 3, agentId, amount: 1000, status: 'pending', referenceNumber: 'REF3' },
+            ];
+
+            mockTx.agentDeposit.findMany.mockResolvedValue(mockDeposits);
+            mockTx.agentDeposit.update.mockResolvedValue({});
+
+            const result = await agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId);
+
+            expect(result.verified).toBe(3);
+            expect(result.totalAmount).toBe(3000);
+            expect(mockTx.agentDeposit.update).toHaveBeenCalledTimes(3);
+            expect(mockTx.agentBalance.update).toHaveBeenCalledTimes(1); // One update per agent
+        });
+
+        it('should handle exactly 50 deposits', async () => {
+            const depositIds = Array.from({ length: 50 }, (_, i) => i + 1);
+            const mockDeposits = depositIds.map(id => ({
+                id, agentId, amount: 10, status: 'pending', referenceNumber: `REF${id}`
+            }));
+
+            mockTx.agentDeposit.findMany.mockResolvedValue(mockDeposits);
+            mockTx.agentDeposit.update.mockResolvedValue({});
+
+            const result = await agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId);
+
+            expect(result.verified).toBe(50);
+            expect(mockTx.agentDeposit.update).toHaveBeenCalledTimes(50);
+        });
+
+        it('should throw error if more than 50 deposits provided', async () => {
+            const depositIds = Array.from({ length: 51 }, (_, i) => i + 1);
+            await expect(agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId))
+                .rejects.toThrow('Cannot verify more than 50 deposits at once');
+        });
+
+        it('should throw error if agent has insufficient balance', async () => {
+            const depositIds = [1, 2];
+            const mockDeposits = [
+                { id: 1, agentId, amount: 3000, status: 'pending', referenceNumber: 'REF1' },
+                { id: 2, agentId, amount: 3000, status: 'pending', referenceNumber: 'REF2' },
+            ]; // Total 6000, balance is 5000
+
+            mockTx.agentDeposit.findMany.mockResolvedValue(mockDeposits);
+
+            await expect(agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId))
+                .rejects.toThrow(/insufficient balance/);
+        });
+
+        it('should throw error if any deposit is not found', async () => {
+            const depositIds = [1, 2];
+            mockTx.agentDeposit.findMany.mockResolvedValue([{ id: 1, agentId, amount: 100, status: 'pending' }]);
+
+            await expect(agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId))
+                .rejects.toThrow('One or more deposit records not found');
+        });
+
+        it('should throw error if any deposit is already verified', async () => {
+            const depositIds = [1, 2];
+            mockTx.agentDeposit.findMany.mockResolvedValue([
+                { id: 1, agentId, amount: 100, status: 'verified', referenceNumber: 'REF1' },
+                { id: 2, agentId, amount: 100, status: 'pending', referenceNumber: 'REF2' }
+            ]);
+
+            await expect(agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId))
+                .rejects.toThrow(/Cannot verify deposits with non - pending status/);
+        });
+
+        it('should verify deposits from multiple agents successfully', async () => {
+            const agent1Id = 456;
+            const agent2Id = 457;
+            const depositIds = [1, 2];
+            const mockDeposits = [
+                { id: 1, agentId: agent1Id, amount: 1000, status: 'pending', referenceNumber: 'REF1' },
+                { id: 2, agentId: agent2Id, amount: 1000, status: 'pending', referenceNumber: 'REF2' }
+            ];
+
+            mockTx.agentDeposit.findMany.mockResolvedValue(mockDeposits);
+            mockTx.agentBalance.findUnique
+                .mockResolvedValueOnce({ id: 10, agentId: agent1Id, currentBalance: 5000 })
+                .mockResolvedValueOnce({ id: 11, agentId: agent2Id, currentBalance: 5000 });
+            mockTx.user.findUnique
+                .mockResolvedValueOnce({ id: agent1Id, firstName: 'Agent', lastName: 'One' })
+                .mockResolvedValueOnce({ id: agent2Id, firstName: 'Agent', lastName: 'Two' });
+
+            const result = await agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId);
+
+            expect(result.verified).toBe(2);
+            expect(mockTx.agentBalance.update).toHaveBeenCalledTimes(2); // One update per agent
+        });
+
+        it('should emit AGENT_COLLECTION_RECONCILED event after bulk verification', async () => {
+            const depositIds = [1];
+            mockTx.agentDeposit.findMany.mockResolvedValue([
+                { id: 1, agentId: 456, amount: 1000, status: 'pending', referenceNumber: 'REF1' }
+            ]);
+
+            await agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId);
+
+            expect(appEvents.emit).toHaveBeenCalledWith(AppEvent.AGENT_COLLECTION_RECONCILED);
+        });
+
+        it('should handle partial matching in FIFO logic', async () => {
+            const depositIds = [1];
+            const mockDeposits = [
+                { id: 1, agentId, amount: 500, status: 'pending', referenceNumber: 'REF1' }
+            ];
+            const mockCollections = [
+                { id: 101, agentId, amount: 1000, status: 'approved', allocatedAmount: 0 }
+            ];
+
+            mockTx.agentDeposit.findMany.mockResolvedValue(mockDeposits);
+            mockTx.agentCollection.findMany.mockResolvedValue(mockCollections);
+            mockTx.agentCollection.update.mockResolvedValue({});
+
+            await agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId);
+
+            expect(mockTx.agentCollection.update).toHaveBeenCalledWith({
+                where: { id: 101 },
+                data: {
+                    allocatedAmount: expect.any(Prisma.Decimal)
+                }
+            });
+            // Verify it didn't set status to 'deposited' since it's only partial
+            const updateArgs = mockTx.agentCollection.update.mock.calls[0][0];
+            expect(updateArgs.data.status).toBeUndefined();
+        });
+
+        it('should handle no pending collections', async () => {
+            const depositIds = [1];
+            mockTx.agentDeposit.findMany.mockResolvedValue([
+                { id: 1, agentId, amount: 1000, status: 'pending', referenceNumber: 'REF1' }
+            ]);
+            mockTx.agentCollection.findMany.mockResolvedValue([]);
+
+            await agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId);
+
+            expect(mockTx.agentCollection.update).not.toHaveBeenCalled();
         });
     });
 });

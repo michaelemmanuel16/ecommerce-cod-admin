@@ -3,9 +3,11 @@ import * as financialController from '../controllers/financialController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
+import { apiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
+router.use(apiLimiter);
 router.use(authenticate);
 
 // Financial summary and reports

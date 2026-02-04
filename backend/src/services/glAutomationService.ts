@@ -634,13 +634,13 @@ export class GLAutomationService {
 
     const transactions: TransactionCreateData[] = [
       {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
         debitAmount: depositAmount,
         creditAmount: new Decimal(0),
         description: `Deposit verification - Agent #${deposit.agentId} (Ref: ${deposit.referenceNumber})`,
       },
       {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS, tx),
         debitAmount: new Decimal(0),
         creditAmount: depositAmount,
         description: `Deposit matching - Agent #${deposit.agentId}`,

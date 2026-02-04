@@ -178,7 +178,7 @@ export const adminService = {
         customers: ['create', 'view', 'update', 'delete'],
         products: ['view'],
         financial: [],
-        analytics: [],
+        analytics: ['view'],
         workflows: [],
         settings: [],
       },

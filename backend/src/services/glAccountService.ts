@@ -13,14 +13,16 @@ export class GLAccountService {
      * Uses a static cache to minimize database hits.
      * 
      * @param code - 4-digit account code
+     * @param tx - Optional transaction client (use this to avoid connection pool exhaustion)
      * @returns Database ID
      * @throws Error if account does not exist
      */
-    static async getAccountIdByCode(code: string): Promise<number> {
+    static async getAccountIdByCode(code: string, tx?: any): Promise<number> {
         const cachedId = this.idCache.get(code);
         if (cachedId) return cachedId;
 
-        const account = await prisma.account.findUnique({
+        const client = tx || prisma;
+        const account = await client.account.findUnique({
             where: { code },
             select: { id: true }
         });

@@ -140,7 +140,7 @@ export interface CollectionRecord {
   orderId: number;
   agentId: number;
   amount: number;
-  status: 'draft' | 'reconciled';
+  status: 'draft' | 'verified' | 'approved' | 'deposited' | 'reconciled';
   collectionDate: string;
 
   verifiedAt?: string;
@@ -509,5 +509,26 @@ export const financialService = {
 
   async bulkVerifyCollections(ids: number[]): Promise<void> {
     await apiClient.post('/api/agent-reconciliation/bulk-verify', { ids });
+  },
+
+  async bulkVerifyDeposits(ids: number[]): Promise<{
+    verified: number;
+    totalAmount: number;
+  }> {
+    const response = await apiClient.post('/api/agent-reconciliation/deposits/bulk-verify', { ids });
+    return response.data;
+  },
+
+  async getAgentDeposits(params?: { agentId?: number; status?: string }): Promise<any[]> {
+    const response = await apiClient.get('/api/agent-reconciliation/deposits', { params });
+    return response.data;
+  },
+
+  async verifyDeposit(depositId: number): Promise<void> {
+    await apiClient.post(`/api/agent-reconciliation/deposits/${depositId}/verify`);
+  },
+
+  async rejectDeposit(depositId: number, notes: string): Promise<void> {
+    await apiClient.post(`/api/agent-reconciliation/deposits/${depositId}/reject`, { notes });
   }
 };

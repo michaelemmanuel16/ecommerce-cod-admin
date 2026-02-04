@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
-import { Users, DollarSign, Clock, AlertTriangle } from 'lucide-react';
+import { Users, DollarSign, Clock, AlertTriangle, Banknote } from 'lucide-react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { FinancialKPICard } from './cards/FinancialKPICard';
 import { AgentSettlementChart } from './charts/AgentSettlementChart';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { CollectionActionModal } from './modals/CollectionActionModal';
+import { DepositActionModal } from './modals/DepositActionModal';
 import { formatCurrency } from '../../utils/format';
 
 export const AgentReconciliationTab: React.FC = () => {
@@ -16,6 +17,7 @@ export const AgentReconciliationTab: React.FC = () => {
   } = useFinancialStore();
 
   const [selectedAgent, setSelectedAgent] = React.useState<{ id: number; name: string } | null>(null);
+  const [depositModalOpen, setDepositModalOpen] = React.useState(false);
 
   useEffect(() => {
     fetchAgentCashHoldings();
@@ -119,6 +121,13 @@ export const AgentReconciliationTab: React.FC = () => {
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Agent Accountability</h3>
+            <Button
+              variant="primary"
+              onClick={() => setDepositModalOpen(true)}
+            >
+              <Banknote className="w-4 h-4 mr-2" />
+              Manage Deposits
+            </Button>
           </div>
 
           <div className="overflow-x-auto">
@@ -215,6 +224,11 @@ export const AgentReconciliationTab: React.FC = () => {
           agentName={selectedAgent.name}
         />
       )}
+
+      <DepositActionModal
+        isOpen={depositModalOpen}
+        onClose={() => setDepositModalOpen(false)}
+      />
     </div>
   );
 };
