@@ -12,8 +12,8 @@ router.post('/import/:uniqueUrl', webhookLimiter, webhookController.importOrders
 router.post('/import', webhookLimiter, webhookController.importOrdersViaWebhook); // Legacy API key-based import
 
 // Protected routes
-router.use(authenticate);
 router.use(apiLimiter); // Rate limiting for authenticated webhook management
+router.use(authenticate);
 
 router.get('/', requirePermission(['super_admin', 'admin']), webhookController.getAllWebhooks);
 router.post('/', requirePermission(['super_admin', 'admin']), webhookController.createWebhook);

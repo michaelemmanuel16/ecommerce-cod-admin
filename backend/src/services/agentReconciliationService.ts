@@ -328,9 +328,22 @@ export class AgentReconciliationService {
                 depositsByAgent.set(deposit.agentId, agentDeposits);
             }
 
+            const { GLAutomationService } = await import('./glAutomationService');
+
             // Process each agent's deposits
             for (const [agentId, agentDeposits] of depositsByAgent) {
-                const balance = await this.getOrCreateBalance(agentId, extTx);
+                // Lock agent balance row for this transaction to prevent race conditions
+                const balances = await extTx.$queryRaw<any[]>`
+                    SELECT * FROM "agent_balances" WHERE "agent_id" = ${agentId} FOR UPDATE
+                `;
+
+                let balance = balances[0];
+
+                if (!balance) {
+                    // Create if not exists (already handled in loop but locking is key)
+                    balance = await this.getOrCreateBalance(agentId, extTx);
+                }
+
                 const currBal = new Prisma.Decimal(balance.currentBalance.toString());
 
                 // Calculate total deposit amount for this agent
@@ -363,7 +376,6 @@ export class AgentReconciliationService {
                     });
 
                     // Create GL Entry for each deposit
-                    const { GLAutomationService } = await import('./glAutomationService');
                     await GLAutomationService.createAgentDepositEntry(extTx, deposit, verifierId);
 
                     totalAmount = totalAmount.plus(new Prisma.Decimal(deposit.amount.toString()));

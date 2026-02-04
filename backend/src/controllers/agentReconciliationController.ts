@@ -303,6 +303,18 @@ export class AgentReconciliationController {
             throw new AppError('Cannot verify more than 50 deposits at once', 400);
         }
 
+        // Validate each ID is a positive integer and there are no duplicates
+        const uniqueIds = new Set<number>();
+        for (const id of ids) {
+            if (typeof id !== 'number' || !Number.isInteger(id) || id <= 0) {
+                throw new AppError(`Invalid deposit ID: ${id}. Must be a positive integer.`, 400);
+            }
+            if (uniqueIds.has(id)) {
+                throw new AppError(`Duplicate deposit ID detected: ${id}`, 400);
+            }
+            uniqueIds.add(id);
+        }
+
         const result = await agentReconciliationService.bulkVerifyDeposits(ids, userId);
 
         // Emit socket event for the whole batch

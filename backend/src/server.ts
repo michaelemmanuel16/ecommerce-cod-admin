@@ -137,8 +137,8 @@ app.use('/api/deliveries', apiLimiter, deliveryRoutes);
 app.use('/api/financial', apiLimiter, financialRoutes);
 app.use('/api/gl', apiLimiter, glRoutes);
 app.use('/api/workflows', apiLimiter, workflowRoutes);
-app.use('/api/webhooks', webhookRoutes);
-app.use('/api/analytics', analyticsRoutes); // No rate limit - already cached & authenticated
+app.use('/api/webhooks', apiLimiter, webhookRoutes);
+app.use('/api/analytics', apiLimiter, analyticsRoutes);
 app.use('/api/notifications', apiLimiter, notificationRoutes);
 app.use('/api/upload', apiLimiter, uploadRoutes);
 app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);

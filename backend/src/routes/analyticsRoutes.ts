@@ -6,8 +6,8 @@ import { apiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-router.use(authenticate);
 router.use(apiLimiter); // Add rate limiting to prevent DoS on database-heavy queries
+router.use(authenticate);
 
 // Cache analytics endpoints (5 minutes default)
 router.get('/dashboard', requireResourcePermission('analytics', 'view'), cacheMiddleware(300), analyticsController.getDashboardMetrics);

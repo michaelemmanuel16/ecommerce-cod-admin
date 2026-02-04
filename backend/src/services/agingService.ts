@@ -8,24 +8,43 @@ export class AgingService {
     this.setupEventListeners();
   }
 
+  private handlers: { [key: string]: (...args: any[]) => void } = {};
+
   private setupEventListeners() {
-    appEvents.on(AppEvent.AGENT_COLLECTION_RECONCILED, () => {
+    this.handlers[AppEvent.AGENT_COLLECTION_RECONCILED] = () => {
       this.refreshAll().catch(err =>
         logger.error('Proactive aging refresh failed after reconciliation:', err)
       );
-    });
+    };
 
-    appEvents.on(AppEvent.BULK_ORDERS_IMPORTED, () => {
+    this.handlers[AppEvent.BULK_ORDERS_IMPORTED] = () => {
       this.refreshAll().catch(err =>
         logger.error('Proactive aging refresh failed after bulk import:', err)
       );
-    });
+    };
 
-    appEvents.on(AppEvent.ORDERS_DELETED, () => {
+    this.handlers[AppEvent.ORDERS_DELETED] = () => {
       this.refreshAll().catch(err =>
         logger.error('Proactive aging refresh failed after order deletion:', err)
       );
+    };
+
+    // Register listeners
+    Object.entries(this.handlers).forEach(([event, handler]) => {
+      appEvents.on(event as any, handler);
     });
+  }
+
+  /**
+   * Cleanup event listeners to prevent memory leaks.
+   * Call this when the service is no longer needed (e.g., in tests or server shutdown).
+   */
+  public destroy() {
+    Object.entries(this.handlers).forEach(([event, handler]) => {
+      appEvents.off(event as any, handler);
+    });
+    this.handlers = {};
+    logger.info('AgingService destroyed and listeners removed');
   }
 
   /**
