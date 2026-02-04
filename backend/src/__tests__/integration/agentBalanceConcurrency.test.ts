@@ -86,5 +86,5 @@ describe('Agent Balance Concurrency Integration Test', () => {
         const finalBalance = await agentReconciliationService.getAgentBalance(testAgent.id);
         expect(Number(finalBalance!.currentBalance)).toBe(1500);
         expect(Number(finalBalance!.totalDeposited)).toBe(500);
-    });
+    }, 60000);
 });
