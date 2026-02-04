@@ -29,6 +29,26 @@ interface UploadResponse {
     }>;
 }
 
+// Helper function to format error messages for users
+const formatErrorMessage = (error: string): string => {
+    if (error.includes('Unique constraint') || error.includes('phone_number')) {
+        return 'Duplicate phone number - customer already exists';
+    }
+    if (error.includes('timeout') || error.includes('Database timeout')) {
+        return 'Request timed out - try with a smaller file (fewer orders)';
+    }
+    if (error.includes('P2002')) {
+        return 'Duplicate entry detected - record already exists';
+    }
+    if (error.includes('P2024')) {
+        return 'Database connection timeout - please try again with fewer orders';
+    }
+    if (error.includes('Database error')) {
+        return error; // Already formatted by backend
+    }
+    return error; // Return original error for other cases
+};
+
 interface ApiError {
     response?: {
         data?: {
@@ -248,7 +268,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
                                                         <p className="text-sm font-semibold text-gray-900 truncate">
                                                             Phone: {(err.order as { customerPhone?: string })?.customerPhone || 'Unknown'}
                                                         </p>
-                                                        <p className="text-xs text-red-600 mt-1">{err.error}</p>
+                                                        <p className="text-xs text-red-600 mt-1">{formatErrorMessage(err.error)}</p>
                                                     </div>
                                                 </div>
                                             </div>

@@ -47,7 +47,7 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
-      DATABASE_URL: postgresql://ecommerce_user:ecommerce_dev_password@postgres:5432/ecommerce_cod
+      DATABASE_URL: postgresql://ecommerce_user:ecommerce_dev_password@postgres:5432/ecommerce_cod?schema=public&connection_limit=30&pool_timeout=10&connect_timeout=10
       REDIS_HOST: redis
       REDIS_PORT: 6379
       JWT_SECRET: dev_jwt_secret_change_in_production_min_64_chars_long

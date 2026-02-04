@@ -15,11 +15,16 @@ export const getDashboardMetrics = async (req: AuthRequest, res: Response): Prom
       req.user?.role
     );
 
-    console.log('[DEBUG] analyticsController.getDashboardMetrics response:', metrics);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[DEBUG] analyticsController.getDashboardMetrics response:', metrics);
+    }
     res.json({ metrics });
   } catch (error) {
-    console.error('[DEBUG] analyticsController.getDashboardMetrics error:', error);
-    throw error;
+    console.error('[analyticsController] getDashboardMetrics error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch dashboard metrics',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
+    });
   }
 };
 
@@ -40,7 +45,11 @@ export const getSalesTrends = async (req: AuthRequest, res: Response): Promise<v
 
     res.json({ trends });
   } catch (error) {
-    throw error;
+    console.error('[analyticsController] getSalesTrends error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch sales trends',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
+    });
   }
 };
 
@@ -59,7 +68,11 @@ export const getConversionFunnel = async (req: AuthRequest, res: Response): Prom
 
     res.json({ funnel });
   } catch (error) {
-    throw error;
+    console.error('[analyticsController] getConversionFunnel error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch conversion funnel',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
+    });
   }
 };
 
@@ -83,7 +96,11 @@ export const getRepPerformance = async (req: AuthRequest, res: Response): Promis
       res.json({ performance });
     }
   } catch (error) {
-    throw error;
+    console.error('[analyticsController] getRepPerformance error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch rep performance',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
+    });
   }
 };
 
@@ -92,7 +109,11 @@ export const getAgentPerformance = async (_req: AuthRequest, res: Response): Pro
     const performance = await analyticsService.getAgentPerformance();
     res.json({ performance });
   } catch (error) {
-    throw error;
+    console.error('[analyticsController] getAgentPerformance error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch agent performance',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
+    });
   }
 };
 
@@ -101,7 +122,11 @@ export const getCustomerInsights = async (_req: AuthRequest, res: Response): Pro
     const insights = await analyticsService.getCustomerInsights();
     res.json({ insights });
   } catch (error) {
-    throw error;
+    console.error('[analyticsController] getCustomerInsights error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch customer insights',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
+    });
   }
 };
 
@@ -110,7 +135,11 @@ export const getPendingOrders = async (req: AuthRequest, res: Response): Promise
     const orders = await analyticsService.getPendingOrders(req.user?.id, req.user?.role);
     res.json({ orders });
   } catch (error) {
-    throw error;
+    console.error('[analyticsController] getPendingOrders error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch pending orders',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
+    });
   }
 };
 
@@ -119,6 +148,10 @@ export const getRecentActivity = async (req: AuthRequest, res: Response): Promis
     const activity = await analyticsService.getRecentActivity(req.user?.id, req.user?.role);
     res.json({ activity });
   } catch (error) {
-    throw error;
+    console.error('[analyticsController] getRecentActivity error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch recent activity',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
+    });
   }
 };

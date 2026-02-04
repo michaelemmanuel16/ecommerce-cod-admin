@@ -450,36 +450,26 @@ export class OrderService {
           }
 
           const createdOrder = await prisma.$transaction(async (tx) => {
-            // 3. Find or Create Customer
-            let customer = await tx.customer.findUnique({
-              where: { phoneNumber: orderData.customerPhone }
+            // 3. Upsert Customer (handles race conditions safely)
+            const customer = await tx.customer.upsert({
+              where: { phoneNumber: orderData.customerPhone },
+              update: {
+                // Update existing customer with new data if provided
+                ...(orderData.customerAlternatePhone && { alternatePhone: orderData.customerAlternatePhone }),
+                ...(orderData.deliveryAddress && { address: orderData.deliveryAddress }),
+                ...(orderData.deliveryState && { state: orderData.deliveryState }),
+                ...(orderData.deliveryArea && { area: orderData.deliveryArea })
+              },
+              create: {
+                firstName: orderData.customerFirstName || 'Unknown',
+                lastName: orderData.customerLastName || '',
+                phoneNumber: orderData.customerPhone,
+                alternatePhone: orderData.customerAlternatePhone,
+                address: orderData.deliveryAddress,
+                state: orderData.deliveryState,
+                area: orderData.deliveryArea
+              }
             });
-
-            if (!customer) {
-              const potentialCustomers = await tx.customer.findMany({
-                where: { phoneNumber: { endsWith: normalizedPhone } }
-              });
-              customer = potentialCustomers[0] || null;
-            }
-
-            if (!customer) {
-              customer = await tx.customer.create({
-                data: {
-                  firstName: orderData.customerFirstName || 'Unknown',
-                  lastName: orderData.customerLastName || '',
-                  phoneNumber: orderData.customerPhone,
-                  alternatePhone: orderData.customerAlternatePhone,
-                  address: orderData.deliveryAddress,
-                  state: orderData.deliveryState,
-                  area: orderData.deliveryArea
-                }
-              });
-            } else if (orderData.customerAlternatePhone && !customer.alternatePhone) {
-              await tx.customer.update({
-                where: { id: customer.id },
-                data: { alternatePhone: orderData.customerAlternatePhone }
-              });
-            }
 
             // 4. Handle product lookup
             let orderItemsData: any[] = [];
@@ -564,6 +554,9 @@ export class OrderService {
             }
 
             return newOrder;
+          }, {
+            maxWait: 10000,  // Wait max 10s to get transaction slot
+            timeout: 15000   // Transaction must complete within 15s
           });
 
           // Success - track it and emit events
@@ -585,11 +578,43 @@ export class OrderService {
           if (error.message === 'DUPLICATE_ORDER') {
             results.duplicates++;
             logger.info('Duplicate order skipped', { phone: orderData.customerPhone });
-          } else {
+          } else if (error.code === 'P2002') {
+            // Prisma unique constraint violation
+            results.duplicates++;
+            logger.warn('Duplicate customer detected via constraint', {
+              phone: orderData.customerPhone,
+              field: error.meta?.target,
+              constraint: error.meta?.constraint
+            });
+          } else if (error.code === 'P2024') {
+            // Prisma connection timeout
             results.failed++;
             results.errors.push({
               order: orderData,
-              error: error.message
+              error: 'Database timeout - please try with smaller batch or contact support'
+            });
+            logger.error('Database timeout during import', {
+              phone: orderData.customerPhone,
+              orderData
+            });
+          } else if (error.code && error.code.startsWith('P')) {
+            // Other Prisma errors
+            results.failed++;
+            results.errors.push({
+              order: orderData,
+              error: `Database error: ${error.message}`
+            });
+            logger.error('Prisma error during import', {
+              code: error.code,
+              message: error.message,
+              phone: orderData.customerPhone
+            });
+          } else {
+            // Generic errors
+            results.failed++;
+            results.errors.push({
+              order: orderData,
+              error: error.message || 'Unknown error'
             });
             logger.error('Failed to import order', {
               error: error.message,
