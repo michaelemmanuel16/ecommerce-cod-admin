@@ -279,6 +279,9 @@ export class AgentReconciliationService {
             appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
 
             return updated;
+        }, {
+            maxWait: 5000,
+            timeout: 20000
         });
     }
 
