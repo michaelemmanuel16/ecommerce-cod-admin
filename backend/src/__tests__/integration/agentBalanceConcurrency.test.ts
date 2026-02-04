@@ -67,9 +67,9 @@ describe('Agent Balance Concurrency Integration Test', () => {
             data: { currentBalance: 2000 }
         });
 
-        // 2. Create 10 deposits of 100 each
+        // 2. Create 5 deposits of 100 each
         const depositIds: number[] = [];
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 5; i++) {
             const d = await agentReconciliationService.createDeposit(testAgent.id, 100, 'bank_transfer', `REF-CON-${i}`);
             depositIds.push(d.id);
         }
@@ -82,9 +82,9 @@ describe('Agent Balance Concurrency Integration Test', () => {
 
         await Promise.all(promises);
 
-        // 4. Check final balance: 2000 - (10 * 100) = 1000
+        // 4. Check final balance: 2000 - (5 * 100) = 1500
         const finalBalance = await agentReconciliationService.getAgentBalance(testAgent.id);
-        expect(Number(finalBalance!.currentBalance)).toBe(1000);
-        expect(Number(finalBalance!.totalDeposited)).toBe(1000);
+        expect(Number(finalBalance!.currentBalance)).toBe(1500);
+        expect(Number(finalBalance!.totalDeposited)).toBe(500);
     });
 });

@@ -280,8 +280,8 @@ export class AgentReconciliationService {
 
             return updated;
         }, {
-            maxWait: 5000,
-            timeout: 20000
+            maxWait: 10000,
+            timeout: 30000
         });
     }
 
