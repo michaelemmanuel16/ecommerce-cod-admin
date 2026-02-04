@@ -603,7 +603,7 @@ export class OrderService {
             results.failed++;
             results.errors.push({
               order: orderData,
-              error: `Database error: ${error.message} `
+              error: `Database error: ${error.message}`
             });
             logger.error('Prisma error during import', {
               code: error.code,
