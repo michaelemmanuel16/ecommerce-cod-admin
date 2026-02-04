@@ -36,6 +36,9 @@ apiClient.interceptors.request.use(
     const token = useAuthStore.getState().accessToken;
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log(`[API Interceptor] Token attached to request (${token.substring(0, 10)}...)`);
+    } else {
+      console.warn('[API Interceptor] No token found in store or headers object missing. Token status:', !!token);
     }
 
     // Check cache for GET requests
@@ -143,10 +146,13 @@ apiClient.interceptors.response.use(
 
         if (originalRequest.headers) {
           originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+          console.log('[API Interceptor] Token attached to retry request. Header length:', originalRequest.headers.Authorization.length);
         }
 
+        console.log('[API Interceptor] Refresh successful, retrying original request:', originalRequest.method?.toUpperCase(), originalRequest.url);
         return apiClient(originalRequest);
       } catch (refreshError: any) {
+        console.error('[API Interceptor] Token refresh failed:', refreshError.response?.status, refreshError.message);
         // If the error is a 5xx error or network error, don't log out
         // The server might be temporarily down (e.g., EADDRINUSE restart issue)
         const isServerError = !refreshError.response || (refreshError.response.status >= 500 && refreshError.response.status <= 599);

@@ -21,6 +21,18 @@ import { prismaMock } from '../mocks/prisma.mock';
 import orderService from '../../services/orderService';
 import { AppError } from '../../middleware/errorHandler';
 import { OrderStatus } from '@prisma/client';
+// Mock appEvents
+jest.mock('../../utils/appEvents', () => ({
+  __esModule: true,
+  default: {
+    emit: jest.fn(),
+  },
+  AppEvent: {
+    BULK_ORDERS_IMPORTED: 'BULK_ORDERS_IMPORTED',
+    AGENT_COLLECTION_RECONCILED: 'AGENT_COLLECTION_RECONCILED',
+  },
+}));
+import appEvents, { AppEvent } from '../../utils/appEvents';
 
 describe('OrderService', () => {
   let serviceInstance: typeof orderService; // Renamed to avoid conflict with imported instance
