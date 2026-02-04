@@ -142,7 +142,7 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
       req.user = decoded;
       next();
     } catch (jwtError: any) {
-      console.log(`[AuthMiddleware] JWT Verification Failed for ${req.method} ${req.path}:`, jwtError.message);
+      console.log('[AuthMiddleware] JWT Verification Failed for %s %s:', req.method, req.path, jwtError.message);
 
       if (jwtError.message === 'TOKEN_FORMAT_OUTDATED') {
         res.status(401).json({
