@@ -45,14 +45,45 @@ describe('GL Concurrency Integration Test', () => {
     });
 
     afterAll(async () => {
-        // Cleanup
-        if (testAccount) {
-            await prisma.accountTransaction.deleteMany({ where: { accountId: testAccount.id } });
-            await prisma.account.delete({ where: { id: testAccount.id } });
-        }
-        if (offsetAccount) {
-            await prisma.accountTransaction.deleteMany({ where: { accountId: offsetAccount.id } });
-            await prisma.account.delete({ where: { id: offsetAccount.id } });
+        // Cleanup: Delete JournalEntries first, which will cascade to AccountTransactions
+        const accountIds = [];
+        if (testAccount) accountIds.push(testAccount.id);
+        if (offsetAccount) accountIds.push(offsetAccount.id);
+
+        if (accountIds.length > 0) {
+            // Find all journal entries that have transactions for these accounts
+            const entries = await prisma.journalEntry.findMany({
+                where: {
+                    transactions: {
+                        some: {
+                            accountId: { in: accountIds }
+                        }
+                    }
+                }
+            });
+
+            const entryIds = entries.map(e => e.id);
+
+            if (entryIds.length > 0) {
+                // Delete the journal entries (cascades to transactions)
+                await prisma.journalEntry.deleteMany({
+                    where: { id: { in: entryIds } }
+                });
+            }
+
+            // Now delete the accounts
+            if (testAccount) {
+                await prisma.accountTransaction.deleteMany({ where: { accountId: testAccount.id } });
+                await prisma.account.delete({ where: { id: testAccount.id } }).catch(err => {
+                    console.warn(`Failed to delete testAccount ${testAccount.id}: ${err.message}`);
+                });
+            }
+            if (offsetAccount) {
+                await prisma.accountTransaction.deleteMany({ where: { accountId: offsetAccount.id } });
+                await prisma.account.delete({ where: { id: offsetAccount.id } }).catch(err => {
+                    console.warn(`Failed to delete offsetAccount ${offsetAccount.id}: ${err.message}`);
+                });
+            }
         }
     });
 
