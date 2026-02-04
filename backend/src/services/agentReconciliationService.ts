@@ -2,9 +2,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
-// import { GL_ACCOUNTS } from '../config/glAccounts'; // Removed unused import
-// import { GLUtils } from '../utils/glUtils'; // Removed unused import
-// import { GLAccountService } from './glAccountService'; // Removed unused import
+import appEvents, { AppEvent } from '../utils/appEvents';
 
 export class AgentReconciliationService {
     /**
@@ -141,11 +139,11 @@ export class AgentReconciliationService {
             }
 
             if (deposit.status !== 'pending') {
-                throw new AppError(`Deposit cannot be rejected from status: ${deposit.status}`, 400);
+                throw new AppError(`Deposit cannot be rejected from status: ${deposit.status} `, 400);
             }
 
             const dateStr = new Date().toLocaleString();
-            const formattedNotes = notes ? `${deposit.notes ? deposit.notes + '\n' : ''}[REJECTED] ${dateStr}: ${notes}` : deposit.notes;
+            const formattedNotes = notes ? `${deposit.notes ? deposit.notes + '\n' : ''} [REJECTED] ${dateStr}: ${notes} ` : deposit.notes;
 
             const updated = await extTx.agentDeposit.update({
                 where: { id: depositId },
@@ -157,7 +155,7 @@ export class AgentReconciliationService {
                 },
             });
 
-            logger.info(`Deposit ${depositId} rejected by user ${rejectedById}`);
+            logger.info(`Deposit ${depositId} rejected by user ${rejectedById} `);
             return updated;
         });
     }
@@ -177,7 +175,7 @@ export class AgentReconciliationService {
             }
 
             if (deposit.status !== 'pending') {
-                throw new AppError(`Deposit cannot be verified from status: ${deposit.status}`, 400);
+                throw new AppError(`Deposit cannot be verified from status: ${deposit.status} `, 400);
             }
 
             // Update agent balance using atomic transaction
@@ -270,18 +268,179 @@ export class AgentReconciliationService {
                     data: {
                         notes: deposit.notes
                             ? `${deposit.notes} (Unallocated remainder: ${remainingAmount.toString()})`
-                            : `Unallocated remainder: ${remainingAmount.toString()}`
+                            : `Unallocated remainder: ${remainingAmount.toString()} `
                     }
                 });
             }
 
-            logger.info(`Deposit ${depositId} verified by user ${verifierId}`);
+            logger.info(`Deposit ${depositId} verified by user ${verifierId} `);
 
-            // Trigger proactive aging refresh (non-blocking)
-            const agingService = (await import('./agingService')).default;
-            agingService.refreshAll().catch(err => logger.error('Proactive aging refresh failed after deposit verification:', err));
+            // Trigger proactive aging refresh via event bus
+            appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
 
             return updated;
+        });
+    }
+
+    /**
+     * Bulk verify agent deposits
+     * Atomic: rolls back entirely if any verification fails
+     * Maximum 50 deposits per batch
+     */
+    async bulkVerifyDeposits(depositIds: number[], verifierId: number): Promise<{
+        verified: number;
+        totalAmount: number;
+    }> {
+        if (depositIds.length === 0) {
+            throw new AppError('No deposit IDs provided', 400);
+        }
+
+        if (depositIds.length > 50) {
+            throw new AppError('Cannot verify more than 50 deposits at once', 400);
+        }
+
+        return await prisma.$transaction(async (tx) => {
+            const extTx = tx as any;
+            let totalAmount = new Prisma.Decimal(0);
+
+            // Fetch all deposits first to validate
+            const deposits = await extTx.agentDeposit.findMany({
+                where: { id: { in: depositIds } },
+                orderBy: { depositDate: 'asc' } // Process oldest first
+            });
+
+            if (deposits.length !== depositIds.length) {
+                throw new AppError('One or more deposit records not found', 404);
+            }
+
+            // Validate all deposits are in pending status
+            const invalidDeposits = deposits.filter((d: any) => d.status !== 'pending');
+            if (invalidDeposits.length > 0) {
+                const refs = invalidDeposits.map((d: any) => d.referenceNumber).join(', ');
+                throw new AppError(`Cannot verify deposits with non - pending status: ${refs} `, 400);
+            }
+
+            // Group deposits by agent for optimized processing
+            const depositsByAgent = new Map<number, any[]>();
+            for (const deposit of deposits) {
+                const agentDeposits = depositsByAgent.get(deposit.agentId) || [];
+                agentDeposits.push(deposit);
+                depositsByAgent.set(deposit.agentId, agentDeposits);
+            }
+
+            // Process each agent's deposits
+            for (const [agentId, agentDeposits] of depositsByAgent) {
+                const balance = await this.getOrCreateBalance(agentId, extTx);
+                const currBal = new Prisma.Decimal(balance.currentBalance.toString());
+
+                // Calculate total deposit amount for this agent
+                const agentTotalDeposit = agentDeposits.reduce(
+                    (sum, d) => sum.plus(new Prisma.Decimal(d.amount.toString())),
+                    new Prisma.Decimal(0)
+                );
+
+                // Validate agent has sufficient balance
+                if (currBal.lessThan(agentTotalDeposit)) {
+                    const agent = await extTx.user.findUnique({
+                        where: { id: agentId },
+                        select: { firstName: true, lastName: true }
+                    });
+                    throw new AppError(
+                        `Verification failed: Agent ${agent?.firstName} ${agent?.lastName} has insufficient balance(${currBal.toString()} < ${agentTotalDeposit.toString()})`,
+                        400
+                    );
+                }
+
+                // Update all deposits for this agent
+                for (const deposit of agentDeposits) {
+                    await extTx.agentDeposit.update({
+                        where: { id: deposit.id },
+                        data: {
+                            status: 'verified',
+                            verifiedAt: new Date(),
+                            verifiedById: verifierId,
+                        },
+                    });
+
+                    // Create GL Entry for each deposit
+                    const { GLAutomationService } = await import('./glAutomationService');
+                    await GLAutomationService.createAgentDepositEntry(extTx, deposit, verifierId);
+
+                    totalAmount = totalAmount.plus(new Prisma.Decimal(deposit.amount.toString()));
+                }
+
+                // Update agent balance once per agent
+                await extTx.agentBalance.update({
+                    where: { id: balance.id },
+                    data: {
+                        totalDeposited: { increment: agentTotalDeposit.toNumber() },
+                        currentBalance: { decrement: agentTotalDeposit.toNumber() },
+                        lastSettlementDate: new Date(),
+                    },
+                });
+
+                // FIFO Matching for this agent's total deposit amount
+                let remainingAmount = agentTotalDeposit;
+
+                const approvedCollections = await extTx.agentCollection.findMany({
+                    where: {
+                        agentId,
+                        status: 'approved',
+                    },
+                    orderBy: {
+                        collectionDate: 'asc'
+                    }
+                });
+
+                // Filter collections that are not yet fully covered
+                const pendingMatches = approvedCollections.filter((coll: any) => {
+                    const amount = new Prisma.Decimal(coll.amount.toString());
+                    const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
+                    return allocated.lessThan(amount);
+                });
+
+                for (const coll of pendingMatches) {
+                    if (remainingAmount.isZero()) break;
+
+                    const collAmount = new Prisma.Decimal(coll.amount.toString());
+                    const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
+                    const outstanding = collAmount.minus(allocated);
+
+                    if (remainingAmount.greaterThanOrEqualTo(outstanding)) {
+                        // Fully cover this collection
+                        await extTx.agentCollection.update({
+                            where: { id: coll.id },
+                            data: {
+                                status: 'deposited',
+                                allocatedAmount: collAmount
+                            }
+                        });
+                        remainingAmount = remainingAmount.minus(outstanding);
+                    } else if (remainingAmount.greaterThan(0)) {
+                        // Partially cover this collection
+                        await extTx.agentCollection.update({
+                            where: { id: coll.id },
+                            data: {
+                                allocatedAmount: allocated.plus(remainingAmount)
+                            }
+                        });
+                        remainingAmount = new Prisma.Decimal(0);
+                    }
+                }
+            }
+
+            logger.info(`Bulk verified ${deposits.length} deposits by user ${verifierId} `, {
+                depositIds,
+                totalAmount: totalAmount.toString()
+            });
+
+            // Trigger proactive aging refresh (non-blocking)
+            appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
+
+            return {
+                verified: deposits.length,
+                totalAmount: totalAmount.toNumber()
+            };
         });
     }
 
@@ -352,7 +511,7 @@ export class AgentReconciliationService {
 
         // Allow verification from draft or verified (if the flow was partially completed)
         if (collection.status !== 'draft' && collection.status !== 'verified') {
-            throw new AppError(`Collection cannot be reconciled from status: ${collection.status}`, 400);
+            throw new AppError(`Collection cannot be reconciled from status: ${collection.status} `, 400);
         }
 
         // 1. Update collection status to reconciled
@@ -402,11 +561,10 @@ export class AgentReconciliationService {
             await GLAutomationService.createCollectionVerificationEntry(tx as any, updated, verifierId);
         }
 
-        logger.info(`Collection ${collectionId} reconciled by user ${verifierId}`);
+        logger.info(`Collection ${collectionId} reconciled by user ${verifierId} `);
 
         // Trigger proactive aging refresh (non-blocking)
-        const agingService = (await import('./agingService')).default;
-        agingService.refreshAll().catch(err => logger.error('Proactive aging refresh failed after reconciliation:', err));
+        appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
 
         return updated;
     }
@@ -439,7 +597,7 @@ export class AgentReconciliationService {
             const { notifyAgentBlocked } = await import('./notificationService');
             await notifyAgentBlocked(agentId.toString(), reason);
 
-            logger.info(`Agent ${agentId} blocked by user ${blockedById}. Reason: ${reason}`);
+            logger.info(`Agent ${agentId} blocked by user ${blockedById}.Reason: ${reason} `);
             return updated;
         });
     }
@@ -475,7 +633,7 @@ export class AgentReconciliationService {
             const { notifyAgentUnblocked } = await import('./notificationService');
             await notifyAgentUnblocked(agentId.toString());
 
-            logger.info(`Agent ${agentId} unblocked by user ${unblockedById}`);
+            logger.info(`Agent ${agentId} unblocked by user ${unblockedById} `);
             return updated;
         });
     }

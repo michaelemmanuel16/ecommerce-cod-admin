@@ -118,6 +118,17 @@ router.post('/deposits/:id/reject',
     agentReconciliationController.rejectDeposit
 );
 
+router.post('/deposits/bulk-verify',
+    requireRole('super_admin', 'accountant'),
+    [
+        body('ids').isArray({ min: 1, max: 50 })
+            .withMessage('Must provide 1-50 deposit IDs'),
+        body('ids.*').isInt().toInt(),
+        validate
+    ],
+    agentReconciliationController.bulkVerifyDeposits
+);
+
 // Aging Report
 router.get('/aging',
     requireRole('super_admin', 'admin', 'manager', 'accountant'),

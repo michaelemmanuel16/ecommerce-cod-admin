@@ -21,6 +21,18 @@ import { prismaMock } from '../mocks/prisma.mock';
 import orderService from '../../services/orderService';
 import { AppError } from '../../middleware/errorHandler';
 import { OrderStatus } from '@prisma/client';
+// Mock appEvents
+jest.mock('../../utils/appEvents', () => ({
+  __esModule: true,
+  default: {
+    emit: jest.fn(),
+  },
+  AppEvent: {
+    BULK_ORDERS_IMPORTED: 'BULK_ORDERS_IMPORTED',
+    AGENT_COLLECTION_RECONCILED: 'AGENT_COLLECTION_RECONCILED',
+  },
+}));
+import appEvents, { AppEvent } from '../../utils/appEvents';
 
 describe('OrderService', () => {
   let serviceInstance: typeof orderService; // Renamed to avoid conflict with imported instance
@@ -329,6 +341,10 @@ describe('OrderService', () => {
 
   // Bulk import tests - verifying error handling implementation
   describe('bulkImportOrders - Error Handling', () => {
+    beforeEach(() => {
+      (prismaMock.order.findMany as any).mockResolvedValue([]);
+    });
+
     // Note: These tests verify the service handles errors gracefully
     // The actual error code detection (P2002, P2024) is implemented in orderService.ts lines 577-623
 
@@ -343,6 +359,7 @@ describe('OrderService', () => {
         deliveryAddress: 'Test Address',
         deliveryState: 'Greater Accra',
         deliveryArea: 'Accra',
+        subtotal: 100,
         totalAmount: 100,
         orderDate: new Date(),
       }];
@@ -371,6 +388,7 @@ describe('OrderService', () => {
         deliveryAddress: '789 Pine Rd',
         deliveryState: 'Greater Accra',
         deliveryArea: 'Accra',
+        subtotal: 200,
         totalAmount: 200,
         orderDate: new Date('2024-01-03'),
       }];
@@ -400,6 +418,7 @@ describe('OrderService', () => {
         deliveryAddress: '321 Elm St',
         deliveryState: 'Greater Accra',
         deliveryArea: 'Spintex',
+        subtotal: 250,
         totalAmount: 250,
         orderDate: new Date('2024-01-04'),
       }];
@@ -412,6 +431,28 @@ describe('OrderService', () => {
       expect(result.duplicates).toBe(0);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].error).toBeDefined();
+    });
+
+    it('should trigger aging refresh after successful import', async () => {
+      (prismaMock.$transaction as any).mockResolvedValue({});
+      (prismaMock.order.count as any).mockResolvedValue(0);
+
+      const orderData = [{
+        customerFirstName: 'Test',
+        customerLastName: 'User',
+        customerPhone: '0501111111',
+        deliveryAddress: 'Test Address',
+        deliveryState: 'Greater Accra',
+        deliveryArea: 'Accra',
+        subtotal: 100,
+        totalAmount: 100,
+        orderDate: new Date(),
+      }];
+
+      await orderService.bulkImportOrders(orderData, 1, undefined, undefined, true);
+
+      // Verify aging refresh was triggered via event
+      expect(appEvents.emit).toHaveBeenCalledWith(AppEvent.BULK_ORDERS_IMPORTED);
     });
   });
 

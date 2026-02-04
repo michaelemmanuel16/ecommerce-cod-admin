@@ -131,25 +131,32 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log(`[AuthMiddleware] No valid Authorization header for ${req.method} ${req.path}`);
       res.status(401).json({ error: 'No token provided' });
       return;
     }
 
     const token = authHeader.substring(7);
-    const decoded = verifyAccessToken(token);
+    try {
+      const decoded = verifyAccessToken(token);
+      req.user = decoded;
+      next();
+    } catch (jwtError: any) {
+      console.log(`[AuthMiddleware] JWT Verification Failed for ${req.method} ${req.path}:`, jwtError.message);
 
-    req.user = decoded;
-    next();
-  } catch (error: any) {
-    // Handle outdated token format (from CUID → integer ID migration)
-    if (error.message === 'TOKEN_FORMAT_OUTDATED') {
-      res.status(401).json({
-        error: 'Token format outdated. Please log in again.',
-        code: 'TOKEN_FORMAT_OUTDATED'
-      });
-      return;
+      if (jwtError.message === 'TOKEN_FORMAT_OUTDATED') {
+        res.status(401).json({
+          error: 'Token format outdated. Please log in again.',
+          code: 'TOKEN_FORMAT_OUTDATED'
+        });
+        return;
+      }
+
+      res.status(401).json({ error: 'Invalid token' });
     }
-    res.status(401).json({ error: 'Invalid token' });
+  } catch (error: any) {
+    console.error('[AuthMiddleware] Unexpected internal error:', error);
+    res.status(500).json({ error: 'Internal application error' });
   }
 };
 
@@ -192,12 +199,14 @@ export const requireResourcePermission = (resource: string, action: string) => {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.user) {
+        console.log(`[AuthMiddleware] requireResourcePermission(${resource}, ${action}) failed: req.user is missing for ${req.method} ${req.path}`);
         res.status(401).json({ error: 'Unauthorized' });
         return;
       }
 
       // Check permissions from database (or cache)
       const permissions = await getPermissionsFromDatabase();
+      console.log(`[AuthMiddleware] Checking ${action} on ${resource} for user ${req.user.id} (${req.user.role})`);
 
       // Super admin always has all permissions
       if (req.user.role === 'super_admin') {
@@ -208,6 +217,7 @@ export const requireResourcePermission = (resource: string, action: string) => {
       const rolePermissions = permissions[req.user.role];
 
       if (!rolePermissions) {
+        console.log(`[AuthMiddleware] No permissions found for role: ${req.user.role}`);
         res.status(403).json({
           error: 'Forbidden: No permissions configured for your role',
           code: 'NO_ROLE_PERMISSIONS'
@@ -218,6 +228,7 @@ export const requireResourcePermission = (resource: string, action: string) => {
       const resourcePermissions = rolePermissions[resource];
 
       if (!resourcePermissions || !Array.isArray(resourcePermissions)) {
+        console.log(`[AuthMiddleware] No resource permissions for: ${resource} for role: ${req.user.role}`);
         res.status(403).json({
           error: `Forbidden: No access to ${resource}`,
           code: 'NO_RESOURCE_ACCESS'
@@ -226,6 +237,7 @@ export const requireResourcePermission = (resource: string, action: string) => {
       }
 
       if (!resourcePermissions.includes(action)) {
+        console.log(`[AuthMiddleware] User ${req.user.id} (${req.user.role}) lacks ${action} on ${resource}`);
         res.status(403).json({
           error: `Forbidden: Cannot ${action} ${resource}`,
           code: 'INSUFFICIENT_PERMISSION',

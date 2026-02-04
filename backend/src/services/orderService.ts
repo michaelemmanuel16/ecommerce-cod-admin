@@ -2,6 +2,7 @@ import prisma, { prismaBase } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
+import appEvents, { AppEvent } from '../utils/appEvents';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
 import {
@@ -268,7 +269,7 @@ export class OrderService {
         const product = productMap.get(item.productId);
         if (product.stockQuantity < item.quantity) {
           throw new AppError(
-            `Insufficient stock for product ${product.name}. Current stock: ${product.stockQuantity}`,
+            `Insufficient stock for product ${product.name}.Current stock: ${product.stockQuantity} `,
             400
           );
         }
@@ -391,7 +392,7 @@ export class OrderService {
           const normalizedPhone = normalizePhone(orderData.customerPhone);
           const orderDateValue = orderData.orderDate || new Date();
           const orderDateString = orderDateValue.toDateString();
-          const orderFingerprint = `${normalizedPhone}|${orderData.totalAmount}|${normalize(orderData.deliveryAddress)}|${orderDateString}`;
+          const orderFingerprint = `${normalizedPhone}| ${orderData.totalAmount}| ${normalize(orderData.deliveryAddress)}| ${orderDateString} `;
 
           if (processedInImport.has(orderFingerprint)) {
             logger.warn('🚫 CANARY: DUPLICATE FOUND IN SAME BATCH', {
@@ -541,14 +542,14 @@ export class OrderService {
                 );
 
                 if (syncResult.transaction || syncResult.journalEntry) {
-                  logger.info(`Financial data auto-synced for imported order ${newOrder.id}`, {
+                  logger.info(`Financial data auto - synced for imported order ${newOrder.id} `, {
                     transactionId: syncResult.transaction?.id,
                     journalEntryNumber: syncResult.journalEntry?.entryNumber
                   });
                 }
               } catch (syncError: any) {
                 // Log error but don't fail the import
-                logger.error(`Failed to auto-sync financial data for imported order ${newOrder.id}:`, syncError);
+                logger.error(`Failed to auto - sync financial data for imported order ${newOrder.id}: `, syncError);
                 // Continue - order is still created
               }
             }
@@ -602,7 +603,7 @@ export class OrderService {
             results.failed++;
             results.errors.push({
               order: orderData,
-              error: `Database error: ${error.message}`
+              error: `Database error: ${error.message} `
             });
             logger.error('Prisma error during import', {
               code: error.code,
@@ -660,6 +661,9 @@ export class OrderService {
       duplicates: results.duplicates,
       total: orders.length
     });
+
+    // Trigger proactive aging refresh via event bus (decoupled)
+    appEvents.emit(AppEvent.BULK_ORDERS_IMPORTED);
 
     return results;
   }
@@ -1071,14 +1075,14 @@ export class OrderService {
           );
 
           if (syncResult.transaction || syncResult.journalEntry) {
-            logger.info(`Financial data auto-synced for order ${orderId}`, {
+            logger.info(`Financial data auto - synced for order ${orderId}`, {
               transactionId: syncResult.transaction?.id,
               journalEntryNumber: syncResult.journalEntry?.entryNumber
             });
           }
         } catch (syncError: any) {
           // Log error but don't fail the status update
-          logger.error(`Failed to auto-sync financial data for order ${orderId}:`, syncError);
+          logger.error(`Failed to auto - sync financial data for order ${orderId}: `, syncError);
           // Continue - order status is still updated
         }
       }
@@ -1285,8 +1289,7 @@ export class OrderService {
     });
 
     // Trigger proactive aging refresh (non-blocking)
-    const agingService = (await import('./agingService')).default;
-    agingService.refreshAll().catch(err => logger.error('Proactive aging refresh failed after order deletion:', err));
+    appEvents.emit(AppEvent.ORDERS_DELETED);
 
     logger.info(`Order soft deleted: ${order.id} `, { orderId, userId });
     return { message: 'Order deleted successfully' };
@@ -1420,6 +1423,9 @@ export class OrderService {
       orderIds: actualOrderIds,
       userId
     });
+
+    // Trigger proactive aging refresh (non-blocking)
+    appEvents.emit(AppEvent.ORDERS_DELETED);
 
     return {
       message: `Successfully deleted ${orders.length} order(s)`,

@@ -21,7 +21,7 @@ export const authLimiter = isDevelopment ? (_req: any, _res: any, next: any) => 
 
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 50000 : 300, // Increased to 300 in production
+  max: isDevelopment ? 50000 : 500, // Increased to 500 in production
   message: { message: 'Too many requests, please try again later' },
   ...commonSettings
 });

@@ -285,6 +285,39 @@ export class AgentReconciliationController {
     }
 
     /**
+     * Bulk verify deposits (Accountant only)
+     */
+    async bulkVerifyDeposits(req: Request, res: Response) {
+        const { ids } = req.body;
+        const userId = (req as any).user.id;
+
+        if (!Array.isArray(ids)) {
+            throw new AppError('IDs must be an array', 400);
+        }
+
+        if (ids.length === 0) {
+            throw new AppError('No deposit IDs provided', 400);
+        }
+
+        if (ids.length > 50) {
+            throw new AppError('Cannot verify more than 50 deposits at once', 400);
+        }
+
+        const result = await agentReconciliationService.bulkVerifyDeposits(ids, userId);
+
+        // Emit socket event for the whole batch
+        const io = getSocketInstance();
+        if (io) {
+            io.emit('agent:deposits-bulk-verified', {
+                count: result.verified,
+                totalAmount: result.totalAmount
+            });
+        }
+
+        res.json(result);
+    }
+
+    /**
      * Get agent aging report (Manager/Admin/Accountant)
      */
     async getAgingReport(_req: Request, res: Response) {

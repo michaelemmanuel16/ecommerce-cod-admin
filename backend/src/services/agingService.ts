@@ -1,8 +1,33 @@
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import appEvents, { AppEvent } from '../utils/appEvents';
 
 export class AgingService {
+  constructor() {
+    this.setupEventListeners();
+  }
+
+  private setupEventListeners() {
+    appEvents.on(AppEvent.AGENT_COLLECTION_RECONCILED, () => {
+      this.refreshAll().catch(err =>
+        logger.error('Proactive aging refresh failed after reconciliation:', err)
+      );
+    });
+
+    appEvents.on(AppEvent.BULK_ORDERS_IMPORTED, () => {
+      this.refreshAll().catch(err =>
+        logger.error('Proactive aging refresh failed after bulk import:', err)
+      );
+    });
+
+    appEvents.on(AppEvent.ORDERS_DELETED, () => {
+      this.refreshAll().catch(err =>
+        logger.error('Proactive aging refresh failed after order deletion:', err)
+      );
+    });
+  }
+
   /**
    * Refreshes aging buckets for all agents with approved but non-deposited collections
    */
