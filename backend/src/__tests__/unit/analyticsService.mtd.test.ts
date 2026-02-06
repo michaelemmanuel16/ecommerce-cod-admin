@@ -222,7 +222,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
 
             // Verify separate pending orders query
             const orderCountCall = prismaMock.order.count.mock.calls[0];
-            expect(orderCountCall[0].where.assignedTo).toBe(1);
+            expect(orderCountCall[0].where.customerRepId).toBe(1);
             expect(orderCountCall[0].where.status.notIn).toEqual([
                 'delivered',
                 'cancelled',
