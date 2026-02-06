@@ -363,7 +363,8 @@ export class AnalyticsService {
             status: true,
             totalAmount: true,
             createdAt: true,
-            updatedAt: true
+            updatedAt: true,
+            commissionPaid: true
           }
         }
       }
@@ -371,9 +372,11 @@ export class AnalyticsService {
 
     const performance = reps.map((rep) => {
       const total = rep.assignedOrdersAsRep.length;
-      const completed = rep.assignedOrdersAsRep.filter((o) => o.status === 'delivered').length;
+      // Only count delivered orders that haven't been paid yet for completed count
+      const completed = rep.assignedOrdersAsRep.filter((o) => o.status === 'delivered' && !o.commissionPaid).length;
+      // Only calculate revenue from delivered orders where commission hasn't been paid
       const revenue = rep.assignedOrdersAsRep
-        .filter((o) => o.status === 'delivered')
+        .filter((o) => o.status === 'delivered' && !o.commissionPaid)
         .reduce((sum, o) => sum + o.totalAmount, 0);
 
       // Calculate average response time
