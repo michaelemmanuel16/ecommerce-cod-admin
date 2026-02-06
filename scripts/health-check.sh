@@ -24,8 +24,12 @@ elif [ "$ENVIRONMENT" == "staging" ]; then
     FRONTEND_URL="${FRONTEND_URL:-https://staging.yourdomain.com}"
 else
     BACKEND_URL="${BACKEND_URL:-http://localhost:3000}"
-    FRONTEND_URL="${FRONTEND_URL:-http://localhost:8080}"
+    FRONTEND_URL="${FRONTEND_URL:-http://localhost:5173}"
 fi
+
+# Container names (default to what's in docker-compose or current dev environment)
+POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-ecommerce-postgres-dev}"
+REDIS_CONTAINER="${REDIS_CONTAINER:-ecommerce-redis-dev}"
 
 echo -e "${GREEN}Running health checks for ${ENVIRONMENT}...${NC}"
 
@@ -62,8 +66,8 @@ FRONTEND_STATUS=$?
 
 # Check database (if local)
 if [ "$ENVIRONMENT" == "local" ]; then
-    echo -e "${YELLOW}Checking PostgreSQL...${NC}"
-    if docker exec ecommerce-cod-postgres pg_isready -U postgres > /dev/null 2>&1; then
+    echo -e "${YELLOW}Checking PostgreSQL (${POSTGRES_CONTAINER})...${NC}"
+    if docker exec "${POSTGRES_CONTAINER}" pg_isready -U ${POSTGRES_USER:-postgres} > /dev/null 2>&1; then
         echo -e "${GREEN}✓ PostgreSQL is healthy${NC}"
         DB_STATUS=0
     else
@@ -71,8 +75,8 @@ if [ "$ENVIRONMENT" == "local" ]; then
         DB_STATUS=1
     fi
 
-    echo -e "${YELLOW}Checking Redis...${NC}"
-    if docker exec ecommerce-cod-redis redis-cli ping > /dev/null 2>&1; then
+    echo -e "${YELLOW}Checking Redis (${REDIS_CONTAINER})...${NC}"
+    if docker exec "${REDIS_CONTAINER}" redis-cli ping > /dev/null 2>&1; then
         echo -e "${GREEN}✓ Redis is healthy${NC}"
         REDIS_STATUS=0
     else

@@ -20,6 +20,7 @@ router.post('/reps/:id/process-payout', requirePermission(['super_admin', 'admin
 router.get('/agents/performance', requirePermission(['super_admin', 'admin', 'manager']), userController.getAgentPerformance);
 router.get('/preferences', userController.getUserPreferences);
 router.put('/preferences', userController.updateUserPreferences);
+router.get('/me/payout-history', userController.getMyPayoutHistory);
 router.get('/:id', requirePermission(['super_admin', 'admin', 'manager']), userController.getUser);
 router.get('/:id/profile', requireSelf, userController.getUser);
 router.put('/:id', requirePermission(['super_admin', 'admin']), userController.updateUser);

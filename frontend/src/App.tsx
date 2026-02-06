@@ -30,6 +30,7 @@ const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.S
 const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ default: m.CheckoutForms })));
 const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
+const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
@@ -70,123 +71,130 @@ function App() {
     <ErrorBoundary>
       <OnboardingProvider>
         <BrowserRouter>
-        <Routes>
-          {/* Public routes - no authentication required */}
-          <Route path="/order/:slug" element={
-            <Suspense fallback={<Loading />}>
-              <PublicCheckout />
-            </Suspense>
-          } />
+          <Routes>
+            {/* Public routes - no authentication required */}
+            <Route path="/order/:slug" element={
+              <Suspense fallback={<Loading />}>
+                <PublicCheckout />
+              </Suspense>
+            } />
 
-          {/* Auth routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<DynamicDashboard />} />
-            <Route path="orders" element={
-              <Suspense fallback={<Loading />}>
-                <Orders />
-              </Suspense>
-            } />
-            <Route path="orders/:id" element={
-              <Suspense fallback={<Loading />}>
-                <OrderDetails />
-              </Suspense>
-            } />
-            <Route path="products" element={
-              <Suspense fallback={<Loading />}>
-                <Products />
-              </Suspense>
-            } />
-            <Route path="products/new" element={
-              <Suspense fallback={<Loading />}>
-                <ProductForm />
-              </Suspense>
-            } />
-            <Route path="products/:id/edit" element={
-              <Suspense fallback={<Loading />}>
-                <ProductForm />
-              </Suspense>
-            } />
-            <Route path="customers" element={
-              <Suspense fallback={<Loading />}>
-                <Customers />
-              </Suspense>
-            } />
-            <Route path="customers/:id" element={
-              <Suspense fallback={<Loading />}>
-                <CustomerDetails />
-              </Suspense>
-            } />
-            <Route path="delivery-agents" element={
-              <Suspense fallback={<Loading />}>
-                <DeliveryAgents />
-              </Suspense>
-            } />
-            <Route path="customer-reps" element={
-              <Suspense fallback={<Loading />}>
-                <CustomerReps />
-              </Suspense>
-            } />
-            <Route path="financial" element={
-              <Suspense fallback={<Loading />}>
-                <Financial />
-              </Suspense>
-            } />
-            <Route path="analytics" element={
-              <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'accountant']}>
+            {/* Auth routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<DynamicDashboard />} />
+              <Route path="orders" element={
                 <Suspense fallback={<Loading />}>
-                  <Analytics />
+                  <Orders />
                 </Suspense>
-              </RoleGuard>
-            } />
-            <Route path="workflows" element={
-              <Suspense fallback={<Loading />}>
-                <Workflows />
-              </Suspense>
-            } />
-            <Route path="workflows/new" element={
-              <Suspense fallback={<Loading />}>
-                <WorkflowWizard />
-              </Suspense>
-            } />
-            <Route path="workflows/:id" element={
-              <Suspense fallback={<Loading />}>
-                <WorkflowWizard />
-              </Suspense>
-            } />
-            <Route path="settings" element={
-              <Suspense fallback={<Loading />}>
-                <Settings />
-              </Suspense>
-            } />
-            <Route path="checkout-forms" element={
-              <Suspense fallback={<Loading />}>
-                <CheckoutForms />
-              </Suspense>
-            } />
-            <Route path="webhooks" element={
-              <RoleGuard allowedRoles={['super_admin', 'admin']}>
+              } />
+              <Route path="orders/:id" element={
                 <Suspense fallback={<Loading />}>
-                  <Webhooks />
+                  <OrderDetails />
                 </Suspense>
-              </RoleGuard>
-            } />
-          </Route>
-        </Routes>
-        {/* Onboarding Tour Components - Only visible for sales_rep role */}
-        <CustomerRepOnboarding />
-        <OnboardingWelcomeModal />
-      </BrowserRouter>
-      <Toast />
-    </OnboardingProvider>
+              } />
+              <Route path="products" element={
+                <Suspense fallback={<Loading />}>
+                  <Products />
+                </Suspense>
+              } />
+              <Route path="products/new" element={
+                <Suspense fallback={<Loading />}>
+                  <ProductForm />
+                </Suspense>
+              } />
+              <Route path="products/:id/edit" element={
+                <Suspense fallback={<Loading />}>
+                  <ProductForm />
+                </Suspense>
+              } />
+              <Route path="customers" element={
+                <Suspense fallback={<Loading />}>
+                  <Customers />
+                </Suspense>
+              } />
+              <Route path="customers/:id" element={
+                <Suspense fallback={<Loading />}>
+                  <CustomerDetails />
+                </Suspense>
+              } />
+              <Route path="delivery-agents" element={
+                <Suspense fallback={<Loading />}>
+                  <DeliveryAgents />
+                </Suspense>
+              } />
+              <Route path="customer-reps" element={
+                <Suspense fallback={<Loading />}>
+                  <CustomerReps />
+                </Suspense>
+              } />
+              <Route path="financial" element={
+                <Suspense fallback={<Loading />}>
+                  <Financial />
+                </Suspense>
+              } />
+              <Route path="analytics" element={
+                <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'accountant']}>
+                  <Suspense fallback={<Loading />}>
+                    <Analytics />
+                  </Suspense>
+                </RoleGuard>
+              } />
+              <Route path="workflows" element={
+                <Suspense fallback={<Loading />}>
+                  <Workflows />
+                </Suspense>
+              } />
+              <Route path="workflows/new" element={
+                <Suspense fallback={<Loading />}>
+                  <WorkflowWizard />
+                </Suspense>
+              } />
+              <Route path="workflows/:id" element={
+                <Suspense fallback={<Loading />}>
+                  <WorkflowWizard />
+                </Suspense>
+              } />
+              <Route path="settings" element={
+                <Suspense fallback={<Loading />}>
+                  <Settings />
+                </Suspense>
+              } />
+              <Route path="checkout-forms" element={
+                <Suspense fallback={<Loading />}>
+                  <CheckoutForms />
+                </Suspense>
+              } />
+              <Route path="webhooks" element={
+                <RoleGuard allowedRoles={['super_admin', 'admin']}>
+                  <Suspense fallback={<Loading />}>
+                    <Webhooks />
+                  </Suspense>
+                </RoleGuard>
+              } />
+              <Route path="earnings-history" element={
+                <RoleGuard allowedRoles={['sales_rep']}>
+                  <Suspense fallback={<Loading />}>
+                    <EarningsHistory />
+                  </Suspense>
+                </RoleGuard>
+              } />
+            </Route>
+          </Routes>
+          {/* Onboarding Tour Components - Only visible for sales_rep role */}
+          <CustomerRepOnboarding />
+          <OnboardingWelcomeModal />
+        </BrowserRouter>
+        <Toast />
+      </OnboardingProvider>
     </ErrorBoundary>
   );
 }

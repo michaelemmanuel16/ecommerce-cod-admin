@@ -45,6 +45,7 @@ export function useDashboardData(
   const fetchCustomerInsights = useAnalyticsStore(state => state.fetchCustomerInsights);
   const fetchPendingOrders = useAnalyticsStore(state => state.fetchPendingOrders);
   const fetchRecentActivity = useAnalyticsStore(state => state.fetchRecentActivity);
+  const fetchOrdersByStatus = useAnalyticsStore(state => state.fetchOrdersByStatus);
 
   const { user } = useAuthStore();
 
@@ -77,6 +78,7 @@ export function useDashboardData(
         fetchCustomerInsights,
         fetchPendingOrders,
         fetchRecentActivity,
+        fetchOrdersByStatus,
       };
 
       // Build dashboard data object
@@ -155,10 +157,12 @@ export function useDashboardData(
 
         // Earnings (for sales reps)
         if (dashboardData.repPerformance && (user as any)?.commissionAmount) {
+          const unpaidCount = (dashboardData.repPerformance as any).unpaidDeliveredOrders || 0;
           calculated.myCommission = (
-            dashboardData.repPerformance.deliveredOrders * (user as any).commissionAmount
+            unpaidCount * (user as any).commissionAmount
           ).toFixed(2);
           calculated.commissionAmount = (user as any).commissionAmount;
+          calculated.unpaidDeliveredCount = unpaidCount;
         }
 
         // Conversion rate (for sales reps)
@@ -202,6 +206,7 @@ export function useDashboardData(
     fetchCustomerInsights,
     fetchPendingOrders,
     fetchRecentActivity,
+    fetchOrdersByStatus,
   ]);
 
   // Initial fetch
@@ -443,34 +448,12 @@ async function executeFetcher(
       break;
 
     case 'fetchOrdersByStatus':
-      // Fetch orders from the orders store and group by status for current sales rep
-      const ordersStore = useOrdersStore.getState();
-
-      // Ensure orders are loaded
-      if (ordersStore.orders.length === 0) {
-        await ordersStore.fetchOrders();
-      }
-
-      const allOrders = useOrdersStore.getState().orders;
-
-      // Filter orders for current sales rep if role is sales_rep
-      const relevantOrders = user?.role === 'sales_rep'
-        ? allOrders.filter(order => order.assignedTo === user.id)
-        : allOrders;
-
-      // Group by status and count
-      const statusCounts: Record<string, number> = {};
-      relevantOrders.forEach(order => {
-        const status = order.status || 'unknown';
-        statusCounts[status] = (statusCounts[status] || 0) + 1;
-      });
-
-      // Convert to array format for chart
-      dashboardData.ordersByStatus = Object.entries(statusCounts)
-        .map(([status, count]) => ({ status, count }))
-        .sort((a, b) => b.count - a.count); // Sort by count descending
-
-      console.log('📊 Orders by status:', dashboardData.ordersByStatus);
+      await storeMethods.fetchOrdersByStatus(
+        dateRange?.startDate,
+        dateRange?.endDate
+      );
+      dashboardData.ordersByStatus = useAnalyticsStore.getState().ordersByStatus;
+      console.log('📊 Orders by status fetched from backend:', dashboardData.ordersByStatus);
       break;
 
     case 'fetchTopProducts':

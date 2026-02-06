@@ -13,6 +13,7 @@ vi.mock('../../services/analytics.service', () => ({
         getCustomerInsights: vi.fn(),
         getPendingOrders: vi.fn(),
         getRecentActivity: vi.fn(),
+        getOrderStatusDistribution: vi.fn(),
     },
 }));
 
@@ -28,6 +29,7 @@ describe('Analytics Store', () => {
             customerInsights: null,
             pendingOrders: [],
             recentActivity: [],
+            ordersByStatus: [],
             isLoading: false,
             error: null,
         });
@@ -106,6 +108,7 @@ describe('Analytics Store', () => {
         vi.mocked(analyticsService.getAgentPerformance).mockResolvedValue([]);
         vi.mocked(analyticsService.getPendingOrders).mockResolvedValue([]);
         vi.mocked(analyticsService.getRecentActivity).mockResolvedValue([]);
+        vi.mocked(analyticsService.getOrderStatusDistribution).mockResolvedValue([]);
 
         const { refreshAll } = useAnalyticsStore.getState();
         await refreshAll();
