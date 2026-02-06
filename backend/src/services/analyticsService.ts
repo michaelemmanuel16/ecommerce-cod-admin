@@ -392,6 +392,22 @@ export class AnalyticsService {
       }
     });
 
+    // Fetch pending orders count separately (no date filter)
+    const pendingOrdersCounts = await Promise.all(
+      reps.map(async (rep) => {
+        const count = await prisma.order.count({
+          where: {
+            assignedTo: rep.id,
+            status: {
+              notIn: ['delivered', 'cancelled', 'returned', 'failed_delivery']
+            },
+            deletedAt: null
+          }
+        });
+        return { repId: rep.id, pendingCount: count };
+      })
+    );
+
     const performance = reps.map((rep) => {
       const total = rep.assignedOrdersAsRep.length;
       // Only count delivered orders that haven't been paid yet for completed count
@@ -413,14 +429,15 @@ export class AnalyticsService {
           ? Math.round(totalResponseTime / total / (1000 * 60)) // Convert to minutes
           : 0;
 
+      const pendingData = pendingOrdersCounts.find(p => p.repId === rep.id);
+
       return {
         userId: rep.id,
         userName: `${rep.firstName} ${rep.lastName}`,
         totalAssigned: total,
         completed,
-        pending: rep.assignedOrdersAsRep.filter((o) =>
-          !['delivered', 'cancelled', 'returned', 'failed_delivery'].includes(o.status)
-        ).length,
+        // Use separately fetched pending count (not filtered by date)
+        pending: pendingData?.pendingCount || 0,
         successRate: total > 0 ? (completed / total) * 100 : 0,
         revenue,
         avgResponseTime
