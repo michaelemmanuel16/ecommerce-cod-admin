@@ -83,7 +83,7 @@ export const salesRepConfig: DashboardConfig = {
       dataSource: 'repPerformance.totalOrders',
       format: 'number',
       subtitle: {
-        template: '{amount} revenue',
+        template: '{amount} revenue this month',
         dataSources: {
           amount: 'repPerformance.totalRevenue',
         },
@@ -102,7 +102,7 @@ export const salesRepConfig: DashboardConfig = {
       dataSource: 'calculated.myConversionRate',
       format: 'percentage',
       subtitle: {
-        template: '{delivered} of {total} delivered',
+        template: '{delivered} of {total} delivered this month',
         dataSources: {
           delivered: 'repPerformance.deliveredOrders',
           total: 'repPerformance.totalOrders',

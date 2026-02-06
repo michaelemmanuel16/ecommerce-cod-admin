@@ -65,7 +65,12 @@ export class AnalyticsService {
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
     const endOfDay = new Date(today.setHours(23, 59, 59, 999));
 
+    // Calculate start of current month for month-to-date filtering
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
     // Build date filter for queries
+    // If custom date range provided, use it; otherwise default to month-to-date
     const dateFilter = filters?.startDate && filters?.endDate
       ? {
         createdAt: {
@@ -73,7 +78,12 @@ export class AnalyticsService {
           lte: new Date(filters.endDate)
         }
       }
-      : {};
+      : {
+        createdAt: {
+          gte: startOfMonth,
+          lte: now
+        }
+      };
 
     // Build user scope filter (sales reps only see their assigned orders)
     const userFilter = buildUserScopeFilter(userId, userRole);
@@ -113,7 +123,8 @@ export class AnalyticsService {
       }),
       prisma.order.count({
         where: {
-          ...baseWhere,
+          ...userFilter,
+          deletedAt: null,
           status: 'pending_confirmation'
         }
       }),
