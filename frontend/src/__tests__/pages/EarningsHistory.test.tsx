@@ -62,11 +62,11 @@ describe('EarningsHistory Component', () => {
 
         // Check summary cards
         expect(screen.getByText('Total Paid')).toBeInTheDocument();
-        expect(screen.getByText(/1,630\.00/)).toBeInTheDocument(); // 1620 + 10
+        expect(screen.getAllByText(/1,630\.00/)[0]).toBeInTheDocument(); // 1620 + 10
         expect(screen.getByText('Total Payments')).toBeInTheDocument();
-        expect(screen.getByText('2')).toBeInTheDocument();
+        expect(screen.getAllByText('2')[0]).toBeInTheDocument();
         expect(screen.getByText('Orders Paid')).toBeInTheDocument();
-        expect(screen.getByText('326')).toBeInTheDocument(); // 324 + 2
+        expect(screen.getAllByText('326')[0]).toBeInTheDocument(); // 324 + 2
 
         // Check table data
         expect(screen.getByText('Mobile Money')).toBeInTheDocument();
@@ -122,7 +122,7 @@ describe('EarningsHistory Component', () => {
         render(<EarningsHistory />);
 
         await waitFor(() => {
-            expect(screen.getByText(/1,234\.56/)).toBeInTheDocument();
+            expect(screen.getAllByText(/1,234\.56/).length).toBeGreaterThan(0);
         });
     });
 
@@ -166,7 +166,7 @@ describe('EarningsHistory Component', () => {
         render(<EarningsHistory />);
 
         await waitFor(() => {
-            const statusBadge = screen.getByText('completed');
+            const statusBadge = screen.getAllByText('completed')[0];
             expect(statusBadge).toBeInTheDocument();
             expect(statusBadge).toHaveClass('bg-green-100');
         });

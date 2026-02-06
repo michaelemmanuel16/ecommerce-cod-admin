@@ -141,6 +141,11 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
 
             // Mock pending orders count (all-time)
             prismaMock.order.count.mockResolvedValue(154);
+            // Mock all-time unpaid delivered orders
+            prismaMock.order.aggregate.mockResolvedValue({
+                _count: { id: 5 },
+                _sum: { totalAmount: 500 }
+            } as any);
 
             const performance = await analyticsService.getRepPerformance();
 
@@ -149,6 +154,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
             expect(performance[0].completed).toBe(1); // MTD delivered
             expect(performance[0].revenue).toBe(100); // MTD revenue
             expect(performance[0].pending).toBe(154); // All-time pending
+            expect(performance[0].unpaidDeliveredOrders).toBe(5); // All-time unpaid count
 
             // Verify MTD date filter was applied to assignedOrdersAsRep query
             const userFindManyCall = prismaMock.user.findMany.mock.calls[0];
@@ -187,6 +193,10 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
 
             prismaMock.user.findMany.mockResolvedValue(mockReps as any);
             prismaMock.order.count.mockResolvedValue(154);
+            prismaMock.order.aggregate.mockResolvedValue({
+                _count: { id: 10 },
+                _sum: { totalAmount: 1000 }
+            } as any);
 
             const performance = await analyticsService.getRepPerformance({
                 startDate: '2026-01-01',
@@ -217,6 +227,10 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
 
             prismaMock.user.findMany.mockResolvedValue(mockReps as any);
             prismaMock.order.count.mockResolvedValue(154);
+            prismaMock.order.aggregate.mockResolvedValue({
+                _count: { id: 5 },
+                _sum: { totalAmount: 500 }
+            } as any);
 
             await analyticsService.getRepPerformance();
 
@@ -256,6 +270,10 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
 
             prismaMock.user.findMany.mockResolvedValue(mockReps as any);
             prismaMock.order.count.mockResolvedValue(50);
+            prismaMock.order.aggregate.mockResolvedValue({
+                _count: { id: 1 },
+                _sum: { totalAmount: 100 }
+            } as any);
 
             const performance = await analyticsService.getRepPerformance();
 
@@ -263,6 +281,28 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
             expect(performance[0].completed).toBe(1);
             expect(performance[0].revenue).toBe(100);
             expect(performance[0].pending).toBe(50); // All-time pending
+        });
+
+        it('should fetch all-time unpaid delivered orders regardless of date filter', async () => {
+            const mockReps = [{ id: 1, firstName: 'Rep', lastName: '1', assignedOrdersAsRep: [] }];
+            prismaMock.user.findMany.mockResolvedValue(mockReps as any);
+            prismaMock.order.count.mockResolvedValue(10);
+            prismaMock.order.aggregate.mockResolvedValue({
+                _count: { id: 25 }, // 25 all-time unpaid orders
+                _sum: { totalAmount: 2500 }
+            } as any);
+
+            // Fetch with MTD filter (current month)
+            const performance = await analyticsService.getRepPerformance();
+
+            // Verify unpaid orders bypass the date filter
+            expect(performance[0].unpaidDeliveredOrders).toBe(25);
+
+            // Verify the aggregate query had no date filter
+            const aggregateCall = prismaMock.order.aggregate.mock.calls[0];
+            expect(aggregateCall[0].where.status).toBe('delivered');
+            expect(aggregateCall[0].where.commissionPaid).toBe(false);
+            expect(aggregateCall[0].where.createdAt).toBeUndefined();
         });
     });
 

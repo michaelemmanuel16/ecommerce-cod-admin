@@ -37,6 +37,7 @@ export interface PerformanceMetrics {
   failed?: number;
   onTimeRate?: number;
   totalDeliveries?: number;
+  unpaidDeliveredOrders?: number;
 }
 
 export interface CustomerInsights {
@@ -133,5 +134,13 @@ export const analyticsService = {
   async getRecentActivity(): Promise<Activity[]> {
     const response = await apiClient.get('/api/analytics/recent-activity');
     return response.data.activity;
+  },
+
+  async getOrderStatusDistribution(params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<ConversionFunnelStep[]> {
+    const response = await apiClient.get('/api/analytics/status-distribution', { params });
+    return response.data.distribution;
   }
 };

@@ -18,5 +18,6 @@ router.get('/agent-performance', requireResourcePermission('analytics', 'view'),
 router.get('/customer-insights', requireResourcePermission('analytics', 'view'), cacheMiddleware(600), analyticsController.getCustomerInsights);
 router.get('/pending-orders', requireResourcePermission('analytics', 'view'), cacheMiddleware(60), analyticsController.getPendingOrders);
 router.get('/recent-activity', requireResourcePermission('analytics', 'view'), cacheMiddleware(60), analyticsController.getRecentActivity);
+router.get('/status-distribution', requireResourcePermission('analytics', 'view'), cacheMiddleware(300), analyticsController.getOrderStatusDistribution);
 
 export default router;

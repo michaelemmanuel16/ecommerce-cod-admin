@@ -393,9 +393,11 @@ export class AnalyticsService {
     });
 
     // Fetch pending orders count separately (no date filter)
-    const pendingOrdersCounts = await Promise.all(
+    // Also fetch all-time unpaid delivered orders (for earnings, bypassing MTD)
+    const repStats = await Promise.all(
       reps.map(async (rep) => {
-        const count = await prisma.order.count({
+        // All-time pending orders
+        const pendingCount = await prisma.order.count({
           where: {
             customerRepId: rep.id,
             status: {
@@ -404,17 +406,34 @@ export class AnalyticsService {
             deletedAt: null
           }
         });
-        return { repId: rep.id, pendingCount: count };
+
+        // All-time unpaid delivered orders (for Earnings)
+        const unpaidDelivered = await prisma.order.aggregate({
+          where: {
+            customerRepId: rep.id,
+            status: 'delivered',
+            commissionPaid: false,
+            deletedAt: null
+          },
+          _count: { id: true },
+          _sum: { totalAmount: true }
+        });
+
+        return {
+          repId: rep.id,
+          pendingCount,
+          unpaidDeliveredCount: unpaidDelivered._count.id || 0,
+          unpaidDeliveredRevenue: unpaidDelivered._sum.totalAmount || 0
+        };
       })
     );
 
     const performance = reps.map((rep) => {
       const total = rep.assignedOrdersAsRep.length;
-      // Only count delivered orders that haven't been paid yet for completed count
-      const completed = rep.assignedOrdersAsRep.filter((o) => o.status === 'delivered' && !o.commissionPaid).length;
-      // Only calculate revenue from delivered orders where commission hasn't been paid
+      // Completed count for MTD metrics (success rate/revenue trend)
+      const completed = rep.assignedOrdersAsRep.filter((o) => o.status === 'delivered').length;
       const revenue = rep.assignedOrdersAsRep
-        .filter((o) => o.status === 'delivered' && !o.commissionPaid)
+        .filter((o) => o.status === 'delivered')
         .reduce((sum, o) => sum + o.totalAmount, 0);
 
       // Calculate average response time
@@ -429,15 +448,17 @@ export class AnalyticsService {
           ? Math.round(totalResponseTime / total / (1000 * 60)) // Convert to minutes
           : 0;
 
-      const pendingData = pendingOrdersCounts.find(p => p.repId === rep.id);
+      const stats = repStats.find(s => s.repId === rep.id);
 
       return {
         userId: rep.id,
         userName: `${rep.firstName} ${rep.lastName}`,
         totalAssigned: total,
         completed,
-        // Use separately fetched pending count (not filtered by date)
-        pending: pendingData?.pendingCount || 0,
+        // Use separately fetched stats (not filtered by date)
+        pending: stats?.pendingCount || 0,
+        unpaidDeliveredOrders: stats?.unpaidDeliveredCount || 0,
+        unpaidDeliveredRevenue: stats?.unpaidDeliveredRevenue || 0,
         successRate: total > 0 ? (completed / total) * 100 : 0,
         revenue,
         avgResponseTime
@@ -861,6 +882,56 @@ export class AnalyticsService {
       createdAt: notification.createdAt,
       data: notification.data
     }));
+  }
+
+  /**
+   * Get order status distribution
+   * Supports MTD and custom date filtering
+   */
+  async getOrderStatusDistribution(
+    filters?: {
+      startDate?: string;
+      endDate?: string;
+    },
+    userId?: number,
+    userRole?: string
+  ) {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Build date filter (MTD default)
+    const dateFilter = filters?.startDate && filters?.endDate
+      ? {
+        createdAt: {
+          gte: new Date(filters.startDate),
+          lte: new Date(filters.endDate)
+        }
+      }
+      : {
+        createdAt: {
+          gte: startOfMonth,
+          lte: now
+        }
+      };
+
+    const userFilter = buildUserScopeFilter(userId, userRole);
+
+    const statusCounts = await prisma.order.groupBy({
+      by: ['status'],
+      where: {
+        ...dateFilter,
+        ...userFilter,
+        deletedAt: null
+      },
+      _count: {
+        status: true
+      }
+    });
+
+    return statusCounts.map(item => ({
+      status: item.status,
+      count: item._count.status
+    })).sort((a, b) => b.count - a.count);
   }
 }
 
