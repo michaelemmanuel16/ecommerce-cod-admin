@@ -346,7 +346,12 @@ export class AnalyticsService {
     userId?: number,
     userRole?: string
   ) {
+    // Calculate start of current month for month-to-date filtering
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
     // Build date filter for orders
+    // If custom date range provided, use it; otherwise default to month-to-date
     const dateFilter = filters?.startDate || filters?.endDate
       ? {
         createdAt: {
@@ -355,7 +360,13 @@ export class AnalyticsService {
         },
         deletedAt: null
       }
-      : { deletedAt: null };
+      : {
+        createdAt: {
+          gte: startOfMonth,
+          lte: now
+        },
+        deletedAt: null
+      };
 
     const reps = await prisma.user.findMany({
       where: {
