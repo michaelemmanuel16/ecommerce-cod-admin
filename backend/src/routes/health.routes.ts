@@ -168,7 +168,7 @@ router.get('/health/detailed', healthLimiter, async (_req: Request, res: Respons
       status: 'error',
       responseTime: 0,
       // Don't expose error details in production
-      error: process.env.NODE_ENV === 'development' ? errorMsg : 'Connection error'
+      error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : 'Connection error'
     } as any;
   }
 
