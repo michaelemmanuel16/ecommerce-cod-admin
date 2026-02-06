@@ -41,16 +41,23 @@ router.get('/health', async (_req: Request, res: Response) => {
 // Readiness probe - Checks if service is ready to handle requests
 router.get('/ready', healthLimiter, async (_req: Request, res: Response) => {
   try {
+    logger.debug('Starting readiness check...');
+
     // Check database connection
+    const dbStart = Date.now();
     await prisma.$queryRaw`SELECT 1`;
+    const dbDuration = Date.now() - dbStart;
+    logger.debug(`Readiness: Database connection check OK (${dbDuration}ms)`);
 
     // Check Redis connection (use singleton instance)
     try {
+      const redisStart = Date.now();
       await getRedisClient().ping();
+      const redisDuration = Date.now() - redisStart;
+      logger.debug(`Readiness: Redis connection check OK (${redisDuration}ms)`);
     } catch (redisError) {
-      logger.error('Redis connection failed during readiness check', {
+      logger.error('Readiness check failed: Redis connection error', {
         error: redisError instanceof Error ? redisError.message : 'Unknown error',
-        stack: redisError instanceof Error ? redisError.stack : undefined,
       });
       throw redisError;
     }
@@ -64,6 +71,11 @@ router.get('/ready', healthLimiter, async (_req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    logger.error('Readiness check failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
     res.status(503).json({
       status: 'not ready',
       timestamp: new Date().toISOString(),
@@ -88,6 +100,8 @@ router.get('/live', (_req: Request, res: Response) => {
 
 // Detailed health check with all dependencies
 router.get('/health/detailed', healthLimiter, async (_req: Request, res: Response) => {
+  logger.info('Starting detailed health check...');
+
   const healthStatus = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -114,19 +128,23 @@ router.get('/health/detailed', healthLimiter, async (_req: Request, res: Respons
     const dbStart = Date.now();
     await prisma.$queryRaw`SELECT 1`;
     const dbEnd = Date.now();
+    const dbResponseTime = dbEnd - dbStart;
+
     healthStatus.checks.database = {
       status: 'ok',
-      responseTime: dbEnd - dbStart,
+      responseTime: dbResponseTime,
     };
+    logger.debug(`Detailed Health: Database check OK (${dbResponseTime}ms)`);
   } catch (error) {
     isHealthy = false;
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Detailed Health Check: Database failed', { error: errorMsg });
+
     healthStatus.checks.database = {
       status: 'error',
       responseTime: 0,
       // Don't expose error details in production
-      error: process.env.NODE_ENV === 'development'
-        ? (error instanceof Error ? error.message : 'Unknown error')
-        : 'Connection error'
+      error: process.env.NODE_ENV === 'development' ? errorMsg : 'Connection error'
     } as any;
   }
 
@@ -135,28 +153,33 @@ router.get('/health/detailed', healthLimiter, async (_req: Request, res: Respons
     const redisStart = Date.now();
     await getRedisClient().ping();
     const redisEnd = Date.now();
+    const redisResponseTime = redisEnd - redisStart;
 
     healthStatus.checks.redis = {
       status: 'ok',
-      responseTime: redisEnd - redisStart,
+      responseTime: redisResponseTime,
     };
+    logger.debug(`Detailed Health: Redis check OK (${redisResponseTime}ms)`);
   } catch (error) {
     isHealthy = false;
-    logger.error('Redis connection failed during detailed health check', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Detailed Health Check: Redis failed', { error: errorMsg });
+
     healthStatus.checks.redis = {
       status: 'error',
       responseTime: 0,
       // Don't expose error details in production
-      error: process.env.NODE_ENV === 'development'
-        ? (error instanceof Error ? error.message : 'Unknown error')
-        : 'Connection error'
+      error: process.env.NODE_ENV === 'development' ? errorMsg : 'Connection error'
     } as any;
   }
 
   healthStatus.status = isHealthy ? 'healthy' : 'unhealthy';
+
+  if (!isHealthy) {
+    logger.warn('Detailed health check finished with warnings/errors', { status: healthStatus.status });
+  } else {
+    logger.info('Detailed health check completed successfully');
+  }
 
   res.status(isHealthy ? 200 : 503).json(healthStatus);
 });
