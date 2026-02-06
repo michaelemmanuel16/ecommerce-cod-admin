@@ -83,9 +83,9 @@ export const salesRepConfig: DashboardConfig = {
       dataSource: 'repPerformance.totalOrders',
       format: 'number',
       subtitle: {
-        template: '{amount} revenue this month',
+        template: 'vs {previous} last month',
         dataSources: {
-          amount: 'repPerformance.totalRevenue',
+          previous: 'repPerformance.previousTotalOrders',
         },
       },
       trend: {
