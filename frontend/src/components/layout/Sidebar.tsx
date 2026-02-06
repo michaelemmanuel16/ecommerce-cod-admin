@@ -14,6 +14,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  History,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -26,6 +27,7 @@ const menuItems = [
   { path: '/delivery-agents', icon: Truck, label: 'Delivery Agents', key: 'delivery-agents' },
   { path: '/customer-reps', icon: UserCog, label: 'Customer Reps', key: 'customer-reps' },
   { path: '/financial', icon: DollarSign, label: 'Financial', key: 'financial' },
+  { path: '/earnings-history', icon: History, label: 'Earnings History', key: 'earnings-history' },
   { path: '/analytics', icon: BarChart3, label: 'Analytics', key: 'analytics' },
   { path: '/workflows', icon: Workflow, label: 'Workflows', key: 'workflows' },
   { path: '/settings', icon: Settings, label: 'Settings', key: 'settings' },
