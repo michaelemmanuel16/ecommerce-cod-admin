@@ -181,6 +181,8 @@ describe('AnalyticsService', () => {
       ];
 
       prismaMock.user.findMany.mockResolvedValue(mockReps as any);
+      // Mock the separate pending orders count query
+      prismaMock.order.count.mockResolvedValue(1);
 
       const performance = await analyticsService.getRepPerformance();
 
