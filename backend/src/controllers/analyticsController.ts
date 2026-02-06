@@ -155,26 +155,3 @@ export const getRecentActivity = async (req: AuthRequest, res: Response): Promis
     });
   }
 };
-
-export const getOrderStatusDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { startDate, endDate } = req.query;
-
-    const distribution = await analyticsService.getOrderStatusDistribution(
-      {
-        startDate: startDate as string,
-        endDate: endDate as string
-      },
-      req.user?.id,
-      req.user?.role
-    );
-
-    res.json({ distribution });
-  } catch (error) {
-    console.error('[analyticsController] getOrderStatusDistribution error:', error);
-    res.status(500).json({
-      error: 'Failed to fetch order status distribution',
-      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
-    });
-  }
-};

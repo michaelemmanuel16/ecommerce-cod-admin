@@ -51,13 +51,11 @@ router.get('/ready', healthLimiter, async (_req: Request, res: Response) => {
 
     // Check Redis connection (use singleton instance)
     try {
-      const redisStart = Date.now();
       await getRedisClient().ping();
-      const redisDuration = Date.now() - redisStart;
-      logger.debug(`Readiness: Redis connection check OK (${redisDuration}ms)`);
     } catch (redisError) {
-      logger.error('Readiness check failed: Redis connection error', {
+      logger.error('Redis connection failed during readiness check', {
         error: redisError instanceof Error ? redisError.message : 'Unknown error',
+        stack: redisError instanceof Error ? redisError.stack : undefined,
       });
       throw redisError;
     }
@@ -162,9 +160,10 @@ router.get('/health/detailed', healthLimiter, async (_req: Request, res: Respons
     logger.debug(`Detailed Health: Redis check OK (${redisResponseTime}ms)`);
   } catch (error) {
     isHealthy = false;
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    logger.error('Detailed Health Check: Redis failed', { error: errorMsg });
-
+    logger.error('Redis connection failed during detailed health check', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     healthStatus.checks.redis = {
       status: 'error',
       responseTime: 0,
