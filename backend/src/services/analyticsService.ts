@@ -397,7 +397,7 @@ export class AnalyticsService {
       reps.map(async (rep) => {
         const count = await prisma.order.count({
           where: {
-            assignedTo: rep.id,
+            customerRepId: rep.id,
             status: {
               notIn: ['delivered', 'cancelled', 'returned', 'failed_delivery']
             },
