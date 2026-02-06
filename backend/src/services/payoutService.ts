@@ -48,6 +48,7 @@ class PayoutService {
         const commissionAmount = rep.commissionAmount || 0;
 
         return pendingOrders.map(order => ({
+            orderId: order.id,
             totalAmount: order.totalAmount,
             commissionAmount: commissionAmount,
             customerName: `${order.customer.firstName} ${order.customer.lastName}`,

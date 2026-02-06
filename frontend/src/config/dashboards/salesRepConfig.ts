@@ -45,9 +45,9 @@ export const salesRepConfig: DashboardConfig = {
       dataSource: 'calculated.myCommission',
       format: 'currency',
       subtitle: {
-        template: 'From {delivered} delivered orders @ {rate}',
+        template: 'Pending from {delivered} unpaid orders @ {rate}',
         dataSources: {
-          delivered: 'repPerformance.deliveredOrders',
+          delivered: 'calculated.unpaidDeliveredCount',
           rate: 'calculated.commissionAmount',
         },
       },
@@ -83,9 +83,9 @@ export const salesRepConfig: DashboardConfig = {
       dataSource: 'repPerformance.totalOrders',
       format: 'number',
       subtitle: {
-        template: '{amount} revenue',
+        template: 'vs {previous} last month',
         dataSources: {
-          amount: 'repPerformance.totalRevenue',
+          previous: 'repPerformance.previousTotalOrders',
         },
       },
       trend: {
@@ -102,7 +102,7 @@ export const salesRepConfig: DashboardConfig = {
       dataSource: 'calculated.myConversionRate',
       format: 'percentage',
       subtitle: {
-        template: '{delivered} of {total} delivered',
+        template: '{delivered} of {total} delivered this month',
         dataSources: {
           delivered: 'repPerformance.deliveredOrders',
           total: 'repPerformance.totalOrders',

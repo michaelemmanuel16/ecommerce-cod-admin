@@ -65,7 +65,12 @@ export class AnalyticsService {
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
     const endOfDay = new Date(today.setHours(23, 59, 59, 999));
 
+    // Calculate start of current month for month-to-date filtering
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
     // Build date filter for queries
+    // If custom date range provided, use it; otherwise default to month-to-date
     const dateFilter = filters?.startDate && filters?.endDate
       ? {
         createdAt: {
@@ -73,7 +78,12 @@ export class AnalyticsService {
           lte: new Date(filters.endDate)
         }
       }
-      : {};
+      : {
+        createdAt: {
+          gte: startOfMonth,
+          lte: now
+        }
+      };
 
     // Build user scope filter (sales reps only see their assigned orders)
     const userFilter = buildUserScopeFilter(userId, userRole);
@@ -113,7 +123,8 @@ export class AnalyticsService {
       }),
       prisma.order.count({
         where: {
-          ...baseWhere,
+          ...userFilter,
+          deletedAt: null,
           status: 'pending_confirmation'
         }
       }),
@@ -335,7 +346,12 @@ export class AnalyticsService {
     userId?: number,
     userRole?: string
   ) {
+    // Calculate start of current month for month-to-date filtering
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
     // Build date filter for orders
+    // If custom date range provided, use it; otherwise default to month-to-date
     const dateFilter = filters?.startDate || filters?.endDate
       ? {
         createdAt: {
@@ -344,7 +360,13 @@ export class AnalyticsService {
         },
         deletedAt: null
       }
-      : { deletedAt: null };
+      : {
+        createdAt: {
+          gte: startOfMonth,
+          lte: now
+        },
+        deletedAt: null
+      };
 
     const reps = await prisma.user.findMany({
       where: {
@@ -363,14 +385,52 @@ export class AnalyticsService {
             status: true,
             totalAmount: true,
             createdAt: true,
-            updatedAt: true
+            updatedAt: true,
+            commissionPaid: true
           }
         }
       }
     });
 
+    // Fetch pending orders count separately (no date filter)
+    // Also fetch all-time unpaid delivered orders (for earnings, bypassing MTD)
+    const repStats = await Promise.all(
+      reps.map(async (rep) => {
+        // All-time pending orders
+        const pendingCount = await prisma.order.count({
+          where: {
+            customerRepId: rep.id,
+            status: {
+              notIn: ['delivered', 'cancelled', 'returned', 'failed_delivery']
+            },
+            deletedAt: null
+          }
+        });
+
+        // All-time unpaid delivered orders (for Earnings)
+        const unpaidDelivered = await prisma.order.aggregate({
+          where: {
+            customerRepId: rep.id,
+            status: 'delivered',
+            commissionPaid: false,
+            deletedAt: null
+          },
+          _count: { id: true },
+          _sum: { totalAmount: true }
+        });
+
+        return {
+          repId: rep.id,
+          pendingCount,
+          unpaidDeliveredCount: unpaidDelivered._count.id || 0,
+          unpaidDeliveredRevenue: unpaidDelivered._sum.totalAmount || 0
+        };
+      })
+    );
+
     const performance = reps.map((rep) => {
       const total = rep.assignedOrdersAsRep.length;
+      // Completed count for MTD metrics (success rate/revenue trend)
       const completed = rep.assignedOrdersAsRep.filter((o) => o.status === 'delivered').length;
       const revenue = rep.assignedOrdersAsRep
         .filter((o) => o.status === 'delivered')
@@ -388,14 +448,17 @@ export class AnalyticsService {
           ? Math.round(totalResponseTime / total / (1000 * 60)) // Convert to minutes
           : 0;
 
+      const stats = repStats.find(s => s.repId === rep.id);
+
       return {
         userId: rep.id,
         userName: `${rep.firstName} ${rep.lastName}`,
         totalAssigned: total,
         completed,
-        pending: rep.assignedOrdersAsRep.filter((o) =>
-          !['delivered', 'cancelled', 'returned', 'failed_delivery'].includes(o.status)
-        ).length,
+        // Use separately fetched stats (not filtered by date)
+        pending: stats?.pendingCount || 0,
+        unpaidDeliveredOrders: stats?.unpaidDeliveredCount || 0,
+        unpaidDeliveredRevenue: stats?.unpaidDeliveredRevenue || 0,
         successRate: total > 0 ? (completed / total) * 100 : 0,
         revenue,
         avgResponseTime
@@ -819,6 +882,56 @@ export class AnalyticsService {
       createdAt: notification.createdAt,
       data: notification.data
     }));
+  }
+
+  /**
+   * Get order status distribution
+   * Supports MTD and custom date filtering
+   */
+  async getOrderStatusDistribution(
+    filters?: {
+      startDate?: string;
+      endDate?: string;
+    },
+    userId?: number,
+    userRole?: string
+  ) {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Build date filter (MTD default)
+    const dateFilter = filters?.startDate && filters?.endDate
+      ? {
+        createdAt: {
+          gte: new Date(filters.startDate),
+          lte: new Date(filters.endDate)
+        }
+      }
+      : {
+        createdAt: {
+          gte: startOfMonth,
+          lte: now
+        }
+      };
+
+    const userFilter = buildUserScopeFilter(userId, userRole);
+
+    const statusCounts = await prisma.order.groupBy({
+      by: ['status'],
+      where: {
+        ...dateFilter,
+        ...userFilter,
+        deletedAt: null
+      },
+      _count: {
+        status: true
+      }
+    });
+
+    return statusCounts.map(item => ({
+      status: item.status,
+      count: item._count.status
+    })).sort((a, b) => b.count - a.count);
   }
 }
 
