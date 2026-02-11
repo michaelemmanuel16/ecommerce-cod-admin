@@ -63,8 +63,8 @@ USER nodejs
 EXPOSE 3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=5 \
+    CMD node -e "const http = require('http'); const options = { hostname: 'localhost', port: 3000, path: '/health', timeout: 2000 }; const req = http.get(options, (res) => { if (res.statusCode === 200) { process.exit(0); } else { console.error('Health check failed with status:', res.statusCode); process.exit(1); } }); req.on('error', (err) => { console.error('Health check error:', err.message); process.exit(1); }); req.on('timeout', () => { console.error('Health check timed out'); req.destroy(); process.exit(1); });"
 
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]

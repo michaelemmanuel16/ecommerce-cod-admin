@@ -43,15 +43,17 @@ RUN chown -R nginx:nginx /usr/share/nginx/html && \
 RUN touch /var/run/nginx.pid && \
     chown -R nginx:nginx /var/run/nginx.pid
 
+# Note: nginx config validation happens automatically at container startup
+# Cannot validate during build because upstream 'backend' doesn't exist yet
+
 # Switch to non-root user
 USER nginx
 
 # Expose port
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+# Note: Health check configured in docker-compose.prod.yml
+# (Docker Compose overrides Dockerfile HEALTHCHECK)
 
 # Start Nginx
 CMD ["nginx", "-g", "daemon off;"]

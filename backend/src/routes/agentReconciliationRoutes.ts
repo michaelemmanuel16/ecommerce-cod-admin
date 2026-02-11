@@ -3,10 +3,12 @@ import agentReconciliationController from '../controllers/agentReconciliationCon
 import { authenticate, requireRole } from '../middleware/auth';
 import { body, param, query } from 'express-validator';
 import { validate } from '../middleware/validation';
+import { apiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
 // All routes require authentication
+router.use(apiLimiter);
 router.use(authenticate);
 
 // Listing and stats (Available to Accountant, Manager, Admin)
@@ -32,7 +34,7 @@ router.get('/stats/:agentId',
 
 // Verification (Accountant only)
 router.post('/:id/verify',
-    requireRole('super_admin', 'accountant'),
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
     [
         param('id').isInt().toInt(),
         validate
@@ -41,7 +43,7 @@ router.post('/:id/verify',
 );
 
 router.post('/bulk-verify',
-    requireRole('super_admin', 'accountant'),
+    requireRole('super_admin', 'admin', 'manager', 'accountant'),
     [
         body('ids').isArray({ min: 1 }),
         body('ids.*').isInt().toInt(),
@@ -116,6 +118,17 @@ router.post('/deposits/:id/reject',
         validate
     ],
     agentReconciliationController.rejectDeposit
+);
+
+router.post('/deposits/bulk-verify',
+    requireRole('super_admin', 'accountant'),
+    [
+        body('ids').isArray({ min: 1, max: 50 })
+            .withMessage('Must provide 1-50 deposit IDs'),
+        body('ids.*').isInt().toInt(),
+        validate
+    ],
+    agentReconciliationController.bulkVerifyDeposits
 );
 
 // Aging Report

@@ -126,6 +126,11 @@ async function resetSequences() {
 }
 
 async function cleanDatabase() {
+  if (process.env.ALLOW_DB_CLEANUP !== 'true') {
+    console.warn('⚠️  Skipping data cleanup. Set ALLOW_DB_CLEANUP=true to enable.');
+    return;
+  }
+
   console.log('Cleaning database...');
 
   // Delete in correct order to respect foreign key constraints

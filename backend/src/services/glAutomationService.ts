@@ -258,41 +258,50 @@ export class GLAutomationService {
       ? new Decimal(salesRep.commissionAmount.toString())
       : new Decimal(0);
 
-    // Calculate net cash company receives (order total - both commissions)
-    const totalCommissions: Decimal = deliveryCommission.plus(salesRepCommission);
-    const cashInTransit: Decimal = orderAmount.minus(totalCommissions);
-
     // Build journal entry transactions
+    // Note: Cash in Transit = Gross Amount - Agent Commission
+    // Commissions Payable = Sales Rep Commission (since they don't hold the cash)
+    const agentComm = deliveryCommission;
+    const repComm = salesRepCommission;
+    const netCashInTransit = orderAmount.minus(agentComm);
+
     const transactions: TransactionCreateData[] = [
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
-        debitAmount: cashInTransit,
+        debitAmount: netCashInTransit,
         creditAmount: new Decimal(0),
-        description: `Cash from delivered order ${order.id} (net of commissions)`,
+        description: `Net collection held by agent for order ${order.id} (Gross ${orderAmount} - Agent Comm ${agentComm})`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PRODUCT_REVENUE),
         debitAmount: new Decimal(0),
         creditAmount: orderAmount,
-        description: 'Product sales revenue',
+        description: 'Product sales revenue (Gross)',
       },
     ];
 
-    if (deliveryCommission.greaterThan(0)) {
+    if (agentComm.greaterThan(0)) {
       transactions.push({
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
-        debitAmount: deliveryCommission,
+        debitAmount: agentComm,
         creditAmount: new Decimal(0),
         description: 'Delivery agent commission expense',
       });
     }
 
-    if (salesRepCommission.greaterThan(0)) {
+    if (repComm.greaterThan(0)) {
       transactions.push({
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION),
-        debitAmount: salesRepCommission,
+        debitAmount: repComm,
         creditAmount: new Decimal(0),
         description: 'Sales representative commission expense',
+      });
+
+      transactions.push({
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE),
+        debitAmount: new Decimal(0),
+        creditAmount: repComm,
+        description: 'Accrued commissions payable to sales rep',
       });
     }
 
@@ -413,20 +422,20 @@ export class GLAutomationService {
       ? new Decimal(salesRep.commissionAmount.toString())
       : new Decimal(0);
 
-    // Calculate net cash (same as original entry)
-    const totalCommissions: Decimal = deliveryCommission.plus(salesRepCommission);
-    const cashInTransit: Decimal = orderAmount.minus(totalCommissions);
-
     // Calculate total COGS to determine if we need to reverse COGS/inventory
     const totalCOGS = this.calculateTotalCOGS(order.orderItems);
 
     // Build reversal transactions (flip debits/credits from original entry)
+    const agentComm = deliveryCommission;
+    const repComm = salesRepCommission;
+    const netCashInTransit = orderAmount.minus(agentComm);
+
     const transactions: TransactionCreateData[] = [
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
         debitAmount: new Decimal(0),
-        creditAmount: cashInTransit,
-        description: 'Cash in transit reversal',
+        creditAmount: netCashInTransit,
+        description: 'Cash in transit reversal (Net)',
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PRODUCT_REVENUE),
@@ -436,21 +445,28 @@ export class GLAutomationService {
       },
     ];
 
-    if (deliveryCommission.greaterThan(0)) {
+    if (agentComm.greaterThan(0)) {
       transactions.push({
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
         debitAmount: new Decimal(0),
-        creditAmount: deliveryCommission,
+        creditAmount: agentComm,
         description: 'Delivery agent commission reversal',
       });
     }
 
-    if (salesRepCommission.greaterThan(0)) {
+    if (repComm.greaterThan(0)) {
       transactions.push({
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION),
         debitAmount: new Decimal(0),
-        creditAmount: salesRepCommission,
+        creditAmount: repComm,
         description: 'Sales representative commission reversal',
+      });
+
+      transactions.push({
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE),
+        debitAmount: repComm,
+        creditAmount: new Decimal(0),
+        description: 'Accrued commissions payable reversal',
       });
     }
 
@@ -552,6 +568,52 @@ export class GLAutomationService {
   }
 
   /**
+   * Create GL entry for collection verification (Reconciliation)
+   *
+   * Moves funds from Cash in Transit to Cash in Hand:
+   * - Debit: Cash in Hand
+   * - Credit: Cash in Transit
+   *
+   * @param tx - Prisma transaction client
+   * @param collection - Agent collection record
+   * @param userId - ID of user verifying the collection
+   * @returns Created journal entry
+   */
+  static async createCollectionVerificationEntry(
+    tx: Prisma.TransactionClient,
+    collection: any,
+    userId: number
+  ): Promise<JournalEntryWithTransactions> {
+    const amount = new Decimal(collection.amount.toString());
+
+    const transactions: TransactionCreateData[] = [
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
+        debitAmount: amount,
+        creditAmount: new Decimal(0),
+        description: `Collection reconciled - Order #${collection.orderId}`,
+      },
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
+        debitAmount: new Decimal(0),
+        creditAmount: amount,
+        description: `Movement from transit to hand - Order #${collection.orderId}`,
+      },
+    ];
+
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Collection reconciliation - Order #${collection.orderId}`,
+      sourceType: JournalSourceType.agent_collection,
+      sourceId: collection.id,
+      createdBy: userId,
+      transactions: {
+        create: transactions,
+      },
+    });
+  }
+
+  /**
    * Create GL entry for agent deposit verification
    *
    * Records receipt of cash from agent and reduction of their receivable:
@@ -572,13 +634,13 @@ export class GLAutomationService {
 
     const transactions: TransactionCreateData[] = [
       {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
         debitAmount: depositAmount,
         creditAmount: new Decimal(0),
         description: `Deposit verification - Agent #${deposit.agentId} (Ref: ${deposit.referenceNumber})`,
       },
       {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS),
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS, tx),
         debitAmount: new Decimal(0),
         creditAmount: depositAmount,
         description: `Deposit matching - Agent #${deposit.agentId}`,

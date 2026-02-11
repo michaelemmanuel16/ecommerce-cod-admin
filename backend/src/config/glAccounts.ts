@@ -31,6 +31,7 @@ export const GL_ACCOUNTS = {
 
   // Liability Accounts (2000-2999)
   REFUND_LIABILITY: '2010',          // Customer refunds pending payment
+  COMMISSIONS_PAYABLE: '2020',       // Unpaid agent and rep commissions
 } as const;
 
 export const GL_DEFAULTS = {

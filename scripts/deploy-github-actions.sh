@@ -75,6 +75,29 @@ else
 fi
 echo ""
 
+# Step 4.5: Verify frontend image contains production URLs (not staging)
+echo -e "${BLUE}[4.5/7] Verifying frontend image configuration...${NC}"
+STAGING_CHECK=$(docker run --rm ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:main \
+  sh -c 'grep -r "staging.codadminpro.com" /usr/share/nginx/html/assets/*.js' 2>/dev/null || true)
+
+if [ -n "$STAGING_CHECK" ]; then
+  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${RED}ERROR: Frontend image contains staging URLs!${NC}"
+  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${YELLOW}The :main image was built from develop branch or with wrong build args${NC}"
+  echo -e "${YELLOW}This usually means:${NC}"
+  echo -e "${YELLOW}1. Docker image cache on GitHub Actions used wrong build${NC}"
+  echo -e "${YELLOW}2. The :main tag was overwritten by develop build${NC}"
+  echo -e "${YELLOW}3. Need to force rebuild with --no-cache${NC}"
+  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${YELLOW}Found staging URLs in bundle:${NC}"
+  echo "$STAGING_CHECK"
+  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  exit 1
+fi
+echo -e "${GREEN}✓ Frontend image configuration verified - no staging URLs found${NC}"
+echo ""
+
 # Step 5: Update containers (detect fresh vs rolling deployment)
 echo -e "${BLUE}[5/7] Updating containers...${NC}"
 
@@ -187,25 +210,40 @@ if [ "$BACKEND_HEALTHY" = false ]; then
     fi
 fi
 
-# Check frontend health via nginx using Docker's built-in health status
+# Check frontend health using Docker's built-in health status
 echo -e "${YELLOW}Checking frontend health...${NC}"
 FRONTEND_HEALTHY=false
 for i in {1..12}; do
-    HEALTH_STATUS=$(docker inspect --format='{{.State.Health.Status}}' ecommerce-cod-nginx 2>/dev/null || echo "unknown")
+    HEALTH_STATUS=$(docker inspect --format='{{.State.Health.Status}}' ecommerce-cod-frontend 2>/dev/null || echo "unknown")
     if [ "$HEALTH_STATUS" = "healthy" ]; then
         FRONTEND_HEALTHY=true
         echo -e "${GREEN}✓ Frontend is healthy${NC}"
         break
     fi
-    echo -e "${YELLOW}Attempt $i/12: Frontend/Nginx status is '$HEALTH_STATUS', waiting...${NC}"
-    sleep 5
+    echo -e "${YELLOW}Attempt $i/12: Frontend status is '$HEALTH_STATUS', waiting...${NC}"
+    sleep 10
 done
 
 if [ "$FRONTEND_HEALTHY" = false ]; then
     echo -e "${RED}✗ Frontend health check failed${NC}"
-    # Show container logs for debugging
-    echo -e "${YELLOW}Recent nginx logs:${NC}"
+
+    # Show frontend container logs for debugging
+    echo -e "${YELLOW}Recent frontend logs:${NC}"
+    docker logs ecommerce-cod-frontend --tail 50 2>&1 || true
+
+    # Also show nginx reverse proxy logs
+    echo -e "${YELLOW}Recent nginx (reverse proxy) logs:${NC}"
     docker logs ecommerce-cod-nginx --tail 30 2>&1 || true
+
+    # Check if nginx is actually running in frontend container
+    echo -e "${YELLOW}Checking nginx process in frontend container:${NC}"
+    docker exec ecommerce-cod-frontend ps aux 2>&1 || echo "Cannot exec into container"
+
+    # Test health endpoint directly
+    echo -e "${YELLOW}Testing health endpoint directly:${NC}"
+    # Wait a bit for container to initialize
+    sleep 5
+    docker exec ecommerce-cod-frontend curl -v http://localhost:8080/health 2>&1 || echo "Health check curl failed"
 
     if [ "$ROLLBACK_ENABLED" = true ]; then
         echo -e "${YELLOW}Initiating rollback due to failed health checks...${NC}"

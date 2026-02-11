@@ -311,3 +311,45 @@ export const updateUserPreferences = async (req: AuthRequest, res: Response, nex
     next(error);
   }
 };
+
+export const getMyPayoutHistory = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      throw new AppError('User not authenticated', 401);
+    }
+
+    // Only sales reps can access this endpoint
+    if (req.user?.role !== 'sales_rep') {
+      throw new AppError('This endpoint is only available for sales representatives', 403);
+    }
+
+    const payouts = await prisma.payout.findMany({
+      where: { repId: userId },
+      include: {
+        _count: {
+          select: { orders: true }
+        }
+      },
+      orderBy: {
+        payoutDate: 'desc'
+      }
+    });
+
+    const formattedPayouts = payouts.map(payout => ({
+      id: payout.id,
+      amount: payout.amount,
+      method: payout.method,
+      payoutDate: payout.payoutDate,
+      status: payout.status,
+      notes: payout.notes,
+      orderCount: payout._count.orders
+    }));
+
+    res.json({ payouts: formattedPayouts });
+  } catch (error) {
+    next(error);
+  }
+};
+

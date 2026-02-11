@@ -21,8 +21,8 @@ SELECT COUNT(*) FROM users;
 EOF
 2>/dev/null | grep -E '^[[:space:]]*[0-9]+[[:space:]]*$' | tr -d ' ' || echo "0")
 
-if [ "$USER_COUNT" = "0" ]; then
-  echo "🌱 Database is empty, running seed..."
+if [ "$USER_COUNT" = "0" ] && [ "${ALLOW_ADMIN_AUTO_CREATE:-true}" = "true" ]; then
+  echo "🌱 Database is empty and ALLOW_ADMIN_AUTO_CREATE is true, running seed..."
   # Create admin user
   node -e "
     const { PrismaClient } = require('@prisma/client');

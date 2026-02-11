@@ -3,6 +3,7 @@ import { AuthRequest } from '../types';
 import { verifyAccessToken } from '../utils/jwt';
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
+import logger from '../utils/logger';
 
 // Cache for role permissions to avoid database hits on every request
 let permissionsCache: any = null;
@@ -22,14 +23,14 @@ async function getPermissionsFromDatabase() {
     const config = await prisma.systemConfig.findFirst();
 
     if (!config || !config.rolePermissions) {
-      console.log('[auth.getPermissionsFromDatabase] No config or rolePermissions found, using defaults');
+      logger.info('[auth.getPermissionsFromDatabase] No config or rolePermissions found, using defaults');
       permissionsCache = getDefaultPermissions();
     } else {
-      console.log('[auth.getPermissionsFromDatabase] Loaded permissions from database');
+      logger.info('[auth.getPermissionsFromDatabase] Loaded permissions from database');
       permissionsCache = config.rolePermissions as any;
     }
   } catch (error) {
-    console.error('[auth.getPermissionsFromDatabase] Error fetching from database, using defaults:', error);
+    logger.error('[auth.getPermissionsFromDatabase] Error fetching from database, using defaults:', error);
     permissionsCache = getDefaultPermissions();
   }
 
@@ -131,25 +132,32 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      logger.info(`[AuthMiddleware] No valid Authorization header for ${req.method} ${req.path}`);
       res.status(401).json({ error: 'No token provided' });
       return;
     }
 
     const token = authHeader.substring(7);
-    const decoded = verifyAccessToken(token);
+    try {
+      const decoded = verifyAccessToken(token);
+      req.user = decoded;
+      next();
+    } catch (jwtError: any) {
+      logger.info(`[AuthMiddleware] JWT Verification Failed for ${req.method} ${req.path}:`, jwtError.message);
 
-    req.user = decoded;
-    next();
-  } catch (error: any) {
-    // Handle outdated token format (from CUID → integer ID migration)
-    if (error.message === 'TOKEN_FORMAT_OUTDATED') {
-      res.status(401).json({
-        error: 'Token format outdated. Please log in again.',
-        code: 'TOKEN_FORMAT_OUTDATED'
-      });
-      return;
+      if (jwtError.message === 'TOKEN_FORMAT_OUTDATED') {
+        res.status(401).json({
+          error: 'Token format outdated. Please log in again.',
+          code: 'TOKEN_FORMAT_OUTDATED'
+        });
+        return;
+      }
+
+      res.status(401).json({ error: 'Invalid token' });
     }
-    res.status(401).json({ error: 'Invalid token' });
+  } catch (error: any) {
+    logger.error('[AuthMiddleware] Unexpected internal error:', error);
+    res.status(500).json({ error: 'Internal application error' });
   }
 };
 
@@ -192,12 +200,14 @@ export const requireResourcePermission = (resource: string, action: string) => {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.user) {
+        logger.info(`[AuthMiddleware] requireResourcePermission(${resource}, ${action}) failed: req.user is missing for ${req.method} ${req.path}`);
         res.status(401).json({ error: 'Unauthorized' });
         return;
       }
 
       // Check permissions from database (or cache)
       const permissions = await getPermissionsFromDatabase();
+      logger.info(`[AuthMiddleware] Checking ${action} on ${resource} for user ${req.user.id} (${req.user.role})`);
 
       // Super admin always has all permissions
       if (req.user.role === 'super_admin') {
@@ -208,6 +218,7 @@ export const requireResourcePermission = (resource: string, action: string) => {
       const rolePermissions = permissions[req.user.role];
 
       if (!rolePermissions) {
+        logger.info(`[AuthMiddleware] No permissions found for role: ${req.user.role}`);
         res.status(403).json({
           error: 'Forbidden: No permissions configured for your role',
           code: 'NO_ROLE_PERMISSIONS'
@@ -218,6 +229,7 @@ export const requireResourcePermission = (resource: string, action: string) => {
       const resourcePermissions = rolePermissions[resource];
 
       if (!resourcePermissions || !Array.isArray(resourcePermissions)) {
+        logger.info(`[AuthMiddleware] No resource permissions for: ${resource} for role: ${req.user.role}`);
         res.status(403).json({
           error: `Forbidden: No access to ${resource}`,
           code: 'NO_RESOURCE_ACCESS'
@@ -226,6 +238,7 @@ export const requireResourcePermission = (resource: string, action: string) => {
       }
 
       if (!resourcePermissions.includes(action)) {
+        logger.info(`[AuthMiddleware] User ${req.user.id} (${req.user.role}) lacks ${action} on ${resource}`);
         res.status(403).json({
           error: `Forbidden: Cannot ${action} ${resource}`,
           code: 'INSUFFICIENT_PERMISSION',
@@ -240,7 +253,7 @@ export const requireResourcePermission = (resource: string, action: string) => {
       // for efficiency to avoid double-querying.
       next();
     } catch (error) {
-      console.error('Error checking permissions:', error);
+      logger.error('Error checking permissions:', error);
       res.status(500).json({ error: 'Failed to check permissions' });
     }
   };
@@ -318,7 +331,7 @@ export const requireEitherPermission = (checks: Array<{ resource: string, action
       // User has at least one of the required permissions
       next();
     } catch (error) {
-      console.error('Error checking permissions:', error);
+      logger.error('Error checking permissions:', error);
       res.status(500).json({ error: 'Failed to check permissions' });
     }
   };

@@ -45,6 +45,8 @@ export const usePermissions = () => {
         return isManager || user?.role === 'accountant';
       case 'workflows':
         return can('workflows', 'view');
+      case 'earnings-history':
+        return user?.role === 'sales_rep'; // Only sales reps can access earnings history
       case 'settings':
         return true; // All users can access their own settings
       default:

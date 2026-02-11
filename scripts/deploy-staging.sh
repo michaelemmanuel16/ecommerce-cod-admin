@@ -68,11 +68,11 @@ docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging 
 
 # Step 6: Health checks
 echo -e "${BLUE}[6/6] Performing health checks...${NC}"
-echo -e "${YELLOW}Waiting 45 seconds for services to fully start...${NC}"
-sleep 45  # Wait for services to start (backend has 40s start_period)
+echo -e "${YELLOW}Waiting 60 seconds for services to fully start...${NC}"
+sleep 60  # Wait for services to start (backend has 60s start_period)
 
 # Check backend health
-MAX_RETRIES=3
+MAX_RETRIES=5
 RETRY_COUNT=0
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     if curl -f http://localhost:3001/health > /dev/null 2>&1; then

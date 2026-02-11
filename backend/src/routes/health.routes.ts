@@ -2,19 +2,31 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
 import { healthLimiter } from '../middleware/rateLimiter';
+import logger from '../utils/logger';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-// Create singleton Redis instance for health checks (prevents connection leak)
-const redisClient = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  password: process.env.REDIS_PASSWORD,
-  lazyConnect: true,
-  maxRetriesPerRequest: 1,
-  enableReadyCheck: false
-});
+// Lazy Redis client with proper cleanup
+let redisClient: Redis | null = null;
+
+const getRedisClient = (): Redis => {
+  if (!redisClient) {
+    redisClient = new Redis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379'),
+      password: process.env.REDIS_PASSWORD,
+      lazyConnect: true,
+      maxRetriesPerRequest: 2,
+      enableReadyCheck: false,
+      retryStrategy: (times) => Math.min(times * 50, 500),
+    });
+  }
+  return redisClient;
+};
+
+// Note: Signal handlers removed - shutdown is handled centrally in server.ts
+// This prevents duplicate handlers and ensures consistent cleanup order
 
 // Health check endpoint - Basic
 router.get('/health', async (_req: Request, res: Response) => {
@@ -29,11 +41,24 @@ router.get('/health', async (_req: Request, res: Response) => {
 // Readiness probe - Checks if service is ready to handle requests
 router.get('/ready', healthLimiter, async (_req: Request, res: Response) => {
   try {
+    logger.debug('Starting readiness check...');
+
     // Check database connection
+    const dbStart = Date.now();
     await prisma.$queryRaw`SELECT 1`;
+    const dbDuration = Date.now() - dbStart;
+    logger.debug(`Readiness: Database connection check OK (${dbDuration}ms)`);
 
     // Check Redis connection (use singleton instance)
-    await redisClient.ping();
+    try {
+      await getRedisClient().ping();
+    } catch (redisError) {
+      logger.error('Redis connection failed during readiness check', {
+        error: redisError instanceof Error ? redisError.message : 'Unknown error',
+        stack: redisError instanceof Error ? redisError.stack : undefined,
+      });
+      throw redisError;
+    }
 
     res.status(200).json({
       status: 'ready',
@@ -44,6 +69,11 @@ router.get('/ready', healthLimiter, async (_req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    logger.error('Readiness check failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
     res.status(503).json({
       status: 'not ready',
       timestamp: new Date().toISOString(),
@@ -68,6 +98,8 @@ router.get('/live', (_req: Request, res: Response) => {
 
 // Detailed health check with all dependencies
 router.get('/health/detailed', healthLimiter, async (_req: Request, res: Response) => {
+  logger.info('Starting detailed health check...');
+
   const healthStatus = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -94,45 +126,59 @@ router.get('/health/detailed', healthLimiter, async (_req: Request, res: Respons
     const dbStart = Date.now();
     await prisma.$queryRaw`SELECT 1`;
     const dbEnd = Date.now();
+    const dbResponseTime = dbEnd - dbStart;
+
     healthStatus.checks.database = {
       status: 'ok',
-      responseTime: dbEnd - dbStart,
+      responseTime: dbResponseTime,
     };
+    logger.debug(`Detailed Health: Database check OK (${dbResponseTime}ms)`);
   } catch (error) {
     isHealthy = false;
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Detailed Health Check: Database failed', { error: errorMsg });
+
     healthStatus.checks.database = {
       status: 'error',
       responseTime: 0,
       // Don't expose error details in production
-      error: process.env.NODE_ENV === 'development'
-        ? (error instanceof Error ? error.message : 'Unknown error')
-        : 'Connection error'
+      error: process.env.NODE_ENV === 'development' ? errorMsg : 'Connection error'
     } as any;
   }
 
   // Check Redis (use singleton instance)
   try {
     const redisStart = Date.now();
-    await redisClient.ping();
+    await getRedisClient().ping();
     const redisEnd = Date.now();
+    const redisResponseTime = redisEnd - redisStart;
 
     healthStatus.checks.redis = {
       status: 'ok',
-      responseTime: redisEnd - redisStart,
+      responseTime: redisResponseTime,
     };
+    logger.debug(`Detailed Health: Redis check OK (${redisResponseTime}ms)`);
   } catch (error) {
     isHealthy = false;
+    logger.error('Redis connection failed during detailed health check', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     healthStatus.checks.redis = {
       status: 'error',
       responseTime: 0,
       // Don't expose error details in production
-      error: process.env.NODE_ENV === 'development'
-        ? (error instanceof Error ? error.message : 'Unknown error')
-        : 'Connection error'
+      error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : 'Unknown error') : 'Connection error'
     } as any;
   }
 
   healthStatus.status = isHealthy ? 'healthy' : 'unhealthy';
+
+  if (!isHealthy) {
+    logger.warn('Detailed health check finished with warnings/errors', { status: healthStatus.status });
+  } else {
+    logger.info('Detailed health check completed successfully');
+  }
 
   res.status(isHealthy ? 200 : 503).json(healthStatus);
 });
@@ -173,3 +219,4 @@ router.get('/metrics', async (_req: Request, res: Response) => {
 });
 
 export default router;
+export { getRedisClient };

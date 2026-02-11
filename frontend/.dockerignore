@@ -27,3 +27,5 @@ test-results
 public/*.test.*
 src/**/*.test.*
 src/**/*.spec.*
+
+# Force rebuild - 2026-02-03T17:30:00Z

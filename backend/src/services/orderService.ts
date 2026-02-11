@@ -2,6 +2,7 @@ import prisma, { prismaBase } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
+import appEvents, { AppEvent } from '../utils/appEvents';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
 import {
@@ -16,6 +17,7 @@ import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
+import FinancialSyncService from './financialSyncService';
 
 interface CreateOrderData {
   customerId?: number;
@@ -267,7 +269,7 @@ export class OrderService {
         const product = productMap.get(item.productId);
         if (product.stockQuantity < item.quantity) {
           throw new AppError(
-            `Insufficient stock for product ${product.name}. Current stock: ${product.stockQuantity}`,
+            `Insufficient stock for product ${product.name}.Current stock: ${product.stockQuantity} `,
             400
           );
         }
@@ -390,7 +392,7 @@ export class OrderService {
           const normalizedPhone = normalizePhone(orderData.customerPhone);
           const orderDateValue = orderData.orderDate || new Date();
           const orderDateString = orderDateValue.toDateString();
-          const orderFingerprint = `${normalizedPhone}|${orderData.totalAmount}|${normalize(orderData.deliveryAddress)}|${orderDateString}`;
+          const orderFingerprint = `${normalizedPhone}| ${orderData.totalAmount}| ${normalize(orderData.deliveryAddress)}| ${orderDateString} `;
 
           if (processedInImport.has(orderFingerprint)) {
             logger.warn('🚫 CANARY: DUPLICATE FOUND IN SAME BATCH', {
@@ -449,36 +451,26 @@ export class OrderService {
           }
 
           const createdOrder = await prisma.$transaction(async (tx) => {
-            // 3. Find or Create Customer
-            let customer = await tx.customer.findUnique({
-              where: { phoneNumber: orderData.customerPhone }
+            // 3. Upsert Customer (handles race conditions safely)
+            const customer = await tx.customer.upsert({
+              where: { phoneNumber: orderData.customerPhone },
+              update: {
+                // Update existing customer with new data if provided
+                ...(orderData.customerAlternatePhone && { alternatePhone: orderData.customerAlternatePhone }),
+                ...(orderData.deliveryAddress && { address: orderData.deliveryAddress }),
+                ...(orderData.deliveryState && { state: orderData.deliveryState }),
+                ...(orderData.deliveryArea && { area: orderData.deliveryArea })
+              },
+              create: {
+                firstName: orderData.customerFirstName || 'Unknown',
+                lastName: orderData.customerLastName || '',
+                phoneNumber: orderData.customerPhone,
+                alternatePhone: orderData.customerAlternatePhone,
+                address: orderData.deliveryAddress,
+                state: orderData.deliveryState,
+                area: orderData.deliveryArea
+              }
             });
-
-            if (!customer) {
-              const potentialCustomers = await tx.customer.findMany({
-                where: { phoneNumber: { endsWith: normalizedPhone } }
-              });
-              customer = potentialCustomers[0] || null;
-            }
-
-            if (!customer) {
-              customer = await tx.customer.create({
-                data: {
-                  firstName: orderData.customerFirstName || 'Unknown',
-                  lastName: orderData.customerLastName || '',
-                  phoneNumber: orderData.customerPhone,
-                  alternatePhone: orderData.customerAlternatePhone,
-                  address: orderData.deliveryAddress,
-                  state: orderData.deliveryState,
-                  area: orderData.deliveryArea
-                }
-              });
-            } else if (orderData.customerAlternatePhone && !customer.alternatePhone) {
-              await tx.customer.update({
-                where: { id: customer.id },
-                data: { alternatePhone: orderData.customerAlternatePhone }
-              });
-            }
 
             // 4. Handle product lookup
             let orderItemsData: any[] = [];
@@ -506,7 +498,7 @@ export class OrderService {
             const customerRepId = orderData.assignedRepName && repMap ? repMap.get(orderData.assignedRepName) : undefined;
             const deliveryAgentId = orderData.assignedAgentName && agentMap ? agentMap.get(orderData.assignedAgentName) : undefined;
 
-            return await tx.order.create({
+            const newOrder = await tx.order.create({
               data: {
                 customerId: customer.id,
                 subtotal: orderData.subtotal,
@@ -517,6 +509,7 @@ export class OrderService {
                 deliveryArea: orderData.deliveryArea,
                 notes: orderData.notes,
                 status: orderData.status || 'pending_confirmation',
+                deliveryDate: orderData.status === 'delivered' ? orderDateValue : null,
                 source: 'bulk_import',
                 createdById,
                 customerRepId,
@@ -530,8 +523,41 @@ export class OrderService {
                     changedBy: createdById
                   }
                 }
+              },
+              include: {
+                orderItems: { include: { product: true } },
+                customer: true,
+                deliveryAgent: true,
+                customerRep: true
               }
             });
+
+            // 6. Auto-sync financial data if order is imported as delivered
+            if (newOrder.status === 'delivered' && newOrder.codAmount) {
+              try {
+                const syncResult = await FinancialSyncService.syncOrderFinancialData(
+                  tx as any,
+                  newOrder as any,
+                  createdById || SYSTEM_USER_ID
+                );
+
+                if (syncResult.transaction || syncResult.journalEntry) {
+                  logger.info(`Financial data auto - synced for imported order ${newOrder.id} `, {
+                    transactionId: syncResult.transaction?.id,
+                    journalEntryNumber: syncResult.journalEntry?.entryNumber
+                  });
+                }
+              } catch (syncError: any) {
+                // Log error but don't fail the import
+                logger.error(`Failed to auto - sync financial data for imported order ${newOrder.id}: `, syncError);
+                // Continue - order is still created
+              }
+            }
+
+            return newOrder;
+          }, {
+            maxWait: 10000,  // Wait max 10s to get transaction slot
+            timeout: 15000   // Transaction must complete within 15s
           });
 
           // Success - track it and emit events
@@ -553,11 +579,43 @@ export class OrderService {
           if (error.message === 'DUPLICATE_ORDER') {
             results.duplicates++;
             logger.info('Duplicate order skipped', { phone: orderData.customerPhone });
-          } else {
+          } else if (error.code === 'P2002') {
+            // Prisma unique constraint violation
+            results.duplicates++;
+            logger.warn('Duplicate customer detected via constraint', {
+              phone: orderData.customerPhone,
+              field: error.meta?.target,
+              constraint: error.meta?.constraint
+            });
+          } else if (error.code === 'P2024') {
+            // Prisma connection timeout
             results.failed++;
             results.errors.push({
               order: orderData,
-              error: error.message
+              error: 'Database timeout - please try with smaller batch or contact support'
+            });
+            logger.error('Database timeout during import', {
+              phone: orderData.customerPhone,
+              orderData
+            });
+          } else if (error.code && error.code.startsWith('P')) {
+            // Other Prisma errors
+            results.failed++;
+            results.errors.push({
+              order: orderData,
+              error: `Database error: ${error.message}`
+            });
+            logger.error('Prisma error during import', {
+              code: error.code,
+              message: error.message,
+              phone: orderData.customerPhone
+            });
+          } else {
+            // Generic errors
+            results.failed++;
+            results.errors.push({
+              order: orderData,
+              error: error.message || 'Unknown error'
             });
             logger.error('Failed to import order', {
               error: error.message,
@@ -603,6 +661,9 @@ export class OrderService {
       duplicates: results.duplicates,
       total: orders.length
     });
+
+    // Trigger proactive aging refresh via event bus (decoupled)
+    appEvents.emit(AppEvent.BULK_ORDERS_IMPORTED);
 
     return results;
   }
@@ -1004,6 +1065,28 @@ export class OrderService {
         }
       });
 
+      // Auto-sync financial data when order is delivered
+      if (data.status === 'delivered' && updatedOrder.codAmount) {
+        try {
+          const syncResult = await FinancialSyncService.syncOrderFinancialData(
+            tx as any,
+            updatedOrder as any,
+            data.changedBy || SYSTEM_USER_ID
+          );
+
+          if (syncResult.transaction || syncResult.journalEntry) {
+            logger.info(`Financial data auto - synced for order ${orderId}`, {
+              transactionId: syncResult.transaction?.id,
+              journalEntryNumber: syncResult.journalEntry?.entryNumber
+            });
+          }
+        } catch (syncError: any) {
+          // Log error but don't fail the status update
+          logger.error(`Failed to auto - sync financial data for order ${orderId}: `, syncError);
+          // Continue - order status is still updated
+        }
+      }
+
       return updatedOrder;
     });
 
@@ -1193,7 +1276,20 @@ export class OrderService {
         where: { id: orderId },
         data: { deletedAt: new Date() }
       });
+
+      // Remove any associated AgentCollection record that isn't yet fully processed
+      // (If it's already 'deposited', we might want to keep it or handle it separately, 
+      // but usually deleting an order means its collection is invalid)
+      await (tx as any).agentCollection.deleteMany({
+        where: {
+          orderId,
+          status: { in: ['draft', 'verified', 'approved'] }
+        }
+      });
     });
+
+    // Trigger proactive aging refresh (non-blocking)
+    appEvents.emit(AppEvent.ORDERS_DELETED);
 
     logger.info(`Order soft deleted: ${order.id} `, { orderId, userId });
     return { message: 'Order deleted successfully' };
@@ -1327,6 +1423,9 @@ export class OrderService {
       orderIds: actualOrderIds,
       userId
     });
+
+    // Trigger proactive aging refresh (non-blocking)
+    appEvents.emit(AppEvent.ORDERS_DELETED);
 
     return {
       message: `Successfully deleted ${orders.length} order(s)`,

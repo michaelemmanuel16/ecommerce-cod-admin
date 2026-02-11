@@ -242,7 +242,7 @@ export function emitCollectionVerified(io: SocketServer, collection: any) {
     id: collection.id,
     orderId: collection.orderId,
     amount: collection.amount,
-    status: 'verified',
+    status: collection.status,
     timestamp: new Date()
   };
 

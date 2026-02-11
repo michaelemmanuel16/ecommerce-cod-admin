@@ -1,8 +1,52 @@
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import appEvents, { AppEvent } from '../utils/appEvents';
 
 export class AgingService {
+  constructor() {
+    this.setupEventListeners();
+  }
+
+  private handlers: { [key: string]: (...args: any[]) => void } = {};
+
+  private setupEventListeners() {
+    this.handlers[AppEvent.AGENT_COLLECTION_RECONCILED] = () => {
+      this.refreshAll().catch(err =>
+        logger.error('Proactive aging refresh failed after reconciliation:', err)
+      );
+    };
+
+    this.handlers[AppEvent.BULK_ORDERS_IMPORTED] = () => {
+      this.refreshAll().catch(err =>
+        logger.error('Proactive aging refresh failed after bulk import:', err)
+      );
+    };
+
+    this.handlers[AppEvent.ORDERS_DELETED] = () => {
+      this.refreshAll().catch(err =>
+        logger.error('Proactive aging refresh failed after order deletion:', err)
+      );
+    };
+
+    // Register listeners
+    Object.entries(this.handlers).forEach(([event, handler]) => {
+      appEvents.on(event as any, handler);
+    });
+  }
+
+  /**
+   * Cleanup event listeners to prevent memory leaks.
+   * Call this when the service is no longer needed (e.g., in tests or server shutdown).
+   */
+  public destroy() {
+    Object.entries(this.handlers).forEach(([event, handler]) => {
+      appEvents.off(event as any, handler);
+    });
+    this.handlers = {};
+    logger.info('AgingService destroyed and listeners removed');
+  }
+
   /**
    * Refreshes aging buckets for all agents with approved but non-deposited collections
    */
@@ -11,10 +55,14 @@ export class AgingService {
     const now = new Date();
 
     try {
-      // 1. Get all approved collections that are NOT yet deposited or reconciled
+      // 1. Get all pending collections (draft, verified, approved) 
+      // and ensure the associated order is not soft-deleted
       const collections = await (prisma as any).agentCollection.findMany({
         where: {
-          status: 'approved',
+          status: { in: ['draft', 'verified', 'approved'] },
+          order: {
+            deletedAt: null
+          }
         },
         include: {
           agent: {

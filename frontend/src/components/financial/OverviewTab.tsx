@@ -81,7 +81,7 @@ export const OverviewTab: React.FC = () => {
 
         <FinancialKPICard
           title="Outstanding COD"
-          value={summary?.codCollected || 0}
+          value={summary?.codPending || 0}
           icon={Clock}
           iconColor="text-yellow-600"
           iconBgColor="bg-yellow-100"

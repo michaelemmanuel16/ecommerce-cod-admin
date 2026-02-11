@@ -21,6 +21,18 @@ import { prismaMock } from '../mocks/prisma.mock';
 import orderService from '../../services/orderService';
 import { AppError } from '../../middleware/errorHandler';
 import { OrderStatus } from '@prisma/client';
+// Mock appEvents
+jest.mock('../../utils/appEvents', () => ({
+  __esModule: true,
+  default: {
+    emit: jest.fn(),
+  },
+  AppEvent: {
+    BULK_ORDERS_IMPORTED: 'BULK_ORDERS_IMPORTED',
+    AGENT_COLLECTION_RECONCILED: 'AGENT_COLLECTION_RECONCILED',
+  },
+}));
+import appEvents, { AppEvent } from '../../utils/appEvents';
 
 describe('OrderService', () => {
   let serviceInstance: typeof orderService; // Renamed to avoid conflict with imported instance
@@ -327,10 +339,92 @@ describe('OrderService', () => {
     });
   });
 
-  // Bulk import tests temporarily skipped - need to update for new transaction structure
-  // Each order now processes in its own transaction for partial success
-  describe.skip('bulkImportOrders', () => {
-    // TODO: Update tests to match new individual transaction per order structure
+  // Bulk import tests - verifying error handling implementation
+  describe('bulkImportOrders - Error Handling', () => {
+    // Note: These tests verify the service handles errors gracefully
+    // The actual error code detection (P2002, P2024) is implemented in orderService.ts lines 577-623
+
+    it('should return proper error structure when import fails', async () => {
+      // Mock transaction to reject
+      (prismaMock.$transaction as any).mockRejectedValue(new Error('Test error'));
+
+      const orderData = [{
+        customerFirstName: 'Test',
+        customerLastName: 'User',
+        customerPhone: '0501111111',
+        deliveryAddress: 'Test Address',
+        deliveryState: 'Greater Accra',
+        deliveryArea: 'Accra',
+        totalAmount: 100,
+        orderDate: new Date(),
+      }];
+
+      const result = await orderService.bulkImportOrders(orderData, 1, undefined, undefined, true);
+
+      // Verify error structure
+      expect(result).toHaveProperty('success');
+      expect(result).toHaveProperty('failed');
+      expect(result).toHaveProperty('duplicates');
+      expect(result).toHaveProperty('errors');
+      expect(Array.isArray(result.errors)).toBe(true);
+    });
+
+    it('should handle generic Prisma errors (P* codes)', async () => {
+      // Mock generic Prisma error
+      const prismaError: any = new Error('Foreign key constraint failed');
+      prismaError.code = 'P2003';
+
+      (prismaMock.$transaction as any).mockRejectedValue(prismaError);
+
+      const orderData = [{
+        customerFirstName: 'Bob',
+        customerLastName: 'Johnson',
+        customerPhone: '0503456789',
+        deliveryAddress: '789 Pine Rd',
+        deliveryState: 'Greater Accra',
+        deliveryArea: 'Accra',
+        totalAmount: 200,
+        orderDate: new Date('2024-01-03'),
+      }];
+
+      const result = await orderService.bulkImportOrders(orderData, 1, undefined, undefined, true);
+
+      // Generic Prisma error should be tracked as failed
+      expect(result.success).toBe(0);
+      expect(result.failed).toBe(1);
+      expect(result.duplicates).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      // Error message varies but should exist
+      expect(result.errors[0].error).toBeDefined();
+      expect(typeof result.errors[0].error).toBe('string');
+    });
+
+    it('should handle non-Prisma errors', async () => {
+      // Mock generic error (no code)
+      const genericError = new Error('Network error');
+
+      (prismaMock.$transaction as any).mockRejectedValue(genericError);
+
+      const orderData = [{
+        customerFirstName: 'Eve',
+        customerLastName: 'Williams',
+        customerPhone: '0504567890',
+        deliveryAddress: '321 Elm St',
+        deliveryState: 'Greater Accra',
+        deliveryArea: 'Spintex',
+        totalAmount: 250,
+        orderDate: new Date('2024-01-04'),
+      }];
+
+      const result = await orderService.bulkImportOrders(orderData, 1, undefined, undefined, true);
+
+      // Generic error should be tracked as failed
+      expect(result.success).toBe(0);
+      expect(result.failed).toBe(1);
+      expect(result.duplicates).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].error).toBeDefined();
+    });
   });
 
   describe('bulkDeleteOrders', () => {

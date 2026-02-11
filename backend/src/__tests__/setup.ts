@@ -18,9 +18,18 @@ process.env.WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'test-webhook-secret-
 if (!process.env.DATABASE_URL) {
   console.warn('WARNING: DATABASE_URL not set for tests. Using fallback local database.');
   process.env.DATABASE_URL = 'postgresql://ecommerce_user:ecommerce_dev_password@localhost:5432/ecommerce_cod_test';
-} else if (process.env.DATABASE_URL.includes('prod') || process.env.DATABASE_URL.includes('production')) {
-  console.error('CRITICAL: Test suite is attempting to run against a production database!');
-  process.exit(1);
+} else {
+  // Strict safety check for tests
+  if (!process.env.DATABASE_URL.includes('_test')) {
+    console.error('CRITICAL: Test suite is attempting to run against a non-test database!');
+    console.error('DATABASE_URL must contain "_test" to be used for testing.');
+    process.exit(1);
+  }
+
+  if (process.env.DATABASE_URL.includes('prod') || process.env.DATABASE_URL.includes('production')) {
+    console.error('CRITICAL: Test suite is attempting to run against a production database!');
+    process.exit(1);
+  }
 }
 
 // Global test timeout

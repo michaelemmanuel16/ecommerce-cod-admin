@@ -23,18 +23,17 @@ describe('FinancialService', () => {
 
   describe('getFinancialSummary', () => {
     it('should calculate financial summary correctly', async () => {
-      prismaMock.transaction.aggregate
-        .mockResolvedValueOnce({ _sum: { amount: 10000 } } as any) // revenue
-        .mockResolvedValueOnce({ _sum: { amount: 9500 } } as any) // codCollections
-        .mockResolvedValueOnce({ _sum: { amount: 500 } } as any); // pendingCOD
+      prismaMock.order.aggregate
+        .mockResolvedValueOnce({ _sum: { totalAmount: 10000 } } as any) // totalRevenue (order.status: delivered)
+        .mockResolvedValueOnce({ _sum: { totalAmount: 500 } } as any); // outForDeliveryOrders
 
       prismaMock.expense.aggregate.mockResolvedValue({
         _sum: { amount: 2000 }
       } as any);
 
-      prismaMock.order.aggregate
-        .mockResolvedValueOnce({ _sum: { totalAmount: 1000 } } as any) // deliveredOrders
-        .mockResolvedValueOnce({ _sum: { totalAmount: 500 } } as any); // outForDeliveryOrders
+      prismaMock.transaction.aggregate
+        .mockResolvedValueOnce({ _sum: { amount: 9500 } } as any) // codCollections (collected/deposited/reconciled)
+        .mockResolvedValueOnce({ _sum: { amount: 0 } } as any); // pendingTransactions (not needed for this test summary)
 
       const summary = await financialService.getFinancialSummary({
         startDate: new Date('2024-01-01'),
@@ -45,7 +44,7 @@ describe('FinancialService', () => {
       expect(summary.totalExpenses).toBe(2000);
       expect(summary.profit).toBe(8000);
       expect(summary.codCollected).toBe(9500);
-      expect(summary.codPending).toBe(2000); // 500 + 1000 + 500
+      expect(summary.codPending).toBe(1000); // (10000 - 9500) + 500
       expect(summary.profitMargin).toBe(80); // (10000 - 2000) / 10000 * 100
     });
 
@@ -275,20 +274,14 @@ describe('FinancialService', () => {
 
   describe('getFinancialReports', () => {
     it('should generate daily financial reports', async () => {
-      const mockTransactions = [
+      const mockOrders = [
         {
-          createdAt: new Date('2024-01-01'),
-          type: 'cod_collection',
-          amount: 100,
-          status: 'collected',
-          order: {}
+          updatedAt: new Date('2024-01-01'),
+          totalAmount: 100
         },
         {
-          createdAt: new Date('2024-01-01'),
-          type: 'cod_collection',
-          amount: 200,
-          status: 'collected',
-          order: {}
+          updatedAt: new Date('2024-01-01'),
+          totalAmount: 200
         }
       ];
 
@@ -299,7 +292,7 @@ describe('FinancialService', () => {
         }
       ];
 
-      prismaMock.transaction.findMany.mockResolvedValue(mockTransactions as any);
+      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
       prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
 
       const reports = await financialService.getFinancialReports({
@@ -317,13 +310,10 @@ describe('FinancialService', () => {
     });
 
     it('should generate monthly financial reports', async () => {
-      const mockTransactions = [
+      const mockOrders = [
         {
-          createdAt: new Date('2024-01-15'),
-          type: 'cod_collection',
-          amount: 100,
-          status: 'collected',
-          order: {}
+          updatedAt: new Date('2024-01-15'),
+          totalAmount: 100
         }
       ];
 
@@ -334,7 +324,7 @@ describe('FinancialService', () => {
         }
       ];
 
-      prismaMock.transaction.findMany.mockResolvedValue(mockTransactions as any);
+      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
       prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
 
       const reports = await financialService.getFinancialReports({
@@ -352,25 +342,14 @@ describe('FinancialService', () => {
 
   describe('getExpenseBreakdown', () => {
     it('should group expenses by category', async () => {
-      const mockBreakdown = [
-        {
-          category: 'Delivery',
-          _sum: { amount: 1000 },
-          _count: 5
-        },
-        {
-          category: 'Marketing',
-          _sum: { amount: 500 },
-          _count: 3
-        },
-        {
-          category: 'Operations',
-          _sum: { amount: 800 },
-          _count: 4
-        }
+      const mockExpenses = [
+        { category: 'Delivery', amount: 200 },
+        { category: 'Delivery', amount: 800 },
+        { category: 'Marketing', amount: 500 },
+        { category: 'Operations', amount: 800 }
       ];
 
-      prismaMock.expense.groupBy.mockResolvedValue(mockBreakdown as any);
+      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
 
       const breakdown = await financialService.getExpenseBreakdown({
         startDate: new Date('2024-01-01'),
@@ -378,12 +357,13 @@ describe('FinancialService', () => {
       });
 
       expect(breakdown).toHaveLength(3);
-      expect(breakdown[0].category).toBe('Delivery');
-      expect(breakdown[0].totalAmount).toBe(1000);
-      expect(breakdown[0].count).toBe(5);
+      expect(breakdown.find(b => b.category === 'Delivery')?.totalAmount).toBe(1000);
+      expect(breakdown.find(b => b.category === 'Marketing')?.totalAmount).toBe(500);
+      expect(breakdown.find(b => b.category === 'Operations')?.totalAmount).toBe(800);
 
       // Should be sorted by amount (descending)
-      expect(breakdown[0].totalAmount).toBeGreaterThan(breakdown[1].totalAmount);
+      expect(breakdown[0].totalAmount).toBe(1000);
+      expect(breakdown[1].totalAmount).toBe(800);
     });
   });
 

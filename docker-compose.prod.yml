@@ -64,6 +64,8 @@ services:
     image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/backend:main
     container_name: ecommerce-cod-backend
     restart: always
+    ports:
+      - "3000:3000"  # Expose backend to host for nginx proxy
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -105,9 +107,17 @@ services:
     image: ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:main
     container_name: ecommerce-cod-frontend
     restart: always
+    ports:
+      - "8080:8080"  # Expose frontend to host for nginx proxy
+    # ⚠️ IMPORTANT: VITE_API_URL and VITE_WS_URL are baked into the static build at IMAGE BUILD TIME
+    # The environment variables below have NO EFFECT on Vite builds - they are here for documentation only
+    # To change API URLs, you must rebuild the Docker image with correct --build-arg values:
+    #   docker build --build-arg VITE_API_URL=https://codadminpro.com \
+    #                --build-arg VITE_WS_URL=wss://codadminpro.com \
+    #                -t ghcr.io/.../frontend:main .
     environment:
-      VITE_API_URL: https://codadminpro.com
-      VITE_WS_URL: https://codadminpro.com
+      VITE_API_URL: https://codadminpro.com  # Informational only - set at build time
+      VITE_WS_URL: https://codadminpro.com   # Informational only - set at build time
       FRONTEND_URL: ${FRONTEND_URL:-https://codadminpro.com}
     depends_on:
       - backend
@@ -115,9 +125,10 @@ services:
       - ecommerce-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:

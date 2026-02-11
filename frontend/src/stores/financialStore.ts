@@ -16,10 +16,12 @@ import {
   CashFlowReport,
   BalanceSheetData,
   ProfitLossData,
-  FinancialStatementAccount
+  FinancialStatementAccount,
+  CollectionRecord
 } from '../services/financial.service';
 import { getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
+import { formatCurrency } from '../utils/format';
 
 interface FinancialFilters {
   startDate?: string;
@@ -56,6 +58,9 @@ interface FinancialState {
   dateRange: { startDate?: string; endDate?: string };
   isLoading: boolean;
   error: string | null;
+  currentAgentCollections: CollectionRecord[];
+  currentAgentDeposits: any[];
+  selectedDepositIds: number[];
   loadingStates: {
     summary: boolean;
     collections: boolean;
@@ -65,6 +70,7 @@ interface FinancialState {
     profitability: boolean;
     cashFlow: boolean;
     statements: boolean;
+    deposits: boolean;
   };
   pagination: {
     transactions: { page: number; totalPages: number; total: number } | null;
@@ -114,6 +120,17 @@ interface FinancialState {
   fetchBalanceSheet: (asOfDate?: string) => Promise<void>;
   fetchProfitLoss: (startDate: string, endDate: string) => Promise<void>;
   setDateRange: (startDate?: string, endDate?: string) => void;
+  fetchAgentCollections: (agentId: number, status?: string) => Promise<void>;
+  verifyCollection: (id: number) => Promise<void>;
+  approveCollection: (id: number) => Promise<void>;
+  bulkVerifyCollections: (ids: number[]) => Promise<void>;
+  fetchAgentDeposits: (params?: { agentId?: number; status?: string }) => Promise<void>;
+  verifyDeposit: (id: number) => Promise<void>;
+  rejectDeposit: (id: number, notes: string) => Promise<void>;
+  bulkVerifyDeposits: (ids: number[]) => Promise<void>;
+  toggleDepositSelection: (id: number) => void;
+  toggleAllDeposits: () => void;
+  clearDepositSelection: () => void;
 }
 
 export const useFinancialStore = create<FinancialState>((set, get) => {
@@ -201,6 +218,9 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     },
     isLoading: false,
     error: null,
+    currentAgentCollections: [],
+    currentAgentDeposits: [],
+    selectedDepositIds: [],
     loadingStates: {
       summary: false,
       collections: false,
@@ -210,6 +230,7 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
       profitability: false,
       cashFlow: false,
       statements: false,
+      deposits: false,
     },
     pagination: {
       transactions: null,
@@ -565,5 +586,132 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     setDateRange: (startDate?: string, endDate?: string) => {
       set({ dateRange: { startDate, endDate } });
     },
+
+    fetchAgentCollections: async (agentId: number, status?: string) => {
+      set({ isLoading: true, error: null });
+      try {
+        const collections = await financialService.getAgentCollections(agentId, { status });
+        set({ currentAgentCollections: collections, isLoading: false });
+      } catch (error: any) {
+        set({ isLoading: false, error: error.message });
+        toast.error('Failed to fetch agent collections');
+      }
+    },
+
+    verifyCollection: async (id: number) => {
+      try {
+        await financialService.verifyCollection(id);
+        toast.success('Collection reconciled');
+        const agentId = get().currentAgentCollections[0]?.agentId;
+        if (agentId) await get().fetchAgentCollections(agentId);
+        await get().fetchAgentCashHoldings();
+        await get().fetchAgentAging();
+        await get().fetchSummary();
+      } catch (error: any) {
+        toast.error('Failed to reconcile collection');
+      }
+    },
+
+    approveCollection: async (id: number) => {
+      try {
+        await financialService.approveCollection(id);
+        toast.success('Collection approved');
+        const agentId = get().currentAgentCollections[0]?.agentId;
+        if (agentId) await get().fetchAgentCollections(agentId);
+        await get().fetchAgentCashHoldings();
+        await get().fetchSummary();
+        await get().fetchAgentAging();
+      } catch (error: any) {
+        toast.error('Failed to approve collection');
+      }
+    },
+
+    bulkVerifyCollections: async (ids: number[]) => {
+      try {
+        await financialService.bulkVerifyCollections(ids);
+        toast.success('Collections verified');
+        const agentId = get().currentAgentCollections[0]?.agentId;
+        if (agentId) await get().fetchAgentCollections(agentId);
+        await get().fetchAgentCashHoldings();
+        await get().fetchAgentAging();
+      } catch (error: any) {
+        toast.error('Failed to bulk verify collections');
+      }
+    },
+
+    fetchAgentDeposits: async (params?: { agentId?: number; status?: string }) => {
+      set((state) => ({ loadingStates: { ...state.loadingStates, deposits: true }, error: null }));
+      try {
+        const deposits = await financialService.getAgentDeposits(params);
+        set((state) => ({
+          currentAgentDeposits: deposits,
+          loadingStates: { ...state.loadingStates, deposits: false }
+        }));
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch deposits';
+        set((state) => ({ error: errorMessage, loadingStates: { ...state.loadingStates, deposits: false } }));
+        toast.error(errorMessage);
+      }
+    },
+
+    verifyDeposit: async (id: number) => {
+      try {
+        await financialService.verifyDeposit(id);
+        toast.success('Deposit verified successfully');
+        await get().fetchAgentDeposits({ status: 'pending' });
+        await get().fetchAgentCashHoldings();
+        await get().fetchAgentAging();
+        await get().fetchSummary();
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to verify deposit';
+        toast.error(errorMessage);
+      }
+    },
+
+    rejectDeposit: async (id: number, notes: string) => {
+      try {
+        await financialService.rejectDeposit(id, notes);
+        toast.success('Deposit rejected');
+        await get().fetchAgentDeposits({ status: 'pending' });
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to reject deposit';
+        toast.error(errorMessage);
+      }
+    },
+
+    bulkVerifyDeposits: async (ids: number[]) => {
+      try {
+        const result = await financialService.bulkVerifyDeposits(ids);
+        toast.success(`Successfully verified ${result.verified} deposits (${formatCurrency(result.totalAmount)})`);
+        set({ selectedDepositIds: [] });
+        await get().fetchAgentDeposits({ status: 'pending' });
+        await get().fetchAgentCashHoldings();
+        await get().fetchAgentAging();
+        await get().fetchSummary();
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to bulk verify deposits';
+        toast.error(errorMessage);
+      }
+    },
+
+    toggleDepositSelection: (id: number) => {
+      set((state) => ({
+        selectedDepositIds: state.selectedDepositIds.includes(id)
+          ? state.selectedDepositIds.filter(depositId => depositId !== id)
+          : [...state.selectedDepositIds, id]
+      }));
+    },
+
+    toggleAllDeposits: () => {
+      set((state) => ({
+        selectedDepositIds: state.selectedDepositIds.length === state.currentAgentDeposits.length
+          ? []
+          : state.currentAgentDeposits.map(d => d.id)
+      }));
+    },
+
+    clearDepositSelection: () => {
+      set({ selectedDepositIds: [] });
+    }
   };
 });

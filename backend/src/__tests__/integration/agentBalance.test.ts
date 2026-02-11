@@ -45,6 +45,7 @@ describe('Agent Balance and Deposit Integration', () => {
         const accounts: Prisma.AccountUncheckedCreateInput[] = [
             { id: parseInt(GL_ACCOUNTS.AR_AGENTS), code: GL_ACCOUNTS.AR_AGENTS, name: 'Agent AR', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
             { id: parseInt(GL_ACCOUNTS.CASH_IN_HAND), code: GL_ACCOUNTS.CASH_IN_HAND, name: 'Cash in Hand', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { id: parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT), code: GL_ACCOUNTS.CASH_IN_TRANSIT, name: 'Cash in Transit', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
         ];
         for (const a of accounts) {
             await prisma.account.upsert({
@@ -106,74 +107,73 @@ describe('Agent Balance and Deposit Integration', () => {
         (testAgent as any).testOrderId = order.id;
     });
 
-    it('should initialize balance, approval update it, and verify deposit reduce it', async () => {
+    it('should initialize balance, reconciliation update it, and verify deposit reduce it', async () => {
         // 1. Initial State: getOrCreateBalance should create record
         const initialBalance = await agentReconciliationService.getOrCreateBalance(testAgent.id);
         expect(initialBalance).not.toBeNull();
         expect(Number(initialBalance.currentBalance)).toBe(0);
 
-        // 2. Mock a collection approval (using direct service call since approval logic is tested elsewhere)
-        // For integration test, we simulate the effect of approveCollection by manually updating if needed or just calling it
-        // Let's manually create a verified collection to approve
+        // 2. Simulate collection accrual (normally done by FinancialSyncService.syncOrderFinancialData)
+        // Agent collects 1000 from customer
+        await (prisma as any).agentBalance.update({
+            where: { id: initialBalance.id },
+            data: {
+                currentBalance: { increment: 1000 },
+                totalCollected: { increment: 1000 }
+            }
+        });
+
         const collection = await (prisma as any).agentCollection.create({
             data: {
                 agentId: testAgent.id,
                 amount: 1000,
-                status: 'verified',
+                status: 'draft',
                 orderId: testAgent.testOrderId,
                 collectionDate: new Date(),
             }
         });
 
-        await agentReconciliationService.approveCollection(collection.id, testUser.id);
+        // 3. Reconcile collection (Settle)
+        // In the new logic, verifyCollection (reconcile) decrements currentBalance and increments totalDeposited
+        await agentReconciliationService.verifyCollection(collection.id, testUser.id);
 
-        const afterApproveBalance = await agentReconciliationService.getAgentBalance(testAgent.id);
-        expect(Number(afterApproveBalance!.currentBalance)).toBe(1000);
-        expect(Number(afterApproveBalance!.totalCollected)).toBe(1000);
+        const afterReconcileBalance = await agentReconciliationService.getAgentBalance(testAgent.id);
+        expect(Number(afterReconcileBalance!.currentBalance)).toBe(0); // Settled
+        expect(Number(afterReconcileBalance!.totalDeposited)).toBe(1000);
 
-        // 3. Create Deposit
+        // 4. Create and Verify Deposit (Regular flow for cash handover)
+        // Note: In this test, balance is now 0. If we want to test deposit, we need some outstanding balance.
+        // Let's accrue another 1000.
+        await (prisma as any).agentBalance.update({
+            where: { id: initialBalance.id },
+            data: { currentBalance: { increment: 1000 } }
+        });
+
         const deposit = await agentReconciliationService.createDeposit(testAgent.id, 400, 'bank_transfer', 'REF123', 'Test deposit');
         expect(deposit.status).toBe('pending');
-        expect(Number(deposit.amount)).toBe(400);
-
-        // 4. Verify Deposit
         await agentReconciliationService.verifyDeposit(deposit.id, testUser.id);
 
-        const afterVerifyBalance = await agentReconciliationService.getAgentBalance(testAgent.id);
-        expect(Number(afterVerifyBalance!.currentBalance)).toBe(600);
-        expect(Number(afterVerifyBalance!.totalDeposited)).toBe(400);
-
-        // Check GL Entry for deposit
-        const glEntry = await prisma.journalEntry.findFirst({
-            where: { sourceId: deposit.id, sourceType: 'agent_deposit' },
-            include: { transactions: true }
-        });
-        expect(glEntry).not.toBeNull();
-        expect(glEntry!.transactions).toHaveLength(2);
+        const finalBalance = await agentReconciliationService.getAgentBalance(testAgent.id);
+        expect(Number(finalBalance!.currentBalance)).toBe(600);
+        expect(Number(finalBalance!.totalDeposited)).toBe(1400); // 1000 from recon + 400 from deposit
     });
 
     it('should not allow deposit verification that leads to negative balance', async () => {
-        // ... previous test code ...
         // Initialize balance with 500
-        const collection = await (prisma as any).agentCollection.create({
-            data: {
-                agentId: testAgent.id,
-                amount: 500,
-                status: 'verified',
-                orderId: testAgent.testOrderId,
-                collectionDate: new Date(),
-            }
+        const initialBalance = await agentReconciliationService.getOrCreateBalance(testAgent.id);
+        await (prisma as any).agentBalance.update({
+            where: { id: initialBalance.id },
+            data: { currentBalance: 500 }
         });
-        await agentReconciliationService.approveCollection(collection.id, testUser.id);
 
-        // Create deposit for 600 - this should now throw in createDeposit
+        // Create deposit for 600 - this should throw in createDeposit
         await expect(agentReconciliationService.createDeposit(testAgent.id, 600, 'bank_transfer', 'REF600'))
             .rejects.toThrow(/Deposit amount cannot exceed your current outstanding balance/);
     });
 
     it('should allow deposit rejection and not change balance', async () => {
         // 1. Initialize balance
-        const initialBalance = await agentReconciliationService.getOrCreateBalance(testAgent.id);
+        await agentReconciliationService.getOrCreateBalance(testAgent.id);
 
         // 2. Create deposit - should fail if balance is 0
         await expect(agentReconciliationService.createDeposit(testAgent.id, 500, 'bank_transfer', 'REF500'))

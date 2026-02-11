@@ -21,6 +21,7 @@ interface AnalyticsState {
   customerInsights: CustomerInsights | null;
   pendingOrders: PendingOrder[];
   recentActivity: Activity[];
+  ordersByStatus: ConversionFunnelStep[];
   isLoading: boolean;
   error: string | null;
   fetchDashboardMetrics: (startDate?: string, endDate?: string) => Promise<void>;
@@ -31,11 +32,12 @@ interface AnalyticsState {
     endDate?: string
   ) => Promise<void>;
   fetchConversionFunnel: (startDate?: string, endDate?: string) => Promise<void>;
-  fetchRepPerformance: () => Promise<void>;
+  fetchRepPerformance: (startDate?: string, endDate?: string) => Promise<void>;
   fetchAgentPerformance: () => Promise<void>;
   fetchCustomerInsights: () => Promise<void>;
   fetchPendingOrders: () => Promise<void>;
   fetchRecentActivity: () => Promise<void>;
+  fetchOrdersByStatus: (startDate?: string, endDate?: string) => Promise<void>;
   refreshAll: () => Promise<void>;
   setupSocketListeners: () => void;
 }
@@ -50,6 +52,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
     customerInsights: null,
     pendingOrders: [],
     recentActivity: [],
+    ordersByStatus: [],
     isLoading: false,
     error: null,
 
@@ -210,6 +213,17 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
       }
     },
 
+    fetchOrdersByStatus: async (startDate?: string, endDate?: string) => {
+      try {
+        const ordersByStatus = await analyticsService.getOrderStatusDistribution({ startDate, endDate });
+        set({ ordersByStatus });
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch orders by status';
+        console.error(errorMessage, error);
+        toast.error(errorMessage);
+      }
+    },
+
     refreshAll: async () => {
       set({ isLoading: true, error: null });
       try {
@@ -220,6 +234,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
           get().fetchAgentPerformance(),
           get().fetchPendingOrders(),
           get().fetchRecentActivity(),
+          get().fetchOrdersByStatus(),
         ]);
         set({ isLoading: false });
       } catch (error: any) {

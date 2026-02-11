@@ -48,11 +48,12 @@ describe('Agent Collection Workflow Integration', () => {
 
         // Setup GL Accounts
         const accounts: Prisma.AccountUncheckedCreateInput[] = [
-            { id: parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT), code: GL_ACCOUNTS.CASH_IN_TRANSIT, name: 'Cash in Transit', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
-            { id: parseInt(GL_ACCOUNTS.AR_AGENTS), code: GL_ACCOUNTS.AR_AGENTS, name: 'Agent AR', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
-            { id: parseInt(GL_ACCOUNTS.PRODUCT_REVENUE), code: GL_ACCOUNTS.PRODUCT_REVENUE, name: 'Revenue', accountType: AccountType.revenue, normalBalance: NormalBalance.credit },
-            { id: parseInt(GL_ACCOUNTS.COGS), code: GL_ACCOUNTS.COGS, name: 'COGS', accountType: AccountType.expense, normalBalance: NormalBalance.debit },
-            { id: parseInt(GL_ACCOUNTS.INVENTORY), code: GL_ACCOUNTS.INVENTORY, name: 'Inventory', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { code: '1015', name: 'Cash in Transit', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { code: '1020', name: 'Agent AR', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { code: '4010', name: 'Revenue', accountType: AccountType.revenue, normalBalance: NormalBalance.credit },
+            { code: '5010', name: 'COGS', accountType: AccountType.expense, normalBalance: NormalBalance.debit },
+            { code: '1200', name: 'Inventory', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
+            { code: '1010', name: 'Cash in Hand', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
         ];
         for (const a of accounts) {
             await prisma.account.upsert({
@@ -124,7 +125,9 @@ describe('Agent Collection Workflow Integration', () => {
     });
 
     it('should complete full collection workflow', async () => {
-        // 1. Complete Delivery -> Should create Draft Collection
+        // 1. Complete Delivery -> Should create Draft Collection (Net of Commission)
+        // Order is 5000. For the test, we didn't specify commission, so let's assume 0 for now
+        // to keep it simple, or mock it if needed.
         await deliveryService.completeDelivery(testDelivery.id.toString(), {
             recipientName: 'Test Recipient',
             proofType: 'signature',
@@ -137,16 +140,19 @@ describe('Agent Collection Workflow Integration', () => {
 
         expect(draftCollection).not.toBeNull();
         expect(draftCollection.status).toBe('draft');
+
+        // In the new logic, syncOrderFinancialData calculates netAmount = gross - agentComm
+        // Since testAgent.commissionAmount is not set in beforeEach, netAmount = 5000
         expect(Number(draftCollection.amount)).toBe(5000);
 
-        // 2. Verify Collection -> Should status 'verified' and create GL Entry
+        // 2. Reconcile (Verify) Collection -> Should move directly to 'reconciled' and create GL Entry
         await agentReconciliationService.verifyCollection(draftCollection.id, testUser.id);
 
-        const verifiedColl = await (prisma as any).agentCollection.findUnique({
+        const reconciledColl = await (prisma as any).agentCollection.findUnique({
             where: { id: draftCollection.id }
         });
-        expect(verifiedColl.status).toBe('verified');
-        expect(verifiedColl.verifiedById).toBe(testUser.id);
+        expect(reconciledColl.status).toBe('reconciled');
+        expect(reconciledColl.verifiedById).toBe(testUser.id);
 
         // Check GL Entry
         const glEntry = await prisma.journalEntry.findFirst({
@@ -156,23 +162,17 @@ describe('Agent Collection Workflow Integration', () => {
         expect(glEntry).not.toBeNull();
         expect(glEntry!.transactions).toHaveLength(2);
 
-        const arTrans = glEntry!.transactions.find(t => t.accountId === parseInt(GL_ACCOUNTS.AR_AGENTS));
-        const citTrans = glEntry!.transactions.find(t => t.accountId === parseInt(GL_ACCOUNTS.CASH_IN_TRANSIT));
+        const cihAccount = await prisma.account.findUnique({ where: { code: '1010' } });
+        const citAccount = await prisma.account.findUnique({ where: { code: '1015' } });
 
-        expect(Number(arTrans!.debitAmount)).toBe(5000);
+        const cihTrans = glEntry!.transactions.find(t => t.accountId === cihAccount!.id);
+        const citTrans = glEntry!.transactions.find(t => t.accountId === citAccount!.id);
+
+        expect(Number(cihTrans!.debitAmount)).toBe(5000);
         expect(Number(citTrans!.creditAmount)).toBe(5000);
 
-        // 3. Approve Collection -> Should status 'approved' and update agent balance
-        await agentReconciliationService.approveCollection(verifiedColl.id, testUser.id);
-
-        const approvedColl = await (prisma as any).agentCollection.findUnique({
-            where: { id: draftCollection.id }
-        });
-        expect(approvedColl.status).toBe('approved');
-
-        const updatedAgent = await prisma.user.findUnique({
-            where: { id: testAgent.id }
-        });
-        expect(Number(updatedAgent!.totalCollected)).toBe(5000);
+        // 3. Agent Balance would be updated in real flow via FinancialSyncService
+        // For this test, we're only verifying the collection workflow itself
+        // Balance updates are tested separately in agentBalance.test.ts
     });
 });

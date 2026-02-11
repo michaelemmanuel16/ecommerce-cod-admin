@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { jest, beforeEach } from '@jest/globals';
 import { PrismaClient } from '@prisma/client';
 import { mockDeep, mockReset, DeepMockProxy } from 'jest-mock-extended';
 
@@ -14,6 +14,7 @@ beforeEach(() => {
 jest.mock('../../utils/prisma', () => ({
   __esModule: true,
   default: prismaMock,
+  prismaBase: prismaMock,
 }));
 
 export default prismaMock;

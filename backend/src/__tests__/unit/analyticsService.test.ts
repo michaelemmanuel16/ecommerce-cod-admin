@@ -181,6 +181,12 @@ describe('AnalyticsService', () => {
       ];
 
       prismaMock.user.findMany.mockResolvedValue(mockReps as any);
+      // Mock the separate pending orders count query
+      prismaMock.order.count.mockResolvedValue(1);
+      prismaMock.order.aggregate.mockResolvedValue({
+        _count: { id: 1 },
+        _sum: { totalAmount: 100 }
+      } as any);
 
       const performance = await analyticsService.getRepPerformance();
 
@@ -206,6 +212,12 @@ describe('AnalyticsService', () => {
       ];
 
       prismaMock.user.findMany.mockResolvedValue(mockReps as any);
+      // Mock pending and unpaid orders
+      prismaMock.order.count.mockResolvedValue(0);
+      prismaMock.order.aggregate.mockResolvedValue({
+        _count: { id: 0 },
+        _sum: { totalAmount: null }
+      } as any);
 
       const performance = await analyticsService.getRepPerformance();
 

@@ -86,7 +86,8 @@ export const getRepPerformanceDetails = async (
             id: true,
             status: true,
             totalAmount: true,
-            createdAt: true
+            createdAt: true,
+            commissionPaid: true
           }
         }
       },
@@ -100,8 +101,10 @@ export const getRepPerformanceDetails = async (
     // Calculate performance metrics for each rep
     const performanceData: RepPerformanceDetails[] = reps.map(rep => {
       const totalAssigned = rep.assignedOrdersAsRep.length;
+
+      // Filter for delivered orders that haven't been paid yet
       const deliveredOrders = rep.assignedOrdersAsRep.filter(
-        order => order.status === OrderStatus.delivered
+        order => order.status === OrderStatus.delivered && !order.commissionPaid
       );
       const deliveredCount = deliveredOrders.length;
 
