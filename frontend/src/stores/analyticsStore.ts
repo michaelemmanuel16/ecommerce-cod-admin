@@ -7,7 +7,9 @@ import {
   PerformanceMetrics,
   CustomerInsights,
   PendingOrder,
-  Activity
+  Activity,
+  ProductPerformance,
+  AreaDistribution,
 } from '../services/analytics.service';
 import { getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
@@ -22,6 +24,8 @@ interface AnalyticsState {
   pendingOrders: PendingOrder[];
   recentActivity: Activity[];
   ordersByStatus: ConversionFunnelStep[];
+  productPerformance: ProductPerformance[];
+  areaDistribution: AreaDistribution[];
   isLoading: boolean;
   error: string | null;
   fetchDashboardMetrics: (startDate?: string, endDate?: string) => Promise<void>;
@@ -33,11 +37,13 @@ interface AnalyticsState {
   ) => Promise<void>;
   fetchConversionFunnel: (startDate?: string, endDate?: string) => Promise<void>;
   fetchRepPerformance: (startDate?: string, endDate?: string) => Promise<void>;
-  fetchAgentPerformance: () => Promise<void>;
+  fetchAgentPerformance: (startDate?: string, endDate?: string) => Promise<void>;
   fetchCustomerInsights: () => Promise<void>;
   fetchPendingOrders: () => Promise<void>;
   fetchRecentActivity: () => Promise<void>;
   fetchOrdersByStatus: (startDate?: string, endDate?: string) => Promise<void>;
+  fetchProductPerformance: (startDate?: string, endDate?: string) => Promise<void>;
+  fetchAreaDistribution: (startDate?: string, endDate?: string) => Promise<void>;
   refreshAll: () => Promise<void>;
   setupSocketListeners: () => void;
 }
@@ -53,6 +59,8 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
     pendingOrders: [],
     recentActivity: [],
     ordersByStatus: [],
+    productPerformance: [],
+    areaDistribution: [],
     isLoading: false,
     error: null,
 
@@ -169,9 +177,12 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
       }
     },
 
-    fetchAgentPerformance: async () => {
+    fetchAgentPerformance: async (startDate?: string, endDate?: string) => {
       try {
-        const agentPerformance = await analyticsService.getAgentPerformance();
+        const agentPerformance = await analyticsService.getAgentPerformance({
+          startDate,
+          endDate,
+        });
         set({ agentPerformance });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch agent performance';
@@ -219,6 +230,34 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
         set({ ordersByStatus });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch orders by status';
+        console.error(errorMessage, error);
+        toast.error(errorMessage);
+      }
+    },
+
+    fetchProductPerformance: async (startDate?: string, endDate?: string) => {
+      try {
+        const productPerformance = await analyticsService.getProductPerformance({
+          startDate,
+          endDate,
+        });
+        set({ productPerformance });
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch product performance';
+        console.error(errorMessage, error);
+        toast.error(errorMessage);
+      }
+    },
+
+    fetchAreaDistribution: async (startDate?: string, endDate?: string) => {
+      try {
+        const areaDistribution = await analyticsService.getAreaDistribution({
+          startDate,
+          endDate,
+        });
+        set({ areaDistribution });
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || 'Failed to fetch area distribution';
         console.error(errorMessage, error);
         toast.error(errorMessage);
       }

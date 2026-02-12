@@ -104,9 +104,13 @@ export const getRepPerformance = async (req: AuthRequest, res: Response): Promis
   }
 };
 
-export const getAgentPerformance = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getAgentPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const performance = await analyticsService.getAgentPerformance();
+    const { startDate, endDate } = req.query;
+    const performance = await analyticsService.getAgentPerformance({
+      startDate: startDate ? new Date(startDate as string) : undefined,
+      endDate: endDate ? new Date(endDate as string) : undefined,
+    });
     res.json({ performance });
   } catch (error) {
     console.error('[analyticsController] getAgentPerformance error:', error);
@@ -151,6 +155,40 @@ export const getRecentActivity = async (req: AuthRequest, res: Response): Promis
     console.error('[analyticsController] getRecentActivity error:', error);
     res.status(500).json({
       error: 'Failed to fetch recent activity',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
+    });
+  }
+};
+
+export const getProductPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { startDate, endDate } = req.query;
+    const performance = await analyticsService.getProductPerformance({
+      startDate: startDate ? new Date(startDate as string) : undefined,
+      endDate: endDate ? new Date(endDate as string) : undefined,
+    });
+    res.json({ performance });
+  } catch (error) {
+    console.error('[analyticsController] getProductPerformance error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch product performance',
+      message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
+    });
+  }
+};
+
+export const getAreaDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { startDate, endDate } = req.query;
+    const distribution = await analyticsService.getAreaDistribution({
+      startDate: startDate ? new Date(startDate as string) : undefined,
+      endDate: endDate ? new Date(endDate as string) : undefined,
+    });
+    res.json({ distribution });
+  } catch (error) {
+    console.error('[analyticsController] getAreaDistribution error:', error);
+    res.status(500).json({
+      error: 'Failed to fetch area distribution',
       message: process.env.NODE_ENV === 'development' ? (error as Error).message : 'Internal server error'
     });
   }
