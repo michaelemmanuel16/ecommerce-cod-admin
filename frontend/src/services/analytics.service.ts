@@ -81,6 +81,22 @@ export interface Activity {
   data?: any;
 }
 
+export interface ProductPerformance {
+  productId: number;
+  productName: string;
+  sku: string;
+  category: string;
+  unitsSold: number;
+  revenue: number;
+  orderCount: number;
+}
+
+export interface AreaDistribution {
+  area: string;
+  orderCount: number;
+  revenue: number;
+}
+
 export const analyticsService = {
   async getDashboardMetrics(params?: {
     startDate?: string;
@@ -116,8 +132,11 @@ export const analyticsService = {
     return response.data.performance;
   },
 
-  async getAgentPerformance(): Promise<PerformanceMetrics[]> {
-    const response = await apiClient.get('/api/analytics/agent-performance');
+  async getAgentPerformance(params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<PerformanceMetrics[]> {
+    const response = await apiClient.get('/api/analytics/agent-performance', { params });
     return response.data.performance;
   },
 
@@ -142,5 +161,21 @@ export const analyticsService = {
   }): Promise<ConversionFunnelStep[]> {
     const response = await apiClient.get('/api/analytics/status-distribution', { params });
     return response.data.distribution;
-  }
+  },
+
+  async getProductPerformance(params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<ProductPerformance[]> {
+    const response = await apiClient.get('/api/analytics/product-performance', { params });
+    return response.data.performance;
+  },
+
+  async getAreaDistribution(params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<AreaDistribution[]> {
+    const response = await apiClient.get('/api/analytics/area-distribution', { params });
+    return response.data.distribution;
+  },
 };

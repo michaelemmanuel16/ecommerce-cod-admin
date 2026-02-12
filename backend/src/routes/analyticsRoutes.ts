@@ -9,7 +9,9 @@ import {
     getCustomerInsights,
     getPendingOrders,
     getRecentActivity,
-    getOrderStatusDistribution
+    getOrderStatusDistribution,
+    getProductPerformance,
+    getAreaDistribution
 } from '../controllers/analyticsController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
 import cacheMiddleware from '../middleware/cache';
@@ -30,5 +32,7 @@ router.get('/customer-insights', requireResourcePermission('analytics', 'view'),
 router.get('/pending-orders', requireResourcePermission('analytics', 'view'), cacheMiddleware(60), getPendingOrders);
 router.get('/recent-activity', requireResourcePermission('analytics', 'view'), cacheMiddleware(60), getRecentActivity);
 router.get('/status-distribution', requireResourcePermission('analytics', 'view'), cacheMiddleware(300), getOrderStatusDistribution);
+router.get('/product-performance', requireResourcePermission('analytics', 'view'), cacheMiddleware(300), getProductPerformance);
+router.get('/area-distribution', requireResourcePermission('analytics', 'view'), cacheMiddleware(300), getAreaDistribution);
 
 export default router;
