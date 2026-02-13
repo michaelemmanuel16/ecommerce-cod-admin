@@ -261,7 +261,6 @@ export const Products: React.FC = () => {
                                                             productId={product.id}
                                                             productName={product.name}
                                                             warehouseStock={warehouseStock}
-                                                            productPrice={product.price}
                                                             onStockChanged={loadProducts}
                                                         />
                                                     </td>

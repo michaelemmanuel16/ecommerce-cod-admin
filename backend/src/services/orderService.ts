@@ -1432,7 +1432,10 @@ export class OrderService {
 
     // Perform bulk deletion in a single transaction
     await prisma.$transaction(async (tx) => {
-      // Phase 1: reverse agent stock (sequential — each needs its own tx calls)
+      // Phase 1: reverse agent stock (sequential — each call makes multiple tx queries
+      // that depend on per-order state, so they cannot be parallelised within the tx).
+      // Performance ceiling: ~50ms × N orders. For bulk deletes > ~100 orders, consider
+      // processing in smaller batches outside a single transaction.
       // Aggregate warehouse restocks into a Map for batched Phase 2
       const warehouseRestocks = new Map<number, number>(); // productId → qty
       const deductedStatuses = ['out_for_delivery', 'delivered'];

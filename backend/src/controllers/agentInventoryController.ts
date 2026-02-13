@@ -61,6 +61,9 @@ class AgentInventoryController {
 
   async getAgentInventory(req: AuthRequest, res: Response) {
     const agentId = parseInt(req.params.agentId);
+    // Self-ownership check: delivery_agents may only view their own inventory.
+    // This lives in the controller (not middleware) because agentId comes from the
+    // path param, which isn't available at the requireRole middleware level.
     if (req.user!.role === 'delivery_agent' && req.user!.id !== agentId) {
       res.status(403).json({ error: 'Forbidden' });
       return;

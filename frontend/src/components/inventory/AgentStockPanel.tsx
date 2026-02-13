@@ -13,7 +13,6 @@ interface AgentStockPanelProps {
   productId: number;
   productName: string;
   warehouseStock: number;
-  productPrice: number;
   onStockChanged?: () => void;
 }
 
@@ -21,7 +20,6 @@ export const AgentStockPanel: React.FC<AgentStockPanelProps> = ({
   productId,
   productName,
   warehouseStock,
-  productPrice,
   onStockChanged,
 }) => {
   const { productAgentStock, isLoading, fetchProductAgentStock, allocateStock, transferStock, returnStock } =
@@ -34,7 +32,7 @@ export const AgentStockPanel: React.FC<AgentStockPanelProps> = ({
 
   useEffect(() => {
     fetchProductAgentStock(productId);
-  }, [productId]);
+  }, [productId, fetchProductAgentStock]);
 
   const data = productAgentStock[productId];
   const agents = data?.agents || [];
