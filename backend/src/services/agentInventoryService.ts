@@ -1,0 +1,559 @@
+import prisma from '../utils/prisma';
+import { AppError } from '../middleware/errorHandler';
+import { TransferType } from '@prisma/client';
+import logger from '../utils/logger';
+
+export class AgentInventoryService {
+  /**
+   * Allocate stock from warehouse to an agent
+   */
+  async allocateStock(
+    productId: number,
+    agentId: number,
+    quantity: number,
+    createdById: number,
+    notes?: string
+  ) {
+    if (quantity <= 0) {
+      throw new AppError('Quantity must be greater than zero', 400);
+    }
+
+    const [product, agent] = await Promise.all([
+      prisma.product.findUnique({ where: { id: productId } }),
+      prisma.user.findUnique({ where: { id: agentId } }),
+    ]);
+
+    if (!product) throw new AppError('Product not found', 404);
+    if (!agent) throw new AppError('Agent not found', 404);
+    if (agent.role !== 'delivery_agent') {
+      throw new AppError('User is not a delivery agent', 400);
+    }
+    if (product.stockQuantity < quantity) {
+      throw new AppError(
+        `Insufficient warehouse stock. Available: ${product.stockQuantity}, Requested: ${quantity}`,
+        400
+      );
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // Deduct warehouse stock
+      await tx.product.update({
+        where: { id: productId },
+        data: { stockQuantity: { decrement: quantity } },
+      });
+
+      // Upsert agent stock
+      await tx.agentStock.upsert({
+        where: { agentId_productId: { agentId, productId } },
+        create: {
+          agentId,
+          productId,
+          quantity,
+          totalAllocated: quantity,
+        },
+        update: {
+          quantity: { increment: quantity },
+          totalAllocated: { increment: quantity },
+        },
+      });
+
+      // Create transfer record
+      const transfer = await tx.inventoryTransfer.create({
+        data: {
+          productId,
+          quantity,
+          transferType: TransferType.allocation,
+          fromAgentId: null,
+          toAgentId: agentId,
+          notes,
+          createdById,
+        },
+        include: {
+          product: { select: { id: true, name: true, sku: true } },
+          toAgent: { select: { id: true, firstName: true, lastName: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      logger.info(`Stock allocated: ${quantity} of product ${productId} to agent ${agentId}`, {
+        transferId: transfer.id,
+        productId,
+        agentId,
+        quantity,
+      });
+
+      return transfer;
+    });
+  }
+
+  /**
+   * Transfer stock between two agents
+   */
+  async transferStock(
+    productId: number,
+    fromAgentId: number,
+    toAgentId: number,
+    quantity: number,
+    createdById: number,
+    notes?: string
+  ) {
+    if (quantity <= 0) {
+      throw new AppError('Quantity must be greater than zero', 400);
+    }
+    if (fromAgentId === toAgentId) {
+      throw new AppError('Cannot transfer to the same agent', 400);
+    }
+
+    const [fromAgent, toAgent] = await Promise.all([
+      prisma.user.findUnique({ where: { id: fromAgentId } }),
+      prisma.user.findUnique({ where: { id: toAgentId } }),
+    ]);
+
+    if (!fromAgent) throw new AppError('Source agent not found', 404);
+    if (!toAgent) throw new AppError('Destination agent not found', 404);
+
+    const sourceStock = await prisma.agentStock.findUnique({
+      where: { agentId_productId: { agentId: fromAgentId, productId } },
+    });
+
+    if (!sourceStock || sourceStock.quantity < quantity) {
+      throw new AppError(
+        `Insufficient agent stock. Available: ${sourceStock?.quantity ?? 0}, Requested: ${quantity}`,
+        400
+      );
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // Decrement source agent
+      await tx.agentStock.update({
+        where: { agentId_productId: { agentId: fromAgentId, productId } },
+        data: {
+          quantity: { decrement: quantity },
+          totalTransferOut: { increment: quantity },
+        },
+      });
+
+      // Upsert destination agent
+      await tx.agentStock.upsert({
+        where: { agentId_productId: { agentId: toAgentId, productId } },
+        create: {
+          agentId: toAgentId,
+          productId,
+          quantity,
+          totalTransferIn: quantity,
+        },
+        update: {
+          quantity: { increment: quantity },
+          totalTransferIn: { increment: quantity },
+        },
+      });
+
+      // Create transfer record
+      const transfer = await tx.inventoryTransfer.create({
+        data: {
+          productId,
+          quantity,
+          transferType: TransferType.agent_transfer,
+          fromAgentId,
+          toAgentId,
+          notes,
+          createdById,
+        },
+        include: {
+          product: { select: { id: true, name: true, sku: true } },
+          fromAgent: { select: { id: true, firstName: true, lastName: true } },
+          toAgent: { select: { id: true, firstName: true, lastName: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      logger.info(`Stock transferred: ${quantity} of product ${productId} from agent ${fromAgentId} to agent ${toAgentId}`, {
+        transferId: transfer.id,
+      });
+
+      return transfer;
+    });
+  }
+
+  /**
+   * Return stock from agent back to warehouse
+   */
+  async returnStock(
+    productId: number,
+    agentId: number,
+    quantity: number,
+    createdById: number,
+    notes?: string
+  ) {
+    if (quantity <= 0) {
+      throw new AppError('Quantity must be greater than zero', 400);
+    }
+
+    const agentStock = await prisma.agentStock.findUnique({
+      where: { agentId_productId: { agentId, productId } },
+    });
+
+    if (!agentStock || agentStock.quantity < quantity) {
+      throw new AppError(
+        `Insufficient agent stock. Available: ${agentStock?.quantity ?? 0}, Requested: ${quantity}`,
+        400
+      );
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // Decrement agent stock
+      await tx.agentStock.update({
+        where: { agentId_productId: { agentId, productId } },
+        data: {
+          quantity: { decrement: quantity },
+          totalReturned: { increment: quantity },
+        },
+      });
+
+      // Increment warehouse stock
+      await tx.product.update({
+        where: { id: productId },
+        data: { stockQuantity: { increment: quantity } },
+      });
+
+      // Create transfer record
+      const transfer = await tx.inventoryTransfer.create({
+        data: {
+          productId,
+          quantity,
+          transferType: TransferType.return_to_warehouse,
+          fromAgentId: agentId,
+          toAgentId: null,
+          notes,
+          createdById,
+        },
+        include: {
+          product: { select: { id: true, name: true, sku: true } },
+          fromAgent: { select: { id: true, firstName: true, lastName: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      logger.info(`Stock returned: ${quantity} of product ${productId} from agent ${agentId} to warehouse`, {
+        transferId: transfer.id,
+      });
+
+      return transfer;
+    });
+  }
+
+  /**
+   * Record order fulfillment from agent stock.
+   * Called when a delivered order's agent has allocated stock.
+   * Returns which items were fulfilled from agent stock.
+   */
+  async recordOrderFulfillment(
+    tx: any,
+    orderId: number,
+    agentId: number,
+    items: Array<{ productId: number; quantity: number }>,
+    createdById: number
+  ): Promise<number[]> {
+    const fulfilledProductIds: number[] = [];
+
+    for (const item of items) {
+      const agentStock = await tx.agentStock.findUnique({
+        where: { agentId_productId: { agentId, productId: item.productId } },
+      });
+
+      if (agentStock && agentStock.quantity >= item.quantity) {
+        // Agent has sufficient stock - fulfill from agent
+        await tx.agentStock.update({
+          where: { agentId_productId: { agentId, productId: item.productId } },
+          data: {
+            quantity: { decrement: item.quantity },
+            totalFulfilled: { increment: item.quantity },
+          },
+        });
+
+        await tx.inventoryTransfer.create({
+          data: {
+            productId: item.productId,
+            quantity: item.quantity,
+            transferType: TransferType.order_fulfillment,
+            fromAgentId: agentId,
+            toAgentId: null,
+            orderId,
+            createdById,
+          },
+        });
+
+        fulfilledProductIds.push(item.productId);
+      }
+      // If agent doesn't have stock, skip - warehouse deduction will handle it
+    }
+
+    if (fulfilledProductIds.length > 0) {
+      logger.info(`Order ${orderId} fulfilled ${fulfilledProductIds.length} items from agent ${agentId} stock`, {
+        orderId,
+        agentId,
+        fulfilledProductIds,
+      });
+    }
+
+    return fulfilledProductIds;
+  }
+
+  /**
+   * Adjust agent stock for reconciliation (shrinkage/correction)
+   */
+  async adjustStock(
+    productId: number,
+    agentId: number,
+    newQuantity: number,
+    createdById: number,
+    notes: string
+  ) {
+    if (newQuantity < 0) {
+      throw new AppError('Quantity cannot be negative', 400);
+    }
+    if (!notes || notes.trim().length === 0) {
+      throw new AppError('Notes are required for stock adjustments', 400);
+    }
+
+    const agentStock = await prisma.agentStock.findUnique({
+      where: { agentId_productId: { agentId, productId } },
+    });
+
+    const currentQuantity = agentStock?.quantity ?? 0;
+    const difference = newQuantity - currentQuantity;
+
+    if (difference === 0) {
+      throw new AppError('New quantity is the same as current quantity', 400);
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // Upsert agent stock to new quantity
+      await tx.agentStock.upsert({
+        where: { agentId_productId: { agentId, productId } },
+        create: {
+          agentId,
+          productId,
+          quantity: newQuantity,
+        },
+        update: {
+          quantity: newQuantity,
+        },
+      });
+
+      // Create adjustment transfer record
+      const transfer = await tx.inventoryTransfer.create({
+        data: {
+          productId,
+          quantity: Math.abs(difference),
+          transferType: TransferType.adjustment,
+          fromAgentId: difference < 0 ? agentId : null,
+          toAgentId: difference > 0 ? agentId : null,
+          notes: `Adjustment: ${currentQuantity} → ${newQuantity}. ${notes}`,
+          createdById,
+        },
+        include: {
+          product: { select: { id: true, name: true, sku: true } },
+          fromAgent: { select: { id: true, firstName: true, lastName: true } },
+          toAgent: { select: { id: true, firstName: true, lastName: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      logger.info(`Stock adjusted for agent ${agentId}, product ${productId}: ${currentQuantity} → ${newQuantity}`, {
+        transferId: transfer.id,
+        difference,
+      });
+
+      return transfer;
+    });
+  }
+
+  /**
+   * Get all agent stock holdings for a specific product
+   */
+  async getProductAgentStock(productId: number) {
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, name: true, sku: true, price: true },
+    });
+
+    if (!product) throw new AppError('Product not found', 404);
+
+    const agentStocks = await prisma.agentStock.findMany({
+      where: { productId, quantity: { gt: 0 } },
+      include: {
+        agent: {
+          select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true },
+        },
+      },
+      orderBy: { quantity: 'desc' },
+    });
+
+    return {
+      product,
+      agents: agentStocks.map((as) => ({
+        agentId: as.agent.id,
+        agentName: `${as.agent.firstName} ${as.agent.lastName}`,
+        email: as.agent.email,
+        phoneNumber: as.agent.phoneNumber,
+        quantity: as.quantity,
+        totalAllocated: as.totalAllocated,
+        totalFulfilled: as.totalFulfilled,
+        totalReturned: as.totalReturned,
+        totalTransferIn: as.totalTransferIn,
+        totalTransferOut: as.totalTransferOut,
+        value: as.quantity * product.price,
+      })),
+      totalWithAgents: agentStocks.reduce((sum, as) => sum + as.quantity, 0),
+      totalValue: agentStocks.reduce((sum, as) => sum + as.quantity * product.price, 0),
+    };
+  }
+
+  /**
+   * Get all stock held by a specific agent
+   */
+  async getAgentInventory(agentId: number) {
+    const agent = await prisma.user.findUnique({
+      where: { id: agentId },
+      select: { id: true, firstName: true, lastName: true, role: true },
+    });
+
+    if (!agent) throw new AppError('Agent not found', 404);
+
+    const stocks = await prisma.agentStock.findMany({
+      where: { agentId, quantity: { gt: 0 } },
+      include: {
+        product: {
+          select: { id: true, name: true, sku: true, price: true, imageUrl: true },
+        },
+      },
+      orderBy: { product: { name: 'asc' } },
+    });
+
+    return {
+      agent: {
+        id: agent.id,
+        name: `${agent.firstName} ${agent.lastName}`,
+      },
+      items: stocks.map((s) => ({
+        productId: s.product.id,
+        productName: s.product.name,
+        sku: s.product.sku,
+        imageUrl: s.product.imageUrl,
+        quantity: s.quantity,
+        totalAllocated: s.totalAllocated,
+        totalFulfilled: s.totalFulfilled,
+        totalReturned: s.totalReturned,
+        totalTransferIn: s.totalTransferIn,
+        totalTransferOut: s.totalTransferOut,
+        unitPrice: s.product.price,
+        value: s.quantity * s.product.price,
+      })),
+      totalValue: stocks.reduce((sum, s) => sum + s.quantity * s.product.price, 0),
+    };
+  }
+
+  /**
+   * Get transfer history with filters
+   */
+  async getTransferHistory(filters: {
+    productId?: number;
+    agentId?: number;
+    type?: TransferType;
+    startDate?: Date;
+    endDate?: Date;
+    page?: number;
+    limit?: number;
+  }) {
+    const { productId, agentId, type, startDate, endDate, page = 1, limit = 50 } = filters;
+
+    const where: any = {};
+    if (productId) where.productId = productId;
+    if (type) where.transferType = type;
+    if (agentId) {
+      where.OR = [{ fromAgentId: agentId }, { toAgentId: agentId }];
+    }
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = startDate;
+      if (endDate) where.createdAt.lte = endDate;
+    }
+
+    const [transfers, total] = await Promise.all([
+      prisma.inventoryTransfer.findMany({
+        where,
+        include: {
+          product: { select: { id: true, name: true, sku: true } },
+          fromAgent: { select: { id: true, firstName: true, lastName: true } },
+          toAgent: { select: { id: true, firstName: true, lastName: true } },
+          order: { select: { id: true, status: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.inventoryTransfer.count({ where }),
+    ]);
+
+    return {
+      transfers,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Get summary of all agent-held inventory
+   */
+  async getSummary() {
+    const agentStocks = await prisma.agentStock.findMany({
+      where: { quantity: { gt: 0 } },
+      include: {
+        agent: { select: { id: true, firstName: true, lastName: true } },
+        product: { select: { id: true, name: true, price: true } },
+      },
+    });
+
+    // Group by agent
+    const byAgent: Record<number, { name: string; items: number; totalQuantity: number; totalValue: number }> = {};
+    let grandTotalValue = 0;
+    let grandTotalQuantity = 0;
+
+    for (const stock of agentStocks) {
+      const agentId = stock.agent.id;
+      if (!byAgent[agentId]) {
+        byAgent[agentId] = {
+          name: `${stock.agent.firstName} ${stock.agent.lastName}`,
+          items: 0,
+          totalQuantity: 0,
+          totalValue: 0,
+        };
+      }
+      const value = stock.quantity * stock.product.price;
+      byAgent[agentId].items += 1;
+      byAgent[agentId].totalQuantity += stock.quantity;
+      byAgent[agentId].totalValue += value;
+      grandTotalValue += value;
+      grandTotalQuantity += stock.quantity;
+    }
+
+    return {
+      agents: Object.entries(byAgent).map(([id, data]) => ({
+        agentId: parseInt(id),
+        ...data,
+      })),
+      totalAgents: Object.keys(byAgent).length,
+      totalQuantity: grandTotalQuantity,
+      totalValue: grandTotalValue,
+    };
+  }
+}
+
+const agentInventoryService = new AgentInventoryService();
+export default agentInventoryService;

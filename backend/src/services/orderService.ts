@@ -18,6 +18,7 @@ import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
 import FinancialSyncService from './financialSyncService';
+import agentInventoryService from './agentInventoryService';
 
 interface CreateOrderData {
   customerId?: number;
@@ -925,8 +926,25 @@ export class OrderService {
 
         if (orderWithItems) {
           if (!isOldDeducted && isNewDeducted) {
-            // Deduct stock
+            // Check if delivery agent has allocated stock for any items
+            let fulfilledFromAgent: number[] = [];
+            if (order.deliveryAgentId) {
+              fulfilledFromAgent = await agentInventoryService.recordOrderFulfillment(
+                tx,
+                orderId,
+                order.deliveryAgentId,
+                orderWithItems.orderItems.map(item => ({
+                  productId: item.productId,
+                  quantity: item.quantity,
+                })),
+                data.changedBy ?? order.deliveryAgentId
+              );
+            }
+
+            // Deduct warehouse stock only for items NOT fulfilled from agent stock
             for (const item of orderWithItems.orderItems) {
+              if (fulfilledFromAgent.includes(item.productId)) continue;
+
               const result = await tx.product.updateMany({
                 where: {
                   id: item.productId,
@@ -942,7 +960,7 @@ export class OrderService {
               }
             }
           } else if (isOldDeducted && !isNewDeducted) {
-            // Restore stock
+            // Restore stock - only restore to warehouse (agent stock was already decremented)
             for (const item of orderWithItems.orderItems) {
               await tx.product.update({
                 where: { id: item.productId },
