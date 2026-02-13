@@ -13,7 +13,8 @@
     "test:e2e:customers": "playwright test e2e/04-customer-management.spec.ts",
     "test:e2e:realtime": "playwright test e2e/05-real-time-updates.spec.ts",
     "test:e2e:gl": "playwright test e2e/06-general-ledger.spec.ts",
-    "test:e2e:financial": "playwright test e2e/07-financial-management.spec.ts"
+    "test:e2e:financial": "playwright test e2e/07-financial-management.spec.ts",
+    "test:e2e:agent-inventory": "playwright test e2e/08-agent-inventory.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

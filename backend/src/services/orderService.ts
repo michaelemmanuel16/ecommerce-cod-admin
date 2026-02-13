@@ -18,6 +18,7 @@ import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
 import FinancialSyncService from './financialSyncService';
+import agentInventoryService from './agentInventoryService';
 
 interface CreateOrderData {
   customerId?: number;
@@ -925,8 +926,38 @@ export class OrderService {
 
         if (orderWithItems) {
           if (!isOldDeducted && isNewDeducted) {
-            // Deduct stock
+            // Check if delivery agent has allocated stock for any items
+            let fulfilledFromAgent: number[] = [];
+            if (order.deliveryAgentId) {
+              fulfilledFromAgent = await agentInventoryService.recordOrderFulfillment(
+                tx,
+                orderId,
+                order.deliveryAgentId,
+                orderWithItems.orderItems.map(item => ({
+                  productId: item.productId,
+                  quantity: item.quantity,
+                })),
+                data.changedBy ?? order.deliveryAgentId
+              );
+            }
+
+            // If moving directly to delivered (skipping out_for_delivery), also confirm delivery
+            if (data.status === 'delivered' && order.deliveryAgentId && fulfilledFromAgent.length > 0) {
+              await agentInventoryService.confirmOrderDelivery(
+                tx,
+                orderId,
+                order.deliveryAgentId,
+                orderWithItems.orderItems
+                  .filter(item => fulfilledFromAgent.includes(item.productId))
+                  .map(item => ({ productId: item.productId, quantity: item.quantity })),
+                data.changedBy ?? order.deliveryAgentId
+              );
+            }
+
+            // Deduct warehouse stock only for items NOT fulfilled from agent stock
             for (const item of orderWithItems.orderItems) {
+              if (fulfilledFromAgent.includes(item.productId)) continue;
+
               const result = await tx.product.updateMany({
                 where: {
                   id: item.productId,
@@ -942,16 +973,42 @@ export class OrderService {
               }
             }
           } else if (isOldDeducted && !isNewDeducted) {
-            // Restore stock
+            // Restore stock - check agent stock first, then warehouse for remaining
+            let reversedFromAgent: number[] = [];
+            if (order.deliveryAgentId) {
+              reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
+                tx,
+                orderId,
+                order.deliveryAgentId,
+                data.changedBy ?? order.deliveryAgentId,
+                order.status === 'delivered'
+              );
+            }
             for (const item of orderWithItems.orderItems) {
+              if (reversedFromAgent.includes(item.productId)) continue;
               await tx.product.update({
                 where: { id: item.productId },
-                data: {
-                  stockQuantity: { increment: item.quantity }
-                }
+                data: { stockQuantity: { increment: item.quantity } }
               });
             }
           }
+        }
+      }
+
+      // Handle out_for_delivery → delivered: confirm agent stock delivery
+      if (order.status === 'out_for_delivery' && data.status === 'delivered' && order.deliveryAgentId) {
+        const orderItems = await tx.order.findUnique({
+          where: { id: orderId },
+          include: { orderItems: true }
+        });
+        if (orderItems) {
+          await agentInventoryService.confirmOrderDelivery(
+            tx,
+            orderId,
+            order.deliveryAgentId,
+            orderItems.orderItems.map(item => ({ productId: item.productId, quantity: item.quantity })),
+            data.changedBy ?? order.deliveryAgentId
+          );
         }
       }
 
@@ -1163,14 +1220,21 @@ export class OrderService {
     await prisma.$transaction(async (tx) => {
       // Restock products ONLY if they were deducted (out_for_delivery, delivered)
       if (["out_for_delivery", "delivered"].includes(order.status)) {
+        let reversedFromAgent: number[] = [];
+        if (order.deliveryAgentId) {
+          reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
+            tx,
+            orderId,
+            order.deliveryAgentId,
+            changedBy ?? order.deliveryAgentId,
+            order.status === 'delivered'
+          );
+        }
         for (const item of order.orderItems) {
+          if (reversedFromAgent.includes(item.productId)) continue;
           await tx.product.update({
             where: { id: item.productId },
-            data: {
-              stockQuantity: {
-                increment: item.quantity
-              }
-            }
+            data: { stockQuantity: { increment: item.quantity } }
           });
         }
       }
@@ -1241,14 +1305,21 @@ export class OrderService {
     await prisma.$transaction(async (tx) => {
       // Restock products ONLY if they were deducted (out_for_delivery, delivered)
       if (["out_for_delivery", "delivered"].includes(order.status)) {
+        let reversedFromAgent: number[] = [];
+        if (order.deliveryAgentId) {
+          reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
+            tx,
+            orderId,
+            order.deliveryAgentId,
+            userId ?? order.deliveryAgentId,
+            order.status === 'delivered'
+          );
+        }
         for (const item of order.orderItems) {
+          if (reversedFromAgent.includes(item.productId)) continue;
           await tx.product.update({
             where: { id: item.productId },
-            data: {
-              stockQuantity: {
-                increment: item.quantity
-              }
-            }
+            data: { stockQuantity: { increment: item.quantity } }
           });
         }
       }
@@ -1338,21 +1409,11 @@ export class OrderService {
     }
 
     // Aggregate updates for performance
-    const productRestocks = new Map<number, number>();
     const customerUpdates = new Map<number, { count: number, total: number }>();
     const historyData: Prisma.OrderHistoryCreateManyInput[] = [];
     const actualOrderIds = orders.map(o => o.id);
 
     for (const order of orders) {
-      // Aggregate product restocks ONLY if they were deducted (out_for_delivery, delivered)
-      const deductedStatuses = ['out_for_delivery', 'delivered'];
-      if (deductedStatuses.includes(order.status)) {
-        for (const item of order.orderItems) {
-          const current = productRestocks.get(item.productId) || 0;
-          productRestocks.set(item.productId, current + item.quantity);
-        }
-      }
-
       // Aggregate customer stats
       const currentCust = customerUpdates.get(order.customerId) || { count: 0, total: 0 };
       customerUpdates.set(order.customerId, {
@@ -1371,18 +1432,42 @@ export class OrderService {
 
     // Perform bulk deletion in a single transaction
     await prisma.$transaction(async (tx) => {
-      // 1. Batch restock products & customer stats in parallel
-      const updatePromises: Promise<any>[] = [];
+      // Phase 1: reverse agent stock (sequential — each needs its own tx calls)
+      // Aggregate warehouse restocks into a Map for batched Phase 2
+      const warehouseRestocks = new Map<number, number>(); // productId → qty
+      const deductedStatuses = ['out_for_delivery', 'delivered'];
 
-      if (productRestocks.size > 0) {
-        for (const [productId, quantity] of productRestocks.entries()) {
-          updatePromises.push(
-            tx.product.update({
-              where: { id: productId },
-              data: { stockQuantity: { increment: quantity } }
-            })
+      for (const order of orders) {
+        if (!deductedStatuses.includes(order.status)) continue;
+
+        let reversedFromAgent: number[] = [];
+        if (order.deliveryAgentId) {
+          reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
+            tx,
+            order.id,
+            order.deliveryAgentId,
+            userId ?? order.deliveryAgentId,
+            order.status === 'delivered'
           );
         }
+        for (const item of order.orderItems) {
+          if (reversedFromAgent.includes(item.productId)) continue;
+          warehouseRestocks.set(
+            item.productId,
+            (warehouseRestocks.get(item.productId) ?? 0) + item.quantity
+          );
+        }
+      }
+
+      // Phase 2: batch warehouse restocks (1 update per distinct product)
+      const updatePromises: Promise<any>[] = [];
+      for (const [productId, quantity] of warehouseRestocks.entries()) {
+        updatePromises.push(
+          tx.product.update({
+            where: { id: productId },
+            data: { stockQuantity: { increment: quantity } }
+          })
+        );
       }
 
       if (customerUpdates.size > 0) {
