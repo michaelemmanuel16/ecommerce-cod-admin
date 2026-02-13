@@ -157,10 +157,9 @@ export function useDashboardData(
 
         // Earnings (for sales reps)
         if (dashboardData.repPerformance && (user as any)?.commissionAmount) {
-          const mtdDelivered = (dashboardData.repPerformance as any).deliveredOrders || 0;
           const unpaidCount = (dashboardData.repPerformance as any).unpaidDeliveredOrders || 0;
           calculated.myCommission = (
-            mtdDelivered * (user as any).commissionAmount
+            unpaidCount * (user as any).commissionAmount
           ).toFixed(2);
           calculated.commissionAmount = (user as any).commissionAmount;
           calculated.unpaidDeliveredCount = unpaidCount;
