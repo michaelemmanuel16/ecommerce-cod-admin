@@ -1,6 +1,6 @@
 import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { TransferType } from '@prisma/client';
+import { Prisma, TransferType } from '@prisma/client';
 import logger from '../utils/logger';
 
 export class AgentInventoryService {
@@ -199,18 +199,19 @@ export class AgentInventoryService {
       throw new AppError('Quantity must be greater than zero', 400);
     }
 
-    const agentStock = await prisma.agentStock.findUnique({
-      where: { agentId_productId: { agentId, productId } },
-    });
-
-    if (!agentStock || agentStock.quantity < quantity) {
-      throw new AppError(
-        `Insufficient agent stock. Available: ${agentStock?.quantity ?? 0}, Requested: ${quantity}`,
-        400
-      );
-    }
-
     return await prisma.$transaction(async (tx) => {
+      // Re-read inside transaction to prevent TOCTOU race condition
+      const agentStock = await tx.agentStock.findUnique({
+        where: { agentId_productId: { agentId, productId } },
+      });
+
+      if (!agentStock || agentStock.quantity < quantity) {
+        throw new AppError(
+          `Insufficient agent stock. Available: ${agentStock?.quantity ?? 0}, Requested: ${quantity}`,
+          400
+        );
+      }
+
       // Decrement agent stock
       await tx.agentStock.update({
         where: { agentId_productId: { agentId, productId } },
@@ -337,6 +338,12 @@ export class AgentInventoryService {
           },
         });
         confirmedProductIds.push(item.productId);
+      } else {
+        logger.warn(
+          `confirmOrderDelivery: skipped product ${item.productId} for order ${orderId} — ` +
+          `in-transit ${agentStock?.totalInTransit ?? 0} < required ${item.quantity} (partial fulfillment or prior data issue)`,
+          { orderId, agentId, productId: item.productId }
+        );
       }
     }
 
@@ -434,18 +441,19 @@ export class AgentInventoryService {
       throw new AppError('Notes are required for stock adjustments', 400);
     }
 
-    const agentStock = await prisma.agentStock.findUnique({
-      where: { agentId_productId: { agentId, productId } },
-    });
-
-    const currentQuantity = agentStock?.quantity ?? 0;
-    const difference = newQuantity - currentQuantity;
-
-    if (difference === 0) {
-      throw new AppError('New quantity is the same as current quantity', 400);
-    }
-
     return await prisma.$transaction(async (tx) => {
+      // Re-read inside transaction to prevent TOCTOU race condition
+      const agentStock = await tx.agentStock.findUnique({
+        where: { agentId_productId: { agentId, productId } },
+      });
+
+      const currentQuantity = agentStock?.quantity ?? 0;
+      const difference = newQuantity - currentQuantity;
+
+      if (difference === 0) {
+        throw new AppError('New quantity is the same as current quantity', 400);
+      }
+
       if (difference > 0) {
         // Upward: deduct from warehouse
         const product = await tx.product.findUnique({ where: { id: productId } });
@@ -614,7 +622,7 @@ export class AgentInventoryService {
   }) {
     const { productId, agentId, type, startDate, endDate, page = 1, limit = 50 } = filters;
 
-    const where: any = {};
+    const where: Prisma.InventoryTransferWhereInput = {};
     if (productId) where.productId = productId;
     if (type) where.transferType = type;
     if (agentId) {
@@ -658,12 +666,16 @@ export class AgentInventoryService {
    * Get summary of all agent-held inventory
    */
   async getSummary() {
+    // NOTE: this loads all agent stock into memory for in-process grouping.
+    // At large fleet scale (1000+ agents × many products) consider replacing with
+    // a $queryRaw GROUP BY query. Current limit prevents unbounded memory growth.
     const agentStocks = await prisma.agentStock.findMany({
       where: { quantity: { gt: 0 } },
       include: {
         agent: { select: { id: true, firstName: true, lastName: true } },
         product: { select: { id: true, name: true, price: true } },
       },
+      take: 5000,
     });
 
     // Group by agent

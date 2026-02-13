@@ -86,7 +86,8 @@ router.get(
   [
     query('productId').optional().isInt().toInt(),
     query('agentId').optional().isInt().toInt(),
-    query('type').optional().isString(),
+    query('type').optional().isIn(['allocation', 'order_fulfillment', 'agent_transfer', 'return_to_warehouse', 'adjustment'])
+      .withMessage('Invalid transfer type'),
     query('startDate').optional().isISO8601().toDate(),
     query('endDate').optional().isISO8601().toDate(),
     query('page').optional().isInt({ min: 1 }).toInt(),
