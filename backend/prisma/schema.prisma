@@ -867,6 +867,7 @@ model AgentStock {
   productId        Int      @map("product_id")
   quantity         Int      @default(0)
   totalAllocated   Int      @default(0) @map("total_allocated")
+  totalInTransit   Int      @default(0) @map("total_in_transit")
   totalFulfilled   Int      @default(0) @map("total_fulfilled")
   totalReturned    Int      @default(0) @map("total_returned")
   totalTransferIn  Int      @default(0) @map("total_transfer_in")

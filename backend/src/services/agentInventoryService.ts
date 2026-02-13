@@ -262,12 +262,12 @@ export class AgentInventoryService {
       });
 
       if (agentStock && agentStock.quantity >= item.quantity) {
-        // Agent has sufficient stock - fulfill from agent
+        // Agent has sufficient stock - mark as in transit (not yet fulfilled)
         await tx.agentStock.update({
           where: { agentId_productId: { agentId, productId: item.productId } },
           data: {
             quantity: { decrement: item.quantity },
-            totalFulfilled: { increment: item.quantity },
+            totalInTransit: { increment: item.quantity },
           },
         });
 
@@ -289,7 +289,7 @@ export class AgentInventoryService {
     }
 
     if (fulfilledProductIds.length > 0) {
-      logger.info(`Order ${orderId} fulfilled ${fulfilledProductIds.length} items from agent ${agentId} stock`, {
+      logger.info(`Order ${orderId} marked ${fulfilledProductIds.length} items in-transit from agent ${agentId} stock`, {
         orderId,
         agentId,
         fulfilledProductIds,
@@ -297,6 +297,114 @@ export class AgentInventoryService {
     }
 
     return fulfilledProductIds;
+  }
+
+  /**
+   * Confirm delivery of an order from agent stock.
+   * Called when order transitions to `delivered`.
+   * Moves items from totalInTransit → totalFulfilled.
+   */
+  async confirmOrderDelivery(
+    tx: any,
+    orderId: number,
+    agentId: number,
+    items: Array<{ productId: number; quantity: number }>,
+    _createdById: number
+  ): Promise<number[]> {
+    const confirmedProductIds: number[] = [];
+
+    for (const item of items) {
+      const agentStock = await tx.agentStock.findUnique({
+        where: { agentId_productId: { agentId, productId: item.productId } },
+      });
+
+      if (agentStock && agentStock.totalInTransit >= item.quantity) {
+        await tx.agentStock.update({
+          where: { agentId_productId: { agentId, productId: item.productId } },
+          data: {
+            totalInTransit: { decrement: item.quantity },
+            totalFulfilled: { increment: item.quantity },
+          },
+        });
+        confirmedProductIds.push(item.productId);
+      }
+    }
+
+    if (confirmedProductIds.length > 0) {
+      logger.info(`Order ${orderId} delivery confirmed for ${confirmedProductIds.length} items from agent ${agentId} stock`, {
+        orderId,
+        agentId,
+        confirmedProductIds,
+      });
+    }
+
+    return confirmedProductIds;
+  }
+
+  /**
+   * Reverse an order fulfillment from agent stock.
+   * Called when an in-transit or delivered order is cancelled, fails delivery, is returned, or deleted.
+   * Restores agent quantity and decrements totalInTransit or totalFulfilled accordingly.
+   * Returns the product IDs reversed (so orderService can skip warehouse restock for those).
+   */
+  async reverseOrderFulfillment(
+    tx: any,
+    orderId: number,
+    agentId: number,
+    createdById: number,
+    wasDelivered: boolean = false
+  ): Promise<number[]> {
+    // Find all order_fulfillment transfers for this order from this agent
+    const transfers = await tx.inventoryTransfer.findMany({
+      where: {
+        orderId,
+        transferType: TransferType.order_fulfillment,
+        fromAgentId: agentId,
+      },
+    });
+
+    if (transfers.length === 0) return [];
+
+    const reversedProductIds: number[] = [];
+
+    for (const transfer of transfers) {
+      const qty = transfer.quantity;
+
+      await tx.agentStock.update({
+        where: { agentId_productId: { agentId, productId: transfer.productId } },
+        data: {
+          quantity: { increment: qty },
+          ...(wasDelivered
+            ? { totalFulfilled: { decrement: qty } }
+            : { totalInTransit: { decrement: qty } }),
+        },
+      });
+
+      // Create adjustment record to document the reversal
+      await tx.inventoryTransfer.create({
+        data: {
+          productId: transfer.productId,
+          quantity: qty,
+          transferType: TransferType.adjustment,
+          fromAgentId: null,
+          toAgentId: agentId,
+          orderId,
+          notes: `Reversed: order #${orderId} ${wasDelivered ? 'returned' : 'cancelled/failed'}`,
+          createdById,
+        },
+      });
+
+      reversedProductIds.push(transfer.productId);
+    }
+
+    logger.info(`Order ${orderId} fulfillment reversed for agent ${agentId}: ${reversedProductIds.length} products`, {
+      orderId,
+      agentId,
+      reversedProductIds,
+      wasDelivered,
+    });
+
+    return reversedProductIds;
   }
 
   /**
@@ -399,6 +507,7 @@ export class AgentInventoryService {
         phoneNumber: as.agent.phoneNumber,
         quantity: as.quantity,
         totalAllocated: as.totalAllocated,
+        totalInTransit: as.totalInTransit,
         totalFulfilled: as.totalFulfilled,
         totalReturned: as.totalReturned,
         totalTransferIn: as.totalTransferIn,
@@ -443,6 +552,7 @@ export class AgentInventoryService {
         imageUrl: s.product.imageUrl,
         quantity: s.quantity,
         totalAllocated: s.totalAllocated,
+        totalInTransit: s.totalInTransit,
         totalFulfilled: s.totalFulfilled,
         totalReturned: s.totalReturned,
         totalTransferIn: s.totalTransferIn,

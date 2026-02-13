@@ -7,6 +7,7 @@ export interface AgentStockItem {
   phoneNumber: string | null;
   quantity: number;
   totalAllocated: number;
+  totalInTransit: number;
   totalFulfilled: number;
   totalReturned: number;
   totalTransferIn: number;
@@ -28,6 +29,7 @@ export interface AgentInventoryItem {
   imageUrl: string | null;
   quantity: number;
   totalAllocated: number;
+  totalInTransit: number;
   totalFulfilled: number;
   totalReturned: number;
   totalTransferIn: number;

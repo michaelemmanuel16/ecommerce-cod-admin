@@ -110,6 +110,7 @@ export const AgentStockPanel: React.FC<AgentStockPanelProps> = ({
               <tr className="text-xs text-gray-500 uppercase">
                 <th className="text-left py-2 pr-4">Agent</th>
                 <th className="text-right py-2 px-3">Allocated</th>
+                <th className="text-right py-2 px-3" title="Orders currently out for delivery">In Transit</th>
                 <th className="text-right py-2 px-3">Fulfilled</th>
                 <th className="text-right py-2 px-3">Returned</th>
                 <th className="text-right py-2 px-3 font-semibold">On Hand</th>
@@ -127,6 +128,7 @@ export const AgentStockPanel: React.FC<AgentStockPanelProps> = ({
                     )}
                   </td>
                   <td className="text-right py-2 px-3 text-gray-600">{agent.totalAllocated}</td>
+                  <td className="text-right py-2 px-3 text-amber-600 font-medium">{agent.totalInTransit}</td>
                   <td className="text-right py-2 px-3 text-gray-600">{agent.totalFulfilled}</td>
                   <td className="text-right py-2 px-3 text-gray-600">{agent.totalReturned}</td>
                   <td className="text-right py-2 px-3 font-semibold text-gray-900">{agent.quantity}</td>
@@ -157,6 +159,9 @@ export const AgentStockPanel: React.FC<AgentStockPanelProps> = ({
                   <td className="py-2 pr-4 text-gray-700">Total</td>
                   <td className="text-right py-2 px-3 text-gray-700">
                     {agents.reduce((s, a) => s + a.totalAllocated, 0)}
+                  </td>
+                  <td className="text-right py-2 px-3 text-amber-600 font-medium">
+                    {agents.reduce((s, a) => s + a.totalInTransit, 0)}
                   </td>
                   <td className="text-right py-2 px-3 text-gray-700">
                     {agents.reduce((s, a) => s + a.totalFulfilled, 0)}
