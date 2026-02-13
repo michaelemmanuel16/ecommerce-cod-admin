@@ -352,6 +352,7 @@ async function executeFetcher(
             successRate: myPerf.successRate || 0,
             userId: myPerf.userId,
             userName: myPerf.userName,
+            unpaidDeliveredOrders: myPerf.unpaidDeliveredOrders || 0,
           };
         } else {
           // No performance data found - use empty defaults

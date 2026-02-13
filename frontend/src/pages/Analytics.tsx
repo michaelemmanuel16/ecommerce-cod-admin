@@ -1,519 +1,117 @@
-import React, { useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-  TrendingUp,
-  ShoppingCart,
+  LayoutDashboard,
   DollarSign,
+  Truck,
   Users,
-  Clock,
-  Package,
-  Target,
-  BarChart3,
-  Phone,
-  Calendar,
-  PieChart
 } from 'lucide-react';
-import { useAnalyticsStore } from '../stores/analyticsStore';
-import { useCallsStore } from '../stores/callsStore';
-import { Card } from '../components/ui/Card';
-import { AnalyticsMetricsSkeleton, PerformanceListSkeleton } from '../components/ui/PageSkeletons';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { formatCurrency } from '../utils/format';
+import { startOfMonth, format } from 'date-fns';
+import { DateRangePicker } from '../components/ui/DateRangePicker';
+import { cn } from '../utils/cn';
+import { OverviewTab } from './analytics/OverviewTab';
+import { SalesRevenueTab } from './analytics/SalesRevenueTab';
+import { DeliveryOperationsTab } from './analytics/DeliveryOperationsTab';
+import { TeamPerformanceTab } from './analytics/TeamPerformanceTab';
+
+const TABS = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'sales-revenue', label: 'Sales & Revenue', icon: DollarSign },
+  { id: 'delivery-operations', label: 'Delivery & Operations', icon: Truck },
+  { id: 'team-performance', label: 'Team Performance', icon: Users },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
 
 export const Analytics: React.FC = () => {
-  const {
-    metrics,
-    trends,
-    repPerformance,
-    agentPerformance,
-    isLoading,
-    fetchDashboardMetrics,
-    fetchSalesTrends,
-    fetchRepPerformance,
-    fetchAgentPerformance
-  } = useAnalyticsStore();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const { stats, fetchCallStats, isLoading: callsLoading } = useCallsStore();
+  const tabParam = searchParams.get('tab') as TabId | null;
+  const activeTab: TabId = TABS.some((t) => t.id === tabParam) ? tabParam! : 'overview';
 
-  useEffect(() => {
-    const loadAnalyticsData = async () => {
-      await Promise.all([
-        fetchDashboardMetrics(),
-        fetchSalesTrends('daily', 7),
-        fetchRepPerformance(),
-        fetchAgentPerformance(),
-        fetchCallStats()
-      ]);
-    };
-    loadAnalyticsData();
-  }, [fetchDashboardMetrics, fetchSalesTrends, fetchRepPerformance, fetchAgentPerformance, fetchCallStats]);
+  // Default to month-to-date
+  const [startDate, setStartDate] = useState<string | undefined>(
+    format(startOfMonth(new Date()), 'yyyy-MM-dd')
+  );
+  const [endDate, setEndDate] = useState<string | undefined>(
+    new Date().toISOString()
+  );
+
+  const handleTabChange = useCallback(
+    (tabId: TabId) => {
+      setSearchParams({ tab: tabId });
+    },
+    [setSearchParams]
+  );
+
+  const handleDateChange = useCallback(
+    (start: string | undefined, end: string | undefined) => {
+      setStartDate(start);
+      setEndDate(end);
+    },
+    []
+  );
+
+  const renderTab = () => {
+    switch (activeTab) {
+      case 'overview':
+        return <OverviewTab startDate={startDate} endDate={endDate} />;
+      case 'sales-revenue':
+        return <SalesRevenueTab startDate={startDate} endDate={endDate} />;
+      case 'delivery-operations':
+        return <DeliveryOperationsTab startDate={startDate} endDate={endDate} />;
+      case 'team-performance':
+        return <TeamPerformanceTab startDate={startDate} endDate={endDate} />;
+      default:
+        return <OverviewTab startDate={startDate} endDate={endDate} />;
+    }
+  };
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Analytics & Insights</h1>
-        <p className="text-gray-600 mt-1">Track your business performance and key metrics</p>
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Analytics & Insights</h1>
+          <p className="text-sm text-gray-600 mt-1">
+            Track your business performance and key metrics
+          </p>
+        </div>
+        <DateRangePicker
+          startDate={startDate}
+          endDate={endDate}
+          onChange={handleDateChange}
+          placeholder="Select date range"
+        />
       </div>
 
-      {isLoading ? (
-        <>
-          <AnalyticsMetricsSkeleton />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 my-6">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Card key={i}>
-                <div className="p-6">
-                  <div className="animate-pulse space-y-2">
-                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                    <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-                    <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-          <Card className="mb-6">
-            <div className="p-6">
-              <div className="animate-pulse space-y-4">
-                <div className="h-6 bg-gray-200 rounded w-48"></div>
-                <div className="h-64 bg-gray-200 rounded"></div>
-              </div>
-            </div>
-          </Card>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <div className="p-6">
-                <div className="h-6 bg-gray-200 rounded w-48 mb-4 animate-pulse"></div>
-                <PerformanceListSkeleton />
-              </div>
-            </Card>
-            <Card>
-              <div className="p-6">
-                <div className="h-6 bg-gray-200 rounded w-48 mb-4 animate-pulse"></div>
-                <PerformanceListSkeleton />
-              </div>
-            </Card>
-          </div>
-        </>
-      ) : (
-        <>
-          {/* Key Metrics Grid */}
-          {metrics && (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                <Card className="hover:shadow-lg transition-shadow">
-                  <div className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Total Orders</p>
-                        <p className="text-3xl font-bold text-gray-900 mt-2">{metrics.totalOrders}</p>
-                        <p className="text-xs text-gray-500 mt-1">Today: {metrics.todayOrders}</p>
-                      </div>
-                      <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center">
-                        <ShoppingCart className="w-6 h-6 text-blue-600" />
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card className="hover:shadow-lg transition-shadow">
-                  <div className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Total Revenue</p>
-                        <p className="text-3xl font-bold text-gray-900 mt-2">
-                          {formatCurrency(metrics.totalRevenue)}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Today: {formatCurrency(metrics.todayRevenue)}
-                        </p>
-                      </div>
-                      <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
-                        <DollarSign className="w-6 h-6 text-green-600" />
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card className="hover:shadow-lg transition-shadow">
-                  <div className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Delivery Rate</p>
-                        <p className="text-3xl font-bold text-gray-900 mt-2">
-                          {metrics.deliveryRate.toFixed(1)}%
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {metrics.deliveredOrders} / {metrics.totalOrders}
-                        </p>
-                      </div>
-                      <div className="h-12 w-12 bg-purple-100 rounded-full flex items-center justify-center">
-                        <Target className="w-6 h-6 text-purple-600" />
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card className="hover:shadow-lg transition-shadow">
-                  <div className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Active Agents</p>
-                        <p className="text-3xl font-bold text-gray-900 mt-2">{metrics.activeAgents}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Avg Time: {metrics.avgDeliveryTime}h
-                        </p>
-                      </div>
-                      <div className="h-12 w-12 bg-orange-100 rounded-full flex items-center justify-center">
-                        <Users className="w-6 h-6 text-orange-600" />
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-
-              {/* Secondary Metrics */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <Card>
-                  <div className="p-6">
-                    <div className="flex items-center mb-3">
-                      <Package className="w-5 h-5 text-yellow-600 mr-2" />
-                      <h3 className="font-semibold text-gray-900">Pending Orders</h3>
-                    </div>
-                    <p className="text-2xl font-bold text-gray-900">{metrics.pendingOrders}</p>
-                    <p className="text-xs text-gray-500 mt-1">Awaiting processing</p>
-                  </div>
-                </Card>
-
-                <Card>
-                  <div className="p-6">
-                    <div className="flex items-center mb-3">
-                      <TrendingUp className="w-5 h-5 text-green-600 mr-2" />
-                      <h3 className="font-semibold text-gray-900">Delivered</h3>
-                    </div>
-                    <p className="text-2xl font-bold text-gray-900">{metrics.deliveredOrders}</p>
-                    <p className="text-xs text-gray-500 mt-1">Successfully completed</p>
-                  </div>
-                </Card>
-
-                <Card>
-                  <div className="p-6">
-                    <div className="flex items-center mb-3">
-                      <Clock className="w-5 h-5 text-blue-600 mr-2" />
-                      <h3 className="font-semibold text-gray-900">Avg Delivery Time</h3>
-                    </div>
-                    <p className="text-2xl font-bold text-gray-900">{metrics.avgDeliveryTime}h</p>
-                    <p className="text-xs text-gray-500 mt-1">From order to delivery</p>
-                  </div>
-                </Card>
-              </div>
-            </>
-          )}
-
-          {/* Sales Trends */}
-          {trends.length > 0 && (
-            <Card className="mb-6">
-              <div className="p-6">
-                <div className="flex items-center mb-6">
-                  <BarChart3 className="w-5 h-5 text-blue-600 mr-2" />
-                  <h3 className="text-lg font-semibold text-gray-900">Sales Trends (Last 7 Days)</h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Orders</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Delivered</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conversion</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {trends.map((trend) => (
-                        <tr key={trend.date} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm text-gray-900">
-                            {new Date(trend.date).toLocaleDateString()}
-                          </td>
-                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">{trend.orders}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{trend.delivered}</td>
-                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                            {formatCurrency(trend.revenue)}
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${trend.conversionRate >= 70
-                                ? 'bg-green-100 text-green-800'
-                                : trend.conversionRate >= 50
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}>
-                              {trend.conversionRate.toFixed(1)}%
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {/* Performance Tables */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Rep Performance */}
-            <Card>
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Customer Rep Performance</h3>
-                {repPerformance.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No data available</p>
-                ) : (
-                  <div className="space-y-3">
-                    {repPerformance.slice(0, 5).map((rep) => (
-                      <div key={rep.userId} className="p-4 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-medium text-gray-900">{rep.userName}</h4>
-                          <span className="text-sm font-semibold text-blue-600">
-                            {rep.successRate.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <p className="text-gray-500">Assigned</p>
-                            <p className="font-semibold text-gray-900">{rep.totalAssigned}</p>
-                          </div>
-                          <div>
-                            <p className="text-gray-500">Completed</p>
-                            <p className="font-semibold text-green-600">{rep.completed}</p>
-                          </div>
-                          <div>
-                            <p className="text-gray-500">Pending</p>
-                            <p className="font-semibold text-yellow-600">{rep.pending}</p>
-                          </div>
-                        </div>
-                        {rep.revenue !== undefined && (
-                          <div className="mt-2 pt-2 border-t border-gray-100">
-                            <p className="text-xs text-gray-500">Revenue Generated</p>
-                            <p className="text-sm font-semibold text-gray-900">{formatCurrency(rep.revenue)}</p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="flex space-x-8">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleTabChange(tab.id)}
+                className={cn(
+                  'flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm',
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 )}
-              </div>
-            </Card>
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
 
-            {/* Agent Performance */}
-            <Card>
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Delivery Agent Performance</h3>
-                {agentPerformance.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No data available</p>
-                ) : (
-                  <div className="space-y-3">
-                    {agentPerformance.slice(0, 5).map((agent) => (
-                      <div key={agent.userId} className="p-4 border border-gray-200 rounded-lg hover:border-green-300 transition-colors">
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-medium text-gray-900">{agent.userName}</h4>
-                          <span className="text-sm font-semibold text-green-600">
-                            {agent.successRate.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <p className="text-gray-500">Assigned</p>
-                            <p className="font-semibold text-gray-900">{agent.totalAssigned}</p>
-                          </div>
-                          <div>
-                            <p className="text-gray-500">Delivered</p>
-                            <p className="font-semibold text-green-600">{agent.completed}</p>
-                          </div>
-                          <div>
-                            <p className="text-gray-500">Failed</p>
-                            <p className="font-semibold text-red-600">{agent.failed || 0}</p>
-                          </div>
-                        </div>
-                        {agent.onTimeRate !== undefined && (
-                          <div className="mt-2 pt-2 border-t border-gray-100">
-                            <p className="text-xs text-gray-500">On-Time Delivery</p>
-                            <p className="text-sm font-semibold text-gray-900">{agent.onTimeRate.toFixed(1)}%</p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </Card>
-          </div>
-
-          {/* Call Tracking Section */}
-          <div className="mt-8">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Call Tracking</h2>
-
-            {/* Call Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <Card>
-                <div className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">Today</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">
-                        {stats.reduce((sum, s) => sum + s.todayCalls, 0)}
-                      </p>
-                    </div>
-                    <Phone className="w-8 h-8 text-blue-500" />
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">This Week</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">
-                        {stats.reduce((sum, s) => sum + s.weekCalls, 0)}
-                      </p>
-                    </div>
-                    <Calendar className="w-8 h-8 text-green-500" />
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">This Month</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">
-                        {stats.reduce((sum, s) => sum + s.monthCalls, 0)}
-                      </p>
-                    </div>
-                    <TrendingUp className="w-8 h-8 text-purple-500" />
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">Avg per Day</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">
-                        {stats.length > 0
-                          ? (stats.reduce((sum, s) => sum + s.avgCallsPerDay, 0) / stats.length).toFixed(1)
-                          : '0.0'}
-                      </p>
-                    </div>
-                    <PieChart className="w-8 h-8 text-orange-500" />
-                  </div>
-                </div>
-              </Card>
-            </div>
-
-            {/* Call Outcomes Chart */}
-            <Card className="mb-6">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold mb-4">Call Outcomes</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart
-                    data={[
-                      {
-                        name: 'Confirmed',
-                        value: stats.reduce((sum, s) => sum + s.outcomeBreakdown.confirmed, 0),
-                        fill: '#10b981'
-                      },
-                      {
-                        name: 'Rescheduled',
-                        value: stats.reduce((sum, s) => sum + s.outcomeBreakdown.rescheduled, 0),
-                        fill: '#3b82f6'
-                      },
-                      {
-                        name: 'No Answer',
-                        value: stats.reduce((sum, s) => sum + s.outcomeBreakdown.no_answer, 0),
-                        fill: '#f59e0b'
-                      },
-                      {
-                        name: 'Cancelled',
-                        value: stats.reduce((sum, s) => sum + s.outcomeBreakdown.cancelled, 0),
-                        fill: '#ef4444'
-                      },
-                      {
-                        name: 'Other',
-                        value: stats.reduce((sum, s) => sum + s.outcomeBreakdown.other, 0),
-                        fill: '#6b7280'
-                      }
-                    ]}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#3b82f6" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-
-            {/* Rep Call Performance Table */}
-            <Card>
-              <div className="p-6">
-                <h3 className="text-lg font-semibold mb-4">Sales Rep Call Performance</h3>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rep Name</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Today</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Week</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Month</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Avg/Day</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Confirmed</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">No Answer</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {stats.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
-                            No call data available
-                          </td>
-                        </tr>
-                      ) : (
-                        stats.map((stat) => (
-                          <tr key={stat.repId} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                              {stat.repName}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                              {stat.todayCalls}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                              {stat.weekCalls}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                              {stat.monthCalls}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                              {stat.avgCallsPerDay.toFixed(1)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                              {stat.outcomeBreakdown.confirmed}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-600">
-                              {stat.outcomeBreakdown.no_answer}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </>
-      )}
+      {/* Active Tab Content */}
+      {renderTab()}
     </div>
   );
 };
