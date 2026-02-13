@@ -426,29 +426,82 @@ export class OrderService {
               },
               totalAmount: orderData.totalAmount
             },
-            select: { id: true, deliveryAddress: true, deletedAt: true },
+            select: { id: true, deliveryAddress: true, deletedAt: true, status: true },
             orderBy: { createdAt: 'desc' },
             take: 20
           });
 
-          const isDuplicateInDB = existingOrders.some(existing => {
+          // Status progression order — higher index = further along
+          const STATUS_ORDER: OrderStatus[] = [
+            'pending_confirmation',
+            'confirmed',
+            'preparing',
+            'ready_for_pickup',
+            'out_for_delivery',
+            'delivered',
+          ];
+          const isForwardStatus = (current: OrderStatus, next: OrderStatus) => {
+            const ci = STATUS_ORDER.indexOf(current);
+            const ni = STATUS_ORDER.indexOf(next);
+            return ci !== -1 && ni !== -1 && ni > ci;
+          };
+
+          const matchingExisting = existingOrders.find(existing => {
             const sameAddr = normalize(existing.deliveryAddress) === normalize(orderData.deliveryAddress);
-
-            // It's a match if addresses match. 
-            // We ignore if deleted more than 5 mins ago (standard delete flow).
-            // But if it was deleted just now (re-import case), it counts as a duplicate.
             const isRelevantRecord = !existing.deletedAt || (Date.now() - new Date(existing.deletedAt).getTime() < 5 * 60 * 1000);
-
             return sameAddr && isRelevantRecord;
           });
 
-          if (isDuplicateInDB) {
-            logger.warn('🚫 CANARY: DUPLICATE FOUND IN DB', {
-              phone: orderData.customerPhone,
-              amount: orderData.totalAmount,
-              date: orderDateString
-            });
-            throw new Error('DUPLICATE_ORDER');
+          if (matchingExisting) {
+            const newStatus = (orderData.status || 'pending_confirmation') as OrderStatus;
+            if (isForwardStatus(matchingExisting.status as OrderStatus, newStatus)) {
+              // Update the existing order's status instead of creating a duplicate
+              await prisma.$transaction(async (tx) => {
+                await tx.order.update({
+                  where: { id: matchingExisting.id },
+                  data: {
+                    status: newStatus,
+                    ...(newStatus === 'delivered' && { deliveryDate: orderDateValue }),
+                  },
+                });
+                await tx.orderHistory.create({
+                  data: {
+                    orderId: matchingExisting.id,
+                    status: newStatus,
+                    notes: 'Status updated via bulk CSV re-import',
+                    changedBy: createdById,
+                  },
+                });
+                // Auto-sync financials if progressing to delivered
+                if (newStatus === 'delivered') {
+                  const updatedOrder = await tx.order.findUnique({
+                    where: { id: matchingExisting.id },
+                    include: { orderItems: { include: { product: true } }, customer: true, deliveryAgent: true, customerRep: true },
+                  });
+                  if (updatedOrder?.codAmount) {
+                    await FinancialSyncService.syncOrderFinancialData(tx as any, updatedOrder as any, createdById || SYSTEM_USER_ID).catch(err => {
+                      logger.warn(`Financial sync skipped for re-imported order ${matchingExisting.id}`, { error: err.message });
+                    });
+                  }
+                }
+              }, { maxWait: 10000, timeout: 15000 });
+              logger.info('✅ CANARY: DUPLICATE — status updated forward', {
+                orderId: matchingExisting.id,
+                from: matchingExisting.status,
+                to: newStatus,
+              });
+              results.success++;
+            } else {
+              // Same or earlier status — skip
+              logger.warn('🚫 CANARY: DUPLICATE FOUND IN DB — status not advanced, skipping', {
+                phone: orderData.customerPhone,
+                existingStatus: matchingExisting.status,
+                incomingStatus: newStatus,
+              });
+              throw new Error('DUPLICATE_ORDER');
+            }
+            processedInImport.add(orderFingerprint);
+            continue;
           }
 
           const createdOrder = await prisma.$transaction(async (tx) => {
