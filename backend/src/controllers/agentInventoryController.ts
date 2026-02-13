@@ -61,6 +61,9 @@ class AgentInventoryController {
 
   async getAgentInventory(req: AuthRequest, res: Response) {
     const agentId = parseInt(req.params.agentId);
+    if (req.user!.role === 'delivery_agent' && req.user!.id !== agentId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const result = await agentInventoryService.getAgentInventory(agentId);
     res.json(result);
   }

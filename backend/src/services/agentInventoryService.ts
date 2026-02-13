@@ -111,6 +111,12 @@ export class AgentInventoryService {
 
     if (!fromAgent) throw new AppError('Source agent not found', 404);
     if (!toAgent) throw new AppError('Destination agent not found', 404);
+    if (fromAgent.role !== 'delivery_agent') {
+      throw new AppError('Source user is not a delivery agent', 400);
+    }
+    if (toAgent.role !== 'delivery_agent') {
+      throw new AppError('Destination user is not a delivery agent', 400);
+    }
 
     const sourceStock = await prisma.agentStock.findUnique({
       where: { agentId_productId: { agentId: fromAgentId, productId } },
@@ -436,6 +442,27 @@ export class AgentInventoryService {
     }
 
     return await prisma.$transaction(async (tx) => {
+      if (difference > 0) {
+        // Upward: deduct from warehouse
+        const product = await tx.product.findUnique({ where: { id: productId } });
+        if (!product || product.stockQuantity < difference) {
+          throw new AppError(
+            `Insufficient warehouse stock for adjustment. Available: ${product?.stockQuantity ?? 0}, Needed: ${difference}`,
+            400
+          );
+        }
+        await tx.product.update({
+          where: { id: productId },
+          data: { stockQuantity: { decrement: difference } },
+        });
+      } else {
+        // Downward: return units to warehouse
+        await tx.product.update({
+          where: { id: productId },
+          data: { stockQuantity: { increment: Math.abs(difference) } },
+        });
+      }
+
       // Upsert agent stock to new quantity
       await tx.agentStock.upsert({
         where: { agentId_productId: { agentId, productId } },

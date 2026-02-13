@@ -1432,32 +1432,42 @@ export class OrderService {
 
     // Perform bulk deletion in a single transaction
     await prisma.$transaction(async (tx) => {
-      // 1. Restock products (checking agent stock first) & customer stats
-      const updatePromises: Promise<any>[] = [];
+      // Phase 1: reverse agent stock (sequential — each needs its own tx calls)
+      // Aggregate warehouse restocks into a Map for batched Phase 2
+      const warehouseRestocks = new Map<number, number>(); // productId → qty
       const deductedStatuses = ['out_for_delivery', 'delivered'];
 
       for (const order of orders) {
-        if (deductedStatuses.includes(order.status)) {
-          let reversedFromAgent: number[] = [];
-          if (order.deliveryAgentId) {
-            reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
-              tx,
-              order.id,
-              order.deliveryAgentId,
-              userId ?? order.deliveryAgentId,
-              order.status === 'delivered'
-            );
-          }
-          for (const item of order.orderItems) {
-            if (reversedFromAgent.includes(item.productId)) continue;
-            updatePromises.push(
-              tx.product.update({
-                where: { id: item.productId },
-                data: { stockQuantity: { increment: item.quantity } }
-              })
-            );
-          }
+        if (!deductedStatuses.includes(order.status)) continue;
+
+        let reversedFromAgent: number[] = [];
+        if (order.deliveryAgentId) {
+          reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
+            tx,
+            order.id,
+            order.deliveryAgentId,
+            userId ?? order.deliveryAgentId,
+            order.status === 'delivered'
+          );
         }
+        for (const item of order.orderItems) {
+          if (reversedFromAgent.includes(item.productId)) continue;
+          warehouseRestocks.set(
+            item.productId,
+            (warehouseRestocks.get(item.productId) ?? 0) + item.quantity
+          );
+        }
+      }
+
+      // Phase 2: batch warehouse restocks (1 update per distinct product)
+      const updatePromises: Promise<any>[] = [];
+      for (const [productId, quantity] of warehouseRestocks.entries()) {
+        updatePromises.push(
+          tx.product.update({
+            where: { id: productId },
+            data: { stockQuantity: { increment: quantity } }
+          })
+        );
       }
 
       if (customerUpdates.size > 0) {
