@@ -533,7 +533,7 @@ export class AgentInventoryService {
     if (!product) throw new AppError('Product not found', 404);
 
     const agentStocks = await prisma.agentStock.findMany({
-      where: { productId, quantity: { gt: 0 } },
+      where: { productId, OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }] },
       include: {
         agent: {
           select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true },
@@ -575,7 +575,7 @@ export class AgentInventoryService {
     if (!agent) throw new AppError('Agent not found', 404);
 
     const stocks = await prisma.agentStock.findMany({
-      where: { agentId, quantity: { gt: 0 } },
+      where: { agentId, OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }] },
       include: {
         product: {
           select: { id: true, name: true, sku: true, price: true, imageUrl: true },
@@ -670,7 +670,7 @@ export class AgentInventoryService {
     // At large fleet scale (1000+ agents × many products) consider replacing with
     // a $queryRaw GROUP BY query. Current limit prevents unbounded memory growth.
     const agentStocks = await prisma.agentStock.findMany({
-      where: { quantity: { gt: 0 } },
+      where: { OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }] },
       include: {
         agent: { select: { id: true, firstName: true, lastName: true } },
         product: { select: { id: true, name: true, price: true } },
