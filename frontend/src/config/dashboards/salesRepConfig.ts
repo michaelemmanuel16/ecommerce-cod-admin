@@ -45,7 +45,7 @@ export const salesRepConfig: DashboardConfig = {
       dataSource: 'calculated.myCommission',
       format: 'currency',
       subtitle: {
-        template: 'Pending from {delivered} orders @ {rate}',
+        template: 'Pending from {delivered} unpaid orders @ {rate}',
         dataSources: {
           delivered: 'calculated.unpaidDeliveredCount',
           rate: 'calculated.commissionAmount',

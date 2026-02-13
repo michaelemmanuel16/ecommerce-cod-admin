@@ -49,6 +49,10 @@ model User {
   verifiedDeposits      AgentDeposit[]    @relation("VerifiedDeposits")
   agingBucket           AgentAgingBucket?
   blockedBalances       AgentBalance[]    @relation("BlockedBy")
+  agentStock            AgentStock[]      @relation("AgentStockHoldings")
+  transfersFrom         InventoryTransfer[] @relation("TransferFrom")
+  transfersTo           InventoryTransfer[] @relation("TransferTo")
+  transfersCreated      InventoryTransfer[] @relation("TransferCreator")
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -105,6 +109,8 @@ model Product {
   orderItems           OrderItem[]
   product_cost_entries product_cost_entries[]
   webhookConfigs       WebhookConfig[]
+  agentStock           AgentStock[]
+  inventoryTransfers   InventoryTransfer[]
 
   @@index([isActive])
   @@index([category, isActive])
@@ -157,6 +163,7 @@ model Order {
   payout            Payout?          @relation(fields: [payoutId], references: [id])
   glJournalEntry    JournalEntry?    @relation(fields: [glJournalEntryId], references: [id])
   agentCollection   AgentCollection?
+  inventoryTransfers InventoryTransfer[]
 
   @@index([customerId])
   @@index([status])
@@ -817,4 +824,62 @@ enum JournalSourceType {
   reversal
   order_return
   agent_collection
+}
+
+enum TransferType {
+  allocation
+  order_fulfillment
+  agent_transfer
+  return_to_warehouse
+  adjustment
+}
+
+model InventoryTransfer {
+  id           Int          @id @default(autoincrement())
+  productId    Int          @map("product_id")
+  quantity     Int
+  transferType TransferType @map("transfer_type")
+  fromAgentId  Int?         @map("from_agent_id")
+  toAgentId    Int?         @map("to_agent_id")
+  orderId      Int?         @map("order_id")
+  notes        String?
+  createdById  Int          @map("created_by_id")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  product   Product @relation(fields: [productId], references: [id])
+  fromAgent User?   @relation("TransferFrom", fields: [fromAgentId], references: [id])
+  toAgent   User?   @relation("TransferTo", fields: [toAgentId], references: [id])
+  order     Order?  @relation(fields: [orderId], references: [id])
+  createdBy User    @relation("TransferCreator", fields: [createdById], references: [id])
+
+  @@index([productId])
+  @@index([fromAgentId])
+  @@index([toAgentId])
+  @@index([transferType])
+  @@index([createdAt])
+  @@index([orderId])
+  @@map("inventory_transfers")
+}
+
+model AgentStock {
+  id               Int      @id @default(autoincrement())
+  agentId          Int      @map("agent_id")
+  productId        Int      @map("product_id")
+  quantity         Int      @default(0)
+  totalAllocated   Int      @default(0) @map("total_allocated")
+  totalInTransit   Int      @default(0) @map("total_in_transit")
+  totalFulfilled   Int      @default(0) @map("total_fulfilled")
+  totalReturned    Int      @default(0) @map("total_returned")
+  totalTransferIn  Int      @default(0) @map("total_transfer_in")
+  totalTransferOut Int      @default(0) @map("total_transfer_out")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  agent   User    @relation("AgentStockHoldings", fields: [agentId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([agentId, productId])
+  @@index([agentId])
+  @@index([productId])
+  @@map("agent_stock")
 }

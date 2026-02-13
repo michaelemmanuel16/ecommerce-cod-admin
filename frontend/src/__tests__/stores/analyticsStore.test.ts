@@ -14,6 +14,8 @@ vi.mock('../../services/analytics.service', () => ({
         getPendingOrders: vi.fn(),
         getRecentActivity: vi.fn(),
         getOrderStatusDistribution: vi.fn(),
+        getProductPerformance: vi.fn(),
+        getAreaDistribution: vi.fn(),
     },
 }));
 
@@ -99,6 +101,54 @@ describe('Analytics Store', () => {
 
         const state = useAnalyticsStore.getState();
         expect(state.pendingOrders).toEqual(mockPending);
+    });
+
+    it('should fetch product performance successfully', async () => {
+        const mockProducts = [
+            { productId: 1, productName: 'Widget A', sku: 'W-A', category: 'Widgets', unitsSold: 100, revenue: 5000, orderCount: 50 },
+            { productId: 2, productName: 'Widget B', sku: 'W-B', category: 'Widgets', unitsSold: 60, revenue: 3000, orderCount: 30 },
+        ];
+        vi.mocked(analyticsService.getProductPerformance).mockResolvedValue(mockProducts);
+
+        const { fetchProductPerformance } = useAnalyticsStore.getState();
+        await fetchProductPerformance('2024-01-01', '2024-01-31');
+
+        const state = useAnalyticsStore.getState();
+        expect(state.productPerformance).toEqual(mockProducts);
+        expect(analyticsService.getProductPerformance).toHaveBeenCalledWith({
+            startDate: '2024-01-01',
+            endDate: '2024-01-31',
+        });
+    });
+
+    it('should fetch area distribution successfully', async () => {
+        const mockAreas = [
+            { area: 'Accra', orderCount: 50, revenue: 10000 },
+            { area: 'Kumasi', orderCount: 30, revenue: 6000 },
+        ];
+        vi.mocked(analyticsService.getAreaDistribution).mockResolvedValue(mockAreas);
+
+        const { fetchAreaDistribution } = useAnalyticsStore.getState();
+        await fetchAreaDistribution('2024-01-01', '2024-01-31');
+
+        const state = useAnalyticsStore.getState();
+        expect(state.areaDistribution).toEqual(mockAreas);
+        expect(analyticsService.getAreaDistribution).toHaveBeenCalledWith({
+            startDate: '2024-01-01',
+            endDate: '2024-01-31',
+        });
+    });
+
+    it('should pass date params to fetchAgentPerformance', async () => {
+        vi.mocked(analyticsService.getAgentPerformance).mockResolvedValue([]);
+
+        const { fetchAgentPerformance } = useAnalyticsStore.getState();
+        await fetchAgentPerformance('2024-01-01', '2024-01-31');
+
+        expect(analyticsService.getAgentPerformance).toHaveBeenCalledWith({
+            startDate: '2024-01-01',
+            endDate: '2024-01-31',
+        });
     });
 
     it('should refresh all data', async () => {

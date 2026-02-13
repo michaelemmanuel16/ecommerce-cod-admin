@@ -471,7 +471,14 @@ export class AnalyticsService {
   /**
    * Get delivery agent performance
    */
-  async getAgentPerformance() {
+  async getAgentPerformance(filters?: DateFilters) {
+    const orderWhere: any = { deletedAt: null };
+    if (filters?.startDate || filters?.endDate) {
+      orderWhere.createdAt = {};
+      if (filters.startDate) orderWhere.createdAt.gte = filters.startDate;
+      if (filters.endDate) orderWhere.createdAt.lte = filters.endDate;
+    }
+
     const agents = await prisma.user.findMany({
       where: {
         role: 'delivery_agent',
@@ -482,7 +489,7 @@ export class AnalyticsService {
         firstName: true,
         lastName: true,
         assignedOrdersAsAgent: {
-          where: { deletedAt: null },
+          where: orderWhere,
           select: {
             id: true,
             status: true,

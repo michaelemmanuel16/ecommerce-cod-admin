@@ -102,7 +102,7 @@ export const adminDashboardConfig: DashboardConfig = {
       title: 'Order Status Distribution',
       gridPosition: { row: 1, col: 3, colSpan: 1 },
       height: 350,
-      dataSource: 'conversionFunnel',
+      dataSource: 'ordersByStatus',
       config: {
         nameKey: 'status',
         valueKey: 'count',
@@ -128,6 +128,7 @@ export const adminDashboardConfig: DashboardConfig = {
     'fetchDashboardMetrics',
     'fetchSalesTrends',
     'fetchConversionFunnel',
+    'fetchOrdersByStatus',
     'fetchCustomerInsights',
   ],
 };

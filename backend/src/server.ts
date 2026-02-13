@@ -36,6 +36,7 @@ import publicOrderRoutes from './routes/publicOrderRoutes';
 import callRoutes from './routes/callRoutes';
 import glRoutes from './routes/glRoutes';
 import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
+import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import { GLAutomationService } from './services/glAutomationService';
 
 // Initialize workflow queue worker
@@ -144,6 +145,7 @@ app.use('/api/upload', apiLimiter, uploadRoutes);
 app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);
 app.use('/api/agent-reconciliation', apiLimiter, agentReconciliationRoutes);
+app.use('/api/agent-inventory', apiLimiter, agentInventoryRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);

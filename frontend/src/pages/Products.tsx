@@ -1,17 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Package, AlertTriangle, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Search, Package, AlertTriangle, Edit2, Trash2, ChevronDown, ChevronRight, Users } from 'lucide-react';
 import { productsService } from '../services/products.service';
 import { formatCurrency } from '../utils/format';
 import { Product } from '../types';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { AgentStockPanel } from '../components/inventory/AgentStockPanel';
+import { useAgentInventoryStore } from '../stores/agentInventoryStore';
 
 export const Products: React.FC = () => {
     const navigate = useNavigate();
     const [products, setProducts] = useState<Product[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
+    const { productAgentStock } = useAgentInventoryStore();
 
     useEffect(() => {
         loadProducts();
@@ -44,11 +48,15 @@ export const Products: React.FC = () => {
 
         try {
             await productsService.deleteProduct(productId);
-            loadProducts(); // Refresh the list
+            loadProducts();
         } catch (error) {
             console.error('Failed to delete product:', error);
             alert('Failed to delete product. It may be associated with existing orders.');
         }
+    };
+
+    const toggleExpand = (productId: number) => {
+        setExpandedProductId((prev) => (prev === productId ? null : productId));
     };
 
     const filteredProducts = products.filter((product) =>
@@ -65,6 +73,10 @@ export const Products: React.FC = () => {
             return { label: 'Low Stock', color: 'bg-yellow-100 text-yellow-800' };
         }
         return { label: 'In Stock', color: 'bg-green-100 text-green-800' };
+    };
+
+    const getAgentStockTotal = (productId: number): number => {
+        return productAgentStock[productId]?.totalWithAgents ?? 0;
     };
 
     return (
@@ -112,6 +124,7 @@ export const Products: React.FC = () => {
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
+                                    <th className="w-8 px-2 py-3"></th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Product
                                     </th>
@@ -125,7 +138,13 @@ export const Products: React.FC = () => {
                                         Price
                                     </th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Stock
+                                        Warehouse
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <div className="flex items-center gap-1">
+                                            <Users className="w-3 h-3" />
+                                            With Agents
+                                        </div>
                                     </th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Status
@@ -138,80 +157,116 @@ export const Products: React.FC = () => {
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {filteredProducts.map((product) => {
                                     const stockStatus = getStockStatus(product);
+                                    const isExpanded = expandedProductId === product.id;
+                                    const agentTotal = getAgentStockTotal(product.id);
+                                    const warehouseStock = product.stockQuantity ?? product.stock ?? 0;
                                     return (
-                                        <tr key={product.id} className="hover:bg-gray-50 cursor-pointer">
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center">
-                                                    <div className="flex-shrink-0 h-10 w-10 bg-gray-100 rounded overflow-hidden flex items-center justify-center">
-                                                        {product.imageUrl ? (
-                                                            <img
-                                                                src={product.imageUrl}
-                                                                alt={product.name}
-                                                                className="w-full h-full object-cover"
-                                                            />
-                                                        ) : (
-                                                            <Package className="w-6 h-6 text-gray-400" />
-                                                        )}
-                                                    </div>
-                                                    <div className="ml-4">
-                                                        <div className="text-sm font-medium text-gray-900">{product.name}</div>
-                                                        {product.description && (
-                                                            <div className="text-sm text-gray-500 truncate max-w-xs">
-                                                                {product.description}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="text-sm text-gray-900 font-mono">{product.sku}</span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                                    {product.category}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                {formatCurrency(product.price)}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <div className="flex items-center">
-                                                    <span className="text-sm text-gray-900">{product.stockQuantity ?? product.stock ?? 0}</span>
-                                                    {(product.stockQuantity ?? product.stock ?? 0) <= product.lowStockThreshold && (
-                                                        <AlertTriangle className="w-4 h-4 text-yellow-500 ml-2" />
+                                        <React.Fragment key={product.id}>
+                                            <tr
+                                                className="hover:bg-gray-50 cursor-pointer"
+                                                onClick={() => toggleExpand(product.id)}
+                                            >
+                                                <td className="px-2 py-4 text-center">
+                                                    {isExpanded ? (
+                                                        <ChevronDown className="w-4 h-4 text-gray-400 mx-auto" />
+                                                    ) : (
+                                                        <ChevronRight className="w-4 h-4 text-gray-400 mx-auto" />
                                                     )}
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${stockStatus.color}`}>
-                                                    {stockStatus.label}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleEditProduct(product.id);
-                                                        }}
-                                                        className="text-blue-600 hover:text-blue-800 transition-colors"
-                                                        title="Edit Product"
-                                                    >
-                                                        <Edit2 className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteProduct(product.id, product.name);
-                                                        }}
-                                                        className="text-red-600 hover:text-red-800 transition-colors"
-                                                        title="Delete Product"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center">
+                                                        <div className="flex-shrink-0 h-10 w-10 bg-gray-100 rounded overflow-hidden flex items-center justify-center">
+                                                            {product.imageUrl ? (
+                                                                <img
+                                                                    src={product.imageUrl}
+                                                                    alt={product.name}
+                                                                    className="w-full h-full object-cover"
+                                                                />
+                                                            ) : (
+                                                                <Package className="w-6 h-6 text-gray-400" />
+                                                            )}
+                                                        </div>
+                                                        <div className="ml-4">
+                                                            <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                                                            {product.description && (
+                                                                <div className="text-sm text-gray-500 truncate max-w-xs">
+                                                                    {product.description}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className="text-sm text-gray-900 font-mono">{product.sku}</span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                                        {product.category}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    {formatCurrency(product.price)}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <div className="flex items-center">
+                                                        <span className="text-sm text-gray-900">{warehouseStock}</span>
+                                                        {warehouseStock <= product.lowStockThreshold && (
+                                                            <AlertTriangle className="w-4 h-4 text-yellow-500 ml-2" />
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    {agentTotal > 0 ? (
+                                                        <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
+                                                            {agentTotal}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-sm text-gray-400">-</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${stockStatus.color}`}>
+                                                        {stockStatus.label}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleEditProduct(product.id);
+                                                            }}
+                                                            className="text-blue-600 hover:text-blue-800 transition-colors"
+                                                            title="Edit Product"
+                                                        >
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleDeleteProduct(product.id, product.name);
+                                                            }}
+                                                            className="text-red-600 hover:text-red-800 transition-colors"
+                                                            title="Delete Product"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {isExpanded && (
+                                                <tr>
+                                                    <td colSpan={9} className="p-0">
+                                                        <AgentStockPanel
+                                                            productId={product.id}
+                                                            productName={product.name}
+                                                            warehouseStock={warehouseStock}
+                                                            onStockChanged={loadProducts}
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
                                     );
                                 })}
                             </tbody>

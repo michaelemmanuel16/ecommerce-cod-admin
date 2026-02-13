@@ -16,6 +16,8 @@ jest.mock('../../services/analyticsService', () => ({
     getCustomerInsights: jest.fn(),
     getPendingOrders: jest.fn(),
     getRecentActivity: jest.fn(),
+    getProductPerformance: jest.fn(),
+    getAreaDistribution: jest.fn(),
   },
 }));
 
@@ -249,6 +251,86 @@ describe('Analytics Controller Error Handling', () => {
         error: 'Failed to fetch dashboard metrics',
         message: 'Internal server error',
       });
+    });
+  });
+
+  describe('getProductPerformance', () => {
+    it('should return product performance data on success', async () => {
+      const mockData = [
+        { productId: 1, productName: 'Widget A', revenue: 5000, unitsSold: 100 },
+        { productId: 2, productName: 'Widget B', revenue: 3000, unitsSold: 60 },
+      ];
+      (analyticsService.getProductPerformance as jest.Mock).mockResolvedValue(mockData);
+
+      mockReq.query = { startDate: '2024-01-01', endDate: '2024-01-31' };
+      await analyticsController.getProductPerformance(mockReq as AuthRequest, mockRes as Response);
+
+      expect(analyticsService.getProductPerformance).toHaveBeenCalledWith({
+        startDate: new Date('2024-01-01'),
+        endDate: new Date('2024-01-31'),
+      });
+      expect(mockRes.json).toHaveBeenCalledWith({ performance: mockData });
+    });
+
+    it('should return 500 on service error', async () => {
+      const mockError = new Error('Product query failed');
+      (analyticsService.getProductPerformance as jest.Mock).mockRejectedValue(mockError);
+
+      await analyticsController.getProductPerformance(mockReq as AuthRequest, mockRes as Response);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'Failed to fetch product performance',
+        message: expect.any(String),
+      });
+    });
+  });
+
+  describe('getAreaDistribution', () => {
+    it('should return area distribution data on success', async () => {
+      const mockData = [
+        { area: 'Accra', orderCount: 50, revenue: 10000 },
+        { area: 'Kumasi', orderCount: 30, revenue: 6000 },
+      ];
+      (analyticsService.getAreaDistribution as jest.Mock).mockResolvedValue(mockData);
+
+      mockReq.query = { startDate: '2024-01-01', endDate: '2024-01-31' };
+      await analyticsController.getAreaDistribution(mockReq as AuthRequest, mockRes as Response);
+
+      expect(analyticsService.getAreaDistribution).toHaveBeenCalledWith({
+        startDate: new Date('2024-01-01'),
+        endDate: new Date('2024-01-31'),
+      });
+      expect(mockRes.json).toHaveBeenCalledWith({ distribution: mockData });
+    });
+
+    it('should return 500 on service error', async () => {
+      const mockError = new Error('Area query failed');
+      (analyticsService.getAreaDistribution as jest.Mock).mockRejectedValue(mockError);
+
+      await analyticsController.getAreaDistribution(mockReq as AuthRequest, mockRes as Response);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'Failed to fetch area distribution',
+        message: expect.any(String),
+      });
+    });
+  });
+
+  describe('getAgentPerformance with date filters', () => {
+    it('should pass date filters to service', async () => {
+      const mockData = [{ userId: 1, userName: 'Agent 1', successRate: 85 }];
+      (analyticsService.getAgentPerformance as jest.Mock).mockResolvedValue(mockData);
+
+      mockReq.query = { startDate: '2024-01-01', endDate: '2024-01-31' };
+      await analyticsController.getAgentPerformance(mockReq as AuthRequest, mockRes as Response);
+
+      expect(analyticsService.getAgentPerformance).toHaveBeenCalledWith({
+        startDate: new Date('2024-01-01'),
+        endDate: new Date('2024-01-31'),
+      });
+      expect(mockRes.json).toHaveBeenCalledWith({ performance: mockData });
     });
   });
 });
