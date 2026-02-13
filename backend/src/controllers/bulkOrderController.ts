@@ -267,9 +267,12 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             const sanitizedName = sanitizeName(customerNameInput, BULK_ORDER_CONFIG.NAME.MAX_LENGTH);
             const nameParts = sanitizedName.split(' ');
 
-            const price = Number(getColumnValue(row, 'PRICE', 'Price', 'Total Amount', 'total')) || 0;
+            const totalAmountDirect = Number(getColumnValue(row, 'TOTAL AMOUNT', 'Total Amount', 'total')) || 0;
+            const price = Number(getColumnValue(row, 'PRICE', 'Price', 'UNIT PRICE', 'Unit Price')) || 0;
             const quantity = Number(getColumnValue(row, 'QUANTITY', 'Quantity', 'qty')) || 1;
-            const totalAmount = price * quantity;
+            // Prefer the explicit Total Amount column; fall back to price × qty
+            const totalAmount = totalAmountDirect || price * quantity;
+            const unitPrice = price || (quantity > 0 ? totalAmount / quantity : totalAmount);
 
             // Validate status
             let status: OrderStatus | undefined;
@@ -313,7 +316,7 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
                 deliveryArea: sanitizeString(getColumnValue(row, 'REGION', 'Region', 'Area', 'area'), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
                 productName: sanitizeString(getColumnValue(row, 'PRODUCT NAME', 'Product', 'product'), BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
                 quantity: quantity,
-                unitPrice: price,
+                unitPrice: unitPrice,
                 status: status,
                 notes: sanitizeString(getColumnValue(row, 'Notes', 'NOTES', 'notes'), BULK_ORDER_CONFIG.NOTES.MAX_LENGTH),
                 assignedRepName,

@@ -36,11 +36,10 @@ export const CustomerDetails: React.FC = () => {
     try {
       const [customerData, ordersData] = await Promise.all([
         customersService.getCustomerById(numericId),
-        ordersService.getOrders({}), // Get all orders, will filter client-side
+        ordersService.getOrders({ customerId: numericId, limit: 100 }),
       ]);
       setCustomer(customerData);
-      // Filter orders for this customer
-      setOrders(ordersData.orders.filter(order => order.customerId === numericId));
+      setOrders(ordersData.orders);
     } catch (error) {
       console.error('Failed to load customer data:', error);
       alert('Failed to load customer details');
