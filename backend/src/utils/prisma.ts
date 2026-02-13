@@ -22,6 +22,10 @@ const prisma = prismaBase.$extends(softDeleteExtension);
 // Define type for extended client to be used across the app
 export type PrismaClientExtended = typeof prisma;
 
+// Transaction client type derived from the extended client (not base Prisma.TransactionClient,
+// which is incompatible when $extends is used)
+export type TransactionClient = Parameters<Parameters<PrismaClientExtended['$transaction']>[0]>[0];
+
 // Query performance logging
 prismaBase.$on('query' as never, (e: any) => {
   const duration = e.duration;

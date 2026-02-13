@@ -1,6 +1,6 @@
-import prisma from '../utils/prisma';
+import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { Prisma, TransferType } from '@prisma/client';
+import { TransferType } from '@prisma/client';
 import logger from '../utils/logger';
 
 export class AgentInventoryService {
@@ -258,7 +258,7 @@ export class AgentInventoryService {
    * Returns which items were fulfilled from agent stock.
    */
   async recordOrderFulfillment(
-    tx: Prisma.TransactionClient,
+    tx: TransactionClient,
     orderId: number,
     agentId: number,
     items: Array<{ productId: number; quantity: number }>,
@@ -315,7 +315,7 @@ export class AgentInventoryService {
    * Moves items from totalInTransit → totalFulfilled.
    */
   async confirmOrderDelivery(
-    tx: Prisma.TransactionClient,
+    tx: TransactionClient,
     orderId: number,
     agentId: number,
     items: Array<{ productId: number; quantity: number }>,
@@ -358,7 +358,7 @@ export class AgentInventoryService {
    * Returns the product IDs reversed (so orderService can skip warehouse restock for those).
    */
   async reverseOrderFulfillment(
-    tx: Prisma.TransactionClient,
+    tx: TransactionClient,
     orderId: number,
     agentId: number,
     createdById: number,
