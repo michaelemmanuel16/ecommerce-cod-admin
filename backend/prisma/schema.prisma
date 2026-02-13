@@ -872,6 +872,7 @@ model AgentStock {
   totalReturned    Int      @default(0) @map("total_returned")
   totalTransferIn  Int      @default(0) @map("total_transfer_in")
   totalTransferOut Int      @default(0) @map("total_transfer_out")
+  createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   agent   User    @relation("AgentStockHoldings", fields: [agentId], references: [id])

@@ -1,6 +1,6 @@
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { TransferType } from '@prisma/client';
+import { Prisma, TransferType } from '@prisma/client';
 import logger from '../utils/logger';
 
 export class AgentInventoryService {
@@ -28,14 +28,17 @@ export class AgentInventoryService {
     if (agent.role !== 'delivery_agent') {
       throw new AppError('User is not a delivery agent', 400);
     }
-    if (product.stockQuantity < quantity) {
-      throw new AppError(
-        `Insufficient warehouse stock. Available: ${product.stockQuantity}, Requested: ${quantity}`,
-        400
-      );
-    }
 
     return await prisma.$transaction(async (tx) => {
+      // Re-read inside transaction to prevent TOCTOU race condition
+      const lockedProduct = await tx.product.findUnique({ where: { id: productId } });
+      if (!lockedProduct || lockedProduct.stockQuantity < quantity) {
+        throw new AppError(
+          `Insufficient warehouse stock. Available: ${lockedProduct?.stockQuantity ?? 0}, Requested: ${quantity}`,
+          400
+        );
+      }
+
       // Deduct warehouse stock
       await tx.product.update({
         where: { id: productId },
@@ -118,18 +121,19 @@ export class AgentInventoryService {
       throw new AppError('Destination user is not a delivery agent', 400);
     }
 
-    const sourceStock = await prisma.agentStock.findUnique({
-      where: { agentId_productId: { agentId: fromAgentId, productId } },
-    });
-
-    if (!sourceStock || sourceStock.quantity < quantity) {
-      throw new AppError(
-        `Insufficient agent stock. Available: ${sourceStock?.quantity ?? 0}, Requested: ${quantity}`,
-        400
-      );
-    }
-
     return await prisma.$transaction(async (tx) => {
+      // Re-read inside transaction to prevent TOCTOU race condition
+      const sourceStock = await tx.agentStock.findUnique({
+        where: { agentId_productId: { agentId: fromAgentId, productId } },
+      });
+
+      if (!sourceStock || sourceStock.quantity < quantity) {
+        throw new AppError(
+          `Insufficient agent stock. Available: ${sourceStock?.quantity ?? 0}, Requested: ${quantity}`,
+          400
+        );
+      }
+
       // Decrement source agent
       await tx.agentStock.update({
         where: { agentId_productId: { agentId: fromAgentId, productId } },
@@ -254,7 +258,7 @@ export class AgentInventoryService {
    * Returns which items were fulfilled from agent stock.
    */
   async recordOrderFulfillment(
-    tx: any,
+    tx: Prisma.TransactionClient,
     orderId: number,
     agentId: number,
     items: Array<{ productId: number; quantity: number }>,
@@ -311,7 +315,7 @@ export class AgentInventoryService {
    * Moves items from totalInTransit → totalFulfilled.
    */
   async confirmOrderDelivery(
-    tx: any,
+    tx: Prisma.TransactionClient,
     orderId: number,
     agentId: number,
     items: Array<{ productId: number; quantity: number }>,
@@ -354,7 +358,7 @@ export class AgentInventoryService {
    * Returns the product IDs reversed (so orderService can skip warehouse restock for those).
    */
   async reverseOrderFulfillment(
-    tx: any,
+    tx: Prisma.TransactionClient,
     orderId: number,
     agentId: number,
     createdById: number,
@@ -463,16 +467,21 @@ export class AgentInventoryService {
         });
       }
 
-      // Upsert agent stock to new quantity
+      // Upsert agent stock to new quantity; update running counters to match warehouse direction
       await tx.agentStock.upsert({
         where: { agentId_productId: { agentId, productId } },
         create: {
           agentId,
           productId,
           quantity: newQuantity,
+          // create only fires when currentQuantity === 0, so difference === newQuantity (always upward)
+          totalAllocated: newQuantity,
         },
         update: {
           quantity: newQuantity,
+          ...(difference > 0
+            ? { totalAllocated: { increment: difference } }
+            : { totalReturned: { increment: Math.abs(difference) } }),
         },
       });
 
