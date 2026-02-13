@@ -157,9 +157,10 @@ export function useDashboardData(
 
         // Earnings (for sales reps)
         if (dashboardData.repPerformance && (user as any)?.commissionAmount) {
+          const mtdDelivered = (dashboardData.repPerformance as any).deliveredOrders || 0;
           const unpaidCount = (dashboardData.repPerformance as any).unpaidDeliveredOrders || 0;
           calculated.myCommission = (
-            unpaidCount * (user as any).commissionAmount
+            mtdDelivered * (user as any).commissionAmount
           ).toFixed(2);
           calculated.commissionAmount = (user as any).commissionAmount;
           calculated.unpaidDeliveredCount = unpaidCount;
@@ -352,6 +353,7 @@ async function executeFetcher(
             successRate: myPerf.successRate || 0,
             userId: myPerf.userId,
             userName: myPerf.userName,
+            unpaidDeliveredOrders: myPerf.unpaidDeliveredOrders || 0,
           };
         } else {
           // No performance data found - use empty defaults
