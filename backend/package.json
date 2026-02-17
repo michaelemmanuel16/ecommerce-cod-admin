@@ -24,7 +24,9 @@
     "test:performance": "ts-node src/scripts/test-query-performance.ts",
     "db:verify-indexes": "psql $DATABASE_URL -f src/scripts/verify-indexes.sql",
     "diagnose:imported": "ts-node scripts/diagnose-imported-orders.ts",
-    "sync:imported-gl": "ts-node scripts/sync-imported-orders-gl.ts"
+    "sync:imported-gl": "ts-node scripts/sync-imported-orders-gl.ts",
+    "verify:balances": "ts-node scripts/verify-account-balances.ts",
+    "backfill:payout-gl": "ts-node scripts/backfill-payout-gl-entries.ts"
   },
   "keywords": [
     "ecommerce",

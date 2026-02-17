@@ -472,11 +472,11 @@ export class AnalyticsService {
    * Get delivery agent performance
    */
   async getAgentPerformance(filters?: DateFilters) {
-    const orderWhere: any = { deletedAt: null };
+    const orderWhere: Prisma.OrderWhereInput = { deletedAt: null };
     if (filters?.startDate || filters?.endDate) {
       orderWhere.createdAt = {};
-      if (filters.startDate) orderWhere.createdAt.gte = filters.startDate;
-      if (filters.endDate) orderWhere.createdAt.lte = filters.endDate;
+      if (filters.startDate) (orderWhere.createdAt as Prisma.DateTimeFilter).gte = filters.startDate;
+      if (filters.endDate) (orderWhere.createdAt as Prisma.DateTimeFilter).lte = filters.endDate;
     }
 
     const agents = await prisma.user.findMany({

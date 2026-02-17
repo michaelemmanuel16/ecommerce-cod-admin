@@ -463,6 +463,8 @@ export const financialService = {
     isActive?: boolean;
     page?: number;
     limit?: number;
+    startDate?: string;
+    endDate?: string;
   }): Promise<{ accounts: any[]; pagination: any }> {
     const response = await apiClient.get('/api/gl/accounts', { params });
     return response.data;

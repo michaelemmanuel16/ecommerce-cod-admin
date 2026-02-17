@@ -912,13 +912,18 @@ export class OrderService {
     let glEntry: any = null;
 
     const updated = await prisma.$transaction(async (tx) => {
-      // Handle inventory based on status change
+      // Handle inventory based on status change.
+      // All three transition types are handled in one block to keep the logic explicit:
+      //   A. entering deducted zone  (e.g. confirmed → out_for_delivery, or any → delivered)
+      //   B. leaving deducted zone   (e.g. out_for_delivery → cancelled)
+      //   C. out_for_delivery → delivered (stock already deducted; agent delivery confirmed)
       const deductedStatuses = ['out_for_delivery', 'delivered'];
       const isOldDeducted = deductedStatuses.includes(order.status);
       const isNewDeducted = deductedStatuses.includes(data.status);
+      const isConfirmingDelivery =
+        order.status === 'out_for_delivery' && data.status === 'delivered' && !!order.deliveryAgentId;
 
-      // Fetch order items if we need to adjust stock
-      if (isOldDeducted !== isNewDeducted) {
+      if (isOldDeducted !== isNewDeducted || isConfirmingDelivery) {
         const orderWithItems = await tx.order.findUnique({
           where: { id: orderId },
           include: { orderItems: true }
@@ -926,7 +931,7 @@ export class OrderService {
 
         if (orderWithItems) {
           if (!isOldDeducted && isNewDeducted) {
-            // Check if delivery agent has allocated stock for any items
+            // Transition A: entering deducted zone — deduct stock
             let fulfilledFromAgent: number[] = [];
             if (order.deliveryAgentId) {
               fulfilledFromAgent = await agentInventoryService.recordOrderFulfillment(
@@ -941,7 +946,7 @@ export class OrderService {
               );
             }
 
-            // If moving directly to delivered (skipping out_for_delivery), also confirm delivery
+            // If jumping directly to delivered (skipping out_for_delivery), also confirm delivery
             if (data.status === 'delivered' && order.deliveryAgentId && fulfilledFromAgent.length > 0) {
               await agentInventoryService.confirmOrderDelivery(
                 tx,
@@ -973,7 +978,7 @@ export class OrderService {
               }
             }
           } else if (isOldDeducted && !isNewDeducted) {
-            // Restore stock - check agent stock first, then warehouse for remaining
+            // Transition B: leaving deducted zone — restore stock
             let reversedFromAgent: number[] = [];
             if (order.deliveryAgentId) {
               reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
@@ -991,24 +996,16 @@ export class OrderService {
                 data: { stockQuantity: { increment: item.quantity } }
               });
             }
+          } else if (isConfirmingDelivery) {
+            // Transition C: out_for_delivery → delivered — stock already deducted; confirm agent delivery
+            await agentInventoryService.confirmOrderDelivery(
+              tx,
+              orderId,
+              order.deliveryAgentId!,
+              orderWithItems.orderItems.map(item => ({ productId: item.productId, quantity: item.quantity })),
+              data.changedBy ?? order.deliveryAgentId!
+            );
           }
-        }
-      }
-
-      // Handle out_for_delivery → delivered: confirm agent stock delivery
-      if (order.status === 'out_for_delivery' && data.status === 'delivered' && order.deliveryAgentId) {
-        const orderItems = await tx.order.findUnique({
-          where: { id: orderId },
-          include: { orderItems: true }
-        });
-        if (orderItems) {
-          await agentInventoryService.confirmOrderDelivery(
-            tx,
-            orderId,
-            order.deliveryAgentId,
-            orderItems.orderItems.map(item => ({ productId: item.productId, quantity: item.quantity })),
-            data.changedBy ?? order.deliveryAgentId
-          );
         }
       }
 
@@ -1096,7 +1093,8 @@ export class OrderService {
               firstName: true,
               lastName: true,
               email: true,
-              role: true
+              role: true,
+              commissionAmount: true
             }
           },
           deliveryAgent: {
@@ -1105,7 +1103,8 @@ export class OrderService {
               firstName: true,
               lastName: true,
               phoneNumber: true,
-              role: true
+              role: true,
+              commissionAmount: true
             }
           },
           orderItems: {
@@ -1114,7 +1113,8 @@ export class OrderService {
                 select: {
                   id: true,
                   name: true,
-                  sku: true
+                  sku: true,
+                  cogs: true
                 }
               }
             }

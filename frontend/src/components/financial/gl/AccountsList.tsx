@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { financialService } from '../../../services/financial.service';
 import { formatCurrency } from '../../../utils/format';
+import { useFinancialStore } from '../../../stores/financialStore';
 
 interface Account {
     id: number;
@@ -10,6 +11,7 @@ interface Account {
     normalBalance: 'debit' | 'credit';
     currentBalance: number;
     isActive: boolean;
+    periodActivity: { debits: number; credits: number } | null;
 }
 
 interface AccountsListProps {
@@ -23,14 +25,11 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const { dateRange } = useFinancialStore();
 
     const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 1 });
 
-    useEffect(() => {
-        fetchAccounts();
-    }, [refreshKey, pagination.page]);
-
-    const fetchAccounts = async () => {
+    const fetchAccounts = useCallback(async () => {
         try {
             if (accounts.length > 0) {
                 setRefreshing(true);
@@ -39,7 +38,9 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
             }
             const data = await financialService.getAllGLAccounts({
                 page: pagination.page,
-                limit: pagination.limit
+                limit: pagination.limit,
+                startDate: dateRange.startDate,
+                endDate: dateRange.endDate
             });
             setAccounts(data.accounts);
             setPagination(prev => ({ ...prev, total: data.pagination.total, pages: data.pagination.pages }));
@@ -51,7 +52,11 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, [pagination.page, pagination.limit, dateRange.startDate, dateRange.endDate]);
+
+    useEffect(() => {
+        fetchAccounts();
+    }, [fetchAccounts, refreshKey]);
 
     const filteredAccounts = accounts.filter(
         acc =>
@@ -148,31 +153,52 @@ export const AccountsList: React.FC<AccountsListProps> = ({ onSelectAccount, ref
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Current Balance</th>
+                            {dateRange.startDate && (
+                                <th className="px-6 py-3 text-right text-xs font-medium text-indigo-500 uppercase tracking-wider">Period Activity</th>
+                            )}
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredAccounts.map((account) => (
-                            <tr key={account.id} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-600">{account.code}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{account.name}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">{getAccountTypeBadge(account.accountType)}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">
-                                    {formatCurrency(account.currentBalance)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <button
-                                        onClick={() => onSelectAccount(account.id)}
-                                        className="text-indigo-600 hover:text-indigo-900"
-                                    >
-                                        View Ledger
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
+                        {filteredAccounts.map((account) => {
+                            const activity = account.periodActivity;
+                            const netChange = activity ? activity.debits - activity.credits : 0;
+                            return (
+                                <tr key={account.id} className="hover:bg-gray-50 transition-colors">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-600">{account.code}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{account.name}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{getAccountTypeBadge(account.accountType)}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">
+                                        {formatCurrency(account.currentBalance)}
+                                    </td>
+                                    {dateRange.startDate && (
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold">
+                                            {activity && (activity.debits > 0 || activity.credits > 0) ? (
+                                                <span className={netChange >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                                    {netChange >= 0 ? '+' : ''}{formatCurrency(netChange)}
+                                                    <span className="block text-xs font-normal text-gray-400">
+                                                        DR {formatCurrency(activity.debits)} / CR {formatCurrency(activity.credits)}
+                                                    </span>
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-300">—</span>
+                                            )}
+                                        </td>
+                                    )}
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button
+                                            onClick={() => onSelectAccount(account.id)}
+                                            className="text-indigo-600 hover:text-indigo-900"
+                                        >
+                                            View Ledger
+                                        </button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
                         {filteredAccounts.length === 0 && !loading && (
                             <tr>
-                                <td colSpan={5} className="px-6 py-10 text-center text-gray-500 font-medium">
+                                <td colSpan={dateRange.startDate ? 6 : 5} className="px-6 py-10 text-center text-gray-500 font-medium">
                                     No accounts found matching your search.
                                 </td>
                             </tr>

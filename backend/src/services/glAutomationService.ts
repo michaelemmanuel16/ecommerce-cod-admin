@@ -119,6 +119,19 @@ export class GLAutomationService {
    * @param data - Journal entry data (without entryNumber)
    * @returns Created journal entry with transactions included
    */
+  /**
+   * Validates that journal entry transactions are balanced (debits = credits).
+   * Throws if the imbalance exceeds 0.01 tolerance.
+   */
+  private static validateJournalEntryBalance(transactions: Array<{ debitAmount: number | Decimal; creditAmount: number | Decimal }>): void {
+    const totalDebits = transactions.reduce((sum, t) => sum.plus(new Decimal(t.debitAmount.toString())), new Decimal(0));
+    const totalCredits = transactions.reduce((sum, t) => sum.plus(new Decimal(t.creditAmount.toString())), new Decimal(0));
+    const imbalance = totalDebits.minus(totalCredits).abs();
+    if (imbalance.greaterThan(new Decimal('0.01'))) {
+      throw new Error(`Journal entry is unbalanced: debits=${totalDebits.toFixed(4)}, credits=${totalCredits.toFixed(4)}, difference=${imbalance.toFixed(4)}`);
+    }
+  }
+
   private static async createJournalEntryWithRetry(
     tx: Prisma.TransactionClient,
     data: JournalEntryCreateData
@@ -130,6 +143,9 @@ export class GLAutomationService {
     while (retries < maxRetries) {
       try {
         const entryNumber = await GLUtils.generateEntryNumber(tx);
+
+        // Validate balance before writing
+        GLAutomationService.validateJournalEntryBalance(data.transactions.create);
 
         // First, update account balances and get running balances
         const transactionsWithRunningBalances = [];
@@ -652,6 +668,56 @@ export class GLAutomationService {
       description: `Agent deposit verification - Ref #${deposit.referenceNumber}`,
       sourceType: JournalSourceType.agent_deposit,
       sourceId: deposit.id,
+      createdBy: userId,
+      transactions: {
+        create: transactions,
+      },
+    });
+  }
+
+  /**
+   * Create GL entry for commission payout to a sales rep
+   *
+   * Records payment of accrued commission liability:
+   * - Debit: Commissions Payable (reduces liability)
+   * - Credit: Cash in Hand (cash leaves the business)
+   *
+   * @param tx - Prisma transaction client
+   * @param payoutId - ID of the payout record
+   * @param repId - ID of the sales rep being paid
+   * @param amount - Payout amount
+   * @param userId - ID of user processing the payout
+   * @returns Created journal entry
+   */
+  static async recordCommissionPayout(
+    tx: Prisma.TransactionClient,
+    payoutId: number,
+    repId: number,
+    amount: Decimal,
+    userId: number
+  ): Promise<JournalEntryWithTransactions> {
+    const transactions: TransactionCreateData[] = [
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE, tx),
+        debitAmount: amount,
+        creditAmount: new Decimal(0),
+        description: `Commission payout to Rep #${repId}`,
+      },
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
+        debitAmount: new Decimal(0),
+        creditAmount: amount,
+        description: `Cash disbursed for commission payout to Rep #${repId}`,
+      },
+    ];
+
+    this.validateJournalEntryBalance(transactions);
+
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Commission payout - Rep #${repId} (Payout #${payoutId})`,
+      sourceType: JournalSourceType.payout,
+      sourceId: payoutId,
       createdBy: userId,
       transactions: {
         create: transactions,

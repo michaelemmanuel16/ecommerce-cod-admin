@@ -13,6 +13,7 @@ import {
   emitTransactionReconciled
 } from '../sockets/index';
 import { GL_ACCOUNTS } from '../config/glAccounts';
+import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 
 interface DateFilters {
   startDate?: Date;
@@ -184,7 +185,19 @@ export class FinancialService {
       expenseDateWhere.recordedBy = requester.id;
     }
 
-    const [revenueData, expenses, codCollections, , outForDeliveryOrders, ordersForCommissions] = await Promise.all([
+    // Build outstanding receivables filter (role-based but NOT date-filtered)
+    const outstandingARWhere: Prisma.OrderWhereInput = {
+      status: 'delivered',
+      paymentStatus: { notIn: ['reconciled', 'deposited'] },
+      deletedAt: null
+    };
+    if (requester && requester.role === 'sales_rep') {
+      outstandingARWhere.customerRepId = requester.id;
+    } else if (requester && requester.role === 'delivery_agent') {
+      outstandingARWhere.deliveryAgentId = requester.id;
+    }
+
+    const [revenueData, expenses, codCollections, , outForDeliveryOrders, ordersForCommissions, outstandingReceivablesData] = await Promise.all([
       // Total Revenue = all delivered orders (Accrual basis)
       prisma.order.aggregate({
         where: orderWhere,
@@ -227,6 +240,11 @@ export class FinancialService {
           deliveryAgent: { select: { commissionAmount: true } },
           customerRep: { select: { commissionAmount: true } }
         }
+      }),
+      // Outstanding receivables: delivered, not yet collected/deposited/reconciled
+      prisma.order.aggregate({
+        where: outstandingARWhere,
+        _sum: { totalAmount: true }
       })
     ]);
 
@@ -265,6 +283,7 @@ export class FinancialService {
     }
 
     const pendingCODAmount = (totalRevenue - totalCOD) + outForDelivery;
+    const outstandingReceivables = this.toNumber(outstandingReceivablesData._sum.totalAmount);
 
     const summary = {
       totalRevenue,
@@ -272,6 +291,7 @@ export class FinancialService {
       profit: totalRevenue - totalExpenses,
       codCollected: totalCOD,
       codPending: pendingCODAmount,
+      outstandingReceivables,
       profitMargin: totalRevenue > 0 ? ((totalRevenue - totalExpenses) / totalRevenue) * 100 : 0
     };
 
@@ -341,24 +361,26 @@ export class FinancialService {
    * Create expense record
    */
   async recordExpense(data: CreateExpenseData, requester?: Requester) {
-    const expense = await prisma.expense.create({
-      data: {
-        category: data.category,
-        amount: data.amount,
-        description: data.description,
-        expenseDate: data.expenseDate,
-        recordedBy: requester ? requester.id : parseInt(data.recordedBy, 10),
-        receiptUrl: data.receiptUrl
-      },
-      include: {
-        user: {
-          select: {
-            firstName: true,
-            lastName: true
+    const expense = await prisma.$transaction(async (tx) => {
+      return tx.expense.create({
+        data: {
+          category: data.category,
+          amount: data.amount,
+          description: data.description,
+          expenseDate: data.expenseDate,
+          recordedBy: requester ? requester.id : parseInt(data.recordedBy, 10),
+          receiptUrl: data.receiptUrl
+        },
+        include: {
+          user: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
           }
         }
-      }
-    });
+      });
+    }, TRANSACTION_CONFIG);
 
     logger.info('Expense recorded', {
       expenseId: expense.id,
@@ -593,26 +615,30 @@ export class FinancialService {
       throw new AppError('You do not have permission to reconcile this transaction', 403);
     }
 
-    const updated = await prisma.transaction.update({
-      where: { id: parseInt(transactionId, 10) },
-      data: {
-        status,
-        reference,
-        metadata: {
-          ...((transaction.metadata as any) || {}),
-          reconciliationNotes: notes,
-          reconciledAt: new Date()
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedTx = await tx.transaction.update({
+        where: { id: parseInt(transactionId, 10) },
+        data: {
+          status,
+          reference,
+          metadata: {
+            ...((transaction.metadata as any) || {}),
+            reconciliationNotes: notes,
+            reconciledAt: new Date()
+          }
         }
-      }
-    });
-
-    // Update order payment status if applicable
-    if (transaction.orderId) {
-      await prisma.order.update({
-        where: { id: transaction.orderId },
-        data: { paymentStatus: status }
       });
-    }
+
+      // Update order payment status if applicable
+      if (transaction.orderId) {
+        await tx.order.update({
+          where: { id: transaction.orderId },
+          data: { paymentStatus: status }
+        });
+      }
+
+      return updatedTx;
+    }, TRANSACTION_CONFIG);
 
     logger.info('Transaction reconciled', {
       transactionId,
@@ -673,25 +699,29 @@ export class FinancialService {
       }
     }
 
-    const updated = await prisma.transaction.updateMany({
-      where: {
-        id: { in: transactions.map(t => t.id) }
-      },
-      data: {
-        status: 'deposited',
-        reference: depositReference
-      }
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.transaction.updateMany({
+        where: {
+          id: { in: transactions.map(t => t.id) }
+        },
+        data: {
+          status: 'deposited',
+          reference: depositReference
+        }
+      });
 
-    // Update corresponding orders
-    await prisma.order.updateMany({
-      where: {
-        id: { in: transactions.filter(t => t.orderId).map(t => t.orderId as number) }
-      },
-      data: {
-        paymentStatus: 'deposited'
-      }
-    });
+      // Update corresponding orders
+      await tx.order.updateMany({
+        where: {
+          id: { in: transactions.filter(t => t.orderId).map(t => t.orderId as number) }
+        },
+        data: {
+          paymentStatus: 'deposited'
+        }
+      });
+
+      return result;
+    }, TRANSACTION_CONFIG);
 
     logger.info('COD marked as deposited', {
       transactionIds,
@@ -1118,23 +1148,25 @@ export class FinancialService {
       throw new AppError('You do not have permission to update this expense', 403);
     }
 
-    const updated = await prisma.expense.update({
-      where: { id: parseInt(expenseId, 10) },
-      data: {
-        ...(data.category && { category: data.category }),
-        ...(data.amount !== undefined && { amount: data.amount }),
-        ...(data.description && { description: data.description }),
-        ...(data.expenseDate && { expenseDate: data.expenseDate })
-      },
-      include: {
-        user: {
-          select: {
-            firstName: true,
-            lastName: true
+    const updated = await prisma.$transaction(async (tx) => {
+      return tx.expense.update({
+        where: { id: parseInt(expenseId, 10) },
+        data: {
+          ...(data.category && { category: data.category }),
+          ...(data.amount !== undefined && { amount: data.amount }),
+          ...(data.description && { description: data.description }),
+          ...(data.expenseDate && { expenseDate: data.expenseDate })
+        },
+        include: {
+          user: {
+            select: {
+              firstName: true,
+              lastName: true
+            }
           }
         }
-      }
-    });
+      });
+    }, TRANSACTION_CONFIG);
 
     logger.info('Expense updated', {
       expenseId,
@@ -1167,9 +1199,11 @@ export class FinancialService {
       throw new AppError('You do not have permission to delete this expense', 403);
     }
 
-    await prisma.expense.delete({
-      where: { id: parseInt(expenseId, 10) }
-    });
+    await prisma.$transaction(async (tx) => {
+      await tx.expense.delete({
+        where: { id: parseInt(expenseId, 10) }
+      });
+    }, TRANSACTION_CONFIG);
 
     logger.info('Expense deleted', {
       expenseId,
@@ -1189,19 +1223,13 @@ export class FinancialService {
   /**
    * Get pipeline revenue (expected revenue from active orders)
    */
-  async getPipelineRevenue(filters: DateFilters, requester?: Requester) {
+  async getPipelineRevenue(_filters: DateFilters, requester?: Requester) {
     const where: Prisma.OrderWhereInput = {
       status: {
         in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery']
       },
       deletedAt: null
     };
-
-    if (filters.startDate || filters.endDate) {
-      where.createdAt = {};
-      if (filters.startDate) where.createdAt.gte = filters.startDate;
-      if (filters.endDate) where.createdAt.lte = filters.endDate;
-    }
 
     // Role-based filtering for pipeline revenue
     if (requester && requester.role === 'sales_rep') {
@@ -1335,11 +1363,14 @@ export class FinancialService {
     const kpis = {
       cashInHand: this.toNumber(cashInHand?.currentBalance),
       cashInTransit: this.toNumber(cashInTransitData._sum.totalAmount),
+      outstandingReceivables: this.toNumber(cashInTransitData._sum.totalAmount),
       arAgents: this.toNumber(arAgents?.currentBalance),
       cashExpected: this.toNumber(cashExpectedData._sum.totalAmount),
     };
 
+    const cashAvailableNow = kpis.cashInHand + kpis.arAgents;
     const totalCashPosition = kpis.cashInHand + kpis.cashInTransit + kpis.arAgents + kpis.cashExpected;
+    const totalCashPipeline = cashAvailableNow + kpis.outstandingReceivables + kpis.cashExpected;
 
     // 3. 30-day Forecast
     const forecast = await this.generateCashFlowForecast();
@@ -1348,7 +1379,7 @@ export class FinancialService {
     const agentBreakdown = await this.getAgentCashHoldings(requester);
 
     return {
-      kpis: { ...kpis, totalCashPosition },
+      kpis: { ...kpis, cashAvailableNow, totalCashPosition, totalCashPipeline },
       forecast,
       agentBreakdown
     };

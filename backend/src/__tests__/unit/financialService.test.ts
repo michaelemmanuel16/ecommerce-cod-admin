@@ -19,13 +19,20 @@ describe('FinancialService', () => {
 
   beforeEach(() => {
     financialService = new FinancialService();
+    // Default $transaction mock: executes the callback with prismaMock as the tx
+    (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
+      return callback(prismaMock);
+    });
   });
 
   describe('getFinancialSummary', () => {
     it('should calculate financial summary correctly', async () => {
       prismaMock.order.aggregate
-        .mockResolvedValueOnce({ _sum: { totalAmount: 10000 } } as any) // totalRevenue (order.status: delivered)
-        .mockResolvedValueOnce({ _sum: { totalAmount: 500 } } as any); // outForDeliveryOrders
+        .mockResolvedValueOnce({ _sum: { totalAmount: 10000 } } as any) // totalRevenue (delivered orders)
+        .mockResolvedValueOnce({ _sum: { totalAmount: 500 } } as any)  // outForDeliveryOrders
+        .mockResolvedValueOnce({ _sum: { totalAmount: 0 } } as any);   // outstandingReceivablesData
+
+      prismaMock.order.findMany.mockResolvedValue([] as any); // ordersForCommissions
 
       prismaMock.expense.aggregate.mockResolvedValue({
         _sum: { amount: 2000 }
