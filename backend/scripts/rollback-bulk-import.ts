@@ -3,13 +3,15 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function rollback() {
-  console.log('Finding bulk-imported orders...');
+  const todayStart = new Date('2026-02-13T00:00:00.000Z');
+  console.log(`Finding bulk-imported orders created on or after ${todayStart.toISOString()}...`);
 
-  // 1. Soft-delete all bulk-imported orders
+  // 1. Soft-delete today's bulk-imported orders only
   const deleted = await prisma.order.updateMany({
     where: {
       source: 'bulk_import',
       deletedAt: null,
+      createdAt: { gte: todayStart },
     },
     data: { deletedAt: new Date() },
   });
@@ -44,8 +46,13 @@ async function rollback() {
   await new Promise<void>(resolve => {
     readline.question('\nDelete these customers? (yes/no): ', async (answer: string) => {
       if (answer.toLowerCase() === 'yes') {
+        const customerIds = orphanedCustomers.map(c => c.id);
+        // Hard-delete their orders first (soft-deleted rows still block FK constraint)
+        await prisma.order.deleteMany({
+          where: { customerId: { in: customerIds } },
+        });
         await prisma.customer.deleteMany({
-          where: { id: { in: orphanedCustomers.map(c => c.id) } },
+          where: { id: { in: customerIds } },
         });
         console.log(`Deleted ${orphanedCustomers.length} customers`);
       } else {
