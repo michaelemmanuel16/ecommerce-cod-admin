@@ -78,12 +78,12 @@ export const FinancialDashboard: React.FC = () => {
           />
 
           <FinancialKPICard
-            title="Outstanding AR"
-            value={summary?.codCollected || 0}
+            title="Outstanding Receivables"
+            value={(summary as any)?.outstandingReceivables || 0}
             icon={Clock}
-            iconColor="text-yellow-600"
-            iconBgColor="bg-yellow-100"
-            subtitle="COD + Agent collections"
+            iconColor="text-orange-600"
+            iconBgColor="bg-orange-100"
+            subtitle="Delivered, awaiting collection"
           />
 
           <FinancialKPICard
@@ -95,12 +95,12 @@ export const FinancialDashboard: React.FC = () => {
           />
 
           <FinancialKPICard
-            title="Expected Revenue"
+            title="Pipeline Revenue"
             value={pipelineRevenue?.totalExpected || 0}
             icon={Receipt}
             iconColor="text-purple-600"
             iconBgColor="bg-purple-100"
-            subtitle="From active orders"
+            subtitle="Active orders (not yet delivered)"
           />
         </div>
       </div>
@@ -127,28 +127,28 @@ export const FinancialDashboard: React.FC = () => {
           <Card>
             <div className="p-6">
               <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 rounded-lg bg-yellow-50">
-                  <Truck className="w-5 h-5 text-yellow-600" />
+                <div className="p-2 rounded-lg bg-green-50">
+                  <Wallet className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Cash in Transit</p>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Cash Available Now</p>
                   <h4 className="text-xl font-bold text-gray-900">
-                    {formatCurrency(kpis?.cashInTransit || 0)}
+                    {formatCurrency((kpis as any)?.cashAvailableNow || 0)}
                   </h4>
                 </div>
               </div>
-              <p className="text-[10px] text-gray-400">Delivered, not collected</p>
+              <p className="text-[10px] text-gray-400">Liquid cash (bank + agents)</p>
             </div>
           </Card>
 
           <Card>
             <div className="p-6">
               <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 rounded-lg bg-green-50">
-                  <ArrowRight className="w-5 h-5 text-green-600" />
+                <div className="p-2 rounded-lg bg-yellow-50">
+                  <Truck className="w-5 h-5 text-yellow-600" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Cash Expected</p>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">In-Transit Orders</p>
                   <h4 className="text-xl font-bold text-gray-900">
                     {formatCurrency(kpis?.cashExpected || 0)}
                   </h4>
@@ -162,16 +162,16 @@ export const FinancialDashboard: React.FC = () => {
             <div className="p-6">
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 rounded-lg bg-blue-50">
-                  <Wallet className="w-5 h-5 text-blue-600" />
+                  <ArrowRight className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Available Cash</p>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cash Pipeline</p>
                   <h4 className="text-xl font-bold text-blue-700">
-                    {formatCurrency(kpis?.totalCashPosition || 0)}
+                    {formatCurrency((kpis as any)?.totalCashPipeline || 0)}
                   </h4>
                 </div>
               </div>
-              <p className="text-[10px] text-gray-400">Consolidated liquidity</p>
+              <p className="text-[10px] text-gray-400">Available + expected collections</p>
             </div>
           </Card>
         </div>

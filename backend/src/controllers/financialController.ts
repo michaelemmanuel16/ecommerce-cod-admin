@@ -6,6 +6,8 @@ import agingService from '../services/agingService';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
 import logger from '../utils/logger';
+import { GLAccountService } from '../services/glAccountService';
+import prisma from '../utils/prisma';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -303,6 +305,38 @@ export const getProfitLoss = async (req: AuthRequest, res: Response): Promise<vo
     }
     const profitLoss = await financialService.getProfitLoss(startDate as string, endDate as string);
     res.json(profitLoss);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getFinancialHealth = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const [balanceReport, journalCount] = await Promise.all([
+      GLAccountService.verifyAllAccountBalances(),
+      prisma.journalEntry.count({
+        where: { createdAt: { gte: twentyFourHoursAgo } }
+      })
+    ]);
+
+    res.json({
+      balanceIntegrity: {
+        totalAccounts: balanceReport.totalAccounts,
+        unbalancedCount: balanceReport.unbalanced.length,
+        maxDifference: balanceReport.maxDifference.toFixed(4),
+        isHealthy: balanceReport.unbalanced.length === 0,
+        unbalanced: balanceReport.unbalanced.map(u => ({
+          accountId: u.accountId,
+          code: u.code,
+          difference: u.difference.toFixed(4)
+        }))
+      },
+      journalActivity: {
+        last24Hours: journalCount
+      }
+    });
   } catch (error) {
     throw error;
   }

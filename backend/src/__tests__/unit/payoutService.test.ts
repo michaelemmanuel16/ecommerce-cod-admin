@@ -1,7 +1,14 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { prismaMock } from '../mocks/prisma.mock';
 import payoutService from '../../services/payoutService';
 import { OrderStatus } from '@prisma/client';
+import { GLAutomationService } from '../../services/glAutomationService';
+
+jest.mock('../../services/glAutomationService', () => ({
+    GLAutomationService: {
+        recordCommissionPayout: jest.fn().mockResolvedValue({ id: 1, transactions: [] })
+    }
+}));
 
 describe('PayoutService', () => {
     const repId = 1001;
@@ -90,7 +97,8 @@ describe('PayoutService', () => {
                 amount: 300,
                 method: 'Mobile Money',
                 orderIds: [1, 2, 3],
-                notes: 'Monthly payout'
+                notes: 'Monthly payout',
+                processedBy: 99
             };
 
             const mockPayout = { id: 50, ...payoutData };
@@ -116,6 +124,7 @@ describe('PayoutService', () => {
                     payoutId: 50
                 }
             }));
+            expect(GLAutomationService.recordCommissionPayout).toHaveBeenCalledTimes(1);
         });
     });
 });

@@ -9,6 +9,8 @@ interface AccountFilters {
   isActive?: boolean;
   page?: number;
   limit?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 interface CreateAccountData {
@@ -326,7 +328,7 @@ export class GLService {
    * Get all accounts with filters and pagination
    */
   async getAllAccounts(filters: AccountFilters) {
-    const { accountType, isActive, page = 1, limit = 50 } = filters;
+    const { accountType, isActive, page = 1, limit = 50, startDate, endDate } = filters;
 
     const where: Prisma.AccountWhereInput = {};
     if (accountType) where.accountType = accountType;
@@ -360,8 +362,43 @@ export class GLService {
       prisma.account.count({ where })
     ]);
 
+    // Compute period activity per account when a date range is provided
+    let periodActivityMap: Map<number, { debits: number; credits: number }> | null = null;
+    if (startDate || endDate) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (startDate) dateFilter.gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.lte = end;
+      }
+      const accountIds = accounts.map(a => a.id);
+      const txns = await prisma.accountTransaction.findMany({
+        where: {
+          accountId: { in: accountIds },
+          journalEntry: { entryDate: dateFilter, isVoided: false }
+        },
+        select: { accountId: true, debitAmount: true, creditAmount: true }
+      });
+      periodActivityMap = new Map();
+      for (const txn of txns) {
+        const existing = periodActivityMap.get(txn.accountId) ?? { debits: 0, credits: 0 };
+        periodActivityMap.set(txn.accountId, {
+          debits: existing.debits + Number(txn.debitAmount),
+          credits: existing.credits + Number(txn.creditAmount)
+        });
+      }
+    }
+
+    const accountsWithActivity = accounts.map(acc => ({
+      ...acc,
+      periodActivity: periodActivityMap
+        ? (periodActivityMap.get(acc.id) ?? { debits: 0, credits: 0 })
+        : null
+    }));
+
     return {
-      accounts,
+      accounts: accountsWithActivity,
       pagination: {
         page,
         limit,

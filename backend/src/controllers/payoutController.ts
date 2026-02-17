@@ -54,7 +54,8 @@ export const processPayout = async (req: AuthRequest, res: Response): Promise<vo
             amount,
             method,
             orderIds,
-            notes
+            notes,
+            processedBy: req.user!.id
         });
 
         res.status(201).json({
