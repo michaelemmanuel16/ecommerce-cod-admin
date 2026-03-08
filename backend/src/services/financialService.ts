@@ -14,6 +14,8 @@ import {
 } from '../sockets/index';
 import { GL_ACCOUNTS } from '../config/glAccounts';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
+import { GLAutomationService } from './glAutomationService';
+import { SYSTEM_USER_ID } from '../config/constants';
 
 interface DateFilters {
   startDate?: Date;
@@ -121,11 +123,93 @@ export class FinancialService {
   }
 
   /**
-   * Get financial summary
+   * Get financial summary — GL is the single source of truth for Revenue, Expenses, and Profit.
+   * COD collected and pipeline revenue remain operational metrics from Order/Transaction tables.
    */
   async getFinancialSummary(filters: DateFilters, requester?: Requester) {
     const { startDate, endDate } = filters;
 
+    // --- GL-based accounting metrics ---
+    // Build date filter for GL transactions
+    const glDateWhere: any = {};
+    if (startDate || endDate) {
+      glDateWhere.createdAt = {};
+      if (startDate) glDateWhere.createdAt.gte = startDate;
+      if (endDate) glDateWhere.createdAt.lte = endDate;
+    }
+
+    // Exclude voided journal entries; include only known operational source types
+    const validJournalEntries = await prisma.journalEntry.findMany({
+      where: {
+        isVoided: false,
+        ...(startDate || endDate ? {
+          createdAt: {
+            ...(startDate ? { gte: startDate } : {}),
+            ...(endDate ? { lte: endDate } : {})
+          }
+        } : {})
+      },
+      select: { id: true }
+    });
+    const validJournalEntryIds = validJournalEntries.map(je => je.id);
+
+    // Revenue account codes
+    const revenueAccountCodes = [GL_ACCOUNTS.PRODUCT_REVENUE];
+    // Expense account codes (all 5xxx accounts)
+    const expenseAccountCodes = [
+      GL_ACCOUNTS.COGS,
+      GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE,
+      GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE,
+      GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION,
+      GL_ACCOUNTS.SALES_REP_COMMISSION,
+      GL_ACCOUNTS.OPERATING_EXPENSE
+    ];
+
+    // Query GL account balances for the period
+    const glAggregations = await prisma.accountTransaction.groupBy({
+      by: ['accountId'],
+      where: {
+        journalEntryId: { in: validJournalEntryIds },
+        account: {
+          code: { in: [...revenueAccountCodes, ...expenseAccountCodes] }
+        }
+      },
+      _sum: {
+        debitAmount: true,
+        creditAmount: true
+      }
+    });
+
+    // Get account metadata to map IDs to codes and normal balances
+    const accounts = await prisma.account.findMany({
+      where: {
+        code: { in: [...revenueAccountCodes, ...expenseAccountCodes] }
+      },
+      select: { id: true, code: true, normalBalance: true, accountType: true }
+    });
+    const accountMap = new Map(accounts.map(a => [a.id, a]));
+
+    let totalRevenue = 0;
+    let totalExpenses = 0;
+
+    for (const agg of glAggregations) {
+      const account = accountMap.get(agg.accountId);
+      if (!account) continue;
+
+      const debit = this.toNumber(agg._sum.debitAmount);
+      const credit = this.toNumber(agg._sum.creditAmount);
+      const balance = account.normalBalance === 'debit'
+        ? debit - credit
+        : credit - debit;
+
+      if (account.accountType === 'revenue') {
+        totalRevenue += balance;
+      } else if (account.accountType === 'expense') {
+        totalExpenses += balance;
+      }
+    }
+
+    // --- Operational metrics (from Order/Transaction tables) ---
     const dateWhere: any = {};
     if (startDate || endDate) {
       dateWhere.createdAt = {};
@@ -133,41 +217,9 @@ export class FinancialService {
       if (endDate) dateWhere.createdAt.lte = endDate;
     }
 
-    const expenseDateWhere: any = {};
-    if (startDate || endDate) {
-      expenseDateWhere.expenseDate = {};
-      if (startDate) expenseDateWhere.expenseDate.gte = startDate;
-      if (endDate) expenseDateWhere.expenseDate.lte = endDate;
-    }
-
-    const orderDateWhere: any = {};
-    if (startDate || endDate) {
-      orderDateWhere.updatedAt = {};
-      if (startDate) orderDateWhere.updatedAt.gte = startDate;
-      if (endDate) orderDateWhere.updatedAt.lte = endDate;
-    }
-
-    const orderWhere: Prisma.OrderWhereInput = {
-      status: 'delivered',
-      deletedAt: null
-    };
-
-    if (Object.keys(orderDateWhere).length > 0) {
-      orderWhere.updatedAt = orderDateWhere.updatedAt;
-    }
-
-    // Role-based filtering for financial summary
-    if (requester && requester.role === 'sales_rep') {
-      orderWhere.customerRepId = requester.id;
-    } else if (requester && requester.role === 'delivery_agent') {
-      orderWhere.deliveryAgentId = requester.id;
-    }
-
     const transactionWhere: Prisma.TransactionWhereInput = {
       type: 'cod_collection',
-      order: {
-        deletedAt: null
-      }
+      order: { deletedAt: null }
     };
     if (Object.keys(dateWhere).length > 0) {
       transactionWhere.createdAt = dateWhere.createdAt;
@@ -179,36 +231,14 @@ export class FinancialService {
       };
     }
 
+    // Outstanding Receivables from GL Cash in Transit account
+    const cashInTransitAccount = await prisma.account.findUnique({
+      where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT }
+    });
+    const outstandingReceivables = this.toNumber(cashInTransitAccount?.currentBalance);
 
-    // Role-based filtering for financial summary expenses
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      expenseDateWhere.recordedBy = requester.id;
-    }
-
-    // Build outstanding receivables filter (role-based but NOT date-filtered)
-    const outstandingARWhere: Prisma.OrderWhereInput = {
-      status: 'delivered',
-      paymentStatus: { notIn: ['reconciled', 'deposited'] },
-      deletedAt: null
-    };
-    if (requester && requester.role === 'sales_rep') {
-      outstandingARWhere.customerRepId = requester.id;
-    } else if (requester && requester.role === 'delivery_agent') {
-      outstandingARWhere.deliveryAgentId = requester.id;
-    }
-
-    const [revenueData, expenses, codCollections, , outForDeliveryOrders, ordersForCommissions, outstandingReceivablesData] = await Promise.all([
-      // Total Revenue = all delivered orders (Accrual basis)
-      prisma.order.aggregate({
-        where: orderWhere,
-        _sum: { totalAmount: true }
-      }),
-      // Total Expenses
-      prisma.expense.aggregate({
-        where: expenseDateWhere,
-        _sum: { amount: true }
-      }),
-      // Actual COD Collected = transactions that are collected/deposited/reconciled
+    const [codCollections, outForDeliveryOrders] = await Promise.all([
+      // COD Collected (operational metric)
       prisma.transaction.aggregate({
         where: {
           ...transactionWhere,
@@ -216,76 +246,26 @@ export class FinancialService {
         },
         _sum: { amount: true }
       }),
-      // Pending Transactions (collections made but not yet processed)
-      prisma.transaction.aggregate({
-        where: {
-          ...transactionWhere,
-          status: 'pending'
-        },
-        _sum: { amount: true }
-      }),
-      // Out-for-delivery orders (expected collection in pipeline)
+      // Pipeline Revenue: out-for-delivery orders (not yet in GL)
       prisma.order.aggregate({
         where: {
-          ...orderWhere,
           status: 'out_for_delivery',
           codAmount: { not: null },
+          deletedAt: null,
+          ...(requester && requester.role === 'delivery_agent' ? { deliveryAgentId: requester.id } : {}),
+          ...(requester && requester.role === 'sales_rep' ? { customerRepId: requester.id } : {})
         },
-        _sum: { totalAmount: true }
-      }),
-      // Accrued Commissions (on delivered orders in this period)
-      prisma.order.findMany({
-        where: orderWhere,
-        include: {
-          deliveryAgent: { select: { commissionAmount: true } },
-          customerRep: { select: { commissionAmount: true } }
-        }
-      }),
-      // Outstanding receivables: delivered, not yet collected/deposited/reconciled
-      prisma.order.aggregate({
-        where: outstandingARWhere,
         _sum: { totalAmount: true }
       })
     ]);
 
-    // Calculate commissions manually from orders
-    let calculatedCommissions = 0;
-    (ordersForCommissions as any || []).forEach((o: any) => {
-      calculatedCommissions += Number(o.deliveryAgent?.commissionAmount || 0);
-      calculatedCommissions += Number(o.customerRep?.commissionAmount || 0);
-    });
-
-    // Actually, let's use a more robust way to get COGS
-    const cogsAggr = await prisma.orderItem.findMany({
-      where: { order: orderWhere },
-      include: { product: { select: { cogs: true } } }
-    });
-
-    let calculatedCOGS = 0;
-    if (cogsAggr && Array.isArray(cogsAggr)) {
-      cogsAggr.forEach(item => {
-        calculatedCOGS += Number(item.product?.cogs || 0) * item.quantity;
-      });
-    }
-
-    const totalRevenue = this.toNumber(revenueData._sum.totalAmount);
-    const totalExpenses = this.toNumber(expenses._sum.amount) + calculatedCommissions + calculatedCOGS;
-    let totalCOD = this.toNumber(codCollections._sum.amount);
+    const totalCOD = this.toNumber(codCollections._sum.amount);
     const outForDelivery = this.toNumber(outForDeliveryOrders._sum.totalAmount);
+    // Pending COD = outstanding receivables (GL, delivered but uncollected) + out-for-delivery (operational)
+    // Uses GL Cash in Transit for delivered-uncollected to stay consistent with accrual accounting
+    const pendingCODAmount = outstandingReceivables + outForDelivery;
 
-    // If no date range is provided, we should include the actual cash held by agents 
-    // (un-deposited collections) in the "COD Collected" metric
-    if (!startDate && !endDate) {
-      const agentBalances = await prisma.agentBalance.aggregate({
-        _sum: { currentBalance: true }
-      });
-      totalCOD += this.toNumber(agentBalances?._sum?.currentBalance);
-    }
-
-    const pendingCODAmount = (totalRevenue - totalCOD) + outForDelivery;
-    const outstandingReceivables = this.toNumber(outstandingReceivablesData._sum.totalAmount);
-
-    const summary = {
+    return {
       totalRevenue,
       totalExpenses,
       profit: totalRevenue - totalExpenses,
@@ -294,8 +274,6 @@ export class FinancialService {
       outstandingReceivables,
       profitMargin: totalRevenue > 0 ? ((totalRevenue - totalExpenses) / totalRevenue) * 100 : 0
     };
-
-    return summary;
   }
 
   /**
@@ -361,14 +339,20 @@ export class FinancialService {
    * Create expense record
    */
   async recordExpense(data: CreateExpenseData, requester?: Requester) {
+    if (!data.amount || data.amount <= 0) {
+      throw new AppError('Expense amount must be a positive number', 400);
+    }
+
+    const userId = requester ? requester.id : parseInt(data.recordedBy, 10);
+
     const expense = await prisma.$transaction(async (tx) => {
-      return tx.expense.create({
+      const created = await tx.expense.create({
         data: {
           category: data.category,
           amount: data.amount,
           description: data.description,
           expenseDate: data.expenseDate,
-          recordedBy: requester ? requester.id : parseInt(data.recordedBy, 10),
+          recordedBy: userId,
           receiptUrl: data.receiptUrl
         },
         include: {
@@ -380,7 +364,23 @@ export class FinancialService {
           }
         }
       });
+
+      // Create GL journal entry for the expense
+      await GLAutomationService.createExpenseGLEntry(
+        tx as any,
+        created.id,
+        data.amount,
+        data.description,
+        userId
+      );
+
+      // Remap Prisma relation `user` → `recordedBy` for frontend compatibility
+      const { user, ...rest } = created as any;
+      return { ...rest, recordedBy: user || null };
     }, TRANSACTION_CONFIG);
+
+    // Invalidate forecast cache since expense data changed
+    this.forecastCache = null;
 
     logger.info('Expense recorded', {
       expenseId: expense.id,
@@ -420,7 +420,7 @@ export class FinancialService {
 
     const skip = (page - 1) * limit;
 
-    const [expenses, total] = await Promise.all([
+    const [rawExpenses, total] = await Promise.all([
       prisma.expense.findMany({
         where,
         skip,
@@ -437,6 +437,12 @@ export class FinancialService {
       }),
       prisma.expense.count({ where })
     ]);
+
+    // Remap Prisma relation `user` → `recordedBy` for frontend compatibility
+    const expenses = rawExpenses.map(({ user, ...rest }: any) => ({
+      ...rest,
+      recordedBy: user || null
+    }));
 
     return {
       expenses,
@@ -711,17 +717,49 @@ export class FinancialService {
       });
 
       // Update corresponding orders
+      const orderIds = transactions.filter(t => t.orderId).map(t => t.orderId as number);
       await tx.order.updateMany({
+        where: { id: { in: orderIds } },
+        data: { paymentStatus: 'deposited' }
+      });
+
+      // Create GL deposit entry for non-reconciled transactions only
+      // (reconciled collections already have GL entries from the reconciliation path)
+      const reconciledCount = await (tx as any).agentCollection.count({
         where: {
-          id: { in: transactions.filter(t => t.orderId).map(t => t.orderId as number) }
-        },
-        data: {
-          paymentStatus: 'deposited'
+          orderId: { in: orderIds },
+          status: 'reconciled'
         }
       });
 
+      const totalTransactions = transactions.length;
+      const nonReconciledCount = totalTransactions - reconciledCount;
+
+      if (nonReconciledCount > 0) {
+        // Calculate amount for non-reconciled transactions only
+        const reconciledOrderIds = new Set(
+          (await (tx as any).agentCollection.findMany({
+            where: { orderId: { in: orderIds }, status: 'reconciled' },
+            select: { orderId: true }
+          })).map((c: any) => c.orderId)
+        );
+
+        const nonReconciledAmount = transactions
+          .filter(t => !reconciledOrderIds.has(t.orderId))
+          .reduce((sum, t) => sum + Number(t.amount), 0);
+
+        if (nonReconciledAmount > 0) {
+          const userId = requester?.id ?? SYSTEM_USER_ID;
+          const sourceId = transactions[0].id;
+          await GLAutomationService.createDepositGLEntry(tx as any, nonReconciledAmount, sourceId, userId);
+        }
+      }
+
       return result;
     }, TRANSACTION_CONFIG);
+
+    // Invalidate forecast cache since deposit data changed
+    this.forecastCache = null;
 
     logger.info('COD marked as deposited', {
       transactionIds,
@@ -1085,10 +1123,27 @@ export class FinancialService {
 
     const totalMarketingExpense = marketingExpenses.reduce((sum, e) => sum + e.amount, 0);
 
+    // Query commission expenses from GL accounts (5040, 5050)
+    const commissionDateFilter: any = {};
+    if (startDate || endDate) {
+      commissionDateFilter.createdAt = {};
+      if (startDate) commissionDateFilter.createdAt.gte = startDate;
+      if (endDate) commissionDateFilter.createdAt.lte = endDate;
+    }
+
+    const commissionAgg = await prisma.accountTransaction.aggregate({
+      where: {
+        account: { code: { in: [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, GL_ACCOUNTS.SALES_REP_COMMISSION] } },
+        ...commissionDateFilter
+      },
+      _sum: { debitAmount: true }
+    });
+    const totalCommissions = this.toNumber(commissionAgg._sum?.debitAmount);
+
     const grossProfit = totalRevenue - totalCOGS;
     const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
 
-    const netProfit = grossProfit - totalMarketingExpense;
+    const netProfit = grossProfit - totalMarketingExpense - totalCommissions;
     const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
     // Format product profitability
@@ -1112,11 +1167,18 @@ export class FinancialService {
         totalShippingCost,
         totalDiscount,
         totalMarketingExpense,
+        totalCommissions,
         grossProfit,
         grossMargin,
         netProfit,
         netMargin,
-        orderCount: orders.length
+        orderCount: orders.length,
+        dataSources: {
+          revenue: 'Order.subtotal (per-product breakdown)',
+          cogs: 'Product.cogs (per-product)',
+          commissions: 'GL accounts 5040/5050 (accrual)',
+          marketing: 'Expense table (category=marketing)',
+        }
       },
       products,
       daily,
@@ -1135,6 +1197,10 @@ export class FinancialService {
       expenseDate?: Date;
     }
     , requester?: Requester) {
+    if (data.amount !== undefined && data.amount <= 0) {
+      throw new AppError('Expense amount must be a positive number', 400);
+    }
+
     const expense = await prisma.expense.findUnique({
       where: { id: parseInt(expenseId, 10) }
     });
@@ -1148,9 +1214,13 @@ export class FinancialService {
       throw new AppError('You do not have permission to update this expense', 403);
     }
 
+    const numericId = parseInt(expenseId, 10);
     const updated = await prisma.$transaction(async (tx) => {
-      return tx.expense.update({
-        where: { id: parseInt(expenseId, 10) },
+      // Void old GL entry before updating
+      await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericId, requester?.id ?? SYSTEM_USER_ID);
+
+      const result = await tx.expense.update({
+        where: { id: numericId },
         data: {
           ...(data.category && { category: data.category }),
           ...(data.amount !== undefined && { amount: data.amount }),
@@ -1166,7 +1236,25 @@ export class FinancialService {
           }
         }
       });
+
+      // Create new GL entry with updated amount
+      const newAmount = data.amount !== undefined ? data.amount : Number(expense.amount);
+      const newDescription = data.description || expense.description;
+      await GLAutomationService.createExpenseGLEntry(
+        tx as any,
+        numericId,
+        newAmount,
+        newDescription,
+        requester?.id ?? SYSTEM_USER_ID
+      );
+
+      // Remap Prisma relation `user` → `recordedBy` for frontend compatibility
+      const { user, ...rest } = result as any;
+      return { ...rest, recordedBy: user || null };
     }, TRANSACTION_CONFIG);
+
+    // Invalidate forecast cache since expense data changed
+    this.forecastCache = null;
 
     logger.info('Expense updated', {
       expenseId,
@@ -1199,11 +1287,18 @@ export class FinancialService {
       throw new AppError('You do not have permission to delete this expense', 403);
     }
 
+    const numericExpenseId = parseInt(expenseId, 10);
     await prisma.$transaction(async (tx) => {
+      // Void GL entry before deleting expense
+      await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericExpenseId, requester?.id ?? SYSTEM_USER_ID);
+
       await tx.expense.delete({
-        where: { id: parseInt(expenseId, 10) }
+        where: { id: numericExpenseId }
       });
     }, TRANSACTION_CONFIG);
+
+    // Invalidate forecast cache since expense data changed
+    this.forecastCache = null;
 
     logger.info('Expense deleted', {
       expenseId,
@@ -1300,29 +1395,49 @@ export class FinancialService {
 
     if (balances.length === 0) return [];
 
-    // 2. For each agent, get details from AgentCollection
-    const holdings: AgentHolding[] = await Promise.all(balances.map(async (b) => {
-      // Find order count and oldest collection date among non-deposited collections
-      const collections = await (prisma as any).agentCollection.findMany({
+    // 2. Batch query all agent collection stats in a single groupBy (avoids N+1)
+    const agentIds = balances.map(b => b.agentId);
+    const [collectionCounts, oldestCollections] = await Promise.all([
+      (prisma as any).agentCollection.groupBy({
+        by: ['agentId'],
         where: {
-          agentId: b.agentId,
+          agentId: { in: agentIds },
           status: { in: ['draft', 'verified', 'approved'] }
         },
-        orderBy: { collectionDate: 'asc' },
-        select: { collectionDate: true }
-      });
-
-      return {
-        agent: {
-          id: b.agent.id,
-          firstName: b.agent.firstName,
-          lastName: b.agent.lastName,
-          email: b.agent.email
+        _count: { id: true },
+      }),
+      (prisma as any).agentCollection.groupBy({
+        by: ['agentId'],
+        where: {
+          agentId: { in: agentIds },
+          status: { in: ['draft', 'verified', 'approved'] }
         },
-        totalCollected: this.toNumber(b.currentBalance),
-        orderCount: collections.length,
-        OldestCollectionDate: collections[0]?.collectionDate || b.updatedAt
-      };
+        _min: { collectionDate: true },
+      }),
+    ]);
+
+    // Build lookup maps
+    const countMap = new Map<number, number>();
+    for (const row of collectionCounts) {
+      countMap.set(row.agentId, row._count.id);
+    }
+    const oldestMap = new Map<number, Date>();
+    for (const row of oldestCollections) {
+      if (row._min.collectionDate) {
+        oldestMap.set(row.agentId, row._min.collectionDate);
+      }
+    }
+
+    const holdings: AgentHolding[] = balances.map((b) => ({
+      agent: {
+        id: b.agent.id,
+        firstName: b.agent.firstName,
+        lastName: b.agent.lastName,
+        email: b.agent.email
+      },
+      totalCollected: this.toNumber(b.currentBalance),
+      orderCount: countMap.get(b.agentId) || 0,
+      OldestCollectionDate: oldestMap.get(b.agentId) || b.updatedAt
     }));
 
     // Sort by total collected (descending)
@@ -1596,14 +1711,21 @@ export class FinancialService {
       }
     });
 
-    // Use Prisma groupBy for efficient aggregation
+    // Exclude voided entries. Prisma groupBy doesn't support relation filters,
+    // so pre-fetch valid journal entry IDs.
+    const validJournalEntries = await prisma.journalEntry.findMany({
+      where: {
+        isVoided: false,
+        createdAt: { gte: startDate, lte: endDate }
+      },
+      select: { id: true }
+    });
+    const validJournalEntryIds = validJournalEntries.map(je => je.id);
+
     const aggregations = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
-        createdAt: {
-          gte: startDate,
-          lte: endDate
-        }
+        journalEntryId: { in: validJournalEntryIds }
       },
       _sum: {
         debitAmount: true,

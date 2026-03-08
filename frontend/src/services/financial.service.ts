@@ -5,6 +5,8 @@ export interface FinancialSummary {
   totalExpenses: number;
   profit: number;
   codCollected: number;
+  codPending: number;
+  outstandingReceivables: number;
   profitMargin: number;
 }
 
@@ -158,9 +160,12 @@ export interface CollectionRecord {
 export interface CashFlowKPI {
   cashInHand: number;
   cashInTransit: number;
+  outstandingReceivables: number;
   arAgents: number;
   cashExpected: number;
+  cashAvailableNow: number;
   totalCashPosition: number;
+  totalCashPipeline: number;
 }
 
 export interface CashFlowForecastPoint {
@@ -177,11 +182,13 @@ export interface ProfitabilityAnalysis {
     totalShippingCost: number;
     totalDiscount: number;
     totalMarketingExpense: number;
+    totalCommissions: number;
     grossProfit: number;
     grossMargin: number;
     netProfit: number;
     netMargin: number;
     orderCount: number;
+    dataSources?: Record<string, string>;
   };
   products: {
     id: number;

@@ -5,7 +5,7 @@ import { FinancialKPICard } from '../../components/financial/cards/FinancialKPIC
 import { RevenueExpenseTrendChart } from '../../components/financial/charts/RevenueExpenseTrendChart';
 import { CashFlowForecastChart } from '../../components/financial/charts/CashFlowForecastChart';
 import { Card } from '../../components/ui/Card';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatPercentage } from '../../utils/format';
 
 export const FinancialDashboard: React.FC = () => {
   const {
@@ -74,12 +74,12 @@ export const FinancialDashboard: React.FC = () => {
             icon={TrendingUp}
             iconColor={summary && summary.profit >= 0 ? 'text-blue-600' : 'text-red-600'}
             iconBgColor={summary && summary.profit >= 0 ? 'bg-blue-100' : 'bg-red-100'}
-            subtitle={`Margin: ${summary?.profitMargin.toFixed(1) || 0}%`}
+            subtitle={`Margin: ${summary ? formatPercentage(summary.profitMargin) : '0%'}`}
           />
 
           <FinancialKPICard
             title="Outstanding Receivables"
-            value={(summary as any)?.outstandingReceivables || 0}
+            value={summary?.outstandingReceivables || 0}
             icon={Clock}
             iconColor="text-orange-600"
             iconBgColor="bg-orange-100"
@@ -133,7 +133,7 @@ export const FinancialDashboard: React.FC = () => {
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Cash Available Now</p>
                   <h4 className="text-xl font-bold text-gray-900">
-                    {formatCurrency((kpis as any)?.cashAvailableNow || 0)}
+                    {formatCurrency(kpis?.cashAvailableNow || 0)}
                   </h4>
                 </div>
               </div>
@@ -167,7 +167,7 @@ export const FinancialDashboard: React.FC = () => {
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cash Pipeline</p>
                   <h4 className="text-xl font-bold text-blue-700">
-                    {formatCurrency((kpis as any)?.totalCashPipeline || 0)}
+                    {formatCurrency(kpis?.totalCashPipeline || 0)}
                   </h4>
                 </div>
               </div>

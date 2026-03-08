@@ -5,6 +5,7 @@ import { ExpenseCategoryCard } from './cards/ExpenseCategoryCard';
 import { Card } from '../ui/Card';
 import { AddExpenseModal } from './modals/AddExpenseModal';
 import { formatCurrency } from '../../utils/format';
+import type { Expense } from '../../services/financial.service';
 
 export const ExpenseManagementTab: React.FC = () => {
   const {
@@ -20,9 +21,10 @@ export const ExpenseManagementTab: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   useEffect(() => {
-    fetchExpenses();
+    fetchExpenses({ category: categoryFilter || undefined });
     fetchExpenseBreakdown(dateRange.startDate, dateRange.endDate);
   }, [dateRange.startDate, dateRange.endDate, categoryFilter]);
 
@@ -239,6 +241,10 @@ export const ExpenseManagementTab: React.FC = () => {
                         <button
                           className="text-blue-600 hover:text-blue-900 mr-3"
                           title="Edit expense"
+                          onClick={() => {
+                            setEditingExpense(expense);
+                            setIsAddModalOpen(true);
+                          }}
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
@@ -261,7 +267,11 @@ export const ExpenseManagementTab: React.FC = () => {
 
       <AddExpenseModal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setEditingExpense(null);
+        }}
+        expense={editingExpense}
       />
     </div>
   );

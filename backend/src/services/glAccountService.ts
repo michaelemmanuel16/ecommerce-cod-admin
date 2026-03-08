@@ -7,20 +7,23 @@ import { Decimal } from '@prisma/client/runtime/library';
  * Decouples business logic from database auto-incrementing/fixed IDs.
  */
 export class GLAccountService {
-    private static idCache: Map<string, number> = new Map();
+    private static idCache: Map<string, { id: number; cachedAt: number }> = new Map();
+    private static readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
     /**
      * Get the database ID for a GL account code (e.g., '1015')
-     * Uses a static cache to minimize database hits.
-     * 
+     * Uses a static cache with 5-minute TTL to minimize database hits.
+     *
      * @param code - 4-digit account code
      * @param tx - Optional transaction client (use this to avoid connection pool exhaustion)
      * @returns Database ID
      * @throws Error if account does not exist
      */
     static async getAccountIdByCode(code: string, tx?: any): Promise<number> {
-        const cachedId = this.idCache.get(code);
-        if (cachedId) return cachedId;
+        const cached = this.idCache.get(code);
+        if (cached && Date.now() - cached.cachedAt < this.CACHE_TTL_MS) {
+            return cached.id;
+        }
 
         const client = tx || prisma;
         const account = await client.account.findUnique({
@@ -33,12 +36,12 @@ export class GLAccountService {
             throw new Error(`Critical Error: GL Account ${code} not found. Please ensure Chart of Accounts is seeded.`);
         }
 
-        this.idCache.set(code, account.id);
+        this.idCache.set(code, { id: account.id, cachedAt: Date.now() });
         return account.id;
     }
 
     /**
-     * Clear the account ID cache (useful for tests)
+     * Clear the account ID cache (useful for tests or after account create/update/delete)
      */
     static clearCache(): void {
         this.idCache.clear();

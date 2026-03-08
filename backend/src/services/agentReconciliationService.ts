@@ -27,6 +27,21 @@ export class AgentReconciliationService {
             },
         });
 
+        // Update AgentBalance — canonical path for balance tracking
+        await (tx as any).agentBalance.upsert({
+            where: { agentId },
+            create: {
+                agentId,
+                totalCollected: amount,
+                totalDeposited: 0,
+                currentBalance: amount,
+            },
+            update: {
+                totalCollected: { increment: amount },
+                currentBalance: { increment: amount },
+            },
+        });
+
         logger.info(`Draft collection created for order ${orderId}`, {
             collectionId: collection.id,
             agentId,

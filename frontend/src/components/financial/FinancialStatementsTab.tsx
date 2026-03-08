@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { Card } from '../ui/Card';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatPercentage } from '../../utils/format';
 import { FileText, Download, RefreshCw, Layers, PieChart } from 'lucide-react';
 
 export const FinancialStatementsTab: React.FC = () => {
@@ -11,6 +11,7 @@ export const FinancialStatementsTab: React.FC = () => {
         profitLoss,
         loadingStates,
         dateRange,
+        error,
         fetchBalanceSheet,
         fetchProfitLoss
     } = useFinancialStore();
@@ -34,7 +35,7 @@ export const FinancialStatementsTab: React.FC = () => {
     );
 
     const renderBalanceSheet = () => {
-        if (!balanceSheet) return null;
+        if (!balanceSheet) return renderEmptyState('Balance Sheet');
 
         return (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -88,8 +89,19 @@ export const FinancialStatementsTab: React.FC = () => {
         );
     };
 
+    const renderEmptyState = (label: string) => (
+        <Card className="p-12">
+            <div className="text-center text-gray-500">
+                <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No {label} Data</h3>
+                <p className="text-sm">Select a date range and click Refresh to load the {label.toLowerCase()} statement.</p>
+                {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+            </div>
+        </Card>
+    );
+
     const renderProfitLoss = () => {
-        if (!profitLoss) return null;
+        if (!profitLoss) return renderEmptyState('Profit & Loss');
 
         return (
             <div className="space-y-6">
@@ -119,7 +131,7 @@ export const FinancialStatementsTab: React.FC = () => {
                         {renderAccountRow('Gross Profit', profitLoss.grossProfit, true)}
                         <div className="flex justify-between text-sm text-gray-600 mt-1">
                             <span>Gross Margin</span>
-                            <span>{profitLoss.grossMarginPercentage.toFixed(1)}%</span>
+                            <span>{formatPercentage(profitLoss.grossMarginPercentage)}</span>
                         </div>
                     </div>
 
@@ -135,7 +147,7 @@ export const FinancialStatementsTab: React.FC = () => {
                         {renderAccountRow('Net Income', profitLoss.netIncome, true)}
                         <div className="flex justify-between text-sm text-gray-600 mt-1">
                             <span>Net Margin</span>
-                            <span>{profitLoss.netMarginPercentage.toFixed(1)}%</span>
+                            <span>{formatPercentage(profitLoss.netMarginPercentage)}</span>
                         </div>
                     </div>
                 </Card>
@@ -144,8 +156,8 @@ export const FinancialStatementsTab: React.FC = () => {
     };
 
     const statementTabs = [
-        { id: 'profit-loss', label: 'Profit & Loss (P&L)', icon: FileText },
-        { id: 'balance-sheet', label: 'Balance Sheet', icon: Layers },
+        { id: 'profit-loss' as const, label: 'Profit & Loss (P&L)', icon: FileText },
+        { id: 'balance-sheet' as const, label: 'Balance Sheet', icon: Layers },
     ];
 
     return (
@@ -155,7 +167,7 @@ export const FinancialStatementsTab: React.FC = () => {
                     {statementTabs.map(tab => (
                         <button
                             key={tab.id}
-                            onClick={() => setActiveStatement(tab.id as any)}
+                            onClick={() => setActiveStatement(tab.id)}
                             className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeStatement === tab.id
                                 ? 'bg-blue-50 text-blue-700 border border-blue-200'
                                 : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
@@ -175,7 +187,10 @@ export const FinancialStatementsTab: React.FC = () => {
                         <RefreshCw className={`w-4 h-4 mr-2 ${loadingStates.statements ? 'animate-spin' : ''}`} />
                         Refresh
                     </button>
-                    <button className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700">
+                    <button
+                        className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+                        onClick={() => window.print()}
+                    >
                         <Download className="w-4 h-4 mr-2" />
                         Export PDF
                     </button>

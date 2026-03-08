@@ -49,8 +49,13 @@ describe('FinancialService Cash Flow Report', () => {
                 return Promise.resolve({ _sum: { totalAmount: 0 } }) as any;
             });
 
-            // Mock agent collections for holdings
-            (prismaMock as any).agentCollection.findMany.mockResolvedValue([]);
+            // Mock agent collections for holdings (batched groupBy queries)
+            (prismaMock as any).agentCollection = {
+                ...(prismaMock as any).agentCollection,
+                groupBy: jest.fn().mockResolvedValue([
+                    { agentId: 1, _count: { id: 3 }, _min: { collectionDate: new Date() } }
+                ]),
+            };
 
             // Mock historical data for forecast
             prismaMock.transaction.aggregate.mockResolvedValue({

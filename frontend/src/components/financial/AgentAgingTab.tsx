@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { Card } from '../ui/Card';
 import { formatCurrency } from '../../utils/format';
-import { Download, AlertCircle, Clock, Users, ShieldAlert, BarChart3, Filter, FileText, Mail, Ban, Eye, ChevronUp, ChevronDown } from 'lucide-react';
+import { Download, AlertCircle, Clock, Users, ShieldAlert, BarChart3, Filter, Mail, Ban, Eye, ChevronUp, ChevronDown } from 'lucide-react';
 import { financialService } from '../../services/financial.service';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import toast from 'react-hot-toast';
@@ -292,10 +292,10 @@ export const AgentAgingTab: React.FC = () => {
                                             <td className="px-6 py-4 whitespace-nowrap text-right">
                                                 <div className="flex items-center justify-end space-x-1">
                                                     <button
-                                                        title="Send Reminder Email"
+                                                        title="Send Reminder Email (Coming Soon)"
                                                         aria-label={`Send reminder to ${entry.agent.firstName}`}
-                                                        className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
-                                                        onClick={() => toast.success(`Reminder sent to ${entry.agent.firstName}`)}
+                                                        className="p-1.5 text-gray-300 cursor-not-allowed rounded"
+                                                        disabled
                                                     >
                                                         <Mail className="w-3.5 h-3.5" />
                                                     </button>
@@ -308,10 +308,10 @@ export const AgentAgingTab: React.FC = () => {
                                                         <Eye className="w-3.5 h-3.5" />
                                                     </Link>
                                                     <button
-                                                        title="Block Agent"
+                                                        title="Block Agent (Coming Soon)"
                                                         aria-label={`Block agent ${entry.agent.firstName}`}
-                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                                        onClick={() => toast.error(`Block functionality for ${entry.agent.firstName} triggered`)}
+                                                        className="p-1.5 text-gray-300 cursor-not-allowed rounded"
+                                                        disabled
                                                     >
                                                         <Ban className="w-3.5 h-3.5" />
                                                     </button>

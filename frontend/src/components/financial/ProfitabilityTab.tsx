@@ -64,8 +64,8 @@ export const ProfitabilityTab: React.FC = () => {
     if (loadingStates.profitability || !profitabilityAnalysis) {
         return (
             <div className="space-y-6 animate-pulse">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {[...Array(4)].map((_, i) => (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+                    {[...Array(5)].map((_, i) => (
                         <Card key={i} className="h-32">
                             <div />
                         </Card>
@@ -125,14 +125,14 @@ export const ProfitabilityTab: React.FC = () => {
             </div>
 
             {/* KPI Overviews */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                 <FinancialKPICard
                     title="Gross Profit"
                     value={summary.grossProfit}
                     icon={DollarSign}
                     iconColor="text-green-600"
                     iconBgColor="bg-green-100"
-                    subtitle={`Margin: ${summary.grossMargin.toFixed(1)}%`}
+                    subtitle={`Margin: ${formatPercentage(summary.grossMargin)}`}
                 />
                 <FinancialKPICard
                     title="Net Profit"
@@ -140,7 +140,7 @@ export const ProfitabilityTab: React.FC = () => {
                     icon={TrendingUp}
                     iconColor="text-blue-600"
                     iconBgColor="bg-blue-100"
-                    subtitle={`Margin: ${summary.netMargin.toFixed(1)}%`}
+                    subtitle={`Margin: ${formatPercentage(summary.netMargin)}`}
                 />
                 <FinancialKPICard
                     title="Total COGS"
@@ -149,6 +149,14 @@ export const ProfitabilityTab: React.FC = () => {
                     iconColor="text-orange-600"
                     iconBgColor="bg-orange-100"
                     subtitle={`${summary.orderCount} orders`}
+                />
+                <FinancialKPICard
+                    title="Commissions"
+                    value={summary.totalCommissions}
+                    icon={TrendingDown}
+                    iconColor="text-red-600"
+                    iconBgColor="bg-red-100"
+                    subtitle="Agent & Rep commissions"
                 />
                 <FinancialKPICard
                     title="Marketing & Ship"
@@ -185,7 +193,15 @@ export const ProfitabilityTab: React.FC = () => {
                                     tick={{ fontSize: 12 }}
                                     tickFormatter={(date) => new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                                 />
-                                <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `$${value}`} />
+                                <YAxis
+                                    tick={{ fontSize: 12 }}
+                                    width={80}
+                                    tickFormatter={(value) => {
+                                        if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+                                        if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+                                        return value.toLocaleString();
+                                    }}
+                                />
                                 <Tooltip
                                     formatter={(value: number) => formatCurrency(value)}
                                     labelFormatter={(label) => new Date(label).toLocaleDateString(undefined, { dateStyle: 'long' })}
@@ -244,13 +260,43 @@ export const ProfitabilityTab: React.FC = () => {
                                             product.grossMargin >= 10 ? 'bg-blue-100 text-blue-800' :
                                                 'bg-red-100 text-red-800'
                                             }`}>
-                                            {product.grossMargin.toFixed(1)}%
+                                            {formatPercentage(product.grossMargin)}
                                         </span>
                                     </TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
                     </Table>
+
+                    {/* Profitability Summary — from Gross Profit to Net Profit */}
+                    <div className="mt-6 border-t border-gray-200 pt-4 space-y-2">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Total Revenue</span>
+                            <span className="font-medium">{formatCurrency(summary.totalRevenue)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Less: Total COGS</span>
+                            <span className="text-red-600">-{formatCurrency(summary.totalCOGS)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm font-medium border-t border-gray-100 pt-2">
+                            <span>Gross Profit</span>
+                            <span className="text-green-600">{formatCurrency(summary.grossProfit)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Less: Commissions (Agent & Rep)</span>
+                            <span className="text-red-600">-{formatCurrency(summary.totalCommissions)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Less: Marketing & Shipping</span>
+                            <span className="text-red-600">-{formatCurrency(summary.totalMarketingExpense + summary.totalShippingCost)}</span>
+                        </div>
+                        <div className="flex justify-between text-base font-semibold border-t-2 border-gray-300 pt-2">
+                            <span>Net Profit</span>
+                            <span className={summary.netProfit >= 0 ? 'text-green-700' : 'text-red-700'}>
+                                {formatCurrency(summary.netProfit)}
+                            </span>
+                        </div>
+                    </div>
                 </div>
             </Card>
         </div>

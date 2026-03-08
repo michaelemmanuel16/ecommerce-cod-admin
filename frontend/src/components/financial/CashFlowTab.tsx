@@ -8,7 +8,6 @@ import {
   UserCheck,
   TrendingUp,
   Download,
-  Mail,
   AlertCircle,
   ArrowRight
 } from 'lucide-react';
@@ -145,7 +144,13 @@ export const CashFlowTab: React.FC = () => {
                 ))
               )}
               {agentBreakdown.length > 8 && (
-                <button className="w-full py-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                <button
+                  className="w-full py-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  onClick={() => {
+                    const agentSection = document.getElementById('agent-aging-section');
+                    if (agentSection) agentSection.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                >
                   View All {agentBreakdown.length} Agents
                 </button>
               )}
