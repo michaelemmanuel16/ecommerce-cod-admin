@@ -70,8 +70,8 @@ export const CashFlowTab: React.FC = () => {
           description="Delivered, not collected"
         />
         <KPICard
-          title="AR Agents"
-          value={kpis?.arAgents || 0}
+          title="Outstanding Receivables"
+          value={kpis?.outstandingReceivables || 0}
           icon={<UserCheck className="w-5 h-5 text-purple-600" />}
           description="Pending agent clearance"
         />

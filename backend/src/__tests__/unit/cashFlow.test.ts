@@ -79,7 +79,7 @@ describe('FinancialService Cash Flow Report', () => {
 
             expect(report.kpis.cashInHand).toBe(1000);
             expect(report.kpis.cashInTransit).toBe(2000);
-            expect(report.kpis.arAgents).toBe(3000);
+            expect(report.kpis.outstandingReceivables).toBe(3000);
             expect(report.kpis.cashExpected).toBe(4000);
             expect(report.kpis.totalCashPosition).toBe(10000);
             expect(report.forecast).toHaveLength(30);

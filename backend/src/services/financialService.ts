@@ -1479,12 +1479,11 @@ export class FinancialService {
       cashInHand: this.toNumber(cashInHand?.currentBalance),
       cashInTransit: this.toNumber(cashInTransitData._sum.totalAmount),
       outstandingReceivables: this.toNumber(arAgents?.currentBalance),
-      arAgents: this.toNumber(arAgents?.currentBalance),
       cashExpected: this.toNumber(cashExpectedData._sum.totalAmount),
     };
 
-    const cashAvailableNow = kpis.cashInHand + kpis.arAgents;
-    const totalCashPosition = kpis.cashInHand + kpis.cashInTransit + kpis.arAgents + kpis.cashExpected;
+    const cashAvailableNow = kpis.cashInHand + kpis.outstandingReceivables;
+    const totalCashPosition = kpis.cashInHand + kpis.cashInTransit + kpis.outstandingReceivables + kpis.cashExpected;
     const totalCashPipeline = cashAvailableNow + kpis.cashInTransit + kpis.cashExpected;
 
     // 3. 30-day Forecast
@@ -1576,7 +1575,7 @@ export class FinancialService {
     const csvData = [
       { Section: 'KPIs', Label: 'Cash in Hand', Value: report.kpis.cashInHand },
       { Section: 'KPIs', Label: 'Cash in Transit', Value: report.kpis.cashInTransit },
-      { Section: 'KPIs', Label: 'AR Agents', Value: report.kpis.arAgents },
+      { Section: 'KPIs', Label: 'Outstanding Receivables', Value: report.kpis.outstandingReceivables },
       { Section: 'KPIs', Label: 'Cash Expected', Value: report.kpis.cashExpected },
       { Section: 'KPIs', Label: 'Total Cash Position', Value: report.kpis.totalCashPosition },
       { Section: '---', Label: '---', Value: '---' },

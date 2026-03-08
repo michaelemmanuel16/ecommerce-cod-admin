@@ -161,7 +161,6 @@ export interface CashFlowKPI {
   cashInHand: number;
   cashInTransit: number;
   outstandingReceivables: number;
-  arAgents: number;
   cashExpected: number;
   cashAvailableNow: number;
   totalCashPosition: number;
