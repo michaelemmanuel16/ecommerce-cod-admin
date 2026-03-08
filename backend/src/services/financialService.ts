@@ -1478,14 +1478,14 @@ export class FinancialService {
     const kpis = {
       cashInHand: this.toNumber(cashInHand?.currentBalance),
       cashInTransit: this.toNumber(cashInTransitData._sum.totalAmount),
-      outstandingReceivables: this.toNumber(cashInTransitData._sum.totalAmount),
+      outstandingReceivables: this.toNumber(arAgents?.currentBalance),
       arAgents: this.toNumber(arAgents?.currentBalance),
       cashExpected: this.toNumber(cashExpectedData._sum.totalAmount),
     };
 
     const cashAvailableNow = kpis.cashInHand + kpis.arAgents;
     const totalCashPosition = kpis.cashInHand + kpis.cashInTransit + kpis.arAgents + kpis.cashExpected;
-    const totalCashPipeline = cashAvailableNow + kpis.outstandingReceivables + kpis.cashExpected;
+    const totalCashPipeline = cashAvailableNow + kpis.cashInTransit + kpis.cashExpected;
 
     // 3. 30-day Forecast
     const forecast = await this.generateCashFlowForecast();
