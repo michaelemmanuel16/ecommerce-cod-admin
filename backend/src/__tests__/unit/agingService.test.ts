@@ -146,6 +146,9 @@ describe('AgingService', () => {
             mockPrisma.agentBalance = {
                 count: jest.fn().mockResolvedValue(1),
             } as any;
+            mockPrisma.account = {
+                findFirst: jest.fn().mockResolvedValue({ currentBalance: new Prisma.Decimal(10000) }),
+            } as any;
 
             const result = await agingService.getAgingReport();
 
