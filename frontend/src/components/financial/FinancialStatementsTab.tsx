@@ -69,7 +69,7 @@ export const FinancialStatementsTab: React.FC = () => {
                             <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Equity</h4>
                             <div className="space-y-1">
                                 {balanceSheet.equity.accounts.map(acc => renderAccountRow(acc.name, acc.balance))}
-                                {renderAccountRow('Retained Earnings', balanceSheet.equity.retainedEarnings)}
+                                {renderAccountRow('Current Period Net Income', balanceSheet.equity.retainedEarnings)}
                                 {renderAccountRow('Total Equity', balanceSheet.equity.total, true)}
                             </div>
                         </div>

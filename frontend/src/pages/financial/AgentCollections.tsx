@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Users, DollarSign, AlertTriangle, Clock, BarChart3, Download, Filter, Mail, Eye, ChevronUp, ChevronDown } from 'lucide-react';
+import { Users, DollarSign, AlertTriangle, Clock, BarChart3, Download, Filter, Mail, Eye, ChevronUp, ChevronDown, Info } from 'lucide-react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { Card } from '../../components/ui/Card';
+import { Tooltip as UITooltip } from '../../components/ui/Tooltip';
 import { formatCurrency } from '../../utils/format';
 import { financialService } from '../../services/financial.service';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
@@ -85,12 +86,17 @@ export const AgentCollections: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* KPI Cards - 6 agent-specific metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-4">
         <Card className="border-l-4 border-blue-500">
           <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Agents Holding Cash</span>
-              <div className="p-1.5 bg-blue-50 rounded-lg">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                Agents Holding Cash
+                <UITooltip content="Number of delivery agents currently holding undeposited cash from customer payments" position="bottom">
+                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                </UITooltip>
+              </span>
+              <div className="p-1.5 bg-blue-50 rounded-lg flex-shrink-0">
                 <Users className="w-4 h-4 text-blue-600" />
               </div>
             </div>
@@ -100,9 +106,14 @@ export const AgentCollections: React.FC = () => {
 
         <Card className="border-l-4 border-green-500">
           <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Cash Held</span>
-              <div className="p-1.5 bg-green-50 rounded-lg">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                Total Cash Held
+                <UITooltip content="Total cash held across all agents awaiting deposit to the company account" position="bottom">
+                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                </UITooltip>
+              </span>
+              <div className="p-1.5 bg-green-50 rounded-lg flex-shrink-0">
                 <DollarSign className="w-4 h-4 text-green-600" />
               </div>
             </div>
@@ -112,9 +123,14 @@ export const AgentCollections: React.FC = () => {
 
         <Card className="border-l-4 border-red-500">
           <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Overdue Settlements</span>
-              <div className="p-1.5 bg-red-50 rounded-lg">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                Overdue Settlements
+                <UITooltip content="Agents with collections held more than 7 days — require urgent follow-up" position="bottom">
+                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                </UITooltip>
+              </span>
+              <div className="p-1.5 bg-red-50 rounded-lg flex-shrink-0">
                 <AlertTriangle className="w-4 h-4 text-red-600" />
               </div>
             </div>
@@ -125,21 +141,31 @@ export const AgentCollections: React.FC = () => {
 
         <Card className="border-l-4 border-primary-500">
           <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Outstanding AR</span>
-              <div className="p-1.5 bg-primary-50 rounded-lg">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                Outstanding Receivables
+                <UITooltip content="Net cash owed to the company from delivered orders — gross agent holdings minus agent commissions (matches Overview)" position="bottom">
+                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                </UITooltip>
+              </span>
+              <div className="p-1.5 bg-primary-50 rounded-lg flex-shrink-0">
                 <BarChart3 className="w-4 h-4 text-primary-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-gray-900">{formatCurrency(summary.totalOutstandingAmount)}</div>
+            <div className="text-2xl font-bold text-gray-900">{formatCurrency(summary.outstandingReceivables ?? 0)}</div>
           </div>
         </Card>
 
         <Card className="border-l-4 border-red-500">
           <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Critical (8+ Days)</span>
-              <div className="p-1.5 bg-red-50 rounded-lg">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                Critical (8+ Days)
+                <UITooltip content="Collections held beyond 8 days — agents at risk of being blocked from new deliveries" position="bottom">
+                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                </UITooltip>
+              </span>
+              <div className="p-1.5 bg-red-50 rounded-lg flex-shrink-0">
                 <Clock className="w-4 h-4 text-red-600" />
               </div>
             </div>
@@ -149,9 +175,14 @@ export const AgentCollections: React.FC = () => {
 
         <Card className="border-l-4 border-orange-500">
           <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Warning (4-7 Days)</span>
-              <div className="p-1.5 bg-orange-50 rounded-lg">
+            <div className="flex items-start justify-between mb-2">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                Warning (4-7 Days)
+                <UITooltip content="Collections held 4-7 days — follow up recommended before they become critical" position="bottom">
+                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                </UITooltip>
+              </span>
+              <div className="p-1.5 bg-orange-50 rounded-lg flex-shrink-0">
                 <Clock className="w-4 h-4 text-orange-600" />
               </div>
             </div>

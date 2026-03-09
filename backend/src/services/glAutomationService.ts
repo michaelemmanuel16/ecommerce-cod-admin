@@ -359,7 +359,7 @@ export class GLAutomationService {
     }
 
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate: order.deliveryDate || new Date(),
       description: `Revenue recognition - Order #${order.id}`,
       sourceType: JournalSourceType.order_delivery,
       sourceId: order.id,
@@ -570,7 +570,7 @@ export class GLAutomationService {
     }
 
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate: order.updatedAt || new Date(),
       description: `Return reversal - Order #${order.id} (Original JE: ${originalEntry?.entryNumber || 'N/A'})`,
       sourceType: JournalSourceType.order_return,
       sourceId: order.id,

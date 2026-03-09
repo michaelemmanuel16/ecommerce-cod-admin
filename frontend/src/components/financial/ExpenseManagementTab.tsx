@@ -24,7 +24,7 @@ export const ExpenseManagementTab: React.FC = () => {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   useEffect(() => {
-    fetchExpenses({ category: categoryFilter || undefined });
+    fetchExpenses({ category: categoryFilter || undefined, startDate: dateRange.startDate, endDate: dateRange.endDate });
     fetchExpenseBreakdown(dateRange.startDate, dateRange.endDate);
   }, [dateRange.startDate, dateRange.endDate, categoryFilter]);
 

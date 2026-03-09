@@ -156,7 +156,7 @@ export const CollectionActionModal: React.FC<CollectionActionModalProps> = ({
                                         </td>
                                     </tr>
                                 ) : (
-                                    currentAgentCollections.map((collection) => (
+                                    currentAgentCollections.filter(c => c.status !== 'reconciled').map((collection) => (
                                         <tr
                                             key={collection.id}
                                             className={selectedIds.includes(collection.id) ? 'bg-blue-50' : ''}

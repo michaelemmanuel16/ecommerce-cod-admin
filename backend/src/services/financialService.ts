@@ -143,7 +143,7 @@ export class FinancialService {
       where: {
         isVoided: false,
         ...(startDate || endDate ? {
-          createdAt: {
+          entryDate: {
             ...(startDate ? { gte: startDate } : {}),
             ...(endDate ? { lte: endDate } : {})
           }
@@ -1011,7 +1011,13 @@ export class FinancialService {
    * Get comprehensive profitability analysis
    */
   async getProfitabilityAnalysis(filters: { startDate?: Date; endDate?: Date; productId?: number }) {
-    const { startDate, endDate, productId } = filters;
+    const { startDate, productId } = filters;
+    // Normalise endDate to end-of-day so it aligns with P&L / GL entryDate filtering
+    let endDate = filters.endDate;
+    if (endDate) {
+      endDate = new Date(endDate);
+      endDate.setHours(23, 59, 59, 999);
+    }
 
     // Filters for delivered orders
     const orderWhere: Prisma.OrderWhereInput = {
@@ -1042,6 +1048,8 @@ export class FinancialService {
             product: true,
           },
         },
+        deliveryAgent: { select: { commissionAmount: true } },
+        customerRep: { select: { commissionAmount: true } },
       },
     });
 
@@ -1058,6 +1066,7 @@ export class FinancialService {
       revenue: number,
       cogs: number,
       quantity: number,
+      commission: number,
       grossProfit: number
     }> = {};
 
@@ -1084,10 +1093,21 @@ export class FinancialService {
       }
       dailyProfitability[dateStr].revenue += order.subtotal;
 
+      const orderCommission = (order.deliveryAgent?.commissionAmount ?? 0)
+                            + (order.customerRep?.commissionAmount ?? 0);
+      const orderSubtotal = order.orderItems.reduce(
+        (sum, item) => sum + (item.unitPrice * item.quantity), 0
+      );
+
       for (const item of order.orderItems) {
         const itemCOGS = (Number(item.product.cogs) || 0) * item.quantity;
         totalCOGS += itemCOGS;
         dailyProfitability[dateStr].cogs += itemCOGS;
+
+        const itemRevenue = item.unitPrice * item.quantity;
+        const itemCommission = orderSubtotal > 0
+          ? orderCommission * (itemRevenue / orderSubtotal)
+          : 0;
 
         if (!productProfitability[item.productId]) {
           productProfitability[item.productId] = {
@@ -1097,13 +1117,15 @@ export class FinancialService {
             revenue: 0,
             cogs: 0,
             quantity: 0,
+            commission: 0,
             grossProfit: 0
           };
         }
 
-        productProfitability[item.productId].revenue += item.unitPrice * item.quantity;
+        productProfitability[item.productId].revenue += itemRevenue;
         productProfitability[item.productId].cogs += itemCOGS;
         productProfitability[item.productId].quantity += item.quantity;
+        productProfitability[item.productId].commission += itemCommission;
       }
     }
 
@@ -1123,32 +1145,57 @@ export class FinancialService {
 
     const totalMarketingExpense = marketingExpenses.reduce((sum, e) => sum + e.amount, 0);
 
-    // Query commission expenses from GL accounts (5040, 5050)
-    const commissionDateFilter: any = {};
+    // Query all non-COGS expense accounts from GL using entryDate (same filter as P&L)
+    const glEntryDateFilter: any = {};
     if (startDate || endDate) {
-      commissionDateFilter.createdAt = {};
-      if (startDate) commissionDateFilter.createdAt.gte = startDate;
-      if (endDate) commissionDateFilter.createdAt.lte = endDate;
+      glEntryDateFilter.entryDate = {};
+      if (startDate) glEntryDateFilter.entryDate.gte = startDate;
+      if (endDate) glEntryDateFilter.entryDate.lte = endDate;
     }
 
-    const commissionAgg = await prisma.accountTransaction.aggregate({
+    const commissionCodes = [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, GL_ACCOUNTS.SALES_REP_COMMISSION];
+
+    const expenseAgg = await prisma.accountTransaction.groupBy({
+      by: ['accountId'],
       where: {
-        account: { code: { in: [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, GL_ACCOUNTS.SALES_REP_COMMISSION] } },
-        ...commissionDateFilter
+        account: {
+          accountType: 'expense',
+          code: { not: GL_ACCOUNTS.COGS }  // COGS already computed from orders
+        },
+        journalEntry: { isVoided: false, ...glEntryDateFilter }
       },
-      _sum: { debitAmount: true }
+      _sum: { debitAmount: true, creditAmount: true }
     });
-    const totalCommissions = this.toNumber(commissionAgg._sum?.debitAmount);
+
+    const commissionAccountIds = await prisma.account.findMany({
+      where: { code: { in: commissionCodes } },
+      select: { id: true }
+    });
+    const commissionIdSet = new Set(commissionAccountIds.map(a => a.id));
+
+    const totalCommissions = expenseAgg
+      .filter(r => commissionIdSet.has(r.accountId))
+      .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
+
+    const totalOperatingExpenses = expenseAgg
+      .filter(r => !commissionIdSet.has(r.accountId))
+      .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
 
     const grossProfit = totalRevenue - totalCOGS;
     const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
 
-    const netProfit = grossProfit - totalMarketingExpense - totalCommissions;
+    const netProfit = grossProfit - totalMarketingExpense - totalCommissions - totalOperatingExpenses;
     const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
     // Format product profitability
     const products = Object.values(productProfitability).map(p => ({
-      ...p,
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      revenue: p.revenue,
+      cogs: p.cogs,
+      quantity: p.quantity,
+      commission: p.commission,
       grossProfit: p.revenue - p.cogs,
       grossMargin: p.revenue > 0 ? ((p.revenue - p.cogs) / p.revenue) * 100 : 0
     })).sort((a, b) => b.grossProfit - a.grossProfit);
@@ -1715,7 +1762,7 @@ export class FinancialService {
     const validJournalEntries = await prisma.journalEntry.findMany({
       where: {
         isVoided: false,
-        createdAt: { gte: startDate, lte: endDate }
+        entryDate: { gte: startDate, lte: endDate }
       },
       select: { id: true }
     });

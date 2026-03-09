@@ -9,8 +9,10 @@ import {
   TrendingUp,
   Download,
   AlertCircle,
-  ArrowRight
+  ArrowRight,
+  Info
 } from 'lucide-react';
+import { Tooltip } from '../ui/Tooltip';
 import { formatCurrency } from '../../utils/format';
 
 export const CashFlowTab: React.FC = () => {
@@ -56,30 +58,34 @@ export const CashFlowTab: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* KPI Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-4">
         <KPICard
           title="Cash in Hand"
           value={kpis?.cashInHand || 0}
           icon={<Wallet className="w-5 h-5 text-blue-600" />}
           description="Collected by agents"
+          info="Cash already collected by delivery agents from customers but not yet deposited to the company bank account"
         />
         <KPICard
           title="Cash in Transit"
           value={kpis?.cashInTransit || 0}
           icon={<Truck className="w-5 h-5 text-yellow-600" />}
           description="Delivered, not collected"
+          info="Orders delivered to customers but payment not yet collected by the agent"
         />
         <KPICard
           title="Outstanding Receivables"
           value={kpis?.outstandingReceivables || 0}
           icon={<UserCheck className="w-5 h-5 text-purple-600" />}
           description="Pending agent clearance"
+          info="Money agents owe the company for collections not yet cleared/deposited"
         />
         <KPICard
           title="Cash Expected"
           value={kpis?.cashExpected || 0}
           icon={<ArrowRight className="w-5 h-5 text-green-600" />}
           description="Out for delivery"
+          info="Expected cash from orders currently out for delivery that have not yet been delivered"
         />
         <KPICard
           title="Total Position"
@@ -87,6 +93,7 @@ export const CashFlowTab: React.FC = () => {
           icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
           description="Consolidated liquidity"
           highlight
+          info="Total consolidated cash position: cash in hand + cash in transit + outstanding receivables"
         />
       </div>
 
@@ -176,9 +183,10 @@ interface KPICardProps {
   icon: React.ReactNode;
   description: string;
   highlight?: boolean;
+  info?: string;
 }
 
-const KPICard: React.FC<KPICardProps> = ({ title, value, icon, description, highlight }) => (
+const KPICard: React.FC<KPICardProps> = ({ title, value, icon, description, highlight, info }) => (
   <Card className={`${highlight ? 'ring-2 ring-emerald-500 ring-offset-2' : ''}`}>
     <div className="p-4">
       <div className="flex items-center gap-3 mb-2">
@@ -186,7 +194,14 @@ const KPICard: React.FC<KPICardProps> = ({ title, value, icon, description, high
           {icon}
         </div>
         <div>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{title}</p>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-1">
+            {title}
+            {info && (
+              <Tooltip content={info} position="bottom">
+                <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
+              </Tooltip>
+            )}
+          </p>
           <h4 className={`text-xl font-bold ${highlight ? 'text-emerald-700' : 'text-gray-900'}`}>
             {formatCurrency(value)}
           </h4>

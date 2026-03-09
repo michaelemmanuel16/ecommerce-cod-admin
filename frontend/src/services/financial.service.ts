@@ -104,6 +104,7 @@ export interface ProfitMargins {
 export interface AgingSummary {
   totalAgentsWithBalance: number;
   totalOutstandingAmount: number;
+  outstandingReceivables: number;
   overdueAgentsCount: number;
   criticalOverdueAmount: number;
   warningOverdueAmount: number;
@@ -196,6 +197,7 @@ export interface ProfitabilityAnalysis {
     revenue: number;
     cogs: number;
     quantity: number;
+    commission: number;
     grossProfit: number;
     grossMargin: number;
   }[];
