@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Users, DollarSign, AlertTriangle, Clock, BarChart3, Download, Filter, Mail, Eye, ChevronUp, ChevronDown, Info } from 'lucide-react';
+import { Users, AlertTriangle, Clock, BarChart3, Download, Filter, Mail, Eye, ChevronUp, ChevronDown, Info } from 'lucide-react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { Card } from '../../components/ui/Card';
 import { Tooltip as UITooltip } from '../../components/ui/Tooltip';
@@ -86,7 +86,7 @@ export const AgentCollections: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* KPI Cards - 6 agent-specific metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-5 gap-4">
         <Card className="border-l-4 border-blue-500">
           <div className="p-4">
             <div className="flex items-start justify-between mb-2">
@@ -101,23 +101,6 @@ export const AgentCollections: React.FC = () => {
               </div>
             </div>
             <div className="text-2xl font-bold text-gray-900">{summary.totalAgentsWithBalance}</div>
-          </div>
-        </Card>
-
-        <Card className="border-l-4 border-green-500">
-          <div className="p-4">
-            <div className="flex items-start justify-between mb-2">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                Total Cash Held
-                <UITooltip content="Total cash held across all agents awaiting deposit to the company account" position="bottom">
-                  <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
-                </UITooltip>
-              </span>
-              <div className="p-1.5 bg-green-50 rounded-lg flex-shrink-0">
-                <DollarSign className="w-4 h-4 text-green-600" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-gray-900">{formatCurrency(summary.totalOutstandingAmount)}</div>
           </div>
         </Card>
 
@@ -144,7 +127,7 @@ export const AgentCollections: React.FC = () => {
             <div className="flex items-start justify-between mb-2">
               <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
                 Outstanding Receivables
-                <UITooltip content="Net cash owed to the company from delivered orders — gross agent holdings minus agent commissions (matches Overview)" position="bottom">
+                <UITooltip content="Net cash owed to the company from delivered orders — agent commissions already deducted. Matches the Overview tab." position="bottom">
                   <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
                 </UITooltip>
               </span>

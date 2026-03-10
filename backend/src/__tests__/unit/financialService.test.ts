@@ -53,10 +53,10 @@ describe('FinancialService', () => {
         { id: 20, code: '5010', normalBalance: 'debit', accountType: 'expense' },
       ] as any);
 
-      // Mock Cash in Transit account for outstanding receivables
-      prismaMock.account.findUnique.mockResolvedValue({
-        currentBalance: 500
-      } as any);
+      // Mock AgentCollection aggregate for outstanding receivables
+      (prismaMock as any).agentCollection = {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 500 } })
+      };
 
       // Mock COD collections and pipeline revenue
       prismaMock.transaction.aggregate.mockResolvedValue({
@@ -84,7 +84,9 @@ describe('FinancialService', () => {
       prismaMock.journalEntry.findMany.mockResolvedValue([] as any);
       prismaMock.accountTransaction.groupBy.mockResolvedValue([] as any);
       prismaMock.account.findMany.mockResolvedValue([] as any);
-      prismaMock.account.findUnique.mockResolvedValue(null);
+      (prismaMock as any).agentCollection = {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } })
+      };
       prismaMock.transaction.aggregate.mockResolvedValue({
         _sum: { amount: null }
       } as any);

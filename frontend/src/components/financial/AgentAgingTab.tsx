@@ -116,7 +116,7 @@ export const AgentAgingTab: React.FC = () => {
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
                             Total Agent Cash Holdings
-                            <UITooltip content="Gross cash physically held by agents (includes their commission). Net receivable to company is lower by agent commissions." position="bottom">
+                            <UITooltip content="Net cash held by agents from delivered orders, pending deposit. Agent commissions are already deducted." position="bottom">
                                 <Info className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" />
                             </UITooltip>
                         </span>

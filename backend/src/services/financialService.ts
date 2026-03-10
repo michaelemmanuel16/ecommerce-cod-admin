@@ -223,11 +223,17 @@ export class FinancialService {
       };
     }
 
-    // Outstanding Receivables from GL Cash in Transit account
-    const cashInTransitAccount = await prisma.account.findUnique({
-      where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT }
+    // Outstanding Receivables from non-reconciled AgentCollection records (net of commission)
+    // Uses operational records rather than GL account 1015 to ensure all delivered orders
+    // are counted, including any that pre-date the GL automation system
+    const outstandingCollections = await (prisma as any).agentCollection.aggregate({
+      where: {
+        status: { in: ['draft', 'verified', 'approved', 'deposited'] },
+        order: { deletedAt: null }
+      },
+      _sum: { amount: true }
     });
-    const outstandingReceivables = this.toNumber(cashInTransitAccount?.currentBalance);
+    const outstandingReceivables = this.toNumber(outstandingCollections._sum.amount);
 
     const [codCollections, outForDeliveryOrders] = await Promise.all([
       // COD Collected (operational metric)

@@ -251,14 +251,9 @@ export class AgingService {
       }
     });
 
-    // Fetch GL-based outstanding receivables (account 1015 = Cash in Transit)
-    const cashInTransitAccount = await (prisma as any).account.findFirst({
-      where: { code: '1015' },
-      select: { currentBalance: true }
-    });
-    const outstandingReceivables = cashInTransitAccount
-      ? Number(cashInTransitAccount.currentBalance)
-      : 0;
+    // Outstanding receivables = same source as totalOutstandingAmount (AgentCollection records)
+    // Both use the same data so they always agree — no GL reconciliation gap
+    const outstandingReceivables = totalOutstandingAmount.toNumber();
 
     return {
       totalAgentsWithBalance,
