@@ -723,7 +723,7 @@ export class FinancialService {
 
       // Create GL deposit entry for non-reconciled transactions only
       // (reconciled collections already have GL entries from the reconciliation path)
-      const reconciledCount = await (tx as any).agentCollection.count({
+      const reconciledCount = await tx.agentCollection.count({
         where: {
           orderId: { in: orderIds },
           status: 'reconciled'
@@ -736,19 +736,21 @@ export class FinancialService {
       if (nonReconciledCount > 0) {
         // Calculate amount for non-reconciled transactions only
         const reconciledOrderIds = new Set(
-          (await (tx as any).agentCollection.findMany({
+          (await tx.agentCollection.findMany({
             where: { orderId: { in: orderIds }, status: 'reconciled' },
             select: { orderId: true }
-          })).map((c: any) => c.orderId)
+          })).map((c) => c.orderId)
         );
 
         const nonReconciledAmount = transactions
-          .filter(t => !reconciledOrderIds.has(t.orderId))
+          .filter(t => !t.orderId || !reconciledOrderIds.has(t.orderId))
           .reduce((sum, t) => sum + Number(t.amount), 0);
 
         if (nonReconciledAmount > 0) {
           const userId = requester?.id ?? SYSTEM_USER_ID;
-          const sourceId = transactions[0].id;
+          // Use the minimum transaction ID as a stable idempotency key for the batch.
+          // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
+          const sourceId = Math.min(...transactions.map(t => t.id));
           await GLAutomationService.createDepositGLEntry(tx as any, nonReconciledAmount, sourceId, userId);
         }
       }
@@ -1363,7 +1365,7 @@ export class FinancialService {
   /**
    * Get pipeline revenue (expected revenue from active orders)
    */
-  async getPipelineRevenue(_filters: DateFilters, requester?: Requester) {
+  async getPipelineRevenue(requester?: Requester) {
     const where: Prisma.OrderWhereInput = {
       status: {
         in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery']
@@ -1755,21 +1757,10 @@ export class FinancialService {
       }
     });
 
-    // Exclude voided entries. Prisma groupBy doesn't support relation filters,
-    // so pre-fetch valid journal entry IDs.
-    const validJournalEntries = await prisma.journalEntry.findMany({
-      where: {
-        isVoided: false,
-        entryDate: { gte: startDate, lte: endDate }
-      },
-      select: { id: true }
-    });
-    const validJournalEntryIds = validJournalEntries.map(je => je.id);
-
     const aggregations = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
-        journalEntryId: { in: validJournalEntryIds }
+        journalEntry: { isVoided: false, entryDate: { gte: startDate, lte: endDate } }
       },
       _sum: {
         debitAmount: true,

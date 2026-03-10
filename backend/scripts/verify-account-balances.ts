@@ -10,6 +10,7 @@
  */
 
 import { GLAccountService } from '../src/services/glAccountService';
+import prisma from '../src/utils/prisma';
 
 async function main() {
   console.log('Verifying GL account balances...\n');
@@ -36,7 +37,9 @@ async function main() {
   process.exit(1);
 }
 
-main().catch((err) => {
-  console.error('Error running balance verification:', err);
-  process.exit(1);
-});
+main()
+  .catch((err) => {
+    console.error('Error running balance verification:', err);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

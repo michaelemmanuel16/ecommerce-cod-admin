@@ -25,7 +25,7 @@ async function main() {
   console.log('=== Backfill Deposit GL Entries ===\n');
 
   // 1. Get all deposited/reconciled COD transactions
-  const transactions = await (prisma as any).transaction.findMany({
+  const transactions = await prisma.transaction.findMany({
     where: {
       type: 'cod_collection',
       status: { in: ['deposited', 'reconciled'] },
@@ -66,7 +66,7 @@ async function main() {
   // 4. Exclude transactions where AgentCollection is already reconciled
   // (collection reconciliation path already created the Cash in Transit -> Cash in Hand entry)
   const orderIds = toBackfill.map((t: any) => t.orderId).filter(Boolean);
-  const reconciledCollections = await (prisma as any).agentCollection.findMany({
+  const reconciledCollections = await prisma.agentCollection.findMany({
     where: {
       orderId: { in: orderIds },
       status: 'reconciled',

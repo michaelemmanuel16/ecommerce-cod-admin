@@ -89,13 +89,7 @@ export const getProfitMargins = async (req: AuthRequest, res: Response): Promise
 };
 
 export const getPipelineRevenue = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { startDate, endDate } = req.query;
-
-  const pipelineRevenue = await financialService.getPipelineRevenue({
-    startDate: startDate ? new Date(startDate as string) : undefined,
-    endDate: endDate ? new Date(endDate as string) : undefined
-  });
-
+  const pipelineRevenue = await financialService.getPipelineRevenue(req.user);
   res.json(pipelineRevenue);
 };
 

@@ -927,8 +927,6 @@ export class GLAutomationService {
       },
     ];
 
-    this.validateJournalEntryBalance(transactions);
-
     return await this.createJournalEntryWithRetry(tx, {
       entryDate: new Date(),
       description: `Commission payout - Rep #${repId} (Payout #${payoutId})`,

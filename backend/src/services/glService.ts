@@ -374,19 +374,19 @@ export class GLService {
         dateFilter.lte = end;
       }
       const accountIds = accounts.map(a => a.id);
-      const txns = await prisma.accountTransaction.findMany({
+      const txns = await prisma.accountTransaction.groupBy({
+        by: ['accountId'],
         where: {
           accountId: { in: accountIds },
           journalEntry: { entryDate: dateFilter, isVoided: false }
         },
-        select: { accountId: true, debitAmount: true, creditAmount: true }
+        _sum: { debitAmount: true, creditAmount: true }
       });
       periodActivityMap = new Map();
       for (const txn of txns) {
-        const existing = periodActivityMap.get(txn.accountId) ?? { debits: 0, credits: 0 };
         periodActivityMap.set(txn.accountId, {
-          debits: existing.debits + Number(txn.debitAmount),
-          credits: existing.credits + Number(txn.creditAmount)
+          debits: Number(txn._sum.debitAmount ?? 0),
+          credits: Number(txn._sum.creditAmount ?? 0)
         });
       }
     }

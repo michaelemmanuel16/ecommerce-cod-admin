@@ -111,24 +111,35 @@ export class GLAccountService {
     }> {
         const accounts = await prisma.account.findMany({
             where: { isActive: true },
-            select: { id: true, code: true }
+            select: { id: true, code: true, currentBalance: true, normalBalance: true }
         });
+
+        const accountIds = accounts.map(a => a.id);
+        const sums = await prisma.accountTransaction.groupBy({
+            by: ['accountId'],
+            where: { accountId: { in: accountIds } },
+            _sum: { debitAmount: true, creditAmount: true }
+        });
+        const sumsMap = new Map(sums.map(s => [s.accountId, s._sum]));
 
         const unbalanced: Array<{ accountId: number; code: string; difference: Decimal }> = [];
         let maxDifference = new Decimal('0');
 
         for (const account of accounts) {
-            const result = await this.verifyAccountBalanceIntegrity(account.id);
-            if (!result.isBalanced) {
-                const absDiff = result.difference.abs();
+            const s = sumsMap.get(account.id);
+            const debitSum = new Decimal(s?.debitAmount?.toString() || '0');
+            const creditSum = new Decimal(s?.creditAmount?.toString() || '0');
+            const storedBalance = new Decimal(account.currentBalance.toString());
+            const calculatedBalance = account.normalBalance === 'debit'
+                ? debitSum.minus(creditSum)
+                : creditSum.minus(debitSum);
+            const difference = calculatedBalance.minus(storedBalance);
+            if (difference.abs().greaterThan(new Decimal('0.01'))) {
+                const absDiff = difference.abs();
                 if (absDiff.greaterThan(maxDifference)) {
                     maxDifference = absDiff;
                 }
-                unbalanced.push({
-                    accountId: account.id,
-                    code: account.code,
-                    difference: result.difference
-                });
+                unbalanced.push({ accountId: account.id, code: account.code, difference });
             }
         }
 
