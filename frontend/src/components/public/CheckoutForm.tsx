@@ -44,10 +44,11 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
   const selectedPackage = formData.packages.find((p) => p.id === selectedPackageId) || null;
 
   const isFieldEnabled = (label: string): boolean => {
-    const field = formData.fields?.find(
+    if (!formData.fields?.length) return true; // no fields configured → show all (fallback)
+    const field = formData.fields.find(
       (f: any) => f.label?.toLowerCase() === label.toLowerCase()
     );
-    return field ? (field.enabled ?? true) : true;
+    return field ? (field.enabled ?? true) : false; // not in array = deleted → hide
   };
   const selectedAddons = formData.upsells.filter((u) => selectedAddonIds.has(u.id));
 
@@ -183,29 +184,31 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
                     </div>
                   )}
 
-                  {/* Region/State — always visible (required for delivery) */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Region/State <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      {...register('region', { required: 'Region is required' })}
-                      className={cn(
-                        'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent bg-white',
-                        errors.region ? 'border-red-500' : 'border-gray-300'
+                  {/* Region/State */}
+                  {isFieldEnabled('Region/State') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Region/State <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        {...register('region', { required: 'Region is required' })}
+                        className={cn(
+                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent bg-white',
+                          errors.region ? 'border-red-500' : 'border-gray-300'
+                        )}
+                      >
+                        <option value="">Select region/state</option>
+                        {(formData.regions?.available || []).map((region: string) => (
+                          <option key={region} value={region}>
+                            {region}
+                          </option>
+                        ))}
+                      </select>
+                      {errors.region && (
+                        <p className="mt-1 text-sm text-red-600">{errors.region.message}</p>
                       )}
-                    >
-                      <option value="">Select region/state</option>
-                      {(formData.regions?.available || []).map((region: string) => (
-                        <option key={region} value={region}>
-                          {region}
-                        </option>
-                      ))}
-                    </select>
-                    {errors.region && (
-                      <p className="mt-1 text-sm text-red-600">{errors.region.message}</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Street Address */}
                   {isFieldEnabled('Street Address') && (
@@ -261,6 +264,8 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
                 currency={formData.currency}
                 isSubmitting={isSubmitting}
                 onSubmit={handleSubmit(onFormSubmit)}
+                buttonColor={formData.styling?.buttonColor}
+                accentColor={formData.styling?.accentColor}
               />
             </div>
           </div>
