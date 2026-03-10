@@ -130,29 +130,6 @@ export class FinancialService {
     const { startDate, endDate } = filters;
 
     // --- GL-based accounting metrics ---
-    // Build date filter for GL transactions
-    const glDateWhere: any = {};
-    if (startDate || endDate) {
-      glDateWhere.createdAt = {};
-      if (startDate) glDateWhere.createdAt.gte = startDate;
-      if (endDate) glDateWhere.createdAt.lte = endDate;
-    }
-
-    // Exclude voided journal entries; include only known operational source types
-    const validJournalEntries = await prisma.journalEntry.findMany({
-      where: {
-        isVoided: false,
-        ...(startDate || endDate ? {
-          entryDate: {
-            ...(startDate ? { gte: startDate } : {}),
-            ...(endDate ? { lte: endDate } : {})
-          }
-        } : {})
-      },
-      select: { id: true }
-    });
-    const validJournalEntryIds = validJournalEntries.map(je => je.id);
-
     // Revenue account codes
     const revenueAccountCodes = [GL_ACCOUNTS.PRODUCT_REVENUE];
     // Expense account codes (all 5xxx accounts)
@@ -165,11 +142,26 @@ export class FinancialService {
       GL_ACCOUNTS.OPERATING_EXPENSE
     ];
 
-    // Query GL account balances for the period
+    // Query GL account balances using a single nested relation filter (avoids large IN clause)
+    // Role-based scoping: delivery_agent and sales_rep see only their own orders' GL entries
     const glAggregations = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
-        journalEntryId: { in: validJournalEntryIds },
+        journalEntry: {
+          isVoided: false,
+          ...(startDate || endDate ? {
+            entryDate: {
+              ...(startDate ? { gte: startDate } : {}),
+              ...(endDate ? { lte: endDate } : {})
+            }
+          } : {}),
+          ...(requester?.role === 'delivery_agent'
+            ? { orders: { some: { deliveryAgentId: requester.id } } }
+            : {}),
+          ...(requester?.role === 'sales_rep'
+            ? { orders: { some: { customerRepId: requester.id } } }
+            : {})
+        },
         account: {
           code: { in: [...revenueAccountCodes, ...expenseAccountCodes] }
         }

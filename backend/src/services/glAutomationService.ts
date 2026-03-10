@@ -287,6 +287,7 @@ export class GLAutomationService {
     const deliveryAgent = order.deliveryAgent;
     const salesRep = order.customerRep;
 
+    // Uses profile flat rate — must match draft collection creation in deliveryService
     const deliveryCommission: Decimal = deliveryAgent?.commissionAmount
       ? new Decimal(deliveryAgent.commissionAmount.toString())
       : new Decimal(0);
@@ -479,6 +480,7 @@ export class GLAutomationService {
     const deliveryAgent = order.deliveryAgent;
     const salesRep = order.customerRep;
 
+    // Uses profile flat rate — must match draft collection creation in deliveryService
     const deliveryCommission: Decimal = deliveryAgent?.commissionAmount
       ? new Decimal(deliveryAgent.commissionAmount.toString())
       : new Decimal(0);

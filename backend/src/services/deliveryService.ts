@@ -388,6 +388,7 @@ export class DeliveryService {
       // Create draft agent collection record with net amount (gross - agent commission)
       if (orderWithItems.deliveryAgentId && orderWithItems.codAmount) {
         const grossAmount = new Decimal(orderWithItems.codAmount.toString());
+        // Uses profile flat rate — must match createRevenueRecognitionEntry in glAutomationService
         const agentCommission = orderWithItems.deliveryAgent?.commissionAmount
           ? new Decimal(orderWithItems.deliveryAgent.commissionAmount.toString())
           : new Decimal(0);
