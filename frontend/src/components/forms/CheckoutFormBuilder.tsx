@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Plus } from 'lucide-react';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -177,6 +179,19 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
     { value: 0, label: 'Select Product' },
     ...products.map(p => ({ value: p.id, label: p.name })),
   ];
+
+  const sensors = useSensors(useSensor(PointerSensor));
+
+  const handleFieldDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setFields(prev => {
+        const oldIndex = prev.findIndex(f => f.id === active.id);
+        const newIndex = prev.findIndex(f => f.id === over.id);
+        return arrayMove(prev, oldIndex, newIndex);
+      });
+    }
+  };
 
   const addField = () => {
     const newField: FormField = {
@@ -542,16 +557,20 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
               Add Field
             </Button>
           </div>
-          <div className="space-y-2">
-            {fields.map(field => (
-              <FormFieldEditor
-                key={field.id}
-                field={field}
-                onUpdate={(updated) => updateField(field.id, updated)}
-                onDelete={() => deleteField(field.id)}
-              />
-            ))}
-          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFieldDragEnd}>
+            <SortableContext items={fields.map(f => f.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-2">
+                {fields.map(field => (
+                  <FormFieldEditor
+                    key={field.id}
+                    field={field}
+                    onUpdate={(updated) => updateField(field.id, updated)}
+                    onDelete={() => deleteField(field.id)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         </div>
 
         {/* Product Packages */}

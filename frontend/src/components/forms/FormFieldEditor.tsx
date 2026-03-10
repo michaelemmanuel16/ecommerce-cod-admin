@@ -1,5 +1,7 @@
 import React from 'react';
 import { Trash2, GripVertical } from 'lucide-react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { FormField, FieldType } from '../../types/checkout-form';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
@@ -22,10 +24,33 @@ export const FormFieldEditor: React.FC<FormFieldEditorProps> = ({
   onUpdate,
   onDelete,
 }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: field.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   return (
-    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="bg-gray-50 p-4 rounded-lg border border-gray-200"
+    >
       <div className="flex items-start gap-3">
-        <div className="mt-2 cursor-move text-gray-400">
+        <div
+          {...attributes}
+          {...listeners}
+          className="mt-2 cursor-grab active:cursor-grabbing text-gray-400 touch-none"
+        >
           <GripVertical className="w-5 h-5" />
         </div>
 
