@@ -5,13 +5,15 @@ import { AccountType, JournalSourceType } from '@prisma/client';
 
 export const getAllAccounts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { accountType, isActive, page = 1, limit = 50 } = req.query;
+    const { accountType, isActive, page = 1, limit = 50, startDate, endDate } = req.query;
 
     const result = await glService.getAllAccounts({
       accountType: accountType as AccountType | undefined,
       isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
       page: Number(page),
-      limit: Number(limit)
+      limit: Number(limit),
+      startDate: startDate as string | undefined,
+      endDate: endDate as string | undefined
     });
 
     res.json(result);

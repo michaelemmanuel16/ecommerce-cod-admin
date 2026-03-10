@@ -1,5 +1,7 @@
 import prisma from '../utils/prisma';
 import { OrderStatus } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
+import { GLAutomationService } from './glAutomationService';
 
 export interface PendingPayment {
     orderId: number;
@@ -82,8 +84,9 @@ class PayoutService {
         method: string;
         orderIds: number[];
         notes?: string;
+        processedBy: number;
     }) {
-        const { repId, amount, method, orderIds, notes } = data;
+        const { repId, amount, method, orderIds, notes, processedBy } = data;
 
         return prisma.$transaction(async (tx) => {
             // 1. Create the Payout record
@@ -108,6 +111,15 @@ class PayoutService {
                     payoutId: payout.id
                 }
             });
+
+            // 3. Post GL journal entry: DR Commissions Payable, CR Cash in Hand
+            await GLAutomationService.recordCommissionPayout(
+                tx as any,
+                payout.id,
+                repId,
+                new Decimal(amount.toString()),
+                processedBy
+            );
 
             return payout;
         });

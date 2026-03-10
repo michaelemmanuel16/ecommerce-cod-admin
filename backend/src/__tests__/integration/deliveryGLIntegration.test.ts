@@ -295,7 +295,7 @@ describe('Delivery GL Integration', () => {
       // Verify GL entry was created
       const glEntries = await prisma.journalEntry.findMany({
         where: {
-          sourceType: 'order_delivery',
+          sourceType: 'failed_delivery',
           sourceId: testDelivery.id,
         },
         include: { transactions: true },

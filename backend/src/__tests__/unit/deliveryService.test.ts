@@ -129,7 +129,14 @@ describe('DeliveryService', () => {
           transaction: {
             create: jest.fn().mockResolvedValue({})
           },
+          agentCollection: {
+            create: jest.fn().mockResolvedValue({ id: 1 })
+          },
+          agentBalance: {
+            upsert: jest.fn().mockResolvedValue({})
+          },
           journalEntry: {
+            findFirst: jest.fn().mockResolvedValue(null),
             create: jest.fn().mockResolvedValue({ id: 1, entryNumber: 'JE-001', transactions: [] })
           },
           accountTransaction: {
@@ -218,6 +225,7 @@ describe('DeliveryService', () => {
             update: jest.fn().mockResolvedValue({})
           },
           journalEntry: {
+            findFirst: jest.fn().mockResolvedValue(null),
             create: jest.fn().mockResolvedValue({ id: 1, entryNumber: 'JE-001', transactions: [] })
           },
           accountTransaction: {

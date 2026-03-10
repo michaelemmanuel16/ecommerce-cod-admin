@@ -6,6 +6,8 @@ import agingService from '../services/agingService';
 import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
 import logger from '../utils/logger';
+import { GLAccountService } from '../services/glAccountService';
+import prisma from '../utils/prisma';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -32,17 +34,22 @@ export const getAllTransactions = async (req: AuthRequest, res: Response): Promi
 };
 
 export const recordExpense = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { category, amount, description, expenseDate } = req.body;
+  try {
+    const { category, amount, description, expenseDate } = req.body;
 
-  const expense = await financialService.recordExpense({
-    category,
-    amount,
-    description,
-    expenseDate: new Date(expenseDate),
-    recordedBy: req.user!.id.toString()
-  }, req.user);
+    const expense = await financialService.recordExpense({
+      category,
+      amount,
+      description,
+      expenseDate: new Date(expenseDate),
+      recordedBy: req.user!.id.toString()
+    }, req.user);
 
-  res.status(201).json({ expense });
+    res.status(201).json({ expense });
+  } catch (error: any) {
+    const status = error.statusCode || error.status || 500;
+    res.status(status).json({ error: error.message || 'Failed to record expense' });
+  }
 };
 
 export const getCODCollections = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -82,13 +89,7 @@ export const getProfitMargins = async (req: AuthRequest, res: Response): Promise
 };
 
 export const getPipelineRevenue = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { startDate, endDate } = req.query;
-
-  const pipelineRevenue = await financialService.getPipelineRevenue({
-    startDate: startDate ? new Date(startDate as string) : undefined,
-    endDate: endDate ? new Date(endDate as string) : undefined
-  });
-
+  const pipelineRevenue = await financialService.getPipelineRevenue(req.user);
   res.json(pipelineRevenue);
 };
 
@@ -104,7 +105,8 @@ export const getProfitabilityAnalysis = async (req: AuthRequest, res: Response):
 
     res.json(analysis);
   } catch (error) {
-    throw error;
+    logger.error('Failed to fetch profitability analysis', { error });
+    res.status(500).json({ message: 'Failed to fetch profitability analysis' });
   }
 };
 
@@ -189,25 +191,35 @@ export const getExpenseBreakdown = async (req: AuthRequest, res: Response): Prom
 };
 
 export const updateExpense = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const { category, amount, description, expenseDate } = req.body;
+  try {
+    const { id } = req.params;
+    const { category, amount, description, expenseDate } = req.body;
 
-  const expense = await financialService.updateExpense(id, {
-    category,
-    amount,
-    description,
-    expenseDate: expenseDate ? new Date(expenseDate) : undefined
-  }, req.user);
+    const expense = await financialService.updateExpense(id, {
+      category,
+      amount,
+      description,
+      expenseDate: expenseDate ? new Date(expenseDate) : undefined
+    }, req.user);
 
-  res.json({ expense });
+    res.json({ expense });
+  } catch (error: any) {
+    const status = error.statusCode || error.status || 500;
+    res.status(status).json({ error: error.message || 'Failed to update expense' });
+  }
 };
 
 export const deleteExpense = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-  await financialService.deleteExpense(id, req.user);
+    await financialService.deleteExpense(id, req.user);
 
-  res.json({ message: 'Expense deleted successfully' });
+    res.json({ message: 'Expense deleted successfully' });
+  } catch (error: any) {
+    const status = error.statusCode || error.status || 500;
+    res.status(status).json({ error: error.message || 'Failed to delete expense' });
+  }
 };
 
 export const getAgentCashHoldings = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -290,7 +302,8 @@ export const getBalanceSheet = async (req: AuthRequest, res: Response): Promise<
     const balanceSheet = await financialService.getBalanceSheet(asOfDate as string);
     res.json(balanceSheet);
   } catch (error) {
-    throw error;
+    logger.error('Failed to fetch balance sheet', { error });
+    res.status(500).json({ message: 'Failed to fetch balance sheet' });
   }
 };
 
@@ -304,6 +317,40 @@ export const getProfitLoss = async (req: AuthRequest, res: Response): Promise<vo
     const profitLoss = await financialService.getProfitLoss(startDate as string, endDate as string);
     res.json(profitLoss);
   } catch (error) {
-    throw error;
+    logger.error('Failed to fetch profit & loss statement', { error });
+    res.status(500).json({ message: 'Failed to fetch profit & loss statement' });
+  }
+};
+
+export const getFinancialHealth = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const [balanceReport, journalCount] = await Promise.all([
+      GLAccountService.verifyAllAccountBalances(),
+      prisma.journalEntry.count({
+        where: { createdAt: { gte: twentyFourHoursAgo } }
+      })
+    ]);
+
+    res.json({
+      balanceIntegrity: {
+        totalAccounts: balanceReport.totalAccounts,
+        unbalancedCount: balanceReport.unbalanced.length,
+        maxDifference: balanceReport.maxDifference.toFixed(4),
+        isHealthy: balanceReport.unbalanced.length === 0,
+        unbalanced: balanceReport.unbalanced.map(u => ({
+          accountId: u.accountId,
+          code: u.code,
+          difference: u.difference.toFixed(4)
+        }))
+      },
+      journalActivity: {
+        last24Hours: journalCount
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to fetch financial health', { error });
+    res.status(500).json({ message: 'Failed to fetch financial health' });
   }
 };

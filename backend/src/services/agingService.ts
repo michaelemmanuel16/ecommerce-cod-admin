@@ -55,11 +55,13 @@ export class AgingService {
     const now = new Date();
 
     try {
-      // 1. Get all pending collections (draft, verified, approved) 
-      // and ensure the associated order is not soft-deleted
+      // 1. Get all outstanding collections (draft, verified, approved, deposited)
+      // 'deposited' is included because deposited-but-unreconciled cash is still outstanding
+      // Only 'reconciled' collections are excluded from aging
+      // Ensure the associated order is not soft-deleted
       const collections = await (prisma as any).agentCollection.findMany({
         where: {
-          status: { in: ['draft', 'verified', 'approved'] },
+          status: { in: ['draft', 'verified', 'approved', 'deposited'] },
           order: {
             deletedAt: null
           }
@@ -249,9 +251,14 @@ export class AgingService {
       }
     });
 
+    // Outstanding receivables = same source as totalOutstandingAmount (AgentCollection records)
+    // Both use the same data so they always agree — no GL reconciliation gap
+    const outstandingReceivables = totalOutstandingAmount.toNumber();
+
     return {
       totalAgentsWithBalance,
       totalOutstandingAmount: totalOutstandingAmount.toNumber(),
+      outstandingReceivables,
       overdueAgentsCount,
       criticalOverdueAmount: criticalOverdueAmount.toNumber(),
       warningOverdueAmount: warningOverdueAmount.toNumber(),

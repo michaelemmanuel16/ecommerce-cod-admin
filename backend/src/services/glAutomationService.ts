@@ -119,6 +119,19 @@ export class GLAutomationService {
    * @param data - Journal entry data (without entryNumber)
    * @returns Created journal entry with transactions included
    */
+  /**
+   * Validates that journal entry transactions are balanced (debits = credits).
+   * Throws if the imbalance exceeds 0.01 tolerance.
+   */
+  private static validateJournalEntryBalance(transactions: Array<{ debitAmount: number | Decimal; creditAmount: number | Decimal }>): void {
+    const totalDebits = transactions.reduce((sum, t) => sum.plus(new Decimal(t.debitAmount.toString())), new Decimal(0));
+    const totalCredits = transactions.reduce((sum, t) => sum.plus(new Decimal(t.creditAmount.toString())), new Decimal(0));
+    const imbalance = totalDebits.minus(totalCredits).abs();
+    if (imbalance.greaterThan(new Decimal('0.01'))) {
+      throw new Error(`Journal entry is unbalanced: debits=${totalDebits.toFixed(4)}, credits=${totalCredits.toFixed(4)}, difference=${imbalance.toFixed(4)}`);
+    }
+  }
+
   private static async createJournalEntryWithRetry(
     tx: Prisma.TransactionClient,
     data: JournalEntryCreateData
@@ -130,6 +143,9 @@ export class GLAutomationService {
     while (retries < maxRetries) {
       try {
         const entryNumber = await GLUtils.generateEntryNumber(tx);
+
+        // Validate balance before writing
+        GLAutomationService.validateJournalEntryBalance(data.transactions.create);
 
         // First, update account balances and get running balances
         const transactionsWithRunningBalances = [];
@@ -246,11 +262,32 @@ export class GLAutomationService {
     totalCOGS: Decimal,
     userId: number
   ): Promise<JournalEntryWithTransactions> {
+    // Idempotency guard — prevent duplicate GL entries for the same order
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.order_delivery,
+        sourceId: order.id,
+        isVoided: false
+      },
+      include: {
+        transactions: {
+          include: {
+            account: true
+          }
+        }
+      }
+    });
+    if (existingEntry) {
+      logger.warn(`Skipping duplicate GL entry for order ${order.id}: ${existingEntry.entryNumber} already exists`);
+      return existingEntry as JournalEntryWithTransactions;
+    }
+
     const orderAmount = new Decimal(order.totalAmount.toString());
 
     const deliveryAgent = order.deliveryAgent;
     const salesRep = order.customerRep;
 
+    // Uses profile flat rate — must match draft collection creation in deliveryService
     const deliveryCommission: Decimal = deliveryAgent?.commissionAmount
       ? new Decimal(deliveryAgent.commissionAmount.toString())
       : new Decimal(0);
@@ -323,7 +360,7 @@ export class GLAutomationService {
     }
 
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate: order.deliveryDate || new Date(),
       description: `Revenue recognition - Order #${order.id}`,
       sourceType: JournalSourceType.order_delivery,
       sourceId: order.id,
@@ -353,6 +390,20 @@ export class GLAutomationService {
     order: Order,
     userId: number
   ): Promise<JournalEntryWithTransactions> {
+    // Idempotency guard — prevent duplicate GL entries for the same delivery
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.failed_delivery,
+        sourceId: delivery.id,
+        isVoided: false
+      },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) {
+      logger.warn(`Skipping duplicate GL entry for failed delivery ${delivery.id}: ${existingEntry.entryNumber} already exists`);
+      return existingEntry as JournalEntryWithTransactions;
+    }
+
     // Use default failed delivery fee as operational cost
     const expenseAmount = new Decimal(GL_DEFAULTS.FAILED_DELIVERY_FEE);
 
@@ -374,7 +425,7 @@ export class GLAutomationService {
     return await this.createJournalEntryWithRetry(tx, {
       entryDate: new Date(),
       description: `Failed delivery expense - Order #${order.id}`,
-      sourceType: JournalSourceType.order_delivery,
+      sourceType: JournalSourceType.failed_delivery,
       sourceId: delivery.id,
       createdBy: userId,
       transactions: {
@@ -410,11 +461,26 @@ export class GLAutomationService {
     userId: number,
     returnProcessingFee?: number
   ): Promise<JournalEntryWithTransactions> {
+    // Idempotency guard — prevent duplicate return reversal GL entries for the same order
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.order_return,
+        sourceId: order.id,
+        isVoided: false
+      },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) {
+      logger.warn(`Skipping duplicate return reversal GL entry for order ${order.id}: ${existingEntry.entryNumber} already exists`);
+      return existingEntry as JournalEntryWithTransactions;
+    }
+
     const orderAmount = new Decimal(order.totalAmount.toString());
 
     const deliveryAgent = order.deliveryAgent;
     const salesRep = order.customerRep;
 
+    // Uses profile flat rate — must match draft collection creation in deliveryService
     const deliveryCommission: Decimal = deliveryAgent?.commissionAmount
       ? new Decimal(deliveryAgent.commissionAmount.toString())
       : new Decimal(0);
@@ -506,7 +572,7 @@ export class GLAutomationService {
     }
 
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate: order.updatedAt || new Date(),
       description: `Return reversal - Order #${order.id} (Original JE: ${originalEntry?.entryNumber || 'N/A'})`,
       sourceType: JournalSourceType.order_return,
       sourceId: order.id,
@@ -584,6 +650,20 @@ export class GLAutomationService {
     collection: any,
     userId: number
   ): Promise<JournalEntryWithTransactions> {
+    // Idempotency guard — prevent duplicate GL entries for the same collection
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.agent_collection,
+        sourceId: collection.id,
+        isVoided: false
+      },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) {
+      logger.warn(`Skipping duplicate GL entry for collection ${collection.id}: ${existingEntry.entryNumber} already exists`);
+      return existingEntry as JournalEntryWithTransactions;
+    }
+
     const amount = new Decimal(collection.amount.toString());
 
     const transactions: TransactionCreateData[] = [
@@ -614,6 +694,130 @@ export class GLAutomationService {
   }
 
   /**
+   * Create GL journal entry for a recorded expense
+   *
+   * DR: Operating Expense (5100) = amount
+   * CR: Cash in Hand (1010)      = amount
+   *
+   * @param tx - Prisma transaction client
+   * @param expenseId - ID of the expense record
+   * @param amount - Expense amount
+   * @param description - Expense description
+   * @param userId - ID of user recording the expense
+   * @returns Created journal entry
+   */
+  static async createExpenseGLEntry(
+    tx: Prisma.TransactionClient,
+    expenseId: number,
+    amount: number,
+    description: string,
+    userId: number
+  ): Promise<JournalEntryWithTransactions> {
+    // Idempotency guard — prevent duplicate GL entries for the same expense
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.expense,
+        sourceId: expenseId,
+        isVoided: false
+      },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) {
+      logger.warn(`Skipping duplicate GL entry for expense ${expenseId}: ${existingEntry.entryNumber} already exists`);
+      return existingEntry as JournalEntryWithTransactions;
+    }
+
+    const expenseAmount = new Decimal(amount.toString());
+
+    const transactions: TransactionCreateData[] = [
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.OPERATING_EXPENSE, tx),
+        debitAmount: expenseAmount,
+        creditAmount: new Decimal(0),
+        description: `Expense recorded: ${description}`,
+      },
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
+        debitAmount: new Decimal(0),
+        creditAmount: expenseAmount,
+        description: `Cash reduction for expense: ${description}`,
+      },
+    ];
+
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Expense - ${description}`,
+      sourceType: JournalSourceType.expense,
+      sourceId: expenseId,
+      createdBy: userId,
+      transactions: {
+        create: transactions,
+      },
+    });
+  }
+
+  /**
+   * Create GL entry for COD deposit (when admin marks transactions as deposited)
+   *
+   * DR: Cash in Hand (1010)    = total deposit amount
+   * CR: Cash in Transit (1015) = total deposit amount
+   *
+   * @param tx - Prisma transaction client
+   * @param amount - Total deposit amount
+   * @param sourceId - Source record ID (first transaction ID in the batch)
+   * @param userId - ID of user processing the deposit
+   * @returns Created journal entry
+   */
+  static async createDepositGLEntry(
+    tx: Prisma.TransactionClient,
+    amount: number,
+    sourceId: number,
+    userId: number
+  ): Promise<JournalEntryWithTransactions> {
+    // Idempotency guard — prevent duplicate GL entries for the same deposit
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.agent_deposit,
+        sourceId,
+        isVoided: false
+      },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) {
+      logger.warn(`Skipping duplicate GL entry for deposit ${sourceId}: ${existingEntry.entryNumber} already exists`);
+      return existingEntry as JournalEntryWithTransactions;
+    }
+
+    const depositAmount = new Decimal(amount.toString());
+
+    const transactions: TransactionCreateData[] = [
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
+        debitAmount: depositAmount,
+        creditAmount: new Decimal(0),
+        description: 'Cash in hand from COD deposit',
+      },
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT, tx),
+        debitAmount: new Decimal(0),
+        creditAmount: depositAmount,
+        description: 'Cash in transit cleared on deposit',
+      },
+    ];
+
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `COD deposit recorded`,
+      sourceType: JournalSourceType.agent_deposit,
+      sourceId,
+      createdBy: userId,
+      transactions: {
+        create: transactions,
+      },
+    });
+  }
+
+  /**
    * Create GL entry for agent deposit verification
    *
    * Records receipt of cash from agent and reduction of their receivable:
@@ -630,6 +834,20 @@ export class GLAutomationService {
     deposit: AgentDeposit,
     userId: number
   ): Promise<JournalEntryWithTransactions> {
+    // Idempotency guard — prevent duplicate GL entries for the same agent deposit
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.agent_deposit,
+        sourceId: deposit.id,
+        isVoided: false
+      },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) {
+      logger.warn(`Skipping duplicate GL entry for agent deposit ${deposit.id}: ${existingEntry.entryNumber} already exists`);
+      return existingEntry as JournalEntryWithTransactions;
+    }
+
     const depositAmount = new Decimal(deposit.amount.toString());
 
     const transactions: TransactionCreateData[] = [
@@ -657,6 +875,137 @@ export class GLAutomationService {
         create: transactions,
       },
     });
+  }
+
+  /**
+   * Create GL entry for commission payout to a sales rep
+   *
+   * Records payment of accrued commission liability:
+   * - Debit: Commissions Payable (reduces liability)
+   * - Credit: Cash in Hand (cash leaves the business)
+   *
+   * @param tx - Prisma transaction client
+   * @param payoutId - ID of the payout record
+   * @param repId - ID of the sales rep being paid
+   * @param amount - Payout amount
+   * @param userId - ID of user processing the payout
+   * @returns Created journal entry
+   */
+  static async recordCommissionPayout(
+    tx: Prisma.TransactionClient,
+    payoutId: number,
+    repId: number,
+    amount: Decimal,
+    userId: number
+  ): Promise<JournalEntryWithTransactions> {
+    // Idempotency guard — prevent duplicate GL entries for the same payout
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.payout,
+        sourceId: payoutId,
+        isVoided: false
+      },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) {
+      logger.warn(`Skipping duplicate GL entry for payout ${payoutId}: ${existingEntry.entryNumber} already exists`);
+      return existingEntry as JournalEntryWithTransactions;
+    }
+
+    const transactions: TransactionCreateData[] = [
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE, tx),
+        debitAmount: amount,
+        creditAmount: new Decimal(0),
+        description: `Commission payout to Rep #${repId}`,
+      },
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
+        debitAmount: new Decimal(0),
+        creditAmount: amount,
+        description: `Cash disbursed for commission payout to Rep #${repId}`,
+      },
+    ];
+
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Commission payout - Rep #${repId} (Payout #${payoutId})`,
+      sourceType: JournalSourceType.payout,
+      sourceId: payoutId,
+      createdBy: userId,
+      transactions: {
+        create: transactions,
+      },
+    });
+  }
+
+  /**
+   * Void a journal entry by creating a reversing entry and marking the original as voided.
+   * Used when updating or deleting expenses to maintain GL integrity.
+   *
+   * @param tx - Prisma transaction client
+   * @param sourceType - The source type of the journal entry (e.g., 'expense')
+   * @param sourceId - The source record ID
+   * @param userId - ID of user performing the void
+   * @returns The reversing journal entry, or null if no entry found to void
+   */
+  static async voidJournalEntry(
+    tx: Prisma.TransactionClient,
+    sourceType: string,
+    sourceId: number,
+    userId: number
+  ): Promise<JournalEntryWithTransactions | null> {
+    // Find the original non-voided journal entry
+    const originalEntry = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: sourceType as JournalSourceType,
+        sourceId,
+        isVoided: false
+      },
+      include: {
+        transactions: {
+          include: {
+            account: true
+          }
+        }
+      }
+    });
+
+    if (!originalEntry) {
+      logger.warn(`No active journal entry found to void for ${sourceType} #${sourceId}`);
+      return null;
+    }
+
+    // Create reversing transactions (flip debits and credits)
+    const reversingTransactions: TransactionCreateData[] = originalEntry.transactions.map(txn => ({
+      accountId: txn.accountId,
+      debitAmount: txn.creditAmount as unknown as Decimal,
+      creditAmount: txn.debitAmount as unknown as Decimal,
+      description: `Void: ${txn.description}`,
+    }));
+
+    // Create the reversing journal entry (marked as voided so idempotency guards
+    // and future void calls don't pick it up as an active entry)
+    const reversingEntry = await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Void - ${originalEntry.description}`,
+      sourceType: JournalSourceType.reversal,
+      sourceId,
+      createdBy: userId,
+      transactions: {
+        create: reversingTransactions,
+      },
+    });
+
+    // Mark both original and reversing entries as voided
+    await tx.journalEntry.updateMany({
+      where: { id: { in: [originalEntry.id, reversingEntry.id] } },
+      data: { isVoided: true }
+    });
+
+    logger.info(`Voided journal entry ${originalEntry.entryNumber} for ${sourceType} #${sourceId}`);
+
+    return reversingEntry;
   }
 
   /**
@@ -693,6 +1042,7 @@ export class GLAutomationService {
           [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION]: { name: 'Delivery Agent Commission', type: 'expense', balance: 'debit' },
           [GL_ACCOUNTS.SALES_REP_COMMISSION]: { name: 'Sales Rep Commission', type: 'expense', balance: 'debit' },
           [GL_ACCOUNTS.REFUND_LIABILITY]: { name: 'Refund Liability', type: 'liability', balance: 'credit' },
+          [GL_ACCOUNTS.OPERATING_EXPENSE]: { name: 'Operating Expenses', type: 'expense', balance: 'debit' },
         };
 
         for (const code of missingAccounts) {

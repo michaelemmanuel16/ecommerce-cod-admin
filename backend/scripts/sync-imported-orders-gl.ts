@@ -117,8 +117,8 @@ async function syncOrderToGL(
     }
 
     // Calculate commissions
-    const deliveryCommission = order.deliveryAgent?.commissionAmount || 0;
-    const salesRepCommission = order.customerRep?.commissionAmount || 0;
+    const deliveryCommission = Number(order.deliveryAgent?.commissionAmount || 0);
+    const salesRepCommission = Number(order.customerRep?.commissionAmount || 0);
     const totalCommissions = deliveryCommission + salesRepCommission;
 
     // In dry-run mode, just return what would be created
@@ -126,7 +126,7 @@ async function syncOrderToGL(
       return {
         orderId,
         status: 'success',
-        revenue: order.totalAmount,
+        revenue: Number(order.totalAmount),
         cogs: parseFloat(totalCOGS.toString()),
         commissions: totalCommissions,
         error: undefined
@@ -152,15 +152,20 @@ async function syncOrderToGL(
         }
       });
 
-      // Create draft agent collection if COD amount exists
+      // Create draft agent collection if COD amount exists and none already exists
       if (order.deliveryAgentId && order.codAmount) {
-        await agentReconciliationService.createDraftCollection(
-          tx,
-          orderId,
-          order.deliveryAgentId,
-          order.codAmount,
-          order.createdAt // Use order creation date as collection date
-        );
+        const existingCollection = await (tx as any).agentCollection.findUnique({
+          where: { orderId }
+        });
+        if (!existingCollection) {
+          await agentReconciliationService.createDraftCollection(
+            tx,
+            orderId,
+            order.deliveryAgentId,
+            Number(order.codAmount),
+            order.createdAt // Use order creation date as collection date
+          );
+        }
       }
 
       return glEntry;
@@ -171,7 +176,7 @@ async function syncOrderToGL(
     return {
       orderId,
       status: 'success',
-      revenue: order.totalAmount,
+      revenue: Number(order.totalAmount),
       cogs: parseFloat(totalCOGS.toString()),
       commissions: totalCommissions,
       glEntryId: result.id
@@ -223,7 +228,7 @@ async function syncImportedOrdersToGL(dryRun: boolean) {
   }
 
   // Show summary of what will be synced
-  const totalRevenue = ordersToSync.reduce((sum, o) => sum + o.totalAmount, 0);
+  const totalRevenue = ordersToSync.reduce((sum, o) => sum + Number(o.totalAmount), 0);
   console.log(`Total Revenue to Recognize: GH₵${totalRevenue.toFixed(2)}`);
   console.log(`Date Range: ${ordersToSync[0].createdAt.toISOString().split('T')[0]} to ${ordersToSync[ordersToSync.length - 1].createdAt.toISOString().split('T')[0]}`);
   console.log('\n' + '-'.repeat(80) + '\n');

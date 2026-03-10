@@ -5,6 +5,8 @@ export interface FinancialSummary {
   totalExpenses: number;
   profit: number;
   codCollected: number;
+  codPending: number;
+  outstandingReceivables: number;
   profitMargin: number;
 }
 
@@ -102,6 +104,7 @@ export interface ProfitMargins {
 export interface AgingSummary {
   totalAgentsWithBalance: number;
   totalOutstandingAmount: number;
+  outstandingReceivables: number;
   overdueAgentsCount: number;
   criticalOverdueAmount: number;
   warningOverdueAmount: number;
@@ -158,9 +161,11 @@ export interface CollectionRecord {
 export interface CashFlowKPI {
   cashInHand: number;
   cashInTransit: number;
-  arAgents: number;
+  outstandingReceivables: number;
   cashExpected: number;
+  cashAvailableNow: number;
   totalCashPosition: number;
+  totalCashPipeline: number;
 }
 
 export interface CashFlowForecastPoint {
@@ -177,11 +182,13 @@ export interface ProfitabilityAnalysis {
     totalShippingCost: number;
     totalDiscount: number;
     totalMarketingExpense: number;
+    totalCommissions: number;
     grossProfit: number;
     grossMargin: number;
     netProfit: number;
     netMargin: number;
     orderCount: number;
+    dataSources?: Record<string, string>;
   };
   products: {
     id: number;
@@ -190,6 +197,7 @@ export interface ProfitabilityAnalysis {
     revenue: number;
     cogs: number;
     quantity: number;
+    commission: number;
     grossProfit: number;
     grossMargin: number;
   }[];
@@ -463,6 +471,8 @@ export const financialService = {
     isActive?: boolean;
     page?: number;
     limit?: number;
+    startDate?: string;
+    endDate?: string;
   }): Promise<{ accounts: any[]; pagination: any }> {
     const response = await apiClient.get('/api/gl/accounts', { params });
     return response.data;
