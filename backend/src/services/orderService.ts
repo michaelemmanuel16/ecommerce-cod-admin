@@ -985,6 +985,7 @@ export class OrderService {
         if (orderWithItems) {
           if (!isOldDeducted && isNewDeducted) {
             // Transition A: entering deducted zone — deduct stock
+            // Check if delivery agent has allocated stock for any items
             let fulfilledFromAgent: number[] = [];
             if (order.deliveryAgentId) {
               fulfilledFromAgent = await agentInventoryService.recordOrderFulfillment(
@@ -1032,6 +1033,7 @@ export class OrderService {
             }
           } else if (isOldDeducted && !isNewDeducted) {
             // Transition B: leaving deducted zone — restore stock
+            // Restore stock - check agent stock first, then warehouse for remaining
             let reversedFromAgent: number[] = [];
             if (order.deliveryAgentId) {
               reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
@@ -1059,6 +1061,23 @@ export class OrderService {
               data.changedBy ?? order.deliveryAgentId!
             );
           }
+        }
+      }
+
+      // Handle out_for_delivery → delivered: confirm agent stock delivery
+      if (order.status === 'out_for_delivery' && data.status === 'delivered' && order.deliveryAgentId) {
+        const orderItems = await tx.order.findUnique({
+          where: { id: orderId },
+          include: { orderItems: true }
+        });
+        if (orderItems) {
+          await agentInventoryService.confirmOrderDelivery(
+            tx,
+            orderId,
+            order.deliveryAgentId,
+            orderItems.orderItems.map(item => ({ productId: item.productId, quantity: item.quantity })),
+            data.changedBy ?? order.deliveryAgentId
+          );
         }
       }
 
