@@ -163,15 +163,19 @@ export class GLService {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
 
-    // Use raw SQL to find and lock the last entry for today to prevent race conditions
-    // This ensures only one process can generate the next sequence number at a time
+    // Acquire a transaction-scoped advisory lock to serialize sequence generation.
+    // FOR UPDATE only locks existing rows — when there are no rows yet (e.g. first
+    // entry of the day) it does nothing, allowing concurrent transactions to all
+    // compute sequence=1 and collide. The advisory lock guarantees one-at-a-time
+    // execution regardless of whether rows exist.
+    await client.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('gl_entry_number_sequence'))`;
+
     const result = await client.$queryRaw<any[]>`
       SELECT entry_number as "entryNumber"
-      FROM journal_entries 
-      WHERE entry_number LIKE ${'JE-' + dateStr + '-%'} 
-      ORDER BY entry_number DESC 
-      LIMIT 1 
-      FOR UPDATE
+      FROM journal_entries
+      WHERE entry_number LIKE ${'JE-' + dateStr + '-%'}
+      ORDER BY entry_number DESC
+      LIMIT 1
     `;
 
     let sequence = 1;
@@ -183,10 +187,7 @@ export class GLService {
       }
     }
 
-    // Add a random 2-character suffix to practically eliminate collisions 
-    // even if the lock is released or bypassed.
-    const entropy = Math.random().toString(36).substring(2, 4).toUpperCase();
-    return `JE-${dateStr}-${sequence.toString().padStart(5, '0')}-${entropy}`;
+    return `JE-${dateStr}-${sequence.toString().padStart(5, '0')}`;
   }
 
   /**
