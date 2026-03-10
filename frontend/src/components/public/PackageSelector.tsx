@@ -54,7 +54,7 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                 {/* Package details */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-gray-900">{pkg.name}</h3>
+                    <h3 className="font-semibold text-gray-900 whitespace-nowrap">{pkg.name}</h3>
                     {/* Show custom highlight if enabled, otherwise fall back to "Most Popular" */}
                     {pkg.showHighlight && pkg.highlightText ? (
                       <span className="px-2 py-0.5 bg-[#f97316] text-white text-xs font-medium rounded whitespace-nowrap flex-shrink-0">
