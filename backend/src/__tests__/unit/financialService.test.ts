@@ -9,6 +9,15 @@ jest.mock('../../server', () => {
   m.to.mockReturnValue(m);
   return { io: m };
 });
+
+// Mock GLAutomationService to prevent GL account DB lookups in unit tests
+jest.mock('../../services/glAutomationService', () => ({
+  GLAutomationService: {
+    createExpenseGLEntry: jest.fn().mockResolvedValue({ id: 1, entryNumber: 'JE-001' }),
+    createDepositGLEntry: jest.fn().mockResolvedValue({ id: 2, entryNumber: 'JE-002' }),
+    voidJournalEntry: jest.fn().mockResolvedValue(null),
+  },
+}));
 import { prismaMock } from '../mocks/prisma.mock';
 import { FinancialService } from '../../services/financialService';
 import { AppError } from '../../middleware/errorHandler';
@@ -19,21 +28,44 @@ describe('FinancialService', () => {
 
   beforeEach(() => {
     financialService = new FinancialService();
+    // Default $transaction mock: executes the callback with prismaMock as the tx
+    (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
+      return callback(prismaMock);
+    });
   });
 
   describe('getFinancialSummary', () => {
-    it('should calculate financial summary correctly', async () => {
-      prismaMock.order.aggregate
-        .mockResolvedValueOnce({ _sum: { totalAmount: 10000 } } as any) // totalRevenue (order.status: delivered)
-        .mockResolvedValueOnce({ _sum: { totalAmount: 500 } } as any); // outForDeliveryOrders
+    it('should calculate financial summary from GL accounts', async () => {
+      // Mock valid journal entries (excluding period_close and voided)
+      prismaMock.journalEntry.findMany.mockResolvedValue([
+        { id: 1 }, { id: 2 }, { id: 3 }
+      ] as any);
 
-      prismaMock.expense.aggregate.mockResolvedValue({
-        _sum: { amount: 2000 }
+      // Mock GL account aggregations (revenue and expense accounts)
+      prismaMock.accountTransaction.groupBy.mockResolvedValue([
+        { accountId: 10, _sum: { debitAmount: 0, creditAmount: 10000 } },   // Product Revenue (credit normal)
+        { accountId: 20, _sum: { debitAmount: 2000, creditAmount: 0 } },    // COGS (debit normal)
+      ] as any);
+
+      // Mock account metadata
+      prismaMock.account.findMany.mockResolvedValue([
+        { id: 10, code: '4010', normalBalance: 'credit', accountType: 'revenue' },
+        { id: 20, code: '5010', normalBalance: 'debit', accountType: 'expense' },
+      ] as any);
+
+      // Mock Cash in Transit account for outstanding receivables
+      prismaMock.account.findUnique.mockResolvedValue({
+        currentBalance: 500
       } as any);
 
-      prismaMock.transaction.aggregate
-        .mockResolvedValueOnce({ _sum: { amount: 9500 } } as any) // codCollections (collected/deposited/reconciled)
-        .mockResolvedValueOnce({ _sum: { amount: 0 } } as any); // pendingTransactions (not needed for this test summary)
+      // Mock COD collections and pipeline revenue
+      prismaMock.transaction.aggregate.mockResolvedValue({
+        _sum: { amount: 9500 }
+      } as any);
+
+      prismaMock.order.aggregate.mockResolvedValue({
+        _sum: { totalAmount: 500 }
+      } as any);
 
       const summary = await financialService.getFinancialSummary({
         startDate: new Date('2024-01-01'),
@@ -44,19 +76,18 @@ describe('FinancialService', () => {
       expect(summary.totalExpenses).toBe(2000);
       expect(summary.profit).toBe(8000);
       expect(summary.codCollected).toBe(9500);
-      expect(summary.codPending).toBe(1000); // (10000 - 9500) + 500
-      expect(summary.profitMargin).toBe(80); // (10000 - 2000) / 10000 * 100
+      expect(summary.outstandingReceivables).toBe(500);
+      expect(summary.profitMargin).toBe(80);
     });
 
-    it('should handle null aggregate values', async () => {
+    it('should handle null/empty GL data', async () => {
+      prismaMock.journalEntry.findMany.mockResolvedValue([] as any);
+      prismaMock.accountTransaction.groupBy.mockResolvedValue([] as any);
+      prismaMock.account.findMany.mockResolvedValue([] as any);
+      prismaMock.account.findUnique.mockResolvedValue(null);
       prismaMock.transaction.aggregate.mockResolvedValue({
         _sum: { amount: null }
       } as any);
-
-      prismaMock.expense.aggregate.mockResolvedValue({
-        _sum: { amount: null }
-      } as any);
-
       prismaMock.order.aggregate.mockResolvedValue({
         _sum: { totalAmount: null }
       } as any);
@@ -234,13 +265,18 @@ describe('FinancialService', () => {
     it('should mark multiple transactions as deposited', async () => {
       const transactionIds = ['1', '2'];
       const mockTransactions = [
-        { id: 1, type: 'cod_collection', status: 'collected', orderId: 101 },
-        { id: 2, type: 'cod_collection', status: 'collected', orderId: 102 }
+        { id: 1, type: 'cod_collection', status: 'collected', orderId: 101, amount: 100 },
+        { id: 2, type: 'cod_collection', status: 'collected', orderId: 102, amount: 200 }
       ];
 
       prismaMock.transaction.findMany.mockResolvedValue(mockTransactions as any);
       prismaMock.transaction.updateMany.mockResolvedValue({ count: 2 } as any);
       prismaMock.order.updateMany.mockResolvedValue({ count: 2 } as any);
+      // No reconciled collections — GL deposit entry will be created
+      (prismaMock as any).agentCollection = {
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([])
+      };
 
       const requester = { id: 1, role: 'admin' };
       const result = await financialService.markCODAsDeposited(
@@ -445,6 +481,40 @@ describe('FinancialService', () => {
     });
   });
 
+  describe('edge cases - negative and zero amounts', () => {
+    it('should reject negative expense amount', async () => {
+      const expenseData = {
+        category: 'Delivery',
+        amount: -500,
+        description: 'Invalid negative',
+        expenseDate: new Date(),
+        recordedBy: 'user-1'
+      };
+
+      await expect(financialService.recordExpense(expenseData))
+        .rejects.toThrow('Expense amount must be a positive number');
+    });
+
+    it('should reject zero expense amount', async () => {
+      const expenseData = {
+        category: 'Delivery',
+        amount: 0,
+        description: 'Zero amount',
+        expenseDate: new Date(),
+        recordedBy: 'user-1'
+      };
+
+      await expect(financialService.recordExpense(expenseData))
+        .rejects.toThrow('Expense amount must be a positive number');
+    });
+
+    it('should throw when marking empty transaction list as deposited', async () => {
+      await expect(
+        financialService.markCODAsDeposited([])
+      ).rejects.toThrow('No transaction IDs provided');
+    });
+  });
+
   describe('getAllTransactions', () => {
     it('should return paginated transactions', async () => {
       const mockTransactions = [
@@ -557,6 +627,10 @@ describe('FinancialService', () => {
       ];
 
       prismaMock.account.findMany.mockResolvedValue(mockAccounts as any);
+
+      prismaMock.journalEntry.findMany.mockResolvedValue([
+        { id: 1 }, { id: 2 }, { id: 3 }
+      ] as any);
 
       prismaMock.accountTransaction.groupBy.mockResolvedValue([
         { accountId: 1, _sum: { debitAmount: 0, creditAmount: 5000 } },

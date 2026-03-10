@@ -28,6 +28,7 @@ export const GL_ACCOUNTS = {
   RETURN_PROCESSING_EXPENSE: '5030', // Return handling costs
   DELIVERY_AGENT_COMMISSION: '5040', // Delivery agent commission expense
   SALES_REP_COMMISSION: '5050',      // Sales representative commission expense
+  OPERATING_EXPENSE: '5100',         // General operating expenses (non-COGS, non-commission)
 
   // Liability Accounts (2000-2999)
   REFUND_LIABILITY: '2010',          // Customer refunds pending payment

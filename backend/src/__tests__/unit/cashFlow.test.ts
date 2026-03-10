@@ -49,8 +49,13 @@ describe('FinancialService Cash Flow Report', () => {
                 return Promise.resolve({ _sum: { totalAmount: 0 } }) as any;
             });
 
-            // Mock agent collections for holdings
-            (prismaMock as any).agentCollection.findMany.mockResolvedValue([]);
+            // Mock agent collections for holdings (batched groupBy queries)
+            (prismaMock as any).agentCollection = {
+                ...(prismaMock as any).agentCollection,
+                groupBy: jest.fn().mockResolvedValue([
+                    { agentId: 1, _count: { id: 3 }, _min: { collectionDate: new Date() } }
+                ]),
+            };
 
             // Mock historical data for forecast
             prismaMock.transaction.aggregate.mockResolvedValue({
@@ -74,7 +79,7 @@ describe('FinancialService Cash Flow Report', () => {
 
             expect(report.kpis.cashInHand).toBe(1000);
             expect(report.kpis.cashInTransit).toBe(2000);
-            expect(report.kpis.arAgents).toBe(3000);
+            expect(report.kpis.outstandingReceivables).toBe(3000);
             expect(report.kpis.cashExpected).toBe(4000);
             expect(report.kpis.totalCashPosition).toBe(10000);
             expect(report.forecast).toHaveLength(30);

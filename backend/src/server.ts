@@ -38,6 +38,8 @@ import glRoutes from './routes/glRoutes';
 import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import { GLAutomationService } from './services/glAutomationService';
+import { GLAccountService } from './services/glAccountService';
+import cron from 'node-cron';
 
 // Initialize workflow queue worker
 import './queues/workflowQueue';
@@ -186,6 +188,26 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup Agent Aging Cron Job
     await setupAgingCron();
+
+    // Daily GL balance verification at 02:00 AM
+    cron.schedule('0 2 * * *', async () => {
+      logger.info('Running daily GL balance verification...');
+      try {
+        const result = await GLAccountService.verifyAllAccountBalances();
+        if (result.unbalanced.length > 0) {
+          logger.error('GL balance verification found discrepancies', {
+            totalAccounts: result.totalAccounts,
+            unbalancedCount: result.unbalanced.length,
+            maxDifference: result.maxDifference.toFixed(4),
+            unbalanced: result.unbalanced.map(u => ({ code: u.code, difference: u.difference.toFixed(4) }))
+          });
+        } else {
+          logger.info(`GL balance verification passed: ${result.totalAccounts} accounts verified`);
+        }
+      } catch (err) {
+        logger.error('GL balance verification cron failed', { error: err });
+      }
+    });
 
     // Verify GL Accounts (Required for financial statements correctness)
     const glValidated = await GLAutomationService.asyncVerifyGLAccounts();

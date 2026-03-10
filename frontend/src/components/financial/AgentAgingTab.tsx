@@ -2,7 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { Card } from '../ui/Card';
 import { formatCurrency } from '../../utils/format';
-import { Download, AlertCircle, Clock, Users, ShieldAlert, BarChart3, Filter, FileText, Mail, Ban, Eye, ChevronUp, ChevronDown } from 'lucide-react';
+import { Download, AlertCircle, Clock, Users, ShieldAlert, BarChart3, Filter, Mail, Ban, Eye, ChevronUp, ChevronDown, Info } from 'lucide-react';
+import { Tooltip as UITooltip } from '../ui/Tooltip';
 import { financialService } from '../../services/financial.service';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import toast from 'react-hot-toast';
@@ -113,7 +114,12 @@ export const AgentAgingTab: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card className="border-l-4 border-primary-500 hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Outstanding AR</span>
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                            Total Agent Cash Holdings
+                            <UITooltip content="Gross cash physically held by agents (includes their commission). Net receivable to company is lower by agent commissions." position="bottom">
+                                <Info className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" />
+                            </UITooltip>
+                        </span>
                         <div className="p-1.5 bg-primary-50 rounded-lg">
                             <BarChart3 className="w-4 h-4 text-primary-600" />
                         </div>
@@ -124,7 +130,12 @@ export const AgentAgingTab: React.FC = () => {
 
                 <Card className="border-l-4 border-red-500 hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Critical (8+ Days)</span>
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                            Critical (8+ Days)
+                            <UITooltip content="Collections held beyond 8 days — agents are at risk of being auto-blocked from new deliveries" position="bottom">
+                                <Info className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" />
+                            </UITooltip>
+                        </span>
                         <div className="p-1.5 bg-red-50 rounded-lg">
                             <AlertCircle className="w-4 h-4 text-red-600" />
                         </div>
@@ -135,7 +146,12 @@ export const AgentAgingTab: React.FC = () => {
 
                 <Card className="border-l-4 border-orange-500 hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Warning (4-7 Days)</span>
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                            Warning (4-7 Days)
+                            <UITooltip content="Collections held 4-7 days — follow up recommended before they become critical" position="bottom">
+                                <Info className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" />
+                            </UITooltip>
+                        </span>
                         <div className="p-1.5 bg-orange-50 rounded-lg">
                             <Clock className="w-4 h-4 text-orange-600" />
                         </div>
@@ -146,7 +162,12 @@ export const AgentAgingTab: React.FC = () => {
 
                 <Card className="border-l-4 border-gray-900 hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Blocked Agents</span>
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                            Blocked Agents
+                            <UITooltip content="Agents currently restricted from receiving new deliveries due to overdue unsettled collections" position="bottom">
+                                <Info className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" />
+                            </UITooltip>
+                        </span>
                         <div className="p-1.5 bg-gray-50 rounded-lg">
                             <ShieldAlert className="w-4 h-4 text-gray-900" />
                         </div>
@@ -292,10 +313,10 @@ export const AgentAgingTab: React.FC = () => {
                                             <td className="px-6 py-4 whitespace-nowrap text-right">
                                                 <div className="flex items-center justify-end space-x-1">
                                                     <button
-                                                        title="Send Reminder Email"
+                                                        title="Send Reminder Email (Coming Soon)"
                                                         aria-label={`Send reminder to ${entry.agent.firstName}`}
-                                                        className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
-                                                        onClick={() => toast.success(`Reminder sent to ${entry.agent.firstName}`)}
+                                                        className="p-1.5 text-gray-300 cursor-not-allowed rounded"
+                                                        disabled
                                                     >
                                                         <Mail className="w-3.5 h-3.5" />
                                                     </button>
@@ -308,10 +329,10 @@ export const AgentAgingTab: React.FC = () => {
                                                         <Eye className="w-3.5 h-3.5" />
                                                     </Link>
                                                     <button
-                                                        title="Block Agent"
+                                                        title="Block Agent (Coming Soon)"
                                                         aria-label={`Block agent ${entry.agent.firstName}`}
-                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                                        onClick={() => toast.error(`Block functionality for ${entry.agent.firstName} triggered`)}
+                                                        className="p-1.5 text-gray-300 cursor-not-allowed rounded"
+                                                        disabled
                                                     >
                                                         <Ban className="w-3.5 h-3.5" />
                                                     </button>

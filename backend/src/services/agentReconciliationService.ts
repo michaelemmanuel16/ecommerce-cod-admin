@@ -3,6 +3,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import appEvents, { AppEvent } from '../utils/appEvents';
+import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 
 export class AgentReconciliationService {
     /**
@@ -26,6 +27,21 @@ export class AgentReconciliationService {
             },
         });
 
+        // Update AgentBalance — canonical path for balance tracking
+        await (tx as any).agentBalance.upsert({
+            where: { agentId },
+            create: {
+                agentId,
+                totalCollected: amount,
+                totalDeposited: 0,
+                currentBalance: amount,
+            },
+            update: {
+                totalCollected: { increment: amount },
+                currentBalance: { increment: amount },
+            },
+        });
+
         logger.info(`Draft collection created for order ${orderId}`, {
             collectionId: collection.id,
             agentId,
@@ -46,7 +62,7 @@ export class AgentReconciliationService {
     async verifyCollection(collectionId: number, verifierId: number) {
         return await prisma.$transaction(async (tx) => {
             return await this.verifyCollectionInternal(tx, collectionId, verifierId);
-        });
+        }, TRANSACTION_CONFIG);
     }
 
     /**
@@ -70,7 +86,7 @@ export class AgentReconciliationService {
     async approveCollection(collectionId: number, approverId: number) {
         return await prisma.$transaction(async (tx) => {
             return await this.verifyCollectionInternal(tx, collectionId, approverId);
-        });
+        }, TRANSACTION_CONFIG);
     }
 
     async getOrCreateBalance(agentId: number, tx?: any): Promise<any> {
@@ -89,6 +105,56 @@ export class AgentReconciliationService {
                 currentBalance: 0,
             },
         });
+    }
+
+    /**
+     * Apply FIFO matching from a deposit amount to approved agent collections.
+     * Marks fully-covered collections as 'deposited' and updates allocatedAmount.
+     * Returns the unmatched remainder (zero if fully allocated).
+     */
+    private async matchDepositsToCollections(
+        extTx: any,
+        agentId: number,
+        depositAmount: Prisma.Decimal
+    ): Promise<Prisma.Decimal> {
+        let remainingAmount = depositAmount;
+
+        const approvedCollections = await extTx.agentCollection.findMany({
+            where: { agentId, status: 'approved' },
+            orderBy: { collectionDate: 'asc' }
+        });
+
+        const pendingMatches = approvedCollections.filter((coll: any) => {
+            const amount = new Prisma.Decimal(coll.amount.toString());
+            const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
+            return allocated.lessThan(amount);
+        });
+
+        for (const coll of pendingMatches) {
+            if (remainingAmount.isZero()) break;
+
+            const collAmount = new Prisma.Decimal(coll.amount.toString());
+            const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
+            const outstanding = collAmount.minus(allocated);
+
+            if (remainingAmount.greaterThanOrEqualTo(outstanding)) {
+                // Fully cover this collection
+                await extTx.agentCollection.update({
+                    where: { id: coll.id },
+                    data: { status: 'deposited', allocatedAmount: collAmount }
+                });
+                remainingAmount = remainingAmount.minus(outstanding);
+            } else if (remainingAmount.greaterThan(0)) {
+                // Partially cover this collection
+                await extTx.agentCollection.update({
+                    where: { id: coll.id },
+                    data: { allocatedAmount: allocated.plus(remainingAmount) }
+                });
+                remainingAmount = new Prisma.Decimal(0);
+            }
+        }
+
+        return remainingAmount;
     }
 
     /**
@@ -120,7 +186,7 @@ export class AgentReconciliationService {
 
             logger.info(`New deposit created for agent ${agentId}`, { depositId: deposit.id, amount });
             return deposit;
-        });
+        }, TRANSACTION_CONFIG);
     }
 
     /**
@@ -157,7 +223,7 @@ export class AgentReconciliationService {
 
             logger.info(`Deposit ${depositId} rejected by user ${rejectedById} `);
             return updated;
-        });
+        }, TRANSACTION_CONFIG);
     }
 
     /**
@@ -213,53 +279,7 @@ export class AgentReconciliationService {
             await GLAutomationService.createAgentDepositEntry(extTx, updated, verifierId);
 
             // FIFO Matching to Approved Collections (Partial Allocation Support)
-            let remainingAmount = depAmt;
-
-            const approvedCollections = await extTx.agentCollection.findMany({
-                where: {
-                    agentId: deposit.agentId,
-                    status: 'approved',
-                },
-                orderBy: {
-                    collectionDate: 'asc'
-                }
-            });
-
-            // Filter collections that are not yet fully covered
-            const pendingMatches = approvedCollections.filter((coll: any) => {
-                const amount = new Prisma.Decimal(coll.amount.toString());
-                const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
-                return allocated.lessThan(amount);
-            });
-
-            for (const coll of pendingMatches) {
-                if (remainingAmount.isZero()) break;
-
-                const collAmount = new Prisma.Decimal(coll.amount.toString());
-                const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
-                const outstanding = collAmount.minus(allocated);
-
-                if (remainingAmount.greaterThanOrEqualTo(outstanding)) {
-                    // Fully cover this collection
-                    await extTx.agentCollection.update({
-                        where: { id: coll.id },
-                        data: {
-                            status: 'deposited',
-                            allocatedAmount: collAmount
-                        }
-                    });
-                    remainingAmount = remainingAmount.minus(outstanding);
-                } else if (remainingAmount.greaterThan(0)) {
-                    // Partially cover this collection
-                    await extTx.agentCollection.update({
-                        where: { id: coll.id },
-                        data: {
-                            allocatedAmount: allocated.plus(remainingAmount)
-                        }
-                    });
-                    remainingAmount = new Prisma.Decimal(0);
-                }
-            }
+            const remainingAmount = await this.matchDepositsToCollections(extTx, deposit.agentId, depAmt);
 
             // If there's an unallocated remainder, update the deposit note
             if (!remainingAmount.isZero()) {
@@ -279,10 +299,7 @@ export class AgentReconciliationService {
             appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
 
             return updated;
-        }, {
-            maxWait: 10000,
-            timeout: 30000
-        });
+        }, TRANSACTION_CONFIG);
     }
 
     /**
@@ -395,53 +412,7 @@ export class AgentReconciliationService {
                 });
 
                 // FIFO Matching for this agent's total deposit amount
-                let remainingAmount = agentTotalDeposit;
-
-                const approvedCollections = await extTx.agentCollection.findMany({
-                    where: {
-                        agentId,
-                        status: 'approved',
-                    },
-                    orderBy: {
-                        collectionDate: 'asc'
-                    }
-                });
-
-                // Filter collections that are not yet fully covered
-                const pendingMatches = approvedCollections.filter((coll: any) => {
-                    const amount = new Prisma.Decimal(coll.amount.toString());
-                    const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
-                    return allocated.lessThan(amount);
-                });
-
-                for (const coll of pendingMatches) {
-                    if (remainingAmount.isZero()) break;
-
-                    const collAmount = new Prisma.Decimal(coll.amount.toString());
-                    const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
-                    const outstanding = collAmount.minus(allocated);
-
-                    if (remainingAmount.greaterThanOrEqualTo(outstanding)) {
-                        // Fully cover this collection
-                        await extTx.agentCollection.update({
-                            where: { id: coll.id },
-                            data: {
-                                status: 'deposited',
-                                allocatedAmount: collAmount
-                            }
-                        });
-                        remainingAmount = remainingAmount.minus(outstanding);
-                    } else if (remainingAmount.greaterThan(0)) {
-                        // Partially cover this collection
-                        await extTx.agentCollection.update({
-                            where: { id: coll.id },
-                            data: {
-                                allocatedAmount: allocated.plus(remainingAmount)
-                            }
-                        });
-                        remainingAmount = new Prisma.Decimal(0);
-                    }
-                }
+                await this.matchDepositsToCollections(extTx, agentId, agentTotalDeposit);
             }
 
             logger.info(`Bulk verified ${deposits.length} deposits by user ${verifierId} `, {
@@ -456,7 +427,7 @@ export class AgentReconciliationService {
                 verified: deposits.length,
                 totalAmount: totalAmount.toNumber()
             };
-        });
+        }, TRANSACTION_CONFIG);
     }
 
     /**
@@ -503,7 +474,7 @@ export class AgentReconciliationService {
                 results.push(result);
             }
             return results;
-        });
+        }, TRANSACTION_CONFIG);
     }
 
     /**
@@ -614,7 +585,7 @@ export class AgentReconciliationService {
 
             logger.info(`Agent ${agentId} blocked by user ${blockedById}.Reason: ${reason} `);
             return updated;
-        });
+        }, TRANSACTION_CONFIG);
     }
 
     /**
@@ -650,7 +621,7 @@ export class AgentReconciliationService {
 
             logger.info(`Agent ${agentId} unblocked by user ${unblockedById} `);
             return updated;
-        });
+        }, TRANSACTION_CONFIG);
     }
 
     /**

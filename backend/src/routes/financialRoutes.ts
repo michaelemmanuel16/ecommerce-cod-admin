@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as financialController from '../controllers/financialController';
-import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { authenticate, requireResourcePermission, requireRole } from '../middleware/auth';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
 import { apiLimiter } from '../middleware/rateLimiter';
@@ -40,5 +40,8 @@ router.delete('/expenses/:id', requireResourcePermission('financial', 'delete'),
 // Agent reconciliation
 router.get('/agent-cash-holdings', requireResourcePermission('financial', 'view'), financialController.getAgentCashHoldings);
 router.get('/agents/settlement/:agentId', requireResourcePermission('financial', 'view'), financialController.getAgentSettlement);
+
+// Financial health (admin/super_admin only)
+router.get('/health', requireRole('admin', 'super_admin'), financialController.getFinancialHealth);
 
 export default router;

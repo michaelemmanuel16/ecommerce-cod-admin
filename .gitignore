@@ -116,6 +116,7 @@ playwright-report/
 .playwright-mcp/
 .agent/
 .agents
+.firecrawl/
 
 # Large log files in backend
 backend/backend.log
