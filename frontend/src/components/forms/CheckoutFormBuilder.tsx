@@ -132,6 +132,8 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
   );
   const [upsellImages, setUpsellImages] = useState<Map<number, { file: File; preview: string }>>(new Map());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showName, setShowName] = useState<boolean>(initialData?.styling?.showName !== false);
+  const [showDescription, setShowDescription] = useState<boolean>(initialData?.styling?.showDescription !== false);
 
   // Dynamic regions based on selected country
   const [currentRegions, setCurrentRegions] = useState<string[]>(
@@ -151,11 +153,15 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
             quantity: u.items?.quantity || 1,
           })) || []
         );
+        setShowName(initialData.styling?.showName !== false);
+        setShowDescription(initialData.styling?.showDescription !== false);
       } else {
         // Create mode - reset to defaults
         setFields(defaultFields);
         setPackages([]);
         setUpsells([]);
+        setShowName(true);
+        setShowDescription(true);
       }
       // Clear any existing upsell image previews
       upsellImages.forEach(({ preview }) => {
@@ -403,6 +409,8 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
         styling: {
           buttonColor: data.buttonColor,
           accentColor: data.accentColor,
+          showName,
+          showDescription,
         },
       };
 
@@ -496,6 +504,26 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="Enter form description..."
           />
+          <div className="mt-2 space-y-1">
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showName}
+                onChange={e => setShowName(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Show form name on checkout
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showDescription}
+                onChange={e => setShowDescription(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Show description on checkout
+            </label>
+          </div>
         </div>
 
         {/* Form Fields */}
