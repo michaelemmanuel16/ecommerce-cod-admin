@@ -278,14 +278,14 @@ export class CheckoutFormService {
             description: true,
             price: true,
             quantity: true,
+            originalPrice: true,
+            discountType: true,
+            discountValue: true,
             isPopular: true,
             isDefault: true,
-            originalPrice: true,
-            showDiscount: true,
             showHighlight: true,
             highlightText: true,
-            discountType: true,
-            discountValue: true
+            showDiscount: true
           }
         },
         upsells: {

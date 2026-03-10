@@ -103,8 +103,6 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
   }
 
   function getFieldError(formKey: string): FieldError | undefined {
-    // For standard fields, look up directly; for custom fields (dotted paths),
-    // traverse the errors object
     if (formKey.startsWith('customFields.')) {
       const customKey = formKey.replace('customFields.', '');
       const customErrors = errors.customFields as Record<string, FieldError> | undefined;
