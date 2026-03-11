@@ -44,4 +44,8 @@ router.get('/agents/settlement/:agentId', requireResourcePermission('financial',
 // Financial health (admin/super_admin only)
 router.get('/health', requireRole('admin', 'super_admin'), financialController.getFinancialHealth);
 
+// Admin maintenance endpoints
+router.post('/refresh-aging', requireRole('admin', 'super_admin'), financialController.refreshAgingBuckets);
+router.post('/backfill-collections', requireRole('admin', 'super_admin'), financialController.backfillMissingCollections);
+
 export default router;

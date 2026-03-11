@@ -60,9 +60,12 @@ export class AgentReconciliationService {
      * Internal version that handles state transitions and GL integration
      */
     async verifyCollection(collectionId: number, verifierId: number) {
-        return await prisma.$transaction(async (tx) => {
+        const result = await prisma.$transaction(async (tx) => {
             return await this.verifyCollectionInternal(tx, collectionId, verifierId);
         }, TRANSACTION_CONFIG);
+        // Emit AFTER transaction commits so aging refresh reads committed data
+        appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
+        return result;
     }
 
     /**
@@ -84,9 +87,12 @@ export class AgentReconciliationService {
      * Only managers/admins can perform this action
      */
     async approveCollection(collectionId: number, approverId: number) {
-        return await prisma.$transaction(async (tx) => {
+        const result = await prisma.$transaction(async (tx) => {
             return await this.verifyCollectionInternal(tx, collectionId, approverId);
         }, TRANSACTION_CONFIG);
+        // Emit AFTER transaction commits so aging refresh reads committed data
+        appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
+        return result;
     }
 
     async getOrCreateBalance(agentId: number, tx?: any): Promise<any> {
@@ -230,7 +236,7 @@ export class AgentReconciliationService {
      * Verify an agent deposit
      */
     async verifyDeposit(depositId: number, verifierId: number): Promise<any> {
-        return await prisma.$transaction(async (tx) => {
+        const result = await prisma.$transaction(async (tx) => {
             const extTx = tx as any;
             const deposit = await extTx.agentDeposit.findUnique({
                 where: { id: depositId },
@@ -295,11 +301,11 @@ export class AgentReconciliationService {
 
             logger.info(`Deposit ${depositId} verified by user ${verifierId} `);
 
-            // Trigger proactive aging refresh via event bus
-            appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
-
             return updated;
         }, TRANSACTION_CONFIG);
+        // Emit AFTER transaction commits so aging refresh reads committed data
+        appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
+        return result;
     }
 
     /**
@@ -319,7 +325,7 @@ export class AgentReconciliationService {
             throw new AppError('Cannot verify more than 50 deposits at once', 400);
         }
 
-        return await prisma.$transaction(async (tx) => {
+        const result = await prisma.$transaction(async (tx) => {
             const extTx = tx as any;
             let totalAmount = new Prisma.Decimal(0);
 
@@ -420,14 +426,14 @@ export class AgentReconciliationService {
                 totalAmount: totalAmount.toString()
             });
 
-            // Trigger proactive aging refresh (non-blocking)
-            appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
-
             return {
                 verified: deposits.length,
                 totalAmount: totalAmount.toNumber()
             };
         }, TRANSACTION_CONFIG);
+        // Emit AFTER transaction commits so aging refresh reads committed data
+        appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
+        return result;
     }
 
     /**
@@ -465,7 +471,7 @@ export class AgentReconciliationService {
      * Atomic: rolls back entirely if any verification fails
      */
     async bulkVerifyCollections(collectionIds: number[], verifierId: number) {
-        return await prisma.$transaction(async (tx) => {
+        const results = await prisma.$transaction(async (tx) => {
             const extTx = tx as any;
             const results = [];
             for (const id of collectionIds) {
@@ -475,6 +481,9 @@ export class AgentReconciliationService {
             }
             return results;
         }, TRANSACTION_CONFIG);
+        // Emit AFTER transaction commits so aging refresh reads committed data
+        appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
+        return results;
     }
 
     /**
@@ -549,8 +558,8 @@ export class AgentReconciliationService {
 
         logger.info(`Collection ${collectionId} reconciled by user ${verifierId} `);
 
-        // Trigger proactive aging refresh (non-blocking)
-        appEvents.emit(AppEvent.AGENT_COLLECTION_RECONCILED);
+        // Note: aging refresh event is emitted by the caller AFTER the transaction commits
+        // to avoid race conditions where refreshAll() reads uncommitted data
 
         return updated;
     }
