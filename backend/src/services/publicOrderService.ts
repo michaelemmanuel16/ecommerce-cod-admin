@@ -150,7 +150,7 @@ export class PublicOrderService {
       });
 
       if (existingOrder) {
-        logger.info('Skipping duplicate checkout form order (same phone+package+total within 5 min)', {
+        logger.info('Skipping duplicate checkout form order (same phone+package+total within 30 min)', {
           existingOrderId: existingOrder.id,
           phone: orderData.phoneNumber,
           packageId: orderData.selectedPackageId,

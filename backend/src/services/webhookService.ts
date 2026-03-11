@@ -356,6 +356,21 @@ export class WebhookService {
       errors: [] as Array<{ order: any; error: string }>
     };
 
+    // Guard 1 pre-fetch: collect all externalOrderIds in the batch and query once
+    const batchExternalIds = orders
+      .map((o: any) => o.id || o.order_id)
+      .filter(Boolean)
+      .map(String);
+
+    const existingExternalIdSet = new Set<string>();
+    if (batchExternalIds.length > 0) {
+      const existing = await prisma.order.findMany({
+        where: { externalOrderId: { in: batchExternalIds }, deletedAt: null },
+        select: { externalOrderId: true },
+      });
+      existing.forEach((o) => existingExternalIdSet.add(o.externalOrderId!));
+    }
+
     for (const externalOrder of orders) {
       try {
         // Map external fields to internal fields
@@ -413,27 +428,22 @@ export class WebhookService {
         const shippingCost = Number(mappedData.shippingCost || mappedData.deliveryFee || externalOrder.shipping_cost || externalOrder.delivery_fee || 0);
         const totalAmount = mappedData.totalAmount ? Number(mappedData.totalAmount) : subtotal + shippingCost;
 
-        // Guard 1: exact-retry deduplication by externalOrderId
+        // Guard 1: exact-retry deduplication by externalOrderId (in-memory lookup from pre-fetch)
         const externalId = externalOrder.id || externalOrder.order_id;
-        if (externalId) {
-          const existingByExternalId = await prisma.order.findFirst({
-            where: { externalOrderId: String(externalId), deletedAt: null },
+        if (externalId && existingExternalIdSet.has(String(externalId))) {
+          logger.info('Skipping duplicate webhook order (same externalOrderId)', {
+            externalOrderId: externalId,
           });
-          if (existingByExternalId) {
-            logger.info('Skipping duplicate webhook order (same externalOrderId)', {
-              externalOrderId: externalId,
-              existingOrderId: existingByExternalId.id,
-            });
-            results.success++;
-            continue;
-          }
+          results.success++;
+          continue;
         }
 
-        // Guard 2: fingerprint deduplication (phone + amount within 1 hour)
+        // Guard 2: fingerprint deduplication (phone + amount within 1 hour, webhook source only)
         {
           const dedupeFrom = new Date(Date.now() - 60 * 60 * 1000);
           const existingByFingerprint = await prisma.order.findFirst({
             where: {
+              source: 'webhook',
               customer: { phoneNumber: customer.phoneNumber },
               totalAmount,
               deletedAt: null,
