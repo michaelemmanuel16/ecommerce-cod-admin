@@ -35,7 +35,7 @@ export interface RepPerformance {
   country: string | null;
   pendingOrders: number;
   mtdDelivered: number;
-  mtdTotalOrders: number;
+  mtdTotalAssigned: number;
   mtdSuccessRate: number;
 }
 
@@ -146,7 +146,7 @@ export const customerRepsService = {
         country: p.country || null,
         pendingOrders,
         mtdDelivered: p.metrics?.mtdDelivered || 0,
-        mtdTotalOrders: p.metrics?.mtdTotalAssigned || 0,
+        mtdTotalAssigned: p.metrics?.mtdTotalAssigned || 0,
         mtdSuccessRate: p.metrics?.mtdSuccessRate || 0,
       };
     });

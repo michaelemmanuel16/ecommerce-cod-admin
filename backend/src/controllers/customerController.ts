@@ -6,13 +6,20 @@ export const getAllCustomers = async (req: AuthRequest, res: Response): Promise<
   try {
     const { search, area, page = 1, limit = 20, sortBy, sortOrder } = req.query;
 
+    const validSortBy = ['totalOrders', 'totalSpent'].includes(sortBy as string)
+      ? (sortBy as 'totalOrders' | 'totalSpent')
+      : undefined;
+    const validSortOrder = ['asc', 'desc'].includes(sortOrder as string)
+      ? (sortOrder as 'asc' | 'desc')
+      : undefined;
+
     const result = await customerService.getAllCustomers({
       search: search as string | undefined,
       area: area as string | undefined,
       page: Number(page),
       limit: Number(limit),
-      sortBy: sortBy as 'totalOrders' | 'totalSpent' | undefined,
-      sortOrder: sortOrder as 'asc' | 'desc' | undefined,
+      sortBy: validSortBy,
+      sortOrder: validSortOrder,
     }, req.user);
 
     res.json(result);
