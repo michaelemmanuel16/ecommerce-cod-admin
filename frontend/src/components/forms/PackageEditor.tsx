@@ -93,7 +93,7 @@ export const PackageEditor: React.FC<PackageEditorProps> = ({
 
   return (
     <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-      <details open>
+      <details>
         <summary className="flex items-center justify-between cursor-pointer list-none [&::-webkit-details-marker]:hidden">
           <div className="flex items-center gap-3">
             <span className="font-medium text-sm text-gray-900">
