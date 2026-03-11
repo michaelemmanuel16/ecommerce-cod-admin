@@ -89,7 +89,53 @@ export class PublicOrderService {
 
     // Calculate total
     const subtotal = selectedPackage.price;
-    const totalAmount = subtotal + upsellsTotal;
+    const totalAmount = Math.round((subtotal + upsellsTotal) * 100) / 100;
+
+    // Dedup guard: prevent double-submits within 30 minutes (same phone + package + total)
+    // Run before any customer mutations so side-effects don't occur on duplicate requests
+    {
+      const dedupeFrom = new Date(Date.now() - 30 * 60 * 1000);
+      const existingOrder = await prisma.order.findFirst({
+        where: {
+          source: 'checkout_form',
+          totalAmount,
+          deletedAt: null,
+          createdAt: { gte: dedupeFrom },
+          customer: { phoneNumber: orderData.phoneNumber },
+          orderItems: {
+            some: {
+              itemType: 'package',
+              metadata: { path: ['packageId'], equals: orderData.selectedPackageId }
+            }
+          }
+        },
+        select: { id: true }
+      });
+
+      if (existingOrder) {
+        logger.info('Skipping duplicate checkout form order (same phone+package+total within 30 min)', {
+          existingOrderId: existingOrder.id,
+          phone: orderData.phoneNumber,
+          packageId: orderData.selectedPackageId,
+          totalAmount
+        });
+        return {
+          orderId: existingOrder.id,
+          totalAmount,
+          customer: {
+            firstName: orderData.firstName,
+            lastName: orderData.lastName,
+            phoneNumber: orderData.phoneNumber
+          },
+          package: {
+            name: selectedPackage.name,
+            quantity: selectedPackage.quantity,
+            price: selectedPackage.price
+          },
+          upsells: []
+        };
+      }
+    }
 
     // Find or create customer
     let customer = await prisma.customer.findUnique({

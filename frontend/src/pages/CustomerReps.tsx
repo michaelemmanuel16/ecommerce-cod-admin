@@ -51,6 +51,10 @@ export const CustomerReps: React.FC = () => {
       successRate: perfData?.successRate || 0,
       totalOrders: perfData?.totalOrders || 0,
       deliveredOrders: perfData?.deliveredOrders || 0,
+      pendingOrders: perfData?.pendingOrders || 0,
+      mtdDelivered: perfData?.mtdDelivered || 0,
+      mtdTotalAssigned: perfData?.mtdTotalAssigned || 0,
+      mtdSuccessRate: perfData?.mtdSuccessRate || 0,
       isActive: rep.isActive,
       createdAt: rep.createdAt,
     };

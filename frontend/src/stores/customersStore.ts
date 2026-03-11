@@ -7,12 +7,15 @@ interface CustomersState {
   selectedCustomer: Customer | null;
   pagination: PaginationMeta;
   searchQuery: string;
+  sortBy?: 'totalOrders' | 'totalSpent';
+  sortOrder: 'asc' | 'desc';
   isLoading: boolean;
   fetchCustomers: () => Promise<void>;
   fetchCustomerById: (id: number) => Promise<void>;
   setSelectedCustomer: (customer: Customer | null) => void;
   setPage: (page: number) => void;
   setSearchQuery: (query: string) => void;
+  setSort: (sortBy: 'totalOrders' | 'totalSpent', sortOrder: 'asc' | 'desc') => void;
 }
 
 export const useCustomersStore = create<CustomersState>((set, get) => ({
@@ -20,16 +23,20 @@ export const useCustomersStore = create<CustomersState>((set, get) => ({
   selectedCustomer: null,
   pagination: { page: 1, limit: 20, total: 0, pages: 0 },
   searchQuery: '',
+  sortBy: undefined,
+  sortOrder: 'desc',
   isLoading: false,
 
   fetchCustomers: async () => {
     set({ isLoading: true });
     try {
-      const { pagination, searchQuery } = get();
+      const { pagination, searchQuery, sortBy, sortOrder } = get();
       const { customers, pagination: newPagination } = await customersService.getCustomers({
         page: pagination.page,
         limit: pagination.limit,
-        search: searchQuery || undefined
+        search: searchQuery || undefined,
+        sortBy,
+        sortOrder,
       });
       set({ customers, pagination: newPagination, isLoading: false });
     } catch (error) {
@@ -64,6 +71,11 @@ export const useCustomersStore = create<CustomersState>((set, get) => ({
       searchQuery: query,
       pagination: { ...state.pagination, page: 1 }
     }));
+    get().fetchCustomers();
+  },
+
+  setSort: (sortBy: 'totalOrders' | 'totalSpent', sortOrder: 'asc' | 'desc') => {
+    set((state) => ({ sortBy, sortOrder, pagination: { ...state.pagination, page: 1 } }));
     get().fetchCustomers();
   },
 }));

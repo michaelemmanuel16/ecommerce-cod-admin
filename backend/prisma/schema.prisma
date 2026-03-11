@@ -487,6 +487,7 @@ model CheckoutForm {
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")
   currency    String           @default("GHS")
+  pixelConfig Json?            @map("pixel_config")
   product     Product          @relation(fields: [productId], references: [id])
   packages    FormPackage[]
   submissions FormSubmission[]

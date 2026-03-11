@@ -1041,6 +1041,7 @@ export class GLAutomationService {
           [GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE]: { name: 'Return Processing Expense', type: 'expense', balance: 'debit' },
           [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION]: { name: 'Delivery Agent Commission', type: 'expense', balance: 'debit' },
           [GL_ACCOUNTS.SALES_REP_COMMISSION]: { name: 'Sales Rep Commission', type: 'expense', balance: 'debit' },
+          [GL_ACCOUNTS.COMMISSIONS_PAYABLE]: { name: 'Commissions Payable', type: 'liability', balance: 'credit' },
           [GL_ACCOUNTS.REFUND_LIABILITY]: { name: 'Refund Liability', type: 'liability', balance: 'credit' },
           [GL_ACCOUNTS.OPERATING_EXPENSE]: { name: 'Operating Expenses', type: 'expense', balance: 'debit' },
         };

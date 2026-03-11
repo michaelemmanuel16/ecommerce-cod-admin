@@ -2,7 +2,7 @@ import apiClient from './api';
 import { Customer, PaginationMeta } from '../types';
 
 export const customersService = {
-  async getCustomers(params?: { page?: number; limit?: number; search?: string; area?: string }): Promise<{ customers: Customer[]; pagination: PaginationMeta }> {
+  async getCustomers(params?: { page?: number; limit?: number; search?: string; area?: string; sortBy?: 'totalOrders' | 'totalSpent'; sortOrder?: 'asc' | 'desc' }): Promise<{ customers: Customer[]; pagination: PaginationMeta }> {
     const response = await apiClient.get('/api/customers', { params });
     const customers = response.data.customers || [];
     const pagination = response.data.pagination || { page: 1, limit: 20, total: 0, pages: 0 };

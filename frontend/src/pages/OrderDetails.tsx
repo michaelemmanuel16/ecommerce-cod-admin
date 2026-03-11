@@ -241,7 +241,7 @@ export const OrderDetails: React.FC = () => {
                       <p className="text-sm text-gray-500">Shipping Address</p>
                       <p className="font-medium text-gray-900">
                         {order.shippingAddress.street}<br />
-                        {order.shippingAddress.area}, {order.shippingAddress.state}
+                        {order.shippingAddress.state}
                       </p>
                     </div>
                   </div>

@@ -11,6 +11,8 @@ interface OrderSummaryProps {
   currency: string;
   isSubmitting: boolean;
   onSubmit: () => void;
+  buttonColor?: string;
+  accentColor?: string;
 }
 
 export const OrderSummary: React.FC<OrderSummaryProps> = ({
@@ -19,6 +21,8 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
   currency,
   isSubmitting,
   onSubmit,
+  buttonColor = '#0f172a',
+  accentColor = '#f97316',
 }) => {
   const hasDiscount = selectedPackage?.originalPrice && selectedPackage.originalPrice > selectedPackage.price && selectedPackage.showDiscount !== false;
   const packageOriginalPrice = hasDiscount ? selectedPackage.originalPrice : selectedPackage?.price || 0;
@@ -101,7 +105,8 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
         onClick={onSubmit}
         disabled={!selectedPackage || isSubmitting}
         isLoading={isSubmitting}
-        className="w-full bg-[#0f172a] hover:bg-[#1e293b] text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+        className="w-full text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+        style={(!selectedPackage || isSubmitting) ? undefined : { backgroundColor: buttonColor }}
       >
         {isSubmitting ? 'Processing...' : 'Place Order'}
       </Button>

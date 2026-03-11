@@ -1,11 +1,10 @@
 import { Response, Request, NextFunction } from 'express';
-import { PrismaClient, OrderStatus } from '@prisma/client';
+import { OrderStatus } from '@prisma/client';
 import workflowService from '../services/workflowService';
 import checkoutFormService from '../services/checkoutFormService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
-
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma';
 
 export const getPublicForm = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -53,6 +52,39 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     for (const field of requiredFields) {
       if (!formData[field]) {
         res.status(400).json({ error: `Missing required field: ${field}` });
+        return;
+      }
+    }
+
+    // Dedup guard: prevent double-submits within 30 minutes (same phone + amount + form)
+    {
+      const dedupeFrom = new Date(Date.now() - 30 * 60 * 1000);
+      const existingOrder = await prisma.order.findFirst({
+        where: {
+          source: 'checkout_form',
+          totalAmount: totalAmount,
+          deletedAt: null,
+          createdAt: { gte: dedupeFrom },
+          customer: { phoneNumber: formData.phoneNumber },
+          orderItems: {
+            some: { productId: form.productId, itemType: 'package' }
+          }
+        },
+        select: { id: true, totalAmount: true, status: true }
+      });
+
+      if (existingOrder) {
+        res.status(201).json({
+          success: true,
+          orderId: existingOrder.id,
+          order: {
+            id: existingOrder.id,
+            totalAmount: existingOrder.totalAmount,
+            status: existingOrder.status
+          },
+          message: 'Order created successfully',
+          deduplicated: true
+        });
         return;
       }
     }

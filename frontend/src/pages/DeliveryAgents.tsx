@@ -118,6 +118,9 @@ export const DeliveryAgents: React.FC = () => {
                   const successRate = agentPerformance?.successRate || 0;
                   const completedCount = agentPerformance?.completed || 0;
                   const totalAssigned = agentPerformance?.totalAssigned || 0;
+                  const mtdSuccessRate = agentPerformance?.mtdSuccessRate || 0;
+                  const mtdCompleted = agentPerformance?.mtdCompleted || 0;
+                  const mtdTotalAssigned = agentPerformance?.mtdTotalAssigned || 0;
 
                   return (
                     <TableRow key={agent.id} className="hover:bg-gray-50">
@@ -169,13 +172,16 @@ export const DeliveryAgents: React.FC = () => {
                       <TableCell>
                         <div className="flex flex-col space-y-1">
                           <div className="flex items-center">
-                            <TrendingUp className={`w-4 h-4 mr-1 ${successRate >= 80 ? 'text-green-500' : successRate >= 60 ? 'text-yellow-500' : 'text-red-500'}`} />
-                            <span className={`font-semibold ${successRate >= 80 ? 'text-green-600' : successRate >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
-                              {successRate.toFixed(1)}%
+                            <TrendingUp className={`w-4 h-4 mr-1 ${mtdSuccessRate >= 80 ? 'text-green-500' : mtdSuccessRate >= 60 ? 'text-yellow-500' : 'text-red-500'}`} />
+                            <span className={`font-semibold ${mtdSuccessRate >= 80 ? 'text-green-600' : mtdSuccessRate >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
+                              {mtdSuccessRate.toFixed(1)}%
                             </span>
                           </div>
                           <span className="text-sm text-gray-500">
-                            {completedCount} of {totalAssigned} completed
+                            {mtdCompleted} of {mtdTotalAssigned} MTD
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {completedCount} of {totalAssigned} all-time
                           </span>
                         </div>
                       </TableCell>

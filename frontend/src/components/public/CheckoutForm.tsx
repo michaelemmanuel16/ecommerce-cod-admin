@@ -42,6 +42,19 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
   }, [formData.packages, selectedPackageId]);
 
   const selectedPackage = formData.packages.find((p) => p.id === selectedPackageId) || null;
+
+  const isFieldEnabled = (label: string): boolean => {
+    if (!formData.fields?.length) return true; // no fields configured → show all (fallback)
+    const variants = label.toLowerCase().split('/').map(l => l.trim());
+    // Match exact label OR any variant from the slash-separated alternatives
+    const field = formData.fields.find(
+      (f: any) => {
+        const fieldLabel = f.label?.toLowerCase().trim();
+        return fieldLabel === label.toLowerCase() || variants.some(v => fieldLabel === v);
+      }
+    );
+    return field ? (field.enabled ?? true) : false; // not in array = deleted → hide
+  };
   const selectedAddons = formData.upsells.filter((u) => selectedAddonIds.has(u.id));
 
   const toggleAddon = (addonId: number) => {
@@ -67,9 +80,9 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
         selectedPackageId,
         selectedAddonIds: Array.from(selectedAddonIds),
       });
+      // Don't reset isSubmitting on success — prevents double-submit while redirecting
     } catch (error) {
       console.error('Order submission error:', error);
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -78,14 +91,18 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            {formData.product?.name || formData.name || 'Product Order'}
-          </h1>
-          {formData.description && (
-            <p className="text-gray-600">{formData.description}</p>
-          )}
-        </div>
+        {(formData.styling?.showName !== false || (formData.styling?.showDescription !== false && formData.description)) && (
+          <div className="mb-8">
+            {formData.styling?.showName !== false && (
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                {formData.product?.name || formData.name || 'Product Order'}
+              </h1>
+            )}
+            {formData.styling?.showDescription !== false && formData.description && (
+              <p className="text-gray-600">{formData.description}</p>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit(onFormSubmit)}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -99,115 +116,125 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
 
                 <div className="space-y-4">
                   {/* Full Name */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Full Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      {...register('fullName', { required: 'Full name is required' })}
-                      type="text"
-                      placeholder="Enter full name"
-                      className={cn(
-                        'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
-                        errors.fullName ? 'border-red-500' : 'border-gray-300'
+                  {isFieldEnabled('Full Name') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Full Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        {...register('fullName', { required: 'Full name is required' })}
+                        type="text"
+                        placeholder="Enter full name"
+                        className={cn(
+                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
+                          errors.fullName ? 'border-red-500' : 'border-gray-300'
+                        )}
+                      />
+                      {errors.fullName && (
+                        <p className="mt-1 text-sm text-red-600">{errors.fullName.message}</p>
                       )}
-                    />
-                    {errors.fullName && (
-                      <p className="mt-1 text-sm text-red-600">{errors.fullName.message}</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Phone */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      {...register('phone', {
-                        required: 'Phone number is required',
-                        pattern: {
-                          value: /^\+?[0-9]{8,15}$/,
-                          message: 'Please enter a valid phone number (8-15 digits)',
-                        },
-                      })}
-                      type="tel"
-                      placeholder="Enter phone number"
-                      className={cn(
-                        'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
-                        errors.phone ? 'border-red-500' : 'border-gray-300'
+                  {isFieldEnabled('Phone') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Phone <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        {...register('phone', {
+                          required: 'Phone number is required',
+                          pattern: {
+                            value: /^\+?[0-9]{8,15}$/,
+                            message: 'Please enter a valid phone number (8-15 digits)',
+                          },
+                        })}
+                        type="tel"
+                        placeholder="Enter phone number"
+                        className={cn(
+                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
+                          errors.phone ? 'border-red-500' : 'border-gray-300'
+                        )}
+                      />
+                      {errors.phone && (
+                        <p className="mt-1 text-sm text-red-600">{errors.phone.message}</p>
                       )}
-                    />
-                    {errors.phone && (
-                      <p className="mt-1 text-sm text-red-600">{errors.phone.message}</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Alternative Phone */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Alternative Phone
-                    </label>
-                    <input
-                      {...register('alternativePhone', {
-                        pattern: {
-                          value: /^\+?[0-9]{8,15}$/,
-                          message: 'Please enter a valid phone number (8-15 digits)',
-                        },
-                      })}
-                      type="tel"
-                      placeholder="Enter alternative phone (optional)"
-                      className={cn(
-                        'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
-                        errors.alternativePhone ? 'border-red-500' : 'border-gray-300'
+                  {isFieldEnabled('Alt Phone') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Alternative Phone
+                      </label>
+                      <input
+                        {...register('alternativePhone', {
+                          pattern: {
+                            value: /^\+?[0-9]{8,15}$/,
+                            message: 'Please enter a valid phone number (8-15 digits)',
+                          },
+                        })}
+                        type="tel"
+                        placeholder="Enter alternative phone (optional)"
+                        className={cn(
+                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
+                          errors.alternativePhone ? 'border-red-500' : 'border-gray-300'
+                        )}
+                      />
+                      {errors.alternativePhone && (
+                        <p className="mt-1 text-sm text-red-600">{errors.alternativePhone.message}</p>
                       )}
-                    />
-                    {errors.alternativePhone && (
-                      <p className="mt-1 text-sm text-red-600">{errors.alternativePhone.message}</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Region/State */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Region/State <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      {...register('region', { required: 'Region is required' })}
-                      className={cn(
-                        'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent bg-white',
-                        errors.region ? 'border-red-500' : 'border-gray-300'
+                  {isFieldEnabled('Region/State') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Region/State <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        {...register('region', { required: 'Region is required' })}
+                        className={cn(
+                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent bg-white',
+                          errors.region ? 'border-red-500' : 'border-gray-300'
+                        )}
+                      >
+                        <option value="">Select region/state</option>
+                        {(formData.regions?.available || []).map((region: string) => (
+                          <option key={region} value={region}>
+                            {region}
+                          </option>
+                        ))}
+                      </select>
+                      {errors.region && (
+                        <p className="mt-1 text-sm text-red-600">{errors.region.message}</p>
                       )}
-                    >
-                      <option value="">Select region/state</option>
-                      {(formData.regions?.available || []).map((region: string) => (
-                        <option key={region} value={region}>
-                          {region}
-                        </option>
-                      ))}
-                    </select>
-                    {errors.region && (
-                      <p className="mt-1 text-sm text-red-600">{errors.region.message}</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Street Address */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Street Address <span className="text-red-500">*</span>
-                    </label>
-                    <textarea
-                      {...register('streetAddress', { required: 'Street address is required' })}
-                      rows={3}
-                      placeholder="Enter street address"
-                      className={cn(
-                        'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent resize-none',
-                        errors.streetAddress ? 'border-red-500' : 'border-gray-300'
+                  {isFieldEnabled('Street Address') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Street Address <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        {...register('streetAddress', { required: 'Street address is required' })}
+                        rows={3}
+                        placeholder="Enter street address"
+                        className={cn(
+                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent resize-none',
+                          errors.streetAddress ? 'border-red-500' : 'border-gray-300'
+                        )}
+                      />
+                      {errors.streetAddress && (
+                        <p className="mt-1 text-sm text-red-600">{errors.streetAddress.message}</p>
                       )}
-                    />
-                    {errors.streetAddress && (
-                      <p className="mt-1 text-sm text-red-600">{errors.streetAddress.message}</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -242,6 +269,8 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
                 currency={formData.currency}
                 isSubmitting={isSubmitting}
                 onSubmit={handleSubmit(onFormSubmit)}
+                buttonColor={formData.styling?.buttonColor}
+                accentColor={formData.styling?.accentColor}
               />
             </div>
           </div>

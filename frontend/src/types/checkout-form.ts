@@ -47,6 +47,15 @@ export interface CheckoutFormSettings {
 export interface CheckoutFormStyling {
   buttonColor: string;
   accentColor: string;
+  showName?: boolean;
+  showDescription?: boolean;
+}
+
+export interface PixelConfig {
+  facebookPixelId?: string;
+  googleAnalyticsId?: string;   // G-XXXXXXXX
+  tiktokPixelId?: string;
+  googleTagManagerId?: string;  // GTM-XXXXX
 }
 
 export interface CheckoutForm {
@@ -63,6 +72,7 @@ export interface CheckoutForm {
   currency: string; // Currency code (e.g., GHS, NGN)
   regions: string[]; // Added from database schema
   styling: CheckoutFormStyling;
+  pixelConfig?: PixelConfig;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

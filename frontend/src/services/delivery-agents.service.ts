@@ -32,6 +32,9 @@ export interface AgentPerformance {
   deliveryRate?: number;
   totalEarnings?: number;
   location?: string;
+  mtdCompleted: number;
+  mtdTotalAssigned: number;
+  mtdSuccessRate: number;
 }
 
 export const deliveryAgentsService = {

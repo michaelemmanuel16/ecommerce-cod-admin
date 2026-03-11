@@ -4,6 +4,35 @@ This file provides guidance to Claude Code when working with this repository.
 
 ---
 
+## Critical Workflow Rules
+
+### Verify before pushing — always wait for approval
+
+After completing any change:
+1. Run the relevant verification commands (build, lint, tests) and show the output
+2. **Stop and wait for explicit user approval before running `git push`**
+
+Never push autonomously, even when all checks pass. The user must confirm first.
+
+### Autonomous task execution
+
+Work tasks to **total completion** before reporting back:
+1. Implement the change
+2. Verify with all relevant checks:
+   - `npm run build` (TypeScript)
+   - `npm run lint` (ESLint)
+   - `npm test` (unit/integration tests)
+   - Browser automation via agent-browser / mcp__claude-in-chrome tools when UI changes are involved
+3. If any check fails, fix the error and re-verify — repeat until all checks pass
+4. Only then summarise the completed work and, if a git push is needed, wait for approval
+
+**Exceptions — always pause and ask before continuing:**
+- Ambiguous or conflicting requirements
+- Destructive operations (drop table, force-push, delete files)
+- Tasks that require credentials or secrets not already in memory
+
+---
+
 ## Project Overview
 
 E-Commerce Cash-on-Delivery (COD) Admin Dashboard - A full-stack TypeScript application for managing COD orders, deliveries, customer relationships, and financial reconciliation.

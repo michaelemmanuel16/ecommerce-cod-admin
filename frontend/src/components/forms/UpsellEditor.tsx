@@ -47,34 +47,27 @@ export const UpsellEditor: React.FC<UpsellEditorProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
     if (file) {
-      // Validate file size (5MB)
       const maxSize = 5 * 1024 * 1024;
       if (file.size > maxSize) {
         alert('Image must be less than 5MB');
         return;
       }
-
-      // Validate file type
       const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
       if (!allowedTypes.includes(file.type)) {
         alert('Invalid image format. Use JPG, PNG, WebP, or GIF');
         return;
       }
-
       onImageSelect(file);
     }
   };
 
   const handleProductSelect = (productId: string) => {
     if (!productId) {
-      // Manual entry - clear product link but keep existing data
       onUpdate({ ...upsell, productId: undefined });
       return;
     }
-
     const product = products.find(p => p.id === parseInt(productId));
     if (product) {
-      // Auto-fill from product
       onUpdate({
         ...upsell,
         productId: product.id,
@@ -91,7 +84,6 @@ export const UpsellEditor: React.FC<UpsellEditorProps> = ({
 
   const handleDiscountTypeChange = (type: 'none' | 'percentage' | 'fixed') => {
     if (type === 'none') {
-      // Reset to original price when discount is removed
       onUpdate({
         ...upsell,
         discountType: 'none',
@@ -117,213 +109,188 @@ export const UpsellEditor: React.FC<UpsellEditorProps> = ({
     });
   };
 
+  const hasDiscount = discountType !== 'none' && discountValue > 0;
+  const hasImage = imagePreview || upsell.imageUrl;
+
   return (
-    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
-      {/* Row 1: Product Selector, Quantity, Delete */}
-      <div className="grid grid-cols-12 gap-3">
-        <div className="col-span-8">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            Link to Product
-          </label>
-          <Select
-            value={upsell.productId?.toString() || ''}
-            onChange={(e) => handleProductSelect(e.target.value)}
-            options={[
-              { value: '', label: 'Manual Entry (No Product Link)' },
-              ...products.map(p => ({
-                value: p.id.toString(),
-                label: `${p.name} (${currency} ${p.price.toFixed(2)})`
-              }))
-            ]}
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Select a product to auto-fill details, or use manual entry
-          </p>
-        </div>
-
-        <div className="col-span-2">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
-            Quantity
-          </label>
-          <Input
-            type="number"
-            placeholder="1"
-            value={upsell.quantity}
-            onChange={(e) => onUpdate({ ...upsell, quantity: parseInt(e.target.value) || 1 })}
-          />
-        </div>
-
-        <div className="col-span-2 flex items-end justify-end">
+    <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+      <details open>
+        <summary className="flex items-center justify-between cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+          <div className="flex items-center gap-3">
+            {hasImage && (
+              <img
+                src={imagePreview || upsell.imageUrl}
+                alt=""
+                className="w-6 h-6 rounded object-cover"
+              />
+            )}
+            <span className="font-medium text-sm text-gray-900">
+              {upsell.name || 'Untitled Upsell'}
+            </span>
+            <span className="text-sm font-semibold text-green-600">
+              {currency} {upsell.price.toFixed(2)}
+            </span>
+            {hasDiscount && (
+              <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-medium">
+                {discountType === 'percentage' ? `${discountValue}% off` : `${currency} ${discountValue} off`}
+              </span>
+            )}
+          </div>
           <button
-            onClick={onDelete}
-            className="text-red-600 hover:text-red-700 p-2"
+            type="button"
+            onClick={(e) => { e.preventDefault(); onDelete(); }}
+            className="text-gray-400 hover:text-red-600 p-1 transition-colors"
             title="Delete upsell"
           >
-            <Trash2 className="w-5 h-5" />
+            <Trash2 className="w-4 h-4" />
           </button>
-        </div>
-      </div>
+        </summary>
 
-      {/* Row 2: Upsell Name (only if manual entry or to override) */}
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">
-          Upsell Name
-        </label>
-        <Input
-          placeholder="e.g., Add Extra Battery"
-          value={upsell.name}
-          onChange={(e) => onUpdate({ ...upsell, name: e.target.value })}
-        />
-      </div>
-
-      {/* Group 1: Pricing & Discounts */}
-      <div className="bg-blue-50 p-3 rounded-md border border-blue-200">
-        <h4 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1">
-          💰 Pricing & Discounts
-        </h4>
-
-        {/* Row A: Price Display */}
-        <div className="grid grid-cols-12 gap-3 mb-3">
-          <div className="col-span-4">
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Original Price
-            </label>
-            <Input
-              type="number"
-              placeholder="0"
-              value={originalPrice}
-              onChange={(e) => onUpdate({
-                ...upsell,
-                originalPrice: parseFloat(e.target.value) || 0,
-                price: discountType !== 'none'
-                  ? calculateFinalPrice(parseFloat(e.target.value) || 0, discountType, discountValue)
-                  : parseFloat(e.target.value) || 0
-              })}
-              className={upsell.productId ? 'bg-gray-100' : ''}
-              title={upsell.productId ? 'Auto-filled from product. Change product or use manual entry to edit.' : ''}
-            />
-          </div>
-
-          <div className="col-span-4">
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Final Price
-            </label>
-            <div className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm font-semibold text-green-600">
-              {currency} {upsell.price.toFixed(2)}
+        <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+          {/* Row 1: Product link + Qty */}
+          <div className="flex items-start gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Link to Product</label>
+              <Select
+                value={upsell.productId?.toString() || ''}
+                onChange={(e) => handleProductSelect(e.target.value)}
+                options={[
+                  { value: '', label: 'Manual Entry' },
+                  ...products.map(p => ({
+                    value: p.id.toString(),
+                    label: `${p.name} (${currency} ${p.price.toFixed(2)})`
+                  }))
+                ]}
+              />
+            </div>
+            <div className="w-20">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Qty</label>
+              <Input
+                type="number"
+                value={upsell.quantity}
+                onChange={(e) => onUpdate({ ...upsell, quantity: parseInt(e.target.value) || 1 })}
+              />
             </div>
           </div>
 
-          <div className="col-span-4"></div>
-        </div>
-
-        {/* Row B: Discount Controls */}
-        <div className="grid grid-cols-12 gap-3">
-          <div className="col-span-4">
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Discount Type
-            </label>
-            <Select
-              value={discountType}
-              onChange={(e) => handleDiscountTypeChange(e.target.value as any)}
-              options={[
-                { value: 'none', label: 'None' },
-                { value: 'percentage', label: 'Percentage (%)' },
-                { value: 'fixed', label: `Fixed Amount (${currency})` }
-              ]}
+          {/* Row 2: Name */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Upsell Name</label>
+            <Input
+              placeholder="e.g., Add Extra Battery"
+              value={upsell.name}
+              onChange={(e) => onUpdate({ ...upsell, name: e.target.value })}
             />
           </div>
 
-          <div className="col-span-5">
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Discount Value
-            </label>
-            <div className="relative">
+          {/* Row 3: Pricing — inline single row */}
+          <div className="flex items-end gap-3">
+            <div className="w-28">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Price</label>
               <Input
                 type="number"
                 placeholder="0"
-                value={discountValue}
-                onChange={(e) => handleDiscountValueChange(parseFloat(e.target.value) || 0)}
-                disabled={discountType === 'none'}
+                value={originalPrice}
+                onChange={(e) => onUpdate({
+                  ...upsell,
+                  originalPrice: parseFloat(e.target.value) || 0,
+                  price: discountType !== 'none'
+                    ? calculateFinalPrice(parseFloat(e.target.value) || 0, discountType, discountValue)
+                    : parseFloat(e.target.value) || 0
+                })}
+                className={upsell.productId ? 'bg-gray-50' : ''}
               />
-              {discountType !== 'none' && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                  {discountType === 'percentage' ? <Percent className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
+            </div>
+            <div className="w-32">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Discount</label>
+              <Select
+                value={discountType}
+                onChange={(e) => handleDiscountTypeChange(e.target.value as any)}
+                options={[
+                  { value: 'none', label: 'None' },
+                  { value: 'percentage', label: '% off' },
+                  { value: 'fixed', label: `${currency} off` }
+                ]}
+              />
+            </div>
+            {discountType !== 'none' && (
+              <div className="w-24">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Value</label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={discountValue}
+                    onChange={(e) => handleDiscountValueChange(parseFloat(e.target.value) || 0)}
+                  />
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
+                    {discountType === 'percentage' ? <Percent className="w-3.5 h-3.5" /> : <DollarSign className="w-3.5 h-3.5" />}
+                  </div>
                 </div>
-              )}
+              </div>
+            )}
+            <div className="w-28">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Final</label>
+              <div className="px-2.5 py-[7px] bg-green-50 border border-green-200 rounded-md text-sm font-semibold text-green-700">
+                {currency} {upsell.price.toFixed(2)}
+              </div>
             </div>
           </div>
+
+          {/* Row 4: Description */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+            <Textarea
+              value={upsell.description || ''}
+              onChange={(e) => onUpdate({ ...upsell, description: e.target.value })}
+              placeholder="Describe what's included in this add-on..."
+              rows={2}
+              className="resize-none"
+            />
+          </div>
+
+          {/* Row 5: Image */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Image</label>
+            {!hasImage ? (
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />
+                  Upload
+                </Button>
+                <span className="text-xs text-gray-400">JPG, PNG, WebP, GIF (max 5MB)</span>
+              </div>
+            ) : (
+              <div className="relative inline-block">
+                <img
+                  src={imagePreview || upsell.imageUrl}
+                  alt={upsell.name}
+                  className="h-20 w-20 object-cover rounded border border-gray-200"
+                />
+                <button
+                  type="button"
+                  onClick={onImageRemove}
+                  className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600 shadow-sm"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-
-        {/* Savings Badge */}
-        {discountType !== 'none' && discountValue > 0 && (
-          <div className="text-xs text-green-600 font-medium mt-3">
-            💰 Customer saves: {currency} {(originalPrice - upsell.price).toFixed(2)}
-            {discountType === 'percentage' && ` (${discountValue}% off)`}
-          </div>
-        )}
-      </div>
-
-      {/* Row 2: Description */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Description (optional)
-        </label>
-        <Textarea
-          value={upsell.description || ''}
-          onChange={(e) => onUpdate({ ...upsell, description: e.target.value })}
-          placeholder="Describe what's included in this add-on..."
-          rows={3}
-          className="resize-none"
-        />
-        <p className="text-xs text-gray-500 mt-1">
-          Use bullet points (•) or line breaks for better readability
-        </p>
-      </div>
-
-      {/* Row 3: Image Upload */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Image (optional)
-        </label>
-
-        {!imagePreview && !upsell.imageUrl ? (
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Image
-            </Button>
-            <p className="text-xs text-gray-500">
-              JPG, PNG, WebP, or GIF (max 5MB)
-            </p>
-          </div>
-        ) : (
-          <div className="relative inline-block">
-            <img
-              src={imagePreview || upsell.imageUrl}
-              alt={upsell.name}
-              className="h-32 w-32 object-cover rounded border border-gray-300"
-            />
-            <button
-              type="button"
-              onClick={onImageRemove}
-              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 shadow-md"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-      </div>
+      </details>
     </div>
   );
 };
