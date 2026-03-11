@@ -453,6 +453,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
     <Modal isOpen={isOpen} onClose={onClose} size="xl" title={initialData ? 'Edit Checkout Form' : 'Create Checkout Form'}>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Tabs
+          key={isOpen ? 'open' : 'closed'}
           tabs={[
             {
               id: 'basics',
