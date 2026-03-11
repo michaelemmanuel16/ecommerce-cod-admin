@@ -1,8 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
-import { PrismaClient, Prisma } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { Prisma } from '@prisma/client';
+import prisma from '../utils/prisma';
 
 export const getAllCheckoutForms = async (req: AuthRequest, res: Response): Promise<void> => {
   try {

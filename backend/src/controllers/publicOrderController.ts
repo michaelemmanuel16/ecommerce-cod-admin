@@ -1,11 +1,10 @@
 import { Response, Request, NextFunction } from 'express';
-import { PrismaClient, OrderStatus } from '@prisma/client';
+import { OrderStatus } from '@prisma/client';
 import workflowService from '../services/workflowService';
 import checkoutFormService from '../services/checkoutFormService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
-
-const prisma = new PrismaClient();
+import prisma from '../utils/prisma';
 
 export const getPublicForm = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
