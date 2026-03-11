@@ -47,6 +47,8 @@ export interface CheckoutFormSettings {
 export interface CheckoutFormStyling {
   buttonColor: string;
   accentColor: string;
+  showName?: boolean;
+  showDescription?: boolean;
 }
 
 export interface CheckoutForm {

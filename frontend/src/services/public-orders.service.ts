@@ -54,6 +54,8 @@ export interface PublicCheckoutForm {
   styling?: {
     buttonColor: string;
     accentColor: string;
+    showName?: boolean;
+    showDescription?: boolean;
   };
   isActive: boolean;
   createdAt: string;
