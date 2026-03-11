@@ -100,8 +100,9 @@ export const getRepPerformanceDetails = async (
     });
 
     // Calculate performance metrics for each rep
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // Calculate performance metrics for each rep
     const performanceData: RepPerformanceDetails[] = reps.map(rep => {
       const totalAssigned = rep.assignedOrdersAsRep.length;
 
@@ -119,19 +120,12 @@ export const getRepPerformanceDetails = async (
       const commissionAmountValue = (rep as any).commissionAmount || 0;
       const totalEarnings = deliveredCount * commissionAmountValue;
 
-      // Calculate monthly earnings (current month)
-      const currentMonth = new Date();
-      const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-
-      const monthlyDeliveredOrders = deliveredOrders.filter(
-        order => new Date(order.createdAt) >= startOfMonth
-      );
-
-      const monthlyEarnings = monthlyDeliveredOrders.length * commissionAmountValue;
-
-      // Calculate MTD metrics (all orders created this month)
+      // All orders created this month (MTD)
       const mtdOrders = rep.assignedOrdersAsRep.filter(o => new Date(o.createdAt) >= startOfMonth);
-      const mtdDelivered = mtdOrders.filter(o => o.status === OrderStatus.delivered && !o.commissionPaid).length;
+      // MTD delivered = delivered+unpaid orders created this month (same predicate as monthlyDeliveredOrders)
+      const monthlyDeliveredOrders = deliveredOrders.filter(o => new Date(o.createdAt) >= startOfMonth);
+      const mtdDelivered = monthlyDeliveredOrders.length;
+      const monthlyEarnings = mtdDelivered * commissionAmountValue;
       const mtdSuccessRate = mtdOrders.length > 0
         ? parseFloat(((mtdDelivered / mtdOrders.length) * 100).toFixed(2)) : 0;
 

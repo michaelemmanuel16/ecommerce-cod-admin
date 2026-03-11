@@ -4,7 +4,8 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { LogCallModal } from './LogCallModal';
 import { callsService } from '../../services/calls.service';
-import { Call, CallOutcome } from '../../types';
+import { Call } from '../../types';
+import { outcomeColors, outcomeLabels } from './callOutcomeConfig';
 
 interface CallHistoryModalProps {
   isOpen: boolean;
@@ -13,22 +14,6 @@ interface CallHistoryModalProps {
   customerId: number;
   customerName: string;
 }
-
-const outcomeColors: Record<CallOutcome, string> = {
-  [CallOutcome.CONFIRMED]: 'bg-green-100 text-green-800',
-  [CallOutcome.RESCHEDULED]: 'bg-blue-100 text-blue-800',
-  [CallOutcome.NO_ANSWER]: 'bg-yellow-100 text-yellow-800',
-  [CallOutcome.CANCELLED]: 'bg-red-100 text-red-800',
-  [CallOutcome.OTHER]: 'bg-gray-100 text-gray-800',
-};
-
-const outcomeLabels: Record<CallOutcome, string> = {
-  [CallOutcome.CONFIRMED]: 'Confirmed',
-  [CallOutcome.RESCHEDULED]: 'Rescheduled',
-  [CallOutcome.NO_ANSWER]: 'No Answer',
-  [CallOutcome.CANCELLED]: 'Cancelled',
-  [CallOutcome.OTHER]: 'Other',
-};
 
 export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
   isOpen,
@@ -124,10 +109,8 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
 
       <LogCallModal
         isOpen={isLogCallOpen}
-        onClose={() => {
-          setIsLogCallOpen(false);
-          fetchCalls();
-        }}
+        onClose={() => setIsLogCallOpen(false)}
+        onSuccess={fetchCalls}
         customerId={customerId}
         customerName={customerName}
         orderId={orderId}

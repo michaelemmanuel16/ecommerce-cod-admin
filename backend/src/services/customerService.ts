@@ -88,7 +88,7 @@ export class CustomerService {
     ]);
 
     // Calculate totalOrders and totalSpent from actual orders
-    let customersWithMetrics = customers.map(customer => {
+    const customersWithMetrics = customers.map(customer => {
       const totalOrders = customer.orders.length;
       const totalSpent = customer.orders.reduce((sum, order) => sum + order.totalAmount, 0);
 

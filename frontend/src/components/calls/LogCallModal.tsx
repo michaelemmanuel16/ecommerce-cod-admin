@@ -7,6 +7,7 @@ import { CallOutcome } from '../../types';
 interface LogCallModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess?: () => void;
   customerId: number;
   customerName: string;
   orderId?: number;
@@ -15,6 +16,7 @@ interface LogCallModalProps {
 export const LogCallModal: React.FC<LogCallModalProps> = ({
   isOpen,
   onClose,
+  onSuccess,
   customerId,
   customerName,
   orderId
@@ -47,6 +49,7 @@ export const LogCallModal: React.FC<LogCallModalProps> = ({
         duration: '',
         notes: ''
       });
+      onSuccess?.();
       onClose();
     } catch (error) {
       // Error handled by store

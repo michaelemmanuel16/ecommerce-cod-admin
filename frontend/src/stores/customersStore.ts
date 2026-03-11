@@ -36,7 +36,7 @@ export const useCustomersStore = create<CustomersState>((set, get) => ({
         limit: pagination.limit,
         search: searchQuery || undefined,
         sortBy,
-        sortOrder: sortBy ? sortOrder : undefined,
+        sortOrder,
       });
       set({ customers, pagination: newPagination, isLoading: false });
     } catch (error) {
