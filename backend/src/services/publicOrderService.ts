@@ -129,9 +129,9 @@ export class PublicOrderService {
       });
     }
 
-    // Dedup guard: prevent double-submits within 5 minutes (same phone + package + total)
+    // Dedup guard: prevent double-submits within 30 minutes (same phone + package + total)
     {
-      const dedupeFrom = new Date(Date.now() - 5 * 60 * 1000);
+      const dedupeFrom = new Date(Date.now() - 30 * 60 * 1000);
       const existingOrder = await prisma.order.findFirst({
         where: {
           source: 'checkout_form',

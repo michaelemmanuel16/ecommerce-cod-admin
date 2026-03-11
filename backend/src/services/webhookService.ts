@@ -429,14 +429,9 @@ export class WebhookService {
           }
         }
 
-        // Guard 2: fingerprint deduplication (phone + amount + address within 1 hour)
+        // Guard 2: fingerprint deduplication (phone + amount within 1 hour)
         {
-          const dedupeWindowMs = 60 * 60 * 1000;
-          const dedupeFrom = new Date(Date.now() - dedupeWindowMs);
-          const normalize = (v: string | null | undefined) =>
-            String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
-          const deliveryAddr = mappedData.deliveryAddress || externalOrder.address || customer.address || '';
-
+          const dedupeFrom = new Date(Date.now() - 60 * 60 * 1000);
           const existingByFingerprint = await prisma.order.findFirst({
             where: {
               customer: { phoneNumber: customer.phoneNumber },
@@ -444,21 +439,18 @@ export class WebhookService {
               deletedAt: null,
               createdAt: { gte: dedupeFrom },
             },
+            select: { id: true },
           });
 
           if (existingByFingerprint) {
-            const addrMatch =
-              normalize(existingByFingerprint.deliveryAddress) === normalize(deliveryAddr);
-            if (addrMatch) {
-              logger.info('Skipping duplicate webhook order (same phone+amount+address within 1 hour)', {
-                externalOrderId: externalId,
-                existingOrderId: existingByFingerprint.id,
-                phone: customer.phoneNumber,
-                totalAmount,
-              });
-              results.success++;
-              continue;
-            }
+            logger.info('Skipping duplicate webhook order (same phone+amount within 1 hour)', {
+              externalOrderId: externalId,
+              existingOrderId: existingByFingerprint.id,
+              phone: customer.phoneNumber,
+              totalAmount,
+            });
+            results.success++;
+            continue;
           }
         }
 
