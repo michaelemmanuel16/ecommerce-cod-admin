@@ -82,6 +82,8 @@ describe('Webhook Controller', () => {
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
       prismaMock.customer.findUnique.mockResolvedValue(null);
       prismaMock.customer.create.mockResolvedValue(mockCustomer as any);
+      prismaMock.order.findMany.mockResolvedValue([]);
+      prismaMock.order.findFirst.mockResolvedValue(null);
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.create.mockResolvedValue({} as any);
 
@@ -159,6 +161,8 @@ describe('Webhook Controller', () => {
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
       prismaMock.customer.findUnique.mockResolvedValue(null);
       prismaMock.customer.create.mockResolvedValue({ id: 'customer' } as any);
+      prismaMock.order.findMany.mockResolvedValue([]);
+      prismaMock.order.findFirst.mockResolvedValue(null);
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.create.mockResolvedValue({} as any);
 
@@ -170,6 +174,73 @@ describe('Webhook Controller', () => {
             success: 2,
             failed: 0,
           }),
+        })
+      );
+    });
+  });
+
+  describe('deduplication', () => {
+    const webhookConfig = { id: 'webhook-1', isActive: true, fieldMapping: {} };
+    const customer = { id: 'c1', phoneNumber: '+1234567890' };
+
+    beforeEach(() => {
+      prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
+      prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
+      prismaMock.webhookLog.update.mockResolvedValue({} as any);
+      prismaMock.customer.findUnique.mockResolvedValue(customer as any);
+    });
+
+    it('Guard 1: skips order when same externalOrderId already exists', async () => {
+      mockReq.headers['x-api-key'] = 'valid-key';
+      mockReq.body = { id: 'dup-ext-1', customer_phone: '+1234567890', amount: 100 };
+
+      // Pre-fetch returns the existing externalOrderId
+      prismaMock.order.findMany.mockResolvedValue([{ externalOrderId: 'dup-ext-1' }] as any);
+      prismaMock.order.findFirst.mockResolvedValue(null);
+
+      await importOrdersViaWebhook(mockReq, mockRes);
+
+      expect(prismaMock.order.create).not.toHaveBeenCalled();
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          results: expect.objectContaining({ success: 0, skipped: 1, failed: 0 }),
+        })
+      );
+    });
+
+    it('Guard 2: skips order when same phone+amount seen within 1 hour (webhook source)', async () => {
+      mockReq.headers['x-api-key'] = 'valid-key';
+      mockReq.body = { id: 'new-ext-id', customer_phone: '+1234567890', amount: 100 };
+
+      // Guard 1 pre-fetch finds nothing (new externalOrderId)
+      prismaMock.order.findMany.mockResolvedValue([]);
+      // Guard 2 finds a matching order
+      prismaMock.order.findFirst.mockResolvedValue({ id: 999 } as any);
+
+      await importOrdersViaWebhook(mockReq, mockRes);
+
+      expect(prismaMock.order.create).not.toHaveBeenCalled();
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          results: expect.objectContaining({ success: 0, skipped: 1, failed: 0 }),
+        })
+      );
+    });
+
+    it('creates order when Guard 2 finds nothing (outside window or different amount)', async () => {
+      mockReq.headers['x-api-key'] = 'valid-key';
+      mockReq.body = { id: 'unique-ext', customer_phone: '+1234567890', amount: 200 };
+
+      prismaMock.order.findMany.mockResolvedValue([]);
+      prismaMock.order.findFirst.mockResolvedValue(null); // outside window
+      prismaMock.order.create.mockResolvedValue({ id: 1000 } as any);
+
+      await importOrdersViaWebhook(mockReq, mockRes);
+
+      expect(prismaMock.order.create).toHaveBeenCalledTimes(1);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          results: expect.objectContaining({ success: 1, skipped: 0, failed: 0 }),
         })
       );
     });
