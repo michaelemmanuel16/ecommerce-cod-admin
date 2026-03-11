@@ -33,6 +33,10 @@ export interface RepPerformance {
   totalEarnings: number;
   monthlyEarnings: number;
   country: string | null;
+  pendingOrders: number;
+  mtdDelivered: number;
+  mtdTotalOrders: number;
+  mtdSuccessRate: number;
 }
 
 export interface UpdateRepData {
@@ -123,16 +127,29 @@ export const customerRepsService = {
     const backendPerformance = response.data.performance || [];
 
     // Transform backend structure (nested metrics) to match frontend interface (flat fields)
-    return backendPerformance.map((p: any) => ({
-      repId: p.repId,
-      repName: p.repName,
-      totalOrders: p.metrics?.totalAssigned || 0,
-      deliveredOrders: p.metrics?.deliveredCount || 0,
-      successRate: p.metrics?.successRate || 0,
-      totalEarnings: p.metrics?.totalEarnings || 0,
-      monthlyEarnings: p.metrics?.monthlyEarnings || 0,
-      country: p.country || null
-    }));
+    return backendPerformance.map((p: any) => {
+      const s = p.ordersByStatus || {};
+      const pendingOrders =
+        (s.pending_confirmation || 0) +
+        (s.confirmed || 0) +
+        (s.preparing || 0) +
+        (s.ready_for_pickup || 0) +
+        (s.out_for_delivery || 0);
+      return {
+        repId: p.repId,
+        repName: p.repName,
+        totalOrders: p.metrics?.totalAssigned || 0,
+        deliveredOrders: p.metrics?.deliveredCount || 0,
+        successRate: p.metrics?.successRate || 0,
+        totalEarnings: p.metrics?.totalEarnings || 0,
+        monthlyEarnings: p.metrics?.monthlyEarnings || 0,
+        country: p.country || null,
+        pendingOrders,
+        mtdDelivered: p.metrics?.mtdDelivered || 0,
+        mtdTotalOrders: p.metrics?.mtdTotalAssigned || 0,
+        mtdSuccessRate: p.metrics?.mtdSuccessRate || 0,
+      };
+    });
   },
 
   async getPendingPayments(id: string): Promise<PendingPayment[]> {

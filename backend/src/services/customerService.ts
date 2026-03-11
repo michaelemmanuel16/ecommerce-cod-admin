@@ -25,6 +25,8 @@ interface CustomerFilters {
   tags?: string[];
   page?: number;
   limit?: number;
+  sortBy?: 'totalOrders' | 'totalSpent';
+  sortOrder?: 'asc' | 'desc';
 }
 
 export class CustomerService {
@@ -32,7 +34,7 @@ export class CustomerService {
    * Get all customers with filters and pagination
    */
   async getAllCustomers(filters: CustomerFilters, requester?: Requester) {
-    const { search, area, tags, page = 1, limit = 20 } = filters;
+    const { search, area, tags, page = 1, limit = 20, sortBy, sortOrder = 'desc' } = filters;
 
     const where: Prisma.CustomerWhereInput = { isActive: true };
 
@@ -86,7 +88,7 @@ export class CustomerService {
     ]);
 
     // Calculate totalOrders and totalSpent from actual orders
-    const customersWithMetrics = customers.map(customer => {
+    let customersWithMetrics = customers.map(customer => {
       const totalOrders = customer.orders.length;
       const totalSpent = customer.orders.reduce((sum, order) => sum + order.totalAmount, 0);
 
@@ -96,6 +98,15 @@ export class CustomerService {
         totalSpent
       };
     });
+
+    // Apply sorting if requested (computed fields, so sorted in memory)
+    if (sortBy) {
+      customersWithMetrics.sort((a, b) => {
+        const aVal = a[sortBy];
+        const bVal = b[sortBy];
+        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+      });
+    }
 
     return {
       customers: customersWithMetrics,

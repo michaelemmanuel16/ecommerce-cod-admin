@@ -19,6 +19,10 @@ export interface RepTableData {
   successRate: number;
   totalOrders: number;
   deliveredOrders: number;
+  pendingOrders: number;
+  mtdDelivered: number;
+  mtdTotalOrders: number;
+  mtdSuccessRate: number;
   isActive: boolean;
   createdAt: string;
 }
@@ -186,11 +190,17 @@ export const RepTable: React.FC<RepTableProps> = ({
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm font-semibold text-gray-900">
-                    {rep.successRate.toFixed(1)}%
+                    {rep.mtdSuccessRate.toFixed(1)}%
                   </div>
                   <div className="text-xs text-gray-500">
-                    {rep.deliveredOrders} of {rep.totalOrders} delivered
+                    {rep.mtdDelivered} of {rep.mtdTotalOrders} MTD
                   </div>
+                  <div className="text-xs text-gray-400">
+                    {rep.deliveredOrders} of {rep.totalOrders} all-time
+                  </div>
+                  {rep.pendingOrders > 0 && (
+                    <div className="text-xs text-amber-600 font-medium">{rep.pendingOrders} pending</div>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm font-semibold text-gray-900">

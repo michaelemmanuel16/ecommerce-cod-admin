@@ -16,6 +16,9 @@ export interface RepPerformanceDetails {
     successRate: number;
     totalEarnings: number;
     monthlyEarnings: number;
+    mtdDelivered: number;
+    mtdTotalAssigned: number;
+    mtdSuccessRate: number;
   };
   ordersByStatus: {
     pending_confirmation: number;
@@ -126,6 +129,12 @@ export const getRepPerformanceDetails = async (
 
       const monthlyEarnings = monthlyDeliveredOrders.length * commissionAmountValue;
 
+      // Calculate MTD metrics (all orders created this month)
+      const mtdOrders = rep.assignedOrdersAsRep.filter(o => new Date(o.createdAt) >= startOfMonth);
+      const mtdDelivered = mtdOrders.filter(o => o.status === OrderStatus.delivered && !o.commissionPaid).length;
+      const mtdSuccessRate = mtdOrders.length > 0
+        ? parseFloat(((mtdDelivered / mtdOrders.length) * 100).toFixed(2)) : 0;
+
       // Count orders by status
       const ordersByStatus = rep.assignedOrdersAsRep.reduce((acc, order) => {
         acc[order.status] = (acc[order.status] || 0) + 1;
@@ -156,7 +165,10 @@ export const getRepPerformanceDetails = async (
           deliveredCount,
           successRate,
           totalEarnings: parseFloat(totalEarnings.toFixed(2)),
-          monthlyEarnings: parseFloat(monthlyEarnings.toFixed(2))
+          monthlyEarnings: parseFloat(monthlyEarnings.toFixed(2)),
+          mtdDelivered,
+          mtdTotalAssigned: mtdOrders.length,
+          mtdSuccessRate
         },
         ordersByStatus
       };
