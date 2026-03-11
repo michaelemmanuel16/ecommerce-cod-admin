@@ -45,9 +45,13 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
 
   const isFieldEnabled = (label: string): boolean => {
     if (!formData.fields?.length) return true; // no fields configured → show all (fallback)
-    const labels = label.toLowerCase().split('/').map(l => l.trim());
+    const variants = label.toLowerCase().split('/').map(l => l.trim());
+    // Match exact label OR any variant from the slash-separated alternatives
     const field = formData.fields.find(
-      (f: any) => labels.some(l => f.label?.toLowerCase().includes(l))
+      (f: any) => {
+        const fieldLabel = f.label?.toLowerCase().trim();
+        return fieldLabel === label.toLowerCase() || variants.some(v => fieldLabel === v);
+      }
     );
     return field ? (field.enabled ?? true) : false; // not in array = deleted → hide
   };

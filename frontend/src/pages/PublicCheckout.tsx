@@ -210,6 +210,7 @@ export const PublicCheckout: React.FC = () => {
       <OrderSuccess
         orderId={orderId}
         orderTotal={submittedTotal}
+        currency={formData?.currency}
         pixelConfig={formData?.pixelConfig as PixelConfig | undefined}
         onClose={handleNewOrder}
       />

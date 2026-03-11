@@ -57,7 +57,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
     }
 
-    // Dedup guard: prevent double-submits within 30 minutes (same phone + amount + source)
+    // Dedup guard: prevent double-submits within 30 minutes (same phone + amount + form)
     {
       const dedupeFrom = new Date(Date.now() - 30 * 60 * 1000);
       const existingOrder = await prisma.order.findFirst({
@@ -67,11 +67,11 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           deletedAt: null,
           createdAt: { gte: dedupeFrom },
           customer: { phoneNumber: formData.phoneNumber },
+          orderItems: {
+            some: { productId: form.productId, itemType: 'package' }
+          }
         },
-        include: {
-          customer: true,
-          orderItems: { include: { product: true } }
-        }
+        select: { id: true, totalAmount: true, status: true }
       });
 
       if (existingOrder) {

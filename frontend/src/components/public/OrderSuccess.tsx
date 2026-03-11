@@ -7,14 +7,15 @@ import { trackPurchase } from '../../utils/pixelTracking';
 interface OrderSuccessProps {
   orderId: number;
   orderTotal?: number;
+  currency?: string;
   pixelConfig?: PixelConfig;
   onClose?: () => void;
 }
 
-export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal, pixelConfig, onClose }) => {
+export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal, currency = 'GHS', pixelConfig, onClose }) => {
   useEffect(() => {
     if (pixelConfig) {
-      trackPurchase(pixelConfig, orderTotal ?? 0, 'GHS');
+      trackPurchase(pixelConfig, orderTotal ?? 0, currency, orderId);
     }
   }, []); // intentionally empty — fires once on mount
 

@@ -704,7 +704,8 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
                               className="h-10 w-20 rounded border border-gray-300"
                             />
                             <Input
-                              {...register('buttonColor')}
+                              value={buttonColorValue}
+                              onChange={e => setValue('buttonColor', e.target.value)}
                               placeholder="#0f172a"
                             />
                           </div>
@@ -720,7 +721,8 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
                               className="h-10 w-20 rounded border border-gray-300"
                             />
                             <Input
-                              {...register('accentColor')}
+                              value={accentColorValue}
+                              onChange={e => setValue('accentColor', e.target.value)}
                               placeholder="#f97316"
                             />
                           </div>

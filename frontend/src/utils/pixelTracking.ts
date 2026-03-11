@@ -102,7 +102,7 @@ export function initPixels(config: PixelConfig): void {
   if (config.googleTagManagerId) loadGTM(config.googleTagManagerId);
 }
 
-export function trackPurchase(config: PixelConfig, value: number, currency: string): void {
+export function trackPurchase(config: PixelConfig, value: number, currency: string, orderId?: number | string): void {
   if (config.facebookPixelId && window.fbq) {
     window.fbq('track', 'Purchase', { value, currency });
   }
@@ -111,7 +111,7 @@ export function trackPurchase(config: PixelConfig, value: number, currency: stri
     window.gtag('event', 'purchase', {
       currency,
       value,
-      transaction_id: Date.now().toString(),
+      transaction_id: orderId ? String(orderId) : Date.now().toString(),
     });
   }
 
