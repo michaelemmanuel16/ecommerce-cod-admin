@@ -95,11 +95,22 @@ function loadGTM(containerId: string): void {
   document.head.appendChild(script);
 }
 
+const PIXEL_PATTERNS: Record<string, RegExp> = {
+  facebook: /^\d+$/,
+  ga4: /^G-[A-Z0-9]+$/,
+  tiktok: /^[A-Z0-9]+$/i,
+  gtm: /^GTM-[A-Z0-9]+$/,
+};
+
 export function initPixels(config: PixelConfig): void {
-  if (config.facebookPixelId) loadFacebookPixel(config.facebookPixelId);
-  if (config.googleAnalyticsId) loadGA4(config.googleAnalyticsId);
-  if (config.tiktokPixelId) loadTikTokPixel(config.tiktokPixelId);
-  if (config.googleTagManagerId) loadGTM(config.googleTagManagerId);
+  if (config.facebookPixelId && PIXEL_PATTERNS.facebook.test(config.facebookPixelId))
+    loadFacebookPixel(config.facebookPixelId);
+  if (config.googleAnalyticsId && PIXEL_PATTERNS.ga4.test(config.googleAnalyticsId))
+    loadGA4(config.googleAnalyticsId);
+  if (config.tiktokPixelId && PIXEL_PATTERNS.tiktok.test(config.tiktokPixelId))
+    loadTikTokPixel(config.tiktokPixelId);
+  if (config.googleTagManagerId && PIXEL_PATTERNS.gtm.test(config.googleTagManagerId))
+    loadGTM(config.googleTagManagerId);
 }
 
 export function trackPurchase(config: PixelConfig, value: number, currency: string, orderId?: number | string): void {

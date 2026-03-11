@@ -95,9 +95,6 @@ export const getCheckoutForm = async (req: AuthRequest, res: Response): Promise<
 };
 
 export const createCheckoutForm = async (req: AuthRequest, res: Response): Promise<void> => {
-  console.log('=== CREATE CHECKOUT FORM START ===');
-  console.log('Request body:', JSON.stringify(req.body, null, 2));
-
   try {
     const {
       name,
@@ -115,20 +112,10 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       pixelConfig
     } = req.body;
 
-    console.log('Extracted data:', {
-      name,
-      slug,
-      productId,
-      packagesCount: packages?.length,
-      upsellsCount: upsells?.length
-    });
-
     // Check if slug already exists
-    console.log('Checking for existing slug...');
     const existing = await prisma.checkoutForm.findUnique({
       where: { slug }
     });
-    console.log('Existing form check complete:', existing ? 'FOUND' : 'NOT FOUND');
 
     if (existing) {
       res.status(400).json({ error: 'Slug already exists' });
@@ -136,21 +123,14 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
     }
 
     // Check if product exists
-    console.log('Checking if product exists:', productId);
     const product = await prisma.product.findUnique({
       where: { id: productId }
     });
-    console.log('Product check complete:', product ? 'FOUND' : 'NOT FOUND');
 
     if (!product) {
-      console.log('Product not found, returning 404');
       res.status(404).json({ error: 'Product not found' });
       return;
     }
-
-    console.log('About to create checkout form with Prisma...');
-    console.log('Packages:', JSON.stringify(packages, null, 2));
-    console.log('Upsells:', JSON.stringify(upsells, null, 2));
 
     // Validate and normalize data before Prisma
     const normalizedPackages = packages?.map((pkg: any, index: number) => ({
@@ -177,9 +157,6 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       items: upsell.items || null,
       sortOrder: upsell.sortOrder !== undefined ? parseInt(upsell.sortOrder) : index
     }));
-
-    console.log('Normalized packages:', normalizedPackages);
-    console.log('Normalized upsells:', normalizedUpsells);
 
     // Wrap Prisma.create in timeout to prevent hanging
     const createWithTimeout = async () => {
@@ -218,14 +195,8 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
 
     const form = await createWithTimeout() as any;
 
-    console.log('Checkout form created successfully!', form.id);
     res.status(201).json({ form });
   } catch (error: any) {
-    console.error('=== CREATE CHECKOUT FORM ERROR ===');
-    console.error('Error:', error);
-    console.error('Error type:', error?.constructor?.name);
-    console.error('Error message:', error?.message);
-
     // Handle timeout errors
     if (error?.message?.includes('timed out')) {
       res.status(500).json({
@@ -512,8 +483,16 @@ export const getFormStats = async (req: AuthRequest, res: Response): Promise<voi
 
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate as string);
-      if (endDate) where.createdAt.lte = new Date(endDate as string);
+      if (startDate) {
+        const start = new Date(startDate as string);
+        if (isNaN(start.getTime())) { res.status(400).json({ error: 'Invalid startDate' }); return; }
+        where.createdAt.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate as string);
+        if (isNaN(end.getTime())) { res.status(400).json({ error: 'Invalid endDate' }); return; }
+        where.createdAt.lte = end;
+      }
     }
 
     const [submissions, totalRevenue] = await Promise.all([

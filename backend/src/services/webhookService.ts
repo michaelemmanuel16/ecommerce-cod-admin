@@ -169,7 +169,9 @@ export class WebhookService {
     try {
       const hmac = crypto.createHmac('sha256', secret);
       const digest = hmac.update(payload).digest('hex');
-      return signature === digest || signature === `sha256=${digest}`;
+      const sig = signature.replace(/^sha256=/, '');
+      if (sig.length !== digest.length) return false;
+      return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(digest, 'hex'));
     } catch (error) {
       logger.error('Signature verification failed', { error });
       return false;
