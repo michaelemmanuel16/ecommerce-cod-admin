@@ -354,3 +354,108 @@ export const getFinancialHealth = async (_req: AuthRequest, res: Response): Prom
     res.status(500).json({ message: 'Failed to fetch financial health' });
   }
 };
+
+/**
+ * POST /api/financial/refresh-aging
+ * Admin-only endpoint to manually trigger aging bucket refresh
+ * Use when aging data is stale or after bulk reconciliation
+ */
+export const refreshAgingBuckets = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    await agingService.refreshAll();
+    res.json({ message: 'Aging buckets refreshed successfully' });
+  } catch (error) {
+    logger.error('Failed to refresh aging buckets', { error });
+    res.status(500).json({ message: 'Failed to refresh aging buckets' });
+  }
+};
+
+/**
+ * POST /api/financial/backfill-collections
+ * Admin-only endpoint to create missing agent_collection records
+ * for delivered orders that have no collection tracking
+ */
+export const backfillMissingCollections = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // Find all delivered orders without agent_collections
+    const orphanedOrders = await prisma.$queryRaw<any[]>`
+      SELECT o.id, o.delivery_agent_id, o.total_amount, o.created_at
+      FROM orders o
+      WHERE o.status = 'delivered'
+        AND o.deleted_at IS NULL
+        AND o.delivery_agent_id IS NOT NULL
+        AND o.id NOT IN (SELECT order_id FROM agent_collections)
+      ORDER BY o.created_at ASC
+    `;
+
+    if (orphanedOrders.length === 0) {
+      res.json({ message: 'No orphaned orders found', created: 0 });
+      return;
+    }
+
+    // Group by agent for balance updates
+    const byAgent = new Map<number, { orders: any[], total: number }>();
+    for (const order of orphanedOrders) {
+      const agentId = order.delivery_agent_id;
+      if (!byAgent.has(agentId)) {
+        byAgent.set(agentId, { orders: [], total: 0 });
+      }
+      const group = byAgent.get(agentId)!;
+      group.orders.push(order);
+      group.total += parseFloat(order.total_amount);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const extTx = tx as any;
+
+      for (const [agentId, { orders, total }] of byAgent) {
+        // Create draft collections for each order
+        for (const order of orders) {
+          await extTx.agentCollection.create({
+            data: {
+              orderId: order.id,
+              agentId,
+              amount: parseFloat(order.total_amount),
+              status: 'draft',
+              collectionDate: order.created_at,
+            },
+          });
+        }
+
+        // Update agent balance
+        await extTx.agentBalance.upsert({
+          where: { agentId },
+          create: {
+            agentId,
+            totalCollected: total,
+            totalDeposited: 0,
+            currentBalance: total,
+          },
+          update: {
+            totalCollected: { increment: total },
+            currentBalance: { increment: total },
+          },
+        });
+      }
+    });
+
+    // Refresh aging buckets after backfill
+    await agingService.refreshAll();
+
+    const summary = Array.from(byAgent.entries()).map(([agentId, { orders, total }]) => ({
+      agentId,
+      ordersBackfilled: orders.length,
+      totalAmount: total,
+    }));
+
+    logger.info('Backfilled missing agent collections', { summary });
+    res.json({
+      message: `Backfilled ${orphanedOrders.length} missing collections`,
+      created: orphanedOrders.length,
+      summary,
+    });
+  } catch (error) {
+    logger.error('Failed to backfill missing collections', { error });
+    res.status(500).json({ message: 'Failed to backfill missing collections' });
+  }
+};
