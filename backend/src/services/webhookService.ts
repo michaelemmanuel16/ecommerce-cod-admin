@@ -413,6 +413,55 @@ export class WebhookService {
         const shippingCost = Number(mappedData.shippingCost || mappedData.deliveryFee || externalOrder.shipping_cost || externalOrder.delivery_fee || 0);
         const totalAmount = mappedData.totalAmount ? Number(mappedData.totalAmount) : subtotal + shippingCost;
 
+        // Guard 1: exact-retry deduplication by externalOrderId
+        const externalId = externalOrder.id || externalOrder.order_id;
+        if (externalId) {
+          const existingByExternalId = await prisma.order.findFirst({
+            where: { externalOrderId: String(externalId), deletedAt: null },
+          });
+          if (existingByExternalId) {
+            logger.info('Skipping duplicate webhook order (same externalOrderId)', {
+              externalOrderId: externalId,
+              existingOrderId: existingByExternalId.id,
+            });
+            results.success++;
+            continue;
+          }
+        }
+
+        // Guard 2: fingerprint deduplication (phone + amount + address within 1 hour)
+        {
+          const dedupeWindowMs = 60 * 60 * 1000;
+          const dedupeFrom = new Date(Date.now() - dedupeWindowMs);
+          const normalize = (v: string | null | undefined) =>
+            String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+          const deliveryAddr = mappedData.deliveryAddress || externalOrder.address || customer.address || '';
+
+          const existingByFingerprint = await prisma.order.findFirst({
+            where: {
+              customer: { phoneNumber: customer.phoneNumber },
+              totalAmount,
+              deletedAt: null,
+              createdAt: { gte: dedupeFrom },
+            },
+          });
+
+          if (existingByFingerprint) {
+            const addrMatch =
+              normalize(existingByFingerprint.deliveryAddress) === normalize(deliveryAddr);
+            if (addrMatch) {
+              logger.info('Skipping duplicate webhook order (same phone+amount+address within 1 hour)', {
+                externalOrderId: externalId,
+                existingOrderId: existingByFingerprint.id,
+                phone: customer.phoneNumber,
+                totalAmount,
+              });
+              results.success++;
+              continue;
+            }
+          }
+        }
+
         // Create order with OrderItems
         const createdOrder = await prisma.order.create({
           data: {
