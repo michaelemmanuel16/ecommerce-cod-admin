@@ -256,6 +256,7 @@ export class CheckoutFormService {
         styling: true,
         country: true,
         regions: true,
+        pixelConfig: true,
         product: {
           select: {
             name: true,
@@ -273,7 +274,11 @@ export class CheckoutFormService {
             description: true,
             price: true,
             quantity: true,
-            isPopular: true
+            isPopular: true,
+            originalPrice: true,
+            showDiscount: true,
+            discountType: true,
+            discountValue: true
           }
         },
         upsells: {
@@ -282,8 +287,12 @@ export class CheckoutFormService {
             id: true,
             name: true,
             description: true,
+            imageUrl: true,
             price: true,
-            items: true
+            items: true,
+            originalPrice: true,
+            discountType: true,
+            discountValue: true
           }
         }
       }

@@ -3,7 +3,7 @@ import { cn } from '../../utils/cn';
 
 interface Tab {
   id: string;
-  label: string;
+  label: React.ReactNode;
   content: React.ReactNode;
 }
 

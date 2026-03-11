@@ -1,13 +1,23 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { PixelConfig } from '../../types/checkout-form';
+import { trackPurchase } from '../../utils/pixelTracking';
 
 interface OrderSuccessProps {
   orderId: number;
+  orderTotal?: number;
+  pixelConfig?: PixelConfig;
   onClose?: () => void;
 }
 
-export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, onClose }) => {
+export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal, pixelConfig, onClose }) => {
+  useEffect(() => {
+    if (pixelConfig) {
+      trackPurchase(pixelConfig, orderTotal ?? 0, 'GHS');
+    }
+  }, []); // intentionally empty — fires once on mount
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow-lg border border-gray-200 p-8 text-center">

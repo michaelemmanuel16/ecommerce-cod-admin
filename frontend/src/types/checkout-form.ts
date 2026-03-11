@@ -49,6 +49,13 @@ export interface CheckoutFormStyling {
   accentColor: string;
 }
 
+export interface PixelConfig {
+  facebookPixelId?: string;
+  googleAnalyticsId?: string;   // G-XXXXXXXX
+  tiktokPixelId?: string;
+  googleTagManagerId?: string;  // GTM-XXXXX
+}
+
 export interface CheckoutForm {
   id: number; // Database ID (changed from CUID string to Int)
   name: string; // Changed from 'productName' to match database schema
@@ -63,6 +70,7 @@ export interface CheckoutForm {
   currency: string; // Currency code (e.g., GHS, NGN)
   regions: string[]; // Added from database schema
   styling: CheckoutFormStyling;
+  pixelConfig?: PixelConfig;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

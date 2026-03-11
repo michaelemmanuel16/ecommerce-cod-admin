@@ -111,7 +111,8 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       regions,
       packages,
       upsells,
-      isActive
+      isActive,
+      pixelConfig
     } = req.body;
 
     console.log('Extracted data:', {
@@ -195,6 +196,7 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
             currency: currency || 'GHS',
             regions,
             isActive: isActive !== undefined ? isActive : true,
+            pixelConfig: pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : undefined,
             packages: normalizedPackages && normalizedPackages.length > 0 ? {
               create: normalizedPackages
             } : undefined,
@@ -281,7 +283,8 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       regions,
       packages,
       upsells,
-      isActive
+      isActive,
+      pixelConfig
     } = req.body;
 
     // Check if form exists
@@ -330,6 +333,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     if (currency !== undefined) updateData.currency = currency;
     if (regions !== undefined) updateData.regions = regions;
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (pixelConfig !== undefined) updateData.pixelConfig = pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : null;
 
     await prisma.checkoutForm.update({
       where: { id: formId },

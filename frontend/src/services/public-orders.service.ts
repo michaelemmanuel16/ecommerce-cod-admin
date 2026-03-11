@@ -47,6 +47,9 @@ export interface PublicCheckoutForm {
     price: number;
     items?: { quantity: number };
     isPopular: boolean;
+    originalPrice?: number;
+    discountType?: 'none' | 'percentage' | 'fixed';
+    discountValue?: number;
   }>;
   country: string;
   currency: string;
@@ -54,6 +57,12 @@ export interface PublicCheckoutForm {
   styling?: {
     buttonColor: string;
     accentColor: string;
+  };
+  pixelConfig?: {
+    facebookPixelId?: string;
+    googleAnalyticsId?: string;
+    tiktokPixelId?: string;
+    googleTagManagerId?: string;
   };
   isActive: boolean;
   createdAt: string;
