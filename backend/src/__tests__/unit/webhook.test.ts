@@ -82,6 +82,7 @@ describe('Webhook Controller', () => {
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
       prismaMock.customer.findUnique.mockResolvedValue(null);
       prismaMock.customer.create.mockResolvedValue(mockCustomer as any);
+      prismaMock.order.findMany.mockResolvedValue([]);
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.create.mockResolvedValue({} as any);
 
@@ -159,6 +160,7 @@ describe('Webhook Controller', () => {
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
       prismaMock.customer.findUnique.mockResolvedValue(null);
       prismaMock.customer.create.mockResolvedValue({ id: 'customer' } as any);
+      prismaMock.order.findMany.mockResolvedValue([]);
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.create.mockResolvedValue({} as any);
 
