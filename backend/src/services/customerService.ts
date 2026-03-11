@@ -66,62 +66,117 @@ export class CustomerService {
       where.tags = { hasSome: tags };
     }
 
-    // When sorting by computed fields, fetch all matching customers, sort globally, then paginate
-    // to avoid misleading per-page-only sort results
-    const needsGlobalSort = !!sortBy;
     const skip = (page - 1) * limit;
 
+    // When sorting by computed fields (totalOrders/totalSpent), use raw SQL
+    // to sort and paginate at the database level instead of loading all records
+    if (sortBy) {
+      // Build WHERE conditions for raw SQL
+      const conditions: string[] = ['c.is_active = true', 'c.deleted_at IS NULL'];
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      if (search) {
+        conditions.push(`(c.first_name ILIKE $${paramIdx} OR c.last_name ILIKE $${paramIdx} OR c.phone_number LIKE $${paramIdx + 1} OR c.email ILIKE $${paramIdx})`);
+        params.push(`%${search}%`, `%${search}%`);
+        paramIdx += 2;
+      }
+      if (area) {
+        conditions.push(`c.area = $${paramIdx}`);
+        params.push(area);
+        paramIdx++;
+      }
+      if (tags && tags.length > 0) {
+        conditions.push(`c.tags && $${paramIdx}::text[]`);
+        params.push(tags);
+        paramIdx++;
+      }
+      if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+        conditions.push(`EXISTS (SELECT 1 FROM orders o2 WHERE o2.customer_id = c.id AND o2.deleted_at IS NULL AND (o2.customer_rep_id = $${paramIdx} OR o2.delivery_agent_id = $${paramIdx}))`);
+        params.push(requester.id);
+        paramIdx++;
+      }
+
+      const whereClause = conditions.join(' AND ');
+      const orderCol = sortBy === 'totalOrders' ? 'total_orders' : 'total_spent';
+      const orderDir = sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+      // Count total
+      const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
+        `SELECT COUNT(*)::bigint as count FROM customers c WHERE ${whereClause}`,
+        ...params
+      );
+      const total = Number(countResult[0].count);
+
+      // Fetch sorted page with aggregated metrics
+      const rawCustomers = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT c.*,
+          COUNT(o.id)::int AS total_orders,
+          COALESCE(SUM(o.total_amount), 0)::float AS total_spent
+        FROM customers c
+        LEFT JOIN orders o ON o.customer_id = c.id AND o.deleted_at IS NULL
+        WHERE ${whereClause}
+        GROUP BY c.id
+        ORDER BY ${orderCol} ${orderDir}, c.created_at DESC
+        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+        ...params, limit, skip
+      );
+
+      // Map raw results to match Prisma output shape
+      const customersWithMetrics = rawCustomers.map((c: any) => ({
+        id: c.id,
+        firstName: c.first_name,
+        lastName: c.last_name,
+        email: c.email,
+        phoneNumber: c.phone_number,
+        alternatePhone: c.alternate_phone,
+        address: c.address,
+        state: c.state,
+        area: c.area,
+        zipCode: c.zip_code,
+        landmark: c.landmark,
+        tags: c.tags || [],
+        notes: c.notes,
+        isActive: c.is_active,
+        totalOrders: c.total_orders,
+        totalSpent: c.total_spent,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+        orders: [], // not needed for list view
+      }));
+
+      return {
+        customers: customersWithMetrics,
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+      };
+    }
+
+    // Default: no computed sort — use standard Prisma query
     const [customers, total] = await Promise.all([
       prisma.customer.findMany({
         where,
-        ...(needsGlobalSort ? {} : { skip, take: limit }),
+        skip,
+        take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
           orders: {
             where: { deletedAt: null },
-            select: {
-              id: true,
-              totalAmount: true
-            }
+            select: { id: true, totalAmount: true }
           }
         }
       }),
       prisma.customer.count({ where })
     ]);
 
-    // Calculate totalOrders and totalSpent from actual orders
-    const customersWithMetrics = customers.map(customer => {
-      const totalOrders = customer.orders.length;
-      const totalSpent = customer.orders.reduce((sum, order) => sum + order.totalAmount, 0);
-
-      return {
-        ...customer,
-        totalOrders,
-        totalSpent
-      };
-    });
-
-    // Sort globally across all matching customers, then paginate
-    if (sortBy) {
-      customersWithMetrics.sort((a, b) => {
-        const aVal = a[sortBy];
-        const bVal = b[sortBy];
-        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
-      });
-    }
-
-    const paginatedCustomers = needsGlobalSort
-      ? customersWithMetrics.slice(skip, skip + limit)
-      : customersWithMetrics;
+    const customersWithMetrics = customers.map(customer => ({
+      ...customer,
+      totalOrders: customer.orders.length,
+      totalSpent: customer.orders.reduce((sum, order) => sum + order.totalAmount, 0)
+    }));
 
     return {
-      customers: paginatedCustomers,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
+      customers: customersWithMetrics,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) }
     };
   }
 
