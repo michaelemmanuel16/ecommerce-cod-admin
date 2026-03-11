@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
-import { DollarSign, TrendingUp, TrendingDown, Receipt, Clock, Wallet, Truck, ArrowRight, Download } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, Receipt, Clock, Wallet, Truck, ArrowRight, Download, Info } from 'lucide-react';
+import { Tooltip } from '../../components/ui/Tooltip';
 import { useFinancialStore } from '../../stores/financialStore';
 import { FinancialKPICard } from '../../components/financial/cards/FinancialKPICard';
 import { RevenueExpenseTrendChart } from '../../components/financial/charts/RevenueExpenseTrendChart';
 import { CashFlowForecastChart } from '../../components/financial/charts/CashFlowForecastChart';
 import { Card } from '../../components/ui/Card';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatPercentage } from '../../utils/format';
 
 export const FinancialDashboard: React.FC = () => {
   const {
@@ -59,13 +60,14 @@ export const FinancialDashboard: React.FC = () => {
       {/* Section 1: Core Financial Health */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold text-gray-900">Core Financial Health</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-6">
           <FinancialKPICard
             title="Total Revenue"
             value={summary?.totalRevenue || 0}
             icon={DollarSign}
             iconColor="text-green-600"
             iconBgColor="bg-green-100"
+            info="Total revenue recognized from delivered orders in the selected period"
           />
 
           <FinancialKPICard
@@ -74,16 +76,18 @@ export const FinancialDashboard: React.FC = () => {
             icon={TrendingUp}
             iconColor={summary && summary.profit >= 0 ? 'text-blue-600' : 'text-red-600'}
             iconBgColor={summary && summary.profit >= 0 ? 'bg-blue-100' : 'bg-red-100'}
-            subtitle={`Margin: ${summary?.profitMargin.toFixed(1) || 0}%`}
+            subtitle={`Margin: ${summary ? formatPercentage(summary.profitMargin) : '0%'}`}
+            info="Revenue minus all costs: COGS, commissions, and operating expenses"
           />
 
           <FinancialKPICard
-            title="Outstanding AR"
-            value={summary?.codCollected || 0}
+            title="Outstanding Receivables"
+            value={summary?.outstandingReceivables || 0}
             icon={Clock}
-            iconColor="text-yellow-600"
-            iconBgColor="bg-yellow-100"
-            subtitle="COD + Agent collections"
+            iconColor="text-orange-600"
+            iconBgColor="bg-orange-100"
+            subtitle="Delivered, awaiting collection"
+            info="Money agents owe the company for delivered orders not yet deposited to the bank"
           />
 
           <FinancialKPICard
@@ -92,15 +96,17 @@ export const FinancialDashboard: React.FC = () => {
             icon={TrendingDown}
             iconColor="text-red-600"
             iconBgColor="bg-red-100"
+            info="All recorded operating expenses for the selected period"
           />
 
           <FinancialKPICard
-            title="Expected Revenue"
+            title="Pipeline Revenue"
             value={pipelineRevenue?.totalExpected || 0}
             icon={Receipt}
             iconColor="text-purple-600"
             iconBgColor="bg-purple-100"
-            subtitle="From active orders"
+            subtitle="Active orders (not yet delivered)"
+            info="Expected revenue from active orders currently out for or awaiting delivery"
           />
         </div>
       </div>
@@ -127,28 +133,38 @@ export const FinancialDashboard: React.FC = () => {
           <Card>
             <div className="p-6">
               <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 rounded-lg bg-yellow-50">
-                  <Truck className="w-5 h-5 text-yellow-600" />
+                <div className="p-2 rounded-lg bg-green-50">
+                  <Wallet className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Cash in Transit</p>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                    Cash Available Now
+                    <Tooltip content="Liquid cash in company bank accounts plus all agent-held collections ready for deposit" position="bottom">
+                      <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                    </Tooltip>
+                  </p>
                   <h4 className="text-xl font-bold text-gray-900">
-                    {formatCurrency(kpis?.cashInTransit || 0)}
+                    {formatCurrency(kpis?.cashAvailableNow || 0)}
                   </h4>
                 </div>
               </div>
-              <p className="text-[10px] text-gray-400">Delivered, not collected</p>
+              <p className="text-[10px] text-gray-400">Liquid cash (bank + agents)</p>
             </div>
           </Card>
 
           <Card>
             <div className="p-6">
               <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 rounded-lg bg-green-50">
-                  <ArrowRight className="w-5 h-5 text-green-600" />
+                <div className="p-2 rounded-lg bg-yellow-50">
+                  <Truck className="w-5 h-5 text-yellow-600" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Cash Expected</p>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                    In-Transit Orders
+                    <Tooltip content="Cash expected from orders currently out for delivery — not yet collected from customers" position="bottom">
+                      <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                    </Tooltip>
+                  </p>
                   <h4 className="text-xl font-bold text-gray-900">
                     {formatCurrency(kpis?.cashExpected || 0)}
                   </h4>
@@ -162,16 +178,21 @@ export const FinancialDashboard: React.FC = () => {
             <div className="p-6">
               <div className="flex items-center gap-3 mb-2">
                 <div className="p-2 rounded-lg bg-blue-50">
-                  <Wallet className="w-5 h-5 text-blue-600" />
+                  <ArrowRight className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Available Cash</p>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                    Total Cash Pipeline
+                    <Tooltip content="Combined cash available now plus all expected incoming collections" position="bottom">
+                      <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                    </Tooltip>
+                  </p>
                   <h4 className="text-xl font-bold text-blue-700">
-                    {formatCurrency(kpis?.totalCashPosition || 0)}
+                    {formatCurrency(kpis?.totalCashPipeline || 0)}
                   </h4>
                 </div>
               </div>
-              <p className="text-[10px] text-gray-400">Consolidated liquidity</p>
+              <p className="text-[10px] text-gray-400">Available + expected collections</p>
             </div>
           </Card>
         </div>

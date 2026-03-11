@@ -39,6 +39,7 @@ jest.mock('../../utils/prisma', () => ({
             update: jest.fn(),
             create: jest.fn(),
             findMany: jest.fn(),
+            upsert: jest.fn(),
         },
         agentDeposit: {
             findUnique: jest.fn(),
@@ -48,6 +49,7 @@ jest.mock('../../utils/prisma', () => ({
             findMany: jest.fn(),
         },
         journalEntry: {
+            findFirst: jest.fn().mockResolvedValue(null),
             create: jest.fn(),
         },
         account: {

@@ -57,9 +57,21 @@ docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging 
 echo -e "${YELLOW}Removing any orphan staging containers...${NC}"
 docker ps -aq --filter "name=staging" | xargs -r docker rm -f || true
 
+# Remove stale PostgreSQL PID file that can prevent postgres from starting after
+# an unclean container shutdown (force-remove leaves postmaster.pid in the volume)
+echo -e "${YELLOW}Removing stale PostgreSQL PID file if present...${NC}"
+docker run --rm \
+  -v staging_postgres_data_staging:/var/lib/postgresql/data \
+  alpine:latest \
+  sh -c "rm -f /var/lib/postgresql/data/postmaster.pid && echo 'PID cleanup done'" || true
+
 # Step 4: Start new containers
 echo -e "${BLUE}[4/6] Starting staging containers...${NC}"
-docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging up -d
+docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging up -d || {
+  echo -e "${RED}Failed to start containers. Capturing postgres logs...${NC}"
+  docker logs ecommerce-cod-postgres-staging 2>&1 || true
+  exit 1
+}
 
 # Step 5: Run database migrations
 echo -e "${BLUE}[5/6] Running database migrations...${NC}"

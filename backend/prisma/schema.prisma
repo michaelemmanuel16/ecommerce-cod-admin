@@ -700,6 +700,8 @@ model AgentCollection {
   @@index([agentId])
   @@index([status])
   @@index([collectionDate])
+  @@index([agentId, status])
+  @@index([status, collectionDate])
   @@map("agent_collections")
 }
 
@@ -818,6 +820,7 @@ enum DepositStatus {
 
 enum JournalSourceType {
   order_delivery
+  failed_delivery
   agent_deposit
   expense
   payout

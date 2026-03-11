@@ -212,10 +212,17 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
 
     // Filters and UI state
     filters: {},
-    dateRange: {
-      startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
-      endDate: new Date().toISOString()
-    },
+    dateRange: (() => {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const endOfToday = new Date(now);
+      endOfToday.setHours(23, 59, 59, 999);
+      return {
+        startDate: `${year}-${month}-01`,
+        endDate: endOfToday.toISOString()
+      };
+    })(),
     isLoading: false,
     error: null,
     currentAgentCollections: [],

@@ -747,9 +747,10 @@ describe('GLService', () => {
 
       (prismaMock.journalEntry.create as any).mockResolvedValue(mockCreatedEntry);
       (prismaMock.accountTransaction.createMany as any).mockResolvedValue({ count: 2 });
-      // Mock $queryRaw calls: first for generateEntryNumber, then for each updateAccountBalance
+      // Mock $executeRaw for advisory lock, then $queryRaw for SELECT + balance updates
+      (prismaMock.$executeRaw as any).mockResolvedValue(0); // pg_advisory_xact_lock
       (prismaMock.$queryRaw as any)
-        .mockResolvedValueOnce([]) // generateEntryNumber - no previous entries
+        .mockResolvedValueOnce([]) // generateEntryNumber SELECT - no previous entries
         .mockResolvedValue([{ // updateAccountBalance - account data for all subsequent calls
           normalBalance: 'debit',
           currentBalance: new Prisma.Decimal('0')
@@ -849,9 +850,10 @@ describe('GLService', () => {
       });
       (prismaMock.accountTransaction.createMany as any).mockResolvedValue({ count: 2 });
       (prismaMock.journalEntry.update as any).mockResolvedValue({ ...mockEntry, isVoided: true });
-      // Mock $queryRaw calls: first for generateEntryNumber, then for each updateAccountBalance
+      // Mock $executeRaw for advisory lock, then $queryRaw for SELECT + balance updates
+      (prismaMock.$executeRaw as any).mockResolvedValue(0); // pg_advisory_xact_lock
       (prismaMock.$queryRaw as any)
-        .mockResolvedValueOnce([]) // generateEntryNumber - no previous entries
+        .mockResolvedValueOnce([]) // generateEntryNumber SELECT - no previous entries
         .mockResolvedValue([{ // updateAccountBalance - account data for all subsequent calls
           normalBalance: 'debit',
           currentBalance: new Prisma.Decimal('0')

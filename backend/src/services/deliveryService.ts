@@ -1,4 +1,5 @@
 import { Prisma, DeliveryProofType } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
@@ -384,13 +385,20 @@ export class DeliveryService {
 
       logger.info(`GL entry created for order ${orderWithItems.id}: ${glEntry.entryNumber}`);
 
-      // Create draft agent collection record
+      // Create draft agent collection record with net amount (gross - agent commission)
       if (orderWithItems.deliveryAgentId && orderWithItems.codAmount) {
+        const grossAmount = new Decimal(orderWithItems.codAmount.toString());
+        // Uses profile flat rate — must match createRevenueRecognitionEntry in glAutomationService
+        const agentCommission = orderWithItems.deliveryAgent?.commissionAmount
+          ? new Decimal(orderWithItems.deliveryAgent.commissionAmount.toString())
+          : new Decimal(0);
+        const netAmount = grossAmount.minus(agentCommission);
+
         await agentReconciliationService.createDraftCollection(
           tx,
           orderWithItems.id,
           orderWithItems.deliveryAgentId,
-          orderWithItems.codAmount,
+          netAmount.toNumber(),
           updatedDelivery.actualDeliveryTime || new Date()
         );
       }

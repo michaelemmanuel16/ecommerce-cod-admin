@@ -346,15 +346,35 @@ export class WebhookService {
   /**
    * Process orders from webhook payload
    */
+  private getExternalId(order: any): string | undefined {
+    const id = order.id || order.order_id;
+    return id ? String(id) : undefined;
+  }
+
   private async processOrdersFromWebhook(body: any, webhookConfig: any) {
     const mapping = (webhookConfig?.fieldMapping as any) || {};
     const orders = Array.isArray(body.orders) ? body.orders : [body];
 
     const results = {
       success: 0,
+      skipped: 0,
       failed: 0,
       errors: [] as Array<{ order: any; error: string }>
     };
+
+    // Guard 1 pre-fetch: collect all externalOrderIds in the batch and query once
+    const batchExternalIds = orders
+      .map((o: any) => this.getExternalId(o))
+      .filter(Boolean) as string[];
+
+    const existingExternalIdSet = new Set<string>();
+    if (batchExternalIds.length > 0) {
+      const existing = await prisma.order.findMany({
+        where: { externalOrderId: { in: batchExternalIds }, deletedAt: null },
+        select: { externalOrderId: true },
+      });
+      existing.forEach((o) => existingExternalIdSet.add(o.externalOrderId!));
+    }
 
     for (const externalOrder of orders) {
       try {
@@ -411,7 +431,43 @@ export class WebhookService {
         const itemTotal = price; // Use price as-is (it's already the total)
         const subtotal = mappedData.subtotal ? Number(mappedData.subtotal) : itemTotal;
         const shippingCost = Number(mappedData.shippingCost || mappedData.deliveryFee || externalOrder.shipping_cost || externalOrder.delivery_fee || 0);
-        const totalAmount = mappedData.totalAmount ? Number(mappedData.totalAmount) : subtotal + shippingCost;
+        const totalAmount = Math.round((mappedData.totalAmount ? Number(mappedData.totalAmount) : subtotal + shippingCost) * 100) / 100;
+
+        // Guard 1: exact-retry deduplication by externalOrderId (in-memory lookup from pre-fetch)
+        const externalId = this.getExternalId(externalOrder);
+        if (externalId && existingExternalIdSet.has(externalId)) {
+          logger.info('Skipping duplicate webhook order (same externalOrderId)', {
+            externalOrderId: externalId,
+          });
+          results.skipped++;
+          continue;
+        }
+
+        // Guard 2: fingerprint deduplication (phone + amount within 1 hour, webhook source only)
+        {
+          const dedupeFrom = new Date(Date.now() - 60 * 60 * 1000);
+          const existingByFingerprint = await prisma.order.findFirst({
+            where: {
+              source: 'webhook',
+              customer: { phoneNumber: customer.phoneNumber },
+              totalAmount,
+              deletedAt: null,
+              createdAt: { gte: dedupeFrom },
+            },
+            select: { id: true },
+          });
+
+          if (existingByFingerprint) {
+            logger.info('Skipping duplicate webhook order (same phone+amount within 1 hour)', {
+              externalOrderId: externalId,
+              existingOrderId: existingByFingerprint.id,
+              phone: customer.phoneNumber,
+              totalAmount,
+            });
+            results.skipped++;
+            continue;
+          }
+        }
 
         // Create order with OrderItems
         const createdOrder = await prisma.order.create({

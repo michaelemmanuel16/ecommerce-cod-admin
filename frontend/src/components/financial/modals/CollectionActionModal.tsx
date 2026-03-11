@@ -17,6 +17,8 @@ interface CollectionActionModalProps {
 const statusColors = {
     draft: 'bg-yellow-100 text-yellow-800',
     verified: 'bg-blue-100 text-blue-800',
+    approved: 'bg-indigo-100 text-indigo-800',
+    deposited: 'bg-purple-100 text-purple-800',
     reconciled: 'bg-green-100 text-green-800',
 };
 
@@ -154,7 +156,7 @@ export const CollectionActionModal: React.FC<CollectionActionModalProps> = ({
                                         </td>
                                     </tr>
                                 ) : (
-                                    currentAgentCollections.map((collection) => (
+                                    currentAgentCollections.filter(c => c.status !== 'reconciled').map((collection) => (
                                         <tr
                                             key={collection.id}
                                             className={selectedIds.includes(collection.id) ? 'bg-blue-50' : ''}

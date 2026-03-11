@@ -45,7 +45,7 @@ async function fixVdlAndReconcile() {
 
         // 3. Recalculate AgentBalance
         // Total Draft + Verified + Approved = currentBalance
-        const collections = await (prisma as any).agentCollection.findMany({
+        const collections = await prisma.agentCollection.findMany({
             where: { agentId: vdlAgent.id }
         });
 

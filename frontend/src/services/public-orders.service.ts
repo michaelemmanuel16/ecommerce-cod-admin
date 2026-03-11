@@ -57,6 +57,8 @@ export interface PublicCheckoutForm {
   styling?: {
     buttonColor: string;
     accentColor: string;
+    showName?: boolean;
+    showDescription?: boolean;
   };
   pixelConfig?: {
     facebookPixelId?: string;

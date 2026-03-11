@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Plus } from 'lucide-react';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -95,6 +97,8 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
 
   // Auto-generate slug from name
   const nameValue = watch('name');
+  const buttonColorValue = watch('buttonColor');
+  const accentColorValue = watch('accentColor');
   React.useEffect(() => {
     if (nameValue && !initialData) {
       const slug = nameValue
@@ -134,6 +138,8 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
   const [upsellImages, setUpsellImages] = useState<Map<number, { file: File; preview: string }>>(new Map());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pixelConfig, setPixelConfig] = useState<PixelConfig>(initialData?.pixelConfig || {});
+  const [showName, setShowName] = useState<boolean>(initialData?.styling?.showName !== false);
+  const [showDescription, setShowDescription] = useState<boolean>(initialData?.styling?.showDescription !== false);
 
   // Dynamic regions based on selected country
   const [currentRegions, setCurrentRegions] = useState<string[]>(
@@ -153,11 +159,15 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
             quantity: u.items?.quantity || 1,
           })) || []
         );
+        setShowName(initialData.styling?.showName !== false);
+        setShowDescription(initialData.styling?.showDescription !== false);
       } else {
         // Create mode - reset to defaults
         setFields(defaultFields);
         setPackages([]);
         setUpsells([]);
+        setShowName(true);
+        setShowDescription(true);
       }
       // Clear any existing upsell image previews
       upsellImages.forEach(({ preview }) => {
@@ -172,6 +182,19 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
     { value: 0, label: 'Select Product' },
     ...products.map(p => ({ value: p.id, label: p.name })),
   ];
+
+  const sensors = useSensors(useSensor(PointerSensor));
+
+  const handleFieldDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setFields(prev => {
+        const oldIndex = prev.findIndex(f => f.id === active.id);
+        const newIndex = prev.findIndex(f => f.id === over.id);
+        return arrayMove(prev, oldIndex, newIndex);
+      });
+    }
+  };
 
   const addField = () => {
     const newField: FormField = {
@@ -406,6 +429,8 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
         styling: {
           buttonColor: data.buttonColor,
           accentColor: data.accentColor,
+          showName,
+          showDescription,
         },
         pixelConfig: Object.values(pixelConfig).some(v => v) ? pixelConfig : null,
       };
@@ -499,6 +524,28 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
                     />
                   </div>
 
+                  {/* Show Name / Show Description toggles */}
+                  <div className="space-y-1">
+                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showName}
+                        onChange={e => setShowName(e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      Show form name on checkout
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showDescription}
+                        onChange={e => setShowDescription(e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      Show description on checkout
+                    </label>
+                  </div>
+
                   {/* Form Fields */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
@@ -513,16 +560,20 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
                         Add Field
                       </Button>
                     </div>
-                    <div className="space-y-2">
-                      {fields.map(field => (
-                        <FormFieldEditor
-                          key={field.id}
-                          field={field}
-                          onUpdate={(updated) => updateField(field.id, updated)}
-                          onDelete={() => deleteField(field.id)}
-                        />
-                      ))}
-                    </div>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFieldDragEnd}>
+                      <SortableContext items={fields.map(f => f.id)} strategy={verticalListSortingStrategy}>
+                        <div className="space-y-2">
+                          {fields.map(field => (
+                            <FormFieldEditor
+                              key={field.id}
+                              field={field}
+                              onUpdate={(updated) => updateField(field.id, updated)}
+                              onDelete={() => deleteField(field.id)}
+                            />
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
                   </div>
                 </div>
               ),

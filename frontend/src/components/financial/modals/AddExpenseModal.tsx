@@ -2,9 +2,18 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { useFinancialStore } from '../../../stores/financialStore';
 
+interface ExpenseData {
+  id: string;
+  category: string;
+  amount: number;
+  description: string;
+  expenseDate: string;
+}
+
 interface AddExpenseModalProps {
   isOpen: boolean;
   onClose: () => void;
+  expense?: ExpenseData | null;
 }
 
 const EXPENSE_CATEGORIES = [
@@ -17,15 +26,28 @@ const EXPENSE_CATEGORIES = [
   'Other'
 ];
 
-export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose }) => {
-  const { recordExpense } = useFinancialStore();
-  const [formData, setFormData] = useState({
-    category: 'COGS',
-    amount: '',
-    description: '',
-    expenseDate: new Date().toISOString().split('T')[0]
+export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose, expense }) => {
+  const { recordExpense, updateExpense } = useFinancialStore();
+  const isEditMode = !!expense;
+
+  const getDefaultFormData = () => ({
+    category: expense?.category || 'COGS',
+    amount: expense?.amount?.toString() || '',
+    description: expense?.description || '',
+    expenseDate: expense?.expenseDate
+      ? new Date(expense.expenseDate).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0]
   });
+
+  const [formData, setFormData] = useState(getDefaultFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Reset form when expense prop changes (opening edit mode)
+  React.useEffect(() => {
+    if (isOpen) {
+      setFormData(getDefaultFormData());
+    }
+  }, [isOpen, expense?.id]);
 
   if (!isOpen) return null;
 
@@ -33,12 +55,21 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClos
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await recordExpense({
-        category: formData.category,
-        amount: parseFloat(formData.amount),
-        description: formData.description,
-        expenseDate: formData.expenseDate
-      });
+      if (isEditMode && expense) {
+        await updateExpense(expense.id, {
+          category: formData.category,
+          amount: parseFloat(formData.amount),
+          description: formData.description,
+          expenseDate: formData.expenseDate
+        });
+      } else {
+        await recordExpense({
+          category: formData.category,
+          amount: parseFloat(formData.amount),
+          description: formData.description,
+          expenseDate: formData.expenseDate
+        });
+      }
       onClose();
       setFormData({
         category: 'COGS',
@@ -47,7 +78,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClos
         expenseDate: new Date().toISOString().split('T')[0]
       });
     } catch (error) {
-      console.error('Failed to add expense:', error);
+      console.error(`Failed to ${isEditMode ? 'update' : 'add'} expense:`, error);
     } finally {
       setIsSubmitting(false);
     }
@@ -58,7 +89,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClos
       <div className="absolute inset-0 bg-black bg-opacity-50" onClick={onClose}></div>
       <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">Add Expense</h2>
+          <h2 className="text-xl font-semibold text-gray-900">{isEditMode ? 'Edit Expense' : 'Add Expense'}</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -128,6 +159,8 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClos
             />
           </div>
 
+          {/* TODO: Receipt upload requires a backend file upload endpoint (S3/local storage) — add in a future PR */}
+
           <div className="flex justify-end gap-3 pt-4">
             <button
               type="button"
@@ -142,7 +175,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClos
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Adding...' : 'Add Expense'}
+              {isSubmitting ? (isEditMode ? 'Saving...' : 'Adding...') : (isEditMode ? 'Save Changes' : 'Add Expense')}
             </button>
           </div>
         </form>
