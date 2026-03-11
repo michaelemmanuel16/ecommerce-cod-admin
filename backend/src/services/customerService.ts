@@ -25,6 +25,8 @@ interface CustomerFilters {
   tags?: string[];
   page?: number;
   limit?: number;
+  sortBy?: 'totalOrders' | 'totalSpent';
+  sortOrder?: 'asc' | 'desc';
 }
 
 export class CustomerService {
@@ -32,7 +34,7 @@ export class CustomerService {
    * Get all customers with filters and pagination
    */
   async getAllCustomers(filters: CustomerFilters, requester?: Requester) {
-    const { search, area, tags, page = 1, limit = 20 } = filters;
+    const { search, area, tags, page = 1, limit = 20, sortBy, sortOrder = 'desc' } = filters;
 
     const where: Prisma.CustomerWhereInput = { isActive: true };
 
@@ -64,13 +66,15 @@ export class CustomerService {
       where.tags = { hasSome: tags };
     }
 
+    // When sorting by computed fields, fetch all matching customers, sort globally, then paginate
+    // to avoid misleading per-page-only sort results
+    const needsGlobalSort = !!sortBy;
     const skip = (page - 1) * limit;
 
     const [customers, total] = await Promise.all([
       prisma.customer.findMany({
         where,
-        skip,
-        take: limit,
+        ...(needsGlobalSort ? {} : { skip, take: limit }),
         orderBy: { createdAt: 'desc' },
         include: {
           orders: {
@@ -97,8 +101,21 @@ export class CustomerService {
       };
     });
 
+    // Sort globally across all matching customers, then paginate
+    if (sortBy) {
+      customersWithMetrics.sort((a, b) => {
+        const aVal = a[sortBy];
+        const bVal = b[sortBy];
+        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+      });
+    }
+
+    const paginatedCustomers = needsGlobalSort
+      ? customersWithMetrics.slice(skip, skip + limit)
+      : customersWithMetrics;
+
     return {
-      customers: customersWithMetrics,
+      customers: paginatedCustomers,
       pagination: {
         page,
         limit,

@@ -184,21 +184,32 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
           where: orderWhere,
           select: {
             id: true,
-            status: true
+            status: true,
+            createdAt: true
           }
         }
       } as any
     })) as any[];
 
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
     const performance = agents.map(agent => {
-      const total = agent.assignedOrdersAsAgent.length;
-      const delivered = agent.assignedOrdersAsAgent.filter((o: any) => o.status === 'delivered').length;
-      const pending = agent.assignedOrdersAsAgent.filter((o: any) =>
+      const orders = agent.assignedOrdersAsAgent;
+      const total = orders.length;
+      const delivered = orders.filter((o: any) => o.status === 'delivered').length;
+      const pending = orders.filter((o: any) =>
         !['delivered', 'cancelled', 'returned'].includes(o.status)
       ).length;
 
       const rate = agent.deliveryRate || agent.commissionAmount || 0;
       const calculatedEarnings = delivered * rate;
+
+      // MTD metrics
+      const mtdOrders = orders.filter((o: any) => new Date(o.createdAt) >= startOfMonth);
+      const mtdCompleted = mtdOrders.filter((o: any) => o.status === 'delivered').length;
+      const mtdSuccessRate = mtdOrders.length > 0
+        ? parseFloat(((mtdCompleted / mtdOrders.length) * 100).toFixed(2)) : 0;
 
       return {
         userId: agent.id,
@@ -212,7 +223,10 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         vehicleId: agent.vehicleId,
         deliveryRate: rate,
         totalEarnings: calculatedEarnings,
-        location: agent.location
+        location: agent.location,
+        mtdCompleted,
+        mtdTotalAssigned: mtdOrders.length,
+        mtdSuccessRate
       };
     });
 

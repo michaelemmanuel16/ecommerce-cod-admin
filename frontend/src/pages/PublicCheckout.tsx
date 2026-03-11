@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { CheckoutForm, CheckoutFormData } from '../components/public/CheckoutForm';
 import { OrderSuccess } from '../components/public/OrderSuccess';
 import { publicOrdersService, PublicCheckoutForm, PublicOrderData } from '../services/public-orders.service';
+import { initPixels } from '../utils/pixelTracking';
+import { PixelConfig } from '../types/checkout-form';
 import toast from 'react-hot-toast';
 
 export const PublicCheckout: React.FC = () => {
@@ -12,6 +14,7 @@ export const PublicCheckout: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<number | null>(null);
+  const [submittedTotal, setSubmittedTotal] = useState<number>(0);
 
   useEffect(() => {
     if (!slug) {
@@ -58,6 +61,13 @@ export const PublicCheckout: React.FC = () => {
       };
     }
   }, [loading, error, orderId]);
+
+  // Fire pixel PageView events when form data is available
+  useEffect(() => {
+    if (formData?.pixelConfig) {
+      initPixels(formData.pixelConfig as PixelConfig);
+    }
+  }, [formData?.pixelConfig]);
 
   const loadForm = async () => {
     try {
@@ -130,6 +140,7 @@ export const PublicCheckout: React.FC = () => {
       const response = await publicOrdersService.submitOrder(slug, orderData as any);
 
       if (response.success) {
+        setSubmittedTotal(totalAmount);
         setOrderId(response.orderId);
         toast.success('Order placed successfully!');
       } else {
@@ -195,7 +206,15 @@ export const PublicCheckout: React.FC = () => {
 
   // Success state
   if (orderId) {
-    return <OrderSuccess orderId={orderId} onClose={handleNewOrder} />;
+    return (
+      <OrderSuccess
+        orderId={orderId}
+        orderTotal={submittedTotal}
+        currency={formData?.currency}
+        pixelConfig={formData?.pixelConfig as PixelConfig | undefined}
+        onClose={handleNewOrder}
+      />
+    );
   }
 
   // Checkout form state

@@ -8,7 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Pagination } from '../components/ui/Pagination';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
 import { OrderForm } from '../components/forms/OrderForm';
-import { LogCallModal } from '../components/calls/LogCallModal';
+import { CallHistoryModal } from '../components/calls/CallHistoryModal';
 import { BulkImportModal } from '../components/orders/BulkImportModal';
 import { useOrdersStore } from '../stores/ordersStore';
 import { useAuthStore } from '../stores/authStore';
@@ -67,7 +67,7 @@ export const Orders: React.FC = () => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
   const [selectedOrderForEdit, setSelectedOrderForEdit] = useState<Order | null>(null);
-  const [isLogCallModalOpen, setIsLogCallModalOpen] = useState(false);
+  const [isCallHistoryModalOpen, setIsCallHistoryModalOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [selectedOrderForCall, setSelectedOrderForCall] = useState<Order | null>(null);
@@ -239,7 +239,7 @@ export const Orders: React.FC = () => {
 
   const handleLogCall = (order: Order) => {
     setSelectedOrderForCall(order);
-    setIsLogCallModalOpen(true);
+    setIsCallHistoryModalOpen(true);
   };
 
   const handleStatusChange = async (orderId: number, newStatus: OrderStatus) => {
@@ -726,10 +726,10 @@ export const Orders: React.FC = () => {
         onSuccess={handleFormSuccess}
       />
       {selectedOrderForCall && (
-        <LogCallModal
-          isOpen={isLogCallModalOpen}
+        <CallHistoryModal
+          isOpen={isCallHistoryModalOpen}
           onClose={() => {
-            setIsLogCallModalOpen(false);
+            setIsCallHistoryModalOpen(false);
             setSelectedOrderForCall(null);
           }}
           customerId={selectedOrderForCall.customerId}

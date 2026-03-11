@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Search, Edit2, Trash2, Eye, User } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Eye, User, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { customersService } from '../services/customers.service';
 import { formatCurrency } from '../utils/format';
@@ -13,7 +13,7 @@ import toast from 'react-hot-toast';
 
 export const Customers: React.FC = () => {
   const navigate = useNavigate();
-  const { customers, pagination, isLoading, searchQuery, fetchCustomers, setPage, setSearchQuery: setStoreSearchQuery } = useCustomersStore();
+  const { customers, pagination, isLoading, searchQuery, sortBy, sortOrder, fetchCustomers, setPage, setSearchQuery: setStoreSearchQuery, setSort } = useCustomersStore();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
@@ -63,6 +63,18 @@ export const Customers: React.FC = () => {
 
   const handleFormSuccess = () => {
     loadCustomers();
+  };
+
+  const handleSort = (field: 'totalOrders' | 'totalSpent') => {
+    const newOrder = sortBy === field && sortOrder === 'desc' ? 'asc' : 'desc';
+    setSort(field, newOrder);
+  };
+
+  const getSortIcon = (field: 'totalOrders' | 'totalSpent') => {
+    if (sortBy !== field) return <ChevronsUpDown className="w-3 h-3 text-gray-400 inline ml-1" />;
+    return sortOrder === 'asc'
+      ? <ChevronUp className="w-3 h-3 text-blue-600 inline ml-1" />
+      : <ChevronDown className="w-3 h-3 text-blue-600 inline ml-1" />;
   };
 
   return (
@@ -121,11 +133,17 @@ export const Customers: React.FC = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Location
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Orders
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort('totalOrders')}
+                  >
+                    Orders{getSortIcon('totalOrders')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Total Spent
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort('totalSpent')}
+                  >
+                    Total Spent{getSortIcon('totalSpent')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
