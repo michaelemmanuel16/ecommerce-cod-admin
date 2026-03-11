@@ -129,6 +129,52 @@ export class PublicOrderService {
       });
     }
 
+    // Dedup guard: prevent double-submits within 5 minutes (same phone + package + total)
+    {
+      const dedupeFrom = new Date(Date.now() - 5 * 60 * 1000);
+      const existingOrder = await prisma.order.findFirst({
+        where: {
+          source: 'checkout_form',
+          totalAmount,
+          deletedAt: null,
+          createdAt: { gte: dedupeFrom },
+          customer: { phoneNumber: orderData.phoneNumber },
+          orderItems: {
+            some: {
+              itemType: 'package',
+              metadata: { path: ['packageId'], equals: orderData.selectedPackageId }
+            }
+          }
+        },
+        select: { id: true }
+      });
+
+      if (existingOrder) {
+        logger.info('Skipping duplicate checkout form order (same phone+package+total within 5 min)', {
+          existingOrderId: existingOrder.id,
+          phone: orderData.phoneNumber,
+          packageId: orderData.selectedPackageId,
+          totalAmount
+        });
+        // Return the existing order's details instead of creating a duplicate
+        return {
+          orderId: existingOrder.id,
+          totalAmount,
+          customer: {
+            firstName: customer.firstName,
+            lastName: customer.lastName,
+            phoneNumber: customer.phoneNumber
+          },
+          package: {
+            name: selectedPackage.name,
+            quantity: selectedPackage.quantity,
+            price: selectedPackage.price
+          },
+          upsells: selectedUpsells.map((u) => ({ name: u.name, price: u.price }))
+        };
+      }
+    }
+
     // Create order with form submission in transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create order
