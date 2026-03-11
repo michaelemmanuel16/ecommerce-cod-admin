@@ -57,6 +57,39 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
     }
 
+    // Dedup guard: prevent double-submits within 30 minutes (same phone + amount + source)
+    {
+      const dedupeFrom = new Date(Date.now() - 30 * 60 * 1000);
+      const existingOrder = await prisma.order.findFirst({
+        where: {
+          source: 'checkout_form',
+          totalAmount: totalAmount,
+          deletedAt: null,
+          createdAt: { gte: dedupeFrom },
+          customer: { phoneNumber: formData.phoneNumber },
+        },
+        include: {
+          customer: true,
+          orderItems: { include: { product: true } }
+        }
+      });
+
+      if (existingOrder) {
+        res.status(201).json({
+          success: true,
+          orderId: existingOrder.id,
+          order: {
+            id: existingOrder.id,
+            totalAmount: existingOrder.totalAmount,
+            status: existingOrder.status
+          },
+          message: 'Order created successfully',
+          deduplicated: true
+        });
+        return;
+      }
+    }
+
     // Check if customer exists or create new one
     let customer = await prisma.customer.findUnique({
       where: { phoneNumber: formData.phoneNumber }

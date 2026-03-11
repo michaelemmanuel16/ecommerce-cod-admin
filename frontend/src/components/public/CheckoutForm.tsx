@@ -76,9 +76,9 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
         selectedPackageId,
         selectedAddonIds: Array.from(selectedAddonIds),
       });
+      // Don't reset isSubmitting on success — prevents double-submit while redirecting
     } catch (error) {
       console.error('Order submission error:', error);
-    } finally {
       setIsSubmitting(false);
     }
   };
