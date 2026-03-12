@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Users, AlertTriangle, Clock, BarChart3, Download, Filter, Mail, Eye, ChevronUp, ChevronDown, Info } from 'lucide-react';
+import { Users, AlertTriangle, Clock, BarChart3, Download, Filter, Mail, Eye, ChevronUp, ChevronDown, Info, Ban, ShieldCheck } from 'lucide-react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { Card } from '../../components/ui/Card';
 import { Tooltip as UITooltip } from '../../components/ui/Tooltip';
@@ -22,6 +22,25 @@ export const AgentCollections: React.FC = () => {
 
   // Selection state for reconciliation
   const [selectedAgent, setSelectedAgent] = useState<{ id: number; name: string } | null>(null);
+  const [blockingAgentId, setBlockingAgentId] = useState<number | null>(null);
+
+  const handleToggleBlock = async (agentId: number, agentName: string, isBlocked: boolean) => {
+    setBlockingAgentId(agentId);
+    try {
+      if (isBlocked) {
+        await financialService.unblockAgent(agentId);
+        toast.success(`${agentName} unblocked`);
+      } else {
+        await financialService.blockAgent(agentId, 'Overdue collection balance');
+        toast.success(`${agentName} blocked from deliveries`);
+      }
+      fetchAgentAging();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || `Failed to ${isBlocked ? 'unblock' : 'block'} agent`);
+    } finally {
+      setBlockingAgentId(null);
+    }
+  };
 
   useEffect(() => {
     fetchAgentAging();
@@ -144,7 +163,7 @@ export const AgentCollections: React.FC = () => {
             <div className="flex items-start justify-between mb-2">
               <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
                 Critical (8+ Days)
-                <UITooltip content="Collections held beyond 8 days — agents at risk of being blocked from new deliveries" position="bottom">
+                <UITooltip content="Collections held beyond 8 days — consider blocking agents from new deliveries" position="bottom">
                   <Info className="w-3 h-3 text-gray-400 hover:text-gray-600 cursor-help" />
                 </UITooltip>
               </span>
@@ -323,6 +342,25 @@ export const AgentCollections: React.FC = () => {
                           >
                             <Eye className="w-4 h-4 mr-1 text-gray-400" />
                             Verify Collections
+                          </button>
+                          <button
+                            title={bucket.isBlocked ? 'Unblock Agent' : 'Block Agent'}
+                            className={`p-1.5 rounded transition-colors ${
+                              bucket.isBlocked
+                                ? 'text-red-600 bg-red-50 hover:bg-red-100'
+                                : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            }`}
+                            disabled={blockingAgentId === bucket.agentId}
+                            onClick={() => handleToggleBlock(
+                              bucket.agentId,
+                              `${bucket.agent.firstName} ${bucket.agent.lastName}`,
+                              bucket.isBlocked
+                            )}
+                          >
+                            {bucket.isBlocked
+                              ? <ShieldCheck className="w-4 h-4" />
+                              : <Ban className="w-4 h-4" />
+                            }
                           </button>
                         </div>
                       </td>

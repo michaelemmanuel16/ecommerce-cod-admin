@@ -1,5 +1,6 @@
 import Bull from 'bull';
 import agingService from '../services/agingService';
+import { notifyAdminsOverdueCollections } from '../services/notificationService';
 import logger from '../utils/logger';
 
 const redisConfig = {
@@ -38,16 +39,19 @@ agingQueue.process('refresh-buckets', async () => {
     }
 });
 
-// Process the auto-block job
-agingQueue.process('auto-block-overdue', async () => {
-    logger.info('Processing auto-block overdue agents job...');
+// Process the overdue collections notification job
+agingQueue.process('notify-overdue-collections', async () => {
+    logger.info('Processing overdue collections notification job...');
     try {
-        // Use system/admin user ID for auto-blocking (usually user ID 1 or a constant)
-        const SYSTEM_USER_ID = 1;
-        const blockedCount = await agingService.autoBlockOverdueAgents(SYSTEM_USER_ID);
-        logger.info(`Auto-block job completed. Blocked ${blockedCount} agents.`);
+        const overdueAgents = await agingService.getOverdueAgents();
+        if (overdueAgents.length > 0) {
+            await notifyAdminsOverdueCollections(overdueAgents);
+            logger.info(`Notified admins about ${overdueAgents.length} agents with overdue collections.`);
+        } else {
+            logger.info('No overdue collections found.');
+        }
     } catch (error: any) {
-        logger.error('Auto-block job failed:', error.message);
+        logger.error('Overdue notification job failed:', error.message);
         throw error;
     }
 });
@@ -69,14 +73,14 @@ export const setupAgingCron = async () => {
         }
     });
 
-    // Add daily auto-block job at 10:00 AM
-    await agingQueue.add('auto-block-overdue', {}, {
+    // Add daily overdue notification job at 10:00 AM
+    await agingQueue.add('notify-overdue-collections', {}, {
         repeat: {
             cron: '0 10 * * *'
         }
     });
 
-    logger.info('Agent aging cron jobs scheduled (6:00 AM refresh, 10:00 AM auto-block).');
+    logger.info('Agent aging cron jobs scheduled (6:00 AM refresh, 10:00 AM overdue notifications).');
 };
 
 agingQueue.on('failed', (job: Bull.Job | undefined, err: Error) => {

@@ -145,6 +145,7 @@ describe('AgingService', () => {
             mockPrisma.agentAgingBucket.findMany.mockResolvedValue(mockBuckets);
             mockPrisma.agentBalance = {
                 count: jest.fn().mockResolvedValue(1),
+                findMany: jest.fn().mockResolvedValue([{ agentId: 1, isBlocked: false }]),
             } as any;
             mockPrisma.account = {
                 findFirst: jest.fn().mockResolvedValue({ currentBalance: new Prisma.Decimal(10000) }),
@@ -153,7 +154,7 @@ describe('AgingService', () => {
             const result = await agingService.getAgingReport();
 
             expect(result.summary).toBeDefined();
-            expect(result.buckets).toEqual(mockBuckets);
+            expect(result.buckets[0].isBlocked).toBe(false);
             expect(result.summary.totalOutstandingAmount).toBe(10000);
             expect(result.summary.bucketTotals.bucket_8_plus).toBe(4000);
             expect(mockPrisma.agentAgingBucket.findMany).toHaveBeenCalledWith({
@@ -165,24 +166,20 @@ describe('AgingService', () => {
         });
     });
 
-    describe('autoBlockOverdueAgents', () => {
-        it('should block agents with overdue buckets', async () => {
+    describe('getOverdueAgents', () => {
+        it('should return agents with overdue buckets', async () => {
             const mockBuckets = [
-                { agentId: 1, bucket_4_7: new Prisma.Decimal(500), bucket_8_plus: new Prisma.Decimal(0) },
-                { agentId: 2, bucket_4_7: new Prisma.Decimal(0), bucket_8_plus: new Prisma.Decimal(1000) },
+                { agentId: 1, totalBalance: new Prisma.Decimal(500), bucket_4_7: new Prisma.Decimal(500), bucket_8_plus: new Prisma.Decimal(0), agent: { id: 1, firstName: 'Agent', lastName: 'One' } },
+                { agentId: 2, totalBalance: new Prisma.Decimal(1000), bucket_4_7: new Prisma.Decimal(0), bucket_8_plus: new Prisma.Decimal(1000), agent: { id: 2, firstName: 'Agent', lastName: 'Two' } },
             ];
 
             mockPrisma.agentAgingBucket.findMany.mockResolvedValue(mockBuckets);
 
-            // Get the mocked service instance (it was mocked at the top)
-            const agentReconciliationService = (require('../../services/agentReconciliationService')).default;
-            agentReconciliationService.getAgentBalance.mockResolvedValue({ isBlocked: false });
-            agentReconciliationService.blockAgent.mockResolvedValue({});
+            const result = await agingService.getOverdueAgents();
 
-            const result = await agingService.autoBlockOverdueAgents(1);
-
-            expect(result).toBe(2); // Agent 1 and 2 should be blocked
-            expect(agentReconciliationService.blockAgent).toHaveBeenCalledTimes(2);
+            expect(result).toHaveLength(2);
+            expect(result[0]).toEqual({ agentId: 1, agentName: 'Agent One', totalBalance: 500, warningAmount: 500, criticalAmount: 0 });
+            expect(result[1]).toEqual({ agentId: 2, agentName: 'Agent Two', totalBalance: 1000, warningAmount: 0, criticalAmount: 1000 });
         });
     });
 });

@@ -184,11 +184,26 @@ export class AgingService {
       }
     });
 
+    // Enrich with blocked status from agent_balances
+    const agentIds = buckets.map((b: any) => b.agentId);
+    const balances = agentIds.length > 0
+      ? await (prisma as any).agentBalance.findMany({
+          where: { agentId: { in: agentIds } },
+          select: { agentId: true, isBlocked: true }
+        })
+      : [];
+    const blockedMap = new Map(balances.map((b: any) => [b.agentId, b.isBlocked]));
+
+    const enrichedBuckets = buckets.map((b: any) => ({
+      ...b,
+      isBlocked: blockedMap.get(b.agentId) || false,
+    }));
+
     const summary = await this.getAgingSummary(buckets);
 
     return {
       summary,
-      buckets
+      buckets: enrichedBuckets
     };
   }
 
@@ -272,12 +287,10 @@ export class AgingService {
     };
   }
   /**
-   * Automatically blocks agents who have collections in the 4-7 day or 8+ day buckets
+   * Get agents with overdue collections (4-7 day or 8+ day buckets)
+   * Used by the notification job to alert admins
    */
-  async autoBlockOverdueAgents(managerUserId: number): Promise<number> {
-    logger.info('Checking for overdue agents to auto-block...');
-
-    // Find all buckets with values in overdue columns
+  async getOverdueAgents(): Promise<{ agentId: number; agentName: string; totalBalance: number; warningAmount: number; criticalAmount: number }[]> {
     const overdueBuckets = await (prisma as any).agentAgingBucket.findMany({
       where: {
         OR: [
@@ -292,30 +305,13 @@ export class AgingService {
       }
     });
 
-    logger.info(`Found ${overdueBuckets.length} agents with overdue collections.`);
-
-    let blockedCount = 0;
-    const agentReconciliationService = (await import('./agentReconciliationService')).default;
-
-    for (const bucket of overdueBuckets) {
-      try {
-        // Double check they aren't already blocked to avoid redundant updates/notifications
-        const balance = await agentReconciliationService.getAgentBalance(bucket.agentId);
-        if (balance && !balance.isBlocked) {
-          await agentReconciliationService.blockAgent(
-            bucket.agentId,
-            managerUserId,
-            'Automatic block: Overdue collection balance (4+ days)'
-          );
-          blockedCount++;
-        }
-      } catch (error) {
-        logger.error(`Failed to auto-block agent ${bucket.agentId}:`, error);
-      }
-    }
-
-    logger.info(`Auto-block cycle completed. Blocked ${blockedCount} agents.`);
-    return blockedCount;
+    return overdueBuckets.map((bucket: any) => ({
+      agentId: bucket.agentId,
+      agentName: `${bucket.agent.firstName} ${bucket.agent.lastName}`,
+      totalBalance: parseFloat(bucket.totalBalance.toString()),
+      warningAmount: parseFloat(bucket.bucket_4_7.toString()),
+      criticalAmount: parseFloat(bucket.bucket_8_plus.toString()),
+    }));
   }
 }
 
