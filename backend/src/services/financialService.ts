@@ -1024,7 +1024,9 @@ export class FinancialService {
       endDate.setHours(23, 59, 59, 999);
     }
 
-    // Filters for delivered orders with GL revenue recognition
+    // Filter orders by GL journal entry date (not deliveryDate) so breakdowns
+    // align with the GL-based summary KPIs. deliveryDate and GL entryDate can
+    // diverge for backfilled orders.
     const orderWhere: Prisma.OrderWhereInput = {
       status: 'delivered',
       revenueRecognized: true,
@@ -1032,9 +1034,15 @@ export class FinancialService {
     };
 
     if (startDate || endDate) {
-      orderWhere.deliveryDate = {};
-      if (startDate) orderWhere.deliveryDate.gte = startDate;
-      if (endDate) orderWhere.deliveryDate.lte = endDate;
+      orderWhere.glJournalEntry = {
+        isVoided: false,
+        ...(startDate || endDate ? {
+          entryDate: {
+            ...(startDate ? { gte: startDate } : {}),
+            ...(endDate ? { lte: endDate } : {}),
+          }
+        } : {}),
+      };
     }
 
     if (productId) {
