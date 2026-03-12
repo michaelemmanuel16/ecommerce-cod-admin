@@ -353,6 +353,17 @@ export class WebhookService {
     return id ? String(id) : undefined;
   }
 
+  /**
+   * Generate a unique fingerprint for webhook order deduplication.
+   * Hash of (phone + totalAmount + date) prevents race-condition duplicates
+   * via a DB unique constraint.
+   */
+  private generateWebhookFingerprint(phone: string, totalAmount: number, webhookConfigId?: number): string {
+    const dateStr = new Date().toISOString().split('T')[0]; // same calendar day
+    const raw = `${phone}|${totalAmount}|${webhookConfigId || ''}|${dateStr}`;
+    return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 40);
+  }
+
   private async processOrdersFromWebhook(body: any, webhookConfig: any) {
     const mapping = (webhookConfig?.fieldMapping as any) || {};
     const orders = Array.isArray(body.orders) ? body.orders : [body];
@@ -445,66 +456,77 @@ export class WebhookService {
           continue;
         }
 
-        // Guard 2: fingerprint deduplication (phone + amount within 1 hour, webhook source only)
-        {
-          const dedupeFrom = new Date(Date.now() - 60 * 60 * 1000);
-          const existingByFingerprint = await prisma.order.findFirst({
-            where: {
-              source: 'webhook',
-              customer: { phoneNumber: customer.phoneNumber },
-              totalAmount,
-              deletedAt: null,
-              createdAt: { gte: dedupeFrom },
-            },
-            select: { id: true },
-          });
+        // Guard 2: DB-level fingerprint deduplication (phone + amount + day + webhookConfig)
+        // Uses a unique constraint on webhookFingerprint to prevent race-condition duplicates
+        const fingerprint = this.generateWebhookFingerprint(
+          customer.phoneNumber,
+          totalAmount,
+          webhookConfig?.id
+        );
 
-          if (existingByFingerprint) {
-            logger.info('Skipping duplicate webhook order (same phone+amount within 1 hour)', {
-              externalOrderId: externalId,
-              existingOrderId: existingByFingerprint.id,
+        // Also check in-memory for orders already created in this batch
+        if (existingExternalIdSet.has(`fp:${fingerprint}`)) {
+          logger.info('Skipping duplicate webhook order (same fingerprint in batch)', {
+            phone: customer.phoneNumber,
+            totalAmount,
+          });
+          results.skipped++;
+          continue;
+        }
+
+        // Create order with fingerprint — unique constraint catches concurrent duplicates
+        let createdOrder;
+        try {
+          createdOrder = await prisma.order.create({
+            data: {
+              customerId: customer.id,
+              subtotal,
+              shippingCost,
+              totalAmount,
+              codAmount: totalAmount,
+              deliveryAddress: mappedData.deliveryAddress || externalOrder.address || customer.address,
+              deliveryState: mappedData.deliveryState || externalOrder.state || customer.state,
+              deliveryArea: mappedData.deliveryArea || externalOrder.area || customer.area,
+              notes: mappedData.notes || externalOrder.notes || (packageInfo ? `Package: ${packageInfo}` : undefined),
+              source: 'webhook',
+              externalOrderId: externalOrder.id || externalOrder.order_id,
+              webhookData: externalOrder,
+              webhookFingerprint: fingerprint,
+              orderItems: product ? {
+                create: {
+                  productId: product.id,
+                  quantity,
+                  unitPrice: quantity > 0 ? price / quantity : price,
+                  totalPrice: itemTotal
+                }
+              } : undefined,
+              orderHistory: {
+                create: {
+                  status: 'pending_confirmation',
+                  notes: 'Order imported via webhook'
+                }
+              }
+            },
+            include: {
+              orderItems: true
+            }
+          });
+        } catch (err: any) {
+          // P2002 = unique constraint violation — another concurrent request already created this order
+          if (err.code === 'P2002' && err.meta?.target?.includes('webhook_fingerprint')) {
+            logger.info('Skipping duplicate webhook order (concurrent fingerprint collision)', {
               phone: customer.phoneNumber,
               totalAmount,
+              fingerprint,
             });
             results.skipped++;
             continue;
           }
+          throw err; // Re-throw non-dedup errors
         }
 
-        // Create order with OrderItems
-        const createdOrder = await prisma.order.create({
-          data: {
-            customerId: customer.id,
-            subtotal,
-            shippingCost,
-            totalAmount,
-            codAmount: totalAmount,
-            deliveryAddress: mappedData.deliveryAddress || externalOrder.address || customer.address,
-            deliveryState: mappedData.deliveryState || externalOrder.state || customer.state,
-            deliveryArea: mappedData.deliveryArea || externalOrder.area || customer.area,
-            notes: mappedData.notes || externalOrder.notes || (packageInfo ? `Package: ${packageInfo}` : undefined),
-            source: 'webhook',
-            externalOrderId: externalOrder.id || externalOrder.order_id,
-            webhookData: externalOrder,
-            orderItems: product ? {
-              create: {
-                productId: product.id,
-                quantity,
-                unitPrice: quantity > 0 ? price / quantity : price, // Calculate unit price from total
-                totalPrice: itemTotal
-              }
-            } : undefined,
-            orderHistory: {
-              create: {
-                status: 'pending_confirmation',
-                notes: 'Order imported via webhook'
-              }
-            }
-          },
-          include: {
-            orderItems: true
-          }
-        });
+        // Track fingerprint in-memory for remaining items in this batch
+        existingExternalIdSet.add(`fp:${fingerprint}`);
 
         results.success++;
         logger.info('Webhook order created', { orderId: createdOrder.id });

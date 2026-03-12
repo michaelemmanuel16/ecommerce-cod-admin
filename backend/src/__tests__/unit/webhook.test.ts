@@ -160,7 +160,10 @@ describe('Webhook Controller', () => {
       } as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
       prismaMock.customer.findUnique.mockResolvedValue(null);
-      prismaMock.customer.create.mockResolvedValue({ id: 'customer' } as any);
+      // Return distinct phone numbers for each customer so fingerprints differ
+      prismaMock.customer.create
+        .mockResolvedValueOnce({ id: 'c1', phoneNumber: '+1111111111' } as any)
+        .mockResolvedValueOnce({ id: 'c2', phoneNumber: '+2222222222' } as any);
       prismaMock.order.findMany.mockResolvedValue([]);
       prismaMock.order.findFirst.mockResolvedValue(null);
       prismaMock.order.count.mockResolvedValue(0);
@@ -208,18 +211,20 @@ describe('Webhook Controller', () => {
       );
     });
 
-    it('Guard 2: skips order when same phone+amount seen within 1 hour (webhook source)', async () => {
+    it('Guard 2: skips order when unique fingerprint constraint violated (concurrent duplicate)', async () => {
       mockReq.headers['x-api-key'] = 'valid-key';
       mockReq.body = { id: 'new-ext-id', customer_phone: '+1234567890', amount: 100 };
 
       // Guard 1 pre-fetch finds nothing (new externalOrderId)
       prismaMock.order.findMany.mockResolvedValue([]);
-      // Guard 2 finds a matching order
-      prismaMock.order.findFirst.mockResolvedValue({ id: 999 } as any);
+      // DB unique constraint violation on webhookFingerprint (concurrent duplicate)
+      const prismaError = new Error('Unique constraint failed') as any;
+      prismaError.code = 'P2002';
+      prismaError.meta = { target: ['webhook_fingerprint'] };
+      prismaMock.order.create.mockRejectedValue(prismaError);
 
       await importOrdersViaWebhook(mockReq, mockRes);
 
-      expect(prismaMock.order.create).not.toHaveBeenCalled();
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
           results: expect.objectContaining({ success: 0, skipped: 1, failed: 0 }),

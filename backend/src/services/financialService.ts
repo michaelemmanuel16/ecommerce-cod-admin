@@ -127,7 +127,12 @@ export class FinancialService {
    * COD collected and pipeline revenue remain operational metrics from Order/Transaction tables.
    */
   async getFinancialSummary(filters: DateFilters, requester?: Requester) {
-    const { startDate, endDate } = filters;
+    let { startDate, endDate } = filters;
+    // Normalise endDate to end-of-day so it aligns with P&L / Profitability
+    if (endDate) {
+      endDate = new Date(endDate);
+      endDate.setHours(23, 59, 59, 999);
+    }
 
     // --- GL-based accounting metrics ---
     // Revenue account codes
@@ -1019,9 +1024,10 @@ export class FinancialService {
       endDate.setHours(23, 59, 59, 999);
     }
 
-    // Filters for delivered orders
+    // Filters for delivered orders with GL revenue recognition
     const orderWhere: Prisma.OrderWhereInput = {
       status: 'delivered',
+      revenueRecognized: true,
       deletedAt: null,
     };
 
@@ -1078,7 +1084,8 @@ export class FinancialService {
     }> = {};
 
     for (const order of orders) {
-      totalRevenue += order.subtotal;
+      // Use totalAmount (subtotal + shipping - discount) to match GL revenue recognition
+      totalRevenue += order.totalAmount;
       totalShippingCost += order.shippingCost;
       totalDiscount += order.discount;
 
@@ -1091,7 +1098,7 @@ export class FinancialService {
           grossProfit: 0
         };
       }
-      dailyProfitability[dateStr].revenue += order.subtotal;
+      dailyProfitability[dateStr].revenue += order.totalAmount;
 
       const orderCommission = (order.deliveryAgent?.commissionAmount ?? 0)
                             + (order.customerRep?.commissionAmount ?? 0);
@@ -1129,23 +1136,9 @@ export class FinancialService {
       }
     }
 
-    // Calculate marketing expenses
-    const expenseWhere: Prisma.ExpenseWhereInput = {
-      category: 'marketing',
-    };
-    if (startDate || endDate) {
-      expenseWhere.expenseDate = {};
-      if (startDate) expenseWhere.expenseDate.gte = startDate;
-      if (endDate) expenseWhere.expenseDate.lte = endDate;
-    }
-
-    const marketingExpenses = await prisma.expense.findMany({
-      where: expenseWhere,
-    });
-
-    const totalMarketingExpense = marketingExpenses.reduce((sum, e) => sum + e.amount, 0);
-
     // Query all non-COGS expense accounts from GL using entryDate (same filter as P&L)
+    // Marketing expenses are included in GL operating expenses (account 5100),
+    // so we do NOT query the Expense table separately to avoid double-counting.
     const glEntryDateFilter: any = {};
     if (startDate || endDate) {
       glEntryDateFilter.entryDate = {};
@@ -1184,7 +1177,7 @@ export class FinancialService {
     const grossProfit = totalRevenue - totalCOGS;
     const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
 
-    const netProfit = grossProfit - totalMarketingExpense - totalCommissions - totalOperatingExpenses;
+    const netProfit = grossProfit - totalCommissions - totalOperatingExpenses;
     const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
     // Format product profitability
@@ -1213,18 +1206,18 @@ export class FinancialService {
         totalCOGS,
         totalShippingCost,
         totalDiscount,
-        totalMarketingExpense,
         totalCommissions,
+        totalOperatingExpenses,
         grossProfit,
         grossMargin,
         netProfit,
         netMargin,
         orderCount: orders.length,
         dataSources: {
-          revenue: 'Order.subtotal (per-product breakdown)',
-          cogs: 'Product.cogs (per-product)',
+          revenue: 'Order.totalAmount (matches GL 4010)',
+          cogs: 'Product.cogs (per-product breakdown)',
           commissions: 'GL accounts 5040/5050 (accrual)',
-          marketing: 'Expense table (category=marketing)',
+          operatingExpenses: 'GL non-COGS, non-commission expense accounts',
         }
       },
       products,

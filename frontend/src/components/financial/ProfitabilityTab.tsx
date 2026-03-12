@@ -147,13 +147,13 @@ export const ProfitabilityTab: React.FC = () => {
                     info="Total commissions paid to delivery agents and sales reps during this period"
                 />
                 <FinancialKPICard
-                    title="Marketing & Ship"
-                    value={summary.totalMarketingExpense + summary.totalShippingCost}
+                    title="Operating Expenses"
+                    value={summary.totalOperatingExpenses}
                     icon={BarChart3}
                     iconColor="text-purple-600"
                     iconBgColor="bg-purple-100"
-                    subtitle={`Ship: ${formatCurrency(summary.totalShippingCost)}`}
-                    info="Total marketing and shipping costs attributed to orders in this period"
+                    subtitle="From GL expense accounts"
+                    info="Total operating expenses from GL (excludes COGS and commissions)"
                 />
             </div>
 
