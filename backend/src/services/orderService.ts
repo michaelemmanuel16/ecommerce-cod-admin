@@ -1138,6 +1138,7 @@ export class OrderService {
         where: { id: orderId },
         data: {
           status: data.status,
+          deliveryDate: data.status === 'delivered' ? new Date() : undefined,
           paymentStatus: data.status === 'delivered' ? 'collected' : order.paymentStatus,
           ...(isReturnStatus && order.revenueRecognized ? { revenueRecognized: false } : {}),
           orderHistory: {
