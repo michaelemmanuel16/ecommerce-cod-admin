@@ -182,8 +182,8 @@ export interface ProfitabilityAnalysis {
     totalCOGS: number;
     totalShippingCost: number;
     totalDiscount: number;
-    totalMarketingExpense: number;
     totalCommissions: number;
+    totalOperatingExpenses: number;
     grossProfit: number;
     grossMargin: number;
     netProfit: number;
