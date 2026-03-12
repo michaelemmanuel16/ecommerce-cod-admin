@@ -1082,7 +1082,7 @@ export class FinancialService {
       totalShippingCost += order.shippingCost;
       totalDiscount += order.discount;
 
-      const dateStr = order.deliveryDate ? order.deliveryDate.toISOString().split('T')[0] : 'unknown';
+      const dateStr = (order.deliveryDate || order.updatedAt).toISOString().split('T')[0];
       if (!dailyProfitability[dateStr]) {
         dailyProfitability[dateStr] = {
           date: dateStr,
@@ -1662,7 +1662,7 @@ export class FinancialService {
     const aggregations = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
-        createdAt: { lte: asOfDate }
+        journalEntry: { isVoided: false, entryDate: { lte: asOfDate } }
       },
       _sum: {
         debitAmount: true,

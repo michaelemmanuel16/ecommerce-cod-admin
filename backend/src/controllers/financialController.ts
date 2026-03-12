@@ -459,3 +459,54 @@ export const backfillMissingCollections = async (_req: AuthRequest, res: Respons
     res.status(500).json({ message: 'Failed to backfill missing collections' });
   }
 };
+
+/**
+ * POST /api/financial/backfill-delivery-dates
+ * Admin-only endpoint to set deliveryDate on delivered orders that are missing it.
+ * Uses orderHistory (status = 'delivered') createdAt, falling back to order.updatedAt.
+ */
+export const backfillDeliveryDates = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: {
+        status: 'delivered',
+        deliveryDate: null,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        updatedAt: true,
+        orderHistory: {
+          where: { status: 'delivered' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { createdAt: true },
+        },
+      },
+    });
+
+    if (orders.length === 0) {
+      res.json({ message: 'No orders with missing deliveryDate found', updated: 0 });
+      return;
+    }
+
+    let updated = 0;
+    for (const order of orders) {
+      const deliveryDate = order.orderHistory[0]?.createdAt || order.updatedAt;
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { deliveryDate },
+      });
+      updated++;
+    }
+
+    logger.info(`Backfilled deliveryDate for ${updated} orders`);
+    res.json({
+      message: `Backfilled deliveryDate for ${updated} orders`,
+      updated,
+    });
+  } catch (error) {
+    logger.error('Failed to backfill delivery dates', { error });
+    res.status(500).json({ message: 'Failed to backfill delivery dates' });
+  }
+};
