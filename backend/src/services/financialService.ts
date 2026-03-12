@@ -1136,9 +1136,9 @@ export class FinancialService {
       }
     }
 
-    // Query all non-COGS expense accounts from GL using entryDate (same filter as P&L)
-    // Marketing expenses are included in GL operating expenses (account 5100),
-    // so we do NOT query the Expense table separately to avoid double-counting.
+    // Query ALL expense accounts from GL using entryDate (same filter as P&L / Overview)
+    // This ensures COGS, commissions, and operating expenses all come from GL,
+    // matching the Overview's single-source-of-truth approach.
     const glEntryDateFilter: any = {};
     if (startDate || endDate) {
       glEntryDateFilter.entryDate = {};
@@ -1151,30 +1151,38 @@ export class FinancialService {
     const expenseAgg = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
-        account: {
-          accountType: 'expense',
-          code: { not: GL_ACCOUNTS.COGS }  // COGS already computed from orders
-        },
+        account: { accountType: 'expense' },
         journalEntry: { isVoided: false, ...glEntryDateFilter }
       },
       _sum: { debitAmount: true, creditAmount: true }
     });
 
-    const commissionAccountIds = await prisma.account.findMany({
-      where: { code: { in: commissionCodes } },
-      select: { id: true }
+    // Map account IDs to codes for categorization
+    const expenseAccounts = await prisma.account.findMany({
+      where: { accountType: 'expense' },
+      select: { id: true, code: true }
     });
-    const commissionIdSet = new Set(commissionAccountIds.map(a => a.id));
+    const commissionIdSet = new Set(
+      expenseAccounts.filter(a => (commissionCodes as string[]).includes(a.code)).map(a => a.id)
+    );
+    const cogsIdSet = new Set(
+      expenseAccounts.filter(a => a.code === GL_ACCOUNTS.COGS).map(a => a.id)
+    );
+
+    const glCOGS = expenseAgg
+      .filter(r => cogsIdSet.has(r.accountId))
+      .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
 
     const totalCommissions = expenseAgg
       .filter(r => commissionIdSet.has(r.accountId))
       .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
 
     const totalOperatingExpenses = expenseAgg
-      .filter(r => !commissionIdSet.has(r.accountId))
+      .filter(r => !commissionIdSet.has(r.accountId) && !cogsIdSet.has(r.accountId))
       .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
 
-    const grossProfit = totalRevenue - totalCOGS;
+    // Use GL COGS for summary totals (matches Overview), keep per-product COGS for breakdown
+    const grossProfit = totalRevenue - glCOGS;
     const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
 
     const netProfit = grossProfit - totalCommissions - totalOperatingExpenses;
@@ -1203,7 +1211,7 @@ export class FinancialService {
     return {
       summary: {
         totalRevenue,
-        totalCOGS,
+        totalCOGS: glCOGS,
         totalShippingCost,
         totalDiscount,
         totalCommissions,
@@ -1215,7 +1223,7 @@ export class FinancialService {
         orderCount: orders.length,
         dataSources: {
           revenue: 'Order.totalAmount (matches GL 4010)',
-          cogs: 'Product.cogs (per-product breakdown)',
+          cogs: 'GL account 5010 (matches Overview)',
           commissions: 'GL accounts 5040/5050 (accrual)',
           operatingExpenses: 'GL non-COGS, non-commission expense accounts',
         }
