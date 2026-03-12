@@ -1026,7 +1026,8 @@ export class FinancialService {
 
     // Filter orders by GL journal entry date (not deliveryDate) so breakdowns
     // align with the GL-based summary KPIs. deliveryDate and GL entryDate can
-    // diverge for backfilled orders.
+    // diverge for backfilled orders. Since glJournalEntryId may be null on
+    // orders, we look up order IDs via journal_entries.source_id instead.
     const orderWhere: Prisma.OrderWhereInput = {
       status: 'delivered',
       revenueRecognized: true,
@@ -1034,15 +1035,22 @@ export class FinancialService {
     };
 
     if (startDate || endDate) {
-      orderWhere.glJournalEntry = {
-        isVoided: false,
-        ...(startDate || endDate ? {
+      // Find order IDs that have GL revenue entries in the date range
+      const glOrderEntries = await prisma.journalEntry.findMany({
+        where: {
+          sourceType: 'order_delivery',
+          isVoided: false,
           entryDate: {
             ...(startDate ? { gte: startDate } : {}),
             ...(endDate ? { lte: endDate } : {}),
-          }
-        } : {}),
-      };
+          },
+        },
+        select: { sourceId: true },
+      });
+      const glOrderIds = glOrderEntries
+        .map(e => e.sourceId)
+        .filter((id): id is number => id !== null);
+      orderWhere.id = { in: glOrderIds };
     }
 
     if (productId) {
@@ -1053,7 +1061,7 @@ export class FinancialService {
       };
     }
 
-    // Fetch orders with items and products (to get COGS)
+    // Fetch orders with items and products
     const orders = await prisma.order.findMany({
       where: orderWhere,
       include: {
