@@ -46,6 +46,8 @@ function sendFbPixelBeacon(pixelId: string, event: string, params?: Record<strin
 function loadFacebookPixel(pixelId: string): void {
   if (!/^\d+$/.test(pixelId)) return;
 
+  // Dedup: checkout is a single page with no SPA navigation, so one
+  // PageView per pixel per module lifetime is correct.
   const beaconKey = `pageview-${pixelId}`;
   if (sentBeacons.has(beaconKey)) return;
   sentBeacons.add(beaconKey);
@@ -145,10 +147,11 @@ export function initPixels(config: PixelConfig): void {
 }
 
 export function trackPurchase(config: PixelConfig, value: number, currency: string, orderId?: number | string): void {
-  if (config.facebookPixelId) {
-    const purchaseKey = `purchase-${config.facebookPixelId}-${orderId ?? 'no-id'}`;
-    if (!sentBeacons.has(purchaseKey)) {
-      sentBeacons.add(purchaseKey);
+  if (config.facebookPixelId && /^\d+$/.test(config.facebookPixelId)) {
+    // Dedup by orderId when available; skip dedup if no orderId (can't reliably dedup)
+    const purchaseKey = orderId != null ? `purchase-${config.facebookPixelId}-${orderId}` : null;
+    if (!purchaseKey || !sentBeacons.has(purchaseKey)) {
+      if (purchaseKey) sentBeacons.add(purchaseKey);
       const eventId = generateEventId();
       if (window.fbq) {
         window.fbq('track', 'Purchase', { value, currency }, eventId ? { eventID: eventId } : {});
