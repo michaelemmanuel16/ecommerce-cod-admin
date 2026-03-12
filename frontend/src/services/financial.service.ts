@@ -130,6 +130,7 @@ export interface AgentAgingBucket {
   bucket_2_3: number;
   bucket_4_7: number;
   bucket_8_plus: number;
+  isBlocked: boolean;
   updatedAt: string;
 }
 
@@ -540,5 +541,13 @@ export const financialService = {
 
   async rejectDeposit(depositId: number, notes: string): Promise<void> {
     await apiClient.post(`/api/agent-reconciliation/deposits/${depositId}/reject`, { notes });
-  }
+  },
+
+  async blockAgent(agentId: number, reason: string): Promise<void> {
+    await apiClient.post(`/api/agent-reconciliation/agents/${agentId}/block`, { reason });
+  },
+
+  async unblockAgent(agentId: number): Promise<void> {
+    await apiClient.post(`/api/agent-reconciliation/agents/${agentId}/unblock`);
+  },
 };

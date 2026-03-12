@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useFinancialStore } from '../../stores/financialStore';
 import { Card } from '../ui/Card';
 import { formatCurrency } from '../../utils/format';
-import { Download, AlertCircle, Clock, Users, ShieldAlert, BarChart3, Filter, Mail, Ban, Eye, ChevronUp, ChevronDown, Info } from 'lucide-react';
+import { Download, AlertCircle, Clock, Users, ShieldAlert, BarChart3, Filter, Mail, Ban, ShieldCheck, Eye, ChevronUp, ChevronDown, Info } from 'lucide-react';
 import { Tooltip as UITooltip } from '../ui/Tooltip';
 import { financialService } from '../../services/financial.service';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
@@ -24,6 +24,26 @@ export const AgentAgingTab: React.FC = () => {
     useEffect(() => {
         fetchAgentAging();
     }, []);
+
+    const [blockingAgentId, setBlockingAgentId] = useState<number | null>(null);
+
+    const handleToggleBlock = async (agentId: number, agentName: string, isBlocked: boolean) => {
+        setBlockingAgentId(agentId);
+        try {
+            if (isBlocked) {
+                await financialService.unblockAgent(agentId);
+                toast.success(`${agentName} unblocked`);
+            } else {
+                await financialService.blockAgent(agentId, 'Overdue collection balance');
+                toast.success(`${agentName} blocked from deliveries`);
+            }
+            fetchAgentAging();
+        } catch (error: any) {
+            toast.error(error?.response?.data?.message || `Failed to ${isBlocked ? 'unblock' : 'block'} agent`);
+        } finally {
+            setBlockingAgentId(null);
+        }
+    };
 
     const handleExport = async () => {
         try {
@@ -132,7 +152,7 @@ export const AgentAgingTab: React.FC = () => {
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
                             Critical (8+ Days)
-                            <UITooltip content="Collections held beyond 8 days — agents are at risk of being auto-blocked from new deliveries" position="bottom">
+                            <UITooltip content="Collections held beyond 8 days — consider blocking agents from new deliveries" position="bottom">
                                 <Info className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" />
                             </UITooltip>
                         </span>
@@ -329,12 +349,21 @@ export const AgentAgingTab: React.FC = () => {
                                                         <Eye className="w-3.5 h-3.5" />
                                                     </Link>
                                                     <button
-                                                        title="Block Agent (Coming Soon)"
-                                                        aria-label={`Block agent ${entry.agent.firstName}`}
-                                                        className="p-1.5 text-gray-300 cursor-not-allowed rounded"
-                                                        disabled
+                                                        title={entry.isBlocked ? 'Unblock Agent' : 'Block Agent'}
+                                                        aria-label={`${entry.isBlocked ? 'Unblock' : 'Block'} agent ${entry.agent.firstName}`}
+                                                        className={cn(
+                                                            "p-1.5 rounded transition-colors",
+                                                            entry.isBlocked
+                                                                ? "text-red-600 bg-red-50 hover:bg-red-100"
+                                                                : "text-gray-400 hover:text-red-600 hover:bg-red-50"
+                                                        )}
+                                                        disabled={blockingAgentId === entry.agent.id}
+                                                        onClick={() => handleToggleBlock(entry.agent.id, `${entry.agent.firstName} ${entry.agent.lastName}`, entry.isBlocked)}
                                                     >
-                                                        <Ban className="w-3.5 h-3.5" />
+                                                        {entry.isBlocked
+                                                            ? <ShieldCheck className="w-3.5 h-3.5" />
+                                                            : <Ban className="w-3.5 h-3.5" />
+                                                        }
                                                     </button>
                                                 </div>
                                             </td>

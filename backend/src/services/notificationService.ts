@@ -70,6 +70,34 @@ export async function notifyDeliveryScheduled(
   );
 }
 
+export async function notifyAdminsOverdueCollections(
+  agents: { agentId: number; agentName: string; totalBalance: number; warningAmount: number; criticalAmount: number }[]
+) {
+  if (agents.length === 0) return;
+
+  // Find all admin and super_admin users
+  const admins = await prisma.user.findMany({
+    where: { role: { in: ['admin', 'super_admin'] }, isActive: true },
+    select: { id: true }
+  });
+
+  const agentSummary = agents
+    .map(a => `${a.agentName}: GHS ${a.totalBalance.toFixed(2)} (${a.criticalAmount > 0 ? '8+ days' : '4-7 days'})`)
+    .join(', ');
+
+  const totalOverdue = agents.reduce((sum, a) => sum + a.totalBalance, 0);
+
+  for (const admin of admins) {
+    await createNotification(
+      admin.id.toString(),
+      'overdue_collections',
+      'Overdue Agent Collections',
+      `${agents.length} agent(s) have overdue collections totaling GHS ${totalOverdue.toFixed(2)}: ${agentSummary}`,
+      { agents, totalOverdue }
+    );
+  }
+}
+
 export async function notifyAgentBlocked(
   userId: string,
   reason: string
