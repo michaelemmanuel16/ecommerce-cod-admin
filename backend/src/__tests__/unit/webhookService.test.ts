@@ -178,10 +178,10 @@ describe('WebhookService', () => {
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
       prismaMock.customer.findUnique.mockResolvedValue(null);
-      prismaMock.customer.create.mockResolvedValue({
-        id: 'customer-1',
-        phoneNumber: '+1234567890'
-      } as any);
+      // Return different phone numbers so fingerprints are distinct
+      prismaMock.customer.create
+        .mockResolvedValueOnce({ id: 'customer-1', phoneNumber: '+1234567890' } as any)
+        .mockResolvedValueOnce({ id: 'customer-2', phoneNumber: '+9876543210' } as any);
 
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.create.mockResolvedValue({

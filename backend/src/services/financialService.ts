@@ -127,7 +127,12 @@ export class FinancialService {
    * COD collected and pipeline revenue remain operational metrics from Order/Transaction tables.
    */
   async getFinancialSummary(filters: DateFilters, requester?: Requester) {
-    const { startDate, endDate } = filters;
+    let { startDate, endDate } = filters;
+    // Normalise endDate to end-of-day so it aligns with P&L / Profitability
+    if (endDate) {
+      endDate = new Date(endDate);
+      endDate.setHours(23, 59, 59, 999);
+    }
 
     // --- GL-based accounting metrics ---
     // Revenue account codes
@@ -1019,16 +1024,33 @@ export class FinancialService {
       endDate.setHours(23, 59, 59, 999);
     }
 
-    // Filters for delivered orders
+    // Filter orders by GL journal entry date (not deliveryDate) so breakdowns
+    // align with the GL-based summary KPIs. deliveryDate and GL entryDate can
+    // diverge for backfilled orders. Since glJournalEntryId may be null on
+    // orders, we look up order IDs via journal_entries.source_id instead.
     const orderWhere: Prisma.OrderWhereInput = {
       status: 'delivered',
+      revenueRecognized: true,
       deletedAt: null,
     };
 
     if (startDate || endDate) {
-      orderWhere.deliveryDate = {};
-      if (startDate) orderWhere.deliveryDate.gte = startDate;
-      if (endDate) orderWhere.deliveryDate.lte = endDate;
+      // Find order IDs that have GL revenue entries in the date range
+      const glOrderEntries = await prisma.journalEntry.findMany({
+        where: {
+          sourceType: 'order_delivery',
+          isVoided: false,
+          entryDate: {
+            ...(startDate ? { gte: startDate } : {}),
+            ...(endDate ? { lte: endDate } : {}),
+          },
+        },
+        select: { sourceId: true },
+      });
+      const glOrderIds = glOrderEntries
+        .map(e => e.sourceId)
+        .filter((id): id is number => id !== null);
+      orderWhere.id = { in: glOrderIds };
     }
 
     if (productId) {
@@ -1039,7 +1061,7 @@ export class FinancialService {
       };
     }
 
-    // Fetch orders with items and products (to get COGS)
+    // Fetch orders with items and products
     const orders = await prisma.order.findMany({
       where: orderWhere,
       include: {
@@ -1078,7 +1100,8 @@ export class FinancialService {
     }> = {};
 
     for (const order of orders) {
-      totalRevenue += order.subtotal;
+      // Use totalAmount (subtotal + shipping - discount) to match GL revenue recognition
+      totalRevenue += order.totalAmount;
       totalShippingCost += order.shippingCost;
       totalDiscount += order.discount;
 
@@ -1091,7 +1114,7 @@ export class FinancialService {
           grossProfit: 0
         };
       }
-      dailyProfitability[dateStr].revenue += order.subtotal;
+      dailyProfitability[dateStr].revenue += order.totalAmount;
 
       const orderCommission = (order.deliveryAgent?.commissionAmount ?? 0)
                             + (order.customerRep?.commissionAmount ?? 0);
@@ -1129,23 +1152,7 @@ export class FinancialService {
       }
     }
 
-    // Calculate marketing expenses
-    const expenseWhere: Prisma.ExpenseWhereInput = {
-      category: 'marketing',
-    };
-    if (startDate || endDate) {
-      expenseWhere.expenseDate = {};
-      if (startDate) expenseWhere.expenseDate.gte = startDate;
-      if (endDate) expenseWhere.expenseDate.lte = endDate;
-    }
-
-    const marketingExpenses = await prisma.expense.findMany({
-      where: expenseWhere,
-    });
-
-    const totalMarketingExpense = marketingExpenses.reduce((sum, e) => sum + e.amount, 0);
-
-    // Query all non-COGS expense accounts from GL using entryDate (same filter as P&L)
+    // Query GL using entryDate (same filter as P&L / Overview) — single source of truth
     const glEntryDateFilter: any = {};
     if (startDate || endDate) {
       glEntryDateFilter.entryDate = {};
@@ -1153,39 +1160,58 @@ export class FinancialService {
       if (endDate) glEntryDateFilter.entryDate.lte = endDate;
     }
 
+    // GL Revenue — use account 4010 (same as Overview) so numbers always match
+    const revenueAgg = await prisma.accountTransaction.aggregate({
+      where: {
+        account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
+        journalEntry: { isVoided: false, ...glEntryDateFilter }
+      },
+      _sum: { debitAmount: true, creditAmount: true }
+    });
+    // Revenue account has credit-normal balance
+    const glRevenue = this.toNumber(revenueAgg._sum.creditAmount) - this.toNumber(revenueAgg._sum.debitAmount);
+
     const commissionCodes = [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, GL_ACCOUNTS.SALES_REP_COMMISSION];
 
     const expenseAgg = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
-        account: {
-          accountType: 'expense',
-          code: { not: GL_ACCOUNTS.COGS }  // COGS already computed from orders
-        },
+        account: { accountType: 'expense' },
         journalEntry: { isVoided: false, ...glEntryDateFilter }
       },
       _sum: { debitAmount: true, creditAmount: true }
     });
 
-    const commissionAccountIds = await prisma.account.findMany({
-      where: { code: { in: commissionCodes } },
-      select: { id: true }
+    // Map account IDs to codes for categorization
+    const expenseAccounts = await prisma.account.findMany({
+      where: { accountType: 'expense' },
+      select: { id: true, code: true }
     });
-    const commissionIdSet = new Set(commissionAccountIds.map(a => a.id));
+    const commissionIdSet = new Set(
+      expenseAccounts.filter(a => (commissionCodes as string[]).includes(a.code)).map(a => a.id)
+    );
+    const cogsIdSet = new Set(
+      expenseAccounts.filter(a => a.code === GL_ACCOUNTS.COGS).map(a => a.id)
+    );
+
+    const glCOGS = expenseAgg
+      .filter(r => cogsIdSet.has(r.accountId))
+      .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
 
     const totalCommissions = expenseAgg
       .filter(r => commissionIdSet.has(r.accountId))
       .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
 
     const totalOperatingExpenses = expenseAgg
-      .filter(r => !commissionIdSet.has(r.accountId))
+      .filter(r => !commissionIdSet.has(r.accountId) && !cogsIdSet.has(r.accountId))
       .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
 
-    const grossProfit = totalRevenue - totalCOGS;
-    const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+    // Use GL revenue + GL COGS for summary totals (matches Overview exactly)
+    const grossProfit = glRevenue - glCOGS;
+    const grossMargin = glRevenue > 0 ? (grossProfit / glRevenue) * 100 : 0;
 
-    const netProfit = grossProfit - totalMarketingExpense - totalCommissions - totalOperatingExpenses;
-    const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+    const netProfit = grossProfit - totalCommissions - totalOperatingExpenses;
+    const netMargin = glRevenue > 0 ? (netProfit / glRevenue) * 100 : 0;
 
     // Format product profitability
     const products = Object.values(productProfitability).map(p => ({
@@ -1209,22 +1235,22 @@ export class FinancialService {
 
     return {
       summary: {
-        totalRevenue,
-        totalCOGS,
+        totalRevenue: glRevenue,
+        totalCOGS: glCOGS,
         totalShippingCost,
         totalDiscount,
-        totalMarketingExpense,
         totalCommissions,
+        totalOperatingExpenses,
         grossProfit,
         grossMargin,
         netProfit,
         netMargin,
         orderCount: orders.length,
         dataSources: {
-          revenue: 'Order.subtotal (per-product breakdown)',
-          cogs: 'Product.cogs (per-product)',
+          revenue: 'GL account 4010 (matches Overview)',
+          cogs: 'GL account 5010 (matches Overview)',
           commissions: 'GL accounts 5040/5050 (accrual)',
-          marketing: 'Expense table (category=marketing)',
+          operatingExpenses: 'GL non-COGS, non-commission expense accounts',
         }
       },
       products,
