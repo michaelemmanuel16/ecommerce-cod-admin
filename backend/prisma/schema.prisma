@@ -141,6 +141,7 @@ model Order {
   source            String           @default("manual")
   externalOrderId   String?          @map("external_order_id")
   webhookData       Json?            @map("webhook_data")
+  webhookFingerprint String?         @unique @map("webhook_fingerprint")
   createdById       Int?             @map("created_by_id")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
