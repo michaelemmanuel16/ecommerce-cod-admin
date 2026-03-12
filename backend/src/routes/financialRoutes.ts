@@ -48,5 +48,6 @@ router.get('/health', requireRole('admin', 'super_admin'), financialController.g
 router.post('/refresh-aging', requireRole('admin', 'super_admin'), financialController.refreshAgingBuckets);
 router.post('/backfill-collections', requireRole('admin', 'super_admin'), financialController.backfillMissingCollections);
 router.post('/backfill-delivery-dates', requireRole('admin', 'super_admin'), financialController.backfillDeliveryDates);
+router.post('/backfill-commissions', requireRole('admin', 'super_admin'), financialController.backfillCommissions);
 
 export default router;
