@@ -1136,15 +1136,24 @@ export class FinancialService {
       }
     }
 
-    // Query ALL expense accounts from GL using entryDate (same filter as P&L / Overview)
-    // This ensures COGS, commissions, and operating expenses all come from GL,
-    // matching the Overview's single-source-of-truth approach.
+    // Query GL using entryDate (same filter as P&L / Overview) — single source of truth
     const glEntryDateFilter: any = {};
     if (startDate || endDate) {
       glEntryDateFilter.entryDate = {};
       if (startDate) glEntryDateFilter.entryDate.gte = startDate;
       if (endDate) glEntryDateFilter.entryDate.lte = endDate;
     }
+
+    // GL Revenue — use account 4010 (same as Overview) so numbers always match
+    const revenueAgg = await prisma.accountTransaction.aggregate({
+      where: {
+        account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
+        journalEntry: { isVoided: false, ...glEntryDateFilter }
+      },
+      _sum: { debitAmount: true, creditAmount: true }
+    });
+    // Revenue account has credit-normal balance
+    const glRevenue = this.toNumber(revenueAgg._sum.creditAmount) - this.toNumber(revenueAgg._sum.debitAmount);
 
     const commissionCodes = [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, GL_ACCOUNTS.SALES_REP_COMMISSION];
 
@@ -1181,12 +1190,12 @@ export class FinancialService {
       .filter(r => !commissionIdSet.has(r.accountId) && !cogsIdSet.has(r.accountId))
       .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
 
-    // Use GL COGS for summary totals (matches Overview), keep per-product COGS for breakdown
-    const grossProfit = totalRevenue - glCOGS;
-    const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+    // Use GL revenue + GL COGS for summary totals (matches Overview exactly)
+    const grossProfit = glRevenue - glCOGS;
+    const grossMargin = glRevenue > 0 ? (grossProfit / glRevenue) * 100 : 0;
 
     const netProfit = grossProfit - totalCommissions - totalOperatingExpenses;
-    const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+    const netMargin = glRevenue > 0 ? (netProfit / glRevenue) * 100 : 0;
 
     // Format product profitability
     const products = Object.values(productProfitability).map(p => ({
@@ -1210,7 +1219,7 @@ export class FinancialService {
 
     return {
       summary: {
-        totalRevenue,
+        totalRevenue: glRevenue,
         totalCOGS: glCOGS,
         totalShippingCost,
         totalDiscount,
@@ -1222,7 +1231,7 @@ export class FinancialService {
         netMargin,
         orderCount: orders.length,
         dataSources: {
-          revenue: 'Order.totalAmount (matches GL 4010)',
+          revenue: 'GL account 4010 (matches Overview)',
           cogs: 'GL account 5010 (matches Overview)',
           commissions: 'GL accounts 5040/5050 (accrual)',
           operatingExpenses: 'GL non-COGS, non-commission expense accounts',
