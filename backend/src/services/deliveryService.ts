@@ -306,6 +306,7 @@ export class DeliveryService {
         where: { id: delivery.orderId },
         data: {
           status: 'delivered',
+          deliveryDate: new Date(),
           paymentStatus: 'collected',
           orderHistory: {
             create: {
