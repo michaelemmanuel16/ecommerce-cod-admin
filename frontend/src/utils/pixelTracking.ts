@@ -17,24 +17,12 @@ declare global {
 function loadFacebookPixel(pixelId: string): void {
   if (window.fbq) return;
 
-  // Use Facebook's exact standard pixel base code
-  const n: any = (window.fbq = function (...args: any[]) {
-    n.callMethod ? n.callMethod.apply(n, args) : n.queue.push(args);
-  });
-  if (!window._fbq) window._fbq = n;
-  n.push = n;
-  n.loaded = true;
-  n.version = '2.0';
-  n.queue = [];
-
-  const t = document.createElement('script');
-  t.async = true;
-  t.src = 'https://connect.facebook.net/en_US/fbevents.js';
-  const s = document.getElementsByTagName('script')[0];
-  s.parentNode!.insertBefore(t, s);
-
-  window.fbq!('init', pixelId);
-  window.fbq!('track', 'PageView');
+  // Inject Facebook's exact standard pixel snippet via inline script
+  // This must run as a single inline script to ensure fbevents.js
+  // fully initializes its internal pipeline (plugins, beacon sender)
+  const script = document.createElement('script');
+  script.textContent = `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixelId}');fbq('track','PageView');`;
+  document.head.appendChild(script);
 }
 
 function loadGA4(measurementId: string): void {
