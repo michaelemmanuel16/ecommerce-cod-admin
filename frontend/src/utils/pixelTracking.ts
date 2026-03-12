@@ -14,15 +14,33 @@ declare global {
   }
 }
 
+function sendFbPixelBeacon(pixelId: string, event: string, params?: Record<string, string | number>): void {
+  const url = new URL('https://www.facebook.com/tr');
+  url.searchParams.set('id', pixelId);
+  url.searchParams.set('ev', event);
+  url.searchParams.set('noscript', '1');
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.set(k, String(v));
+    }
+  }
+  const img = new Image(1, 1);
+  img.style.display = 'none';
+  img.src = url.toString();
+  document.body.appendChild(img);
+}
+
 function loadFacebookPixel(pixelId: string): void {
   if (window.fbq) return;
 
   // Inject Facebook's exact standard pixel snippet via inline script
-  // This must run as a single inline script to ensure fbevents.js
-  // fully initializes its internal pipeline (plugins, beacon sender)
   const script = document.createElement('script');
   script.textContent = `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixelId}');fbq('track','PageView');`;
   document.head.appendChild(script);
+
+  // Direct image beacon fallback — guarantees PageView reaches Facebook
+  // even if fbevents.js fails to send network beacons
+  sendFbPixelBeacon(pixelId, 'PageView');
 }
 
 function loadGA4(measurementId: string): void {
@@ -102,6 +120,13 @@ export function initPixels(config: PixelConfig): void {
 export function trackPurchase(config: PixelConfig, value: number, currency: string, orderId?: number | string): void {
   if (config.facebookPixelId && window.fbq) {
     window.fbq('track', 'Purchase', { value, currency });
+  }
+
+  // Direct image beacon fallback for Facebook Purchase event
+  if (config.facebookPixelId) {
+    sendFbPixelBeacon(config.facebookPixelId, 'Purchase', {
+      cd: JSON.stringify({ value, currency }),
+    });
   }
 
   if (config.googleAnalyticsId && window.gtag) {
