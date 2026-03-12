@@ -44,6 +44,8 @@ function sendFbPixelBeacon(pixelId: string, event: string, params?: Record<strin
 }
 
 function loadFacebookPixel(pixelId: string): void {
+  if (!/^\d+$/.test(pixelId)) return;
+
   const beaconKey = `pageview-${pixelId}`;
   if (sentBeacons.has(beaconKey)) return;
   sentBeacons.add(beaconKey);
@@ -144,14 +146,18 @@ export function initPixels(config: PixelConfig): void {
 
 export function trackPurchase(config: PixelConfig, value: number, currency: string, orderId?: number | string): void {
   if (config.facebookPixelId) {
-    const eventId = generateEventId();
-    if (window.fbq) {
-      window.fbq('track', 'Purchase', { value, currency }, eventId ? { eventID: eventId } : {});
+    const purchaseKey = `purchase-${config.facebookPixelId}-${orderId ?? 'no-id'}`;
+    if (!sentBeacons.has(purchaseKey)) {
+      sentBeacons.add(purchaseKey);
+      const eventId = generateEventId();
+      if (window.fbq) {
+        window.fbq('track', 'Purchase', { value, currency }, eventId ? { eventID: eventId } : {});
+      }
+      // NOTE: Both fbq and the image beacon always fire together.
+      // Facebook deduplicates via the shared eventID.
+      // Intentional: fbevents.js can silently drop beacons even when fbq exists.
+      sendFbPixelBeacon(config.facebookPixelId, 'Purchase', { value, currency }, eventId);
     }
-    // NOTE: Both fbq and the image beacon always fire together.
-    // Facebook deduplicates via the shared eventID.
-    // Intentional: fbevents.js can silently drop beacons even when fbq exists.
-    sendFbPixelBeacon(config.facebookPixelId, 'Purchase', { value, currency }, eventId);
   }
 
   if (config.googleAnalyticsId && window.gtag) {
