@@ -159,7 +159,7 @@ export function trackPurchase(config: PixelConfig, value: number, currency: stri
       // NOTE: Both fbq and the image beacon always fire together.
       // Facebook deduplicates via the shared eventID.
       // Intentional: fbevents.js can silently drop beacons even when fbq exists.
-      sendFbPixelBeacon(config.facebookPixelId, 'Purchase', { value, currency }, eventId);
+      sendFbPixelBeacon(config.facebookPixelId, 'Purchase', { 'cd[value]': value, 'cd[currency]': currency }, eventId);
     }
   }
 
