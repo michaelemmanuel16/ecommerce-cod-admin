@@ -7,7 +7,9 @@ import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
 import logger from '../utils/logger';
 import { GLAccountService } from '../services/glAccountService';
+import { GL_ACCOUNTS } from '../config/glAccounts';
 import prisma from '../utils/prisma';
+import { Decimal } from '@prisma/client/runtime/library';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -508,5 +510,150 @@ export const backfillDeliveryDates = async (_req: AuthRequest, res: Response): P
   } catch (error) {
     logger.error('Failed to backfill delivery dates', { error });
     res.status(500).json({ message: 'Failed to backfill delivery dates' });
+  }
+};
+
+/**
+ * POST /api/financial/backfill-commissions
+ * Admin-only endpoint to add missing commission lines to order_delivery journal entries.
+ * Finds JEs that have revenue but no commission transactions, then adds commission
+ * debit + adjusts Cash in Transit based on current agent/rep commissionAmount.
+ */
+export const backfillCommissions = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const commAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION);
+    const repCommAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION);
+    const commPayableAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE);
+    const cashInTransitAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT);
+
+    // Find all order_delivery JEs that have NO commission transactions
+    const journalEntries = await prisma.journalEntry.findMany({
+      where: {
+        sourceType: 'order_delivery',
+        isVoided: false,
+        transactions: {
+          none: {
+            accountId: { in: [commAccountId, repCommAccountId] },
+          },
+        },
+      },
+      include: {
+        transactions: true,
+      },
+    });
+
+    if (journalEntries.length === 0) {
+      res.json({ message: 'No journal entries missing commissions', updated: 0 });
+      return;
+    }
+
+    // Get orders with agent/rep commission info
+    const orderIds = journalEntries.map(je => je.sourceId).filter((id): id is number => id !== null);
+    const orders = await prisma.order.findMany({
+      where: { id: { in: orderIds } },
+      include: {
+        deliveryAgent: { select: { id: true, commissionAmount: true } },
+        customerRep: { select: { id: true, commissionAmount: true } },
+      },
+    });
+    const orderMap = new Map(orders.map(o => [o.id, o]));
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const je of journalEntries) {
+      const order = je.sourceId ? orderMap.get(je.sourceId) : null;
+      if (!order) {
+        skipped++;
+        continue;
+      }
+
+      const agentComm = order.deliveryAgent?.commissionAmount
+        ? new Decimal(order.deliveryAgent.commissionAmount.toString())
+        : new Decimal(0);
+      const repComm = order.customerRep?.commissionAmount
+        ? new Decimal(order.customerRep.commissionAmount.toString())
+        : new Decimal(0);
+
+      if (agentComm.equals(0) && repComm.equals(0)) {
+        skipped++;
+        continue;
+      }
+
+      await prisma.$transaction(async (tx) => {
+        // Add agent commission transaction
+        if (agentComm.greaterThan(0)) {
+          await tx.accountTransaction.create({
+            data: {
+              journalEntryId: je.id,
+              accountId: commAccountId,
+              debitAmount: agentComm,
+              creditAmount: new Decimal(0),
+              description: `Backfill: Delivery agent commission - Order #${order.id}`,
+            },
+          });
+          // Reduce Cash in Transit (agent keeps commission from collection)
+          const citTxn = je.transactions.find(t => t.accountId === cashInTransitAccountId);
+          if (citTxn) {
+            await tx.accountTransaction.update({
+              where: { id: citTxn.id },
+              data: { debitAmount: new Decimal(citTxn.debitAmount.toString()).minus(agentComm) },
+            });
+          }
+          // Update account running balances
+          await tx.account.update({
+            where: { id: commAccountId },
+            data: { currentBalance: { increment: agentComm } },
+          });
+          await tx.account.update({
+            where: { id: cashInTransitAccountId },
+            data: { currentBalance: { decrement: agentComm } },
+          });
+        }
+
+        // Add rep commission transaction
+        if (repComm.greaterThan(0)) {
+          await tx.accountTransaction.create({
+            data: {
+              journalEntryId: je.id,
+              accountId: repCommAccountId,
+              debitAmount: repComm,
+              creditAmount: new Decimal(0),
+              description: `Backfill: Sales rep commission - Order #${order.id}`,
+            },
+          });
+          await tx.accountTransaction.create({
+            data: {
+              journalEntryId: je.id,
+              accountId: commPayableAccountId,
+              debitAmount: new Decimal(0),
+              creditAmount: repComm,
+              description: `Backfill: Commissions payable - Order #${order.id}`,
+            },
+          });
+          await tx.account.update({
+            where: { id: repCommAccountId },
+            data: { currentBalance: { increment: repComm } },
+          });
+          await tx.account.update({
+            where: { id: commPayableAccountId },
+            data: { currentBalance: { increment: repComm } },
+          });
+        }
+      });
+
+      updated++;
+    }
+
+    logger.info(`Backfilled commissions for ${updated} journal entries (${skipped} skipped)`);
+    res.json({
+      message: `Backfilled commissions for ${updated} journal entries`,
+      updated,
+      skipped,
+      totalChecked: journalEntries.length,
+    });
+  } catch (error) {
+    logger.error('Failed to backfill commissions', { error });
+    res.status(500).json({ message: 'Failed to backfill commissions' });
   }
 };
