@@ -18,6 +18,10 @@ function generateEventId(): string | undefined {
   return typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : undefined;
 }
 
+// Tracks which pixel+event combinations have already been sent to prevent
+// duplicate beacons from React StrictMode, component remounts, etc.
+const sentBeacons = new Set<string>();
+
 function sendFbPixelBeacon(pixelId: string, event: string, params?: Record<string, string | number>, eventId?: string): void {
   const url = new URL('https://www.facebook.com/tr');
   url.searchParams.set('id', pixelId);
@@ -40,6 +44,10 @@ function sendFbPixelBeacon(pixelId: string, event: string, params?: Record<strin
 }
 
 function loadFacebookPixel(pixelId: string): void {
+  const beaconKey = `pageview-${pixelId}`;
+  if (sentBeacons.has(beaconKey)) return;
+  sentBeacons.add(beaconKey);
+
   const eventId = generateEventId();
 
   if (!window.fbq) {
