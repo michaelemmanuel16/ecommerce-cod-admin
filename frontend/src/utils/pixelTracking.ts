@@ -14,15 +14,50 @@ declare global {
   }
 }
 
-function loadFacebookPixel(pixelId: string): void {
-  if (window.fbq) return;
+function generateEventId(): string | undefined {
+  return typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : undefined;
+}
 
-  // Inject Facebook's exact standard pixel snippet via inline script
-  // This must run as a single inline script to ensure fbevents.js
-  // fully initializes its internal pipeline (plugins, beacon sender)
-  const script = document.createElement('script');
-  script.textContent = `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixelId}');fbq('track','PageView');`;
-  document.head.appendChild(script);
+function sendFbPixelBeacon(pixelId: string, event: string, params?: Record<string, string | number>, eventId?: string): void {
+  const url = new URL('https://www.facebook.com/tr');
+  url.searchParams.set('id', pixelId);
+  url.searchParams.set('ev', event);
+  url.searchParams.set('noscript', '1');
+  if (eventId) {
+    url.searchParams.set('eid', eventId);
+  }
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.set(k, String(v));
+    }
+  }
+  const img = new Image(1, 1);
+  img.style.display = 'none';
+  img.onload = () => img.remove();
+  img.onerror = () => img.remove();
+  img.src = url.toString();
+  (document.body ?? document.documentElement).appendChild(img);
+}
+
+function loadFacebookPixel(pixelId: string): void {
+  const eventId = generateEventId();
+
+  if (!window.fbq) {
+    // Inject Facebook's exact standard pixel snippet via inline script.
+    // This must run as a single inline script to ensure fbevents.js
+    // fully initializes its internal pipeline (plugins, beacon sender).
+    const script = document.createElement('script');
+    script.textContent = eventId
+      ? `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixelId}');fbq('track','PageView',{},{eventID:'${eventId}'});`
+      : `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixelId}');fbq('track','PageView');`;
+    document.head.appendChild(script);
+  }
+
+  // NOTE: Both fbq and the image beacon always fire together.
+  // Facebook deduplicates via the shared eventID.
+  // Intentional: fbevents.js can silently drop beacons even when fbq exists,
+  // and fbq may have been pre-loaded by a parent page (e.g. GTM on WordPress).
+  sendFbPixelBeacon(pixelId, 'PageView', undefined, eventId);
 }
 
 function loadGA4(measurementId: string): void {
@@ -100,8 +135,15 @@ export function initPixels(config: PixelConfig): void {
 }
 
 export function trackPurchase(config: PixelConfig, value: number, currency: string, orderId?: number | string): void {
-  if (config.facebookPixelId && window.fbq) {
-    window.fbq('track', 'Purchase', { value, currency });
+  if (config.facebookPixelId) {
+    const eventId = generateEventId();
+    if (window.fbq) {
+      window.fbq('track', 'Purchase', { value, currency }, eventId ? { eventID: eventId } : {});
+    }
+    // NOTE: Both fbq and the image beacon always fire together.
+    // Facebook deduplicates via the shared eventID.
+    // Intentional: fbevents.js can silently drop beacons even when fbq exists.
+    sendFbPixelBeacon(config.facebookPixelId, 'Purchase', { value, currency }, eventId);
   }
 
   if (config.googleAnalyticsId && window.gtag) {
