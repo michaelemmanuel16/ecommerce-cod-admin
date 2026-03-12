@@ -19,6 +19,22 @@ add_header X-Frame-Options "SAMEORIGIN" always;
 add_header X-Content-Type-Options "nosniff" always;
 add_header X-XSS-Protection "1; mode=block" always;
 
+# Public checkout pages - allow iframe embedding on external sites
+    location /order {
+         proxy_pass http://localhost:5174;
+         proxy_http_version 1.1;
+         proxy_set_header Upgrade $http_upgrade;
+         proxy_set_header Connection 'upgrade';
+         proxy_set_header Host $host;
+         proxy_set_header X-Real-IP $remote_addr;
+         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+         proxy_set_header X-Forwarded-Proto $scheme;
+         proxy_cache_bypass $http_upgrade;
+
+         # No X-Frame-Options here - allow iframe embedding
+         add_header X-Content-Type-Options "nosniff" always;
+    }
+
 # Frontend (React app)
     location / {
          proxy_pass http://localhost:5174;
