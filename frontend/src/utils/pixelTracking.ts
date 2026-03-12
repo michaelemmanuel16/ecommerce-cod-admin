@@ -15,25 +15,23 @@ declare global {
 }
 
 function loadFacebookPixel(pixelId: string): void {
-  if (document.getElementById('fb-pixel')) return;
+  if (window.fbq) return;
 
-  // Set up fbq stub
-  if (!window.fbq) {
-    const fbq: any = function (...args: any[]) {
-      (fbq.q = fbq.q || []).push(args);
-    };
-    fbq.q = [];
-    fbq.loaded = true;
-    fbq.version = '2.0';
-    window.fbq = fbq;
-    window._fbq = fbq;
-  }
+  // Use Facebook's exact standard pixel base code
+  const n: any = (window.fbq = function (...args: any[]) {
+    n.callMethod ? n.callMethod.apply(n, args) : n.queue.push(args);
+  });
+  if (!window._fbq) window._fbq = n;
+  n.push = n;
+  n.loaded = true;
+  n.version = '2.0';
+  n.queue = [];
 
-  const script = document.createElement('script');
-  script.id = 'fb-pixel';
-  script.async = true;
-  script.src = 'https://connect.facebook.net/en_US/fbevents.js';
-  document.head.appendChild(script);
+  const t = document.createElement('script');
+  t.async = true;
+  t.src = 'https://connect.facebook.net/en_US/fbevents.js';
+  const s = document.getElementsByTagName('script')[0];
+  s.parentNode!.insertBefore(t, s);
 
   window.fbq!('init', pixelId);
   window.fbq!('track', 'PageView');
