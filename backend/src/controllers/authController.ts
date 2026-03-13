@@ -202,22 +202,26 @@ export const forgotPassword = async (req: AuthRequest, res: Response, next: Next
     const user = await prisma.user.findUnique({ where: { email } });
 
     if (user && user.isActive && (user.role === 'super_admin' || user.role === 'admin')) {
-      const rawToken = crypto.randomBytes(32).toString('hex');
-      const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-      const expires = new Date(Date.now() + 15 * 60 * 1000);
+      try {
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+        const expires = new Date(Date.now() + 15 * 60 * 1000);
 
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          passwordResetToken: hashedToken,
-          passwordResetExpires: expires,
-        },
-      });
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            passwordResetToken: hashedToken,
+            passwordResetExpires: expires,
+          },
+        });
 
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
 
-      await sendPasswordResetEmail(email, user.firstName, resetUrl);
+        await sendPasswordResetEmail(email, user.firstName, resetUrl);
+      } catch (e) {
+        console.error('Password reset email send failed:', e);
+      }
     }
 
     res.json({ message: "If an account exists with that email, we've sent a reset link" });
