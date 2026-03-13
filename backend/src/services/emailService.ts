@@ -9,6 +9,10 @@ function getResendClient(): Resend {
   return resend;
 }
 
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 export async function sendPasswordResetEmail(
   email: string,
   firstName: string,
@@ -21,9 +25,9 @@ export async function sendPasswordResetEmail(
     to: email,
     subject: 'Reset your password - COD Admin',
     html: `
-      <p>Hi ${firstName},</p>
+      <p>Hi ${escapeHtml(firstName)},</p>
       <p>We received a request to reset your password. Click the link below to set a new password:</p>
-      <p><a href="${resetUrl}">${resetUrl}</a></p>
+      <p><a href="${escapeHtml(resetUrl)}">${escapeHtml(resetUrl)}</a></p>
       <p>This link will expire in 15 minutes.</p>
       <p>If you didn't request a password reset, you can safely ignore this email.</p>
       <p>— COD Admin Team</p>
