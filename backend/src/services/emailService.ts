@@ -27,7 +27,7 @@ export async function sendPasswordResetEmail(
     html: `
       <p>Hi ${escapeHtml(firstName)},</p>
       <p>We received a request to reset your password. Click the link below to set a new password:</p>
-      <p><a href="${escapeHtml(resetUrl)}">${escapeHtml(resetUrl)}</a></p>
+      <p><a href="${resetUrl}">Reset your password</a></p>
       <p>This link will expire in 15 minutes.</p>
       <p>If you didn't request a password reset, you can safely ignore this email.</p>
       <p>— COD Admin Team</p>
