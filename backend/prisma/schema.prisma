@@ -17,6 +17,8 @@ model User {
   isAvailable           Boolean           @default(true) @map("is_available")
   lastLogin             DateTime?         @map("last_login")
   refreshToken          String?           @map("refresh_token")
+  passwordResetToken    String?           @unique @map("password_reset_token")
+  passwordResetExpires  DateTime?         @map("password_reset_expires")
   commissionAmount      Float?            @default(0) @map("commission_amount") /// Fixed commission amount per delivery (GHS)
   country               String?
   preferences           Json?

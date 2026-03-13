@@ -113,6 +113,25 @@ export const bulkDeleteValidation: ValidationChain[] = [
     .custom((ids) => ids.every((id: any) => typeof id === 'number')).withMessage('All IDs must be numbers')
 ];
 
+export const forgotPasswordValidation: ValidationChain[] = [
+  body('email').isEmail().normalizeEmail()
+];
+
+export const resetPasswordValidation: ValidationChain[] = [
+  body('token').notEmpty(),
+  body('password')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters long')
+    .matches(/[A-Z]/)
+    .withMessage('Password must contain at least one uppercase letter')
+    .matches(/[a-z]/)
+    .withMessage('Password must contain at least one lowercase letter')
+    .matches(/[0-9]/)
+    .withMessage('Password must contain at least one number')
+    .matches(/[!@#$%^&*(),.?":{}|<>]/)
+    .withMessage('Password must contain at least one special character')
+];
+
 export const createCallValidation: ValidationChain[] = [
   body('customerId').isInt().withMessage('Customer ID is required'),
   body('orderId').optional().isInt(),
