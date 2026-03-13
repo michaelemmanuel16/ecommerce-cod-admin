@@ -70,6 +70,11 @@ export const Login: React.FC = () => {
               error={errors.password?.message}
               placeholder="Enter your password"
             />
+            <div className="text-right">
+              <Link to="/forgot-password" className="text-sm text-blue-600 hover:underline">
+                Forgot password?
+              </Link>
+            </div>
             <Button
               type="submit"
               variant="primary"

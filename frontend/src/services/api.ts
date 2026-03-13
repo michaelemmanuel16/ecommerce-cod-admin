@@ -106,7 +106,9 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Skip auto-logout for login/register endpoints - let them handle their own errors
       const isAuthEndpoint = originalRequest.url?.includes('/api/auth/login') ||
-        originalRequest.url?.includes('/api/auth/register');
+        originalRequest.url?.includes('/api/auth/register') ||
+        originalRequest.url?.includes('/api/auth/forgot-password') ||
+        originalRequest.url?.includes('/api/auth/reset-password');
 
       if (isAuthEndpoint) {
         // Let login/register pages handle 401 errors with their own UI
@@ -130,7 +132,7 @@ apiClient.interceptors.response.use(
         const refreshToken = useAuthStore.getState().refreshToken;
         if (!refreshToken) {
           useAuthStore.getState().logout(false);
-          const publicPages = ['/login', '/register'];
+          const publicPages = ['/login', '/register', '/forgot-password', '/reset-password'];
           if (!publicPages.includes(window.location.pathname)) {
             window.location.href = '/login';
           }
@@ -167,7 +169,7 @@ apiClient.interceptors.response.use(
         if (refreshError.response?.data?.code === 'TOKEN_FORMAT_OUTDATED') {
           useAuthStore.getState().logout(false);
           toast.error('Your session is outdated. Please log in again.');
-          const publicPages = ['/login', '/register'];
+          const publicPages = ['/login', '/register', '/forgot-password', '/reset-password'];
           if (!publicPages.includes(window.location.pathname)) {
             window.location.href = '/login';
           }
@@ -176,7 +178,7 @@ apiClient.interceptors.response.use(
 
         useAuthStore.getState().logout(false);
         // Only show session expired toast if we weren't already on a public page
-        const publicPages = ['/login', '/register'];
+        const publicPages = ['/login', '/register', '/forgot-password', '/reset-password'];
         if (!publicPages.includes(window.location.pathname)) {
           toast.error('Session expired. Please login again.');
           window.location.href = '/login';
