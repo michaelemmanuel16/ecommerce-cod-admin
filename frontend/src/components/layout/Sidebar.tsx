@@ -113,6 +113,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
           <button
             onClick={() => {
               localStorage.removeItem(DESKTOP_FLAG);
+              localStorage.setItem('mobile_opt_in', 'true');
               navigate('/m/');
             }}
             className={cn(

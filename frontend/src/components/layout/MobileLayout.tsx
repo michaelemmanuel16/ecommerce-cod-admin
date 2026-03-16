@@ -17,6 +17,7 @@ export function MobileLayout() {
 
   const handleSwitchDesktop = () => {
     localStorage.setItem(DESKTOP_FLAG, 'true');
+    localStorage.removeItem('mobile_opt_in');
     navigate('/');
   };
 

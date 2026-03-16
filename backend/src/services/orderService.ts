@@ -1054,7 +1054,10 @@ export class OrderService {
               });
             }
           } else if (isConfirmingDelivery) {
-            // Transition C: out_for_delivery → delivered — stock already deducted; confirm agent delivery
+            // Transition C: out_for_delivery → delivered — stock already deducted; confirm agent delivery.
+            // NOTE: This is the sole call site for confirmOrderDelivery on the normal delivery path.
+            // A duplicate block that ran the same logic was removed — it matched the same condition
+            // (out_for_delivery → delivered + deliveryAgentId) and called confirmOrderDelivery identically.
             await agentInventoryService.confirmOrderDelivery(
               tx,
               orderId,
@@ -1183,7 +1186,12 @@ export class OrderService {
       return updatedOrder;
     });
 
-    // Auto-sync financial data when order is delivered (outside transaction to avoid timeout)
+    // Auto-sync financial data when order is delivered.
+    // Runs OUTSIDE the status-update transaction to avoid 30s+ timeout on large orders.
+    // Trade-off: if the process crashes between transaction commit and this callback,
+    // the order will be marked 'delivered' but GL entries won't be created.
+    // syncOrderFinancialData is idempotent (checks revenueRecognized + existing transaction),
+    // so a manual retry or scheduled reconciliation job can recover the gap.
     if (data.status === 'delivered' && updated.codAmount) {
       setImmediate(() => {
         FinancialSyncService.syncOrderFinancialData(

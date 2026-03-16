@@ -74,11 +74,15 @@ const MobileRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const isMobile = useIsMobile();
   const location = useLocation();
 
+  // Only auto-redirect when the user has explicitly opted in via the "Mobile View"
+  // sidebar button (which sets MOBILE_OPT_IN). Without opt-in, mobile agents stay on
+  // the desktop view because key mobile pages (Deliveries) are still stubs.
   if (
     user?.role === 'delivery_agent' &&
     isMobile &&
     !location.pathname.startsWith('/m') &&
-    localStorage.getItem(DESKTOP_FLAG) !== 'true'
+    localStorage.getItem(DESKTOP_FLAG) !== 'true' &&
+    localStorage.getItem('mobile_opt_in') === 'true'
   ) {
     return <Navigate to="/m/" replace />;
   }
