@@ -5,7 +5,7 @@ import { useAgentInventoryStore } from '../stores/agentInventoryStore';
 
 export default function AgentMyInventory() {
   const { user } = useAuthStore();
-  const { agentInventory, isLoading, fetchAgentInventory } = useAgentInventoryStore();
+  const { agentInventory, isLoadingInventory, fetchAgentInventory } = useAgentInventoryStore();
 
   useEffect(() => {
     if (user?.id) {
@@ -13,7 +13,7 @@ export default function AgentMyInventory() {
     }
   }, [user?.id, fetchAgentInventory]);
 
-  if (isLoading) {
+  if (isLoadingInventory) {
     return (
       <div className="flex items-center justify-center h-64">
         <div role="status" className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600">

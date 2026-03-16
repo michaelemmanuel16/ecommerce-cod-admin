@@ -151,6 +151,7 @@ function App() {
               <Route path="collections" element={
                 <Suspense fallback={<Loading />}><MobileCollections /></Suspense>
               } />
+              {/* TODO: replace with mobile-optimized Settings */}
               <Route path="settings" element={
                 <Suspense fallback={<Loading />}><Settings /></Suspense>
               } />

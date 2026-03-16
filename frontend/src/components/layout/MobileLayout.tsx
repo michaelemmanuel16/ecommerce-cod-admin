@@ -15,6 +15,9 @@ export function MobileLayout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
+  // Clear both flags to ensure desktop view sticks: DESKTOP_FLAG prevents
+  // MobileRedirect from re-redirecting, and removing mobile_opt_in resets
+  // the user's explicit mobile preference.
   const handleSwitchDesktop = () => {
     localStorage.setItem(DESKTOP_FLAG, 'true');
     localStorage.removeItem('mobile_opt_in');

@@ -27,7 +27,9 @@ export default function AgentInventoryManagement() {
     summary,
     agentInventory,
     transferHistory,
-    isLoading,
+    isLoadingInventory,
+    isLoadingSummary,
+    isLoadingHistory,
     fetchSummary,
     fetchAgentInventory,
     fetchTransferHistory,
@@ -513,7 +515,7 @@ export default function AgentInventoryManagement() {
     );
   };
 
-  if (isLoading && !summary && !agentInventory && !transferHistory) {
+  if ((isLoadingSummary || isLoadingInventory || isLoadingHistory) && !summary && !agentInventory && !transferHistory) {
     return (
       <div className="flex items-center justify-center h-64">
         <div role="status" className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600">

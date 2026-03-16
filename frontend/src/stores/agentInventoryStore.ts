@@ -24,7 +24,9 @@ interface AgentInventoryState {
   agentInventory: AgentInventoryResponse | null;
   summary: InventorySummaryResponse | null;
   transferHistory: TransferHistoryResponse | null;
-  isLoading: boolean;
+  isLoadingInventory: boolean;
+  isLoadingSummary: boolean;
+  isLoadingHistory: boolean;
   error: string | null;
 
   fetchProductAgentStock: (productId: number) => Promise<void>;
@@ -63,53 +65,55 @@ export const useAgentInventoryStore = create<AgentInventoryState>((set, get) => 
   agentInventory: null,
   summary: null,
   transferHistory: null,
-  isLoading: false,
+  isLoadingInventory: false,
+  isLoadingSummary: false,
+  isLoadingHistory: false,
   error: null,
 
   fetchProductAgentStock: async (productId: number) => {
-    set({ isLoading: true, error: null });
+    set({ isLoadingInventory: true, error: null });
     try {
       const data = await agentInventoryService.getProductAgentStock(productId);
       set((state) => ({
         productAgentStock: { ...state.productAgentStock, [productId]: data },
-        isLoading: false,
+        isLoadingInventory: false,
       }));
     } catch (error: any) {
       const msg = error.response?.data?.error || 'Failed to fetch agent stock';
-      set({ error: msg, isLoading: false });
+      set({ error: msg, isLoadingInventory: false });
     }
   },
 
   fetchAgentInventory: async (agentId: number) => {
-    set({ isLoading: true, error: null });
+    set({ isLoadingInventory: true, error: null });
     try {
       const data = await agentInventoryService.getAgentInventory(agentId);
-      set({ agentInventory: data, isLoading: false });
+      set({ agentInventory: data, isLoadingInventory: false });
     } catch (error: any) {
       const msg = error.response?.data?.error || 'Failed to fetch agent inventory';
-      set({ error: msg, isLoading: false });
+      set({ error: msg, isLoadingInventory: false });
     }
   },
 
   fetchSummary: async () => {
-    set({ isLoading: true, error: null });
+    set({ isLoadingSummary: true, error: null });
     try {
       const data = await agentInventoryService.getSummary();
-      set({ summary: data, isLoading: false });
+      set({ summary: data, isLoadingSummary: false });
     } catch (error: any) {
       const msg = error.response?.data?.error || 'Failed to fetch inventory summary';
-      set({ error: msg, isLoading: false });
+      set({ error: msg, isLoadingSummary: false });
     }
   },
 
   fetchTransferHistory: async (params) => {
-    set({ isLoading: true, error: null });
+    set({ isLoadingHistory: true, error: null });
     try {
       const data = await agentInventoryService.getTransferHistory(params);
-      set({ transferHistory: data, isLoading: false });
+      set({ transferHistory: data, isLoadingHistory: false });
     } catch (error: any) {
       const msg = error.response?.data?.error || 'Failed to fetch transfer history';
-      set({ error: msg, isLoading: false });
+      set({ error: msg, isLoadingHistory: false });
     }
   },
 

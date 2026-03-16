@@ -2,8 +2,7 @@ import Bull from 'bull';
 import { FinancialSyncService } from '../services/financialSyncService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-
-const SYSTEM_USER_ID = 1;
+import { SYSTEM_USER_ID } from '../config/constants';
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -83,8 +82,10 @@ financialReconciliationQueue.process('reconcile-delivered-orders', async () => {
 
     logger.info(`Financial reconciliation complete: ${synced} synced, ${failed} failed, ${unsynced.length - synced - failed} already up-to-date.`);
 
-    if (failed > 0) {
-        throw new Error(`${failed} orders failed reconciliation — will retry.`);
+    if (failed > 0 && failed === unsynced.length) {
+        throw new Error(`All ${failed} orders failed reconciliation — will retry.`);
+    } else if (failed > 0) {
+        logger.warn(`Partial reconciliation: ${failed}/${unsynced.length} orders failed — next run will retry.`);
     }
 });
 
