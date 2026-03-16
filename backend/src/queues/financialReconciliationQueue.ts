@@ -103,7 +103,8 @@ export const setupFinancialReconciliationCron = async () => {
     await financialReconciliationQueue.add('reconcile-delivered-orders', {}, {
         repeat: {
             cron: '*/15 * * * *'
-        }
+        },
+        timeout: 120_000, // 2 minutes — prevents silent kills when processing 50 orders on slow DB
     });
 
     logger.info('Financial reconciliation cron job scheduled (every 15 minutes).');

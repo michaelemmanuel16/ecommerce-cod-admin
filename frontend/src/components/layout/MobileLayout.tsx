@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { Home, Truck, Package, Menu, X, Wallet, Settings, LogOut } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
-import { DESKTOP_FLAG } from '../../constants/mobile';
+import { DESKTOP_FLAG, MOBILE_OPT_IN } from '../../constants/mobile';
 
 const tabs = [
   { to: '/m/', icon: Home, label: 'Dashboard' },
@@ -20,7 +20,7 @@ export function MobileLayout() {
   // the user's explicit mobile preference.
   const handleSwitchDesktop = () => {
     localStorage.setItem(DESKTOP_FLAG, 'true');
-    localStorage.removeItem('mobile_opt_in');
+    localStorage.removeItem(MOBILE_OPT_IN);
     navigate('/');
   };
 

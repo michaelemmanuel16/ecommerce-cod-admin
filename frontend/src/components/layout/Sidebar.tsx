@@ -21,7 +21,7 @@ import {
 import { cn } from '../../utils/cn';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useAuthStore } from '../../stores/authStore';
-import { DESKTOP_FLAG } from '../../constants/mobile';
+import { DESKTOP_FLAG, MOBILE_OPT_IN } from '../../constants/mobile';
 
 const menuItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard', key: 'dashboard' },
@@ -113,7 +113,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
           <button
             onClick={() => {
               localStorage.removeItem(DESKTOP_FLAG);
-              localStorage.setItem('mobile_opt_in', 'true');
+              localStorage.setItem(MOBILE_OPT_IN, 'true');
               navigate('/m/');
             }}
             className={cn(

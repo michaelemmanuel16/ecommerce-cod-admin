@@ -9,7 +9,7 @@ import { UpdatePrompt } from './components/pwa/UpdatePrompt';
 import { OnboardingProvider } from './components/onboarding';
 import { CustomerRepOnboarding, OnboardingWelcomeModal } from './components/onboarding';
 import { useIsMobile } from './hooks/useIsMobile';
-import { DESKTOP_FLAG } from './constants/mobile';
+import { DESKTOP_FLAG, MOBILE_OPT_IN } from './constants/mobile';
 import { useConfigStore } from './stores/configStore';
 
 // Eager load authentication pages (critical path)
@@ -82,7 +82,7 @@ const MobileRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) =
     isMobile &&
     !location.pathname.startsWith('/m') &&
     localStorage.getItem(DESKTOP_FLAG) !== 'true' &&
-    localStorage.getItem('mobile_opt_in') === 'true'
+    localStorage.getItem(MOBILE_OPT_IN) === 'true'
   ) {
     return <Navigate to="/m/" replace />;
   }
