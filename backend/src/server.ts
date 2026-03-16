@@ -7,6 +7,7 @@ import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import fs from 'fs';
 import path from 'path';
 import { initializeSocket } from './sockets';
 import { errorHandler, notFound } from './middleware/errorHandler';
@@ -210,6 +211,29 @@ if (process.env.NODE_ENV !== 'test') {
         }
       } catch (err) {
         logger.error('GL balance verification cron failed', { error: err });
+      }
+    });
+
+    // Daily cleanup of old upload files at 03:00 AM
+    cron.schedule('0 3 * * *', async () => {
+      logger.info('Running daily upload cleanup...');
+      try {
+        const uploadsDir = path.join(__dirname, '../uploads');
+        if (!fs.existsSync(uploadsDir)) return;
+        const files = fs.readdirSync(uploadsDir);
+        const cutoff = Date.now() - (60 * 24 * 60 * 60 * 1000);
+        let deleted = 0;
+        for (const file of files) {
+          const filePath = path.join(uploadsDir, file);
+          const stat = fs.statSync(filePath);
+          if (stat.isFile() && stat.mtimeMs < cutoff) {
+            fs.unlinkSync(filePath);
+            deleted++;
+          }
+        }
+        logger.info(`Upload cleanup complete: deleted ${deleted} files older than 60 days`);
+      } catch (error) {
+        logger.error('Upload cleanup failed:', error);
       }
     });
 
