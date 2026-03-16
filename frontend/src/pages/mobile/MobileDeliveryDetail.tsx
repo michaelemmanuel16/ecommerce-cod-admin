@@ -132,8 +132,12 @@ export default function MobileDeliveryDetail() {
     if (!file) return;
     try {
       const resized = await resizeImage(file);
+      const previewUrl = URL.createObjectURL(resized);
+      if (!previewUrl.startsWith('blob:')) {
+        throw new Error('Invalid preview URL');
+      }
       setPhoto(resized);
-      setPhotoPreview(URL.createObjectURL(resized));
+      setPhotoPreview(previewUrl);
     } catch {
       toast.error('Failed to process photo');
     }
