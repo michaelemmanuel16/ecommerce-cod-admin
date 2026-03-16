@@ -14,29 +14,67 @@ declare global {
   }
 }
 
-function loadFacebookPixel(pixelId: string): void {
-  if (document.getElementById('fb-pixel')) return;
+function generateEventId(): string | undefined {
+  return typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : undefined;
+}
 
-  // Set up fbq stub
+// Tracks which pixel+event combinations have already been sent to prevent
+// duplicate beacons from React StrictMode, component remounts, etc.
+const sentBeacons = new Set<string>();
+
+function sendFbPixelBeacon(pixelId: string, event: string, params?: Record<string, string | number>, eventId?: string): void {
+  const url = new URL('https://www.facebook.com/tr');
+  url.searchParams.set('id', pixelId);
+  url.searchParams.set('ev', event);
+  url.searchParams.set('noscript', '1');
+  if (eventId) {
+    url.searchParams.set('eid', eventId);
+  }
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.set(k, String(v));
+    }
+  }
+  const img = new Image(1, 1);
+  img.style.display = 'none';
+  img.onload = () => img.remove();
+  img.onerror = () => img.remove();
+  img.src = url.toString();
+  (document.body ?? document.documentElement).appendChild(img);
+}
+
+function loadFacebookPixel(pixelId: string): void {
+  if (!/^\d+$/.test(pixelId)) return;
+
+  // Dedup: checkout is a single page with no SPA navigation, so one
+  // PageView per pixel per module lifetime is correct.
+  const beaconKey = `pageview-${pixelId}`;
+  if (sentBeacons.has(beaconKey)) return;
+  sentBeacons.add(beaconKey);
+
+  const eventId = generateEventId();
+
   if (!window.fbq) {
-    const fbq: any = function (...args: any[]) {
-      (fbq.q = fbq.q || []).push(args);
-    };
-    fbq.q = [];
-    fbq.loaded = true;
-    fbq.version = '2.0';
-    window.fbq = fbq;
-    window._fbq = fbq;
+    // Inject Facebook's exact standard pixel snippet via inline script.
+    // This must run as a single inline script to ensure fbevents.js
+    // fully initializes its internal pipeline (plugins, beacon sender).
+    const script = document.createElement('script');
+    script.textContent = eventId
+      ? `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixelId}');fbq('track','PageView',{},{eventID:'${eventId}'});`
+      : `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixelId}');fbq('track','PageView');`;
+    document.head.appendChild(script);
+  } else {
+    // fbq already exists (e.g. GTM on WordPress parent page) —
+    // still need to register our pixel ID so trackPurchase events route correctly
+    window.fbq('init', pixelId);
+    window.fbq('track', 'PageView', {}, eventId ? { eventID: eventId } : {});
   }
 
-  const script = document.createElement('script');
-  script.id = 'fb-pixel';
-  script.async = true;
-  script.src = 'https://connect.facebook.net/en_US/fbevents.js';
-  document.head.appendChild(script);
-
-  window.fbq!('init', pixelId);
-  window.fbq!('track', 'PageView');
+  // NOTE: Both fbq and the image beacon always fire together.
+  // Facebook deduplicates via the shared eventID.
+  // Intentional: fbevents.js can silently drop beacons even when fbq exists,
+  // and fbq may have been pre-loaded by a parent page (e.g. GTM on WordPress).
+  sendFbPixelBeacon(pixelId, 'PageView', undefined, eventId);
 }
 
 function loadGA4(measurementId: string): void {
@@ -133,8 +171,20 @@ export function trackInitiateCheckout(config: PixelConfig): void {
 }
 
 export function trackPurchase(config: PixelConfig, value: number, currency: string, orderId?: number | string): void {
-  if (config.facebookPixelId && window.fbq) {
-    window.fbq('track', 'Purchase', { value, currency });
+  if (config.facebookPixelId && /^\d+$/.test(config.facebookPixelId)) {
+    // Dedup by orderId when available; skip dedup if no orderId (can't reliably dedup)
+    const purchaseKey = orderId != null ? `purchase-${config.facebookPixelId}-${orderId}` : null;
+    if (!purchaseKey || !sentBeacons.has(purchaseKey)) {
+      if (purchaseKey) sentBeacons.add(purchaseKey);
+      const eventId = generateEventId();
+      if (window.fbq) {
+        window.fbq('track', 'Purchase', { value, currency }, eventId ? { eventID: eventId } : {});
+      }
+      // NOTE: Both fbq and the image beacon always fire together.
+      // Facebook deduplicates via the shared eventID.
+      // Intentional: fbevents.js can silently drop beacons even when fbq exists.
+      sendFbPixelBeacon(config.facebookPixelId, 'Purchase', { 'cd[value]': value, 'cd[currency]': currency }, eventId);
+    }
   }
 
   if (config.googleAnalyticsId && window.gtag) {

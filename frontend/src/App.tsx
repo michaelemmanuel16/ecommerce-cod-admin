@@ -15,6 +15,8 @@ import { useConfigStore } from './stores/configStore';
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
 
 // Lazy load all other pages for better initial load performance
@@ -117,6 +119,8 @@ function App() {
             {/* Auth routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             {/* Mobile routes for delivery agents */}
             <Route
               path="/m"
