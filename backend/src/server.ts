@@ -44,6 +44,7 @@ import cron from 'node-cron';
 // Initialize workflow queue worker
 import './queues/workflowQueue';
 import { setupAgingCron } from './queues/agingQueue';
+import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 
 // Validate environment variables before starting server
 try {
@@ -188,6 +189,9 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup Agent Aging Cron Job
     await setupAgingCron();
+
+    // Setup Financial Reconciliation Cron Job
+    await setupFinancialReconciliationCron();
 
     // Daily GL balance verification at 02:00 AM
     cron.schedule('0 2 * * *', async () => {

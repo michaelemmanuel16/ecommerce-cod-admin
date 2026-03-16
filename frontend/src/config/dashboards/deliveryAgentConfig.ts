@@ -3,17 +3,9 @@
  *
  * Focus: Daily earnings, delivery performance, active routes, efficiency
  *
- * Metrics:
- * - Personal earnings from deliveries
- * - Active deliveries to complete
- * - Completed deliveries
- * - Success rate
- *
- * Charts:
- * - Earnings over time
- * - Delivery status distribution
- * - Performance metrics
- * - Recent deliveries list (per user feedback: NOT "Delivery Areas")
+ * Layout:
+ * - Row 1: 4 stat cards (earnings, active, completed, success rate)
+ * - Row 2: Orders by Status donut chart (2/3) + Pending Orders widget (1/3)
  */
 
 import { DashboardConfig } from '../types/dashboard';
@@ -42,6 +34,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       iconColor: 'text-green-600',
       dataSource: 'calculated.myEarnings',
       format: 'currency',
+      info: 'Total earnings based on your delivery rate per completed delivery this period',
       subtitle: {
         template: 'From {count} deliveries',
         dataSources: {
@@ -61,6 +54,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       iconColor: 'text-blue-600',
       dataSource: 'agentPerformance.activeDeliveries',
       format: 'number',
+      info: 'Orders currently assigned to you that are in progress',
       subtitle: {
         template: 'In progress',
         dataSources: {},
@@ -77,6 +71,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       iconColor: 'text-indigo-600',
       dataSource: 'agentPerformance.completedDeliveries',
       format: 'number',
+      info: 'Total deliveries you have completed this period',
       subtitle: {
         template: '{successful} successful',
         dataSources: {
@@ -96,6 +91,7 @@ export const deliveryAgentConfig: DashboardConfig = {
       iconColor: 'text-orange-600',
       dataSource: 'calculated.mySuccessRate',
       format: 'percentage',
+      info: 'Percentage of assigned deliveries successfully completed',
       subtitle: {
         template: '{failed} failed deliveries',
         dataSources: {
@@ -111,31 +107,13 @@ export const deliveryAgentConfig: DashboardConfig = {
 
   // Charts
   charts: [
-    // My Earnings Over Time (Line Chart)
+    // Orders by Status (Donut Chart) — real data from fetchOrdersByStatus
     {
-      id: 'my-earnings-trends',
-      type: 'lineChart',
-      title: 'My Earnings Over Time',
-      dataSource: 'earningsTrends',
-      gridPosition: { row: 1, col: 1, colSpan: 2 },
-      height: 300,
-      config: {
-        xAxis: 'date',
-        yAxis: ['earnings'],
-        colors: ['#10B981'],
-        showDots: true,
-        fill: true,
-        format: 'currency',
-      },
-    },
-
-    // My Delivery Status (Donut Chart)
-    {
-      id: 'my-delivery-status',
+      id: 'orders-by-status',
       type: 'donutChart',
-      title: 'My Delivery Status',
-      dataSource: 'deliveriesByStatus',
-      gridPosition: { row: 1, col: 3, colSpan: 1 },
+      title: 'Orders by Status',
+      dataSource: 'ordersByStatus',
+      gridPosition: { row: 1, col: 1, colSpan: 2 },
       height: 300,
       config: {
         nameKey: 'status',
@@ -143,81 +121,18 @@ export const deliveryAgentConfig: DashboardConfig = {
         innerRadius: 60,
         showLabels: true,
         showLegend: true,
-        colors: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'],
+        colors: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'],
       },
     },
-
-    // My Performance Metrics (Bar Chart)
+    // Pending Orders — real data from fetchPendingOrders
     {
-      id: 'my-performance-metrics',
-      type: 'barChart',
-      title: 'My Performance Metrics',
-      dataSource: 'performanceMetrics',
-      gridPosition: { row: 2, col: 1, colSpan: 1 },
+      id: 'pending-orders',
+      type: 'ordersAwaiting',
+      title: 'Pending Orders',
+      dataSource: 'pendingOrders',
+      gridPosition: { row: 1, col: 3, colSpan: 1 },
       height: 300,
-      config: {
-        xAxis: 'metric',
-        yAxis: 'value',
-        orientation: 'horizontal',
-        format: 'percentage',
-        colors: ['#3B82F6'],
-      },
-    },
-
-    // My Delivery Count by Day (Bar Chart)
-    {
-      id: 'my-daily-deliveries',
-      type: 'barChart',
-      title: 'My Daily Deliveries',
-      dataSource: 'dailyDeliveries',
-      gridPosition: { row: 2, col: 2, colSpan: 1 },
-      height: 300,
-      config: {
-        xAxis: 'date',
-        yAxis: 'count',
-        orientation: 'vertical',
-        format: 'number',
-        colors: ['#8B5CF6'],
-      },
-    },
-
-    // My Delivery Time Analysis (Line Chart)
-    {
-      id: 'my-delivery-time',
-      type: 'lineChart',
-      title: 'My Average Delivery Time',
-      dataSource: 'deliveryTimeAnalysis',
-      gridPosition: { row: 2, col: 3, colSpan: 1 },
-      height: 300,
-      config: {
-        xAxis: 'date',
-        yAxis: ['avgTime'],
-        colors: ['#F59E0B'],
-        showDots: true,
-        format: 'number',
-      },
-    },
-
-    // My Recent Deliveries (Data Table) - Per User Feedback
-    {
-      id: 'my-recent-deliveries',
-      type: 'dataTable',
-      title: 'My Recent Deliveries',
-      dataSource: 'recentDeliveries',
-      gridPosition: { row: 3, col: 1, colSpan: 3 },
-      height: 400,
-      config: {
-        columns: [
-          { key: 'orderId', label: 'Order ID', sortable: true },
-          { key: 'customerName', label: 'Customer', sortable: true },
-          { key: 'address', label: 'Address', sortable: false },
-          { key: 'status', label: 'Status', sortable: true },
-          { key: 'deliveryTime', label: 'Time', sortable: true, format: 'datetime' },
-          { key: 'earnings', label: 'Earnings', sortable: true, format: 'currency' },
-        ],
-        maxRows: 10,
-        onRowClick: 'order_details',
-      },
+      config: {},
     },
   ],
 
@@ -231,12 +146,8 @@ export const deliveryAgentConfig: DashboardConfig = {
   // Data fetchers needed
   dataFetchers: [
     'fetchDashboardMetrics',
-    'fetchEarningsTrends',
-    'fetchDeliveriesByStatus',
-    'fetchPerformanceMetrics',
-    'fetchDailyDeliveries',
-    'fetchDeliveryTimeAnalysis',
-    'fetchRecentDeliveries',
     'fetchAgentPerformance',
+    'fetchOrdersByStatus',
+    'fetchPendingOrders',
   ],
 };

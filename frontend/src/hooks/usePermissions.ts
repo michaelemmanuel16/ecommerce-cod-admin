@@ -34,7 +34,7 @@ export const usePermissions = () => {
       case 'customers':
         return can('customers', 'view');
       case 'products':
-        return can('products', 'view') && user?.role !== 'sales_rep';
+        return can('products', 'view') && !['sales_rep', 'delivery_agent'].includes(user?.role || '');
       case 'delivery-agents':
         return isManager; // Manager and above
       case 'customer-reps':
@@ -45,6 +45,8 @@ export const usePermissions = () => {
         return isManager || user?.role === 'accountant';
       case 'workflows':
         return can('workflows', 'view');
+      case 'agent-inventory':
+        return isManager || user?.role === 'inventory_manager' || user?.role === 'delivery_agent';
       case 'earnings-history':
         return user?.role === 'sales_rep'; // Only sales reps can access earnings history
       case 'settings':

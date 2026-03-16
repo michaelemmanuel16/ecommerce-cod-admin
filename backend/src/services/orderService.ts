@@ -251,16 +251,16 @@ export class OrderService {
       throw new AppError('Either customerId or customerPhone must be provided', 400);
     }
 
-    // Validate products and check stock
-    const productMap = new Map<number, any>();
+    // Validate products and check stock (batch query to avoid N+1)
+    const productIds = [...new Set(data.orderItems.map(item => item.productId))];
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } }
+    });
+    const productMap = new Map<number, any>(products.map(p => [p.id, p]));
     for (const item of data.orderItems) {
-      const product = await prisma.product.findUnique({
-        where: { id: item.productId }
-      });
-      if (!product) {
+      if (!productMap.has(item.productId)) {
         throw new AppError(`Product ID ${item.productId} not found`, 404);
       }
-      productMap.set(item.productId, product);
     }
 
     // Create order in transaction
@@ -337,11 +337,13 @@ export class OrderService {
     // Emit socket event for real-time update
     emitOrderCreated(getSocketInstance() as any, order);
 
-    // Trigger workflows with order_created trigger (async, don't block order creation)
-    workflowService.triggerOrderCreatedWorkflows(order).catch(error => {
-      logger.error('Failed to trigger order_created workflows', {
-        orderId: order.id,
-        error: error.message
+    // Trigger workflows with order_created trigger (fully detached from request cycle)
+    setImmediate(() => {
+      workflowService.triggerOrderCreatedWorkflows(order).catch(error => {
+        logger.error('Failed to trigger order_created workflows', {
+          orderId: order.id,
+          error: error.message
+        });
       });
     });
 
@@ -1052,7 +1054,10 @@ export class OrderService {
               });
             }
           } else if (isConfirmingDelivery) {
-            // Transition C: out_for_delivery → delivered — stock already deducted; confirm agent delivery
+            // Transition C: out_for_delivery → delivered — stock already deducted; confirm agent delivery.
+            // NOTE: This is the sole call site for confirmOrderDelivery on the normal delivery path.
+            // A duplicate block that ran the same logic was removed — it matched the same condition
+            // (out_for_delivery → delivered + deliveryAgentId) and called confirmOrderDelivery identically.
             await agentInventoryService.confirmOrderDelivery(
               tx,
               orderId,
@@ -1061,23 +1066,6 @@ export class OrderService {
               data.changedBy ?? order.deliveryAgentId!
             );
           }
-        }
-      }
-
-      // Handle out_for_delivery → delivered: confirm agent stock delivery
-      if (order.status === 'out_for_delivery' && data.status === 'delivered' && order.deliveryAgentId) {
-        const orderItems = await tx.order.findUnique({
-          where: { id: orderId },
-          include: { orderItems: true }
-        });
-        if (orderItems) {
-          await agentInventoryService.confirmOrderDelivery(
-            tx,
-            orderId,
-            order.deliveryAgentId,
-            orderItems.orderItems.map(item => ({ productId: item.productId, quantity: item.quantity })),
-            data.changedBy ?? order.deliveryAgentId
-          );
         }
       }
 
@@ -1195,30 +1183,33 @@ export class OrderService {
         }
       });
 
-      // Auto-sync financial data when order is delivered
-      if (data.status === 'delivered' && updatedOrder.codAmount) {
-        try {
-          const syncResult = await FinancialSyncService.syncOrderFinancialData(
-            tx as any,
-            updatedOrder as any,
-            data.changedBy || SYSTEM_USER_ID
-          );
+      return updatedOrder;
+    });
 
+    // Auto-sync financial data when order is delivered.
+    // Runs OUTSIDE the status-update transaction to avoid 30s+ timeout on large orders.
+    // Trade-off: if the process crashes between transaction commit and this callback,
+    // the order will be marked 'delivered' but GL entries won't be created.
+    // syncOrderFinancialData is idempotent (checks revenueRecognized + existing transaction),
+    // and the financialReconciliationQueue runs every 15 min to catch any missed orders.
+    if (data.status === 'delivered' && updated.codAmount) {
+      setImmediate(() => {
+        FinancialSyncService.syncOrderFinancialData(
+          prisma as any,
+          updated as any,
+          data.changedBy || SYSTEM_USER_ID
+        ).then(syncResult => {
           if (syncResult.transaction || syncResult.journalEntry) {
-            logger.info(`Financial data auto - synced for order ${orderId}`, {
+            logger.info(`Financial data auto-synced for order ${orderId}`, {
               transactionId: syncResult.transaction?.id,
               journalEntryNumber: syncResult.journalEntry?.entryNumber
             });
           }
-        } catch (syncError: any) {
-          // Log error but don't fail the status update
-          logger.error(`Failed to auto - sync financial data for order ${orderId}: `, syncError);
-          // Continue - order status is still updated
-        }
-      }
-
-      return updatedOrder;
-    });
+        }).catch(syncError => {
+          logger.error(`Failed to auto-sync financial data for order ${orderId}:`, syncError);
+        });
+      });
+    }
 
     logger.info(`Order status updated: ${order.id} `, {
       orderId,
@@ -1248,8 +1239,10 @@ export class OrderService {
     });
 
     // Trigger status change workflows (non-blocking)
-    workflowService.triggerStatusChangeWorkflows(orderId, order.status, data.status).catch(error => {
-      logger.error('Failed to trigger status change workflows', { orderId, error: error.message });
+    setImmediate(() => {
+      workflowService.triggerStatusChangeWorkflows(orderId, order.status, data.status).catch(error => {
+        logger.error('Failed to trigger status change workflows', { orderId, error: error.message });
+      });
     });
 
     return updated;

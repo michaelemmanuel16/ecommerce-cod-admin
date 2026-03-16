@@ -9,6 +9,7 @@ import { StatCardConfig, WidgetProps, DashboardData } from '../../../config/type
 import { formatValue } from '../../../utils/dashboard/formatters';
 import { calculateTrend, getTrendColorClass, getTrendIcon } from '../../../utils/dashboard/trendCalculator';
 import { resolveTemplate, resolveDataSource } from '../../../utils/dashboard/dataResolver';
+import { Tooltip } from '../../ui/Tooltip';
 
 interface StatCardWidgetProps extends WidgetProps {
   config: StatCardConfig;
@@ -67,33 +68,32 @@ export const StatCardWidget: React.FC<StatCardWidgetProps> = ({
 
   return (
     <div className={`bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden ${getOnboardingClasses()}`}>
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         {/* Header with icon and title */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className={`p-2 rounded-lg bg-gray-50 ${config.iconColor}`}>
-              <IconComponent className="w-5 h-5" />
+        <div className="flex items-start justify-between mb-2 sm:mb-4">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <div className={`p-1.5 sm:p-2 rounded-lg bg-gray-50 shrink-0 ${config.iconColor}`}>
+              <IconComponent className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <h3 className="text-sm font-medium text-gray-600">{config.title}</h3>
+            <h3 className="text-xs sm:text-sm font-medium text-gray-600 line-clamp-2">{config.title}</h3>
           </div>
 
-          {/* Info tooltip (if provided) */}
+          {/* Info tooltip (if provided) - hidden on small screens */}
           {config.info && (
-            <button
-              className="text-gray-400 hover:text-gray-600"
-              title={config.info}
-            >
-              <LucideIcons.Info className="w-4 h-4" />
-            </button>
+            <Tooltip content={config.info} position="bottom">
+              <button className="text-gray-400 hover:text-gray-600 hidden sm:block shrink-0">
+                <LucideIcons.Info className="w-4 h-4" />
+              </button>
+            </Tooltip>
           )}
         </div>
 
         {/* Main value */}
-        <div className="mb-3">
+        <div className="mb-1 sm:mb-3">
           {loading ? (
             <div className="h-10 w-32 bg-gray-200 animate-pulse rounded" />
           ) : (
-            <div className="text-3xl font-bold text-gray-900">
+            <div className="text-lg sm:text-3xl font-bold text-gray-900 truncate">
               {formattedValue.formatted}
             </div>
           )}
@@ -112,7 +112,7 @@ export const StatCardWidget: React.FC<StatCardWidgetProps> = ({
 
         {/* Subtitle */}
         {subtitleText && !loading && (
-          <p className="text-sm text-gray-500 mt-2">
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 sm:mt-2 truncate">
             {subtitleText}
           </p>
         )}
@@ -139,15 +139,3 @@ export const StatCardWidget: React.FC<StatCardWidgetProps> = ({
   );
 };
 
-/**
- * Helper to format comparison period labels
- */
-function formatComparisonLabel(comparison: string): string {
-  const labels: Record<string, string> = {
-    previousPeriod: 'previous period',
-    yesterday: 'yesterday',
-    lastWeek: 'last week',
-    lastMonth: 'last month',
-  };
-  return labels[comparison] || comparison;
-}

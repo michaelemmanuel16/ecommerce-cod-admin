@@ -34,17 +34,20 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const handleRefresh = async () => {
     if (onRefresh) {
       setRefreshing(true);
-      await onRefresh();
-      setRefreshing(false);
+      try {
+        await onRefresh();
+      } finally {
+        setRefreshing(false);
+      }
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{config.title}</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{config.title}</h1>
           {config.description && (
             <p className="text-sm text-gray-500 mt-1">{config.description}</p>
           )}
@@ -60,23 +63,76 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                   right: 0;
                   transform: none;
                 }
+                @media (max-width: 768px) {
+                  .dashboard-date-picker .date-range-popover {
+                    position: fixed;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    top: auto;
+                    max-height: 85vh;
+                    border-radius: 1rem 1rem 0 0;
+                    flex-direction: column;
+                    overflow-y: auto;
+                  }
+                  .dashboard-date-picker .date-range-presets {
+                    width: 100%;
+                    border-right: none;
+                    border-bottom: 1px solid #e5e7eb;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.25rem;
+                    padding: 0.75rem;
+                    position: sticky;
+                    top: 0;
+                    background: white;
+                    z-index: 1;
+                  }
+                  .dashboard-date-picker .date-range-preset-btn {
+                    width: auto;
+                    padding: 0.375rem 0.75rem;
+                    font-size: 0.75rem;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 999px;
+                  }
+                  .dashboard-date-picker .date-range-preset-btn.active {
+                    border-color: #2563eb;
+                  }
+                  .dashboard-date-picker .calendars-row {
+                    flex-direction: column;
+                    gap: 0;
+                    align-items: center;
+                  }
+                  .dashboard-date-picker .calendar-grid-container {
+                    width: auto;
+                  }
+                  .dashboard-date-picker .date-range-calendars {
+                    padding: 0.5rem;
+                  }
+                  .dashboard-date-picker .date-range-actions {
+                    position: sticky;
+                    bottom: 0;
+                    background: white;
+                    padding: 0.75rem;
+                    margin-top: 0;
+                    border-top: 1px solid #e5e7eb;
+                  }
+                  .dashboard-date-picker .date-range-backdrop {
+                    background: rgba(0,0,0,0.4);
+                  }
+                }
               `}</style>
               <div className="dashboard-date-picker">
                 <DateRangePicker
                   startDate={dateRange?.startDate}
                   endDate={dateRange?.endDate}
                   onChange={(start, end) => {
-                    console.log('[DashboardLayout] Date range onChange called:', { start, end });
                     if (start && end) {
-                      console.log('[DashboardLayout] Setting custom date range:', { startDate: start, endDate: end });
-                      // User selected custom date range
                       onDateRangeChange({
                         startDate: start,
                         endDate: end,
                       });
                     } else {
-                      console.log('[DashboardLayout] Clearing date range, resetting to preset');
-                      // User cleared the date range - reset to default preset
                       onDateRangeChange({
                         preset: config.defaultDateRange || 'last-30-days',
                       });
@@ -122,7 +178,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       )}
 
       {/* Stat Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
         {config.statCards.map((cardConfig) => (
           <WidgetRenderer
             key={cardConfig.id}
