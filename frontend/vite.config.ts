@@ -14,13 +14,13 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['vite.svg', 'icons/*.png'],
       manifest: {
-        name: 'COD Admin Pro - Agent',
-        short_name: 'COD Agent',
-        description: 'Delivery agent mobile app for COD Admin Pro',
+        name: 'COD Admin Pro',
+        short_name: 'COD Admin',
+        description: 'COD Admin Pro - E-commerce management dashboard',
         theme_color: '#1e3a5f',
         background_color: '#ffffff',
         display: 'standalone',
-        start_url: '/m/',
+        start_url: '/',
         scope: '/',
         icons: [
           {
@@ -51,7 +51,7 @@ export default defineConfig({
         navigateFallback: '/index.html',
         runtimeCaching: [
           {
-            urlPattern: /\/api\/.*/,
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

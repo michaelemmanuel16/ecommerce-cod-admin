@@ -63,7 +63,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                   right: 0;
                   transform: none;
                 }
-                @media (max-width: 640px) {
+                @media (max-width: 768px) {
                   .dashboard-date-picker .date-range-popover {
                     position: fixed;
                     left: 0;

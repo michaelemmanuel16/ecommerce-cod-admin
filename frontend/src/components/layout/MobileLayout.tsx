@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Home, Truck, Package, Menu, X, Wallet, Settings, LogOut, Bell } from 'lucide-react';
+import { Home, Truck, Package, Menu, X, Wallet, Settings, LogOut } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { DESKTOP_FLAG } from '../../constants/mobile';
 
@@ -36,9 +36,6 @@ export function MobileLayout() {
           <span className="font-semibold text-gray-900 text-sm">COD Agent</span>
         </div>
         <div className="flex items-center gap-3">
-          <button className="relative p-1.5 text-gray-500 hover:text-gray-700" aria-label="Notifications">
-            <Bell size={20} />
-          </button>
           <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
             <span className="text-blue-700 text-xs font-medium">
               {user?.name?.charAt(0)?.toUpperCase() || 'A'}
