@@ -180,6 +180,11 @@ export function useDashboardData(
           ).toFixed(2);
         }
 
+        // Success rate (for delivery agents)
+        if (dashboardData.myPerformance) {
+          calculated.mySuccessRate = dashboardData.myPerformance.successRate?.toFixed(1);
+        }
+
         dashboardData.calculated = calculated;
       }
 
@@ -374,13 +379,30 @@ async function executeFetcher(
     case 'fetchAgentPerformance':
       await storeMethods.fetchAgentPerformance();
       const agentPerf = useAnalyticsStore.getState().agentPerformance;
-      dashboardData.agentPerformance = agentPerf;
 
-      // Filter for current user if role is delivery_agent
       if (user?.role === 'delivery_agent') {
-        dashboardData.myPerformance = agentPerf.find(
-          (agent: any) => agent.userId === user.id
-        );
+        const myPerf = agentPerf.find((agent: any) => agent.userId === user.id);
+        dashboardData.myPerformance = myPerf;
+
+        // Transform backend fields to match config data paths
+        if (myPerf) {
+          dashboardData.agentPerformance = {
+            completedDeliveries: myPerf.completed || 0,
+            activeDeliveries: myPerf.pending || 0,
+            successfulDeliveries: myPerf.completed || 0,
+            failedDeliveries: myPerf.failed || 0,
+            totalAssigned: myPerf.totalAssigned || 0,
+            successRate: myPerf.successRate || 0,
+          };
+        } else {
+          dashboardData.agentPerformance = {
+            completedDeliveries: 0, activeDeliveries: 0,
+            successfulDeliveries: 0, failedDeliveries: 0,
+            totalAssigned: 0, successRate: 0,
+          };
+        }
+      } else {
+        dashboardData.agentPerformance = agentPerf;
       }
       break;
 

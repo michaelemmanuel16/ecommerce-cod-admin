@@ -1,12 +1,16 @@
 import React, { Suspense, lazy, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Layout } from './components/layout/Layout';
 import { Toast } from './components/ui/Toast';
 import { Loading } from './components/ui/Loading';
+import { UpdatePrompt } from './components/pwa/UpdatePrompt';
 import { OnboardingProvider } from './components/onboarding';
 import { CustomerRepOnboarding, OnboardingWelcomeModal } from './components/onboarding';
+import { useIsMobile } from './hooks/useIsMobile';
+import { DESKTOP_FLAG } from './constants/mobile';
+import { useConfigStore } from './stores/configStore';
 
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
@@ -33,6 +37,22 @@ const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ de
 const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
+const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
+const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
+
+// Mobile pages
+const MobileLayout = lazy(() => import('./components/layout/MobileLayout').then(m => ({ default: m.MobileLayout })));
+const MobileDeliveries = lazy(() => import('./pages/mobile/MobileDeliveries'));
+const MobileDeliveryDetail = lazy(() => import('./pages/mobile/MobileDeliveryDetail'));
+const MobileCollections = lazy(() => import('./pages/mobile/MobileCollections'));
+
+const AgentInventoryRoute: React.FC = () => {
+  const { user } = useAuthStore();
+  if (user?.role === 'delivery_agent') {
+    return <AgentMyInventory />;
+  }
+  return <AgentInventoryManagement />;
+};
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
@@ -49,7 +69,26 @@ const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }>
   return <>{children}</>;
 };
 
-import { useConfigStore } from './stores/configStore';
+const MobileRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuthStore();
+  const isMobile = useIsMobile();
+  const location = useLocation();
+
+  // Only auto-redirect when the user has explicitly opted in via the "Mobile View"
+  // sidebar button (which sets MOBILE_OPT_IN). Without opt-in, mobile agents stay on
+  // the desktop view because key mobile pages (Deliveries) are still stubs.
+  if (
+    user?.role === 'delivery_agent' &&
+    isMobile &&
+    !location.pathname.startsWith('/m') &&
+    localStorage.getItem(DESKTOP_FLAG) !== 'true' &&
+    localStorage.getItem('mobile_opt_in') === 'true'
+  ) {
+    return <Navigate to="/m/" replace />;
+  }
+
+  return <>{children}</>;
+};
 
 function App() {
   const { isAuthenticated, refreshPermissions, setupPermissionListener } = useAuthStore();
@@ -86,11 +125,45 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            {/* Mobile routes for delivery agents */}
+            <Route
+              path="/m"
+              element={
+                <ProtectedRoute>
+                  <RoleGuard allowedRoles={['delivery_agent']}>
+                    <Suspense fallback={<Loading />}>
+                      <MobileLayout />
+                    </Suspense>
+                  </RoleGuard>
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<DynamicDashboard />} />
+              <Route path="deliveries" element={
+                <Suspense fallback={<Loading />}><MobileDeliveries /></Suspense>
+              } />
+              <Route path="deliveries/:id" element={
+                <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
+              } />
+              <Route path="inventory" element={
+                <Suspense fallback={<Loading />}><AgentMyInventory /></Suspense>
+              } />
+              <Route path="collections" element={
+                <Suspense fallback={<Loading />}><MobileCollections /></Suspense>
+              } />
+              <Route path="settings" element={
+                <Suspense fallback={<Loading />}><Settings /></Suspense>
+              } />
+            </Route>
+
+            {/* Desktop routes */}
             <Route
               path="/"
               element={
                 <ProtectedRoute>
-                  <Layout />
+                  <MobileRedirect>
+                    <Layout />
+                  </MobileRedirect>
                 </ProtectedRoute>
               }
             >
@@ -184,6 +257,13 @@ function App() {
                   </Suspense>
                 </RoleGuard>
               } />
+              <Route path="agent-inventory" element={
+                <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'inventory_manager', 'delivery_agent']}>
+                  <Suspense fallback={<Loading />}>
+                    <AgentInventoryRoute />
+                  </Suspense>
+                </RoleGuard>
+              } />
               <Route path="earnings-history" element={
                 <RoleGuard allowedRoles={['sales_rep']}>
                   <Suspense fallback={<Loading />}>
@@ -198,6 +278,7 @@ function App() {
           <OnboardingWelcomeModal />
         </BrowserRouter>
         <Toast />
+        <UpdatePrompt />
       </OnboardingProvider>
     </ErrorBoundary>
   );

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { CheckoutForm, CheckoutFormData } from '../components/public/CheckoutForm';
 import { OrderSuccess } from '../components/public/OrderSuccess';
 import { publicOrdersService, PublicCheckoutForm, PublicOrderData } from '../services/public-orders.service';
-import { initPixels } from '../utils/pixelTracking';
+import { initPixels, trackInitiateCheckout } from '../utils/pixelTracking';
 import { PixelConfig } from '../types/checkout-form';
 import toast from 'react-hot-toast';
 
@@ -66,6 +66,7 @@ export const PublicCheckout: React.FC = () => {
   useEffect(() => {
     if (formData?.pixelConfig) {
       initPixels(formData.pixelConfig as PixelConfig);
+      trackInitiateCheckout(formData.pixelConfig as PixelConfig);
     }
   }, [formData?.pixelConfig]);
 
