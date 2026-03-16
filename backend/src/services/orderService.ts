@@ -1191,7 +1191,7 @@ export class OrderService {
     // Trade-off: if the process crashes between transaction commit and this callback,
     // the order will be marked 'delivered' but GL entries won't be created.
     // syncOrderFinancialData is idempotent (checks revenueRecognized + existing transaction),
-    // so a manual retry or scheduled reconciliation job can recover the gap.
+    // and the financialReconciliationQueue runs every 15 min to catch any missed orders.
     if (data.status === 'delivered' && updated.codAmount) {
       setImmediate(() => {
         FinancialSyncService.syncOrderFinancialData(
