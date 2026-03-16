@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Phone, MapPin, Camera, Check, X, AlertTriangle, RotateCcw } from 'lucide-react';
 import { deliveriesService, DeliveryListItem, formatDeliveryAddress } from '../../services/deliveries.service';
@@ -67,20 +67,20 @@ export default function MobileDeliveryDetail() {
   const [recipientName, setRecipientName] = useState('');
   const [codAmount, setCodAmount] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Failed sheet
-  const [showFailedSheet, setShowFailedSheet] = useState(false);
-  const [failReason, setFailReason] = useState('');
-  const [reschedule, setReschedule] = useState(false);
-
-  // Revoke photo preview object URL on unmount
+  // Derive preview URL from photo File — avoids passing string through state (CodeQL safe)
+  const photoPreview = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
   useEffect(() => {
     return () => {
       if (photoPreview) URL.revokeObjectURL(photoPreview);
     };
   }, [photoPreview]);
+
+  // Failed sheet
+  const [showFailedSheet, setShowFailedSheet] = useState(false);
+  const [failReason, setFailReason] = useState('');
+  const [reschedule, setReschedule] = useState(false);
 
   const fetchDelivery = useCallback(async () => {
     if (!id) return;
@@ -123,7 +123,6 @@ export default function MobileDeliveryDetail() {
     setRecipientName(customer ? `${customer.firstName} ${customer.lastName}` : '');
     setCodAmount(totalAmount.toFixed(2));
     setPhoto(null);
-    setPhotoPreview(null);
     setShowCompleteSheet(true);
   };
 
@@ -132,12 +131,7 @@ export default function MobileDeliveryDetail() {
     if (!file) return;
     try {
       const resized = await resizeImage(file);
-      const previewUrl = URL.createObjectURL(resized);
-      if (!previewUrl.startsWith('blob:')) {
-        throw new Error('Invalid preview URL');
-      }
       setPhoto(resized);
-      setPhotoPreview(previewUrl);
     } catch {
       toast.error('Failed to process photo');
     }
@@ -393,7 +387,7 @@ export default function MobileDeliveryDetail() {
               <div className="mb-4 relative">
                 <img src={photoPreview} alt="Proof" className="w-full h-40 object-cover rounded-lg" />
                 <button
-                  onClick={() => { if (photoPreview) URL.revokeObjectURL(photoPreview); setPhoto(null); setPhotoPreview(null); }}
+                  onClick={() => setPhoto(null)}
                   className="absolute top-2 right-2 p-1 bg-black/50 rounded-full"
                 >
                   <X size={14} className="text-white" />
