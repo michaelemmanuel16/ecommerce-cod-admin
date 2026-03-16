@@ -104,9 +104,10 @@ apiClient.interceptors.response.use(
     };
 
     if (error.response?.status === 401 && !originalRequest._retry) {
-      // Skip auto-logout for login/register endpoints - let them handle their own errors
+      // Skip auto-logout for auth endpoints that handle their own errors
       const isAuthEndpoint = originalRequest.url?.includes('/api/auth/login') ||
-        originalRequest.url?.includes('/api/auth/register');
+        originalRequest.url?.includes('/api/auth/register') ||
+        originalRequest.url?.includes('/api/auth/logout');
 
       if (isAuthEndpoint) {
         // Let login/register pages handle 401 errors with their own UI

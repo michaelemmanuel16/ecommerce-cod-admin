@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -15,9 +15,13 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
+  Boxes,
+  Smartphone,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useAuthStore } from '../../stores/authStore';
+import { DESKTOP_FLAG } from '../../constants/mobile';
 
 const menuItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard', key: 'dashboard' },
@@ -25,6 +29,7 @@ const menuItems = [
   { path: '/customers', icon: Users, label: 'Customers', key: 'customers' },
   { path: '/products', icon: Package, label: 'Products', key: 'products' },
   { path: '/delivery-agents', icon: Truck, label: 'Delivery Agents', key: 'delivery-agents' },
+  { path: '/agent-inventory', icon: Boxes, label: 'Agent Inventory', key: 'agent-inventory' },
   { path: '/customer-reps', icon: UserCog, label: 'Customer Reps', key: 'customer-reps' },
   { path: '/financial', icon: DollarSign, label: 'Financial', key: 'financial' },
   { path: '/earnings-history', icon: History, label: 'Earnings History', key: 'earnings-history' },
@@ -40,6 +45,8 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
   const { canAccessMenu } = usePermissions();
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
 
   const visibleMenuItems = menuItems.filter(item => canAccessMenu(item.key));
 
@@ -99,6 +106,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
           </NavLink>
         ))}
       </nav>
+
+      {/* Switch to Mobile button for delivery agents */}
+      {user?.role === 'delivery_agent' && (
+        <div className="absolute bottom-4 left-4 right-4">
+          <button
+            onClick={() => {
+              localStorage.removeItem(DESKTOP_FLAG);
+              navigate('/m/');
+            }}
+            className={cn(
+              'flex items-center rounded-lg transition-colors w-full text-gray-300 hover:bg-gray-800',
+              isCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-4 py-3'
+            )}
+            title={isCollapsed ? 'Mobile View' : undefined}
+          >
+            <Smartphone className="w-5 h-5 flex-shrink-0" />
+            {!isCollapsed && <span>Mobile View</span>}
+          </button>
+        </div>
+      )}
     </aside>
   );
 };

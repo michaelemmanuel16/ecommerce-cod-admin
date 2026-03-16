@@ -113,6 +113,25 @@ export function initPixels(config: PixelConfig): void {
     loadGTM(config.googleTagManagerId);
 }
 
+export function trackInitiateCheckout(config: PixelConfig): void {
+  if (config.facebookPixelId && window.fbq) {
+    window.fbq('track', 'InitiateCheckout');
+  }
+
+  if (config.googleAnalyticsId && window.gtag) {
+    window.gtag('event', 'begin_checkout');
+  }
+
+  if (config.tiktokPixelId && window.ttq) {
+    window.ttq.track('InitiateCheckout');
+  }
+
+  if (config.googleTagManagerId) {
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({ event: 'begin_checkout' });
+  }
+}
+
 export function trackPurchase(config: PixelConfig, value: number, currency: string, orderId?: number | string): void {
   if (config.facebookPixelId && window.fbq) {
     window.fbq('track', 'Purchase', { value, currency });

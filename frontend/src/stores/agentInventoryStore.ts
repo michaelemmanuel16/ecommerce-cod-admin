@@ -2,17 +2,35 @@ import { create } from 'zustand';
 import {
   agentInventoryService,
   ProductAgentStockResponse,
-  AgentStockItem,
+  AgentInventoryResponse,
+  InventorySummaryResponse,
+  TransferHistoryResponse,
 } from '../services/agent-inventory.service';
 import toast from 'react-hot-toast';
+
+interface TransferHistoryParams {
+  productId?: number;
+  agentId?: number;
+  type?: string;
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  limit?: number;
+}
 
 interface AgentInventoryState {
   // Product agent stock cache keyed by productId
   productAgentStock: Record<number, ProductAgentStockResponse>;
+  agentInventory: AgentInventoryResponse | null;
+  summary: InventorySummaryResponse | null;
+  transferHistory: TransferHistoryResponse | null;
   isLoading: boolean;
   error: string | null;
 
   fetchProductAgentStock: (productId: number) => Promise<void>;
+  fetchAgentInventory: (agentId: number) => Promise<void>;
+  fetchSummary: () => Promise<void>;
+  fetchTransferHistory: (params?: TransferHistoryParams) => Promise<void>;
   allocateStock: (data: {
     productId: number;
     agentId: number;
@@ -42,6 +60,9 @@ interface AgentInventoryState {
 
 export const useAgentInventoryStore = create<AgentInventoryState>((set, get) => ({
   productAgentStock: {},
+  agentInventory: null,
+  summary: null,
+  transferHistory: null,
   isLoading: false,
   error: null,
 
@@ -59,12 +80,44 @@ export const useAgentInventoryStore = create<AgentInventoryState>((set, get) => 
     }
   },
 
+  fetchAgentInventory: async (agentId: number) => {
+    set({ isLoading: true, error: null });
+    try {
+      const data = await agentInventoryService.getAgentInventory(agentId);
+      set({ agentInventory: data, isLoading: false });
+    } catch (error: any) {
+      const msg = error.response?.data?.error || 'Failed to fetch agent inventory';
+      set({ error: msg, isLoading: false });
+    }
+  },
+
+  fetchSummary: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const data = await agentInventoryService.getSummary();
+      set({ summary: data, isLoading: false });
+    } catch (error: any) {
+      const msg = error.response?.data?.error || 'Failed to fetch inventory summary';
+      set({ error: msg, isLoading: false });
+    }
+  },
+
+  fetchTransferHistory: async (params) => {
+    set({ isLoading: true, error: null });
+    try {
+      const data = await agentInventoryService.getTransferHistory(params);
+      set({ transferHistory: data, isLoading: false });
+    } catch (error: any) {
+      const msg = error.response?.data?.error || 'Failed to fetch transfer history';
+      set({ error: msg, isLoading: false });
+    }
+  },
+
   allocateStock: async (data) => {
     try {
       await agentInventoryService.allocateStock(data);
       toast.success('Stock allocated to agent');
-      // Refresh the product's agent stock
-      await get().fetchProductAgentStock(data.productId);
+      await Promise.all([get().fetchProductAgentStock(data.productId), get().fetchSummary()]);
     } catch (error: any) {
       const msg = error.response?.data?.error || 'Failed to allocate stock';
       toast.error(msg);
@@ -76,7 +129,7 @@ export const useAgentInventoryStore = create<AgentInventoryState>((set, get) => 
     try {
       await agentInventoryService.transferStock(data);
       toast.success('Stock transferred between agents');
-      await get().fetchProductAgentStock(data.productId);
+      await Promise.all([get().fetchProductAgentStock(data.productId), get().fetchSummary()]);
     } catch (error: any) {
       const msg = error.response?.data?.error || 'Failed to transfer stock';
       toast.error(msg);
@@ -88,7 +141,7 @@ export const useAgentInventoryStore = create<AgentInventoryState>((set, get) => 
     try {
       await agentInventoryService.returnStock(data);
       toast.success('Stock returned to warehouse');
-      await get().fetchProductAgentStock(data.productId);
+      await Promise.all([get().fetchProductAgentStock(data.productId), get().fetchSummary()]);
     } catch (error: any) {
       const msg = error.response?.data?.error || 'Failed to return stock';
       toast.error(msg);
@@ -100,7 +153,7 @@ export const useAgentInventoryStore = create<AgentInventoryState>((set, get) => 
     try {
       await agentInventoryService.adjustStock(data);
       toast.success('Agent stock adjusted');
-      await get().fetchProductAgentStock(data.productId);
+      await Promise.all([get().fetchProductAgentStock(data.productId), get().fetchSummary()]);
     } catch (error: any) {
       const msg = error.response?.data?.error || 'Failed to adjust stock';
       toast.error(msg);

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#1e3a5f"/>
+  <text x="256" y="280" font-family="Arial, sans-serif" font-size="200" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">COD</text>
+  <text x="256" y="400" font-family="Arial, sans-serif" font-size="80" fill="#60a5fa" text-anchor="middle" dominant-baseline="middle">AGENT</text>
+</svg>
