@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { startOfMonth } from 'date-fns';
 import { useAuthStore } from '../stores/authStore';
 import { dashboardConfigs } from '../config/dashboards';
 import { DashboardLayout } from '../components/dashboard/DashboardLayout';
@@ -21,9 +22,14 @@ export const DynamicDashboard: React.FC = () => {
   // Get config based on user role
   const config = dashboardConfigs[user?.role || 'admin'];
 
-  // State for date range (supports both presets and custom ranges)
-  const [dateRange, setDateRange] = useState<DateRangeFilter>({
-    preset: config?.defaultDateRange || 'last-30-days',
+  // Resolve preset to actual dates so fetchers receive startDate/endDate on initial load
+  const [dateRange, setDateRange] = useState<DateRangeFilter>(() => {
+    const now = new Date();
+    return {
+      preset: 'this_month',
+      startDate: startOfMonth(now).toISOString(),
+      endDate: now.toISOString(),
+    };
   });
 
   // Fetch dashboard data

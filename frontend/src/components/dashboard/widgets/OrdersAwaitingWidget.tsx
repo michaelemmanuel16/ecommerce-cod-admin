@@ -68,7 +68,9 @@ export const OrdersAwaitingWidget: React.FC<OrdersAwaitingWidgetProps> = ({
               d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <p className="text-gray-500 text-sm">No orders awaiting confirmation</p>
+          <p className="text-gray-500 text-sm">
+            {config.title === 'Ready for Pickup' ? 'No orders to pick up' : 'No orders awaiting confirmation'}
+          </p>
           <p className="text-gray-400 text-xs mt-1">All caught up!</p>
         </div>
       </div>
@@ -81,7 +83,7 @@ export const OrdersAwaitingWidget: React.FC<OrdersAwaitingWidgetProps> = ({
         <h3 className="text-lg font-semibold">{config.title}</h3>
         {!loading && orders.length > 0 && (
           <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full font-medium">
-            {orders.length} pending
+            {orders.length} {config.title === 'Ready for Pickup' ? 'ready' : 'pending'}
           </span>
         )}
       </div>
@@ -149,11 +151,13 @@ export const OrdersAwaitingWidget: React.FC<OrdersAwaitingWidgetProps> = ({
         <div className="mt-4 pt-4 border-t border-gray-200">
           <button
             onClick={() => {
-              window.location.href = '/orders?status=pending_confirmation';
+              window.location.href = config.dataSource === 'readyForPickup'
+                ? '/m/deliveries'
+                : '/orders?status=pending_confirmation';
             }}
             className="w-full text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center justify-center gap-1 py-2 hover:bg-blue-50 rounded-md transition-colors"
           >
-            View all pending orders
+            {config.dataSource === 'readyForPickup' ? 'View all deliveries' : 'View all pending orders'}
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

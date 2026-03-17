@@ -36,6 +36,16 @@ Welcome to the E-Commerce COD Admin Dashboard documentation.
 - [Production Checklist](deployment/PRODUCTION_CHECKLIST.md) - Pre-launch checklist
 - [DevOps Guide](deployment/DEVOPS.md) - CI/CD and infrastructure
 
+### Features
+
+- [Feature Index](features/README.md) — Documentation for all feature areas
+- Each feature gets one file; related Linear issues append as work progresses
+
+### Work History
+
+- [Feature Docs](features/) — Implementation history organized by feature
+- [CHANGELOG](../CHANGELOG.md) — Version history
+
 ### 📦 Archive
 
 Historical completion reports and summaries:
