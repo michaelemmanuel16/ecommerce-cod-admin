@@ -4,7 +4,6 @@ import toast from 'react-hot-toast';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 import { adminService, SystemConfig } from '../../../services/admin.service';
-import { apiClient } from '../../../services/api';
 
 interface WhatsAppIntegrationProps {
   systemConfig: SystemConfig | null;
@@ -45,8 +44,8 @@ export const WhatsAppIntegration: React.FC<WhatsAppIntegrationProps> = ({ system
   const checkStatus = useCallback(async () => {
     setStatusLoading(true);
     try {
-      const response = await apiClient.get('/api/whatsapp/status');
-      setStatus(response.data);
+      const data = await adminService.getWhatsAppStatus();
+      setStatus(data);
     } catch {
       setStatus({ error: 'Failed to check status' });
     } finally {

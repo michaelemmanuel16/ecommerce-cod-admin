@@ -95,6 +95,18 @@ export const adminService = {
     return response.data;
   },
 
+  async getWhatsAppStatus(): Promise<{
+    configured?: boolean;
+    enabled?: boolean;
+    verifiedName?: string;
+    displayPhoneNumber?: string;
+    qualityRating?: string;
+    error?: string;
+  }> {
+    const response = await apiClient.get('/api/whatsapp/status');
+    return response.data;
+  },
+
   // Role Permissions
   async getRolePermissions(): Promise<any> {
     const response = await apiClient.get('/api/admin/permissions');
