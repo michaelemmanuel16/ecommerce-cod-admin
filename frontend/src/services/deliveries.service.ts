@@ -110,7 +110,7 @@ export const deliveriesService = {
   async uploadImage(file: File): Promise<{ imageUrl: string }> {
     const formData = new FormData();
     formData.append('image', file);
-    const response = await apiClient.post('/api/uploads/', formData, {
+    const response = await apiClient.post('/api/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;

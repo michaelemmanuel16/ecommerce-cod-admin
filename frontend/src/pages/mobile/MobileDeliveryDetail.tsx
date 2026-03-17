@@ -149,9 +149,15 @@ export default function MobileDeliveryDetail() {
         const result = await deliveriesService.uploadImage(photo);
         proofData = result.imageUrl;
       }
+      const parsedAmount = parseFloat(codAmount);
+      if (!parsedAmount || parsedAmount <= 0) {
+        toast.error('Please enter a valid COD amount');
+        setActionLoading(false);
+        return;
+      }
       await deliveriesService.completeDelivery(delivery.id, {
-        codAmount: parseFloat(codAmount) || 0,
-        proofType: photo ? 'photo' : 'signature',
+        codAmount: parsedAmount,
+        proofType: photo ? 'photo' : 'otp',
         proofData,
         recipientName: recipientName.trim(),
       });

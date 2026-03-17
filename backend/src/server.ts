@@ -219,15 +219,15 @@ if (process.env.NODE_ENV !== 'test') {
       logger.info('Running daily upload cleanup...');
       try {
         const uploadsDir = path.join(__dirname, '../uploads');
-        if (!fs.existsSync(uploadsDir)) return;
-        const files = fs.readdirSync(uploadsDir);
+        try { await fs.promises.access(uploadsDir); } catch { return; }
+        const files = await fs.promises.readdir(uploadsDir);
         const cutoff = Date.now() - (60 * 24 * 60 * 60 * 1000);
         let deleted = 0;
         for (const file of files) {
           const filePath = path.join(uploadsDir, file);
-          const stat = fs.statSync(filePath);
+          const stat = await fs.promises.stat(filePath);
           if (stat.isFile() && stat.mtimeMs < cutoff) {
-            fs.unlinkSync(filePath);
+            await fs.promises.unlink(filePath);
             deleted++;
           }
         }
