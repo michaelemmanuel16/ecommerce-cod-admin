@@ -38,12 +38,14 @@ import callRoutes from './routes/callRoutes';
 import glRoutes from './routes/glRoutes';
 import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
+import whatsappRoutes from './routes/whatsappRoutes';
 import { GLAutomationService } from './services/glAutomationService';
 import { GLAccountService } from './services/glAccountService';
 import cron from 'node-cron';
 
-// Initialize workflow queue worker
+// Initialize queue workers
 import './queues/workflowQueue';
+import './queues/messagingQueue';
 import { setupAgingCron } from './queues/agingQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 
@@ -150,6 +152,7 @@ app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);
 app.use('/api/agent-reconciliation', apiLimiter, agentReconciliationRoutes);
 app.use('/api/agent-inventory', apiLimiter, agentInventoryRoutes);
+app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);
@@ -173,6 +176,7 @@ app.get('/', (_req, res) => {
       notifications: '/api/notifications',
       upload: '/api/upload',
       checkoutForms: '/api/checkout-forms',
+      whatsapp: '/api/whatsapp',
       public: '/api/public'
     }
   });
