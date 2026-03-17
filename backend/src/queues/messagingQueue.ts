@@ -14,7 +14,7 @@ export const messagingQueue = process.env.NODE_ENV === 'test'
   ? ({
     process: () => {},
     on: () => {},
-    add: () => {},
+    add: () => Promise.resolve(),
     close: () => Promise.resolve(),
   } as any)
   : new Bull('order-status-messaging', {
