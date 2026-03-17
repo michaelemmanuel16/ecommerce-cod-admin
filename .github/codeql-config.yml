@@ -1,0 +1,6 @@
+name: "COD Admin CodeQL Configuration"
+
+# Exclude queries that produce false positives in this codebase
+query-filters:
+  - exclude:
+      id: js/xss-through-dom

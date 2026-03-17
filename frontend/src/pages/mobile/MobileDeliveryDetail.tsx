@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Phone, MapPin, Camera, Check, X, AlertTriangle, RotateCcw } from 'lucide-react';
 import { deliveriesService, DeliveryListItem, formatDeliveryAddress } from '../../services/deliveries.service';
@@ -67,21 +67,15 @@ export default function MobileDeliveryDetail() {
   const [recipientName, setRecipientName] = useState('');
   const [codAmount, setCodAmount] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
-  const [hasPhoto, setHasPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
 
-  // Set img src imperatively via ref to avoid CodeQL taint tracking on JSX src={}
+  // Derive preview URL from photo File via useMemo
+  const photoPreview = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
   useEffect(() => {
-    if (!photo) {
-      setHasPhoto(false);
-      return;
-    }
-    const url = URL.createObjectURL(photo);
-    if (imgRef.current) imgRef.current.src = url;
-    setHasPhoto(true);
-    return () => URL.revokeObjectURL(url);
-  }, [photo]);
+    return () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+    };
+  }, [photoPreview]);
 
   // Failed sheet
   const [showFailedSheet, setShowFailedSheet] = useState(false);
@@ -395,9 +389,9 @@ export default function MobileDeliveryDetail() {
               onChange={handlePhotoCapture}
               className="hidden"
             />
-            {hasPhoto ? (
+            {photoPreview ? (
               <div className="mb-4 relative">
-                <img ref={imgRef} alt="Proof" className="w-full h-40 object-cover rounded-lg" />
+                <img src={photoPreview} alt="Proof" className="w-full h-40 object-cover rounded-lg" />
                 <button
                   onClick={() => setPhoto(null)}
                   className="absolute top-2 right-2 p-1 bg-black/50 rounded-full"
