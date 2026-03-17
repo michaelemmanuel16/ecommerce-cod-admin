@@ -98,8 +98,8 @@ export const ordersService = {
     }
   },
 
-  async updateOrderStatus(id: number, status: OrderStatus): Promise<Order> {
-    const response = await apiClient.patch(`/api/orders/${id}/status`, { status });
+  async updateOrderStatus(id: number, status: OrderStatus, notes?: string): Promise<Order> {
+    const response = await apiClient.patch(`/api/orders/${id}/status`, { status, ...(notes && { notes }) });
     return transformOrder(response.data.order || response.data);
   },
 

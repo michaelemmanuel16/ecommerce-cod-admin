@@ -19,7 +19,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^3.9.0",
     "@xyflow/react": "^12.8.6",
-    "axios": "^1.7.3",
+    "axios": "^1.13.6",
     "clsx": "^2.1.1",
     "country-state-city": "^3.2.1",
     "date-fns": "^3.6.0",

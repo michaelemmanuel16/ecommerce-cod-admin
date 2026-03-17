@@ -15,7 +15,6 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
-  Boxes,
   Smartphone,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
@@ -29,7 +28,6 @@ const menuItems = [
   { path: '/customers', icon: Users, label: 'Customers', key: 'customers' },
   { path: '/products', icon: Package, label: 'Products', key: 'products' },
   { path: '/delivery-agents', icon: Truck, label: 'Delivery Agents', key: 'delivery-agents' },
-  { path: '/agent-inventory', icon: Boxes, label: 'Agent Inventory', key: 'agent-inventory' },
   { path: '/customer-reps', icon: UserCog, label: 'Customer Reps', key: 'customer-reps' },
   { path: '/financial', icon: DollarSign, label: 'Financial', key: 'financial' },
   { path: '/earnings-history', icon: History, label: 'Earnings History', key: 'earnings-history' },
