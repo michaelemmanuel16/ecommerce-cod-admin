@@ -8,6 +8,7 @@ import {
   sendMessage,
   getStats,
   testSend,
+  getStatus,
 } from '../controllers/whatsappController';
 import { UserRole } from '@prisma/client';
 
@@ -25,5 +26,6 @@ router.get('/messages/:id', authenticate, requirePermission(adminRoles), getMess
 router.post('/send', authenticate, requirePermission(['super_admin', 'admin']), sendMessage);
 router.post('/test', authenticate, requirePermission(['super_admin', 'admin']), testSend);
 router.get('/stats', authenticate, requirePermission(adminRoles), getStats);
+router.get('/status', authenticate, requirePermission(['super_admin', 'admin']), getStatus);
 
 export default router;

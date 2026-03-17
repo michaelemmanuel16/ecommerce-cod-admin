@@ -470,6 +470,7 @@ model SystemConfig {
   operatingHours        Json?    @map("operating_hours")
   smsProvider           Json?    @map("sms_provider")
   emailProvider         Json?    @map("email_provider")
+  whatsappProvider      Json?    @map("whatsapp_provider")
   notificationTemplates Json?    @map("notification_templates")
   rolePermissions       Json?    @map("role_permissions")
   createdAt             DateTime @default(now()) @map("created_at")

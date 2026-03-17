@@ -103,6 +103,7 @@ export const adminService = {
     operatingHours?: any;
     smsProvider?: any;
     emailProvider?: any;
+    whatsappProvider?: any;
     notificationTemplates?: any;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');

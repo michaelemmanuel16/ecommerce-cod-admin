@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, MessageSquare, FileText, Webhook } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, MessageSquare, FileText, Webhook, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useAuthStore } from '../stores/authStore';
@@ -20,6 +20,23 @@ export const Settings: React.FC = () => {
   const isSalesRep = user?.role === 'sales_rep';
 
   const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null);
+  const [whatsappForm, setWhatsappForm] = useState({
+    accessToken: '',
+    phoneNumberId: '',
+    appSecret: '',
+    webhookVerifyToken: '',
+    isEnabled: false,
+  });
+  const [whatsappStatus, setWhatsappStatus] = useState<{
+    configured?: boolean;
+    enabled?: boolean;
+    verifiedName?: string;
+    displayPhoneNumber?: string;
+    qualityRating?: string;
+    error?: string;
+  } | null>(null);
+  const [whatsappStatusLoading, setWhatsappStatusLoading] = useState(false);
+  const [whatsappSaving, setWhatsappSaving] = useState(false);
   const [businessForm, setBusinessForm] = useState({
     businessName: '',
     businessEmail: '',
@@ -47,6 +64,15 @@ export const Settings: React.FC = () => {
         taxId: config.taxId || '',
         currency: config.currency || 'USD',
       });
+      if (config.whatsappProvider) {
+        setWhatsappForm({
+          accessToken: config.whatsappProvider.accessToken || '',
+          phoneNumberId: config.whatsappProvider.phoneNumberId || '',
+          appSecret: config.whatsappProvider.appSecret || '',
+          webhookVerifyToken: config.whatsappProvider.webhookVerifyToken || '',
+          isEnabled: config.whatsappProvider.isEnabled ?? false,
+        });
+      }
     } catch (error) {
       console.error('Failed to load system config:', error);
     }
@@ -63,6 +89,35 @@ export const Settings: React.FC = () => {
     } catch (error) {
       console.error('Failed to save business settings:', error);
       alert('Failed to save business settings');
+    }
+  };
+
+  const checkWhatsAppStatus = useCallback(async () => {
+    setWhatsappStatusLoading(true);
+    try {
+      const response = await apiClient.get('/api/whatsapp/status');
+      setWhatsappStatus(response.data);
+    } catch {
+      setWhatsappStatus({ error: 'Failed to check status' });
+    } finally {
+      setWhatsappStatusLoading(false);
+    }
+  }, []);
+
+  const handleSaveWhatsApp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWhatsappSaving(true);
+    try {
+      await adminService.updateSystemConfig({ whatsappProvider: whatsappForm });
+      alert('WhatsApp settings saved successfully');
+      loadSystemConfig();
+      // Auto-test connection after save
+      await checkWhatsAppStatus();
+    } catch (error) {
+      console.error('Failed to save WhatsApp settings:', error);
+      alert('Failed to save WhatsApp settings');
+    } finally {
+      setWhatsappSaving(false);
     }
   };
 
@@ -518,6 +573,134 @@ export const Settings: React.FC = () => {
                 </div>
               </div>
             </div>
+          </Card>
+
+          <Card>
+            <form onSubmit={handleSaveWhatsApp}>
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">WhatsApp Provider Settings</h3>
+                  <div className="flex items-center gap-2">
+                    {whatsappStatusLoading ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        Checking...
+                      </span>
+                    ) : whatsappStatus?.configured && !whatsappStatus?.error ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Connected
+                      </span>
+                    ) : whatsappStatus?.configured && whatsappStatus?.error ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        <XCircle className="w-3 h-3 mr-1" />
+                        Not Connected
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        Not Configured
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {whatsappStatus?.verifiedName && (
+                  <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                    <strong>{whatsappStatus.verifiedName}</strong>
+                    {whatsappStatus.displayPhoneNumber && ` (${whatsappStatus.displayPhoneNumber})`}
+                    {whatsappStatus.qualityRating && ` — Quality: ${whatsappStatus.qualityRating}`}
+                  </div>
+                )}
+
+                {whatsappStatus?.error && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                    {whatsappStatus.error}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Access Token
+                    </label>
+                    <input
+                      type="password"
+                      value={whatsappForm.accessToken}
+                      onChange={(e) => setWhatsappForm({ ...whatsappForm, accessToken: e.target.value })}
+                      placeholder="EAAx..."
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Phone Number ID
+                    </label>
+                    <input
+                      type="text"
+                      value={whatsappForm.phoneNumberId}
+                      onChange={(e) => setWhatsappForm({ ...whatsappForm, phoneNumberId: e.target.value })}
+                      placeholder="123456789"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      App Secret
+                    </label>
+                    <input
+                      type="password"
+                      value={whatsappForm.appSecret}
+                      onChange={(e) => setWhatsappForm({ ...whatsappForm, appSecret: e.target.value })}
+                      placeholder="abc123..."
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Webhook Verify Token
+                    </label>
+                    <input
+                      type="text"
+                      value={whatsappForm.webhookVerifyToken}
+                      onChange={(e) => setWhatsappForm({ ...whatsappForm, webhookVerifyToken: e.target.value })}
+                      placeholder="my-verify-token"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="flex items-center">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={whatsappForm.isEnabled}
+                        onChange={(e) => setWhatsappForm({ ...whatsappForm, isEnabled: e.target.checked })}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <span className="ml-3 text-sm font-medium text-gray-700">Enable WhatsApp</span>
+                    </label>
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={checkWhatsAppStatus}
+                    disabled={whatsappStatusLoading}
+                  >
+                    {whatsappStatusLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                    )}
+                    Test Connection
+                  </Button>
+                  <Button variant="primary" type="submit" disabled={whatsappSaving}>
+                    <Save className="w-4 h-4 mr-2" />
+                    {whatsappSaving ? 'Saving...' : 'Save WhatsApp Settings'}
+                  </Button>
+                </div>
+              </div>
+            </form>
           </Card>
 
           <Card>

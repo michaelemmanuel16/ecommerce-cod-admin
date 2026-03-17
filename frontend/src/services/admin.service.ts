@@ -23,6 +23,13 @@ export interface SystemConfig {
     fromEmail?: string;
     fromName?: string;
   };
+  whatsappProvider?: {
+    accessToken?: string;
+    phoneNumberId?: string;
+    appSecret?: string;
+    webhookVerifyToken?: string;
+    isEnabled?: boolean;
+  };
   notificationTemplates?: {
     orderConfirmation?: { sms: string; email: string };
     outForDelivery?: { sms: string; email: string };

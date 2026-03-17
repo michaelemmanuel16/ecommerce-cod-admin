@@ -8,16 +8,63 @@ const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
 interface WhatsAppConfig {
   accessToken: string;
   phoneNumberId: string;
+  appSecret: string;
   webhookVerifyToken: string;
   businessAccountId?: string;
+  isEnabled: boolean;
 }
 
-function getConfig(): WhatsAppConfig {
+// Cached DB config to avoid per-message DB queries
+let cachedDbConfig: { data: any; fetchedAt: number } | null = null;
+const CACHE_TTL_MS = 60_000; // 60 seconds
+
+async function getDbWhatsappConfig(): Promise<any | null> {
+  const now = Date.now();
+  if (cachedDbConfig && now - cachedDbConfig.fetchedAt < CACHE_TTL_MS) {
+    return cachedDbConfig.data;
+  }
+
+  try {
+    const config = await prisma.systemConfig.findFirst({
+      select: { whatsappProvider: true },
+    });
+    const provider = config?.whatsappProvider as any;
+    cachedDbConfig = { data: provider || null, fetchedAt: now };
+    return cachedDbConfig.data;
+  } catch (error: any) {
+    logger.warn('Failed to read WhatsApp config from DB, falling back to env vars', { error: error.message });
+    return null;
+  }
+}
+
+/** Clear cached DB config (call after admin saves new settings). */
+export function clearWhatsAppConfigCache(): void {
+  cachedDbConfig = null;
+}
+
+async function getConfig(): Promise<WhatsAppConfig> {
+  const dbConfig = await getDbWhatsappConfig();
+
+  // DB config takes precedence when present and enabled
+  if (dbConfig && dbConfig.accessToken && dbConfig.phoneNumberId) {
+    return {
+      accessToken: dbConfig.accessToken,
+      phoneNumberId: dbConfig.phoneNumberId,
+      appSecret: dbConfig.appSecret || process.env.WHATSAPP_APP_SECRET || '',
+      webhookVerifyToken: dbConfig.webhookVerifyToken || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
+      businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
+      isEnabled: dbConfig.isEnabled !== false,
+    };
+  }
+
+  // Fall back to env vars
   return {
     accessToken: process.env.WHATSAPP_ACCESS_TOKEN || '',
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+    appSecret: process.env.WHATSAPP_APP_SECRET || '',
     webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
+    isEnabled: true,
   };
 }
 
@@ -149,9 +196,9 @@ class WhatsAppService {
     formattedPhone: string,
     payload: object,
   ): Promise<string | undefined> {
-    const config = getConfig();
+    const config = await getConfig();
 
-    if (!config.accessToken || !config.phoneNumberId) {
+    if (!config.accessToken || !config.phoneNumberId || !config.isEnabled) {
       logger.warn('WhatsApp not configured — message logged but not sent', { messageLogId });
       return undefined;
     }

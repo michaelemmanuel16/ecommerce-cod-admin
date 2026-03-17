@@ -4,17 +4,29 @@ import { AuthRequest } from '../types';
 import whatsappService, { TEMPLATE_BY_NAME } from '../services/whatsappService';
 import logger from '../utils/logger';
 import { MessageChannel, MessageStatus } from '@prisma/client';
+import prisma from '../utils/prisma';
 
 /**
  * GET /api/whatsapp/webhook — WhatsApp webhook verification (challenge-response).
  * Public endpoint — no auth required.
  */
-export const verifyWebhook = (req: AuthRequest, res: Response): void => {
+async function getWhatsAppDbConfig(): Promise<any | null> {
+  try {
+    const config = await prisma.systemConfig.findFirst({ select: { whatsappProvider: true } });
+    return (config?.whatsappProvider as any) || null;
+  } catch {
+    return null;
+  }
+}
+
+export const verifyWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
   const mode = req.query['hub.mode'] as string;
   const token = req.query['hub.verify_token'] as string;
   const challenge = req.query['hub.challenge'] as string;
 
-  const verifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+  // Read verify token from DB config first, fall back to env var
+  const dbConfig = await getWhatsAppDbConfig();
+  const verifyToken = dbConfig?.webhookVerifyToken || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
 
   if (mode === 'subscribe' && token === verifyToken) {
     logger.info('WhatsApp webhook verified');
@@ -54,7 +66,8 @@ function verifyWebhookSignature(rawBody: string, signature: string | undefined, 
  * Public endpoint — validates via X-Hub-Signature-256 HMAC signature.
  */
 export const handleWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
-  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  const dbConfig = await getWhatsAppDbConfig();
+  const appSecret = dbConfig?.appSecret || process.env.WHATSAPP_APP_SECRET;
 
   // If app secret is configured, verify signature before processing
   if (appSecret) {
@@ -205,6 +218,67 @@ export const getStats = async (req: AuthRequest, res: Response): Promise<void> =
  * Useful for verifying API credentials and template approval.
  * Admin-only.
  */
+/**
+ * GET /api/whatsapp/status — Check WhatsApp connection status.
+ * Admin-only. Validates credentials against Meta Graph API.
+ */
+export const getStatus = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const dbConfig = await getWhatsAppDbConfig();
+    const accessToken = dbConfig?.accessToken || process.env.WHATSAPP_ACCESS_TOKEN || '';
+    const phoneNumberId = dbConfig?.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || '';
+    const isEnabled = dbConfig?.isEnabled !== false;
+
+    if (!accessToken || !phoneNumberId) {
+      res.json({ configured: false, enabled: false });
+      return;
+    }
+
+    // Call Meta Graph API to validate credentials
+    try {
+      const response = await fetch(
+        `https://graph.facebook.com/v21.0/${phoneNumberId}?fields=verified_name,display_phone_number,quality_rating`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        res.json({
+          configured: true,
+          enabled: isEnabled,
+          error: `API returned ${response.status}: ${errorBody}`,
+        });
+        return;
+      }
+
+      const data = await response.json() as {
+        verified_name?: string;
+        display_phone_number?: string;
+        quality_rating?: string;
+      };
+
+      res.json({
+        configured: true,
+        enabled: isEnabled,
+        verifiedName: data.verified_name,
+        displayPhoneNumber: data.display_phone_number,
+        qualityRating: data.quality_rating,
+      });
+    } catch (fetchError: any) {
+      res.json({
+        configured: true,
+        enabled: isEnabled,
+        error: fetchError.message,
+      });
+    }
+  } catch (error: any) {
+    logger.error('Error checking WhatsApp status', { error: error.message });
+    res.status(500).json({ error: 'Failed to check WhatsApp status' });
+  }
+};
+
 export const testSend = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { to, templateName } = req.body;
