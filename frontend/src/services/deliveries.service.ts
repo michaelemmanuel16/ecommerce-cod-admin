@@ -33,8 +33,8 @@ export interface DeliveryListItem {
     orderItems?: Array<{
       id: number;
       quantity: number;
-      price: number;
-      total: number;
+      unitPrice: number;
+      totalPrice: number;
       product: {
         id: number;
         name: string;

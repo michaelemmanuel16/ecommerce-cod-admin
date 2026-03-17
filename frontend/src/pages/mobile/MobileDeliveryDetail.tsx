@@ -266,7 +266,7 @@ export default function MobileDeliveryDetail() {
                   <span className="text-gray-700">
                     {item.product?.name || 'Item'} <span className="text-gray-400">×{item.quantity}</span>
                   </span>
-                  <span className="font-medium text-gray-900">GH₵{item.total.toFixed(2)}</span>
+                  <span className="font-medium text-gray-900">GH₵{(item.totalPrice ?? item.unitPrice * item.quantity).toFixed(2)}</span>
                 </div>
               ))}
             </div>
