@@ -69,8 +69,12 @@ export default function MobileDeliveryDetail() {
   const [photo, setPhoto] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Derive preview URL from photo File — avoids passing string through state (CodeQL safe)
-  const photoPreview = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
+  // Derive preview URL from photo File — validated blob: scheme (CodeQL safe)
+  const photoPreview = useMemo(() => {
+    if (!photo) return null;
+    const url = URL.createObjectURL(photo);
+    return url.startsWith('blob:') ? url : null;
+  }, [photo]);
   useEffect(() => {
     return () => {
       if (photoPreview) URL.revokeObjectURL(photoPreview);
