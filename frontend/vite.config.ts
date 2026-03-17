@@ -11,7 +11,7 @@ export default defineConfig({
       fastRefresh: true,
     }),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['vite.svg', 'icons/*.png'],
       manifest: {
         name: 'COD Admin Pro',
