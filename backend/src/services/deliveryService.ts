@@ -720,8 +720,16 @@ export class DeliveryService {
     const dateCondition: Prisma.OrderWhereInput = {};
     if (hasDateFilter) {
       dateCondition.createdAt = {};
-      if (filters!.startDate) dateCondition.createdAt.gte = new Date(filters!.startDate);
-      if (filters!.endDate) dateCondition.createdAt.lte = new Date(filters!.endDate);
+      if (filters!.startDate) {
+        const parsed = new Date(filters!.startDate);
+        if (isNaN(parsed.getTime())) throw new AppError('Invalid startDate', 400);
+        dateCondition.createdAt.gte = parsed;
+      }
+      if (filters!.endDate) {
+        const parsed = new Date(filters!.endDate);
+        if (isNaN(parsed.getTime())) throw new AppError('Invalid endDate', 400);
+        dateCondition.createdAt.lte = parsed;
+      }
     }
 
     // Build the base where clause
