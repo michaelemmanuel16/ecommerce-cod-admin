@@ -16,7 +16,7 @@ export const verifyWebhook = async (req: AuthRequest, res: Response): Promise<vo
 
   if (mode === 'subscribe' && token === verifyToken) {
     logger.info('WhatsApp webhook verified');
-    res.status(200).send(challenge);
+    res.set('Content-Type', 'text/plain').status(200).send(challenge);
   } else {
     logger.warn('WhatsApp webhook verification failed', { mode, tokenMatch: token === verifyToken });
     res.status(403).send('Forbidden');
