@@ -207,19 +207,16 @@ export class AgentReconciliationController {
         const { amount, depositMethod, referenceNumber, notes, receiptUrl, agentId: providedAgentId } = req.body;
         const user = (req as any).user;
 
-        // RBAC: Strengthened check for creating deposits for others
+        // RBAC: Delivery agents can only create deposits for themselves
         let targetAgentId = user.id;
-        if (providedAgentId) {
+        if (user.role === 'delivery_agent') {
+            if (providedAgentId && parseInt(providedAgentId) !== user.id) {
+                throw new AppError('Access denied: Agents can only create deposits for themselves', 403);
+            }
+        } else if (providedAgentId) {
             const parsedProvidedId = parseInt(providedAgentId);
             if (isNaN(parsedProvidedId)) throw new AppError('Invalid agent ID format', 400);
-
-            if (parsedProvidedId !== user.id) {
-                const canManageOthers = ['manager', 'admin', 'accountant', 'super_admin'].includes(user.role);
-                if (!canManageOthers) {
-                    throw new AppError('Access denied: You cannot create deposits for other agents', 403);
-                }
-                targetAgentId = parsedProvidedId;
-            }
+            targetAgentId = parsedProvidedId;
         }
 
         try {

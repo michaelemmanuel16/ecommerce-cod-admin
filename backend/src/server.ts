@@ -135,8 +135,13 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Serve static files from uploads directory
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Serve static files from uploads directory with security headers
+app.use('/uploads', (_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', 'inline');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
+  next();
+}, express.static(path.join(__dirname, '../uploads')));
 
 // Health check routes (without rate limiting for monitoring)
 app.use('/', healthRoutes);

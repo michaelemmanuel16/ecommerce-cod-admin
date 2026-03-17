@@ -95,7 +95,9 @@ router.post('/deposits',
         body('referenceNumber').trim().notEmpty().withMessage('Reference number is required')
             .isLength({ min: 1, max: 100 }).withMessage('Reference number is too long'),
         body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes are too long'),
-        body('receiptUrl').optional().isString().withMessage('Receipt URL must be a string'),
+        body('receiptUrl').optional().isString()
+            .matches(/^\/uploads\/[a-z0-9_-]+-\d+-\d+\.\w+$/i)
+            .withMessage('Receipt URL must be a valid upload path'),
         body('agentId').optional().isInt().toInt(),
         validate
     ],

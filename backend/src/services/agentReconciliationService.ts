@@ -566,6 +566,17 @@ export class AgentReconciliationService {
             const extTx = tx as any;
             const balance = await this.getOrCreateBalance(agentId, extTx);
 
+            // Warn if agent has active deliveries
+            const activeDeliveries = await extTx.order.count({
+                where: {
+                    deliveryAgentId: agentId,
+                    status: { in: ['out_for_delivery', 'ready_for_pickup'] }
+                }
+            });
+            if (activeDeliveries > 0) {
+                logger.warn(`Blocking agent ${agentId} who has ${activeDeliveries} active deliveries`);
+            }
+
             const updated = await extTx.agentBalance.update({
                 where: { id: balance.id },
                 data: {
