@@ -61,7 +61,6 @@ export function useDashboardData(
 
     // Prevent duplicate fetches
     if (fetchingRef.current) {
-      console.log('Fetch already in progress, skipping...');
       return;
     }
 
@@ -87,11 +86,6 @@ export function useDashboardData(
       const dashboardData: DashboardData = {
         currentUser: user,
       };
-
-      // DEBUG: Log all data fetchers
-      console.log('📊 Dashboard config dataFetchers:', config.dataFetchers);
-      console.log('📊 First 3 fetchers:', config.dataFetchers.slice(0, 3));
-      console.log('📊 Remaining fetchers:', config.dataFetchers.slice(3));
 
       // Fetch critical metrics first in parallel
       const criticalFetchers = config.dataFetchers.slice(0, 3);
@@ -237,19 +231,11 @@ export function useDashboardData(
     // Throttled version of fetchData to prevent event storms
     // We use a longer window for bulk operations to ensure data is ready
     const throttledFetch = debounce(() => {
-      console.log('🔄 Throttled dashboard refresh triggered');
       fetchData();
     }, 5000, { leading: true, trailing: true });
 
     refreshEvents.forEach((eventName) => {
       socket.on(eventName, (payload: any) => {
-        console.log(`🔌 Real-time event received: ${eventName}`, payload || '');
-
-        // If it's a completion event, trigger a refresh immediately (but still respect throttle leading/trailing)
-        if (eventName === 'bulk_import_completed' || eventName === 'orders:deleted') {
-          console.log(`✅ Bulk operation completed: ${eventName}. Refreshing...`);
-        }
-
         throttledFetch();
       });
     });
@@ -268,7 +254,6 @@ export function useDashboardData(
     if (!config.refreshInterval) return;
 
     const interval = setInterval(() => {
-      console.log('Auto-refreshing dashboard...');
       fetchData();
     }, config.refreshInterval);
 
@@ -295,7 +280,6 @@ async function executeFetcher(
   user: any,
   dateRange?: DateRangeFilter
 ) {
-  console.log(`🔄 Executing fetcher: ${fetcherName}`);
   const analyticsStore = useAnalyticsStore.getState();
 
   // Calculate days for backward compatibility with backend
@@ -305,17 +289,11 @@ async function executeFetcher(
 
   switch (fetcherName) {
     case 'fetchDashboardMetrics':
-      console.log('[useDashboardData] Calling fetchDashboardMetrics with dates:', {
-        startDate: dateRange?.startDate,
-        endDate: dateRange?.endDate,
-        dateRange
-      });
       await storeMethods.fetchDashboardMetrics(
         dateRange?.startDate,
         dateRange?.endDate
       );
       dashboardData.metrics = useAnalyticsStore.getState().metrics;
-      console.log('[useDashboardData] Received metrics:', dashboardData.metrics);
       break;
 
     case 'fetchSalesTrends':
@@ -430,23 +408,18 @@ async function executeFetcher(
       break;
 
     case 'fetchPendingOrders':
-      console.log('📋 Fetching pending orders...');
       await storeMethods.fetchPendingOrders();
       dashboardData.pendingOrders = useAnalyticsStore.getState().pendingOrders;
-      console.log('📋 Pending orders fetched:', dashboardData.pendingOrders);
       break;
 
     case 'fetchReadyForPickup':
-      console.log('📦 Fetching ready for pickup orders...');
       await storeMethods.fetchReadyForPickup();
       dashboardData.readyForPickup = useAnalyticsStore.getState().readyForPickup;
       break;
 
     case 'fetchRecentActivity':
-      console.log('📝 Fetching recent activity...');
       await storeMethods.fetchRecentActivity();
       dashboardData.recentActivity = useAnalyticsStore.getState().recentActivity;
-      console.log('📝 Recent activity fetched:', dashboardData.recentActivity);
       break;
 
     case 'fetchAreaDistribution':
@@ -488,7 +461,6 @@ async function executeFetcher(
         dateRange?.endDate
       );
       dashboardData.ordersByStatus = useAnalyticsStore.getState().ordersByStatus;
-      console.log('📊 Orders by status fetched from backend:', dashboardData.ordersByStatus);
       break;
 
     case 'fetchTopProducts':

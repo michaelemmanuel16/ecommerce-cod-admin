@@ -874,9 +874,9 @@ export class DeliveryService {
   /**
    * Get delivery info by order ID (for orders that may not have a Delivery record)
    */
-  async getDeliveryByOrderId(orderId: number) {
+  async getDeliveryByOrderId(orderId: number, agentUserId?: number) {
     const order = await prisma.order.findUnique({
-      where: { id: orderId },
+      where: { id: orderId, ...(agentUserId != null && { deliveryAgentId: agentUserId }) },
       include: {
         customer: { select: DeliveryService.customerSelect },
         orderItems: { include: { product: { select: { id: true, name: true } } } },

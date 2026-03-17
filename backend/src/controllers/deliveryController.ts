@@ -92,7 +92,10 @@ export const getAgentOrders = async (req: AuthRequest, res: Response): Promise<v
 export const getDeliveryByOrderId = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { orderId } = req.params;
-    const delivery = await deliveryService.getDeliveryByOrderId(parseInt(orderId, 10));
+    const delivery = await deliveryService.getDeliveryByOrderId(
+      parseInt(orderId, 10),
+      req.user!.role === 'delivery_agent' ? req.user!.id : undefined
+    );
     res.json({ delivery });
   } catch (error) {
     throw error;
