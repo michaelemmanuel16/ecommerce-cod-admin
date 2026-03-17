@@ -15,6 +15,7 @@ import { UserRole } from '@prisma/client';
 const router = Router();
 
 // Public webhook endpoints (no auth — called by WhatsApp)
+// Raw body is captured via express.json verify callback in server.ts for HMAC verification.
 router.get('/webhook', verifyWebhook);
 router.post('/webhook', handleWebhook);
 

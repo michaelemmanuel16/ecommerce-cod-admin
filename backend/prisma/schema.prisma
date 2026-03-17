@@ -937,6 +937,5 @@ model MessageLog {
   @@index([customerId])
   @@index([channel, status])
   @@index([createdAt])
-  @@index([providerMessageId])
   @@map("message_logs")
 }

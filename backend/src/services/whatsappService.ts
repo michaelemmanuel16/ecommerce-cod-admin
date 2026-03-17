@@ -18,7 +18,7 @@ interface WhatsAppConfig {
 let cachedDbConfig: { data: any; fetchedAt: number } | null = null;
 const CACHE_TTL_MS = 60_000; // 60 seconds
 
-async function getDbWhatsappConfig(): Promise<any | null> {
+export async function getDbWhatsappConfig(): Promise<any | null> {
   const now = Date.now();
   if (cachedDbConfig && now - cachedDbConfig.fetchedAt < CACHE_TTL_MS) {
     return cachedDbConfig.data;

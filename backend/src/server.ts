@@ -111,7 +111,15 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  // Preserve raw body buffer on webhook routes for HMAC signature verification
+  verify: (req: any, _res, buf) => {
+    if (req.originalUrl?.startsWith('/api/whatsapp/webhook')) {
+      req.rawBody = buf;
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Request logging (sanitized - no auth headers or sensitive data)

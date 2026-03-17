@@ -1,23 +1,9 @@
 import { Response } from 'express';
 import crypto from 'crypto';
 import { AuthRequest } from '../types';
-import whatsappService, { TEMPLATE_BY_NAME } from '../services/whatsappService';
+import whatsappService, { TEMPLATE_BY_NAME, getDbWhatsappConfig } from '../services/whatsappService';
 import logger from '../utils/logger';
 import { MessageChannel, MessageStatus } from '@prisma/client';
-import prisma from '../utils/prisma';
-
-/**
- * GET /api/whatsapp/webhook — WhatsApp webhook verification (challenge-response).
- * Public endpoint — no auth required.
- */
-async function getWhatsAppDbConfig(): Promise<any | null> {
-  try {
-    const config = await prisma.systemConfig.findFirst({ select: { whatsappProvider: true } });
-    return (config?.whatsappProvider as any) || null;
-  } catch {
-    return null;
-  }
-}
 
 export const verifyWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
   const mode = req.query['hub.mode'] as string;
@@ -25,7 +11,7 @@ export const verifyWebhook = async (req: AuthRequest, res: Response): Promise<vo
   const challenge = req.query['hub.challenge'] as string;
 
   // Read verify token from DB config first, fall back to env var
-  const dbConfig = await getWhatsAppDbConfig();
+  const dbConfig = await getDbWhatsappConfig();
   const verifyToken = dbConfig?.webhookVerifyToken || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
 
   if (mode === 'subscribe' && token === verifyToken) {
@@ -41,7 +27,7 @@ export const verifyWebhook = async (req: AuthRequest, res: Response): Promise<vo
  * Verify the X-Hub-Signature-256 header from Meta.
  * Uses HMAC-SHA256 with the app secret for constant-time comparison.
  */
-function verifyWebhookSignature(rawBody: string, signature: string | undefined, appSecret: string): boolean {
+function verifyWebhookSignature(rawBody: Buffer, signature: string | undefined, appSecret: string): boolean {
   if (!signature) return false;
 
   const expectedHash = crypto
@@ -66,13 +52,20 @@ function verifyWebhookSignature(rawBody: string, signature: string | undefined, 
  * Public endpoint — validates via X-Hub-Signature-256 HMAC signature.
  */
 export const handleWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
-  const dbConfig = await getWhatsAppDbConfig();
+  const dbConfig = await getDbWhatsappConfig();
   const appSecret = dbConfig?.appSecret || process.env.WHATSAPP_APP_SECRET;
 
-  // If app secret is configured, verify signature before processing
+  // If app secret is configured, verify signature using the raw body buffer
+  // captured by the express.json verify callback in server.ts
   if (appSecret) {
     const signature = req.headers['x-hub-signature-256'] as string | undefined;
-    const rawBody = JSON.stringify(req.body);
+    const rawBody: Buffer = (req as any).rawBody;
+
+    if (!rawBody) {
+      logger.warn('WhatsApp webhook: raw body not available for signature verification');
+      res.status(500).send('Internal Server Error');
+      return;
+    }
 
     if (!verifyWebhookSignature(rawBody, signature, appSecret)) {
       logger.warn('WhatsApp webhook signature verification failed');
@@ -214,17 +207,12 @@ export const getStats = async (req: AuthRequest, res: Response): Promise<void> =
 };
 
 /**
- * POST /api/whatsapp/test — Send a test WhatsApp message.
- * Useful for verifying API credentials and template approval.
- * Admin-only.
- */
-/**
  * GET /api/whatsapp/status — Check WhatsApp connection status.
  * Admin-only. Validates credentials against Meta Graph API.
  */
 export const getStatus = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const dbConfig = await getWhatsAppDbConfig();
+    const dbConfig = await getDbWhatsappConfig();
     const accessToken = dbConfig?.accessToken || process.env.WHATSAPP_ACCESS_TOKEN || '';
     const phoneNumberId = dbConfig?.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || '';
     const isEnabled = dbConfig?.isEnabled !== false;
