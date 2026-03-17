@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import crypto from 'crypto';
 import { AuthRequest } from '../types';
 import whatsappService, { TEMPLATE_BY_NAME } from '../services/whatsappService';
 import logger from '../utils/logger';
@@ -25,11 +26,51 @@ export const verifyWebhook = (req: AuthRequest, res: Response): void => {
 };
 
 /**
+ * Verify the X-Hub-Signature-256 header from Meta.
+ * Uses HMAC-SHA256 with the app secret for constant-time comparison.
+ */
+function verifyWebhookSignature(rawBody: string, signature: string | undefined, appSecret: string): boolean {
+  if (!signature) return false;
+
+  const expectedHash = crypto
+    .createHmac('sha256', appSecret)
+    .update(rawBody)
+    .digest('hex');
+
+  const receivedHash = signature.startsWith('sha256=')
+    ? signature.substring(7)
+    : signature;
+
+  if (expectedHash.length !== receivedHash.length) return false;
+
+  return crypto.timingSafeEqual(
+    Buffer.from(expectedHash, 'hex'),
+    Buffer.from(receivedHash, 'hex'),
+  );
+}
+
+/**
  * POST /api/whatsapp/webhook — Receive WhatsApp status updates and inbound messages.
- * Public endpoint — no auth required. Validates via signature.
+ * Public endpoint — validates via X-Hub-Signature-256 HMAC signature.
  */
 export const handleWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
-  // Always respond 200 quickly to prevent WhatsApp retries
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
+
+  // If app secret is configured, verify signature before processing
+  if (appSecret) {
+    const signature = req.headers['x-hub-signature-256'] as string | undefined;
+    const rawBody = JSON.stringify(req.body);
+
+    if (!verifyWebhookSignature(rawBody, signature, appSecret)) {
+      logger.warn('WhatsApp webhook signature verification failed');
+      res.status(401).send('Unauthorized');
+      return;
+    }
+  } else {
+    logger.warn('WHATSAPP_APP_SECRET not set — webhook signature verification skipped');
+  }
+
+  // Respond 200 quickly to prevent WhatsApp retries
   res.status(200).send('EVENT_RECEIVED');
 
   try {
