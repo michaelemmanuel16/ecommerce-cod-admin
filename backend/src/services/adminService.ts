@@ -4,6 +4,7 @@ import { UserRole } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { Requester, canManageRole } from '../utils/authUtils';
+import { clearWhatsAppConfigCache } from './whatsappService';
 
 export const adminService = {
   /**
@@ -103,6 +104,7 @@ export const adminService = {
     operatingHours?: any;
     smsProvider?: any;
     emailProvider?: any;
+    whatsappProvider?: any;
     notificationTemplates?: any;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
@@ -112,6 +114,11 @@ export const adminService = {
       where: { id: config.id },
       data,
     });
+
+    // Invalidate WhatsApp config cache when provider settings change
+    if (data.whatsappProvider !== undefined) {
+      clearWhatsAppConfigCache();
+    }
 
     await this.createAuditLog(requester, 'update', 'system_config', config.id.toString(), { changes: Object.keys(data) });
 
