@@ -511,6 +511,9 @@ export class AnalyticsService {
       const failed = agent.assignedOrdersAsAgent.filter((o) =>
         ['cancelled', 'returned', 'failed_delivery'].includes(o.status)
       ).length;
+      const active = agent.assignedOrdersAsAgent.filter((o) =>
+        ['ready_for_pickup', 'out_for_delivery'].includes(o.status)
+      ).length;
 
       // Calculate on-time delivery rate
       let onTimeDeliveries = 0;
@@ -529,6 +532,7 @@ export class AnalyticsService {
         totalAssigned: total,
         completed: delivered,
         pending: total - delivered - failed,
+        active,
         failed,
         successRate: total > 0 ? (delivered / total) * 100 : 0,
         onTimeRate,

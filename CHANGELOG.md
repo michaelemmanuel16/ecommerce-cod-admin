@@ -260,6 +260,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
 ### Planned Features
 - Multi-language support (i18n)
 - Advanced reporting dashboard
@@ -271,9 +277,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API rate limiting per user tier
 - Scheduled order processing
 - Return and refund management
-
-### Known Issues
-- None reported
 
 ---
 

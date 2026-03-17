@@ -145,6 +145,9 @@ function App() {
               <Route path="deliveries/:id" element={
                 <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
               } />
+              <Route path="deliveries/order/:orderId" element={
+                <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
+              } />
               <Route path="inventory" element={
                 <Suspense fallback={<Loading />}><AgentMyInventory /></Suspense>
               } />

@@ -56,7 +56,7 @@ function StatusStepper({ status }: { status: string }) {
 }
 
 export default function MobileDeliveryDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id, orderId } = useParams<{ id?: string; orderId?: string }>();
   const navigate = useNavigate();
   const [delivery, setDelivery] = useState<DeliveryListItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,16 +83,18 @@ export default function MobileDeliveryDetail() {
   const [reschedule, setReschedule] = useState(false);
 
   const fetchDelivery = useCallback(async () => {
-    if (!id) return;
+    if (!id && !orderId) return;
     try {
-      const data = await deliveriesService.getDeliveryById(id);
+      const data = orderId
+        ? await deliveriesService.getDeliveryByOrderId(orderId)
+        : await deliveriesService.getDeliveryById(id!);
       setDelivery(data);
     } catch {
       toast.error('Failed to load delivery');
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, orderId]);
 
   useEffect(() => {
     fetchDelivery();
@@ -138,8 +140,12 @@ export default function MobileDeliveryDetail() {
   };
 
   const handleComplete = async () => {
-    if (!delivery?.id || !recipientName.trim()) {
+    if (!delivery || !recipientName.trim()) {
       toast.error('Recipient name is required');
+      return;
+    }
+    if (delivery.id <= 0) {
+      toast.error('No delivery record — please contact admin');
       return;
     }
     setActionLoading(true);

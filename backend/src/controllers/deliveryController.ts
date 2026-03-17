@@ -69,6 +69,36 @@ export const completeDelivery = async (req: AuthRequest, res: Response): Promise
   }
 };
 
+export const getAgentOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const agentId = req.user!.id;
+    const { status, page = 1, limit = 20, search, startDate, endDate } = req.query;
+
+    const result = await deliveryService.getAgentOrders(agentId, {
+      status: status as string | undefined,
+      page: Number(page),
+      limit: Number(limit),
+      search: search as string | undefined,
+      startDate: startDate as string | undefined,
+      endDate: endDate as string | undefined,
+    });
+
+    res.json(result);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getDeliveryByOrderId = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { orderId } = req.params;
+    const delivery = await deliveryService.getDeliveryByOrderId(parseInt(orderId, 10));
+    res.json({ delivery });
+  } catch (error) {
+    throw error;
+  }
+};
+
 export const getAgentRoute = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { agentId } = req.params;

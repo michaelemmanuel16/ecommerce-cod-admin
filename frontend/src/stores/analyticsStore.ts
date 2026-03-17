@@ -11,6 +11,7 @@ import {
   ProductPerformance,
   AreaDistribution,
 } from '../services/analytics.service';
+import { deliveriesService } from '../services/deliveries.service';
 import { getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
 
@@ -22,6 +23,7 @@ interface AnalyticsState {
   agentPerformance: PerformanceMetrics[];
   customerInsights: CustomerInsights | null;
   pendingOrders: PendingOrder[];
+  readyForPickup: PendingOrder[];
   recentActivity: Activity[];
   ordersByStatus: ConversionFunnelStep[];
   productPerformance: ProductPerformance[];
@@ -40,6 +42,7 @@ interface AnalyticsState {
   fetchAgentPerformance: (startDate?: string, endDate?: string) => Promise<void>;
   fetchCustomerInsights: () => Promise<void>;
   fetchPendingOrders: () => Promise<void>;
+  fetchReadyForPickup: () => Promise<void>;
   fetchRecentActivity: () => Promise<void>;
   fetchOrdersByStatus: (startDate?: string, endDate?: string) => Promise<void>;
   fetchProductPerformance: (startDate?: string, endDate?: string) => Promise<void>;
@@ -57,6 +60,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
     agentPerformance: [],
     customerInsights: null,
     pendingOrders: [],
+    readyForPickup: [],
     recentActivity: [],
     ordersByStatus: [],
     productPerformance: [],
@@ -210,6 +214,25 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
         const errorMessage = error.response?.data?.message || 'Failed to fetch pending orders';
         console.error(errorMessage, error);
         toast.error(errorMessage);
+      }
+    },
+
+    fetchReadyForPickup: async () => {
+      try {
+        const data = await deliveriesService.getAgentOrders({ status: 'ready_for_pickup', limit: 5 });
+        const readyForPickup: PendingOrder[] = (data.deliveries || []).map(d => ({
+          id: d.orderId,
+          orderNumber: `#${String(d.orderId).padStart(6, '0')}`,
+          customerName: d.order?.customer ? `${d.order.customer.firstName} ${d.order.customer.lastName}` : 'Unknown',
+          customerPhone: d.order?.customer?.phoneNumber || '',
+          customerArea: d.order?.deliveryArea || '',
+          totalAmount: d.order?.totalAmount || 0,
+          createdAt: d.createdAt,
+          repName: '',
+        }));
+        set({ readyForPickup });
+      } catch (error: any) {
+        console.error('Failed to fetch ready for pickup orders', error);
       }
     },
 

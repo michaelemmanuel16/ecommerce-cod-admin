@@ -86,6 +86,24 @@ export const deliveriesService = {
     return response.data;
   },
 
+  async getAgentOrders(filters?: { status?: string; page?: number; limit?: number; search?: string; startDate?: string; endDate?: string }): Promise<{ deliveries: DeliveryListItem[]; pagination: DeliveryPagination; statusCounts?: Record<string, number> }> {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.page) params.set('page', String(filters.page));
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    if (filters?.search) params.set('search', filters.search);
+    if (filters?.startDate) params.set('startDate', filters.startDate);
+    if (filters?.endDate) params.set('endDate', filters.endDate);
+    const query = params.toString();
+    const response = await apiClient.get(`/api/deliveries/agent-orders${query ? `?${query}` : ''}`);
+    return response.data;
+  },
+
+  async getDeliveryByOrderId(orderId: string | number): Promise<DeliveryListItem> {
+    const response = await apiClient.get(`/api/deliveries/by-order/${orderId}`);
+    return response.data.delivery || response.data;
+  },
+
   async getDeliveryById(id: string | number): Promise<DeliveryListItem> {
     const response = await apiClient.get(`/api/deliveries/${id}`);
     return response.data.delivery || response.data;

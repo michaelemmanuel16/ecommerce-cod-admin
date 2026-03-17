@@ -44,6 +44,7 @@ export function useDashboardData(
   const fetchAgentPerformance = useAnalyticsStore(state => state.fetchAgentPerformance);
   const fetchCustomerInsights = useAnalyticsStore(state => state.fetchCustomerInsights);
   const fetchPendingOrders = useAnalyticsStore(state => state.fetchPendingOrders);
+  const fetchReadyForPickup = useAnalyticsStore(state => state.fetchReadyForPickup);
   const fetchRecentActivity = useAnalyticsStore(state => state.fetchRecentActivity);
   const fetchOrdersByStatus = useAnalyticsStore(state => state.fetchOrdersByStatus);
 
@@ -77,6 +78,7 @@ export function useDashboardData(
         fetchAgentPerformance,
         fetchCustomerInsights,
         fetchPendingOrders,
+        fetchReadyForPickup,
         fetchRecentActivity,
         fetchOrdersByStatus,
       };
@@ -210,6 +212,7 @@ export function useDashboardData(
     fetchAgentPerformance,
     fetchCustomerInsights,
     fetchPendingOrders,
+    fetchReadyForPickup,
     fetchRecentActivity,
     fetchOrdersByStatus,
   ]);
@@ -377,7 +380,10 @@ async function executeFetcher(
       break;
 
     case 'fetchAgentPerformance':
-      await storeMethods.fetchAgentPerformance();
+      await storeMethods.fetchAgentPerformance(
+        dateRange?.startDate,
+        dateRange?.endDate
+      );
       const agentPerf = useAnalyticsStore.getState().agentPerformance;
 
       if (user?.role === 'delivery_agent') {
@@ -388,7 +394,7 @@ async function executeFetcher(
         if (myPerf) {
           dashboardData.agentPerformance = {
             completedDeliveries: myPerf.completed || 0,
-            activeDeliveries: myPerf.pending || 0,
+            activeDeliveries: myPerf.active ?? myPerf.pending ?? 0,
             successfulDeliveries: myPerf.completed || 0,
             failedDeliveries: myPerf.failed || 0,
             totalAssigned: myPerf.totalAssigned || 0,
@@ -428,6 +434,12 @@ async function executeFetcher(
       await storeMethods.fetchPendingOrders();
       dashboardData.pendingOrders = useAnalyticsStore.getState().pendingOrders;
       console.log('📋 Pending orders fetched:', dashboardData.pendingOrders);
+      break;
+
+    case 'fetchReadyForPickup':
+      console.log('📦 Fetching ready for pickup orders...');
+      await storeMethods.fetchReadyForPickup();
+      dashboardData.readyForPickup = useAnalyticsStore.getState().readyForPickup;
       break;
 
     case 'fetchRecentActivity':
