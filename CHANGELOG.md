@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[Financial]**: Per-agent Deposits tab in collection modal with verify/reject actions (MAN-28)
 - **[Financial]**: Collection modal pagination for high-volume agents (MAN-28)
 - **[Financial]**: Agent inventory history tracking on mobile (MAN-28)
+- **[Inventory]**: Mobile inventory view with per-product allocation history drill-down (MAN-27)
 
 ### Fixed
 - **[Financial]**: Bulk deposit verification self-deadlock from raw SQL FOR UPDATE (MAN-28)
