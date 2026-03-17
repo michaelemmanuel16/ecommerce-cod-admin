@@ -12,9 +12,13 @@ export class AgentReconciliationController {
      */
     async getCollections(req: Request, res: Response) {
         const { agentId, status, startDate, endDate } = req.query;
+        const user = (req as any).user;
 
         const where: any = {};
-        if (agentId) {
+        // Delivery agents can only see their own collections
+        if (user.role === 'delivery_agent') {
+            where.agentId = user.id;
+        } else if (agentId) {
             const parsedId = parseInt(agentId as string);
             if (isNaN(parsedId)) throw new AppError('Invalid agentId', 400);
             where.agentId = parsedId;
@@ -47,9 +51,13 @@ export class AgentReconciliationController {
      */
     async getDeposits(req: Request, res: Response) {
         const { agentId, status, startDate, endDate } = req.query;
+        const user = (req as any).user;
 
         const where: any = {};
-        if (agentId) {
+        // Delivery agents can only see their own deposits
+        if (user.role === 'delivery_agent') {
+            where.agentId = user.id;
+        } else if (agentId) {
             const parsedId = parseInt(agentId as string);
             if (isNaN(parsedId)) throw new AppError('Invalid agentId', 400);
             where.agentId = parsedId;
@@ -196,7 +204,7 @@ export class AgentReconciliationController {
      * Create a deposit record (Agent/Accountant/Manager/Admin)
      */
     async createDeposit(req: Request, res: Response) {
-        const { amount, depositMethod, referenceNumber, notes, agentId: providedAgentId } = req.body;
+        const { amount, depositMethod, referenceNumber, notes, receiptUrl, agentId: providedAgentId } = req.body;
         const user = (req as any).user;
 
         // RBAC: Strengthened check for creating deposits for others
@@ -220,7 +228,8 @@ export class AgentReconciliationController {
                 parseFloat(amount),
                 depositMethod,
                 referenceNumber,
-                notes
+                notes,
+                receiptUrl
             );
 
             // Emit socket event for accountants to see the new pending deposit
