@@ -1,6 +1,6 @@
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { MessageChannel, MessageDirection, MessageStatus } from '@prisma/client';
+import { MessageChannel, MessageDirection, MessageStatus, Prisma } from '@prisma/client';
 
 // WhatsApp Business Cloud API configuration
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
@@ -19,11 +19,6 @@ function getConfig(): WhatsAppConfig {
     webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
   };
-}
-
-function isConfigured(): boolean {
-  const config = getConfig();
-  return !!(config.accessToken && config.phoneNumberId);
 }
 
 // Order status → WhatsApp template mapping.
@@ -54,6 +49,11 @@ export const ORDER_STATUS_TEMPLATES: Record<string, {
     bodyParams: (o) => [o.customerName, String(o.orderId)],
   },
 };
+
+// Reverse lookup: templateName → config (for test endpoint)
+export const TEMPLATE_BY_NAME = Object.fromEntries(
+  Object.values(ORDER_STATUS_TEMPLATES).map(t => [t.templateName, t])
+);
 
 export interface OrderContext {
   orderId: number;
@@ -121,6 +121,7 @@ export function formatPhoneNumber(phone: string): string {
 
 /**
  * Build a human-readable message body from a template for logging purposes.
+ * Best-effort representation — the actual message sent uses Meta's template system.
  */
 function buildMessageBody(templateName: string, bodyParams: string[]): string {
   const templates: Record<string, string> = {
@@ -140,53 +141,22 @@ function buildMessageBody(templateName: string, bodyParams: string[]): string {
 
 class WhatsAppService {
   /**
-   * Send a template message via WhatsApp Business Cloud API.
+   * Send the API payload and update the MessageLog accordingly.
+   * Shared by sendTemplate() and sendText().
    */
-  async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
-    const { to, templateName, languageCode = 'en', bodyParams = [], orderId, customerId } = options;
-    const formattedPhone = formatPhoneNumber(to);
-    const messageBody = buildMessageBody(templateName, bodyParams);
+  private async dispatch(
+    messageLogId: number,
+    formattedPhone: string,
+    payload: object,
+  ): Promise<string | undefined> {
+    const config = getConfig();
 
-    // Create message log entry
-    const messageLog = await prisma.messageLog.create({
-      data: {
-        orderId,
-        customerId,
-        channel: MessageChannel.whatsapp,
-        direction: MessageDirection.outbound,
-        templateName,
-        messageBody,
-        status: MessageStatus.pending,
-        metadata: { bodyParams, languageCode, to: formattedPhone },
-      },
-    });
-
-    if (!isConfigured()) {
-      logger.warn('WhatsApp not configured — message logged but not sent', {
-        messageLogId: messageLog.id,
-        templateName,
-      });
-      return { messageLogId: messageLog.id };
+    if (!config.accessToken || !config.phoneNumberId) {
+      logger.warn('WhatsApp not configured — message logged but not sent', { messageLogId });
+      return undefined;
     }
 
     try {
-      const config = getConfig();
-      const payload = {
-        messaging_product: 'whatsapp',
-        to: formattedPhone,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: languageCode },
-          components: bodyParams.length > 0
-            ? [{
-                type: 'body',
-                parameters: bodyParams.map(text => ({ type: 'text', text })),
-              }]
-            : undefined,
-        },
-      };
-
       const response = await fetch(`${WHATSAPP_API_URL}/${config.phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
@@ -205,7 +175,7 @@ class WhatsAppService {
       const providerMessageId = data.messages?.[0]?.id;
 
       await prisma.messageLog.update({
-        where: { id: messageLog.id },
+        where: { id: messageLogId },
         data: {
           status: MessageStatus.sent,
           providerMessageId,
@@ -213,31 +183,61 @@ class WhatsAppService {
         },
       });
 
-      logger.info('WhatsApp template message sent', {
-        messageLogId: messageLog.id,
-        templateName,
-        to: formattedPhone,
-        providerMessageId,
-      });
-
-      return { messageLogId: messageLog.id, providerMessageId };
+      logger.info('WhatsApp message sent', { messageLogId, to: formattedPhone, providerMessageId });
+      return providerMessageId;
     } catch (error: any) {
       await prisma.messageLog.update({
-        where: { id: messageLog.id },
+        where: { id: messageLogId },
         data: {
           status: MessageStatus.failed,
           errorMessage: error.message?.substring(0, 500),
         },
       });
 
-      logger.error('Failed to send WhatsApp template message', {
-        messageLogId: messageLog.id,
-        templateName,
-        error: error.message,
-      });
-
+      logger.error('Failed to send WhatsApp message', { messageLogId, error: error.message });
       throw error;
     }
+  }
+
+  /**
+   * Send a template message via WhatsApp Business Cloud API.
+   */
+  async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
+    const { to, templateName, languageCode = 'en', bodyParams = [], orderId, customerId } = options;
+    const formattedPhone = formatPhoneNumber(to);
+    const messageBody = buildMessageBody(templateName, bodyParams);
+
+    const messageLog = await prisma.messageLog.create({
+      data: {
+        orderId,
+        customerId,
+        channel: MessageChannel.whatsapp,
+        direction: MessageDirection.outbound,
+        templateName,
+        messageBody,
+        status: MessageStatus.pending,
+        metadata: { bodyParams, languageCode, to: formattedPhone },
+      },
+    });
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: formattedPhone,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: languageCode },
+        components: bodyParams.length > 0
+          ? [{
+              type: 'body',
+              parameters: bodyParams.map(text => ({ type: 'text', text })),
+            }]
+          : undefined,
+      },
+    };
+
+    const providerMessageId = await this.dispatch(messageLog.id, formattedPhone, payload);
+    return { messageLogId: messageLog.id, providerMessageId };
   }
 
   /**
@@ -259,76 +259,20 @@ class WhatsAppService {
       },
     });
 
-    if (!isConfigured()) {
-      logger.warn('WhatsApp not configured — text message logged but not sent', {
-        messageLogId: messageLog.id,
-      });
-      return { messageLogId: messageLog.id };
-    }
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: formattedPhone,
+      type: 'text',
+      text: { body },
+    };
 
-    try {
-      const config = getConfig();
-      const payload = {
-        messaging_product: 'whatsapp',
-        to: formattedPhone,
-        type: 'text',
-        text: { body },
-      };
-
-      const response = await fetch(`${WHATSAPP_API_URL}/${config.phoneNumberId}/messages`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`WhatsApp API error ${response.status}: ${errorBody}`);
-      }
-
-      const data = await response.json() as WhatsAppApiResponse;
-      const providerMessageId = data.messages?.[0]?.id;
-
-      await prisma.messageLog.update({
-        where: { id: messageLog.id },
-        data: {
-          status: MessageStatus.sent,
-          providerMessageId,
-          sentAt: new Date(),
-        },
-      });
-
-      logger.info('WhatsApp text message sent', {
-        messageLogId: messageLog.id,
-        to: formattedPhone,
-        providerMessageId,
-      });
-
-      return { messageLogId: messageLog.id, providerMessageId };
-    } catch (error: any) {
-      await prisma.messageLog.update({
-        where: { id: messageLog.id },
-        data: {
-          status: MessageStatus.failed,
-          errorMessage: error.message?.substring(0, 500),
-        },
-      });
-
-      logger.error('Failed to send WhatsApp text message', {
-        messageLogId: messageLog.id,
-        error: error.message,
-      });
-
-      throw error;
-    }
+    const providerMessageId = await this.dispatch(messageLog.id, formattedPhone, payload);
+    return { messageLogId: messageLog.id, providerMessageId };
   }
 
   /**
    * Process inbound webhook status update from WhatsApp.
-   * Updates MessageLog with delivery/read receipts.
+   * Updates MessageLog with delivery/read receipts in a single query.
    */
   async processStatusUpdate(providerMessageId: string, status: string, timestamp?: number): Promise<void> {
     const statusMap: Record<string, MessageStatus> = {
@@ -344,16 +288,7 @@ class WhatsAppService {
       return;
     }
 
-    const messageLog = await prisma.messageLog.findUnique({
-      where: { providerMessageId },
-    });
-
-    if (!messageLog) {
-      logger.warn('MessageLog not found for status update', { providerMessageId });
-      return;
-    }
-
-    const updateData: any = { status: mappedStatus };
+    const updateData: Prisma.MessageLogUpdateManyMutationInput = { status: mappedStatus };
     const eventTime = timestamp ? new Date(timestamp * 1000) : new Date();
 
     if (mappedStatus === MessageStatus.delivered) {
@@ -362,16 +297,17 @@ class WhatsAppService {
       updateData.readAt = eventTime;
     }
 
-    await prisma.messageLog.update({
-      where: { id: messageLog.id },
+    const result = await prisma.messageLog.updateMany({
+      where: { providerMessageId },
       data: updateData,
     });
 
-    logger.info('WhatsApp message status updated', {
-      messageLogId: messageLog.id,
-      providerMessageId,
-      newStatus: mappedStatus,
-    });
+    if (result.count === 0) {
+      logger.warn('MessageLog not found for status update', { providerMessageId });
+      return;
+    }
+
+    logger.info('WhatsApp message status updated', { providerMessageId, newStatus: mappedStatus });
   }
 
   /**
@@ -390,7 +326,7 @@ class WhatsAppService {
     const { page = 1, limit = 20, channel, status, orderId, customerId, startDate, endDate } = params;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.MessageLogWhereInput = {};
     if (channel) where.channel = channel;
     if (status) where.status = status;
     if (orderId) where.orderId = orderId;
@@ -443,15 +379,14 @@ class WhatsAppService {
    * Get message statistics for dashboard.
    */
   async getStats(startDate?: string, endDate?: string) {
-    const where: any = {};
+    const where: Prisma.MessageLogWhereInput = {};
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
-    const [total, byStatus, byChannel] = await Promise.all([
-      prisma.messageLog.count({ where }),
+    const [byStatus, byChannel] = await Promise.all([
       prisma.messageLog.groupBy({
         by: ['status'],
         where,
@@ -463,6 +398,8 @@ class WhatsAppService {
         _count: true,
       }),
     ]);
+
+    const total = byStatus.reduce((sum, s) => sum + s._count, 0);
 
     return {
       total,

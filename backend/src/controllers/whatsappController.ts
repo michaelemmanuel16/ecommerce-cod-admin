@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
-import whatsappService, { ORDER_STATUS_TEMPLATES } from '../services/whatsappService';
+import whatsappService, { TEMPLATE_BY_NAME } from '../services/whatsappService';
 import logger from '../utils/logger';
 import { MessageChannel, MessageStatus } from '@prisma/client';
 
@@ -174,17 +174,12 @@ export const testSend = async (req: AuthRequest, res: Response): Promise<void> =
     }
 
     const template = templateName || 'order_confirmed';
-    const templateConfig = ORDER_STATUS_TEMPLATES[
-      // Map template names back to status keys
-      Object.keys(ORDER_STATUS_TEMPLATES).find(
-        k => ORDER_STATUS_TEMPLATES[k].templateName === template
-      ) || 'confirmed'
-    ];
+    const templateConfig = TEMPLATE_BY_NAME[template];
 
     if (!templateConfig) {
       res.status(400).json({
         error: `Unknown template: ${template}`,
-        availableTemplates: Object.values(ORDER_STATUS_TEMPLATES).map(t => t.templateName),
+        availableTemplates: Object.keys(TEMPLATE_BY_NAME),
       });
       return;
     }
