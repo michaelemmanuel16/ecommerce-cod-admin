@@ -39,6 +39,7 @@ import glRoutes from './routes/glRoutes';
 import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
+import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { GLAutomationService } from './services/glAutomationService';
 import { GLAccountService } from './services/glAccountService';
 import cron from 'node-cron';
@@ -166,8 +167,9 @@ app.use('/api/calls', apiLimiter, callRoutes);
 app.use('/api/agent-reconciliation', apiLimiter, agentReconciliationRoutes);
 app.use('/api/agent-inventory', apiLimiter, agentInventoryRoutes);
 // WhatsApp webhook endpoints bypass rate limiter — Meta sends bursts of status callbacks
-// Admin endpoints still rate-limited via per-route auth middleware
-app.use('/api/whatsapp/webhook', whatsappRoutes);
+app.get('/api/whatsapp/webhook', verifyWebhook);
+app.post('/api/whatsapp/webhook', handleWebhook);
+// Admin endpoints still rate-limited
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 
 // Public routes (no authentication required)
