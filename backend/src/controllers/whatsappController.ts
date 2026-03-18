@@ -232,11 +232,11 @@ export const getStatus = async (_req: AuthRequest, res: Response): Promise<void>
       );
 
       if (!response.ok) {
-        const errorBody = await response.text();
+        logger.error(`WhatsApp API status check failed: ${response.status}`);
         res.json({
           configured: true,
           enabled: isEnabled,
-          error: `API returned ${response.status}: ${errorBody}`,
+          error: `WhatsApp API returned status ${response.status}`,
         });
         return;
       }

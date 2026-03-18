@@ -276,19 +276,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deployment automation
 - Environment-specific configs
 
-## [Unreleased]
-
-### Added
-
-### Changed
-
-### Fixed
-
 ### Planned Features
 - Multi-language support (i18n)
 - Advanced reporting dashboard
 - Mobile application
-- Real-time notifications (WebSocket)
 - Bulk import/export improvements
 - Advanced analytics with AI insights
 - Two-factor authentication (2FA)
