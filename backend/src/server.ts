@@ -165,6 +165,9 @@ app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);
 app.use('/api/agent-reconciliation', apiLimiter, agentReconciliationRoutes);
 app.use('/api/agent-inventory', apiLimiter, agentInventoryRoutes);
+// WhatsApp webhook endpoints bypass rate limiter — Meta sends bursts of status callbacks
+// Admin endpoints still rate-limited via per-route auth middleware
+app.use('/api/whatsapp/webhook', whatsappRoutes);
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 
 // Public routes (no authentication required)

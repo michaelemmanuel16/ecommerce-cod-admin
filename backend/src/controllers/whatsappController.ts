@@ -73,7 +73,9 @@ export const handleWebhook = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
   } else {
-    logger.warn('WHATSAPP_APP_SECRET not set — webhook signature verification skipped');
+    logger.error('WHATSAPP_APP_SECRET not configured — rejecting unsigned webhook');
+    res.status(403).send('Webhook signature verification not configured');
+    return;
   }
 
   // Respond 200 quickly to prevent WhatsApp retries

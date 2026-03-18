@@ -48,7 +48,8 @@ Other statuses (preparing, ready_for_pickup, cancelled) can be triggered via the
 WHATSAPP_ACCESS_TOKEN=           # Meta Graph API access token
 WHATSAPP_PHONE_NUMBER_ID=        # WhatsApp Business phone number ID
 
-# Required for webhook verification
+# Required for webhook security (HMAC-SHA256 signature verification)
+WHATSAPP_APP_SECRET=             # Meta App Secret — without this, webhooks are rejected
 WHATSAPP_WEBHOOK_VERIFY_TOKEN=   # Custom token you set in Meta dashboard
 
 # Optional
