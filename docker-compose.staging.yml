@@ -53,6 +53,8 @@ services:
       WEBHOOK_SECRET: ${WEBHOOK_SECRET}
       FRONTEND_URL: ${FRONTEND_URL:-https://staging.codadminpro.com}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://staging.codadminpro.com}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      PROVIDER_ENCRYPTION_KEY: ${PROVIDER_ENCRYPTION_KEY}
     volumes:
       - backend_uploads_staging:/app/uploads
       - backend_logs_staging:/app/logs
