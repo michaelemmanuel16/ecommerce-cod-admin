@@ -5,6 +5,24 @@ All notable changes to the E-Commerce COD Admin Dashboard will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **[Financial]**: Mobile deposit submission with receipt photo upload for agents (MAN-28)
+- **[Financial]**: Per-agent Deposits tab in collection modal with verify/reject actions (MAN-28)
+- **[Financial]**: Collection modal pagination for high-volume agents (MAN-28)
+- **[Financial]**: Agent inventory history tracking on mobile (MAN-28)
+- **[Inventory]**: Mobile inventory view with per-product allocation history drill-down (MAN-27)
+
+### Fixed
+- **[Financial]**: Bulk deposit verification self-deadlock from raw SQL FOR UPDATE (MAN-28)
+- **[Financial]**: Double-click on verify buttons causing duplicate requests (MAN-28)
+- **[Financial]**: Deposit verification timeout by extending API timeouts (MAN-28)
+
+### Changed
+- **[Financial]**: Deposit reference format improved to date-based DEP-YYYYMMDD-XXXX (MAN-28)
+- **[Financial]**: "Verify Collections" button renamed to "View Details" in Agent Collections (MAN-28)
+
 ## [1.0.0] - 2025-10-08
 
 ### Added

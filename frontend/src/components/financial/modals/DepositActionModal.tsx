@@ -1,9 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal } from '../../ui/Modal';
 import { Button } from '../../ui/Button';
 import { useFinancialStore } from '../../../stores/financialStore';
 import { formatCurrency } from '../../../utils/format';
-import { CheckCircle, Loader2, X, CheckSquare, Square } from 'lucide-react';
+import { CheckCircle, Loader2, X, CheckSquare, Square, Image } from 'lucide-react';
 import { Badge } from '../../ui/Badge';
 
 interface DepositActionModalProps {
@@ -40,17 +40,30 @@ export const DepositActionModal: React.FC<DepositActionModalProps> = ({
         }
     }, [isOpen, fetchAgentDeposits, clearDepositSelection]);
 
+    const [verifying, setVerifying] = useState(false);
+
     const handleVerify = async (depositId: number) => {
-        await verifyDeposit(depositId);
+        if (verifying) return;
+        setVerifying(true);
+        try {
+            await verifyDeposit(depositId);
+        } finally {
+            setVerifying(false);
+        }
     };
 
     const handleBulkVerify = async () => {
-        if (selectedDepositIds.length === 0) return;
+        if (verifying || selectedDepositIds.length === 0) return;
         if (selectedDepositIds.length > 50) {
             alert('Cannot verify more than 50 deposits at once');
             return;
         }
-        await bulkVerifyDeposits(selectedDepositIds);
+        setVerifying(true);
+        try {
+            await bulkVerifyDeposits(selectedDepositIds);
+        } finally {
+            setVerifying(false);
+        }
     };
 
     const allSelected = currentAgentDeposits.length > 0 &&
@@ -93,7 +106,7 @@ export const DepositActionModal: React.FC<DepositActionModalProps> = ({
                                     size="sm"
                                     variant="primary"
                                     onClick={handleBulkVerify}
-                                    disabled={selectedDepositIds.length > 50}
+                                    disabled={verifying || selectedDepositIds.length > 50}
                                 >
                                     <CheckCircle className="w-4 h-4 mr-1" />
                                     Verify Selected ({selectedDepositIds.length})
@@ -136,6 +149,7 @@ export const DepositActionModal: React.FC<DepositActionModalProps> = ({
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Receipt</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                 </tr>
@@ -143,7 +157,7 @@ export const DepositActionModal: React.FC<DepositActionModalProps> = ({
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {currentAgentDeposits.length === 0 ? (
                                     <tr>
-                                        <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                                        <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
                                             No pending deposits found.
                                         </td>
                                     </tr>
@@ -177,6 +191,21 @@ export const DepositActionModal: React.FC<DepositActionModalProps> = ({
                                             <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                                                 {new Date(deposit.depositDate).toLocaleDateString()}
                                             </td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                                {deposit.receiptUrl ? (
+                                                    <a
+                                                        href={deposit.receiptUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                                                    >
+                                                        <Image className="w-4 h-4" />
+                                                        <span>View</span>
+                                                    </a>
+                                                ) : (
+                                                    <span className="text-gray-400">No receipt</span>
+                                                )}
+                                            </td>
                                             <td className="px-4 py-3 whitespace-nowrap">
                                                 <Badge className={statusColors[deposit.status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800'}>
                                                     {deposit.status.charAt(0).toUpperCase() + deposit.status.slice(1)}
@@ -189,6 +218,7 @@ export const DepositActionModal: React.FC<DepositActionModalProps> = ({
                                                             size="sm"
                                                             variant="primary"
                                                             onClick={() => handleVerify(deposit.id)}
+                                                            disabled={verifying}
                                                         >
                                                             <CheckCircle className="w-4 h-4 mr-1" />
                                                             Verify

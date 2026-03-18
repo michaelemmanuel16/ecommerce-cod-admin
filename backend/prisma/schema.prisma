@@ -722,6 +722,7 @@ model AgentDeposit {
   verifiedAt      DateTime?     @map("verified_at")
   verifiedById    Int?          @map("verified_by_id")
   notes           String?
+  receiptUrl      String?       @map("receipt_url")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
