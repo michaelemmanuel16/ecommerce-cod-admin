@@ -226,7 +226,7 @@ export const Settings: React.FC = () => {
             </div>
           </Card>
 
-          {!isSalesRep && (
+          {!isSalesRep && user?.role !== 'delivery_agent' && (
             <Card>
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Display Preferences</h3>
