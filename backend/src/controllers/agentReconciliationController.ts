@@ -216,6 +216,10 @@ export class AgentReconciliationController {
         } else if (providedAgentId) {
             const parsedProvidedId = parseInt(providedAgentId);
             if (isNaN(parsedProvidedId)) throw new AppError('Invalid agent ID format', 400);
+            const canManageOthers = ['manager', 'admin', 'accountant', 'super_admin'].includes(user.role);
+            if (!canManageOthers) {
+                throw new AppError('Access denied: You cannot create deposits for other agents', 403);
+            }
             targetAgentId = parsedProvidedId;
         }
 
