@@ -1,6 +1,7 @@
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { MessageChannel, MessageDirection, MessageStatus, Prisma } from '@prisma/client';
+import { decryptProviderSecrets } from '../utils/providerCrypto';
 
 // WhatsApp Business Cloud API configuration
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
@@ -29,7 +30,8 @@ export async function getDbWhatsappConfig(): Promise<any | null> {
       select: { whatsappProvider: true },
     });
     const provider = config?.whatsappProvider as any;
-    cachedDbConfig = { data: provider || null, fetchedAt: now };
+    const decrypted = provider ? decryptProviderSecrets('whatsappProvider', provider) : null;
+    cachedDbConfig = { data: decrypted, fetchedAt: now };
     return cachedDbConfig.data;
   } catch (error: any) {
     logger.warn('Failed to read WhatsApp config from DB, falling back to env vars', { error: error.message });

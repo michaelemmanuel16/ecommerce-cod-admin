@@ -1,8 +1,6 @@
 import { Router } from 'express';
 import { authenticate, requirePermission } from '../middleware/auth';
 import {
-  verifyWebhook,
-  handleWebhook,
   getMessages,
   getMessageById,
   sendMessage,
@@ -14,10 +12,8 @@ import { UserRole } from '@prisma/client';
 
 const router = Router();
 
-// Public webhook endpoints (no auth — called by WhatsApp)
-// Raw body is captured via express.json verify callback in server.ts for HMAC verification.
-router.get('/webhook', verifyWebhook);
-router.post('/webhook', handleWebhook);
+// Webhook endpoints are registered directly in server.ts with a dedicated rate limiter
+// (whatsappWebhookLimiter) to handle Meta's burst traffic without apiLimiter blocking.
 
 // Admin endpoints (require auth + admin role)
 const adminRoles: UserRole[] = ['super_admin', 'admin', 'manager'];

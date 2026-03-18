@@ -5,6 +5,7 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { Requester, canManageRole } from '../utils/authUtils';
 import { clearWhatsAppConfigCache } from './whatsappService';
+import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/providerCrypto';
 
 export const adminService = {
   /**
@@ -83,8 +84,14 @@ export const adminService = {
       });
     }
 
+    // Decrypt provider credentials (no-op if not encrypted or key not set)
+    const decrypted = { ...config } as any;
+    decrypted.whatsappProvider = decryptProviderSecrets('whatsappProvider', decrypted.whatsappProvider);
+    decrypted.smsProvider = decryptProviderSecrets('smsProvider', decrypted.smsProvider);
+    decrypted.emailProvider = decryptProviderSecrets('emailProvider', decrypted.emailProvider);
+
     // Mask sensitive provider credentials before returning
-    const masked = { ...config } as any;
+    const masked = { ...decrypted } as any;
     if (masked.whatsappProvider) {
       const wp = { ...masked.whatsappProvider };
       if (wp.accessToken) wp.accessToken = '••••••••';
@@ -151,6 +158,17 @@ export const adminService = {
       const ep = { ...data.emailProvider };
       if (ep.apiKey === MASK) ep.apiKey = existing.apiKey;
       data.emailProvider = ep;
+    }
+
+    // Encrypt sensitive fields before writing to DB
+    if (data.whatsappProvider) {
+      data.whatsappProvider = encryptProviderSecrets('whatsappProvider', data.whatsappProvider);
+    }
+    if (data.smsProvider) {
+      data.smsProvider = encryptProviderSecrets('smsProvider', data.smsProvider);
+    }
+    if (data.emailProvider) {
+      data.emailProvider = encryptProviderSecrets('emailProvider', data.emailProvider);
     }
 
     const updatedConfig = await prisma.systemConfig.update({

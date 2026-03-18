@@ -11,7 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { initializeSocket } from './sockets';
 import { errorHandler, notFound } from './middleware/errorHandler';
-import { apiLimiter } from './middleware/rateLimiter';
+import { apiLimiter, whatsappWebhookLimiter } from './middleware/rateLimiter';
 import logger from './utils/logger';
 import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
@@ -166,10 +166,11 @@ app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);
 app.use('/api/agent-reconciliation', apiLimiter, agentReconciliationRoutes);
 app.use('/api/agent-inventory', apiLimiter, agentInventoryRoutes);
-// WhatsApp webhook endpoints bypass rate limiter — Meta sends bursts of status callbacks
-app.get('/api/whatsapp/webhook', verifyWebhook);
-app.post('/api/whatsapp/webhook', handleWebhook);
-// Admin endpoints still rate-limited
+// WhatsApp webhook endpoints — dedicated high-limit rate limiter (1000/15min prod)
+// bypasses apiLimiter (500/15min) since Meta sends bursts of status callbacks
+app.get('/api/whatsapp/webhook', whatsappWebhookLimiter, verifyWebhook);
+app.post('/api/whatsapp/webhook', whatsappWebhookLimiter, handleWebhook);
+// Admin endpoints use standard rate limiter
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 
 // Public routes (no authentication required)
