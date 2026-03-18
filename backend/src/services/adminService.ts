@@ -83,7 +83,26 @@ export const adminService = {
       });
     }
 
-    return config;
+    // Mask sensitive provider credentials before returning
+    const masked = { ...config } as any;
+    if (masked.whatsappProvider) {
+      const wp = { ...masked.whatsappProvider };
+      if (wp.accessToken) wp.accessToken = '••••••••';
+      if (wp.appSecret) wp.appSecret = '••••••••';
+      if (wp.webhookVerifyToken) wp.webhookVerifyToken = '••••••••';
+      masked.whatsappProvider = wp;
+    }
+    if (masked.smsProvider) {
+      const sp = { ...masked.smsProvider };
+      if (sp.authToken) sp.authToken = '••••••••';
+      masked.smsProvider = sp;
+    }
+    if (masked.emailProvider) {
+      const ep = { ...masked.emailProvider };
+      if (ep.apiKey) ep.apiKey = '••••••••';
+      masked.emailProvider = ep;
+    }
+    return masked;
   },
 
   async getPublicConfig() {
@@ -108,7 +127,31 @@ export const adminService = {
     notificationTemplates?: any;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
-    const config = await this.getSystemConfig();
+    const config = await prisma.systemConfig.findFirst();
+    if (!config) throw new Error('System config not found');
+
+    // Strip masked placeholder values so they don't overwrite real secrets
+    const MASK = '••••••••';
+    if (data.whatsappProvider) {
+      const existing = (config.whatsappProvider as any) || {};
+      const wp = { ...data.whatsappProvider };
+      if (wp.accessToken === MASK) wp.accessToken = existing.accessToken;
+      if (wp.appSecret === MASK) wp.appSecret = existing.appSecret;
+      if (wp.webhookVerifyToken === MASK) wp.webhookVerifyToken = existing.webhookVerifyToken;
+      data.whatsappProvider = wp;
+    }
+    if (data.smsProvider) {
+      const existing = (config.smsProvider as any) || {};
+      const sp = { ...data.smsProvider };
+      if (sp.authToken === MASK) sp.authToken = existing.authToken;
+      data.smsProvider = sp;
+    }
+    if (data.emailProvider) {
+      const existing = (config.emailProvider as any) || {};
+      const ep = { ...data.emailProvider };
+      if (ep.apiKey === MASK) ep.apiKey = existing.apiKey;
+      data.emailProvider = ep;
+    }
 
     const updatedConfig = await prisma.systemConfig.update({
       where: { id: config.id },
