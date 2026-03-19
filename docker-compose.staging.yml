@@ -55,8 +55,8 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-https://staging.codadminpro.com}
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
       PROVIDER_ENCRYPTION_KEY: ${PROVIDER_ENCRYPTION_KEY}
-      META_APP_ID: ${META_APP_ID}
-      META_APP_SECRET: ${META_APP_SECRET}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
       BACKEND_URL: ${BACKEND_URL:-https://staging.codadminpro.com}
     volumes:
       - backend_uploads_staging:/app/uploads
