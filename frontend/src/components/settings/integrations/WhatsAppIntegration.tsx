@@ -84,8 +84,7 @@ export const WhatsAppIntegration: React.FC<WhatsAppIntegrationProps> = ({ system
     searchParams.delete('oauth');
     searchParams.delete('message');
     setSearchParams(searchParams, { replace: true });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // Run once on mount — handleOAuthSuccess uses stable useState setters
 
   const checkStatus = useCallback(async () => {
     setStatusLoading(true);
