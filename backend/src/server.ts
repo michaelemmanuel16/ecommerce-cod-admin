@@ -172,8 +172,8 @@ app.use('/api/agent-inventory', apiLimiter, agentInventoryRoutes);
 // bypasses apiLimiter (500/15min) since Meta sends bursts of status callbacks
 app.get('/api/whatsapp/webhook', whatsappWebhookLimiter, verifyWebhook);
 app.post('/api/whatsapp/webhook', whatsappWebhookLimiter, handleWebhook);
-// WhatsApp OAuth callback — unauthenticated (Meta redirects here after consent)
-app.get('/api/whatsapp/oauth/callback', handleOAuthCallback);
+// WhatsApp OAuth callback — unauthenticated (CSRF state validates the request)
+app.get('/api/whatsapp/oauth/callback', apiLimiter, handleOAuthCallback);
 // Admin endpoints use standard rate limiter
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 

@@ -60,12 +60,18 @@ export const WhatsAppIntegration: React.FC<WhatsAppIntegrationProps> = ({ system
     }
   }, [systemConfig]);
 
-  // Check if OAuth is available
+  // Check if OAuth is available — fall back to manual tab if not
   useEffect(() => {
     adminService.checkWhatsAppOAuthEnabled()
-      .then(({ enabled }) => setOauthEnabled(enabled))
-      .catch(() => setOauthEnabled(false));
-  }, []);
+      .then(({ enabled }) => {
+        setOauthEnabled(enabled);
+        if (!enabled && !isOAuthConnected) setActiveTab('manual');
+      })
+      .catch(() => {
+        setOauthEnabled(false);
+        if (!isOAuthConnected) setActiveTab('manual');
+      });
+  }, []); // Run once on mount — isOAuthConnected is derived from initial systemConfig prop
 
   // Handle OAuth callback redirect
   useEffect(() => {

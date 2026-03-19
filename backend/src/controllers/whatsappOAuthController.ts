@@ -8,6 +8,7 @@ import {
   exchangeForLongLivedToken,
   fetchUserIdFromToken,
   fetchWABAPhoneNumbers,
+  revokeToken,
   getRedirectUri,
   isOAuthConfigured,
   tokenFallbackExpiry,
@@ -15,7 +16,7 @@ import {
 } from '../services/metaOAuthService';
 import { adminService } from '../services/adminService';
 import { clearWhatsAppConfigCache } from '../services/whatsappService';
-import { encryptProviderSecrets } from '../utils/providerCrypto';
+import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/providerCrypto';
 import prisma from '../utils/prisma';
 
 // In-memory CSRF state store (state → { userId, expiresAt })
@@ -288,7 +289,14 @@ export async function disconnectOAuth(req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    const existingProvider = (config.whatsappProvider as any) || {};
+    const existingProvider = decryptProviderSecrets('whatsappProvider', (config.whatsappProvider as any) || {});
+
+    // Revoke token on Meta's side (best-effort, don't block on failure)
+    if (existingProvider.accessToken && existingProvider.authMode === 'oauth') {
+      revokeToken(existingProvider.accessToken).catch((err: any) => {
+        logger.warn('Failed to revoke Meta OAuth token', { error: err.message });
+      });
+    }
 
     // Destructure out OAuth-specific fields, keep everything else
     const {

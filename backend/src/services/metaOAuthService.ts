@@ -73,6 +73,8 @@ export async function exchangeCodeForToken(code: string, redirectUri: string): P
   }
 
   const data = await response.json() as any;
+  // expires_in intentionally ignored — this short-lived token is immediately
+  // exchanged for a long-lived token via exchangeForLongLivedToken()
   return { accessToken: data.access_token };
 }
 
@@ -114,6 +116,15 @@ export function exchangeForLongLivedToken(shortToken: string): Promise<TokenExch
 
 export function refreshLongLivedToken(currentToken: string): Promise<TokenExchangeResult> {
   return exchangeToken(currentToken, 'token refresh');
+}
+
+export async function revokeToken(token: string): Promise<void> {
+  const response = await fetch(`${GRAPH_API_BASE}/me/permissions?access_token=${token}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    logger.warn('Meta token revocation failed', { status: response.status });
+  }
 }
 
 export async function fetchUserIdFromToken(token: string): Promise<string> {
