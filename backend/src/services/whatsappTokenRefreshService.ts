@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { refreshLongLivedToken, isOAuthConfigured, tokenFallbackExpiry } from './metaOAuthService';
+import { refreshLongLivedToken, isOAuthConfigured, tokenFallbackExpiry, getRedirectUri } from './metaOAuthService';
 import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/providerCrypto';
 import { clearWhatsAppConfigCache } from './whatsappService';
 
@@ -96,6 +96,10 @@ export function scheduleTokenRefresh(): void {
     logger.info('META_APP_ID not configured — WhatsApp token refresh cron not scheduled');
     return;
   }
+
+  // Validate BACKEND_URL so OAuth redirect URI issues are caught at startup
+  const redirectUri = getRedirectUri();
+  logger.info('WhatsApp OAuth redirect URI', { redirectUri });
 
   cron.schedule('0 1 * * *', async () => {
     logger.info('Running scheduled WhatsApp OAuth token refresh...');

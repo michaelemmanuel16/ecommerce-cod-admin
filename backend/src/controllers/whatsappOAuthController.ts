@@ -21,6 +21,7 @@ import prisma from '../utils/prisma';
 // In-memory CSRF state store (state → { userId, expiresAt })
 const csrfStateStore = new Map<string, { userId: number; expiresAt: number }>();
 const CSRF_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_CSRF_ENTRIES = 100;
 
 // In-memory pending OAuth data store (userId → { token, phones, expiresAt })
 interface PendingOAuthData {
@@ -32,6 +33,7 @@ interface PendingOAuthData {
 }
 const pendingOAuthStore = new Map<number, PendingOAuthData>();
 const PENDING_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_PENDING_ENTRIES = 50;
 
 // Cleanup expired entries periodically
 let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -74,6 +76,12 @@ export async function initiateOAuth(req: AuthRequest, res: Response): Promise<vo
 
     const userId = req.user!.id;
     const state = generateApiKey();
+
+    // Evict oldest entries if store is full
+    if (csrfStateStore.size >= MAX_CSRF_ENTRIES) {
+      const oldestKey = csrfStateStore.keys().next().value;
+      if (oldestKey) csrfStateStore.delete(oldestKey);
+    }
 
     csrfStateStore.set(state, {
       userId,
@@ -137,6 +145,12 @@ export async function handleOAuthCallback(req: AuthRequest, res: Response): Prom
     // Fetch user ID and phone numbers
     const metaUserId = await fetchUserIdFromToken(longToken);
     const phones = await fetchWABAPhoneNumbers(metaUserId, longToken);
+
+    // Evict oldest entries if store is full
+    if (pendingOAuthStore.size >= MAX_PENDING_ENTRIES) {
+      const oldestKey = pendingOAuthStore.keys().next().value;
+      if (oldestKey) pendingOAuthStore.delete(oldestKey);
+    }
 
     // Store pending data
     pendingOAuthStore.set(userId, {

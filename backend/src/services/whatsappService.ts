@@ -274,7 +274,7 @@ class WhatsAppService {
    * Send a template message via WhatsApp Business Cloud API.
    */
   async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
-    const { to, templateName, languageCode = 'en_US', bodyParams = [], orderId, customerId } = options;
+    const { to, templateName, languageCode = 'en', bodyParams = [], orderId, customerId } = options;
     const formattedPhone = formatPhoneNumber(to);
     const messageBody = buildMessageBody(templateName, bodyParams);
 
