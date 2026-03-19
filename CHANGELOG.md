@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[WhatsApp]**: Meta OAuth integration — "Connect with Meta" for automatic token exchange and phone selection
+- **[WhatsApp]**: Daily token refresh cron with on-demand fallback guard in message dispatch
+- **[WhatsApp]**: Phone picker modal with auto-select for single-number WABAs
+- **[UI]**: URL-based tab persistence for Settings, Financial, and Integrations pages
 - **[Financial]**: Mobile deposit submission with receipt photo upload for agents (MAN-28)
 - **[Financial]**: Per-agent Deposits tab in collection modal with verify/reject actions (MAN-28)
 - **[Financial]**: Collection modal pagination for high-volume agents (MAN-28)
