@@ -145,6 +145,18 @@ export const adminService = {
       if (wp.accessToken === MASK) wp.accessToken = existing.accessToken;
       if (wp.appSecret === MASK) wp.appSecret = existing.appSecret;
       if (wp.webhookVerifyToken === MASK) wp.webhookVerifyToken = existing.webhookVerifyToken;
+
+      // Preserve OAuth fields when manual form saves (prevent overwrite)
+      const oauthFields = [
+        'authMode', 'wabaId', 'oauthTokenExpiry', 'oauthConnectedAt',
+        'oauthVerifiedName', 'oauthDisplayPhone', 'oauthUserId',
+      ];
+      for (const field of oauthFields) {
+        if (wp[field] === undefined && existing[field] !== undefined) {
+          wp[field] = existing[field];
+        }
+      }
+
       data.whatsappProvider = wp;
     }
     if (data.smsProvider) {

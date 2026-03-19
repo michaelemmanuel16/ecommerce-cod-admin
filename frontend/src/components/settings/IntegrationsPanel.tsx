@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { MessageSquare, Phone, Mail, FileText, Webhook, ChevronRight } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { SystemConfig } from '../../services/admin.service';
 import { SmsIntegration } from './integrations/SmsIntegration';
 import { WhatsAppIntegration } from './integrations/WhatsAppIntegration';
@@ -8,6 +9,7 @@ import { MessageTemplates } from './integrations/MessageTemplates';
 import { WebhooksOverview } from './integrations/WebhooksOverview';
 
 type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'templates' | 'webhooks';
+const VALID_SECTIONS: IntegrationSection[] = ['sms', 'whatsapp', 'email', 'templates', 'webhooks'];
 
 const NAV_ITEMS: { id: IntegrationSection; label: string; description: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'sms', label: 'SMS', description: 'Twilio messaging', icon: Phone },
@@ -23,7 +25,17 @@ interface IntegrationsPanelProps {
 }
 
 export const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ systemConfig, onConfigSaved }) => {
-  const [activeSection, setActiveSection] = useState<IntegrationSection>('whatsapp');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sectionParam = searchParams.get('section') as IntegrationSection;
+  const initialSection = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : 'whatsapp';
+  const [activeSection, setActiveSectionState] = useState<IntegrationSection>(initialSection);
+
+  const setActiveSection = (section: IntegrationSection) => {
+    setActiveSectionState(section);
+    const params = new URLSearchParams(searchParams);
+    params.set('section', section);
+    setSearchParams(params, { replace: true });
+  };
 
   const getStatus = useCallback((section: IntegrationSection): 'configured' | 'not-configured' | null => {
     if (!systemConfig) return null;

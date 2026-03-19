@@ -48,7 +48,7 @@ export const Financial: React.FC = () => {
         />
       </div>
 
-      <Tabs tabs={tabs} defaultTab="overview" />
+      <Tabs tabs={tabs} defaultTab="overview" persistKey="financial-tab" />
     </div>
   );
 };

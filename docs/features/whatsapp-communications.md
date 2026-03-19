@@ -146,8 +146,79 @@ model MessageLog {
 }
 ```
 
+## OAuth Integration (2026-03-19)
+
+### Overview
+
+Meta "Facebook Login for Business" OAuth flow allows admins to click "Connect with Meta" to authorize the app, automatically exchange tokens, and select their WhatsApp phone number from a picker. Manual entry remains as an alternative via a tabbed UI.
+
+### OAuth Flow
+
+```
+Admin clicks "Connect with Meta" → POST /api/whatsapp/oauth/initiate
+  → Backend generates CSRF state, returns authUrl
+  → Browser opens Meta OAuth consent in new tab
+  → Admin authorizes → Meta redirects to GET /api/whatsapp/oauth/callback
+  → Backend validates state, exchanges code → short-lived → long-lived token (~60 days)
+  → Backend fetches WABA phone numbers via debug_token + Graph API
+  → Redirects to frontend /settings?oauth=success
+  → Frontend fetches phone list, opens picker (auto-selects if single number)
+  → Admin selects phone → POST /api/whatsapp/oauth/select
+  → Backend persists config (encrypted), clears cache → done
+```
+
+### OAuth API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/whatsapp/oauth/initiate` | super_admin | Generate auth URL + CSRF state |
+| GET | `/api/whatsapp/oauth/callback` | none (CSRF) | Meta redirect target, exchanges tokens |
+| GET | `/api/whatsapp/oauth/phones` | super_admin | Fetch pending phone numbers |
+| POST | `/api/whatsapp/oauth/select` | super_admin | Finalize phone selection |
+| DELETE | `/api/whatsapp/oauth/disconnect` | super_admin | Clear OAuth, revert to manual |
+| GET | `/api/whatsapp/oauth/enabled` | admin+ | Check if META_APP_ID configured |
+
+### Token Refresh
+
+- **Daily cron** at 01:00 — refreshes if within 7 days of expiry
+- **On-demand guard** in dispatch — refreshes if within 1 day of expiry (fallback when cron fails)
+- `isRefreshing` flag prevents concurrent refresh attempts
+
+### Environment Variables
+
+```env
+META_APP_ID=<your-meta-app-id>          # Optional — OAuth disabled if absent
+META_APP_SECRET=<your-meta-app-secret>  # Optional — OAuth disabled if absent
+BACKEND_URL=http://localhost:3000       # For constructing OAuth redirect URI
+```
+
+### Extended whatsappProvider JSON Schema
+
+```typescript
+// New OAuth fields (no migration — JSON column)
+authMode?: 'manual' | 'oauth';
+wabaId?: string;
+oauthTokenExpiry?: string;     // ISO 8601
+oauthConnectedAt?: string;     // ISO 8601
+oauthVerifiedName?: string;
+oauthDisplayPhone?: string;
+oauthUserId?: string;          // Meta user ID for refresh
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/src/services/metaOAuthService.ts` | Meta Graph API interactions (new) |
+| `backend/src/controllers/whatsappOAuthController.ts` | HTTP handlers + in-memory stores (new) |
+| `backend/src/services/whatsappTokenRefreshService.ts` | Token refresh cron + on-demand (new) |
+| `frontend/src/components/settings/integrations/WhatsAppOAuthButton.tsx` | Connect/disconnect button (new) |
+| `frontend/src/components/settings/integrations/WhatsAppPhonePickerModal.tsx` | Phone picker modal (new) |
+| `frontend/src/components/settings/integrations/WhatsAppIntegration.tsx` | Dual-mode tabbed UI (modified) |
+
 ## Testing
 
 1. **Without API keys (dev):** Messages are logged to `MessageLog` with status `pending`. Verify via Prisma Studio or the `/api/whatsapp/messages` endpoint.
 2. **With API keys (staging):** Use `POST /api/whatsapp/test` with `{ "to": "0241234567" }` to send a test message.
 3. **Production:** Messages auto-send on order status changes. Monitor via `/api/whatsapp/stats`.
+4. **OAuth flow:** Without META_APP_ID — OAuth tab shows disabled state. With META_APP_ID — "Connect with Meta" button initiates full OAuth flow.

@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { MessageChannel, MessageDirection, MessageStatus, Prisma } from '@prisma/client';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
+import { refreshTokenIfNeeded } from './whatsappTokenRefreshService';
 
 // WhatsApp Business Cloud API configuration
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
@@ -13,6 +14,8 @@ interface WhatsAppConfig {
   webhookVerifyToken: string;
   businessAccountId?: string;
   isEnabled: boolean;
+  authMode?: 'manual' | 'oauth';
+  oauthTokenExpiry?: string;
 }
 
 // Cached DB config to avoid per-message DB queries
@@ -56,6 +59,8 @@ async function getConfig(): Promise<WhatsAppConfig> {
       webhookVerifyToken: dbConfig.webhookVerifyToken || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
       businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
       isEnabled: dbConfig.isEnabled !== false,
+      authMode: dbConfig.authMode,
+      oauthTokenExpiry: dbConfig.oauthTokenExpiry,
     };
   }
 
@@ -198,11 +203,28 @@ class WhatsAppService {
     formattedPhone: string,
     payload: object,
   ): Promise<string | undefined> {
-    const config = await getConfig();
+    let config = await getConfig();
 
     if (!config.accessToken || !config.phoneNumberId || !config.isEnabled) {
       logger.warn('WhatsApp not configured — message logged but not sent', { messageLogId });
       return undefined;
+    }
+
+    // On-demand token refresh for OAuth mode — only triggers when cron has failed
+    // (within 1 day of expiry rather than 7, since cron handles proactive refresh)
+    if (config.authMode === 'oauth' && config.oauthTokenExpiry) {
+      const expiryMs = new Date(config.oauthTokenExpiry).getTime();
+      const oneDay = 24 * 60 * 60 * 1000;
+      if (expiryMs - Date.now() < oneDay) {
+        try {
+          const result = await refreshTokenIfNeeded();
+          if (result.refreshed) {
+            config = await getConfig(); // re-read so this dispatch uses the new token
+          }
+        } catch (err: any) {
+          logger.warn('On-demand token refresh failed, proceeding with current token', { error: err.message });
+        }
+      }
     }
 
     try {
