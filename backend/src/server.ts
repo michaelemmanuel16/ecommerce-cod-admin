@@ -40,6 +40,8 @@ import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
+import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
+import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
 import { GLAutomationService } from './services/glAutomationService';
 import { GLAccountService } from './services/glAccountService';
 import cron from 'node-cron';
@@ -170,6 +172,8 @@ app.use('/api/agent-inventory', apiLimiter, agentInventoryRoutes);
 // bypasses apiLimiter (500/15min) since Meta sends bursts of status callbacks
 app.get('/api/whatsapp/webhook', whatsappWebhookLimiter, verifyWebhook);
 app.post('/api/whatsapp/webhook', whatsappWebhookLimiter, handleWebhook);
+// WhatsApp OAuth callback — unauthenticated (Meta redirects here after consent)
+app.get('/api/whatsapp/oauth/callback', handleOAuthCallback);
 // Admin endpoints use standard rate limiter
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 
@@ -267,6 +271,9 @@ if (process.env.NODE_ENV !== 'test') {
       process.exit(1);
     }
 
+    // Schedule WhatsApp OAuth token refresh (daily at 01:00)
+    scheduleTokenRefresh();
+
     logger.info(`Socket.io initialized`);
     console.log(`
     ╔═══════════════════════════════════════════════════════════════╗
@@ -291,6 +298,9 @@ const shutdown = async (signal: string) => {
   }, 5000);
 
   try {
+    // 0. Stop OAuth cleanup interval
+    stopCleanupInterval();
+
     // 1. Close Socket.io connections
     if (io) {
       logger.info('Closing Socket.io connections...');

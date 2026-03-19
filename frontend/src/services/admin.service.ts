@@ -29,6 +29,13 @@ export interface SystemConfig {
     appSecret?: string;
     webhookVerifyToken?: string;
     isEnabled?: boolean;
+    authMode?: 'manual' | 'oauth';
+    wabaId?: string;
+    oauthTokenExpiry?: string;
+    oauthConnectedAt?: string;
+    oauthVerifiedName?: string;
+    oauthDisplayPhone?: string;
+    oauthUserId?: string;
   };
   notificationTemplates?: {
     orderConfirmation?: { sms: string; email: string };
@@ -76,6 +83,14 @@ export interface UpdateUserData {
   commissionAmount?: number;
   deliveryRate?: number;
   isActive?: boolean;
+}
+
+export interface WABAPhoneNumber {
+  id: string;
+  display_phone_number: string;
+  verified_name: string;
+  quality_rating: string;
+  code_verification_status?: string;
 }
 
 export const adminService = {
@@ -155,5 +170,36 @@ export const adminService = {
 
   async permanentlyDeleteUser(userId: string): Promise<void> {
     await apiClient.delete(`/api/admin/users/${userId}/permanent`);
+  },
+
+  // WhatsApp OAuth
+  async initiateWhatsAppOAuth(): Promise<{ authUrl: string }> {
+    const response = await apiClient.post('/api/whatsapp/oauth/initiate');
+    return response.data;
+  },
+
+  async getWhatsAppOAuthPhones(): Promise<{ phones: WABAPhoneNumber[] }> {
+    const response = await apiClient.get('/api/whatsapp/oauth/phones');
+    return response.data;
+  },
+
+  async selectWhatsAppOAuthPhone(data: {
+    phoneNumberId: string;
+    displayPhone: string;
+    verifiedName: string;
+    wabaId?: string;
+  }): Promise<{ success: boolean; verifiedName: string; displayPhone: string }> {
+    const response = await apiClient.post('/api/whatsapp/oauth/select', data);
+    return response.data;
+  },
+
+  async disconnectWhatsAppOAuth(): Promise<{ success: boolean }> {
+    const response = await apiClient.delete('/api/whatsapp/oauth/disconnect');
+    return response.data;
+  },
+
+  async checkWhatsAppOAuthEnabled(): Promise<{ enabled: boolean }> {
+    const response = await apiClient.get('/api/whatsapp/oauth/enabled');
+    return response.data;
   },
 };

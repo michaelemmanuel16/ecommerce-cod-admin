@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, FileText, Puzzle } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useAuthStore } from '../stores/authStore';
@@ -12,8 +13,33 @@ import { useConfigStore } from '../stores/configStore';
 
 type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'integrations' | 'checkout-forms';
 
+const VALID_TABS: SettingsTab[] = ['profile', 'notifications', 'security', 'users', 'business', 'permissions', 'integrations', 'checkout-forms'];
+
 export const Settings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const getInitialTab = (): SettingsTab => {
+    // OAuth callback → integrations
+    if (searchParams.has('oauth')) return 'integrations';
+    // URL ?tab= param
+    const tabParam = searchParams.get('tab') as SettingsTab;
+    if (tabParam && VALID_TABS.includes(tabParam)) return tabParam;
+    return 'profile';
+  };
+
+  const [activeTab, setActiveTabState] = useState<SettingsTab>(getInitialTab);
+
+  const setActiveTab = (tab: SettingsTab) => {
+    setActiveTabState(tab);
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', tab);
+    // Preserve section param only for integrations
+    if (tab !== 'integrations') params.delete('section');
+    // Clean up oauth params
+    params.delete('oauth');
+    params.delete('message');
+    setSearchParams(params, { replace: true });
+  };
   const { user } = useAuthStore();
   const { isSuperAdmin, isAdmin } = usePermissions();
   const isSalesRep = user?.role === 'sales_rep';
