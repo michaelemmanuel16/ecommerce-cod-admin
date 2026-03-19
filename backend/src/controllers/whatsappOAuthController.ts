@@ -56,8 +56,10 @@ export function stopCleanupInterval(): void {
   }
 }
 
-// Start cleanup on module load for production; tests can stop/start as needed
-startCleanupInterval();
+// Start cleanup only in non-test environments
+if (process.env.NODE_ENV !== 'test') {
+  startCleanupInterval();
+}
 
 /**
  * POST /api/whatsapp/oauth/initiate
