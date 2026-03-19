@@ -109,7 +109,7 @@ function getDefaultPermissions() {
       analytics: ['view'],
       workflows: [],
       settings: [],
-      calls: [],
+      calls: ['view'],
       gl: [],
     },
     accountant: {

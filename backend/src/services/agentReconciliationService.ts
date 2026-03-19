@@ -166,7 +166,7 @@ export class AgentReconciliationService {
     /**
      * Create a new deposit record
      */
-    async createDeposit(agentId: number, amount: number, depositMethod: string, referenceNumber: string, notes?: string) {
+    async createDeposit(agentId: number, amount: number, depositMethod: string, referenceNumber: string, notes?: string, receiptUrl?: string): Promise<any> {
         if (amount <= 0) {
             throw new AppError('Deposit amount must be greater than zero', 400);
         }
@@ -186,6 +186,7 @@ export class AgentReconciliationService {
                     depositDate: new Date(),
                     referenceNumber,
                     notes,
+                    receiptUrl,
                     status: 'pending',
                 },
             });
@@ -358,17 +359,9 @@ export class AgentReconciliationService {
 
             // Process each agent's deposits
             for (const [agentId, agentDeposits] of depositsByAgent) {
-                // Lock agent balance row for this transaction to prevent race conditions
-                const balances = await extTx.$queryRaw<any[]>`
-                    SELECT * FROM "agent_balances" WHERE "agent_id" = ${agentId} FOR UPDATE
-                `;
-
-                let balance = balances[0];
-
-                if (!balance) {
-                    // Create if not exists (already handled in loop but locking is key)
-                    balance = await this.getOrCreateBalance(agentId, extTx);
-                }
+                // Use Prisma ORM (not $queryRaw) to stay on the transaction's connection.
+                // $queryRaw with FOR UPDATE can self-deadlock in Prisma interactive transactions.
+                const balance = await this.getOrCreateBalance(agentId, extTx);
 
                 const currBal = new Prisma.Decimal(balance.currentBalance.toString());
 
@@ -572,6 +565,17 @@ export class AgentReconciliationService {
         return await prisma.$transaction(async (tx) => {
             const extTx = tx as any;
             const balance = await this.getOrCreateBalance(agentId, extTx);
+
+            // Warn if agent has active deliveries
+            const activeDeliveries = await extTx.order.count({
+                where: {
+                    deliveryAgentId: agentId,
+                    status: { in: ['out_for_delivery', 'ready_for_pickup'] }
+                }
+            });
+            if (activeDeliveries > 0) {
+                logger.warn(`Blocking agent ${agentId} who has ${activeDeliveries} active deliveries`);
+            }
 
             const updated = await extTx.agentBalance.update({
                 where: { id: balance.id },

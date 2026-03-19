@@ -33,6 +33,15 @@ export const webhookLimiter = rateLimit({
   ...commonSettings
 });
 
+// Higher limit for WhatsApp webhooks — Meta sends bursts of status callbacks
+// (sent/delivered/read per message). 1000/15min handles ~300 messages worth of callbacks.
+export const whatsappWebhookLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDevelopment ? 10000 : 1000,
+  message: { message: 'Too many webhook requests' },
+  ...commonSettings
+});
+
 export const healthLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: isDevelopment ? 1000 : 30, // Relaxed for development

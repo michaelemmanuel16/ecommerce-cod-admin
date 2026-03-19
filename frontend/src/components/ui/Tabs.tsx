@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { cn } from '../../utils/cn';
 
 interface Tab {
@@ -10,10 +11,32 @@ interface Tab {
 interface TabsProps {
   tabs: Tab[];
   defaultTab?: string;
+  /** When set, persists the active tab in URL search params under this key */
+  persistKey?: string;
 }
 
-export const Tabs: React.FC<TabsProps> = ({ tabs, defaultTab }) => {
-  const [activeTab, setActiveTab] = useState(defaultTab || tabs[0]?.id);
+export const Tabs: React.FC<TabsProps> = ({ tabs, defaultTab, persistKey }) => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabIds = tabs.map(t => t.id);
+
+  const getInitial = () => {
+    if (persistKey) {
+      const param = searchParams.get(persistKey);
+      if (param && tabIds.includes(param)) return param;
+    }
+    return defaultTab || tabs[0]?.id;
+  };
+
+  const [activeTab, setActiveTabState] = useState(getInitial);
+
+  const setActiveTab = (tabId: string) => {
+    setActiveTabState(tabId);
+    if (persistKey) {
+      const params = new URLSearchParams(searchParams);
+      params.set(persistKey, tabId);
+      setSearchParams(params, { replace: true });
+    }
+  };
 
   const activeContent = tabs.find((tab) => tab.id === activeTab)?.content;
 

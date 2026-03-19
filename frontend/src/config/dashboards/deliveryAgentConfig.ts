@@ -5,7 +5,7 @@
  *
  * Layout:
  * - Row 1: 4 stat cards (earnings, active, completed, success rate)
- * - Row 2: Orders by Status donut chart (2/3) + Pending Orders widget (1/3)
+ * - Row 2: Orders by Status donut chart (2/3) + Ready for Pickup widget (1/3)
  */
 
 import { DashboardConfig } from '../types/dashboard';
@@ -124,12 +124,12 @@ export const deliveryAgentConfig: DashboardConfig = {
         colors: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'],
       },
     },
-    // Pending Orders — real data from fetchPendingOrders
+    // Ready for Pickup — orders the agent needs to pick up
     {
-      id: 'pending-orders',
+      id: 'ready-for-pickup',
       type: 'ordersAwaiting',
-      title: 'Pending Orders',
-      dataSource: 'pendingOrders',
+      title: 'Ready for Pickup',
+      dataSource: 'readyForPickup',
       gridPosition: { row: 1, col: 3, colSpan: 1 },
       height: 300,
       config: {},
@@ -148,6 +148,6 @@ export const deliveryAgentConfig: DashboardConfig = {
     'fetchDashboardMetrics',
     'fetchAgentPerformance',
     'fetchOrdersByStatus',
-    'fetchPendingOrders',
+    'fetchReadyForPickup',
   ],
 };

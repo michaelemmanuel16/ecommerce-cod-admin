@@ -82,7 +82,7 @@ router.get(
 
 router.get(
   '/transfers',
-  requireRole('super_admin', 'admin', 'manager', 'inventory_manager', 'accountant'),
+  requireRole('super_admin', 'admin', 'manager', 'inventory_manager', 'accountant', 'delivery_agent'),
   [
     query('productId').optional().isInt().toInt(),
     query('agentId').optional().isInt().toInt(),

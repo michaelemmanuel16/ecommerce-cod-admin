@@ -57,6 +57,7 @@ jest.mock('../../utils/prisma', () => ({
         },
         order: {
             update: jest.fn(),
+            count: jest.fn(),
         },
         $queryRaw: (jest.fn() as any).mockResolvedValue([]),
     },
@@ -484,6 +485,7 @@ describe('AgentReconciliationService', () => {
             const balance = { id: 1, agentId, isBlocked: false };
 
             mockTx.agentBalance.findUnique.mockResolvedValue(balance);
+            mockTx.order.count.mockResolvedValue(0);
             mockTx.agentBalance.update.mockResolvedValue({
                 ...balance,
                 isBlocked: true,

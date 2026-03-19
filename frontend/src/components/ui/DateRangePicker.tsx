@@ -270,7 +270,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
           background-color: white;
           transition: all 0.2s;
           cursor: pointer;
-          width: 340px;
+          width: 100%;
+          max-width: 340px;
         }
 
         .date-range-trigger:hover {
@@ -287,10 +288,15 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
           display: flex;
           align-items: center;
           gap: 0.5rem;
+          min-width: 0;
+          overflow: hidden;
         }
 
         .date-range-trigger-text {
           color: #111827;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .date-range-trigger-placeholder {

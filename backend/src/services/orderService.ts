@@ -19,6 +19,7 @@ import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
+import { enqueueOrderStatusMessage } from '../queues/messagingQueue';
 
 interface CreateOrderData {
   customerId?: number;
@@ -346,6 +347,9 @@ export class OrderService {
         });
       });
     });
+
+    // Send WhatsApp notification to customer for new order (non-blocking, queued with retries)
+    enqueueOrderStatusMessage(order.id, '', 'order_created');
 
     return order;
   }
@@ -1244,6 +1248,9 @@ export class OrderService {
         logger.error('Failed to trigger status change workflows', { orderId, error: error.message });
       });
     });
+
+    // Send WhatsApp notification to customer (non-blocking, queued with retries)
+    enqueueOrderStatusMessage(orderId, order.status, data.status);
 
     return updated;
   }

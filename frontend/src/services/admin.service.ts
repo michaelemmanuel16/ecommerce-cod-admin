@@ -23,6 +23,20 @@ export interface SystemConfig {
     fromEmail?: string;
     fromName?: string;
   };
+  whatsappProvider?: {
+    accessToken?: string;
+    phoneNumberId?: string;
+    appSecret?: string;
+    webhookVerifyToken?: string;
+    isEnabled?: boolean;
+    authMode?: 'manual' | 'oauth';
+    wabaId?: string;
+    oauthTokenExpiry?: string;
+    oauthConnectedAt?: string;
+    oauthVerifiedName?: string;
+    oauthDisplayPhone?: string;
+    oauthUserId?: string;
+  };
   notificationTemplates?: {
     orderConfirmation?: { sms: string; email: string };
     outForDelivery?: { sms: string; email: string };
@@ -71,6 +85,15 @@ export interface UpdateUserData {
   isActive?: boolean;
 }
 
+/** Mirror of WABAPhoneNumber in backend/src/services/metaOAuthService.ts — keep in sync */
+export interface WABAPhoneNumber {
+  id: string;
+  display_phone_number: string;
+  verified_name: string;
+  quality_rating: string;
+  code_verification_status?: string;
+}
+
 export const adminService = {
   // System Configuration
   async getSystemConfig(): Promise<SystemConfig> {
@@ -85,6 +108,18 @@ export const adminService = {
 
   async updateSystemConfig(data: Partial<SystemConfig>): Promise<SystemConfig> {
     const response = await apiClient.put('/api/admin/settings', data);
+    return response.data;
+  },
+
+  async getWhatsAppStatus(): Promise<{
+    configured?: boolean;
+    enabled?: boolean;
+    verifiedName?: string;
+    displayPhoneNumber?: string;
+    qualityRating?: string;
+    error?: string;
+  }> {
+    const response = await apiClient.get('/api/whatsapp/status');
     return response.data;
   },
 
@@ -136,5 +171,36 @@ export const adminService = {
 
   async permanentlyDeleteUser(userId: string): Promise<void> {
     await apiClient.delete(`/api/admin/users/${userId}/permanent`);
+  },
+
+  // WhatsApp OAuth
+  async initiateWhatsAppOAuth(): Promise<{ authUrl: string }> {
+    const response = await apiClient.post('/api/whatsapp/oauth/initiate');
+    return response.data;
+  },
+
+  async getWhatsAppOAuthPhones(): Promise<{ phones: WABAPhoneNumber[] }> {
+    const response = await apiClient.get('/api/whatsapp/oauth/phones');
+    return response.data;
+  },
+
+  async selectWhatsAppOAuthPhone(data: {
+    phoneNumberId: string;
+    displayPhone: string;
+    verifiedName: string;
+    wabaId?: string;
+  }): Promise<{ success: boolean; verifiedName: string; displayPhone: string }> {
+    const response = await apiClient.post('/api/whatsapp/oauth/select', data);
+    return response.data;
+  },
+
+  async disconnectWhatsAppOAuth(): Promise<{ success: boolean }> {
+    const response = await apiClient.delete('/api/whatsapp/oauth/disconnect');
+    return response.data;
+  },
+
+  async checkWhatsAppOAuthEnabled(): Promise<{ enabled: boolean }> {
+    const response = await apiClient.get('/api/whatsapp/oauth/enabled');
+    return response.data;
   },
 };

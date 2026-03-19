@@ -1,20 +1,45 @@
 import React, { useState, useEffect } from 'react';
-import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, MessageSquare, FileText, Webhook } from 'lucide-react';
+import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, FileText, Puzzle } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useAuthStore } from '../stores/authStore';
 import { usePermissions } from '../hooks/usePermissions';
 import { UserManagementTable } from '../components/admin/UserManagementTable';
 import { RolePermissionsMatrix } from '../components/admin/RolePermissionsMatrix';
+import { IntegrationsPanel } from '../components/settings/IntegrationsPanel';
 import { adminService, SystemConfig } from '../services/admin.service';
-import { apiClient } from '../services/api';
 import { useConfigStore } from '../stores/configStore';
-import { getCurrencySymbol } from '../utils/countries';
 
-type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'notifications-config' | 'checkout-forms' | 'webhooks';
+type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'integrations' | 'checkout-forms';
+
+const VALID_TABS: SettingsTab[] = ['profile', 'notifications', 'security', 'users', 'business', 'permissions', 'integrations', 'checkout-forms'];
 
 export const Settings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const getInitialTab = (): SettingsTab => {
+    // OAuth callback → integrations
+    if (searchParams.has('oauth')) return 'integrations';
+    // URL ?tab= param
+    const tabParam = searchParams.get('tab') as SettingsTab;
+    if (tabParam && VALID_TABS.includes(tabParam)) return tabParam;
+    return 'profile';
+  };
+
+  const [activeTab, setActiveTabState] = useState<SettingsTab>(getInitialTab);
+
+  const setActiveTab = (tab: SettingsTab) => {
+    setActiveTabState(tab);
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', tab);
+    // Preserve section param only for integrations
+    if (tab !== 'integrations') params.delete('section');
+    // Clean up oauth params
+    params.delete('oauth');
+    params.delete('message');
+    setSearchParams(params, { replace: true });
+  };
   const { user } = useAuthStore();
   const { isSuperAdmin, isAdmin } = usePermissions();
   const isSalesRep = user?.role === 'sales_rep';
@@ -73,8 +98,7 @@ export const Settings: React.FC = () => {
     { id: 'users' as SettingsTab, label: 'User Management', icon: UsersIcon, adminOnly: true },
     { id: 'business' as SettingsTab, label: 'Business Settings', icon: Building2, adminOnly: true },
     { id: 'checkout-forms' as SettingsTab, label: 'Checkout Forms', icon: FileText, adminOnly: true },
-    { id: 'webhooks' as SettingsTab, label: 'Webhooks', icon: Webhook, adminOnly: true },
-    { id: 'notifications-config' as SettingsTab, label: 'Notification Config', icon: MessageSquare, adminOnly: true },
+    { id: 'integrations' as SettingsTab, label: 'Integrations', icon: Puzzle, adminOnly: true },
     { id: 'permissions' as SettingsTab, label: 'Role Permissions', icon: Shield, adminOnly: true },
   ];
 
@@ -228,7 +252,7 @@ export const Settings: React.FC = () => {
             </div>
           </Card>
 
-          {!isSalesRep && (
+          {!isSalesRep && user?.role !== 'delivery_agent' && (
             <Card>
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Display Preferences</h3>
@@ -470,135 +494,9 @@ export const Settings: React.FC = () => {
         </div>
       )}
 
-      {/* Super Admin Only - Notification Configuration */}
-      {activeTab === 'notifications-config' && isSuperAdmin && (
-        <div className="space-y-6">
-          <Card>
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">SMS Provider Settings</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Provider
-                  </label>
-                  <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="twilio">Twilio</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Account SID
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Auth Token
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="••••••••••••••••••••••••••••••••"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    placeholder="+1 (555) 000-0000"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Email Provider Settings</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Provider
-                  </label>
-                  <select className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="sendgrid">SendGrid</option>
-                    <option value="smtp">SMTP</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    API Key / Password
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="••••••••••••••••••••••••••••••••"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    From Email
-                  </label>
-                  <input
-                    type="email"
-                    placeholder="noreply@business.com"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    From Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Your Business Name"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Notification Templates</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Available variables: <code className="bg-gray-100 px-2 py-1 rounded">{'{customerName}'}</code>,
-                <code className="bg-gray-100 px-2 py-1 rounded ml-2">{'{orderNumber}'}</code>,
-                <code className="bg-gray-100 px-2 py-1 rounded ml-2">{'{totalAmount}'}</code>
-              </p>
-              <div className="space-y-6">
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-3">Order Confirmation</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">SMS Template</label>
-                      <textarea
-                        rows={2}
-                        placeholder="Hi {customerName}, your order {orderNumber} has been confirmed!"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end">
-                <Button variant="primary">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Templates
-                </Button>
-              </div>
-            </div>
-          </Card>
-        </div>
+      {/* Super Admin Only - Integrations */}
+      {activeTab === 'integrations' && isSuperAdmin && (
+        <IntegrationsPanel systemConfig={systemConfig} onConfigSaved={loadSystemConfig} />
       )}
 
       {/* Super Admin Only - Checkout Forms */}
@@ -630,42 +528,6 @@ export const Settings: React.FC = () => {
                   <li>Add optional upsells for extra revenue</li>
                   <li>Customize colors to match your brand</li>
                   <li>Share the public URL with customers!</li>
-                </ol>
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Super Admin Only - Webhooks */}
-      {activeTab === 'webhooks' && isSuperAdmin && (
-        <Card>
-          <div className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Webhooks</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  Import orders automatically from external systems via webhooks
-                </p>
-              </div>
-              <Button
-                variant="primary"
-                onClick={() => window.location.href = '/webhooks'}
-              >
-                <Webhook className="w-4 h-4 mr-2" />
-                Manage Webhooks
-              </Button>
-            </div>
-            <div className="space-y-4">
-              <div className="border border-gray-200 rounded-lg p-4 bg-blue-50">
-                <h4 className="font-medium text-gray-900 mb-2">🚀 Quick Start</h4>
-                <ol className="text-sm text-gray-700 space-y-2 list-decimal list-inside">
-                  <li>Click "Manage Webhooks" to open the Webhooks page</li>
-                  <li>Click "+ Add Webhook" button</li>
-                  <li>Enter your webhook details (name, URL, secret key)</li>
-                  <li>Map external field names to internal fields</li>
-                  <li>Test your field mapping with sample data</li>
-                  <li>Activate the webhook to start importing orders!</li>
                 </ol>
               </div>
             </div>

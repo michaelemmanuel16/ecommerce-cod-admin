@@ -1,4 +1,4 @@
-import { Prisma, DeliveryProofType } from '@prisma/client';
+import { Prisma, DeliveryProofType, OrderStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
@@ -640,6 +640,264 @@ export class DeliveryService {
     });
 
     return delivery;
+  }
+
+  /** Shared includes for order-based delivery queries */
+  private static readonly deliverySelect = {
+    id: true, scheduledTime: true, actualDeliveryTime: true,
+    deliveryAttempts: true, proofType: true, proofData: true,
+    proofImageUrl: true, recipientName: true, recipientPhone: true,
+    notes: true, createdAt: true, updatedAt: true,
+  } as const;
+
+  private static readonly customerSelect = {
+    firstName: true, lastName: true, phoneNumber: true,
+  } as const;
+
+  private static readonly agentSelect = {
+    id: true, firstName: true, lastName: true, phoneNumber: true,
+  } as const;
+
+  /** Transform an Order (with delivery/customer/agent) to DeliveryListItem-compatible shape */
+  private mapOrderToDeliveryItem(order: any, extraOrderFields?: Record<string, unknown>) {
+    const d = order.delivery;
+    return {
+      id: d?.id ?? -order.id,
+      orderId: order.id,
+      agentId: order.deliveryAgentId,
+      scheduledTime: d?.scheduledTime?.toISOString() ?? null,
+      actualDeliveryTime: d?.actualDeliveryTime?.toISOString() ?? null,
+      deliveryAttempts: d?.deliveryAttempts ?? 0,
+      proofType: d?.proofType ?? null,
+      proofData: d?.proofData ?? null,
+      proofImageUrl: d?.proofImageUrl ?? null,
+      recipientName: d?.recipientName ?? null,
+      recipientPhone: d?.recipientPhone ?? null,
+      notes: d?.notes ?? null,
+      createdAt: (d?.createdAt ?? order.createdAt).toISOString(),
+      updatedAt: (d?.updatedAt ?? order.updatedAt).toISOString(),
+      order: {
+        id: order.id,
+        status: order.status,
+        totalAmount: order.totalAmount ? Number(order.totalAmount) : 0,
+        paymentStatus: order.paymentStatus,
+        deliveryAddress: order.deliveryAddress ?? '',
+        deliveryState: order.deliveryState ?? '',
+        deliveryArea: order.deliveryArea ?? '',
+        notes: order.notes,
+        customer: order.customer
+          ? {
+              firstName: order.customer.firstName,
+              lastName: order.customer.lastName,
+              phoneNumber: order.customer.phoneNumber,
+            }
+          : null,
+        ...extraOrderFields,
+      },
+      agent: order.deliveryAgent
+        ? {
+            id: order.deliveryAgent.id,
+            firstName: order.deliveryAgent.firstName,
+            lastName: order.deliveryAgent.lastName,
+            phoneNumber: order.deliveryAgent.phoneNumber,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * Get all orders assigned to a delivery agent (queries Order table, not Delivery table)
+   */
+  async getAgentOrders(agentId: number, filters?: { status?: string; page?: number; limit?: number; search?: string; startDate?: string; endDate?: string }) {
+    const { page = 1, limit = 20 } = filters || {};
+    const skip = (page - 1) * limit;
+
+    // Active statuses are always shown (no date filter); terminal statuses are date-filtered
+    const ACTIVE_STATUSES: OrderStatus[] = ['ready_for_pickup', 'out_for_delivery'];
+    const TERMINAL_STATUSES: OrderStatus[] = ['delivered', 'failed_delivery'];
+
+    const hasDateFilter = !!(filters?.startDate || filters?.endDate);
+    const dateCondition: Prisma.OrderWhereInput = {};
+    if (hasDateFilter) {
+      dateCondition.createdAt = {};
+      if (filters!.startDate) {
+        const parsed = new Date(filters!.startDate);
+        if (isNaN(parsed.getTime())) throw new AppError('Invalid startDate', 400);
+        dateCondition.createdAt.gte = parsed;
+      }
+      if (filters!.endDate) {
+        const parsed = new Date(filters!.endDate);
+        if (isNaN(parsed.getTime())) throw new AppError('Invalid endDate', 400);
+        dateCondition.createdAt.lte = parsed;
+      }
+    }
+
+    // Build the base where clause
+    // When date filter is present: active statuses (no date) OR terminal statuses (with date)
+    const baseWhere: Prisma.OrderWhereInput = {
+      deliveryAgentId: agentId,
+      deletedAt: null,
+    };
+
+    if (hasDateFilter) {
+      baseWhere.OR = [
+        { status: { in: ACTIVE_STATUSES } },
+        { status: { in: TERMINAL_STATUSES }, ...dateCondition },
+      ];
+    } else {
+      baseWhere.status = { in: [...ACTIVE_STATUSES, ...TERMINAL_STATUSES] };
+    }
+
+    const where: Prisma.OrderWhereInput = { ...baseWhere };
+
+    if (filters?.status) {
+      const statuses = filters.status.split(',').map(s => s.trim());
+      // Override status filter but preserve date logic for terminal statuses
+      if (hasDateFilter) {
+        const requestedActive = statuses.filter(s => ACTIVE_STATUSES.includes(s as OrderStatus)) as OrderStatus[];
+        const requestedTerminal = statuses.filter(s => TERMINAL_STATUSES.includes(s as OrderStatus)) as OrderStatus[];
+        const orConditions: Prisma.OrderWhereInput[] = [];
+        if (requestedActive.length > 0) {
+          orConditions.push({ status: { in: requestedActive } });
+        }
+        if (requestedTerminal.length > 0) {
+          orConditions.push({ status: { in: requestedTerminal }, ...dateCondition });
+        }
+        if (orConditions.length > 0) {
+          delete where.OR;
+          delete where.status;
+          where.OR = orConditions;
+        }
+      } else {
+        where.status = statuses.length === 1 ? statuses[0] as any : { in: statuses } as any;
+      }
+    }
+
+    if (filters?.search) {
+      const term = filters.search.trim();
+      const numericId = parseInt(term, 10);
+      // When we already have OR (from date filtering), wrap in AND
+      const searchOr: Prisma.OrderWhereInput[] = [
+        { customer: { firstName: { contains: term, mode: 'insensitive' } } },
+        { customer: { lastName: { contains: term, mode: 'insensitive' } } },
+        { customer: { phoneNumber: { contains: term } } },
+        { deliveryAddress: { contains: term, mode: 'insensitive' } },
+        { deliveryArea: { contains: term, mode: 'insensitive' } },
+        ...(Number.isFinite(numericId) ? [{ id: numericId }] : []),
+      ];
+      if (where.OR) {
+        // Combine existing OR (date/status) with search OR via AND
+        const existingOr = where.OR;
+        delete where.OR;
+        where.AND = [
+          { OR: existingOr },
+          { OR: searchOr },
+        ];
+      } else {
+        where.OR = searchOr;
+      }
+    }
+
+    // Count where: includes search + date filter but NOT tab status filter, so each tab gets its own count
+    const countWhere: Prisma.OrderWhereInput = {
+      deliveryAgentId: agentId,
+      deletedAt: null,
+    };
+    if (hasDateFilter) {
+      countWhere.OR = [
+        { status: { in: ACTIVE_STATUSES } },
+        { status: { in: TERMINAL_STATUSES }, ...dateCondition },
+      ];
+    } else {
+      countWhere.status = { in: [...ACTIVE_STATUSES, ...TERMINAL_STATUSES] };
+    }
+    if (filters?.search) {
+      const term = filters.search.trim();
+      const numericId = parseInt(term, 10);
+      const searchOr: Prisma.OrderWhereInput[] = [
+        { customer: { firstName: { contains: term, mode: 'insensitive' } } },
+        { customer: { lastName: { contains: term, mode: 'insensitive' } } },
+        { customer: { phoneNumber: { contains: term } } },
+        { deliveryAddress: { contains: term, mode: 'insensitive' } },
+        { deliveryArea: { contains: term, mode: 'insensitive' } },
+        ...(Number.isFinite(numericId) ? [{ id: numericId }] : []),
+      ];
+      if (countWhere.OR) {
+        const existingOr = countWhere.OR;
+        delete countWhere.OR;
+        countWhere.AND = [
+          { OR: existingOr },
+          { OR: searchOr },
+        ];
+      } else {
+        countWhere.OR = searchOr;
+      }
+    }
+
+    const [orders, total, statusGroups] = await Promise.all([
+      prisma.order.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          customer: { select: DeliveryService.customerSelect },
+          delivery: { select: DeliveryService.deliverySelect },
+          deliveryAgent: { select: DeliveryService.agentSelect },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.order.count({ where }),
+      prisma.order.groupBy({
+        by: ['status'],
+        where: countWhere,
+        _count: true,
+      }),
+    ]);
+
+    const deliveries = orders.map((order) => this.mapOrderToDeliveryItem(order));
+
+    const statusCounts: Record<string, number> = {};
+    let allCount = 0;
+    for (const g of statusGroups) {
+      statusCounts[g.status] = g._count;
+      allCount += g._count;
+    }
+    statusCounts.all = allCount;
+
+    return {
+      deliveries,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      statusCounts,
+    };
+  }
+
+  /**
+   * Get delivery info by order ID (for orders that may not have a Delivery record)
+   */
+  async getDeliveryByOrderId(orderId: number, agentUserId?: number) {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId, ...(agentUserId != null && { deliveryAgentId: agentUserId }) },
+      include: {
+        customer: { select: DeliveryService.customerSelect },
+        orderItems: { include: { product: { select: { id: true, name: true } } } },
+        delivery: { select: DeliveryService.deliverySelect },
+        deliveryAgent: { select: DeliveryService.agentSelect },
+      },
+    });
+
+    if (!order) {
+      throw new AppError('Order not found', 404);
+    }
+
+    return this.mapOrderToDeliveryItem(order, {
+      orderItems: order.orderItems.map((item) => ({
+        id: item.id,
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        totalPrice: Number(item.totalPrice),
+        product: { id: item.product.id, name: item.product.name },
+      })),
+    });
   }
 
   /**

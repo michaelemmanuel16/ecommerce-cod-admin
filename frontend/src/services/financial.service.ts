@@ -526,7 +526,9 @@ export const financialService = {
     verified: number;
     totalAmount: number;
   }> {
-    const response = await apiClient.post('/api/agent-reconciliation/deposits/bulk-verify', { ids });
+    const response = await apiClient.post('/api/agent-reconciliation/deposits/bulk-verify', { ids }, {
+      timeout: 90000, // Verification involves GL entries + FIFO matching — needs more time
+    });
     return response.data;
   },
 
@@ -536,7 +538,9 @@ export const financialService = {
   },
 
   async verifyDeposit(depositId: number): Promise<void> {
-    await apiClient.post(`/api/agent-reconciliation/deposits/${depositId}/verify`);
+    await apiClient.post(`/api/agent-reconciliation/deposits/${depositId}/verify`, {}, {
+      timeout: 90000, // Verification involves GL entries + FIFO matching
+    });
   },
 
   async rejectDeposit(depositId: number, notes: string): Promise<void> {
@@ -549,5 +553,29 @@ export const financialService = {
 
   async unblockAgent(agentId: number): Promise<void> {
     await apiClient.post(`/api/agent-reconciliation/agents/${agentId}/unblock`);
+  },
+
+  async createDeposit(data: {
+    amount: number;
+    depositMethod: string;
+    referenceNumber: string;
+    notes?: string;
+    receiptUrl?: string;
+  }): Promise<any> {
+    const response = await apiClient.post('/api/agent-reconciliation/deposits', data);
+    return response.data;
+  },
+
+  async getAgentBalance(agentId: number): Promise<{
+    id: number;
+    agentId: number;
+    totalCollected: number;
+    totalDeposited: number;
+    currentBalance: number;
+    lastSettlementDate?: string;
+    isBlocked: boolean;
+  } | null> {
+    const response = await apiClient.get(`/api/agent-reconciliation/agents/${agentId}/balance`);
+    return response.data;
   },
 };

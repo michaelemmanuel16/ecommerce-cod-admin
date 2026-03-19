@@ -341,7 +341,7 @@ export const AgentCollections: React.FC = () => {
                             })}
                           >
                             <Eye className="w-4 h-4 mr-1 text-gray-400" />
-                            Verify Collections
+                            View Details
                           </button>
                           <button
                             title={bucket.isBlocked ? 'Unblock Agent' : 'Block Agent'}
@@ -382,6 +382,7 @@ export const AgentCollections: React.FC = () => {
           agentName={selectedAgent.name}
         />
       )}
+
     </div>
   );
 };

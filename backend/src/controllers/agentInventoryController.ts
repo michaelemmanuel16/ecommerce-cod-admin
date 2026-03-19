@@ -113,7 +113,14 @@ class AgentInventoryController {
 
   async getTransferHistory(req: AuthRequest, res: Response) {
     try {
-      const { productId, agentId, type, startDate, endDate, page, limit } = req.query;
+      const { productId, type, startDate, endDate, page, limit } = req.query;
+      let { agentId } = req.query;
+
+      // Self-ownership check: delivery_agents may only view their own transfers.
+      if (req.user!.role === 'delivery_agent') {
+        agentId = String(req.user!.id);
+      }
+
       const result = await agentInventoryService.getTransferHistory({
         productId: productId ? parseInt(productId as string) : undefined,
         agentId: agentId ? parseInt(agentId as string) : undefined,

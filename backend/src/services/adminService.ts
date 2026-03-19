@@ -4,6 +4,8 @@ import { UserRole } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { Requester, canManageRole } from '../utils/authUtils';
+import { clearWhatsAppConfigCache } from './whatsappService';
+import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/providerCrypto';
 
 export const adminService = {
   /**
@@ -82,7 +84,32 @@ export const adminService = {
       });
     }
 
-    return config;
+    // Decrypt provider credentials (no-op if not encrypted or key not set)
+    const decrypted = { ...config } as any;
+    decrypted.whatsappProvider = decryptProviderSecrets('whatsappProvider', decrypted.whatsappProvider);
+    decrypted.smsProvider = decryptProviderSecrets('smsProvider', decrypted.smsProvider);
+    decrypted.emailProvider = decryptProviderSecrets('emailProvider', decrypted.emailProvider);
+
+    // Mask sensitive provider credentials before returning
+    const masked = { ...decrypted } as any;
+    if (masked.whatsappProvider) {
+      const wp = { ...masked.whatsappProvider };
+      if (wp.accessToken) wp.accessToken = '••••••••';
+      if (wp.appSecret) wp.appSecret = '••••••••';
+      if (wp.webhookVerifyToken) wp.webhookVerifyToken = '••••••••';
+      masked.whatsappProvider = wp;
+    }
+    if (masked.smsProvider) {
+      const sp = { ...masked.smsProvider };
+      if (sp.authToken) sp.authToken = '••••••••';
+      masked.smsProvider = sp;
+    }
+    if (masked.emailProvider) {
+      const ep = { ...masked.emailProvider };
+      if (ep.apiKey) ep.apiKey = '••••••••';
+      masked.emailProvider = ep;
+    }
+    return masked;
   },
 
   async getPublicConfig() {
@@ -103,15 +130,68 @@ export const adminService = {
     operatingHours?: any;
     smsProvider?: any;
     emailProvider?: any;
+    whatsappProvider?: any;
     notificationTemplates?: any;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
-    const config = await this.getSystemConfig();
+    const config = await prisma.systemConfig.findFirst();
+    if (!config) throw new Error('System config not found');
+
+    // Strip masked placeholder values so they don't overwrite real secrets
+    const MASK = '••••••••';
+    if (data.whatsappProvider) {
+      const existing = (config.whatsappProvider as any) || {};
+      const wp = { ...data.whatsappProvider };
+      if (wp.accessToken === MASK) wp.accessToken = existing.accessToken;
+      if (wp.appSecret === MASK) wp.appSecret = existing.appSecret;
+      if (wp.webhookVerifyToken === MASK) wp.webhookVerifyToken = existing.webhookVerifyToken;
+
+      // Preserve OAuth fields when manual form saves (prevent overwrite)
+      const oauthFields = [
+        'authMode', 'wabaId', 'oauthTokenExpiry', 'oauthConnectedAt',
+        'oauthVerifiedName', 'oauthDisplayPhone', 'oauthUserId',
+      ];
+      for (const field of oauthFields) {
+        if (wp[field] === undefined && existing[field] !== undefined) {
+          wp[field] = existing[field];
+        }
+      }
+
+      data.whatsappProvider = wp;
+    }
+    if (data.smsProvider) {
+      const existing = (config.smsProvider as any) || {};
+      const sp = { ...data.smsProvider };
+      if (sp.authToken === MASK) sp.authToken = existing.authToken;
+      data.smsProvider = sp;
+    }
+    if (data.emailProvider) {
+      const existing = (config.emailProvider as any) || {};
+      const ep = { ...data.emailProvider };
+      if (ep.apiKey === MASK) ep.apiKey = existing.apiKey;
+      data.emailProvider = ep;
+    }
+
+    // Encrypt sensitive fields before writing to DB
+    if (data.whatsappProvider) {
+      data.whatsappProvider = encryptProviderSecrets('whatsappProvider', data.whatsappProvider);
+    }
+    if (data.smsProvider) {
+      data.smsProvider = encryptProviderSecrets('smsProvider', data.smsProvider);
+    }
+    if (data.emailProvider) {
+      data.emailProvider = encryptProviderSecrets('emailProvider', data.emailProvider);
+    }
 
     const updatedConfig = await prisma.systemConfig.update({
       where: { id: config.id },
       data,
     });
+
+    // Invalidate WhatsApp config cache when provider settings change
+    if (data.whatsappProvider !== undefined) {
+      clearWhatsAppConfigCache();
+    }
 
     await this.createAuditLog(requester, 'update', 'system_config', config.id.toString(), { changes: Object.keys(data) });
 

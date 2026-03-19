@@ -162,7 +162,21 @@ npm run test:e2e:agent-inventory
 ## Scope (Phase 1)
 
 This implementation covers admin visibility and operations only. The following are **out of scope** for Phase 1:
-- Agent-facing mobile app or self-service stock view
+- ~~Agent-facing mobile app or self-service stock view~~ → Delivered in MAN-27 (Phase 2)
 - Automated end-of-period reconciliation workflows
 - Low-stock alerts for agent holdings
 - SMS/email notifications for stock movements
+
+---
+
+## MAN-27 — Mobile Inventory View (Phase 2)
+**Date:** 2026-03-17 | **Type:** feat | **Branch:** feature/mobile-inventory-history | **Commit:** b8c3594
+
+### Summary
+Agents can now view their allocated stock on mobile with product details and drill into per-product allocation history showing all transfer types (allocations, fulfillments, returns, transfers, adjustments) with pagination.
+
+### Changes
+- **Frontend:** Added inventory history drill-down to `AgentMyInventory.tsx` — tapping a product row opens a slide-over sheet showing paginated transfer history with type-specific badges/icons (Allocated, Fulfilled, Transferred, Returned, Adjusted), signed quantity indicators (+/-), order references, and "Load more" pagination. Added `TRANSFER_TYPE_CONFIG` for consistent transfer type rendering across the UI.
+
+### Key Files
+- `frontend/src/pages/AgentMyInventory.tsx` (modified — history sheet, transfer type config, pagination)

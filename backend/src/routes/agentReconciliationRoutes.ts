@@ -13,7 +13,7 @@ router.use(authenticate);
 
 // Listing and stats (Available to Accountant, Manager, Admin)
 router.get('/',
-    requireRole('super_admin', 'admin', 'manager', 'accountant'),
+    requireRole('super_admin', 'admin', 'manager', 'accountant', 'delivery_agent'),
     [
         query('agentId').optional().isInt().toInt(),
         query('status').optional().isString(),
@@ -75,7 +75,7 @@ router.get('/agents/balances', requireRole('super_admin', 'admin', 'manager', 'a
 
 // Deposits
 router.get('/deposits',
-    requireRole('super_admin', 'admin', 'manager', 'accountant'),
+    requireRole('super_admin', 'admin', 'manager', 'accountant', 'delivery_agent'),
     [
         query('agentId').optional().isInt().toInt(),
         query('status').optional().isString(),
@@ -95,6 +95,9 @@ router.post('/deposits',
         body('referenceNumber').trim().notEmpty().withMessage('Reference number is required')
             .isLength({ min: 1, max: 100 }).withMessage('Reference number is too long'),
         body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes are too long'),
+        body('receiptUrl').optional().isString()
+            .matches(/^\/uploads\/[a-z0-9_-]+-\d+-\d+\.(jpg|jpeg|png|webp|gif)$/i)
+            .withMessage('Receipt URL must be a valid upload path'),
         body('agentId').optional().isInt().toInt(),
         validate
     ],

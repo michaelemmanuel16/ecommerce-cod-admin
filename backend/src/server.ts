@@ -7,10 +7,11 @@ import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import fs from 'fs';
 import path from 'path';
 import { initializeSocket } from './sockets';
 import { errorHandler, notFound } from './middleware/errorHandler';
-import { apiLimiter } from './middleware/rateLimiter';
+import { apiLimiter, whatsappWebhookLimiter } from './middleware/rateLimiter';
 import logger from './utils/logger';
 import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
@@ -37,12 +38,17 @@ import callRoutes from './routes/callRoutes';
 import glRoutes from './routes/glRoutes';
 import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
+import whatsappRoutes from './routes/whatsappRoutes';
+import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
+import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
+import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
 import { GLAutomationService } from './services/glAutomationService';
 import { GLAccountService } from './services/glAccountService';
 import cron from 'node-cron';
 
-// Initialize workflow queue worker
+// Initialize queue workers
 import './queues/workflowQueue';
+import './queues/messagingQueue';
 import { setupAgingCron } from './queues/agingQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 
@@ -108,7 +114,15 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  // Preserve raw body buffer on webhook routes for HMAC signature verification
+  verify: (req: any, _res, buf) => {
+    if (req.originalUrl?.startsWith('/api/whatsapp/webhook')) {
+      req.rawBody = buf;
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Request logging (sanitized - no auth headers or sensitive data)
@@ -124,8 +138,13 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Serve static files from uploads directory
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Serve static files from uploads directory with security headers
+app.use('/uploads', (_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', 'inline');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
+  next();
+}, express.static(path.join(__dirname, '../uploads')));
 
 // Health check routes (without rate limiting for monitoring)
 app.use('/', healthRoutes);
@@ -149,6 +168,14 @@ app.use('/api/checkout-forms', apiLimiter, checkoutFormRoutes);
 app.use('/api/calls', apiLimiter, callRoutes);
 app.use('/api/agent-reconciliation', apiLimiter, agentReconciliationRoutes);
 app.use('/api/agent-inventory', apiLimiter, agentInventoryRoutes);
+// WhatsApp webhook endpoints — dedicated high-limit rate limiter (1000/15min prod)
+// bypasses apiLimiter (500/15min) since Meta sends bursts of status callbacks
+app.get('/api/whatsapp/webhook', whatsappWebhookLimiter, verifyWebhook);
+app.post('/api/whatsapp/webhook', whatsappWebhookLimiter, handleWebhook);
+// WhatsApp OAuth callback — unauthenticated (CSRF state validates the request)
+app.get('/api/whatsapp/oauth/callback', apiLimiter, handleOAuthCallback);
+// Admin endpoints use standard rate limiter
+app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);
@@ -172,6 +199,7 @@ app.get('/', (_req, res) => {
       notifications: '/api/notifications',
       upload: '/api/upload',
       checkoutForms: '/api/checkout-forms',
+      whatsapp: '/api/whatsapp',
       public: '/api/public'
     }
   });
@@ -213,12 +241,38 @@ if (process.env.NODE_ENV !== 'test') {
       }
     });
 
+    // Daily cleanup of old upload files at 03:00 AM
+    cron.schedule('0 3 * * *', async () => {
+      logger.info('Running daily upload cleanup...');
+      try {
+        const uploadsDir = path.join(__dirname, '../uploads');
+        try { await fs.promises.access(uploadsDir); } catch { return; }
+        const files = await fs.promises.readdir(uploadsDir);
+        const cutoff = Date.now() - (60 * 24 * 60 * 60 * 1000);
+        let deleted = 0;
+        for (const file of files) {
+          const filePath = path.join(uploadsDir, file);
+          const stat = await fs.promises.stat(filePath);
+          if (stat.isFile() && stat.mtimeMs < cutoff) {
+            await fs.promises.unlink(filePath);
+            deleted++;
+          }
+        }
+        logger.info(`Upload cleanup complete: deleted ${deleted} files older than 60 days`);
+      } catch (error) {
+        logger.error('Upload cleanup failed:', error);
+      }
+    });
+
     // Verify GL Accounts (Required for financial statements correctness)
     const glValidated = await GLAutomationService.asyncVerifyGLAccounts();
     if (!glValidated) {
       logger.error('Failed to validate/seed GL accounts. Exiting...');
       process.exit(1);
     }
+
+    // Schedule WhatsApp OAuth token refresh (daily at 01:00)
+    scheduleTokenRefresh();
 
     logger.info(`Socket.io initialized`);
     console.log(`
@@ -244,6 +298,9 @@ const shutdown = async (signal: string) => {
   }, 5000);
 
   try {
+    // 0. Stop OAuth cleanup interval
+    stopCleanupInterval();
+
     // 1. Close Socket.io connections
     if (io) {
       logger.info('Closing Socket.io connections...');

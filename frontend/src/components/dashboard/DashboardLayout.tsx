@@ -45,7 +45,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 min-w-0">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{config.title}</h1>
           {config.description && (
@@ -53,10 +53,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap min-w-0 w-full sm:w-auto sm:justify-end">
           {/* Date Range Picker */}
           {onDateRangeChange && (
-            <div style={{ position: 'relative' }}>
+            <div className="min-w-0 flex-1 sm:flex-initial" style={{ position: 'relative' }}>
               <style>{`
                 .dashboard-date-picker .date-range-popover {
                   left: auto;
