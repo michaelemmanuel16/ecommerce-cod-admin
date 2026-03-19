@@ -77,9 +77,7 @@ export async function refreshTokenIfNeeded(): Promise<{
 
     clearWhatsAppConfigCache();
 
-    logger.info('WhatsApp OAuth token refreshed successfully', {
-      newExpiresAt: updatedProvider.oauthTokenExpiry,
-    });
+    logger.info('WhatsApp OAuth token refreshed successfully');
 
     return { refreshed: true, newExpiresAt: updatedProvider.oauthTokenExpiry };
   } catch (error: any) {
@@ -103,7 +101,7 @@ export function scheduleTokenRefresh(): void {
     logger.info('Running scheduled WhatsApp OAuth token refresh...');
     const result = await refreshTokenIfNeeded();
     if (result.refreshed) {
-      logger.info('Scheduled token refresh completed', { newExpiresAt: result.newExpiresAt });
+      logger.info('Scheduled token refresh completed');
     } else if (result.error) {
       logger.error('Scheduled token refresh failed', { error: result.error });
     } else {

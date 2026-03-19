@@ -104,7 +104,7 @@ export async function handleOAuthCallback(req: AuthRequest, res: Response): Prom
     const { code, state, error: oauthError, error_description } = req.query as Record<string, string>;
 
     if (oauthError) {
-      logger.warn('OAuth callback received error from Meta', { error: oauthError, error_description });
+      logger.warn('OAuth callback received error from Meta');
       const msg = (error_description || oauthError).substring(0, 200);
       res.redirect(`${frontendUrl}/settings?oauth=error&message=${encodeURIComponent(msg)}`);
       return;
