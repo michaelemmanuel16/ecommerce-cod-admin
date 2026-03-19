@@ -124,9 +124,9 @@ export const WhatsAppIntegration: React.FC<WhatsAppIntegrationProps> = ({ system
     try {
       const { authUrl } = await adminService.initiateWhatsAppOAuth();
       window.open(authUrl, '_blank', 'noopener,noreferrer');
-      setOauthConnecting(false);
     } catch {
       toast.error('Failed to initiate OAuth');
+    } finally {
       setOauthConnecting(false);
     }
   };

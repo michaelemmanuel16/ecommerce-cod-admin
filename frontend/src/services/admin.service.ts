@@ -85,6 +85,7 @@ export interface UpdateUserData {
   isActive?: boolean;
 }
 
+/** Mirror of WABAPhoneNumber in backend/src/services/metaOAuthService.ts — keep in sync */
 export interface WABAPhoneNumber {
   id: string;
   display_phone_number: string;
