@@ -27,7 +27,7 @@ function shouldCache(config: InternalAxiosRequestConfig): boolean {
 function isPublicPage(): boolean {
   const path = window.location.pathname;
   return ['/login', '/register', '/forgot-password', '/reset-password'].includes(path)
-    || path.startsWith('/order/');
+    || path.startsWith('/form/');
 }
 
 export const apiClient = axios.create({
