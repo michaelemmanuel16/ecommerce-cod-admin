@@ -26,7 +26,7 @@ export const PublicCheckout: React.FC = () => {
     loadForm();
   }, [slug]);
 
-  // Auto-resize support for iframe embedding
+  // Auto-resize support for iframe embedding (postMessage to parent)
   useEffect(() => {
     // Detect if running in iframe
     if (window.self !== window.top) {
