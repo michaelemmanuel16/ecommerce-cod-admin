@@ -171,6 +171,15 @@ else
         fi
         exit 1
     fi
+
+    # Reload nginx to pick up config changes (nginx.conf is bind-mounted)
+    echo -e "${YELLOW}Reloading nginx configuration...${NC}"
+    if docker exec ecommerce-cod-nginx nginx -s reload 2>/dev/null; then
+        echo -e "${GREEN}✓ Nginx configuration reloaded${NC}"
+    else
+        echo -e "${YELLOW}Warning: Nginx reload failed, restarting container...${NC}"
+        docker-compose -p production -f "$COMPOSE_FILE" restart nginx
+    fi
 fi
 
 echo ""
