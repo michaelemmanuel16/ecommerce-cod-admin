@@ -24,7 +24,7 @@ export const EmbedCodeModal: React.FC<EmbedCodeModalProps> = ({
 
   // Get the base URL (in production, this should be your actual domain)
   const baseUrl = window.location.origin;
-  const embedUrl = `${baseUrl}/order/${form.slug}`;
+  const embedUrl = `${baseUrl}/form/${form.slug}`;
 
   // Generate iframe embed code
   const iframeCode = `<iframe

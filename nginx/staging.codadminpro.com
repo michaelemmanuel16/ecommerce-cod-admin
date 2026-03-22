@@ -19,8 +19,8 @@ add_header X-Frame-Options "SAMEORIGIN" always;
 add_header X-Content-Type-Options "nosniff" always;
 add_header X-XSS-Protection "1; mode=block" always;
 
-# Public checkout pages - allow iframe embedding on external sites
-    location /order {
+# Public checkout forms - allow iframe embedding on external sites
+    location /form {
          proxy_pass http://localhost:5174;
          proxy_http_version 1.1;
          proxy_set_header Upgrade $http_upgrade;

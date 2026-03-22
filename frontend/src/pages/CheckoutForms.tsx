@@ -227,7 +227,7 @@ export const CheckoutForms: React.FC = () => {
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => window.open(`/order/${form.slug}`, '_blank')}
+                        onClick={() => window.open(`/form/${form.slug}`, '_blank')}
                         title="Preview"
                       >
                         <ExternalLink className="w-4 h-4" />

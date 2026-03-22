@@ -114,7 +114,7 @@ function App() {
         <BrowserRouter>
           <Routes>
             {/* Public routes - no authentication required */}
-            <Route path="/order/:slug" element={
+            <Route path="/form/:slug" element={
               <Suspense fallback={<Loading />}>
                 <PublicCheckout />
               </Suspense>
