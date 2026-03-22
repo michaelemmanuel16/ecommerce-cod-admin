@@ -1,4 +1,5 @@
 import { apiClient } from './api';
+import { publicClient } from './public-orders.service';
 
 export interface SystemConfig {
   id: string;
@@ -102,7 +103,10 @@ export const adminService = {
   },
 
   async getPublicConfig(): Promise<Pick<SystemConfig, 'businessName' | 'currency'>> {
-    const response = await apiClient.get('/api/admin/config');
+    // Use publicClient (no auth interceptor) since this endpoint doesn't require auth.
+    // Using apiClient here caused iframe embedding to break: stale tokens triggered
+    // 401 → redirect to /login → X-Frame-Options blocked the iframe.
+    const response = await publicClient.get('/api/admin/config');
     return response.data;
   },
 

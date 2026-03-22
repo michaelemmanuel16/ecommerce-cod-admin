@@ -21,6 +21,15 @@ function shouldCache(config: InternalAxiosRequestConfig): boolean {
   return config.method?.toLowerCase() === 'get';
 }
 
+// Pages that should never trigger a 401 redirect to /login.
+// Includes public checkout pages embedded in iframes on external sites —
+// redirecting there would be blocked by X-Frame-Options.
+function isPublicPage(): boolean {
+  const path = window.location.pathname;
+  return ['/login', '/register', '/forgot-password', '/reset-password'].includes(path)
+    || path.startsWith('/order/');
+}
+
 export const apiClient = axios.create({
   baseURL: API_URL,
   headers: {
@@ -121,7 +130,7 @@ apiClient.interceptors.response.use(
       if (errorCode === 'TOKEN_FORMAT_OUTDATED') {
         useAuthStore.getState().logout(false);
         toast.error('Your session is outdated. Please log in again.');
-        if (window.location.pathname !== '/login') {
+        if (!isPublicPage()) {
           window.location.href = '/login';
         }
         return Promise.reject(error);
@@ -133,8 +142,7 @@ apiClient.interceptors.response.use(
         const refreshToken = useAuthStore.getState().refreshToken;
         if (!refreshToken) {
           useAuthStore.getState().logout(false);
-          const publicPages = ['/login', '/register', '/forgot-password', '/reset-password'];
-          if (!publicPages.includes(window.location.pathname)) {
+          if (!isPublicPage()) {
             window.location.href = '/login';
           }
           return Promise.reject(error);
@@ -170,17 +178,14 @@ apiClient.interceptors.response.use(
         if (refreshError.response?.data?.code === 'TOKEN_FORMAT_OUTDATED') {
           useAuthStore.getState().logout(false);
           toast.error('Your session is outdated. Please log in again.');
-          const publicPages = ['/login', '/register', '/forgot-password', '/reset-password'];
-          if (!publicPages.includes(window.location.pathname)) {
+          if (!isPublicPage()) {
             window.location.href = '/login';
           }
           return Promise.reject(refreshError);
         }
 
         useAuthStore.getState().logout(false);
-        // Only show session expired toast if we weren't already on a public page
-        const publicPages = ['/login', '/register', '/forgot-password', '/reset-password'];
-        if (!publicPages.includes(window.location.pathname)) {
+        if (!isPublicPage()) {
           toast.error('Session expired. Please login again.');
           window.location.href = '/login';
         }
