@@ -172,13 +172,13 @@ else
         exit 1
     fi
 
-    # Reload nginx to pick up config changes (nginx.conf is bind-mounted)
+    # Reload nginx to pick up config changes (nginx.conf is bind-mounted).
+    # Use SIGHUP for graceful reload — avoids port conflicts from a full restart.
     echo -e "${YELLOW}Reloading nginx configuration...${NC}"
-    if docker exec ecommerce-cod-nginx nginx -s reload 2>/dev/null; then
+    if docker kill --signal=HUP ecommerce-cod-nginx 2>/dev/null; then
         echo -e "${GREEN}✓ Nginx configuration reloaded${NC}"
     else
-        echo -e "${YELLOW}Warning: Nginx reload failed, restarting container...${NC}"
-        docker-compose -p production -f "$COMPOSE_FILE" restart nginx
+        echo -e "${YELLOW}Warning: Nginx reload signal failed${NC}"
     fi
 fi
 

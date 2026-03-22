@@ -9,6 +9,18 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>E-Commerce COD Admin Dashboard</title>
+    <script>
+      // Unregister service worker for public checkout forms loaded in iframes.
+      // The SW caches index.html with X-Frame-Options headers from admin visits,
+      // which blocks iframe embedding on external sites.
+      if (window.self !== window.top || window.location.pathname.startsWith('/form/')) {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            registrations.forEach(function(r) { r.unregister(); });
+          });
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
