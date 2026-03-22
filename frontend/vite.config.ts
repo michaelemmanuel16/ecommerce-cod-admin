@@ -10,8 +10,11 @@ export default defineConfig({
       // Enable Fast Refresh
       fastRefresh: true,
     }),
+    // PWA disabled — the service worker cached index.html with X-Frame-Options
+    // headers which blocked iframe embedding of checkout forms on external sites.
+    // Keep manifest-only for mobile home screen support, no service worker.
     VitePWA({
-      registerType: 'prompt',
+      selfDestroying: true,
       includeAssets: ['vite.svg', 'icons/*.png'],
       manifest: {
         name: 'COD Admin Pro',
@@ -44,35 +47,6 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
-          },
-        ],
-      },
-      workbox: {
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/form\//],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/auth/'),
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60, // 1 hour
-              },
-              networkTimeoutSeconds: 10,
-            },
-          },
-          {
-            urlPattern: /\.(js|css|png|jpg|jpeg|svg|gif|woff2?)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'static-assets',
-              expiration: {
-                maxEntries: 200,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
-              },
-            },
           },
         ],
       },
