@@ -1,5 +1,5 @@
 import { Response, Request, NextFunction } from 'express';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import workflowService from '../services/workflowService';
 import checkoutFormService from '../services/checkoutFormService';
 import { getSocketInstance } from '../utils/socketInstance';
@@ -56,6 +56,42 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
     }
 
+    // Check if customer exists or create new one
+    let customer = await prisma.customer.findUnique({
+      where: { phoneNumber: formData.phoneNumber }
+    });
+
+    if (!customer) {
+      const nameParts = formData.name.split(' ');
+      const firstName = nameParts[0] || formData.name;
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      customer = await prisma.customer.create({
+        data: {
+          firstName,
+          lastName,
+          phoneNumber: formData.phoneNumber,
+          email: formData.email || null,
+          alternatePhone: formData.alternatePhone || null,
+          address: formData.address,
+          state: formData.state,
+          area: formData.state,
+          landmark: formData.landmark || null,
+          notes: formData.notes || null
+        }
+      });
+    } else {
+      const updateData: Prisma.CustomerUpdateInput = {};
+      if (formData.email && !customer.email) updateData.email = formData.email;
+      if (formData.alternatePhone && !customer.alternatePhone) updateData.alternatePhone = formData.alternatePhone;
+      if (Object.keys(updateData).length > 0) {
+        customer = await prisma.customer.update({
+          where: { id: customer.id },
+          data: updateData,
+        });
+      }
+    }
+
     // Dedup guard: prevent double-submits within 30 minutes (same phone + amount + form)
     {
       const dedupeFrom = new Date(Date.now() - 30 * 60 * 1000);
@@ -87,32 +123,6 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         });
         return;
       }
-    }
-
-    // Check if customer exists or create new one
-    let customer = await prisma.customer.findUnique({
-      where: { phoneNumber: formData.phoneNumber }
-    });
-
-    if (!customer) {
-      const nameParts = formData.name.split(' ');
-      const firstName = nameParts[0] || formData.name;
-      const lastName = nameParts.slice(1).join(' ') || '';
-
-      customer = await prisma.customer.create({
-        data: {
-          firstName,
-          lastName,
-          phoneNumber: formData.phoneNumber,
-          email: formData.email || null,
-          alternatePhone: formData.alternatePhone || null,
-          address: formData.address,
-          state: formData.state,
-          area: formData.state,
-          landmark: formData.landmark || null,
-          notes: formData.notes || null
-        }
-      });
     }
 
     // Calculate package pricing

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, RegisterOptions, FieldError } from 'react-hook-form';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
+import { FormField } from '../../types/checkout-form';
 import { PackageSelector } from './PackageSelector';
 import { AddOnSelector } from './AddOnSelector';
 import { OrderSummary } from './OrderSummary';
-import { Input } from '../ui/Input';
 import { cn } from '../../utils/cn';
 
 interface CheckoutFormProps {
@@ -16,10 +16,63 @@ export interface CheckoutFormData {
   fullName: string;
   phone: string;
   alternativePhone?: string;
+  email?: string;
   region: string;
   streetAddress: string;
   selectedPackageId: number;
   selectedAddonIds: number[];
+  customFields?: Record<string, string>;
+}
+
+interface StandardFieldConfig {
+  key: keyof CheckoutFormData;
+  aliases: string[];
+}
+
+const STANDARD_FIELDS: StandardFieldConfig[] = [
+  { key: 'fullName', aliases: ['name', 'full name'] },
+  { key: 'phone', aliases: ['phone', 'phone number'] },
+  { key: 'alternativePhone', aliases: ['alt phone', 'alternative phone', 'alt. phone'] },
+  { key: 'email', aliases: ['email', 'e-mail'] },
+  { key: 'region', aliases: ['region', 'region/state', 'state'] },
+  { key: 'streetAddress', aliases: ['street address', 'address'] },
+];
+
+const DEFAULT_REQUIRED_KEYS: ReadonlySet<string> = new Set(['fullName', 'phone', 'region', 'streetAddress']);
+
+const DEFAULT_FIELDS: FormField[] = [
+  { id: 'fullName', label: 'Full Name', type: 'text', required: true, enabled: true },
+  { id: 'phone', label: 'Phone', type: 'phone', required: true, enabled: true },
+  { id: 'altPhone', label: 'Alt Phone', type: 'phone', required: false, enabled: true },
+  { id: 'region', label: 'Region/State', type: 'select', required: true, enabled: true },
+  { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: true, enabled: true },
+];
+
+function getStandardField(label: string): StandardFieldConfig | null {
+  const normalized = label.toLowerCase().trim();
+  return STANDARD_FIELDS.find(config => config.aliases.includes(normalized)) ?? null;
+}
+
+interface FieldWrapperProps {
+  fieldKey: string;
+  label: string;
+  required: boolean;
+  error: FieldError | undefined;
+  children: React.ReactNode;
+}
+
+function FieldWrapper({ fieldKey, label, required, error, children }: FieldWrapperProps): React.JSX.Element {
+  return (
+    <div key={fieldKey}>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      {children}
+      {error && (
+        <p className="mt-1 text-sm text-red-600">{error.message}</p>
+      )}
+    </div>
+  );
 }
 
 export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }) => {
@@ -33,7 +86,6 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
     formState: { errors },
   } = useForm<CheckoutFormData>();
 
-  // Auto-select default package on mount
   useEffect(() => {
     const defaultPackage = formData.packages.find(pkg => pkg.isDefault);
     if (defaultPackage && !selectedPackageId) {
@@ -43,18 +95,143 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
 
   const selectedPackage = formData.packages.find((p) => p.id === selectedPackageId) || null;
 
-  const isFieldEnabled = (label: string): boolean => {
-    if (!formData.fields?.length) return true; // no fields configured → show all (fallback)
-    const variants = label.toLowerCase().split('/').map(l => l.trim());
-    // Match exact label OR any variant from the slash-separated alternatives
-    const field = formData.fields.find(
-      (f: any) => {
-        const fieldLabel = f.label?.toLowerCase().trim();
-        return fieldLabel === label.toLowerCase() || variants.some(v => fieldLabel === v);
-      }
+  function getFieldsToRender(): FormField[] {
+    if (!formData.fields?.length) {
+      return DEFAULT_FIELDS;
+    }
+    return formData.fields.filter((f: FormField) => f.enabled !== false);
+  }
+
+  function getFieldError(formKey: string): FieldError | undefined {
+    // For standard fields, look up directly; for custom fields (dotted paths),
+    // traverse the errors object
+    if (formKey.startsWith('customFields.')) {
+      const customKey = formKey.replace('customFields.', '');
+      const customErrors = errors.customFields as Record<string, FieldError> | undefined;
+      return customErrors?.[customKey];
+    }
+    return (errors as Record<string, FieldError | undefined>)[formKey];
+  }
+
+  const inputClassName = (hasError: boolean) => cn(
+    'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
+    hasError ? 'border-red-500' : 'border-gray-300'
+  );
+
+  const selectClassName = (hasError: boolean) => cn(
+    'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent bg-white',
+    hasError ? 'border-red-500' : 'border-gray-300'
+  );
+
+  function requiredRule(label: string): RegisterOptions | undefined {
+    return { required: `${label} is required` };
+  }
+
+  function renderField(field: FormField): React.JSX.Element {
+    const standard = getStandardField(field.label);
+    const formKey = standard ? standard.key : `customFields.${field.label}`;
+    const isRequired = field.required ?? (standard ? DEFAULT_REQUIRED_KEYS.has(standard.key) : false);
+    const error = getFieldError(formKey);
+    const validation: RegisterOptions | undefined = isRequired ? requiredRule(field.label) : undefined;
+
+    if (standard?.key === 'region') {
+      return (
+        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+          <select
+            {...register(formKey as any, validation)}
+            className={selectClassName(!!error)}
+          >
+            <option value="">Select {field.label.toLowerCase()}</option>
+            {(formData.regions?.available || []).map((region: string) => (
+              <option key={region} value={region}>{region}</option>
+            ))}
+          </select>
+        </FieldWrapper>
+      );
+    }
+
+    if (standard?.key === 'streetAddress' || (!standard && field.type === 'textarea')) {
+      return (
+        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+          <textarea
+            {...register(formKey as any, validation)}
+            rows={3}
+            placeholder={`Enter ${field.label.toLowerCase()}`}
+            className={cn(inputClassName(!!error), 'resize-none')}
+          />
+        </FieldWrapper>
+      );
+    }
+
+    if (!standard && field.type === 'select') {
+      return (
+        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+          <select
+            {...register(formKey as any, validation)}
+            className={selectClassName(!!error)}
+          >
+            <option value="">Select {field.label.toLowerCase()}</option>
+            {(field.options || []).map((opt: string) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        </FieldWrapper>
+      );
+    }
+
+    const isPhone = standard?.key === 'phone' || standard?.key === 'alternativePhone' || (!standard && field.type === 'phone');
+    if (isPhone) {
+      const phoneValidation: RegisterOptions = {
+        ...(isRequired ? { required: `${field.label} is required` } : {}),
+        pattern: {
+          value: /^\+?[0-9]{8,15}$/,
+          message: 'Please enter a valid phone number (8-15 digits)',
+        },
+      };
+      return (
+        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+          <input
+            {...register(formKey as any, phoneValidation)}
+            type="tel"
+            placeholder={`Enter ${field.label.toLowerCase()}`}
+            className={inputClassName(!!error)}
+          />
+        </FieldWrapper>
+      );
+    }
+
+    if (standard?.key === 'email') {
+      const emailValidation: RegisterOptions = {
+        ...(isRequired ? { required: `${field.label} is required` } : {}),
+        pattern: {
+          value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+          message: 'Please enter a valid email address',
+        },
+      };
+      return (
+        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+          <input
+            {...register(formKey as any, emailValidation)}
+            type="email"
+            placeholder={`Enter ${field.label.toLowerCase()}`}
+            className={inputClassName(!!error)}
+          />
+        </FieldWrapper>
+      );
+    }
+
+    return (
+      <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+        <input
+          {...register(formKey as any, validation)}
+          type="text"
+          placeholder={`Enter ${field.label.toLowerCase()}`}
+          className={inputClassName(!!error)}
+        />
+      </FieldWrapper>
     );
-    return field ? (field.enabled ?? true) : false; // not in array = deleted → hide
-  };
+  }
+
   const selectedAddons = formData.upsells.filter((u) => selectedAddonIds.has(u.id));
 
   const toggleAddon = (addonId: number) => {
@@ -115,126 +292,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
                 </h2>
 
                 <div className="space-y-4">
-                  {/* Full Name */}
-                  {isFieldEnabled('Full Name') && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Full Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        {...register('fullName', { required: 'Full name is required' })}
-                        type="text"
-                        placeholder="Enter full name"
-                        className={cn(
-                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
-                          errors.fullName ? 'border-red-500' : 'border-gray-300'
-                        )}
-                      />
-                      {errors.fullName && (
-                        <p className="mt-1 text-sm text-red-600">{errors.fullName.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Phone */}
-                  {isFieldEnabled('Phone') && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Phone <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        {...register('phone', {
-                          required: 'Phone number is required',
-                          pattern: {
-                            value: /^\+?[0-9]{8,15}$/,
-                            message: 'Please enter a valid phone number (8-15 digits)',
-                          },
-                        })}
-                        type="tel"
-                        placeholder="Enter phone number"
-                        className={cn(
-                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
-                          errors.phone ? 'border-red-500' : 'border-gray-300'
-                        )}
-                      />
-                      {errors.phone && (
-                        <p className="mt-1 text-sm text-red-600">{errors.phone.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Alternative Phone */}
-                  {isFieldEnabled('Alt Phone') && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Alternative Phone
-                      </label>
-                      <input
-                        {...register('alternativePhone', {
-                          pattern: {
-                            value: /^\+?[0-9]{8,15}$/,
-                            message: 'Please enter a valid phone number (8-15 digits)',
-                          },
-                        })}
-                        type="tel"
-                        placeholder="Enter alternative phone (optional)"
-                        className={cn(
-                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
-                          errors.alternativePhone ? 'border-red-500' : 'border-gray-300'
-                        )}
-                      />
-                      {errors.alternativePhone && (
-                        <p className="mt-1 text-sm text-red-600">{errors.alternativePhone.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Region/State */}
-                  {isFieldEnabled('Region/State') && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Region/State <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        {...register('region', { required: 'Region is required' })}
-                        className={cn(
-                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent bg-white',
-                          errors.region ? 'border-red-500' : 'border-gray-300'
-                        )}
-                      >
-                        <option value="">Select region/state</option>
-                        {(formData.regions?.available || []).map((region: string) => (
-                          <option key={region} value={region}>
-                            {region}
-                          </option>
-                        ))}
-                      </select>
-                      {errors.region && (
-                        <p className="mt-1 text-sm text-red-600">{errors.region.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Street Address */}
-                  {isFieldEnabled('Street Address') && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Street Address <span className="text-red-500">*</span>
-                      </label>
-                      <textarea
-                        {...register('streetAddress', { required: 'Street address is required' })}
-                        rows={3}
-                        placeholder="Enter street address"
-                        className={cn(
-                          'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent resize-none',
-                          errors.streetAddress ? 'border-red-500' : 'border-gray-300'
-                        )}
-                      />
-                      {errors.streetAddress && (
-                        <p className="mt-1 text-sm text-red-600">{errors.streetAddress.message}</p>
-                      )}
-                    </div>
-                  )}
+                  {getFieldsToRender().map(renderField)}
                 </div>
               </div>
 
