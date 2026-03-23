@@ -111,10 +111,11 @@ export const PublicCheckout: React.FC = () => {
           name: data.fullName.trim(),
           phoneNumber: data.phone,
           alternatePhone: data.alternativePhone || undefined,
-          email: '', // Optional - could add email field later
+          email: data.email || '',
           address: data.streetAddress,
           state: data.region,
           notes: null,
+          customFields: data.customFields,
         },
         selectedPackage: {
           name: selectedPackage.name,
