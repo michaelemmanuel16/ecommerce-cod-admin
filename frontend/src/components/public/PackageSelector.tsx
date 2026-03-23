@@ -34,8 +34,9 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                 : 'border-gray-200 hover:border-gray-300 bg-white'
             )}
           >
-            <div className="flex items-start justify-between">
-              <div className="flex items-start space-x-3 flex-1">
+            <div className="space-y-2">
+              {/* Top row: radio + name + badge */}
+              <div className="flex items-start space-x-3">
                 {/* Radio indicator */}
                 <div
                   className={cn(
@@ -53,7 +54,7 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                 {/* Package details */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-gray-900 whitespace-nowrap">{pkg.name}</h3>
+                    <h3 className="font-semibold text-gray-900">{pkg.name}</h3>
                     {/* Show custom highlight if enabled, otherwise fall back to "Most Popular" */}
                     {pkg.showHighlight && pkg.highlightText ? (
                       <span className="px-2 py-0.5 bg-[#f97316] text-white text-xs font-medium rounded whitespace-nowrap flex-shrink-0">
@@ -71,10 +72,10 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                 </div>
               </div>
 
-              {/* Price */}
-              <div className="text-right ml-4">
+              {/* Price row */}
+              <div className="flex items-center gap-3 pl-8">
                 {pkg.originalPrice && pkg.originalPrice > pkg.price && pkg.showDiscount !== false ? (
-                  <div className="space-y-1">
+                  <>
                     <p className="text-sm text-gray-500 line-through">
                       {currency} {pkg.originalPrice.toFixed(2)}
                     </p>
@@ -82,16 +83,16 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                       {currency} {pkg.price.toFixed(2)}
                     </p>
                     {pkg.discountType === 'percentage' && pkg.discountValue && (
-                      <span className="inline-block px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded">
+                      <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded">
                         Save {pkg.discountValue}%
                       </span>
                     )}
                     {pkg.discountType === 'fixed' && pkg.discountValue && (
-                      <span className="inline-block px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded">
+                      <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded">
                         Save {currency} {(pkg.originalPrice - pkg.price).toFixed(2)}
                       </span>
                     )}
-                  </div>
+                  </>
                 ) : (
                   <p className="text-xl font-bold text-gray-900">
                     {currency} {pkg.price.toFixed(2)}
