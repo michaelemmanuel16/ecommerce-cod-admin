@@ -280,13 +280,12 @@ export const Workflows: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => handleExecuteWorkflow(workflow.id)}
-                          disabled={!workflow.isActive || executingIds.has(workflow.id)}
-                          className="text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Execute Workflow"
+                          onClick={() => handleToggleWorkflow(workflow.id, workflow.isActive)}
+                          className={`transition-colors ${workflow.isActive ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-green-600'}`}
+                          title={workflow.isActive ? 'Pause Workflow' : 'Activate Workflow'}
                         >
-                          {executingIds.has(workflow.id) ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
+                          {workflow.isActive ? (
+                            <Pause className="w-5 h-5" />
                           ) : (
                             <Play className="w-5 h-5" />
                           )}
