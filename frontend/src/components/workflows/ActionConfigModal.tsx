@@ -28,6 +28,7 @@ export const ActionConfigModal: React.FC<ActionConfigModalProps> = ({
       assign_user: 'Configure User Assignment',
       send_email: 'Configure Email',
       send_sms: 'Configure SMS',
+      send_whatsapp: 'Configure WhatsApp Message',
       update_order: 'Configure Order Update',
       wait: 'Configure Wait Time',
       http_request: 'Configure HTTP Request',
@@ -118,6 +119,32 @@ export const ActionConfigModal: React.FC<ActionConfigModalProps> = ({
                   <p className="text-xs text-gray-500 mt-2">
                     {(config.message || '').length}/160 characters •
                     Available variables: {'{customerName}'}, {'{orderNumber}'}, {'{totalAmount}'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {action.type === 'send_whatsapp' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    WhatsApp Template
+                  </label>
+                  <select
+                    value={config.templateKey || 'confirmed'}
+                    onChange={(e) =>
+                      setConfig({ ...config, templateKey: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="order_created">Order Created</option>
+                    <option value="confirmed">Order Confirmed</option>
+                    <option value="out_for_delivery">Out for Delivery</option>
+                    <option value="delivered">Delivered</option>
+                    <option value="failed_delivery">Delivery Failed</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Sends the selected WhatsApp template to the customer with order details automatically filled in.
                   </p>
                 </div>
               </div>

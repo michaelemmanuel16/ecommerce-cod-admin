@@ -84,19 +84,19 @@ export const ORDER_STATUS_TEMPLATES: Record<string, {
 }> = {
   order_created: {
     templateName: 'order_created',
-    bodyParams: (o) => [o.customerName, String(o.orderId), `GHS ${o.totalAmount.toFixed(2)}`],
+    bodyParams: (o) => [o.customerName, String(o.orderId)],
   },
   confirmed: {
     templateName: 'order_confirmed',
-    bodyParams: (o) => [o.customerName, String(o.orderId), `GHS ${o.totalAmount.toFixed(2)}`],
+    bodyParams: (o) => [o.customerName, String(o.orderId)],
   },
   out_for_delivery: {
     templateName: 'order_out_for_delivery',
-    bodyParams: (o) => [o.customerName, String(o.orderId), o.deliveryAgentName || 'your delivery agent'],
+    bodyParams: (o) => [o.customerName, String(o.orderId)],
   },
   delivered: {
     templateName: 'order_delivered',
-    bodyParams: (o) => [o.customerName, String(o.orderId), `GHS ${o.totalAmount.toFixed(2)}`],
+    bodyParams: (o) => [o.customerName, String(o.orderId)],
   },
   failed_delivery: {
     templateName: 'order_delivery_failed',
@@ -274,7 +274,7 @@ class WhatsAppService {
    * Send a template message via WhatsApp Business Cloud API.
    */
   async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
-    const { to, templateName, languageCode = 'en', bodyParams = [], orderId, customerId } = options;
+    const { to, templateName, languageCode = 'en_US', bodyParams = [], orderId, customerId } = options;
     const formattedPhone = formatPhoneNumber(to);
     const messageBody = buildMessageBody(templateName, bodyParams);
 

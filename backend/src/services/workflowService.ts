@@ -318,6 +318,9 @@ export class WorkflowService {
       case 'send_email':
         return this.executeSendEmail(action, context);
 
+      case 'send_whatsapp':
+        return this.executeSendWhatsApp(action, context);
+
       case 'update_order':
         return this.executeUpdateOrder(action, context);
 
@@ -373,6 +376,62 @@ export class WorkflowService {
       success: true,
       message: 'Email sent (mock)',
       to: action.email || context.email
+    };
+  }
+
+  /**
+   * Execute send WhatsApp action
+   */
+  private async executeSendWhatsApp(action: any, context: any): Promise<any> {
+    const { whatsappService, ORDER_STATUS_TEMPLATES } = await import('./whatsappService');
+
+    const templateConfig = ORDER_STATUS_TEMPLATES[action.config?.templateKey];
+    if (!templateConfig) {
+      throw new Error(`Unknown WhatsApp template: ${action.config?.templateKey}`);
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: context.orderId },
+      include: {
+        customer: true,
+        deliveryAgent: true,
+      },
+    });
+
+    if (!order || !order.customer) {
+      throw new Error(`Order ${context.orderId} not found or has no customer`);
+    }
+
+    const orderContext = {
+      orderId: order.id,
+      customerId: order.customer.id,
+      customerName: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
+      customerPhone: order.customer.phoneNumber,
+      totalAmount: Number(order.totalAmount),
+      deliveryAgentName: order.deliveryAgent ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim() : undefined,
+      status: order.status,
+    };
+
+    const bodyParams = templateConfig.bodyParams(orderContext);
+
+    const result = await whatsappService.sendTemplate({
+      to: orderContext.customerPhone,
+      templateName: templateConfig.templateName,
+      bodyParams,
+      orderId: order.id,
+      customerId: orderContext.customerId,
+    });
+
+    logger.info('WhatsApp message sent via workflow', {
+      orderId: order.id,
+      templateName: templateConfig.templateName,
+      messageLogId: result.messageLogId,
+    });
+
+    return {
+      success: true,
+      messageLogId: result.messageLogId,
+      templateName: templateConfig.templateName,
     };
   }
 
@@ -622,6 +681,7 @@ export class WorkflowService {
     const validActionTypes = [
       'send_sms',
       'send_email',
+      'send_whatsapp',
       'update_order',
       'assign_agent',
       'assign_user',
@@ -685,14 +745,16 @@ export class WorkflowService {
    * Status change workflows triggered
    */
   async triggerStatusChangeWorkflows(orderId: number, oldStatus: string, newStatus: string) {
+    // Query both 'status' and 'targetStatus' paths since the wizard and editor
+    // store the target status under different keys
     const workflows = await prisma.workflow.findMany({
       where: {
         isActive: true,
         triggerType: 'status_change',
-        triggerData: {
-          path: ['status'],
-          equals: newStatus
-        }
+        OR: [
+          { triggerData: { path: ['status'], equals: newStatus } },
+          { triggerData: { path: ['targetStatus'], equals: newStatus } },
+        ],
       }
     }) || [];
 

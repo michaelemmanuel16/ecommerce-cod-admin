@@ -100,6 +100,10 @@ export const WorkflowEditor: React.FC = () => {
         distributionMode: 'even',
         onlyUnassigned: true,
       };
+    } else if (actionType === 'send_whatsapp') {
+      defaultConfig = {
+        templateKey: 'confirmed',
+      };
     }
 
     const newAction: WorkflowAction = {
@@ -317,6 +321,12 @@ export const WorkflowEditor: React.FC = () => {
               </Button>
               <Button
                 variant="secondary"
+                onClick={() => handleAddAction('send_whatsapp')}
+              >
+                Send WhatsApp
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => handleAddAction('update_order')}
               >
                 Update Order
@@ -336,6 +346,7 @@ export const WorkflowEditor: React.FC = () => {
                       {action.type === 'assign_user' && 'Assign User'}
                       {action.type === 'send_sms' && 'Send SMS'}
                       {action.type === 'send_email' && 'Send Email'}
+                      {action.type === 'send_whatsapp' && 'Send WhatsApp'}
                       {action.type === 'update_order' && 'Update Order'}
                     </span>
                   </div>
@@ -403,6 +414,32 @@ export const WorkflowEditor: React.FC = () => {
                   </div>
                 )}
 
+                {action.type === 'send_whatsapp' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        WhatsApp Template
+                      </label>
+                      <select
+                        value={action.config.templateKey || 'confirmed'}
+                        onChange={(e) =>
+                          handleUpdateAction(action.id, { ...action.config, templateKey: e.target.value }, action.conditions)
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="order_created">Order Created</option>
+                        <option value="confirmed">Order Confirmed</option>
+                        <option value="out_for_delivery">Out for Delivery</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="failed_delivery">Delivery Failed</option>
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Sends the selected WhatsApp template to the customer with order details automatically filled in.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {action.type === 'update_order' && (
                   <div className="space-y-3">
                     <div>
@@ -451,6 +488,9 @@ export const WorkflowEditor: React.FC = () => {
                 </Button>
                 <Button variant="secondary" onClick={() => handleAddAction('send_email')}>
                   Send Email
+                </Button>
+                <Button variant="secondary" onClick={() => handleAddAction('send_whatsapp')}>
+                  Send WhatsApp
                 </Button>
                 <Button variant="secondary" onClick={() => handleAddAction('update_order')}>
                   Update Order

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, User, Mail, MessageSquare, RefreshCw, Clock, Globe } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, User, Mail, MessageSquare, RefreshCw, Clock, Globe, Phone } from 'lucide-react';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 import { ActionSequence } from '../ActionSequence';
@@ -42,6 +42,13 @@ const actionTypes: ActionType[] = [
     color: 'from-green-500 to-green-600',
   },
   {
+    type: 'send_whatsapp',
+    label: 'Send WhatsApp',
+    description: 'Send WhatsApp template message to customers',
+    icon: <Phone className="w-5 h-5" />,
+    color: 'from-emerald-500 to-emerald-600',
+  },
+  {
     type: 'update_order',
     label: 'Update Order',
     description: 'Change order status or properties',
@@ -81,6 +88,10 @@ export const ActionsStep: React.FC<ActionsStepProps> = ({
         assignments: [],
         distributionMode: 'even',
         onlyUnassigned: true,
+      };
+    } else if (actionType === 'send_whatsapp') {
+      defaultConfig = {
+        templateKey: 'confirmed',
       };
     }
 

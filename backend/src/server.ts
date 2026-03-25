@@ -48,7 +48,7 @@ import cron from 'node-cron';
 
 // Initialize queue workers
 import './queues/workflowQueue';
-import './queues/messagingQueue';
+
 import { setupAgingCron } from './queues/agingQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 
