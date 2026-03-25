@@ -299,45 +299,8 @@ async function executeAction(action: any, input: any, conditions?: any): Promise
       return { sent: true };
 
     case 'send_whatsapp': {
-      const { whatsappService, ORDER_STATUS_TEMPLATES } = await import('../services/whatsappService');
-
-      const templateConfig = ORDER_STATUS_TEMPLATES[action.config.templateKey];
-      if (!templateConfig) {
-        throw new Error(`Unknown WhatsApp template: ${action.config.templateKey}`);
-      }
-
-      const waOrder = await prisma.order.findUnique({
-        where: { id: input.orderId },
-        include: {
-          customer: true,
-          deliveryAgent: true,
-        },
-      });
-
-      if (!waOrder || !waOrder.customer) {
-        throw new Error(`Order ${input.orderId} not found or has no customer`);
-      }
-
-      const orderContext = {
-        orderId: waOrder.id,
-        customerId: waOrder.customer.id,
-        customerName: `${waOrder.customer.firstName} ${waOrder.customer.lastName}`.trim(),
-        customerPhone: waOrder.customer.phoneNumber,
-        totalAmount: Number(waOrder.totalAmount),
-        deliveryAgentName: waOrder.deliveryAgent ? `${waOrder.deliveryAgent.firstName} ${waOrder.deliveryAgent.lastName}`.trim() : undefined,
-        status: waOrder.status,
-      };
-
-      const bodyParams = templateConfig.bodyParams(orderContext);
-
-      const result = await whatsappService.sendTemplate({
-        to: orderContext.customerPhone,
-        templateName: templateConfig.templateName,
-        bodyParams,
-        orderId: waOrder.id,
-        customerId: orderContext.customerId,
-      });
-
+      const { sendWhatsAppForOrder } = await import('../services/whatsappService');
+      const result = await sendWhatsAppForOrder(action.config.templateKey, input.orderId);
       return { sent: true, messageLogId: result.messageLogId };
     }
 

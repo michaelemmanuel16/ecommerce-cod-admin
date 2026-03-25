@@ -383,56 +383,15 @@ export class WorkflowService {
    * Execute send WhatsApp action
    */
   private async executeSendWhatsApp(action: any, context: any): Promise<any> {
-    const { whatsappService, ORDER_STATUS_TEMPLATES } = await import('./whatsappService');
-
-    const templateConfig = ORDER_STATUS_TEMPLATES[action.config?.templateKey];
-    if (!templateConfig) {
-      throw new Error(`Unknown WhatsApp template: ${action.config?.templateKey}`);
-    }
-
-    const order = await prisma.order.findUnique({
-      where: { id: context.orderId },
-      include: {
-        customer: true,
-        deliveryAgent: true,
-      },
-    });
-
-    if (!order || !order.customer) {
-      throw new Error(`Order ${context.orderId} not found or has no customer`);
-    }
-
-    const orderContext = {
-      orderId: order.id,
-      customerId: order.customer.id,
-      customerName: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
-      customerPhone: order.customer.phoneNumber,
-      totalAmount: Number(order.totalAmount),
-      deliveryAgentName: order.deliveryAgent ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim() : undefined,
-      status: order.status,
-    };
-
-    const bodyParams = templateConfig.bodyParams(orderContext);
-
-    const result = await whatsappService.sendTemplate({
-      to: orderContext.customerPhone,
-      templateName: templateConfig.templateName,
-      bodyParams,
-      orderId: order.id,
-      customerId: orderContext.customerId,
-    });
+    const { sendWhatsAppForOrder } = await import('./whatsappService');
+    const result = await sendWhatsAppForOrder(action.config?.templateKey, context.orderId);
 
     logger.info('WhatsApp message sent via workflow', {
-      orderId: order.id,
-      templateName: templateConfig.templateName,
+      orderId: context.orderId,
       messageLogId: result.messageLogId,
     });
 
-    return {
-      success: true,
-      messageLogId: result.messageLogId,
-      templateName: templateConfig.templateName,
-    };
+    return { success: true, messageLogId: result.messageLogId };
   }
 
   /**

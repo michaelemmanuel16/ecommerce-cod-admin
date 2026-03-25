@@ -10,6 +10,7 @@ import { ConditionBuilder, ConditionGroup } from '../components/workflows/Condit
 import { AssignUserAction, UserAssignment } from '../components/workflows/actions/AssignUserAction';
 import { WorkflowTemplateGallery } from '../components/workflows/WorkflowTemplateGallery';
 import { ExecutionHistory } from '../components/workflows/ExecutionHistory';
+import { WHATSAPP_TEMPLATE_OPTIONS } from '../constants/workflow';
 
 interface WorkflowAction {
   id: string;
@@ -427,11 +428,9 @@ export const WorkflowEditor: React.FC = () => {
                         }
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="order_created">Order Created</option>
-                        <option value="confirmed">Order Confirmed</option>
-                        <option value="out_for_delivery">Out for Delivery</option>
-                        <option value="delivered">Delivered</option>
-                        <option value="failed_delivery">Delivery Failed</option>
+                        {WHATSAPP_TEMPLATE_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
                       </select>
                       <p className="text-xs text-gray-500 mt-1">
                         Sends the selected WhatsApp template to the customer with order details automatically filled in.

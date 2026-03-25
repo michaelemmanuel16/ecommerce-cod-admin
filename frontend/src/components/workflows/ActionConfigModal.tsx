@@ -4,6 +4,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { WorkflowAction } from '../../pages/WorkflowWizard';
 import { AssignUserAction } from './actions/AssignUserAction';
+import { WHATSAPP_TEMPLATE_OPTIONS } from '../../constants/workflow';
 
 interface ActionConfigModalProps {
   action: WorkflowAction;
@@ -137,11 +138,9 @@ export const ActionConfigModal: React.FC<ActionConfigModalProps> = ({
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="order_created">Order Created</option>
-                    <option value="confirmed">Order Confirmed</option>
-                    <option value="out_for_delivery">Out for Delivery</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="failed_delivery">Delivery Failed</option>
+                    {WHATSAPP_TEMPLATE_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
                   </select>
                   <p className="text-xs text-gray-500 mt-2">
                     Sends the selected WhatsApp template to the customer with order details automatically filled in.

@@ -12,6 +12,7 @@ import {
   Phone,
 } from 'lucide-react';
 import { WorkflowAction } from '../../pages/WorkflowWizard';
+import { WHATSAPP_TEMPLATE_LABELS } from '../../constants/workflow';
 import { cn } from '../../utils/cn';
 
 interface ActionSequenceProps {
@@ -70,15 +71,8 @@ const getActionSummary = (action: WorkflowAction): string => {
       return `Message: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`;
 
     case 'send_whatsapp':
-      const templateLabels: Record<string, string> = {
-        order_created: 'Order Created',
-        confirmed: 'Order Confirmed',
-        out_for_delivery: 'Out for Delivery',
-        delivered: 'Delivered',
-        failed_delivery: 'Delivery Failed',
-      };
       const templateKey = action.config.templateKey || 'confirmed';
-      return `Template: ${templateLabels[templateKey] || templateKey}`;
+      return `Template: ${WHATSAPP_TEMPLATE_LABELS[templateKey] || templateKey}`;
 
     case 'update_order':
       const status = action.config.status || 'unspecified';

@@ -119,6 +119,50 @@ export interface OrderContext {
   status: string;
 }
 
+/**
+ * Look up the order, build context, and send a WhatsApp template message.
+ * Shared by both workflowQueue and workflowService execution paths.
+ */
+export async function sendWhatsAppForOrder(
+  templateKey: string,
+  orderId: number,
+): Promise<{ messageLogId: number; providerMessageId?: string }> {
+  const templateConfig = ORDER_STATUS_TEMPLATES[templateKey];
+  if (!templateConfig) {
+    throw new Error(`Unknown WhatsApp template: ${templateKey}`);
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { customer: true, deliveryAgent: true },
+  });
+
+  if (!order || !order.customer) {
+    throw new Error(`Order ${orderId} not found or has no customer`);
+  }
+
+  const orderContext: OrderContext = {
+    orderId: order.id,
+    customerId: order.customer.id,
+    customerName: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
+    customerPhone: order.customer.phoneNumber,
+    totalAmount: Number(order.totalAmount),
+    deliveryAgentName: order.deliveryAgent
+      ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim()
+      : undefined,
+    status: order.status,
+  };
+
+  const bodyParams = templateConfig.bodyParams(orderContext);
+  return whatsappService.sendTemplate({
+    to: orderContext.customerPhone,
+    templateName: templateConfig.templateName,
+    bodyParams,
+    orderId: order.id,
+    customerId: orderContext.customerId,
+  });
+}
+
 interface SendTemplateOptions {
   to: string;
   templateName: string;
