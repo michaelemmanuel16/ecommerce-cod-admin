@@ -318,6 +318,9 @@ export class WorkflowService {
       case 'send_email':
         return this.executeSendEmail(action, context);
 
+      case 'send_whatsapp':
+        return this.executeSendWhatsApp(action, context);
+
       case 'update_order':
         return this.executeUpdateOrder(action, context);
 
@@ -374,6 +377,21 @@ export class WorkflowService {
       message: 'Email sent (mock)',
       to: action.email || context.email
     };
+  }
+
+  /**
+   * Execute send WhatsApp action
+   */
+  private async executeSendWhatsApp(action: any, context: any): Promise<any> {
+    const { sendWhatsAppForOrder } = await import('./whatsappService');
+    const result = await sendWhatsAppForOrder(action.config?.templateKey, context.orderId);
+
+    logger.info('WhatsApp message sent via workflow', {
+      orderId: context.orderId,
+      messageLogId: result.messageLogId,
+    });
+
+    return { success: true, messageLogId: result.messageLogId };
   }
 
   /**
@@ -622,6 +640,7 @@ export class WorkflowService {
     const validActionTypes = [
       'send_sms',
       'send_email',
+      'send_whatsapp',
       'update_order',
       'assign_agent',
       'assign_user',
@@ -685,14 +704,16 @@ export class WorkflowService {
    * Status change workflows triggered
    */
   async triggerStatusChangeWorkflows(orderId: number, oldStatus: string, newStatus: string) {
+    // Query both 'status' and 'targetStatus' paths since the wizard and editor
+    // store the target status under different keys
     const workflows = await prisma.workflow.findMany({
       where: {
         isActive: true,
         triggerType: 'status_change',
-        triggerData: {
-          path: ['status'],
-          equals: newStatus
-        }
+        OR: [
+          { triggerData: { path: ['status'], equals: newStatus } },
+          { triggerData: { path: ['targetStatus'], equals: newStatus } },
+        ],
       }
     }) || [];
 

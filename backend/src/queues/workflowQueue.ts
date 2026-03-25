@@ -298,6 +298,12 @@ async function executeAction(action: any, input: any, conditions?: any): Promise
       // Integrate with email service here
       return { sent: true };
 
+    case 'send_whatsapp': {
+      const { sendWhatsAppForOrder } = await import('../services/whatsappService');
+      const result = await sendWhatsAppForOrder(action.config.templateKey, input.orderId);
+      return { sent: true, messageLogId: result.messageLogId };
+    }
+
     case 'update_order':
       const order = await prisma.order.update({
         where: { id: action.config.orderId },

@@ -84,19 +84,19 @@ export const ORDER_STATUS_TEMPLATES: Record<string, {
 }> = {
   order_created: {
     templateName: 'order_created',
-    bodyParams: (o) => [o.customerName, String(o.orderId), `GHS ${o.totalAmount.toFixed(2)}`],
+    bodyParams: (o) => [o.customerName, String(o.orderId)],
   },
   confirmed: {
     templateName: 'order_confirmed',
-    bodyParams: (o) => [o.customerName, String(o.orderId), `GHS ${o.totalAmount.toFixed(2)}`],
+    bodyParams: (o) => [o.customerName, String(o.orderId)],
   },
   out_for_delivery: {
     templateName: 'order_out_for_delivery',
-    bodyParams: (o) => [o.customerName, String(o.orderId), o.deliveryAgentName || 'your delivery agent'],
+    bodyParams: (o) => [o.customerName, String(o.orderId)],
   },
   delivered: {
     templateName: 'order_delivered',
-    bodyParams: (o) => [o.customerName, String(o.orderId), `GHS ${o.totalAmount.toFixed(2)}`],
+    bodyParams: (o) => [o.customerName, String(o.orderId)],
   },
   failed_delivery: {
     templateName: 'order_delivery_failed',
@@ -117,6 +117,50 @@ export interface OrderContext {
   totalAmount: number;
   deliveryAgentName?: string;
   status: string;
+}
+
+/**
+ * Look up the order, build context, and send a WhatsApp template message.
+ * Shared by both workflowQueue and workflowService execution paths.
+ */
+export async function sendWhatsAppForOrder(
+  templateKey: string,
+  orderId: number,
+): Promise<{ messageLogId: number; providerMessageId?: string }> {
+  const templateConfig = ORDER_STATUS_TEMPLATES[templateKey];
+  if (!templateConfig) {
+    throw new Error(`Unknown WhatsApp template: ${templateKey}`);
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { customer: true, deliveryAgent: true },
+  });
+
+  if (!order || !order.customer) {
+    throw new Error(`Order ${orderId} not found or has no customer`);
+  }
+
+  const orderContext: OrderContext = {
+    orderId: order.id,
+    customerId: order.customer.id,
+    customerName: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
+    customerPhone: order.customer.phoneNumber,
+    totalAmount: Number(order.totalAmount),
+    deliveryAgentName: order.deliveryAgent
+      ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim()
+      : undefined,
+    status: order.status,
+  };
+
+  const bodyParams = templateConfig.bodyParams(orderContext);
+  return whatsappService.sendTemplate({
+    to: orderContext.customerPhone,
+    templateName: templateConfig.templateName,
+    bodyParams,
+    orderId: order.id,
+    customerId: orderContext.customerId,
+  });
 }
 
 interface SendTemplateOptions {
@@ -274,7 +318,7 @@ class WhatsAppService {
    * Send a template message via WhatsApp Business Cloud API.
    */
   async sendTemplate(options: SendTemplateOptions): Promise<{ messageLogId: number; providerMessageId?: string }> {
-    const { to, templateName, languageCode = 'en', bodyParams = [], orderId, customerId } = options;
+    const { to, templateName, languageCode = 'en_US', bodyParams = [], orderId, customerId } = options;
     const formattedPhone = formatPhoneNumber(to);
     const messageBody = buildMessageBody(templateName, bodyParams);
 

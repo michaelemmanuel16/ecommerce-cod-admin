@@ -9,8 +9,10 @@ import {
   Edit,
   Trash2,
   ChevronDown,
+  Phone,
 } from 'lucide-react';
 import { WorkflowAction } from '../../pages/WorkflowWizard';
+import { WHATSAPP_TEMPLATE_LABELS } from '../../constants/workflow';
 import { cn } from '../../utils/cn';
 
 interface ActionSequenceProps {
@@ -27,6 +29,8 @@ const getActionIcon = (type: string) => {
       return <Mail className="w-5 h-5" />;
     case 'send_sms':
       return <MessageSquare className="w-5 h-5" />;
+    case 'send_whatsapp':
+      return <Phone className="w-5 h-5" />;
     case 'update_order':
       return <RefreshCw className="w-5 h-5" />;
     case 'wait':
@@ -43,6 +47,7 @@ const getActionLabel = (type: string) => {
     assign_user: 'Assign User',
     send_email: 'Send Email',
     send_sms: 'Send SMS',
+    send_whatsapp: 'Send WhatsApp',
     update_order: 'Update Order',
     wait: 'Wait',
     http_request: 'HTTP Request',
@@ -64,6 +69,10 @@ const getActionSummary = (action: WorkflowAction): string => {
     case 'send_sms':
       const message = action.config.message || 'No message';
       return `Message: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`;
+
+    case 'send_whatsapp':
+      const templateKey = action.config.templateKey || 'confirmed';
+      return `Template: ${WHATSAPP_TEMPLATE_LABELS[templateKey] || templateKey}`;
 
     case 'update_order':
       const status = action.config.status || 'unspecified';
@@ -98,6 +107,11 @@ const getActionColor = (type: string) => {
       bg: 'bg-green-50',
       text: 'text-green-900',
       icon: 'text-green-600',
+    },
+    send_whatsapp: {
+      bg: 'bg-emerald-50',
+      text: 'text-emerald-900',
+      icon: 'text-emerald-600',
     },
     update_order: {
       bg: 'bg-orange-50',
