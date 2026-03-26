@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[SMS]**: Arkesel SMS integration with auto-fallback when WhatsApp fails (MAN-31)
+- **[WhatsApp]**: Product-specific delivery messages with custom links via workflow conditions (MAN-31)
+- **[WhatsApp]**: `send_whatsapp` workflow action with template picker and custom link support
+- **[Workflows]**: Product name available in status change workflow conditions for per-product routing
 - **[WhatsApp]**: Meta OAuth integration — "Connect with Meta" for automatic token exchange and phone selection
 - **[WhatsApp]**: Daily token refresh cron with on-demand fallback guard in message dispatch
 - **[WhatsApp]**: Phone picker modal with auto-select for single-number WABAs
