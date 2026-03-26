@@ -63,7 +63,8 @@ export const SmsIntegration: React.FC<SmsIntegrationProps> = ({ systemConfig, on
     }
   };
 
-  const webhookUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/sms/webhook`;
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+  const webhookUrl = `${apiBase.replace(/\/api\/?$/, '')}/api/sms/webhook`;
 
   return (
     <Card>

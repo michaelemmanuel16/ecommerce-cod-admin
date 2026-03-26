@@ -55,6 +55,12 @@ export async function testSend(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    const config = await getDbSmsConfig();
+    if (!config || !config.isEnabled) {
+      res.status(400).json({ error: 'SMS not configured or disabled' });
+      return;
+    }
+
     const result = await smsService.sendSms({
       to: phoneNumber,
       body: 'This is a test message from COD Admin. If you received this, SMS is configured correctly!',

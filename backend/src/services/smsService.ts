@@ -65,7 +65,7 @@ export const SMS_TEMPLATES: Record<string, {
     body: (o) => `Hi ${o.customerName}, your order #${o.orderId} is out for delivery!${o.deliveryAgentName ? ` ${o.deliveryAgentName} is on the way.` : ''}`,
   },
   delivered: {
-    body: (o) => `Hi ${o.customerName}, Your order #${o.orderId}, ${o.productName || 'your items'} has been delivered. Thank you for shopping with us!`,
+    body: (o) => `Hi ${o.customerName}, Your order #${o.orderId}, ${o.productName || 'your items'} ${o.productName?.includes(',') ? 'have' : 'has'} been delivered. Thank you for shopping with us!`,
   },
   failed_delivery: {
     body: (o) => `Hi ${o.customerName}, we couldn't deliver order #${o.orderId}. We'll contact you to reschedule.`,
