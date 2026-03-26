@@ -348,17 +348,20 @@ export class WorkflowService {
    * Execute send SMS action
    */
   private async executeSendSMS(action: any, context: any): Promise<any> {
-    // TODO: Integrate with SMS provider (Twilio, etc.)
-    logger.info('SMS action executed (mock)', {
-      to: action.phoneNumber || context.phoneNumber,
-      message: action.message
+    const { smsService } = await import('./smsService');
+    const phone = action.phoneNumber || context.phoneNumber;
+    const message = action.message;
+    if (!phone || !message) {
+      logger.warn('executeSendSMS: missing phone or message', { action, context });
+      return { success: false, error: 'Missing phone or message' };
+    }
+    const result = await smsService.sendSms({
+      to: phone,
+      body: message,
+      orderId: context.orderId,
+      customerId: context.customerId,
     });
-
-    return {
-      success: true,
-      message: 'SMS sent (mock)',
-      to: action.phoneNumber || context.phoneNumber
-    };
+    return { success: true, messageLogId: result.messageLogId, to: phone };
   }
 
   /**
@@ -384,7 +387,7 @@ export class WorkflowService {
    */
   private async executeSendWhatsApp(action: any, context: any): Promise<any> {
     const { sendWhatsAppForOrder } = await import('./whatsappService');
-    const result = await sendWhatsAppForOrder(action.config?.templateKey, context.orderId);
+    const result = await sendWhatsAppForOrder(action.config?.templateKey, context.orderId, action.config?.customLink);
 
     logger.info('WhatsApp message sent via workflow', {
       orderId: context.orderId,
@@ -717,12 +720,29 @@ export class WorkflowService {
       }
     }) || [];
 
+    if (workflows.length === 0) {
+      logger.info('Status change workflows triggered', { orderId, oldStatus, newStatus, workflowsTriggered: 0 });
+      return;
+    }
+
+    // Load order with products for condition evaluation (e.g. product-specific workflows)
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { orderItems: { include: { product: true } } },
+    });
+
+    const input = {
+      orderId,
+      oldStatus,
+      newStatus,
+      productName: order?.orderItems
+        ?.map((item: any) => item.product?.name)
+        .filter(Boolean)
+        .join(', ') || '',
+    };
+
     for (const workflow of workflows) {
-      await this.executeWorkflow(workflow.id, {
-        orderId,
-        oldStatus,
-        newStatus
-      });
+      await this.executeWorkflow(workflow.id, input);
     }
 
     logger.info('Status change workflows triggered', {

@@ -39,6 +39,7 @@ import glRoutes from './routes/glRoutes';
 import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
+import smsRoutes from './routes/smsRoutes';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
@@ -176,6 +177,7 @@ app.post('/api/whatsapp/webhook', whatsappWebhookLimiter, handleWebhook);
 app.get('/api/whatsapp/oauth/callback', apiLimiter, handleOAuthCallback);
 // Admin endpoints use standard rate limiter
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
+app.use('/api/sms', apiLimiter, smsRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);

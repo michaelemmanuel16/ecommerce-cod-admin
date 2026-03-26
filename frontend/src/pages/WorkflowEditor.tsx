@@ -436,6 +436,23 @@ export const WorkflowEditor: React.FC = () => {
                         Sends the selected WhatsApp template to the customer with order details automatically filled in.
                       </p>
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Custom Link (optional)
+                      </label>
+                      <input
+                        type="url"
+                        value={action.config.customLink || ''}
+                        onChange={(e) =>
+                          handleUpdateAction(action.id, { ...action.config, customLink: e.target.value }, action.conditions)
+                        }
+                        placeholder="https://example.com/product-guide"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Added as an extra parameter in the template. Update your Meta template to include {'{{3}}'} for the link.
+                      </p>
+                    </div>
                   </div>
                 )}
 

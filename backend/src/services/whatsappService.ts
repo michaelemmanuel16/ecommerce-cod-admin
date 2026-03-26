@@ -96,7 +96,7 @@ export const ORDER_STATUS_TEMPLATES: Record<string, {
   },
   delivered: {
     templateName: 'order_delivered',
-    bodyParams: (o) => [o.customerName, String(o.orderId)],
+    bodyParams: (o) => [o.customerName, `#${o.orderId}, ${o.productName || 'your items'}`],
   },
   failed_delivery: {
     templateName: 'order_delivery_failed',
@@ -116,6 +116,7 @@ export interface OrderContext {
   customerPhone: string;
   totalAmount: number;
   deliveryAgentName?: string;
+  productName?: string;
   status: string;
 }
 
@@ -126,6 +127,7 @@ export interface OrderContext {
 export async function sendWhatsAppForOrder(
   templateKey: string,
   orderId: number,
+  customLink?: string,
 ): Promise<{ messageLogId: number; providerMessageId?: string }> {
   const templateConfig = ORDER_STATUS_TEMPLATES[templateKey];
   if (!templateConfig) {
@@ -134,7 +136,11 @@ export async function sendWhatsAppForOrder(
 
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { customer: true, deliveryAgent: true },
+    include: {
+      customer: true,
+      deliveryAgent: true,
+      orderItems: { include: { product: true } },
+    },
   });
 
   if (!order || !order.customer) {
@@ -150,17 +156,42 @@ export async function sendWhatsAppForOrder(
     deliveryAgentName: order.deliveryAgent
       ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim()
       : undefined,
+    productName: order.orderItems
+      ?.map((item: any) => item.product?.name)
+      .filter(Boolean)
+      .join(', ') || undefined,
     status: order.status,
   };
 
   const bodyParams = templateConfig.bodyParams(orderContext);
-  return whatsappService.sendTemplate({
-    to: orderContext.customerPhone,
-    templateName: templateConfig.templateName,
-    bodyParams,
-    orderId: order.id,
-    customerId: orderContext.customerId,
-  });
+  if (customLink) {
+    bodyParams.push(customLink);
+  }
+
+  try {
+    return await whatsappService.sendTemplate({
+      to: orderContext.customerPhone,
+      templateName: templateConfig.templateName,
+      bodyParams,
+      orderId: order.id,
+      customerId: orderContext.customerId,
+    });
+  } catch (error: any) {
+    // Auto-fallback to SMS when WhatsApp fails
+    logger.warn('WhatsApp send failed, attempting SMS fallback', {
+      orderId, templateKey, error: error.message,
+    });
+
+    try {
+      const { sendSmsForOrder } = await import('./smsService');
+      const smsResult = await sendSmsForOrder(templateKey, orderId);
+      logger.info('SMS fallback succeeded', { orderId, messageLogId: smsResult.messageLogId });
+      return smsResult;
+    } catch (smsError: any) {
+      logger.error('SMS fallback also failed', { orderId, error: smsError.message });
+      throw error; // throw original WhatsApp error
+    }
+  }
 }
 
 interface SendTemplateOptions {

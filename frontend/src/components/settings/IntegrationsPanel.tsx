@@ -12,7 +12,7 @@ type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'templates' | 'webhooks
 const VALID_SECTIONS: IntegrationSection[] = ['sms', 'whatsapp', 'email', 'templates', 'webhooks'];
 
 const NAV_ITEMS: { id: IntegrationSection; label: string; description: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: 'sms', label: 'SMS', description: 'Twilio messaging', icon: Phone },
+  { id: 'sms', label: 'SMS', description: 'Arkesel SMS', icon: Phone },
   { id: 'whatsapp', label: 'WhatsApp', description: 'Business API', icon: MessageSquare },
   { id: 'email', label: 'Email', description: 'SendGrid / SMTP', icon: Mail },
   { id: 'templates', label: 'Templates', description: 'Message content', icon: FileText },
