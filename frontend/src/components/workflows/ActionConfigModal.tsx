@@ -146,6 +146,23 @@ export const ActionConfigModal: React.FC<ActionConfigModalProps> = ({
                     Sends the selected WhatsApp template to the customer with order details automatically filled in.
                   </p>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Custom Link (optional)
+                  </label>
+                  <input
+                    type="url"
+                    value={config.customLink || ''}
+                    onChange={(e) =>
+                      setConfig({ ...config, customLink: e.target.value })
+                    }
+                    placeholder="https://example.com/product-guide"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-2">
+                    Added as an extra parameter in the template. Update your Meta template to include {'{{3}}'} for the link.
+                  </p>
+                </div>
               </div>
             )}
 

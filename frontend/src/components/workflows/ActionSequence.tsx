@@ -72,7 +72,8 @@ const getActionSummary = (action: WorkflowAction): string => {
 
     case 'send_whatsapp':
       const templateKey = action.config.templateKey || 'confirmed';
-      return `Template: ${WHATSAPP_TEMPLATE_LABELS[templateKey] || templateKey}`;
+      const linkSuffix = action.config.customLink ? ` + link` : '';
+      return `Template: ${WHATSAPP_TEMPLATE_LABELS[templateKey] || templateKey}${linkSuffix}`;
 
     case 'update_order':
       const status = action.config.status || 'unspecified';
