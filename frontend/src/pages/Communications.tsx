@@ -254,7 +254,7 @@ const MessageHistoryTab: React.FC = () => {
                     <td className="px-4 py-3">
                       <Badge variant={statusBadgeVariant(msg.status)}>{msg.status}</Badge>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">
+                    <td className="px-4 py-3 text-sm text-gray-500 max-w-md break-words">
                       {msg.messageBody}
                     </td>
                   </tr>
