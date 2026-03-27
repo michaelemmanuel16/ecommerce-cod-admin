@@ -1,8 +1,6 @@
 import Bull from 'bull';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-
-const prisma = new PrismaClient();
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -36,15 +34,24 @@ messageCleanupQueue.process('cleanup-old-messages', async () => {
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - RETENTION_DAYS);
 
-        const result = await prisma.messageLog.deleteMany({
-            where: {
-                createdAt: {
-                    lt: cutoffDate,
-                },
-            },
-        });
+        const BATCH_SIZE = 1000;
+        let totalDeleted = 0;
+        let deleted: number;
+        do {
+            const rows = await prisma.messageLog.findMany({
+                where: { createdAt: { lt: cutoffDate } },
+                select: { id: true },
+                take: BATCH_SIZE,
+            });
+            if (rows.length === 0) break;
+            const result = await prisma.messageLog.deleteMany({
+                where: { id: { in: rows.map(r => r.id) } },
+            });
+            deleted = result.count;
+            totalDeleted += deleted;
+        } while (deleted === BATCH_SIZE);
 
-        logger.info(`Message log cleanup completed: ${result.count} records deleted (older than ${cutoffDate.toISOString()}).`);
+        logger.info(`Message log cleanup completed: ${totalDeleted} records deleted (older than ${cutoffDate.toISOString()}).`);
     } catch (error: any) {
         logger.error('Message log cleanup job failed:', error.message);
         throw error;

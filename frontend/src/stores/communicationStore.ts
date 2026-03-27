@@ -16,7 +16,6 @@ interface CommunicationState {
   recipients: Recipient[];
   optOutCustomers: any[];
   optOutPagination: { page: number; limit: number; total: number; totalPages: number } | null;
-  isLoading: boolean;
   isLoadingMessages: boolean;
   isLoadingStats: boolean;
   isLoadingTemplates: boolean;
@@ -37,7 +36,6 @@ export const useCommunicationStore = create<CommunicationState>((set) => ({
   recipients: [],
   optOutCustomers: [],
   optOutPagination: null,
-  isLoading: false,
   isLoadingMessages: false,
   isLoadingStats: false,
   isLoadingTemplates: false,
@@ -52,6 +50,7 @@ export const useCommunicationStore = create<CommunicationState>((set) => ({
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 'Failed to fetch messages';
       console.error(errorMessage, error);
+      toast.error(errorMessage);
       set({ isLoadingMessages: false });
     }
   },
@@ -64,6 +63,7 @@ export const useCommunicationStore = create<CommunicationState>((set) => ({
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 'Failed to fetch stats';
       console.error(errorMessage, error);
+      toast.error(errorMessage);
       set({ isLoadingStats: false });
     }
   },
@@ -76,6 +76,7 @@ export const useCommunicationStore = create<CommunicationState>((set) => ({
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 'Failed to fetch templates';
       console.error(errorMessage, error);
+      toast.error(errorMessage);
       set({ isLoadingTemplates: false });
     }
   },
@@ -88,6 +89,7 @@ export const useCommunicationStore = create<CommunicationState>((set) => ({
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 'Failed to fetch recipients';
       console.error(errorMessage, error);
+      toast.error(errorMessage);
       set({ isLoadingRecipients: false });
     }
   },
@@ -104,6 +106,7 @@ export const useCommunicationStore = create<CommunicationState>((set) => ({
     } catch (error: any) {
       const errorMessage = error.response?.data?.message || 'Failed to fetch opt-out customers';
       console.error(errorMessage, error);
+      toast.error(errorMessage);
       set({ isLoadingOptOuts: false });
     }
   },

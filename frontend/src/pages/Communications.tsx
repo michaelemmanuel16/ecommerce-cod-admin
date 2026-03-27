@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -816,13 +816,13 @@ const OptOutsTab: React.FC = () => {
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 
 export const Communications: React.FC = () => {
-  const tabs = [
+  const tabs = useMemo(() => [
     { id: 'overview', label: 'Overview', content: <OverviewTab /> },
     { id: 'history', label: 'Message History', content: <MessageHistoryTab /> },
     { id: 'bulk-send', label: 'Bulk Send', content: <BulkSendTab /> },
     { id: 'templates', label: 'Templates', content: <TemplatesTab /> },
     { id: 'opt-outs', label: 'Opt-outs', content: <OptOutsTab /> },
-  ];
+  ], []);
 
   return (
     <div className="space-y-6">

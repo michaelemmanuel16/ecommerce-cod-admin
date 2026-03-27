@@ -1,11 +1,10 @@
 import React, { useState, useCallback } from 'react';
-import { MessageSquare, Phone, Mail, FileText, Webhook, ChevronRight } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Webhook, ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { SystemConfig } from '../../services/admin.service';
 import { SmsIntegration } from './integrations/SmsIntegration';
 import { WhatsAppIntegration } from './integrations/WhatsAppIntegration';
 import { EmailIntegration } from './integrations/EmailIntegration';
-import { MessageTemplates } from './integrations/MessageTemplates';
 import { WebhooksOverview } from './integrations/WebhooksOverview';
 
 type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'webhooks';
@@ -58,8 +57,6 @@ export const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ systemConf
         return <WhatsAppIntegration systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
       case 'email':
         return <EmailIntegration systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
-      case 'templates':
-        return <MessageTemplates systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
       case 'webhooks':
         return <WebhooksOverview />;
     }
