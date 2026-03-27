@@ -3,7 +3,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Pagination } from '../components/ui/Pagination';
-import { Tabs } from '../components/ui/Tabs';
+import { useSearchParams } from 'react-router-dom';
 import { WHATSAPP_TEMPLATE_OPTIONS } from '../constants/workflow';
 import { useProductsStore } from '../stores/productsStore';
 import {
@@ -818,14 +818,36 @@ const OptOutsTab: React.FC = () => {
 
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 
+const TAB_IDS = ['overview', 'history', 'bulk-send', 'templates', 'opt-outs'] as const;
+const TAB_LABELS: Record<string, string> = {
+  overview: 'Overview',
+  history: 'Message History',
+  'bulk-send': 'Bulk Send',
+  templates: 'Templates',
+  'opt-outs': 'Opt-outs',
+};
+
+function TabContent({ tabId }: { tabId: string }) {
+  switch (tabId) {
+    case 'overview': return <OverviewTab />;
+    case 'history': return <MessageHistoryTab />;
+    case 'bulk-send': return <BulkSendTab />;
+    case 'templates': return <TemplatesTab />;
+    case 'opt-outs': return <OptOutsTab />;
+    default: return <OverviewTab />;
+  }
+}
+
 export const Communications: React.FC = () => {
-  const tabs = [
-    { id: 'overview', label: 'Overview', content: () => <OverviewTab /> },
-    { id: 'history', label: 'Message History', content: () => <MessageHistoryTab /> },
-    { id: 'bulk-send', label: 'Bulk Send', content: () => <BulkSendTab /> },
-    { id: 'templates', label: 'Templates', content: () => <TemplatesTab /> },
-    { id: 'opt-outs', label: 'Opt-outs', content: () => <OptOutsTab /> },
-  ];
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab = tabParam && TAB_IDS.includes(tabParam as any) ? tabParam : 'overview';
+
+  const setActiveTab = (tabId: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', tabId);
+    setSearchParams(params, { replace: true });
+  };
 
   return (
     <div className="space-y-6">
@@ -833,7 +855,29 @@ export const Communications: React.FC = () => {
         <h1 className="text-2xl font-bold text-gray-900">Communications</h1>
         <p className="text-gray-500 mt-1">Manage SMS and WhatsApp messaging</p>
       </div>
-      <Tabs tabs={tabs} defaultTab="overview" persistKey="tab" />
+      <div>
+        <div className="border-b border-gray-200">
+          <nav className="flex space-x-8">
+            {TAB_IDS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveTab(id)}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {TAB_LABELS[id]}
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="py-4" key={activeTab}>
+          <TabContent tabId={activeTab} />
+        </div>
+      </div>
     </div>
   );
 };
