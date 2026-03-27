@@ -1,4 +1,4 @@
-# WhatsApp & SMS Communications (MAN-29 + MAN-30 + MAN-31)
+# WhatsApp & SMS Communications (MAN-29 + MAN-30 + MAN-31 + MAN-32)
 
 ## Overview
 
@@ -241,3 +241,55 @@ oauthUserId?: string;          // Meta user ID for refresh
 2. **With API keys (staging):** Use `POST /api/whatsapp/test` with `{ "to": "0241234567" }` to send a test message.
 3. **Production:** Messages auto-send on order status changes. Monitor via `/api/whatsapp/stats`.
 4. **OAuth flow:** Without META_APP_ID — OAuth tab shows disabled state. With META_APP_ID — "Connect with Meta" button initiates full OAuth flow.
+
+---
+
+## MAN-32: Communication Dashboard
+
+| Field | Value |
+|-------|-------|
+| Issue | MAN-32 |
+| Date | 2026-03-27 |
+| Type | Feature |
+| Branch | `feature/man-32-communication-dashboard` |
+| Commit | `f7c214d` |
+
+### Summary
+
+Full communications dashboard for viewing message history, delivery stats, bulk messaging, template management, and customer opt-out preferences.
+
+### Changes
+
+**Backend:**
+- `communicationService.ts` — Unified service for message stats, history queries, bulk send, template CRUD, opt-out management
+- `communicationController.ts` — API controller with role-based access
+- `communicationRoutes.ts` — RESTful routes under `/api/communications`
+- `messageCleanupQueue.ts` — Bull queue for auto-deleting MessageLog records older than 90 days (daily 4AM cron)
+- `whatsappService.ts` / `smsService.ts` — Added opt-out enforcement before sending
+- `schema.prisma` — Added `smsOptOut` and `whatsappOptOut` fields to Customer, new `SmsTemplate` model
+
+**Frontend:**
+- `Communications.tsx` — Five-tab dashboard (Overview, Message History, Bulk Send, Templates, Opt-outs)
+- `communicationStore.ts` — Zustand store for all communication state
+- `communication.service.ts` — API service layer
+- `Sidebar.tsx` — Added Communications nav item
+- `IntegrationsPanel.tsx` — Removed Templates section (moved to Communications), fixed default section
+
+**Database:**
+- Migration `20260326000000_add_messaging_preferences_and_sms_templates`
+
+### Key Files
+
+| File | Status |
+|------|--------|
+| `backend/src/services/communicationService.ts` | new |
+| `backend/src/controllers/communicationController.ts` | new |
+| `backend/src/routes/communicationRoutes.ts` | new |
+| `backend/src/queues/messageCleanupQueue.ts` | new |
+| `frontend/src/pages/Communications.tsx` | new |
+| `frontend/src/stores/communicationStore.ts` | new |
+| `frontend/src/services/communication.service.ts` | new |
+| `backend/prisma/schema.prisma` | modified |
+| `backend/src/services/whatsappService.ts` | modified |
+| `backend/src/services/smsService.ts` | modified |
+| `frontend/src/components/settings/IntegrationsPanel.tsx` | modified |
