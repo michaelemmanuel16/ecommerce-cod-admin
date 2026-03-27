@@ -266,9 +266,9 @@ describe('Communication Controller', () => {
       expect(mockRes.json).toHaveBeenCalledWith(mockUpdated);
     });
 
-    it('should return 400 when Zod validation fails (missing required fields)', async () => {
+    it('should return 400 when Zod validation fails (empty body)', async () => {
       mockReq.params = { id: '5' };
-      mockReq.body = { name: 'Updated' }; // missing 'body' field required by templateSchema
+      mockReq.body = {}; // at least one of name or body is required
 
       await communicationController.updateTemplate(mockReq as AuthRequest, mockRes as Response);
 

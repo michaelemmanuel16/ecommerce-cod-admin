@@ -20,6 +20,14 @@ const templateSchema = z.object({
   body: z.string().min(1),
 });
 
+const updateTemplateSchema = templateSchema.partial().refine(
+  (data) => data.name !== undefined || data.body !== undefined,
+  { message: 'At least one of name or body is required' },
+);
+
+const validChannels = Object.values(MessageChannel);
+const validStatuses = Object.values(MessageStatus);
+
 const updateOptOutSchema = z
   .object({
     smsOptOut: z.boolean().optional(),
@@ -32,6 +40,14 @@ const updateOptOutSchema = z
 export const getMessages = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { page, limit, channel, status, startDate, endDate } = req.query;
+    if (channel && !validChannels.includes(channel as MessageChannel)) {
+      res.status(400).json({ error: `Invalid channel. Must be one of: ${validChannels.join(', ')}` });
+      return;
+    }
+    if (status && !validStatuses.includes(status as MessageStatus)) {
+      res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+      return;
+    }
     const result = await communicationService.getMessages({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
@@ -134,7 +150,7 @@ export const createTemplate = async (req: AuthRequest, res: Response): Promise<v
 export const updateTemplate = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
-    const parsed = templateSchema.safeParse(req.body);
+    const parsed = updateTemplateSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues.map((e) => e.message).join(', ') });
       return;

@@ -46,7 +46,7 @@ export interface Recipient {
 export const communicationService = {
   async getMessages(params?: Record<string, any>): Promise<{ messages: MessageLog[]; pagination: any }> {
     const res = await apiClient.get('/api/communications/messages', { params });
-    return { messages: res.data.data || res.data.messages || [], pagination: res.data.pagination };
+    return { messages: res.data.data || [], pagination: res.data.pagination };
   },
 
   async getStats(startDate?: string, endDate?: string): Promise<MessageStats> {
