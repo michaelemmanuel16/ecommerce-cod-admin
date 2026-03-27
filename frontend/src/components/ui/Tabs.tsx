@@ -61,7 +61,7 @@ export const Tabs: React.FC<TabsProps> = ({ tabs, defaultTab, persistKey }) => {
           ))}
         </nav>
       </div>
-      <div className="py-4">{activeContent}</div>
+      <div className="py-4" key={activeTab}>{activeContent}</div>
     </div>
   );
 };
