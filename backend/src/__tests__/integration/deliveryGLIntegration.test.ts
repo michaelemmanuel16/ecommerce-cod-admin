@@ -48,13 +48,13 @@ describe('Delivery GL Integration', () => {
   beforeEach(async () => {
     // Clean up test data in correct order to avoid FK issues
     await prisma.accountTransaction.deleteMany({});
-    await prisma.journalEntry.deleteMany({});
-    await prisma.transaction.deleteMany({});
     await (prisma as any).agentCollection.deleteMany({});
     await prisma.delivery.deleteMany({});
     await prisma.orderItem.deleteMany({});
     await (prisma as any).formSubmission.deleteMany({});
     await prisma.order.deleteMany({});
+    await prisma.journalEntry.deleteMany({});
+    await prisma.transaction.deleteMany({});
     await (prisma as any).formUpsell.deleteMany({});
     await (prisma as any).formPackage.deleteMany({});
     await (prisma as any).checkoutForm.deleteMany({});
@@ -171,15 +171,15 @@ describe('Delivery GL Integration', () => {
   });
 
   afterAll(async () => {
-    // Clean up test data
+    // Clean up test data in correct order to avoid FK issues
     await prisma.accountTransaction.deleteMany({});
-    await prisma.journalEntry.deleteMany({});
-    await prisma.transaction.deleteMany({});
     await (prisma as any).agentCollection.deleteMany({});
     await prisma.delivery.deleteMany({});
     await prisma.orderItem.deleteMany({});
     await (prisma as any).formSubmission.deleteMany({});
     await prisma.order.deleteMany({});
+    await prisma.journalEntry.deleteMany({});
+    await prisma.transaction.deleteMany({});
     await (prisma as any).formUpsell.deleteMany({});
     await (prisma as any).formPackage.deleteMany({});
     await (prisma as any).checkoutForm.deleteMany({});

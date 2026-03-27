@@ -75,6 +75,8 @@ model Customer {
   totalOrders    Int      @default(0) @map("total_orders")
   totalSpent     Float    @default(0) @map("total_spent")
   isActive       Boolean  @default(true) @map("is_active")
+  smsOptOut      Boolean  @default(false) @map("sms_opt_out")
+  whatsappOptOut Boolean  @default(false) @map("whatsapp_opt_out")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
   firstName      String   @map("first_name")
@@ -939,4 +941,14 @@ model MessageLog {
   @@index([channel, status])
   @@index([createdAt])
   @@map("message_logs")
+}
+
+model SmsTemplate {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("sms_templates")
 }

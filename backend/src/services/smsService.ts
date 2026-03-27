@@ -226,6 +226,11 @@ export async function sendSmsForOrder(
     throw new Error(`Order ${orderId} not found or has no customer`);
   }
 
+  if (order.customer.smsOptOut) {
+    logger.info('Skipping SMS send — customer opted out', { orderId, customerId: order.customer.id });
+    return { messageLogId: 0 };
+  }
+
   const orderContext: OrderContext = {
     orderId: order.id,
     customerId: order.customer.id,

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Communications]**: Full communications dashboard with message history, delivery stats, bulk messaging, template manager, and opt-out management (MAN-32)
+- **[Communications]**: Auto-cleanup queue for MessageLog records with 90-day retention (MAN-32)
+- **[Communications]**: Customer opt-out enforcement in WhatsApp and SMS messaging services (MAN-32)
 - **[SMS]**: Arkesel SMS integration with auto-fallback when WhatsApp fails (MAN-31)
 - **[WhatsApp]**: Product-specific delivery messages with custom links via workflow conditions (MAN-31)
 - **[WhatsApp]**: `send_whatsapp` workflow action with template picker and custom link support

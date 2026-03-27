@@ -9,11 +9,11 @@ describe('Agent Balance Concurrency Integration Test', () => {
     let testAgent: any;
 
     beforeAll(async () => {
-        // Clean up
+        // Clean up - Order matters due to foreign keys
         await prisma.accountTransaction.deleteMany({});
-        await prisma.journalEntry.deleteMany({});
         await (prisma as any).agentDeposit.deleteMany({});
         await (prisma as any).agentBalance.deleteMany({});
+        await prisma.journalEntry.deleteMany({});
         await prisma.user.deleteMany({
             where: { email: { in: ['admin-con@test.com', 'agent-con@test.com'] } }
         });
@@ -56,7 +56,14 @@ describe('Agent Balance Concurrency Integration Test', () => {
     });
 
     afterAll(async () => {
-        // Cleanup if needed
+        // Clean up - Order matters due to foreign keys
+        await prisma.accountTransaction.deleteMany({});
+        await (prisma as any).agentDeposit.deleteMany({});
+        await (prisma as any).agentBalance.deleteMany({});
+        await prisma.journalEntry.deleteMany({});
+        await prisma.user.deleteMany({
+            where: { email: { in: ['admin-con@test.com', 'agent-con@test.com'] } }
+        });
     });
 
     it('should maintain correct agent balance under concurrent deposit verifications', async () => {

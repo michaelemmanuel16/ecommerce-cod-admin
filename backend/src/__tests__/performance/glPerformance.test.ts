@@ -10,21 +10,19 @@ describe('GL Performance Test', () => {
     const TRANSACTION_COUNT = 200; // Reduced for faster/stable CI
 
     beforeAll(async () => {
-        systemUser = await prisma.user.findFirst({ where: { role: 'admin' } });
-        if (!systemUser) {
-            systemUser = await prisma.user.findFirst({ where: { role: 'super_admin' } });
-        }
-        if (!systemUser) {
-            systemUser = await prisma.user.create({
-                data: {
-                    email: 'gl-perf-tester@example.com',
-                    password: 'hashed-password',
-                    firstName: 'GL',
-                    lastName: 'PerfTester',
-                    role: 'admin'
-                }
-            });
-        }
+        // Always create a dedicated user for this test to avoid FK issues
+        // from concurrent test cleanup deleting shared users
+        systemUser = await prisma.user.upsert({
+            where: { email: 'gl-perf-tester@example.com' },
+            update: {},
+            create: {
+                email: 'gl-perf-tester@example.com',
+                password: 'hashed-password',
+                firstName: 'GL',
+                lastName: 'PerfTester',
+                role: 'admin'
+            }
+        });
 
         perfAccount = await prisma.account.create({
             data: {
@@ -76,14 +74,28 @@ describe('GL Performance Test', () => {
     }, 60000); // 60s timeout for seeding
 
     afterAll(async () => {
+        // Delete account transactions first, then journal entries, then accounts
         if (perfAccount) {
             await prisma.accountTransaction.deleteMany({ where: { accountId: perfAccount.id } });
-            await prisma.account.delete({ where: { id: perfAccount.id } });
         }
         if (offsetAccount) {
             await prisma.accountTransaction.deleteMany({ where: { accountId: offsetAccount.id } });
+        }
+        // Delete journal entries created during the test (they reference systemUser via createdBy FK)
+        await prisma.journalEntry.deleteMany({
+            where: { description: { startsWith: 'Seed Entry' } }
+        });
+        // Now safe to delete accounts
+        if (perfAccount) {
+            await prisma.account.delete({ where: { id: perfAccount.id } });
+        }
+        if (offsetAccount) {
             await prisma.account.delete({ where: { id: offsetAccount.id } });
         }
+        // Clean up the test user if we created one
+        await prisma.user.deleteMany({
+            where: { email: 'gl-perf-tester@example.com' }
+        });
     });
 
     it('should fetch paginated ledger data efficiently', async () => {

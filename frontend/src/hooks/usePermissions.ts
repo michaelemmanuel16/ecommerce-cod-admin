@@ -49,6 +49,8 @@ export const usePermissions = () => {
         return isManager || user?.role === 'inventory_manager' || user?.role === 'delivery_agent';
       case 'earnings-history':
         return user?.role === 'sales_rep'; // Only sales reps can access earnings history
+      case 'communications':
+        return isManager; // Manager and above
       case 'settings':
         return true; // All users can access their own settings
       default:
