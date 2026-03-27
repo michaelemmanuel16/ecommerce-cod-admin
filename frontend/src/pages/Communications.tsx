@@ -298,7 +298,7 @@ const BulkSendTab: React.FC = () => {
 
   useEffect(() => {
     fetchTemplates();
-    fetchProducts();
+    fetchProducts().catch(() => {});
   }, [fetchTemplates, fetchProducts]);
 
   const handleTemplateSelect = (templateId: string) => {
