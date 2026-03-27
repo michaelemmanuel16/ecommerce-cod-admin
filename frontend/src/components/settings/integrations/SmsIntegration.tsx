@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Save } from 'lucide-react';
+import { Save, Send } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 import { adminService, SystemConfig } from '../../../services/admin.service';
+import api from '../../../services/api';
 
 interface SmsIntegrationProps {
   systemConfig: SystemConfig | null;
@@ -12,20 +13,22 @@ interface SmsIntegrationProps {
 
 export const SmsIntegration: React.FC<SmsIntegrationProps> = ({ systemConfig, onConfigSaved }) => {
   const [form, setForm] = useState({
-    provider: 'twilio',
-    accountSid: '',
+    provider: 'arkesel',
     authToken: '',
-    phoneNumber: '',
+    senderId: '',
+    isEnabled: true,
   });
   const [saving, setSaving] = useState(false);
+  const [testPhone, setTestPhone] = useState('');
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     if (systemConfig?.smsProvider) {
       setForm({
-        provider: systemConfig.smsProvider.provider || 'twilio',
-        accountSid: systemConfig.smsProvider.accountSid || '',
+        provider: systemConfig.smsProvider.provider || 'arkesel',
         authToken: systemConfig.smsProvider.authToken || '',
-        phoneNumber: systemConfig.smsProvider.phoneNumber || '',
+        senderId: systemConfig.smsProvider.senderId || '',
+        isEnabled: systemConfig.smsProvider.isEnabled !== false,
       });
     }
   }, [systemConfig]);
@@ -44,55 +47,101 @@ export const SmsIntegration: React.FC<SmsIntegrationProps> = ({ systemConfig, on
     }
   };
 
+  const handleTestSms = async () => {
+    if (!testPhone) {
+      toast.error('Enter a phone number to test');
+      return;
+    }
+    setTesting(true);
+    try {
+      await api.post('/api/sms/test', { phoneNumber: testPhone });
+      toast.success('Test SMS sent!');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to send test SMS');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+  const webhookUrl = `${apiBase.replace(/\/api\/?$/, '')}/api/sms/webhook`;
+
   return (
     <Card>
       <form onSubmit={handleSave}>
         <div className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">SMS Provider Settings</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Provider</label>
-              <select
-                value={form.provider}
-                onChange={(e) => setForm({ ...form, provider: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="twilio">Twilio</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Account SID</label>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Arkesel SMS Settings</h3>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <span className="text-sm text-gray-600">{form.isEnabled ? 'Enabled' : 'Disabled'}</span>
               <input
-                type="text"
-                value={form.accountSid}
-                onChange={(e) => setForm({ ...form, accountSid: e.target.value })}
-                placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                type="checkbox"
+                checked={form.isEnabled}
+                onChange={(e) => setForm({ ...form, isEnabled: e.target.checked })}
+                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
               />
-            </div>
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Auth Token</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">API Key</label>
               <input
                 type="password"
                 value={form.authToken}
                 onChange={(e) => setForm({ ...form, authToken: e.target.value })}
-                placeholder="••••••••••••••••••••••••••••••••"
+                placeholder="Your Arkesel API key"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              <p className="text-xs text-gray-500 mt-1">Found in Arkesel Dashboard &gt; API Keys</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sender ID</label>
+              <input
+                type="text"
+                value={form.senderId}
+                onChange={(e) => setForm({ ...form, senderId: e.target.value.substring(0, 11) })}
+                placeholder="CODAdmin"
+                maxLength={11}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Max 11 characters. Must be registered with Arkesel.</p>
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
-              <input
-                type="tel"
-                value={form.phoneNumber}
-                onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
-                placeholder="+1 (555) 000-0000"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Report Webhook URL</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={webhookUrl}
+                  readOnly
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600 text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success('Copied!'); }}
+                >
+                  Copy
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Paste this URL in your Arkesel Dashboard for delivery reports.</p>
             </div>
           </div>
-          <div className="mt-6 flex justify-end">
+
+          <div className="mt-6 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <input
+                type="tel"
+                value={testPhone}
+                onChange={(e) => setTestPhone(e.target.value)}
+                placeholder="+233241234567"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <Button type="button" variant="ghost" onClick={handleTestSms} disabled={testing}>
+                <Send className="w-4 h-4 mr-1" />
+                {testing ? 'Sending...' : 'Test SMS'}
+              </Button>
+            </div>
             <Button variant="primary" type="submit" disabled={saving}>
               <Save className="w-4 h-4 mr-2" />
               {saving ? 'Saving...' : 'Save SMS Settings'}

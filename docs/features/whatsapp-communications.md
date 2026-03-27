@@ -1,4 +1,4 @@
-# WhatsApp Business API Integration (MAN-29 + MAN-30)
+# WhatsApp & SMS Communications (MAN-29 + MAN-30 + MAN-31 + MAN-32)
 
 ## Overview
 
@@ -7,27 +7,46 @@ Automated WhatsApp messaging to customers on key order lifecycle events using Me
 ## Architecture
 
 ```
-Order event → Bull queue (messagingQueue) → WhatsApp Cloud API → Customer
-                                         ↘ MessageLog (DB)
+Order status change → Workflow engine → send_whatsapp action → WhatsApp Cloud API → Customer
+                                                          ↘ MessageLog (DB)
+                                     → send_sms action    → Arkesel SMS API → Customer
+                                                          ↘ MessageLog (DB)
+
+WhatsApp failure → Auto-fallback → Arkesel SMS API → Customer
 
 WhatsApp webhook → POST /api/whatsapp/webhook → Update MessageLog status
+Arkesel webhook  → POST /api/sms/webhook      → Update MessageLog status
 ```
 
-- **Async delivery**: Messages are enqueued via Bull/Redis with exponential backoff (3 attempts: 5s, 10s, 20s)
-- **Graceful degradation**: If WhatsApp credentials aren't configured, messages are logged to `MessageLog` but not sent to the API
+- **Workflow-driven**: All messaging is controlled via the Workflow engine (no automatic queue)
+- **Auto-fallback**: WhatsApp API failure automatically retries via SMS
+- **Graceful degradation**: If provider credentials aren't configured, messages are logged but not sent
 - **Audit trail**: Every message (sent or failed) is stored in `MessageLog` with status tracking (pending → sent → delivered → read)
 
-## Auto-Triggered Messages
+## Workflow-Triggered Messages
 
-| Order Event | Template | Customer Sees |
+| Order Event | WhatsApp Template | SMS Fallback |
 |-------------|----------|---------------|
-| Order created | `order_created` | "We've received your order #123! Total: GHS 150.00" |
-| Status → confirmed | `order_confirmed` | "Your order #123 has been confirmed! Total: GHS 150.00" |
-| Status → out_for_delivery | `order_out_for_delivery` | "Your order #123 is out for delivery! John is on the way." |
-| Status → delivered | `order_delivered` | "Your order #123 has been delivered! Amount: GHS 150.00" |
-| Status → failed_delivery | `order_delivery_failed` | "We were unable to deliver your order #123." |
+| Order created | `order_created` — Hi {name}, we've received your order #{id}! | Same text via SMS |
+| Status → confirmed | `order_confirmed` — Your order #{id} has been confirmed! | Same text via SMS |
+| Status → out_for_delivery | `order_out_for_delivery` — Your order #{id} is out for delivery! | Same text via SMS |
+| Status → delivered | `order_delivered` — Your order #{id}, {productName} has been delivered. Visit {link} for your product guide. | Same text via SMS |
+| Status → failed_delivery | `order_delivery_failed` — We couldn't deliver order #{id}. | Same text via SMS |
 
-Other statuses (preparing, ready_for_pickup, cancelled) can be triggered via the Workflows system.
+### Product-Specific Workflows (MAN-31)
+
+Workflows can use **conditions** to match on product name and send different **custom links** per product:
+- Workflow 1: IF product contains "Copybook" → Send WhatsApp (delivered + link A)
+- Workflow 2: IF product contains "Kit" → Send WhatsApp (delivered + link B)
+
+The `delivered` template includes product name(s) and an optional custom link as `{{3}}`.
+
+### SMS Fallback (MAN-31)
+
+- **Provider**: Arkesel (Ghana-focused SMS API)
+- **Auto-fallback**: When WhatsApp `sendTemplate` throws, SMS is attempted automatically
+- **Admin settings**: Settings > Integrations > SMS — API key, sender ID, webhook URL, test button
+- **Config**: Stored encrypted in `SystemConfig.smsProvider` via `providerCrypto`
 
 ## API Endpoints
 
@@ -222,3 +241,55 @@ oauthUserId?: string;          // Meta user ID for refresh
 2. **With API keys (staging):** Use `POST /api/whatsapp/test` with `{ "to": "0241234567" }` to send a test message.
 3. **Production:** Messages auto-send on order status changes. Monitor via `/api/whatsapp/stats`.
 4. **OAuth flow:** Without META_APP_ID — OAuth tab shows disabled state. With META_APP_ID — "Connect with Meta" button initiates full OAuth flow.
+
+---
+
+## MAN-32: Communication Dashboard
+
+| Field | Value |
+|-------|-------|
+| Issue | MAN-32 |
+| Date | 2026-03-27 |
+| Type | Feature |
+| Branch | `feature/man-32-communication-dashboard` |
+| Commit | `f7c214d` |
+
+### Summary
+
+Full communications dashboard for viewing message history, delivery stats, bulk messaging, template management, and customer opt-out preferences.
+
+### Changes
+
+**Backend:**
+- `communicationService.ts` — Unified service for message stats, history queries, bulk send, template CRUD, opt-out management
+- `communicationController.ts` — API controller with role-based access
+- `communicationRoutes.ts` — RESTful routes under `/api/communications`
+- `messageCleanupQueue.ts` — Bull queue for auto-deleting MessageLog records older than 90 days (daily 4AM cron)
+- `whatsappService.ts` / `smsService.ts` — Added opt-out enforcement before sending
+- `schema.prisma` — Added `smsOptOut` and `whatsappOptOut` fields to Customer, new `SmsTemplate` model
+
+**Frontend:**
+- `Communications.tsx` — Five-tab dashboard (Overview, Message History, Bulk Send, Templates, Opt-outs)
+- `communicationStore.ts` — Zustand store for all communication state
+- `communication.service.ts` — API service layer
+- `Sidebar.tsx` — Added Communications nav item
+- `IntegrationsPanel.tsx` — Removed Templates section (moved to Communications), fixed default section
+
+**Database:**
+- Migration `20260326000000_add_messaging_preferences_and_sms_templates`
+
+### Key Files
+
+| File | Status |
+|------|--------|
+| `backend/src/services/communicationService.ts` | new |
+| `backend/src/controllers/communicationController.ts` | new |
+| `backend/src/routes/communicationRoutes.ts` | new |
+| `backend/src/queues/messageCleanupQueue.ts` | new |
+| `frontend/src/pages/Communications.tsx` | new |
+| `frontend/src/stores/communicationStore.ts` | new |
+| `frontend/src/services/communication.service.ts` | new |
+| `backend/prisma/schema.prisma` | modified |
+| `backend/src/services/whatsappService.ts` | modified |
+| `backend/src/services/smsService.ts` | modified |
+| `frontend/src/components/settings/IntegrationsPanel.tsx` | modified |

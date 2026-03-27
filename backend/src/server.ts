@@ -39,6 +39,8 @@ import glRoutes from './routes/glRoutes';
 import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
+import smsRoutes from './routes/smsRoutes';
+import communicationRoutes from './routes/communicationRoutes';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
@@ -48,9 +50,10 @@ import cron from 'node-cron';
 
 // Initialize queue workers
 import './queues/workflowQueue';
-import './queues/messagingQueue';
+
 import { setupAgingCron } from './queues/agingQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
+import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
 
 // Validate environment variables before starting server
 try {
@@ -176,6 +179,8 @@ app.post('/api/whatsapp/webhook', whatsappWebhookLimiter, handleWebhook);
 app.get('/api/whatsapp/oauth/callback', apiLimiter, handleOAuthCallback);
 // Admin endpoints use standard rate limiter
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
+app.use('/api/sms', apiLimiter, smsRoutes);
+app.use('/api/communications', apiLimiter, communicationRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);
@@ -220,6 +225,9 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup Financial Reconciliation Cron Job
     await setupFinancialReconciliationCron();
+
+    // Setup Message Log Cleanup Cron Job
+    await setupMessageCleanupCron();
 
     // Daily GL balance verification at 02:00 AM
     cron.schedule('0 2 * * *', async () => {

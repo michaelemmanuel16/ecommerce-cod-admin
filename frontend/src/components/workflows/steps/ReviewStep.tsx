@@ -3,6 +3,7 @@ import { CheckCircle, Edit, Play, Save, ChevronLeft, AlertCircle } from 'lucide-
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 import { WorkflowFormData } from '../../../pages/WorkflowWizard';
+import { WHATSAPP_TEMPLATE_LABELS } from '../../../constants/workflow';
 import { ExecutionHistory } from '../ExecutionHistory';
 import { workflowsService } from '../../../services/workflows.service';
 
@@ -66,6 +67,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       assign_user: 'Assign User',
       send_email: 'Send Email',
       send_sms: 'Send SMS',
+      send_whatsapp: 'Send WhatsApp',
       update_order: 'Update Order',
       wait: 'Wait',
       http_request: 'HTTP Request',
@@ -81,6 +83,8 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
         return action.config.subject || 'No subject';
       case 'send_sms':
         return action.config.message?.substring(0, 50) || 'No message';
+      case 'send_whatsapp':
+        return WHATSAPP_TEMPLATE_LABELS[action.config.templateKey] || action.config.templateKey || 'No template';
       case 'update_order':
         return action.config.status || 'unspecified';
       case 'wait':

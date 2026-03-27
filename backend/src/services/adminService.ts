@@ -188,9 +188,13 @@ export const adminService = {
       data,
     });
 
-    // Invalidate WhatsApp config cache when provider settings change
+    // Invalidate provider config caches when settings change
     if (data.whatsappProvider !== undefined) {
       clearWhatsAppConfigCache();
+    }
+    if (data.smsProvider !== undefined) {
+      const { clearSmsConfigCache } = await import('./smsService');
+      clearSmsConfigCache();
     }
 
     await this.createAuditLog(requester, 'update', 'system_config', config.id.toString(), { changes: Object.keys(data) });

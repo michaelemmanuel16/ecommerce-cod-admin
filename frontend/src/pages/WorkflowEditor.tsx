@@ -10,6 +10,7 @@ import { ConditionBuilder, ConditionGroup } from '../components/workflows/Condit
 import { AssignUserAction, UserAssignment } from '../components/workflows/actions/AssignUserAction';
 import { WorkflowTemplateGallery } from '../components/workflows/WorkflowTemplateGallery';
 import { ExecutionHistory } from '../components/workflows/ExecutionHistory';
+import { WHATSAPP_TEMPLATE_OPTIONS } from '../constants/workflow';
 
 interface WorkflowAction {
   id: string;
@@ -99,6 +100,10 @@ export const WorkflowEditor: React.FC = () => {
         assignments: [],
         distributionMode: 'even',
         onlyUnassigned: true,
+      };
+    } else if (actionType === 'send_whatsapp') {
+      defaultConfig = {
+        templateKey: 'confirmed',
       };
     }
 
@@ -317,6 +322,12 @@ export const WorkflowEditor: React.FC = () => {
               </Button>
               <Button
                 variant="secondary"
+                onClick={() => handleAddAction('send_whatsapp')}
+              >
+                Send WhatsApp
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => handleAddAction('update_order')}
               >
                 Update Order
@@ -336,6 +347,7 @@ export const WorkflowEditor: React.FC = () => {
                       {action.type === 'assign_user' && 'Assign User'}
                       {action.type === 'send_sms' && 'Send SMS'}
                       {action.type === 'send_email' && 'Send Email'}
+                      {action.type === 'send_whatsapp' && 'Send WhatsApp'}
                       {action.type === 'update_order' && 'Update Order'}
                     </span>
                   </div>
@@ -403,6 +415,47 @@ export const WorkflowEditor: React.FC = () => {
                   </div>
                 )}
 
+                {action.type === 'send_whatsapp' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        WhatsApp Template
+                      </label>
+                      <select
+                        value={action.config.templateKey || 'confirmed'}
+                        onChange={(e) =>
+                          handleUpdateAction(action.id, { ...action.config, templateKey: e.target.value }, action.conditions)
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {WHATSAPP_TEMPLATE_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Sends the selected WhatsApp template to the customer with order details automatically filled in.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Custom Link (optional)
+                      </label>
+                      <input
+                        type="url"
+                        value={action.config.customLink || ''}
+                        onChange={(e) =>
+                          handleUpdateAction(action.id, { ...action.config, customLink: e.target.value }, action.conditions)
+                        }
+                        placeholder="https://example.com/product-guide"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Added as an extra parameter in the template. Update your Meta template to include {'{{3}}'} for the link.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {action.type === 'update_order' && (
                   <div className="space-y-3">
                     <div>
@@ -451,6 +504,9 @@ export const WorkflowEditor: React.FC = () => {
                 </Button>
                 <Button variant="secondary" onClick={() => handleAddAction('send_email')}>
                   Send Email
+                </Button>
+                <Button variant="secondary" onClick={() => handleAddAction('send_whatsapp')}>
+                  Send WhatsApp
                 </Button>
                 <Button variant="secondary" onClick={() => handleAddAction('update_order')}>
                   Update Order

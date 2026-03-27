@@ -288,15 +288,33 @@ async function executeAssignUserAction(action: any, _input: any, conditions?: an
 
 async function executeAction(action: any, input: any, conditions?: any): Promise<any> {
   switch (action.type) {
-    case 'send_sms':
-      logger.info('Sending SMS', { to: action.config.to, message: action.config.message });
-      // Integrate with SMS service here
-      return { sent: true };
+    case 'send_sms': {
+      const { smsService } = await import('../services/smsService');
+      const phone = action.config.phoneNumber || action.config.to;
+      const message = action.config.message;
+      if (!phone || !message) {
+        logger.warn('send_sms action missing phone or message', { config: action.config });
+        return { sent: false, error: 'Missing phone or message' };
+      }
+      const smsResult = await smsService.sendSms({
+        to: phone,
+        body: message,
+        orderId: input.orderId,
+        customerId: input.customerId,
+      });
+      return { sent: true, messageLogId: smsResult.messageLogId };
+    }
 
     case 'send_email':
       logger.info('Sending email', { to: action.config.to, subject: action.config.subject });
       // Integrate with email service here
       return { sent: true };
+
+    case 'send_whatsapp': {
+      const { sendWhatsAppForOrder } = await import('../services/whatsappService');
+      const result = await sendWhatsAppForOrder(action.config.templateKey, input.orderId, action.config.customLink);
+      return { sent: true, messageLogId: result.messageLogId };
+    }
 
     case 'update_order':
       const order = await prisma.order.update({

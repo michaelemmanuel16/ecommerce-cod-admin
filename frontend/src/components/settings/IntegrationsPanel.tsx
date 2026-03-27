@@ -1,21 +1,19 @@
 import React, { useState, useCallback } from 'react';
-import { MessageSquare, Phone, Mail, FileText, Webhook, ChevronRight } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Webhook, ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { SystemConfig } from '../../services/admin.service';
 import { SmsIntegration } from './integrations/SmsIntegration';
 import { WhatsAppIntegration } from './integrations/WhatsAppIntegration';
 import { EmailIntegration } from './integrations/EmailIntegration';
-import { MessageTemplates } from './integrations/MessageTemplates';
 import { WebhooksOverview } from './integrations/WebhooksOverview';
 
-type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'templates' | 'webhooks';
-const VALID_SECTIONS: IntegrationSection[] = ['sms', 'whatsapp', 'email', 'templates', 'webhooks'];
+type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'webhooks';
+const VALID_SECTIONS: IntegrationSection[] = ['sms', 'whatsapp', 'email', 'webhooks'];
 
 const NAV_ITEMS: { id: IntegrationSection; label: string; description: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: 'sms', label: 'SMS', description: 'Twilio messaging', icon: Phone },
+  { id: 'sms', label: 'SMS', description: 'Arkesel SMS', icon: Phone },
   { id: 'whatsapp', label: 'WhatsApp', description: 'Business API', icon: MessageSquare },
   { id: 'email', label: 'Email', description: 'SendGrid / SMTP', icon: Mail },
-  { id: 'templates', label: 'Templates', description: 'Message content', icon: FileText },
   { id: 'webhooks', label: 'Webhooks', description: 'Order imports', icon: Webhook },
 ];
 
@@ -27,7 +25,7 @@ interface IntegrationsPanelProps {
 export const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ systemConfig, onConfigSaved }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const sectionParam = searchParams.get('section') as IntegrationSection;
-  const initialSection = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : 'whatsapp';
+  const initialSection = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : 'sms';
   const [activeSection, setActiveSectionState] = useState<IntegrationSection>(initialSection);
 
   const setActiveSection = (section: IntegrationSection) => {
@@ -41,7 +39,7 @@ export const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ systemConf
     if (!systemConfig) return null;
     switch (section) {
       case 'sms':
-        return systemConfig.smsProvider?.accountSid ? 'configured' : 'not-configured';
+        return systemConfig.smsProvider?.authToken ? 'configured' : 'not-configured';
       case 'whatsapp':
         return systemConfig.whatsappProvider?.accessToken ? 'configured' : 'not-configured';
       case 'email':
@@ -59,8 +57,6 @@ export const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ systemConf
         return <WhatsAppIntegration systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
       case 'email':
         return <EmailIntegration systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
-      case 'templates':
-        return <MessageTemplates systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
       case 'webhooks':
         return <WebhooksOverview />;
     }

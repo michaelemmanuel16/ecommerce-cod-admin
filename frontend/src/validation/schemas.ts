@@ -145,7 +145,7 @@ export const workflowTriggerSchema = z.object({
 });
 
 export const workflowActionSchema = z.object({
-  type: z.enum(['send_sms', 'send_email', 'update_order', 'assign_agent', 'add_tag', 'wait', 'http_request']),
+  type: z.enum(['send_sms', 'send_email', 'send_whatsapp', 'update_order', 'assign_agent', 'assign_user', 'add_tag', 'wait', 'http_request']),
   config: z.record(z.any()),
 });
 

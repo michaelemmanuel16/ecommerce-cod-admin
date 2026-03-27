@@ -28,13 +28,13 @@ describe('Agent Balance and Deposit Integration', () => {
         GLAccountService.clearCache();
         // Clean up - Order matters due to foreign keys
         await prisma.accountTransaction.deleteMany({});
-        await prisma.journalEntry.deleteMany({});
         await (prisma as any).agentDeposit.deleteMany({});
         await (prisma as any).agentCollection.deleteMany({});
         await (prisma as any).agentBalance.deleteMany({});
         await prisma.delivery.deleteMany({});
         await prisma.orderItem.deleteMany({});
         await prisma.order.deleteMany({});
+        await prisma.journalEntry.deleteMany({});
         await prisma.customer.deleteMany({});
         await prisma.account.deleteMany({});
         await prisma.user.deleteMany({

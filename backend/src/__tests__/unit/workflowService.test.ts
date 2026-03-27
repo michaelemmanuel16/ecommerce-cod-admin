@@ -11,6 +11,15 @@ jest.mock('../../queues/workflowQueue', () => ({
   }
 }));
 
+// Mock the SMS service
+jest.mock('../../services/smsService', () => ({
+  smsService: {
+    sendSms: jest.fn().mockResolvedValue({ messageLogId: 1 }),
+  },
+  sendSmsForOrder: jest.fn().mockResolvedValue({ messageLogId: 1 }),
+  clearSmsConfigCache: jest.fn(),
+}));
+
 describe('WorkflowService', () => {
   let workflowService: WorkflowService;
 
@@ -466,6 +475,69 @@ describe('WorkflowService', () => {
       );
 
       expect(prismaMock.workflowExecution.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createWorkflow - send_whatsapp action', () => {
+    it('should accept send_whatsapp as a valid action type', async () => {
+      const whatsappWorkflowData = {
+        name: 'WhatsApp Order Confirmation',
+        description: 'Send WhatsApp when order is confirmed',
+        triggerType: 'status_change' as WorkflowTriggerType,
+        triggerData: { status: 'confirmed' },
+        actions: [
+          {
+            type: 'send_whatsapp',
+            config: { templateKey: 'confirmed' }
+          }
+        ],
+        conditions: {}
+      };
+
+      const mockWorkflow = {
+        id: 'workflow-wa-1',
+        ...whatsappWorkflowData,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      prismaMock.workflow.create.mockResolvedValue(mockWorkflow as any);
+
+      const workflow = await workflowService.createWorkflow(whatsappWorkflowData);
+
+      expect(workflow).toBeDefined();
+      expect(workflow.name).toBe('WhatsApp Order Confirmation');
+      expect(workflow.actions).toHaveLength(1);
+      expect((workflow.actions as any[])[0].type).toBe('send_whatsapp');
+    });
+
+    it('should accept send_whatsapp alongside other actions', async () => {
+      const multiActionData = {
+        name: 'Confirm and Notify',
+        triggerType: 'status_change' as WorkflowTriggerType,
+        triggerData: { status: 'confirmed' },
+        actions: [
+          { type: 'update_order', config: { status: 'confirmed' } },
+          { type: 'send_whatsapp', config: { templateKey: 'confirmed' } },
+          { type: 'send_sms', config: { message: 'Order confirmed' } }
+        ],
+        conditions: {}
+      };
+
+      const mockWorkflow = {
+        id: 'workflow-multi-1',
+        ...multiActionData,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      prismaMock.workflow.create.mockResolvedValue(mockWorkflow as any);
+
+      const workflow = await workflowService.createWorkflow(multiActionData);
+
+      expect(workflow.actions).toHaveLength(3);
     });
   });
 
