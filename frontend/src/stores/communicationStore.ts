@@ -14,7 +14,7 @@ interface CommunicationState {
   stats: MessageStats | null;
   templates: SmsTemplate[];
   recipients: Recipient[];
-  optOutCustomers: any[];
+  optOutCustomers: Recipient[];
   optOutPagination: { page: number; limit: number; total: number; totalPages: number } | null;
   isLoadingMessages: boolean;
   isLoadingStats: boolean;

@@ -1,7 +1,33 @@
 import { Response } from 'express';
-import { MessageChannel, MessageStatus } from '@prisma/client';
+import { MessageChannel, MessageStatus, Prisma } from '@prisma/client';
+import { z } from 'zod';
 import { AuthRequest } from '../types';
 import { communicationService } from '../services/communicationService';
+
+const bulkSendSmsSchema = z.object({
+  customerIds: z.array(z.number()).min(1).max(5000),
+  message: z.string().min(1).max(1000),
+});
+
+const bulkSendWhatsAppSchema = z.object({
+  customerIds: z.array(z.number()).min(1).max(5000),
+  templateKey: z.string().min(1),
+  customLink: z.string().url().optional(),
+});
+
+const templateSchema = z.object({
+  name: z.string().min(1),
+  body: z.string().min(1),
+});
+
+const updateOptOutSchema = z
+  .object({
+    smsOptOut: z.boolean().optional(),
+    whatsappOptOut: z.boolean().optional(),
+  })
+  .refine((data) => data.smsOptOut !== undefined || data.whatsappOptOut !== undefined, {
+    message: 'At least one of smsOptOut or whatsappOptOut is required',
+  });
 
 export const getMessages = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -54,11 +80,12 @@ export const getRecipients = async (req: AuthRequest, res: Response): Promise<vo
 
 export const bulkSendSms = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { customerIds, message } = req.body;
-    if (!Array.isArray(customerIds) || !message) {
-      res.status(400).json({ error: 'customerIds (array) and message (string) are required' });
+    const parsed = bulkSendSmsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((e) => e.message).join(', ') });
       return;
     }
+    const { customerIds, message } = parsed.data;
     const result = await communicationService.bulkSendSms(customerIds, message);
     res.json(result);
   } catch (error: any) {
@@ -68,11 +95,12 @@ export const bulkSendSms = async (req: AuthRequest, res: Response): Promise<void
 
 export const bulkSendWhatsApp = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { customerIds, templateKey, customLink } = req.body;
-    if (!Array.isArray(customerIds) || !templateKey) {
-      res.status(400).json({ error: 'customerIds (array) and templateKey (string) are required' });
+    const parsed = bulkSendWhatsAppSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((e) => e.message).join(', ') });
       return;
     }
+    const { customerIds, templateKey, customLink } = parsed.data;
     const result = await communicationService.bulkSendWhatsApp(customerIds, templateKey, customLink);
     res.json(result);
   } catch (error: any) {
@@ -91,12 +119,12 @@ export const getTemplates = async (_req: AuthRequest, res: Response): Promise<vo
 
 export const createTemplate = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, body } = req.body;
-    if (!name || !body) {
-      res.status(400).json({ error: 'name and body are required' });
+    const parsed = templateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((e) => e.message).join(', ') });
       return;
     }
-    const template = await communicationService.createTemplate({ name, body });
+    const template = await communicationService.createTemplate(parsed.data);
     res.status(201).json(template);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -106,10 +134,18 @@ export const createTemplate = async (req: AuthRequest, res: Response): Promise<v
 export const updateTemplate = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
-    const { name, body } = req.body;
-    const template = await communicationService.updateTemplate(id, { name, body });
+    const parsed = templateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((e) => e.message).join(', ') });
+      return;
+    }
+    const template = await communicationService.updateTemplate(id, parsed.data);
     res.json(template);
   } catch (error: any) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      res.status(404).json({ error: 'Template not found' });
+      return;
+    }
     res.status(500).json({ error: error.message });
   }
 };
@@ -120,6 +156,10 @@ export const deleteTemplate = async (req: AuthRequest, res: Response): Promise<v
     await communicationService.deleteTemplate(id);
     res.json({ success: true });
   } catch (error: any) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      res.status(404).json({ error: 'Template not found' });
+      return;
+    }
     res.status(500).json({ error: error.message });
   }
 };
@@ -140,13 +180,18 @@ export const getOptOutCustomers = async (req: AuthRequest, res: Response): Promi
 export const updateOptOut = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const customerId = Number(req.params.customerId);
-    const { smsOptOut, whatsappOptOut } = req.body;
-    const customer = await communicationService.updateCustomerOptOut(customerId, {
-      smsOptOut,
-      whatsappOptOut,
-    });
+    const parsed = updateOptOutSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((e) => e.message).join(', ') });
+      return;
+    }
+    const customer = await communicationService.updateCustomerOptOut(customerId, parsed.data);
     res.json(customer);
   } catch (error: any) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      res.status(404).json({ error: 'Customer not found' });
+      return;
+    }
     res.status(500).json({ error: error.message });
   }
 };

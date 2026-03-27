@@ -147,7 +147,7 @@ export async function sendWhatsAppForOrder(
     throw new Error(`Order ${orderId} not found or has no customer`);
   }
 
-  if ((order.customer as Record<string, unknown>).whatsappOptOut) {
+  if (order.customer.whatsappOptOut) {
     logger.info('Skipping WhatsApp send — customer opted out', { orderId, customerId: order.customer.id });
     return { messageLogId: 0 };
   }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -26,7 +26,7 @@ import toast from 'react-hot-toast';
 import {
   MessageSquare,
   Send,
-  Mail,
+  Phone,
   AlertTriangle,
   CheckCircle,
   XCircle,
@@ -362,7 +362,8 @@ const BulkSendTab: React.FC = () => {
         );
       }
       setSendResult(result);
-      toast.success(`Successfully queued ${result.sent || result.queued || recipients.length} messages`);
+      const successCount = result.results?.filter((r: any) => r.success).length ?? result.total;
+      toast.success(`Successfully queued ${successCount} messages`);
     } catch {
       toast.error('Failed to send messages');
     } finally {
@@ -384,7 +385,7 @@ const BulkSendTab: React.FC = () => {
                 : 'border-gray-200 hover:border-gray-300'
             }`}
           >
-            <Mail className="w-5 h-5" />
+            <Phone className="w-5 h-5" />
             <span className="font-medium">SMS</span>
           </button>
           <button
@@ -557,8 +558,10 @@ const BulkSendTab: React.FC = () => {
           <div className="flex items-center gap-2 text-green-600">
             <CheckCircle className="w-5 h-5" />
             <span className="font-medium">
-              Messages queued: {sendResult.sent || sendResult.queued || 0}
-              {sendResult.failed ? ` | Failed: ${sendResult.failed}` : ''}
+              Messages queued: {sendResult.results?.filter((r: any) => r.success).length ?? sendResult.total ?? 0}
+              {sendResult.results?.filter((r: any) => !r.success).length
+                ? ` | Failed: ${sendResult.results.filter((r: any) => !r.success).length}`
+                : ''}
             </span>
           </div>
         </Card>
@@ -759,7 +762,7 @@ const OptOutsTab: React.FC = () => {
                   <td colSpan={4} className="px-4 py-8 text-center text-gray-500">No customers found</td>
                 </tr>
               ) : (
-                optOutCustomers.map((c: any) => (
+                optOutCustomers.map((c) => (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm text-gray-900">
                       {c.firstName} {c.lastName}
@@ -816,13 +819,13 @@ const OptOutsTab: React.FC = () => {
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 
 export const Communications: React.FC = () => {
-  const tabs = useMemo(() => [
+  const tabs = [
     { id: 'overview', label: 'Overview', content: <OverviewTab /> },
     { id: 'history', label: 'Message History', content: <MessageHistoryTab /> },
     { id: 'bulk-send', label: 'Bulk Send', content: <BulkSendTab /> },
     { id: 'templates', label: 'Templates', content: <TemplatesTab /> },
     { id: 'opt-outs', label: 'Opt-outs', content: <OptOutsTab /> },
-  ], []);
+  ];
 
   return (
     <div className="space-y-6">
