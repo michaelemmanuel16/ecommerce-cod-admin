@@ -40,15 +40,15 @@ describe('Bulk Agent Collection Reconciliation Integration', () => {
 
     beforeEach(async () => {
         GLAccountService.clearCache();
-        // Clean up
+        // Clean up - Order matters due to foreign keys
+        await prisma.accountTransaction.deleteMany({});
         await (prisma as any).agentCollection.deleteMany({});
         await (prisma as any).agentBalance.deleteMany({});
         await prisma.delivery.deleteMany({});
         await prisma.orderItem.deleteMany({});
         await prisma.order.deleteMany({});
-        await prisma.customer.deleteMany({});
-        await prisma.accountTransaction.deleteMany({});
         await prisma.journalEntry.deleteMany({});
+        await prisma.customer.deleteMany({});
         await prisma.user.deleteMany({
             where: { email: { in: ['admin-bulk@test.com', 'agent-bulk@test.com'] } }
         });
