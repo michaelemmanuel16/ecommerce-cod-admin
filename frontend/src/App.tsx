@@ -39,6 +39,7 @@ const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ 
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
+const Communications = lazy(() => import('./pages/Communications'));
 
 // Mobile pages
 const MobileLayout = lazy(() => import('./components/layout/MobileLayout').then(m => ({ default: m.MobileLayout })));
@@ -243,6 +244,13 @@ function App() {
                 <Suspense fallback={<Loading />}>
                   <WorkflowWizard />
                 </Suspense>
+              } />
+              <Route path="communications" element={
+                <RoleGuard allowedRoles={['super_admin', 'admin', 'manager']}>
+                  <Suspense fallback={<Loading />}>
+                    <Communications />
+                  </Suspense>
+                </RoleGuard>
               } />
               <Route path="settings" element={
                 <Suspense fallback={<Loading />}>
