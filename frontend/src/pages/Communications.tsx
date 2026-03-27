@@ -820,11 +820,11 @@ const OptOutsTab: React.FC = () => {
 
 export const Communications: React.FC = () => {
   const tabs = [
-    { id: 'overview', label: 'Overview', content: <OverviewTab /> },
-    { id: 'history', label: 'Message History', content: <MessageHistoryTab /> },
-    { id: 'bulk-send', label: 'Bulk Send', content: <BulkSendTab /> },
-    { id: 'templates', label: 'Templates', content: <TemplatesTab /> },
-    { id: 'opt-outs', label: 'Opt-outs', content: <OptOutsTab /> },
+    { id: 'overview', label: 'Overview', content: () => <OverviewTab /> },
+    { id: 'history', label: 'Message History', content: () => <MessageHistoryTab /> },
+    { id: 'bulk-send', label: 'Bulk Send', content: () => <BulkSendTab /> },
+    { id: 'templates', label: 'Templates', content: () => <TemplatesTab /> },
+    { id: 'opt-outs', label: 'Opt-outs', content: () => <OptOutsTab /> },
   ];
 
   return (

@@ -5,7 +5,7 @@ import { cn } from '../../utils/cn';
 interface Tab {
   id: string;
   label: React.ReactNode;
-  content: React.ReactNode;
+  content: React.ReactNode | (() => React.ReactNode);
 }
 
 interface TabsProps {
@@ -38,7 +38,8 @@ export const Tabs: React.FC<TabsProps> = ({ tabs, defaultTab, persistKey }) => {
     }
   };
 
-  const activeContent = tabs.find((tab) => tab.id === activeTab)?.content;
+  const activeTabDef = tabs.find((tab) => tab.id === activeTab);
+  const activeContent = typeof activeTabDef?.content === 'function' ? activeTabDef.content() : activeTabDef?.content;
 
   return (
     <div>
