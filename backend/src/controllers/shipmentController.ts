@@ -202,13 +202,20 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
         include: { product: true },
       });
 
-      // 1. Increment product stock + update COGS to landed cost per unit
-      const landedCostPerUnit = Number(shipment.totalCost) / shipment.quantity;
+      // 1. Increment product stock + update COGS using weighted average
+      const currentStock = shipment.product.stockQuantity;
+      const currentCogs = Number(shipment.product.cogs) || 0;
+      const newQty = shipment.quantity;
+      const landedCostPerUnit = Number(shipment.totalCost) / newQty;
+      const weightedCogs = currentStock + newQty > 0
+        ? ((currentStock * currentCogs) + (newQty * landedCostPerUnit)) / (currentStock + newQty)
+        : landedCostPerUnit;
+
       await tx.product.update({
         where: { id: shipment.productId },
         data: {
-          stockQuantity: { increment: shipment.quantity },
-          cogs: landedCostPerUnit,
+          stockQuantity: { increment: newQty },
+          cogs: weightedCogs,
         },
       });
 

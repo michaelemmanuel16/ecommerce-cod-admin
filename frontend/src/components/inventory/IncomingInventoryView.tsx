@@ -48,15 +48,20 @@ export const IncomingInventoryView: React.FC<IncomingInventoryViewProps> = ({
   };
 
   const handleAddShipment = async (data: CreateShipmentPayload) => {
-    if (editingShipment) {
-      await shipmentsService.updateShipment(editingShipment.id, data);
-      toast.success('Shipment updated');
-      setEditingShipment(null);
-    } else {
-      await shipmentsService.createShipment(data);
-      toast.success('Shipment added');
+    try {
+      if (editingShipment) {
+        await shipmentsService.updateShipment(editingShipment.id, data);
+        toast.success('Shipment updated');
+        setEditingShipment(null);
+      } else {
+        await shipmentsService.createShipment(data);
+        toast.success('Shipment added');
+      }
+      loadShipments();
+    } catch {
+      toast.error(editingShipment ? 'Failed to update shipment' : 'Failed to add shipment');
+      throw new Error('save failed');
     }
-    loadShipments();
   };
 
   const handleMarkArrived = async (id: number) => {
