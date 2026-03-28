@@ -21,9 +21,9 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
                 .mockResolvedValueOnce(154) // pendingOrders (all-time, no date filter)
                 .mockResolvedValueOnce(0); // deliveredOrders (MTD)
 
-            prismaMock.order.aggregate
-                .mockResolvedValueOnce({ _sum: { totalAmount: 1000 } } as any) // totalRevenue (MTD)
-                .mockResolvedValueOnce({ _sum: { totalAmount: 200 } } as any); // todayRevenue
+            prismaMock.accountTransaction.aggregate
+                .mockResolvedValueOnce({ _sum: { creditAmount: 1000, debitAmount: 0 } } as any) // totalRevenue (GL)
+                .mockResolvedValueOnce({ _sum: { creditAmount: 200, debitAmount: 0 } } as any); // todayRevenue (GL)
 
             prismaMock.user.count.mockResolvedValue(5);
             prismaMock.delivery.findMany.mockResolvedValue([]);
@@ -57,9 +57,9 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
                 .mockResolvedValueOnce(154) // pendingOrders
                 .mockResolvedValueOnce(30); // deliveredOrders (custom range)
 
-            prismaMock.order.aggregate
-                .mockResolvedValueOnce({ _sum: { totalAmount: 5000 } } as any)
-                .mockResolvedValueOnce({ _sum: { totalAmount: 0 } } as any);
+            prismaMock.accountTransaction.aggregate
+                .mockResolvedValueOnce({ _sum: { creditAmount: 5000, debitAmount: 0 } } as any)
+                .mockResolvedValueOnce({ _sum: { creditAmount: 0, debitAmount: 0 } } as any);
 
             prismaMock.user.count.mockResolvedValue(5);
             prismaMock.delivery.findMany.mockResolvedValue([]);
@@ -88,9 +88,9 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
                 .mockResolvedValueOnce(154) // Pending should still be all-time
                 .mockResolvedValueOnce(10);
 
-            prismaMock.order.aggregate
-                .mockResolvedValueOnce({ _sum: { totalAmount: 2000 } } as any)
-                .mockResolvedValueOnce({ _sum: { totalAmount: 500 } } as any);
+            prismaMock.accountTransaction.aggregate
+                .mockResolvedValueOnce({ _sum: { creditAmount: 2000, debitAmount: 0 } } as any)
+                .mockResolvedValueOnce({ _sum: { creditAmount: 500, debitAmount: 0 } } as any);
 
             prismaMock.user.count.mockResolvedValue(5);
             prismaMock.delivery.findMany.mockResolvedValue([]);
@@ -310,7 +310,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
         it('should handle empty results with MTD filter', async () => {
 
             prismaMock.order.count.mockResolvedValue(0);
-            prismaMock.order.aggregate.mockResolvedValue({ _sum: { totalAmount: null } } as any);
+            prismaMock.accountTransaction.aggregate.mockResolvedValue({ _sum: { creditAmount: null, debitAmount: null } } as any);
             prismaMock.user.count.mockResolvedValue(0);
             prismaMock.delivery.findMany.mockResolvedValue([]);
 
@@ -324,7 +324,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
 
         it('should handle partial date range (only startDate)', async () => {
             prismaMock.order.count.mockResolvedValue(25);
-            prismaMock.order.aggregate.mockResolvedValue({ _sum: { totalAmount: 2500 } } as any);
+            prismaMock.accountTransaction.aggregate.mockResolvedValue({ _sum: { creditAmount: 2500, debitAmount: 0 } } as any);
             prismaMock.user.count.mockResolvedValue(5);
             prismaMock.delivery.findMany.mockResolvedValue([]);
 
@@ -340,7 +340,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
 
         it('should handle partial date range (only endDate)', async () => {
             prismaMock.order.count.mockResolvedValue(30);
-            prismaMock.order.aggregate.mockResolvedValue({ _sum: { totalAmount: 3000 } } as any);
+            prismaMock.accountTransaction.aggregate.mockResolvedValue({ _sum: { creditAmount: 3000, debitAmount: 0 } } as any);
             prismaMock.user.count.mockResolvedValue(5);
             prismaMock.delivery.findMany.mockResolvedValue([]);
 
