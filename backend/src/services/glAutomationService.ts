@@ -10,7 +10,7 @@
  * All methods are designed to be called from within Prisma transactions to ensure atomicity.
  */
 
-import { Prisma, Order, OrderItem, Product, Delivery, Customer, User, JournalEntry, AccountTransaction, JournalSourceType, AgentDeposit } from '@prisma/client';
+import { Prisma, Order, OrderItem, Product, Delivery, Customer, User, JournalEntry, AccountTransaction, JournalSourceType, AgentDeposit, InventoryShipment } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GL_ACCOUNTS, GL_DEFAULTS } from '../config/glAccounts';
 import { GLAccountService } from './glAccountService';
@@ -1073,5 +1073,64 @@ export class GLAutomationService {
       logger.error('Failed to verify/seed GL accounts:', error);
       return false;
     }
+  }
+
+  /**
+   * Create GL entry for inventory purchase (when a shipment arrives at warehouse)
+   *
+   * DR: Inventory (1200)       = totalCost
+   * CR: Cash in Hand (1010)    = totalCost
+   *
+   * @param tx - Prisma transaction client
+   * @param shipment - The inventory shipment record
+   * @param userId - ID of user marking arrival
+   * @returns Created journal entry
+   */
+  static async createInventoryPurchaseEntry(
+    tx: Prisma.TransactionClient,
+    shipment: InventoryShipment & { product: Product },
+    userId: number
+  ): Promise<JournalEntryWithTransactions> {
+    // Idempotency guard — prevent duplicate GL entries for the same shipment
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: {
+        sourceType: JournalSourceType.inventory_purchase,
+        sourceId: shipment.id,
+        isVoided: false
+      },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) {
+      logger.warn(`Skipping duplicate GL entry for shipment ${shipment.id}: ${existingEntry.entryNumber} already exists`);
+      return existingEntry as JournalEntryWithTransactions;
+    }
+
+    const totalCost = new Decimal(shipment.totalCost.toString());
+
+    const transactions: TransactionCreateData[] = [
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.INVENTORY, tx),
+        debitAmount: totalCost,
+        creditAmount: new Decimal(0),
+        description: `Inventory purchase - ${shipment.product.name} (${shipment.quantity} units)`,
+      },
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
+        debitAmount: new Decimal(0),
+        creditAmount: totalCost,
+        description: `Payment for inventory - ${shipment.supplier || 'Unknown supplier'}`,
+      },
+    ];
+
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Inventory purchase - ${shipment.product.name} x${shipment.quantity} from ${shipment.supplier || 'Unknown'}`,
+      sourceType: JournalSourceType.inventory_purchase,
+      sourceId: shipment.id,
+      createdBy: userId,
+      transactions: {
+        create: transactions,
+      },
+    });
   }
 }

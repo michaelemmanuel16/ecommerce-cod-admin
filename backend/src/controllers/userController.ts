@@ -223,6 +223,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         vehicleId: agent.vehicleId,
         deliveryRate: rate,
         totalEarnings: calculatedEarnings,
+        mtdEarnings: mtdCompleted * rate,
         location: agent.location,
         mtdCompleted,
         mtdTotalAssigned: mtdOrders.length,

@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Package, AlertTriangle, Edit2, Trash2, ChevronDown, ChevronRight, Users } from 'lucide-react';
+import { Plus, Search, Package, AlertTriangle, Edit2, Trash2, ChevronDown, ChevronRight, Users, Truck } from 'lucide-react';
 import { productsService } from '../services/products.service';
 import { formatCurrency } from '../utils/format';
 import { Product } from '../types';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { AgentStockPanel } from '../components/inventory/AgentStockPanel';
+import { IncomingInventoryView } from '../components/inventory/IncomingInventoryView';
 import { useAgentInventoryStore } from '../stores/agentInventoryStore';
 
 export const Products: React.FC = () => {
@@ -15,17 +16,22 @@ export const Products: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
+    const [showIncomingInventory, setShowIncomingInventory] = useState(false);
     const { productAgentStock } = useAgentInventoryStore();
 
     useEffect(() => {
         loadProducts();
     }, []);
 
+    const { fetchProductAgentStock } = useAgentInventoryStore();
+
     const loadProducts = async () => {
         try {
             setIsLoading(true);
             const data = await productsService.getProducts();
             setProducts(data);
+            // Fetch agent stock for all products so "With Agents" column shows immediately
+            data.forEach((p: Product) => fetchProductAgentStock(p.id));
         } catch (error) {
             console.error('Failed to load products:', error);
         } finally {
@@ -83,10 +89,16 @@ export const Products: React.FC = () => {
         <div>
             <div className="mb-6 flex items-center justify-between">
                 <h1 className="text-2xl font-bold text-gray-900">Products</h1>
-                <Button variant="primary" onClick={handleAddProduct}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Product
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button variant="secondary" onClick={() => setShowIncomingInventory(true)}>
+                        <Truck className="w-4 h-4 mr-2" />
+                        Incoming Inventory
+                    </Button>
+                    <Button variant="primary" onClick={handleAddProduct}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Product
+                    </Button>
+                </div>
             </div>
 
             <Card className="mb-6">
@@ -274,6 +286,12 @@ export const Products: React.FC = () => {
                     </div>
                 </Card>
             )}
+            <IncomingInventoryView
+                isOpen={showIncomingInventory}
+                onClose={() => setShowIncomingInventory(false)}
+                products={products}
+                onShipmentArrived={loadProducts}
+            />
         </div>
     );
 };

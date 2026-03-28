@@ -31,6 +31,7 @@ export interface AgentPerformance {
   vehicleId?: string;
   deliveryRate?: number;
   totalEarnings?: number;
+  mtdEarnings?: number;
   location?: string;
   mtdCompleted: number;
   mtdTotalAssigned: number;
