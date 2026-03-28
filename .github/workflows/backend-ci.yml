@@ -202,6 +202,7 @@ jobs:
             git reset --hard origin/develop
             export META_APP_ID="${{ secrets.META_APP_ID }}"
             export META_APP_SECRET="${{ secrets.META_APP_SECRET }}"
+            export WHATSAPP_APP_SECRET="${{ secrets.WHATSAPP_APP_SECRET }}"
             echo "Running staging deployment script..."
             bash scripts/deploy-staging.sh
 
@@ -231,5 +232,6 @@ jobs:
             git reset --hard origin/main
             export META_APP_ID="${{ secrets.META_APP_ID }}"
             export META_APP_SECRET="${{ secrets.META_APP_SECRET }}"
+            export WHATSAPP_APP_SECRET="${{ secrets.WHATSAPP_APP_SECRET }}"
             echo "Running deployment script..."
             bash scripts/deploy-github-actions.sh

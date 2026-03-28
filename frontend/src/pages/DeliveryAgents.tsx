@@ -186,20 +186,20 @@ export const DeliveryAgents: React.FC = () => {
                         </div>
                       </TableCell>
 
-                      {/* Earnings Column */}
+                      {/* Earnings Column (MTD) */}
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-semibold text-gray-900">
-                            {formatCurrency(agentPerformance?.totalEarnings ?? (agent.deliveryRate || 0) * completedCount)}
+                            {formatCurrency(agentPerformance?.mtdEarnings ?? (agent.deliveryRate || 0) * mtdCompleted)}
                           </span>
                           {(agentPerformance?.deliveryRate || agent.deliveryRate) !== undefined && (agentPerformance?.deliveryRate || agent.deliveryRate || 0) > 0 && (
                             <span className="text-sm text-gray-500">
                               {formatCurrency(agentPerformance?.deliveryRate || agent.deliveryRate || 0)} per delivery
                             </span>
                           )}
-                          {completedCount > 0 && (
+                          {mtdCompleted > 0 && (
                             <span className="text-xs text-gray-400">
-                              {completedCount} completed deliveries
+                              {mtdCompleted} deliveries MTD
                             </span>
                           )}
                         </div>

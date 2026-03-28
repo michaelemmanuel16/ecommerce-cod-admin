@@ -55,6 +55,7 @@ model User {
   transfersFrom         InventoryTransfer[] @relation("TransferFrom")
   transfersTo           InventoryTransfer[] @relation("TransferTo")
   transfersCreated      InventoryTransfer[] @relation("TransferCreator")
+  shipmentsCreated      InventoryShipment[] @relation("ShipmentCreator")
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -116,6 +117,7 @@ model Product {
   webhookConfigs       WebhookConfig[]
   agentStock           AgentStock[]
   inventoryTransfers   InventoryTransfer[]
+  inventoryShipments   InventoryShipment[]
 
   @@index([isActive])
   @@index([category, isActive])
@@ -340,6 +342,7 @@ model JournalEntry {
   creator      User                 @relation("JournalEntryCreator", fields: [createdBy], references: [id])
   voider       User?                @relation("VoidedByUser", fields: [voidedBy], references: [id])
   orders       Order[]
+  shipments    InventoryShipment[]
 
   @@index([sourceType, sourceId])
   @@index([entryDate])
@@ -627,6 +630,40 @@ model product_cost_entries {
   @@index([product_id])
 }
 
+model InventoryShipment {
+  id                  Int              @id @default(autoincrement())
+  productId           Int              @map("product_id")
+  supplier            String?
+  quantity            Int
+  unitCost            Decimal          @default(0) @map("unit_cost") @db.Decimal(10, 2)
+  shippingCost        Decimal          @default(0) @map("shipping_cost") @db.Decimal(10, 2)
+  customsDuties       Decimal          @default(0) @map("customs_duties") @db.Decimal(10, 2)
+  otherCosts          Decimal          @default(0) @map("other_costs") @db.Decimal(10, 2)
+  totalCost           Decimal          @default(0) @map("total_cost") @db.Decimal(10, 2)
+  status              ShipmentStatus   @default(pending)
+  expectedArrivalDate DateTime?        @map("expected_arrival_date")
+  arrivedAt           DateTime?        @map("arrived_at")
+  glJournalEntryId    Int?             @map("gl_journal_entry_id")
+  notes               String?
+  createdById         Int              @map("created_by_id")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  product             Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdBy           User             @relation("ShipmentCreator", fields: [createdById], references: [id])
+  glJournalEntry      JournalEntry?    @relation(fields: [glJournalEntryId], references: [id])
+
+  @@index([productId])
+  @@index([status])
+  @@index([expectedArrivalDate])
+  @@map("inventory_shipments")
+}
+
+enum ShipmentStatus {
+  pending
+  arrived
+}
+
 model AuditLog {
   id         Int      @id @default(autoincrement())
   userId     Int?     @map("user_id")
@@ -837,6 +874,7 @@ enum JournalSourceType {
   reversal
   order_return
   agent_collection
+  inventory_purchase
 }
 
 enum MessageChannel {

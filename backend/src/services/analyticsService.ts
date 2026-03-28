@@ -71,19 +71,23 @@ export class AnalyticsService {
 
     // Build date filter for queries
     // If custom date range provided, use it; otherwise default to month-to-date
-    const dateFilter = filters?.startDate && filters?.endDate
-      ? {
-        createdAt: {
-          gte: new Date(filters.startDate),
-          lte: new Date(filters.endDate)
-        }
+    const rangeStart = filters?.startDate ? new Date(filters.startDate) : startOfMonth;
+    const rangeEnd = filters?.endDate ? new Date(filters.endDate) : now;
+
+    const dateFilter = {
+      createdAt: {
+        gte: rangeStart,
+        lte: rangeEnd
       }
-      : {
-        createdAt: {
-          gte: startOfMonth,
-          lte: now
-        }
-      };
+    };
+
+    // Revenue & delivered counts use deliveryDate to match GL entry timing
+    const deliveryDateFilter = {
+      deliveryDate: {
+        gte: rangeStart,
+        lte: rangeEnd
+      }
+    };
 
     // Build user scope filter (sales reps only see their assigned orders)
     const userFilter = buildUserScopeFilter(userId, userRole);
@@ -130,14 +134,18 @@ export class AnalyticsService {
       }),
       prisma.order.count({
         where: {
-          ...baseWhere,
-          status: 'delivered'
+          ...userFilter,
+          deletedAt: null,
+          status: 'delivered',
+          ...deliveryDateFilter
         }
       }),
       prisma.order.aggregate({
         where: {
-          ...baseWhere,
-          status: 'delivered'
+          ...userFilter,
+          deletedAt: null,
+          status: 'delivered',
+          ...deliveryDateFilter
         },
         _sum: { totalAmount: true }
       }),
@@ -146,7 +154,7 @@ export class AnalyticsService {
           ...userFilter,
           deletedAt: null,
           status: 'delivered',
-          createdAt: {
+          deliveryDate: {
             gte: startOfDay,
             lte: endOfDay
           }
