@@ -1,5 +1,6 @@
 import prisma from '../utils/prisma';
 import { Prisma } from '@prisma/client';
+import { GL_ACCOUNTS } from '../config/glAccounts';
 
 interface DateFilters {
   startDate?: Date;
@@ -140,26 +141,39 @@ export class AnalyticsService {
           ...deliveryDateFilter
         }
       }),
-      prisma.order.aggregate({
+      // Revenue from GL (single source of truth — matches Financial page)
+      prisma.accountTransaction.aggregate({
         where: {
-          ...userFilter,
-          deletedAt: null,
-          status: 'delivered',
-          ...deliveryDateFilter
-        },
-        _sum: { totalAmount: true }
-      }),
-      prisma.order.aggregate({
-        where: {
-          ...userFilter,
-          deletedAt: null,
-          status: 'delivered',
-          deliveryDate: {
-            gte: startOfDay,
-            lte: endOfDay
+          account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
+          journalEntry: {
+            isVoided: false,
+            entryDate: { gte: rangeStart, lte: rangeEnd },
+            ...(userRole === 'delivery_agent'
+              ? { orders: { some: { deliveryAgentId: userId } } }
+              : {}),
+            ...(userRole === 'sales_rep'
+              ? { orders: { some: { customerRepId: userId } } }
+              : {})
           }
         },
-        _sum: { totalAmount: true }
+        _sum: { creditAmount: true, debitAmount: true }
+      }),
+      // Today's revenue from GL
+      prisma.accountTransaction.aggregate({
+        where: {
+          account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
+          journalEntry: {
+            isVoided: false,
+            entryDate: { gte: startOfDay, lte: endOfDay },
+            ...(userRole === 'delivery_agent'
+              ? { orders: { some: { deliveryAgentId: userId } } }
+              : {}),
+            ...(userRole === 'sales_rep'
+              ? { orders: { some: { customerRepId: userId } } }
+              : {})
+          }
+        },
+        _sum: { creditAmount: true, debitAmount: true }
       }),
       prisma.user.count({
         where: {
@@ -190,8 +204,8 @@ export class AnalyticsService {
         todayOrders,
         pendingOrders,
         deliveredOrders,
-        totalRevenue: totalRevenue._sum.totalAmount,
-        todayRevenue: todayRevenue._sum.totalAmount,
+        totalRevenue: Number(totalRevenue._sum.creditAmount || 0) - Number(totalRevenue._sum.debitAmount || 0),
+        todayRevenue: Number(todayRevenue._sum.creditAmount || 0) - Number(todayRevenue._sum.debitAmount || 0),
         activeAgents,
         deliverySamples: deliveries.length
       });
@@ -219,8 +233,8 @@ export class AnalyticsService {
       todayOrders,
       pendingOrders,
       deliveredOrders,
-      totalRevenue: totalRevenue._sum.totalAmount || 0,
-      todayRevenue: todayRevenue._sum.totalAmount || 0,
+      totalRevenue: Number(totalRevenue._sum.creditAmount || 0) - Number(totalRevenue._sum.debitAmount || 0),
+      todayRevenue: Number(todayRevenue._sum.creditAmount || 0) - Number(todayRevenue._sum.debitAmount || 0),
       activeAgents,
       avgDeliveryTime: avgTime,
       deliveryRate: totalOrders > 0 ? (deliveredOrders / totalOrders) * 100 : 0

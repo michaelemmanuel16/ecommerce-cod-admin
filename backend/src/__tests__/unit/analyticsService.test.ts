@@ -17,9 +17,9 @@ describe('AnalyticsService', () => {
         .mockResolvedValueOnce(30) // pendingOrders
         .mockResolvedValueOnce(60); // deliveredOrders
 
-      prismaMock.order.aggregate
-        .mockResolvedValueOnce({ _sum: { totalAmount: 10000 } } as any) // totalRevenue
-        .mockResolvedValueOnce({ _sum: { totalAmount: 500 } } as any); // todayRevenue
+      prismaMock.accountTransaction.aggregate
+        .mockResolvedValueOnce({ _sum: { creditAmount: 10000, debitAmount: 0 } } as any) // totalRevenue (GL)
+        .mockResolvedValueOnce({ _sum: { creditAmount: 500, debitAmount: 0 } } as any); // todayRevenue (GL)
 
       prismaMock.user.count.mockResolvedValue(5); // activeAgents
 
@@ -45,7 +45,7 @@ describe('AnalyticsService', () => {
 
     it('should handle zero orders gracefully', async () => {
       prismaMock.order.count.mockResolvedValue(0);
-      prismaMock.order.aggregate.mockResolvedValue({ _sum: { totalAmount: null } } as any);
+      prismaMock.accountTransaction.aggregate.mockResolvedValue({ _sum: { creditAmount: null, debitAmount: null } } as any);
       prismaMock.user.count.mockResolvedValue(0);
       prismaMock.delivery.findMany.mockResolvedValue([] as any);
 
