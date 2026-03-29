@@ -84,15 +84,15 @@ export const ORDER_STATUS_TEMPLATES: Record<string, {
 }> = {
   order_created: {
     templateName: 'order_created',
-    bodyParams: (o) => [o.customerName, String(o.orderId)],
+    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
   },
   confirmed: {
     templateName: 'order_confirmed',
-    bodyParams: (o) => [o.customerName, String(o.orderId)],
+    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
   },
   out_for_delivery: {
     templateName: 'order_out_for_delivery',
-    bodyParams: (o) => [o.customerName, String(o.orderId)],
+    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
   },
   delivered: {
     templateName: 'order_delivered',
@@ -100,7 +100,7 @@ export const ORDER_STATUS_TEMPLATES: Record<string, {
   },
   failed_delivery: {
     templateName: 'order_delivery_failed',
-    bodyParams: (o) => [o.customerName, String(o.orderId)],
+    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
   },
 };
 
@@ -161,9 +161,9 @@ export async function sendWhatsAppForOrder(
     deliveryAgentName: order.deliveryAgent
       ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim()
       : undefined,
-    productName: order.orderItems
+    productName: [...new Set(order.orderItems
       ?.map((item: any) => item.product?.name)
-      .filter(Boolean)
+      .filter(Boolean))]
       .join(', ') || undefined,
     status: order.status,
   };
@@ -259,11 +259,11 @@ export function formatPhoneNumber(phone: string): string {
  */
 function buildMessageBody(templateName: string, bodyParams: string[]): string {
   const templates: Record<string, string> = {
-    order_created: `Hi {1}, we've received your order #{2}! Total: {3}. We'll confirm it shortly and keep you updated.`,
-    order_confirmed: `Hi {1}, your order #{2} has been confirmed! Total: {3}. We'll update you as it progresses.`,
-    order_out_for_delivery: `Hi {1}, your order #{2} is out for delivery! {3} is on the way.`,
-    order_delivered: `Hi {1}, your order #{2} has been delivered! Amount collected: {3}. Thank you for your purchase!`,
-    order_delivery_failed: `Hi {1}, we were unable to deliver your order #{2}. We'll contact you to reschedule.`,
+    order_created: `Hi {1}, we've received your order {2}! Total: {3}. We'll confirm it shortly and keep you updated.`,
+    order_confirmed: `Hi {1}, your order {2} has been confirmed! Total: {3}. We'll update you as it progresses.`,
+    order_out_for_delivery: `Hi {1}, your order {2} is out for delivery! {3} is on the way.`,
+    order_delivered: `Hi {1}, your order {2} has been delivered! Visit {3} for your product guide. Thank you for your purchase!`,
+    order_delivery_failed: `Hi {1}, we were unable to deliver your order {2}. We'll contact you to reschedule.`,
   };
 
   let body = templates[templateName] || `Template: ${templateName}`;
