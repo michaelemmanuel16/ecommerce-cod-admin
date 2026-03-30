@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma, AccountType, NormalBalance, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
+import { getTenantId } from '../utils/tenantContext';
 
 interface AccountFilters {
   accountType?: AccountType;
@@ -329,11 +330,13 @@ export class GLService {
    * Get all accounts with filters and pagination
    */
   async getAllAccounts(filters: AccountFilters) {
+    const tenantId = getTenantId();
     const { accountType, isActive, page = 1, limit = 50, startDate, endDate } = filters;
 
     const where: Prisma.AccountWhereInput = {};
     if (accountType) where.accountType = accountType;
     if (isActive !== undefined) where.isActive = isActive;
+    if (tenantId) where.tenantId = tenantId;
 
     const skip = (page - 1) * limit;
 
@@ -378,7 +381,8 @@ export class GLService {
         by: ['accountId'],
         where: {
           accountId: { in: accountIds },
-          journalEntry: { entryDate: dateFilter, isVoided: false }
+          journalEntry: { entryDate: dateFilter, isVoided: false },
+          ...(tenantId ? { tenantId } : {})
         },
         _sum: { debitAmount: true, creditAmount: true }
       });
@@ -413,10 +417,11 @@ export class GLService {
    * Get single account by ID
    */
   async getAccountById(accountId: string) {
+    const tenantId = getTenantId();
     const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       include: {
         parent: {
           select: {
@@ -446,6 +451,7 @@ export class GLService {
    * Create new account
    */
   async createAccount(data: CreateAccountData, requester?: Requester) {
+    const tenantId = getTenantId();
     const { code, name, description, accountType, normalBalance, parentId } = data;
 
     // Validate normal balance
@@ -490,7 +496,8 @@ export class GLService {
         accountType,
         normalBalance,
         parentId,
-        isSystem: false // User-created accounts are never system accounts
+        isSystem: false, // User-created accounts are never system accounts
+        ...(tenantId ? { tenantId } : {})
       },
       include: {
         parent: {
@@ -528,12 +535,13 @@ export class GLService {
    * Update account (only non-system fields)
    */
   async updateAccount(accountId: string, data: UpdateAccountData, requester?: Requester) {
+    const tenantId = getTenantId();
     const { name, description, parentId } = data;
 
     const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
-      where: { id }
+      where: { id, ...(tenantId ? { tenantId } : {}) }
     });
 
     if (!account) {
@@ -615,10 +623,11 @@ export class GLService {
    * Delete account (system accounts cannot be deleted)
    */
   async deleteAccount(accountId: string, requester?: Requester) {
+    const tenantId = getTenantId();
     const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       include: {
         children: true
       }
@@ -679,10 +688,11 @@ export class GLService {
    * Toggle account active status
    */
   async toggleAccountStatus(accountId: string, isActive: boolean, requester?: Requester) {
+    const tenantId = getTenantId();
     const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
-      where: { id }
+      where: { id, ...(tenantId ? { tenantId } : {}) }
     });
 
     if (!account) {
@@ -718,6 +728,7 @@ export class GLService {
    * Create new journal entry with balanced debits/credits
    */
   async createJournalEntry(data: CreateJournalEntryData, requester?: Requester) {
+    const tenantId = getTenantId();
     // Validate journal entry data
     await this.validateJournalEntry(data);
 
@@ -756,6 +767,7 @@ export class GLService {
           sourceType: data.sourceType,
           sourceId: data.sourceId,
           createdBy: requester?.id || 0,
+          ...(tenantId ? { tenantId } : {}),
           transactions: {
             create: transactionsWithRunningBalance
           }
@@ -814,6 +826,7 @@ export class GLService {
    * Get all journal entries with filters and pagination
    */
   async getJournalEntries(filters: JournalEntryFilters) {
+    const tenantId = getTenantId();
     const {
       sourceType,
       sourceId,
@@ -833,6 +846,7 @@ export class GLService {
       if (startDate) where.entryDate.gte = new Date(startDate);
       if (endDate) where.entryDate.lte = new Date(endDate);
     }
+    if (tenantId) where.tenantId = tenantId;
 
     const skip = (page - 1) * limit;
 
@@ -888,10 +902,11 @@ export class GLService {
    * Get single journal entry by ID
    */
   async getJournalEntryById(entryId: string) {
+    const tenantId = getTenantId();
     const id = this.parseId(entryId, 'Invalid journal entry ID');
 
     const entry = await prisma.journalEntry.findUnique({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       include: {
         transactions: {
           include: {
@@ -943,11 +958,12 @@ export class GLService {
    * Void journal entry by creating reversing entry
    */
   async voidJournalEntry(entryId: string, reason: string, requester?: Requester) {
+    const tenantId = getTenantId();
     const id = this.parseId(entryId, 'Invalid journal entry ID');
 
     return await prisma.$transaction(async (tx) => {
       const entry = await tx.journalEntry.findUnique({
-        where: { id },
+        where: { id, ...(tenantId ? { tenantId } : {}) },
         include: { transactions: true }
       });
 
@@ -969,6 +985,7 @@ export class GLService {
           sourceType: JournalSourceType.reversal,
           sourceId: entry.id,
           createdBy: requester?.id || 0,
+          ...(tenantId ? { tenantId } : {}),
           transactions: {
             create: entry.transactions.map(t => ({
               accountId: t.accountId,
@@ -1056,10 +1073,11 @@ export class GLService {
    * Get account balance (cached from currentBalance field)
    */
   async getAccountBalance(accountId: string) {
+    const tenantId = getTenantId();
     const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       select: {
         id: true,
         code: true,
@@ -1082,10 +1100,11 @@ export class GLService {
    * Get account ledger (transaction history)
    */
   async getAccountLedger(accountId: string, filters: AccountLedgerFilters) {
+    const tenantId = getTenantId();
     const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       select: {
         id: true,
         code: true,
@@ -1103,7 +1122,8 @@ export class GLService {
     const { startDate, endDate, page = 1, limit = 100 } = filters;
 
     const where: Prisma.AccountTransactionWhereInput = {
-      accountId: id
+      accountId: id,
+      ...(tenantId ? { tenantId } : {})
     };
 
     // Filter by journal entry date if provided
@@ -1154,10 +1174,11 @@ export class GLService {
    * Recalculate account balance from transactions (utility for verification/repair)
    */
   async recalculateAccountBalance(accountId: string) {
+    const tenantId = getTenantId();
     const id = this.parseId(accountId, 'Invalid account ID');
 
     const account = await prisma.account.findUnique({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       select: {
         id: true,
         code: true,
@@ -1177,7 +1198,8 @@ export class GLService {
         accountId: id,
         journalEntry: {
           isVoided: false
-        }
+        },
+        ...(tenantId ? { tenantId } : {})
       },
       select: {
         debitAmount: true,
@@ -1232,11 +1254,12 @@ export class GLService {
    * Optimized for large datasets by fetching in chunks
    */
   async exportAccountLedgerToCSV(accountId: string, filters: AccountLedgerFilters) {
+    const tenantId = getTenantId();
     const id = this.parseId(accountId, 'Invalid account ID');
 
     // Get account info first
     const account = await prisma.account.findUnique({
-      where: { id },
+      where: { id, ...(tenantId ? { tenantId } : {}) },
       select: { code: true }
     });
 
@@ -1245,7 +1268,7 @@ export class GLService {
     }
 
     const { startDate, endDate } = filters;
-    const where: Prisma.AccountTransactionWhereInput = { accountId: id };
+    const where: Prisma.AccountTransactionWhereInput = { accountId: id, ...(tenantId ? { tenantId } : {}) };
 
     if (startDate || endDate) {
       const dateFilter: Prisma.DateTimeFilter = {};

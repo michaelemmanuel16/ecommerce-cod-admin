@@ -8,12 +8,16 @@ datasource db {
 }
 
 model Tenant {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  plan      String   @default("free")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  name                String
+  slug                String   @unique
+  plan                String   @default("free")
+  logo                String?
+  region              String?
+  currency            String   @default("GHS")
+  defaultDeliveryFee  Float?   @map("default_delivery_fee")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@map("tenants")
 }
@@ -290,6 +294,7 @@ model Transaction {
   metadata      Json?
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
+  tenantId      String?       @map("tenant_id")
   order         Order?        @relation(fields: [orderId], references: [id])
 
   @@index([type])
@@ -298,6 +303,7 @@ model Transaction {
   @@index([type, status])
   @@index([type, createdAt])
   @@index([status, createdAt])
+  @@index([tenantId])
   @@map("transactions")
 }
 
@@ -310,10 +316,12 @@ model Expense {
   recordedBy  Int?     @map("recorded_by")
   expenseDate DateTime @map("expense_date")
   createdAt   DateTime @default(now()) @map("created_at")
+  tenantId    String?  @map("tenant_id")
   user        User?    @relation(fields: [recordedBy], references: [id])
 
   @@index([category])
   @@index([expenseDate])
+  @@index([tenantId])
   @@map("expenses")
 }
 
@@ -386,6 +394,7 @@ model AccountTransaction {
   runningBalance Decimal  @default(0) @map("running_balance") @db.Decimal(19, 4)
   description    String?
   createdAt      DateTime @default(now()) @map("created_at")
+  tenantId       String?  @map("tenant_id")
 
   journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   account      Account      @relation(fields: [accountId], references: [id])
@@ -393,6 +402,7 @@ model AccountTransaction {
   @@index([journalEntryId])
   @@index([accountId])
   @@index([accountId, createdAt])
+  @@index([tenantId])
   @@map("account_transactions")
 }
 
@@ -751,10 +761,12 @@ model AgentBalance {
   blockedById        Int?      @map("blocked_by_id")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
+  tenantId           String?   @map("tenant_id")
 
   agent     User  @relation(fields: [agentId], references: [id])
   blockedBy User? @relation("BlockedBy", fields: [blockedById], references: [id])
 
+  @@index([tenantId])
   @@map("agent_balances")
 }
 
@@ -957,6 +969,7 @@ model InventoryTransfer {
   notes        String?
   createdById  Int          @map("created_by_id")
   createdAt    DateTime     @default(now()) @map("created_at")
+  tenantId     String?      @map("tenant_id")
 
   product   Product @relation(fields: [productId], references: [id])
   fromAgent User?   @relation("TransferFrom", fields: [fromAgentId], references: [id])
@@ -970,6 +983,7 @@ model InventoryTransfer {
   @@index([transferType])
   @@index([createdAt])
   @@index([orderId])
+  @@index([tenantId])
   @@map("inventory_transfers")
 }
 
