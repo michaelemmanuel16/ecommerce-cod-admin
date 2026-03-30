@@ -97,7 +97,7 @@ describe('WorkflowService', () => {
     };
 
     it('should execute active workflow successfully', async () => {
-      prismaMock.workflow.findUnique.mockResolvedValue(mockWorkflow as any);
+      prismaMock.workflow.findFirst.mockResolvedValue(mockWorkflow as any);
 
       const mockExecution = {
         id: 'execution-1',
@@ -119,7 +119,7 @@ describe('WorkflowService', () => {
     });
 
     it('should throw error when workflow not found', async () => {
-      prismaMock.workflow.findUnique.mockResolvedValue(null);
+      prismaMock.workflow.findFirst.mockResolvedValue(null);
 
       await expect(
         workflowService.executeWorkflow('workflow-1')
@@ -127,7 +127,7 @@ describe('WorkflowService', () => {
     });
 
     it('should throw error when workflow is not active', async () => {
-      prismaMock.workflow.findUnique.mockResolvedValue({
+      prismaMock.workflow.findFirst.mockResolvedValue({
         ...mockWorkflow,
         isActive: false
       } as any);
@@ -138,7 +138,7 @@ describe('WorkflowService', () => {
     });
 
     it('should return early when conditions not met', async () => {
-      prismaMock.workflow.findUnique.mockResolvedValue({
+      prismaMock.workflow.findFirst.mockResolvedValue({
         ...mockWorkflow,
         conditions: { status: 'delivered' }
       } as any);
@@ -283,7 +283,7 @@ describe('WorkflowService', () => {
         conditions: { status: 'delivered', amount: 100 }
       };
 
-      prismaMock.workflow.findUnique.mockResolvedValue(workflow as any);
+      prismaMock.workflow.findFirst.mockResolvedValue(workflow as any);
 
       const input = { status: 'delivered', amount: 100 };
       const result = (workflowService as any).evaluateConditions(
@@ -300,7 +300,7 @@ describe('WorkflowService', () => {
         conditions: { status: 'delivered' }
       };
 
-      prismaMock.workflow.findUnique.mockResolvedValue(workflow as any);
+      prismaMock.workflow.findFirst.mockResolvedValue(workflow as any);
 
       const input = { status: 'pending' };
       const result = (workflowService as any).evaluateConditions(
@@ -452,7 +452,7 @@ describe('WorkflowService', () => {
       ];
 
       prismaMock.workflow.findMany.mockResolvedValue(mockWorkflows as any);
-      prismaMock.workflow.findUnique.mockResolvedValue(mockWorkflows[0] as any);
+      prismaMock.workflow.findFirst.mockResolvedValue(mockWorkflows[0] as any);
       prismaMock.workflowExecution.create.mockResolvedValue({} as any);
 
       await workflowService.triggerStatusChangeWorkflows(
@@ -548,7 +548,7 @@ describe('WorkflowService', () => {
         name: 'Test Workflow'
       };
 
-      prismaMock.workflow.findUnique.mockResolvedValue(mockWorkflow as any);
+      prismaMock.workflow.findFirst.mockResolvedValue(mockWorkflow as any);
       prismaMock.workflow.delete.mockResolvedValue(mockWorkflow as any);
 
       const result = await workflowService.deleteWorkflow('workflow-1');
@@ -558,7 +558,7 @@ describe('WorkflowService', () => {
     });
 
     it('should throw error when workflow not found', async () => {
-      prismaMock.workflow.findUnique.mockResolvedValue(null);
+      prismaMock.workflow.findFirst.mockResolvedValue(null);
 
       await expect(
         workflowService.deleteWorkflow('workflow-1')
