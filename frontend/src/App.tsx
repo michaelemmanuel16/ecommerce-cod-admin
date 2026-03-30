@@ -41,6 +41,7 @@ const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
 const Communications = lazy(() => import('./pages/Communications'));
+const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
 
 // Mobile pages
 const MobileLayout = lazy(() => import('./components/layout/MobileLayout').then(m => ({ default: m.MobileLayout })));
@@ -266,6 +267,11 @@ function App() {
               <Route path="settings" element={
                 <Suspense fallback={<Loading />}>
                   <Settings />
+                </Suspense>
+              } />
+              <Route path="settings/billing" element={
+                <Suspense fallback={<Loading />}>
+                  <Billing />
                 </Suspense>
               } />
               <Route path="checkout-forms" element={

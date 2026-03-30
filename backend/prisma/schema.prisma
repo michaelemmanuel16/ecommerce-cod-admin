@@ -8,18 +8,40 @@ datasource db {
 }
 
 model Tenant {
-  id                  String   @id @default(uuid())
+  id                  String    @id @default(uuid())
   name                String
-  slug                String   @unique
-  plan                String   @default("free")
+  slug                String    @unique
+  plan                String    @default("free")
   logo                String?
   region              String?
-  currency            String   @default("GHS")
-  defaultDeliveryFee  Float?   @map("default_delivery_fee")
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  currency            String    @default("GHS")
+  defaultDeliveryFee  Float?    @map("default_delivery_fee")
+  currentPlanId       String?   @map("current_plan_id")
+  subscriptionStatus  String    @default("active") @map("subscription_status")
+  trialEndsAt         DateTime? @map("trial_ends_at")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  currentPlan Plan? @relation(fields: [currentPlanId], references: [id])
 
   @@map("tenants")
+}
+
+model Plan {
+  id               String   @id @default(uuid())
+  name             String   @unique
+  displayName      String   @map("display_name")
+  maxOrders        Int?     @map("max_orders")
+  maxUsers         Int?     @map("max_users")
+  priceGHS         Decimal  @map("price_ghs") @db.Decimal(10, 2)
+  paystackPlanCode String?  @map("paystack_plan_code")
+  features         Json
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenants Tenant[]
+
+  @@map("plans")
 }
 
 model User {
