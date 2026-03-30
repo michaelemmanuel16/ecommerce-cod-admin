@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
+import { getTenantId } from '../utils/tenantContext';
 
 interface CreateCheckoutFormData {
   name: string;
@@ -67,9 +68,10 @@ export class CheckoutFormService {
    * Create new checkout form with packages and upsells
    */
   async createCheckoutForm(data: CreateCheckoutFormData) {
+    const tenantId = getTenantId();
     // Check if slug already exists
-    const existingForm = await prisma.checkoutForm.findUnique({
-      where: { slug: data.slug }
+    const existingForm = await prisma.checkoutForm.findFirst({
+      where: { slug: data.slug, ...(tenantId ? { tenantId } : {}) }
     });
 
     if (existingForm) {
@@ -97,6 +99,7 @@ export class CheckoutFormService {
           styling: data.styling,
           country: data.country || 'Ghana',
           regions: data.regions,
+          ...(tenantId ? { tenantId } : {}),
           packages: {
             create: data.packages.map((pkg) => ({
               name: pkg.name,
@@ -155,7 +158,8 @@ export class CheckoutFormService {
    * Get all checkout forms with packages and upsells
    */
   async getAllCheckoutForms(filters?: { isActive?: boolean }) {
-    const where: Prisma.CheckoutFormWhereInput = {};
+    const tenantId = getTenantId();
+    const where: Prisma.CheckoutFormWhereInput = { ...(tenantId ? { tenantId } : {}) };
 
     if (filters?.isActive !== undefined) {
       where.isActive = filters.isActive;
@@ -338,8 +342,8 @@ export class CheckoutFormService {
 
     // If updating slug, check for duplicates
     if (data.slug && data.slug !== existingForm.slug) {
-      const slugExists = await prisma.checkoutForm.findUnique({
-        where: { slug: data.slug }
+      const slugExists = await prisma.checkoutForm.findFirst({
+        where: { slug: data.slug, ...(getTenantId() ? { tenantId: getTenantId()! } : {}) }
       });
 
       if (slugExists) {

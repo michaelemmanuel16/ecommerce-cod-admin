@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
+import { getTenantId } from '../utils/tenantContext';
 
 interface CreateCustomerData {
   firstName: string;
@@ -34,9 +35,10 @@ export class CustomerService {
    * Get all customers with filters and pagination
    */
   async getAllCustomers(filters: CustomerFilters, requester?: Requester) {
+    const tenantId = getTenantId();
     const { search, area, tags, page = 1, limit = 20, sortBy, sortOrder = 'desc' } = filters;
 
-    const where: Prisma.CustomerWhereInput = { isActive: true };
+    const where: Prisma.CustomerWhereInput = { isActive: true, ...(tenantId ? { tenantId } : {}) };
 
     // Role-based filtering for customers
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
@@ -184,9 +186,10 @@ export class CustomerService {
    * Create new customer
    */
   async createCustomer(data: CreateCustomerData) {
+    const tenantId = getTenantId();
     // Check if customer with phone number already exists
-    const existingCustomer = await prisma.customer.findUnique({
-      where: { phoneNumber: data.phoneNumber }
+    const existingCustomer = await prisma.customer.findFirst({
+      where: { phoneNumber: data.phoneNumber, ...(tenantId ? { tenantId } : {}) }
     });
 
     if (existingCustomer) {
@@ -197,7 +200,8 @@ export class CustomerService {
       data: {
         ...data,
         firstName: data.firstName || 'Unknown',
-        lastName: data.lastName || ''
+        lastName: data.lastName || '',
+        ...(tenantId ? { tenantId } : {})
       }
     });
 
@@ -281,8 +285,9 @@ export class CustomerService {
    * Get customer by phone number
    */
   async getCustomerByPhone(phoneNumber: string, requester?: Requester) {
-    const customer = await prisma.customer.findUnique({
-      where: { phoneNumber },
+    const tenantId = getTenantId();
+    const customer = await prisma.customer.findFirst({
+      where: { phoneNumber, ...(tenantId ? { tenantId } : {}) },
       include: {
         orders: {
           where: { deletedAt: null },
@@ -347,8 +352,8 @@ export class CustomerService {
 
     // If updating phone number, check for duplicates
     if (updateData.phoneNumber && updateData.phoneNumber !== customer.phoneNumber) {
-      const existingCustomer = await prisma.customer.findUnique({
-        where: { phoneNumber: updateData.phoneNumber }
+      const existingCustomer = await prisma.customer.findFirst({
+        where: { phoneNumber: updateData.phoneNumber, ...(getTenantId() ? { tenantId: getTenantId()! } : {}) }
       });
 
       if (existingCustomer) {
@@ -662,8 +667,10 @@ export class CustomerService {
    * Search customers by multiple criteria
    */
   async searchCustomers(query: string, requester?: Requester, filters?: { area?: string; limit?: number }) {
+    const tenantId = getTenantId();
     const where: Prisma.CustomerWhereInput = {
       isActive: true,
+      ...(tenantId ? { tenantId } : {}),
       OR: [
         { firstName: { contains: query, mode: 'insensitive' } },
         { lastName: { contains: query, mode: 'insensitive' } },
@@ -710,7 +717,8 @@ export class CustomerService {
    * Get top customers by spending
    */
   async getTopCustomers(limit: number = 10, requester?: Requester, filters?: { area?: string }) {
-    const where: Prisma.CustomerWhereInput = { isActive: true };
+    const tenantId = getTenantId();
+    const where: Prisma.CustomerWhereInput = { isActive: true, ...(tenantId ? { tenantId } : {}) };
 
     // Role-based filtering for top customers
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
@@ -750,9 +758,10 @@ export class CustomerService {
    * Get customers by area distribution
    */
   async getCustomerDistribution() {
+    const tenantId = getTenantId();
     const byArea = await prisma.customer.groupBy({
       by: ['area'],
-      where: { isActive: true },
+      where: { isActive: true, ...(tenantId ? { tenantId } : {}) },
       _count: true,
       orderBy: {
         _count: {
