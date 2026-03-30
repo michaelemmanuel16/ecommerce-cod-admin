@@ -15,6 +15,7 @@ import { useConfigStore } from './stores/configStore';
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { Onboarding } from './pages/Onboarding';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
@@ -55,9 +56,14 @@ const AgentInventoryRoute: React.FC = () => {
   return <AgentInventoryManagement />;
 };
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuthStore();
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+const ProtectedRoute: React.FC<{ children: React.ReactNode; skipOnboardingCheck?: boolean }> = ({ children, skipOnboardingCheck }) => {
+  const { isAuthenticated, needsOnboarding } = useAuthStore();
+  const location = useLocation();
+  if (!isAuthenticated) return <Navigate to="/login" />;
+  if (!skipOnboardingCheck && needsOnboarding() && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" replace />;
+  }
+  return <>{children}</>;
 };
 
 const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }> = ({ children, allowedRoles }) => {
@@ -126,6 +132,11 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/onboarding" element={
+              <ProtectedRoute skipOnboardingCheck>
+                <Onboarding />
+              </ProtectedRoute>
+            } />
             {/* Mobile routes for delivery agents */}
             <Route
               path="/m"

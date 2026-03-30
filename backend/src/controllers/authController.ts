@@ -301,3 +301,103 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
     next(error);
   }
 };
+
+// Slugify helper
+function slugify(str: string): string {
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+
+export const registerTenant = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { companyName, adminEmail, adminPassword, adminName } = req.body;
+
+    if (!companyName || !adminEmail || !adminPassword || !adminName) {
+      throw new AppError('companyName, adminEmail, adminPassword, and adminName are required', 400);
+    }
+
+    // Check email uniqueness
+    const existing = await prisma.user.findUnique({ where: { email: adminEmail } });
+    if (existing) {
+      throw new AppError('An account with this email already exists', 400);
+    }
+
+    // Build unique slug
+    const baseSlug = slugify(companyName) || 'company';
+    let slug = baseSlug;
+    let suffix = 1;
+    while (await prisma.tenant.findUnique({ where: { slug } })) {
+      slug = `${baseSlug}-${suffix++}`;
+    }
+
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
+
+    // Split adminName into first/last
+    const nameParts = adminName.trim().split(/\s+/);
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || nameParts[0];
+
+    // Create tenant + admin user in a transaction
+    const { tenant, user } = await prisma.$transaction(async (tx) => {
+      const tenant = await tx.tenant.create({
+        data: { name: companyName, slug }
+      });
+
+      const user = await tx.user.create({
+        data: {
+          email: adminEmail,
+          password: hashedPassword,
+          firstName,
+          lastName,
+          role: 'super_admin',
+          tenantId: tenant.id,
+          preferences: { onboardingCompleted: false }
+        },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          tenantId: true,
+          preferences: true,
+          createdAt: true
+        }
+      });
+
+      return { tenant, user };
+    });
+
+    const accessToken = generateAccessToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId ?? null
+    });
+
+    const refreshToken = generateRefreshToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId ?? null
+    });
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken }
+    });
+
+    res.status(201).json({
+      message: 'Tenant registered successfully',
+      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+      user,
+      tokens: { accessToken, refreshToken }
+    });
+  } catch (error) {
+    next(error);
+  }
+};

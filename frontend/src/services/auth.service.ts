@@ -46,4 +46,24 @@ export const authService = {
     const response = await apiClient.get('/api/auth/me');
     return response.data;
   },
+
+  async registerTenant(data: {
+    companyName: string;
+    adminEmail: string;
+    adminPassword: string;
+    adminName: string;
+  }): Promise<{ user: User; tokens: AuthTokens; tenant: { id: string; name: string; slug: string } }> {
+    const response = await apiClient.post('/api/auth/register-tenant', data);
+    return response.data;
+  },
+
+  async setupOnboarding(data: {
+    companyLogo?: string;
+    region: string;
+    currency: string;
+    defaultDeliveryFee?: number;
+  }): Promise<{ tenant: any }> {
+    const response = await apiClient.post('/api/onboarding/setup', data);
+    return response.data;
+  },
 };
