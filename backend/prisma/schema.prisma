@@ -7,6 +7,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  plan      String   @default("free")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("tenants")
+}
+
 model User {
   id                    Int               @id @default(autoincrement())
   email                 String            @unique
@@ -56,9 +67,11 @@ model User {
   transfersTo           InventoryTransfer[] @relation("TransferTo")
   transfersCreated      InventoryTransfer[] @relation("TransferCreator")
   shipmentsCreated      InventoryShipment[] @relation("ShipmentCreator")
+  tenantId              String?             @map("tenant_id")
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
+  @@index([tenantId])
   @@map("users")
 }
 
@@ -85,11 +98,13 @@ model Customer {
   calls          Call[]
   orders         Order[]
   messageLogs    MessageLog[]
+  tenantId       String?      @map("tenant_id")
 
   @@index([isActive])
   @@index([email])
   @@index([area])
   @@index([totalSpent])
+  @@index([tenantId])
   @@map("customers")
 }
 
@@ -118,10 +133,12 @@ model Product {
   agentStock           AgentStock[]
   inventoryTransfers   InventoryTransfer[]
   inventoryShipments   InventoryShipment[]
+  tenantId             String?             @map("tenant_id")
 
   @@index([isActive])
   @@index([category, isActive])
   @@index([stockQuantity])
+  @@index([tenantId])
   @@map("products")
 }
 
@@ -173,6 +190,7 @@ model Order {
   agentCollection   AgentCollection?
   inventoryTransfers InventoryTransfer[]
   messageLogs       MessageLog[]
+  tenantId          String?          @map("tenant_id")
 
   @@index([customerId])
   @@index([status])
@@ -194,6 +212,7 @@ model Order {
   @@index([revenueRecognized])
   @@index([glJournalEntryId])
   @@index([status, deliveryDate])
+  @@index([tenantId])
   @@map("orders")
 }
 
@@ -248,12 +267,14 @@ model Delivery {
   updatedAt          DateTime           @updatedAt @map("updated_at")
   agent              User?              @relation(fields: [agentId], references: [id])
   order              Order              @relation(fields: [orderId], references: [id])
+  tenantId           String?            @map("tenant_id")
 
   @@index([agentId])
   @@index([scheduledTime])
   @@index([agentId, scheduledTime])
   @@index([orderId, actualDeliveryTime])
   @@index([scheduledTime, actualDeliveryTime])
+  @@index([tenantId])
   @@map("deliveries")
 }
 
@@ -312,11 +333,13 @@ model Account {
   parent         Account?             @relation("AccountHierarchy", fields: [parentId], references: [id])
   children       Account[]            @relation("AccountHierarchy")
   transactions   AccountTransaction[]
+  tenantId       String?              @map("tenant_id")
 
   @@index([accountType])
   @@index([isActive])
   @@index([parentId])
   @@index([code])
+  @@index([tenantId])
   @@map("accounts")
 }
 
@@ -343,12 +366,14 @@ model JournalEntry {
   voider       User?                @relation("VoidedByUser", fields: [voidedBy], references: [id])
   orders       Order[]
   shipments    InventoryShipment[]
+  tenantId     String?              @map("tenant_id")
 
   @@index([sourceType, sourceId])
   @@index([entryDate])
   @@index([createdAt])
   @@index([isVoided])
   @@index([sourceType, sourceId, isVoided])
+  @@index([tenantId])
   @@map("journal_entries")
 }
 
@@ -383,11 +408,13 @@ model Workflow {
   createdAt   DateTime            @default(now()) @map("created_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
   executions  WorkflowExecution[]
+  tenantId    String?             @map("tenant_id")
 
   @@index([isActive])
   @@index([triggerType])
   @@index([createdAt])
   @@index([isActive, triggerType])
+  @@index([tenantId])
   @@map("workflows")
 }
 
@@ -401,10 +428,12 @@ model WorkflowExecution {
   startedAt   DateTime  @default(now()) @map("started_at")
   completedAt DateTime? @map("completed_at")
   workflow    Workflow  @relation(fields: [workflowId], references: [id])
+  tenantId    String?   @map("tenant_id")
 
   @@index([workflowId])
   @@index([status])
   @@index([startedAt])
+  @@index([tenantId])
   @@map("workflow_executions")
 }
 
@@ -423,8 +452,10 @@ model WebhookConfig {
   productId    Int?         @map("product_id")
   product      Product?     @relation(fields: [productId], references: [id])
   logs         WebhookLog[]
+  tenantId     String?      @map("tenant_id")
 
   @@index([productId])
+  @@index([tenantId])
   @@map("webhook_configs")
 }
 
@@ -457,10 +488,12 @@ model Notification {
   isRead    Boolean  @default(false) @map("is_read")
   createdAt DateTime @default(now()) @map("created_at")
   user      User     @relation(fields: [userId], references: [id])
+  tenantId  String?  @map("tenant_id")
 
   @@index([userId])
   @@index([isRead])
   @@index([createdAt])
+  @@index([tenantId])
   @@map("notifications")
 }
 
@@ -503,9 +536,11 @@ model CheckoutForm {
   packages    FormPackage[]
   submissions FormSubmission[]
   upsells     FormUpsell[]
+  tenantId    String?          @map("tenant_id")
 
   @@index([slug])
   @@index([isActive])
+  @@index([tenantId])
   @@map("checkout_forms")
 }
 
@@ -652,10 +687,12 @@ model InventoryShipment {
   product             Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
   createdBy           User             @relation("ShipmentCreator", fields: [createdById], references: [id])
   glJournalEntry      JournalEntry?    @relation(fields: [glJournalEntryId], references: [id])
+  tenantId            String?          @map("tenant_id")
 
   @@index([productId])
   @@index([status])
   @@index([expectedArrivalDate])
+  @@index([tenantId])
   @@map("inventory_shipments")
 }
 
@@ -787,18 +824,22 @@ enum UserRole {
 
 enum OrderStatus {
   pending_confirmation
+  payment_pending
   confirmed
   preparing
   ready_for_pickup
   out_for_delivery
   delivered
+  digital_delivered
   cancelled
   returned
   failed_delivery
+  payment_failed
 }
 
 enum PaymentStatus {
   pending
+  paid
   collected
   deposited
   reconciled
@@ -875,6 +916,8 @@ enum JournalSourceType {
   order_return
   agent_collection
   inventory_purchase
+  period_close
+  digital_sale
 }
 
 enum MessageChannel {
@@ -944,12 +987,14 @@ model AgentStock {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  agent   User    @relation("AgentStockHoldings", fields: [agentId], references: [id])
-  product Product @relation(fields: [productId], references: [id])
+  agent    User    @relation("AgentStockHoldings", fields: [agentId], references: [id])
+  product  Product @relation(fields: [productId], references: [id])
+  tenantId String? @map("tenant_id")
 
   @@unique([agentId, productId])
   @@index([agentId])
   @@index([productId])
+  @@index([tenantId])
   @@map("agent_stock")
 }
 
