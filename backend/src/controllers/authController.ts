@@ -34,6 +34,7 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
         firstName: true,
         lastName: true,
         role: true,
+        tenantId: true,
         commissionAmount: true,
         deliveryRate: true,
         createdAt: true
@@ -44,13 +45,15 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
     const accessToken = generateAccessToken({
       id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenantId ?? null
     });
 
     const refreshToken = generateRefreshToken({
       id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenantId ?? null
     });
 
     // Save refresh token
@@ -98,13 +101,15 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
     const accessToken = generateAccessToken({
       id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenantId ?? null
     });
 
     const refreshToken = generateRefreshToken({
       id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenantId ?? null
     });
 
     await prisma.user.update({
@@ -169,7 +174,8 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
     const newAccessToken = generateAccessToken({
       id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenantId ?? null
     });
 
     res.json({

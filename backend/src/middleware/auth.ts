@@ -4,6 +4,7 @@ import { verifyAccessToken } from '../utils/jwt';
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import { tenantStorage } from '../utils/tenantContext';
 
 // Cache for role permissions to avoid database hits on every request
 let permissionsCache: any = null;
@@ -141,7 +142,8 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
     try {
       const decoded = verifyAccessToken(token);
       req.user = decoded;
-      next();
+      // Propagate tenantId into AsyncLocalStorage so Prisma extension can scope queries
+      tenantStorage.run({ tenantId: decoded.tenantId ?? null }, next);
     } catch (jwtError: any) {
       logger.info(`[AuthMiddleware] JWT Verification Failed for ${req.method} ${req.path}:`, jwtError.message);
 
