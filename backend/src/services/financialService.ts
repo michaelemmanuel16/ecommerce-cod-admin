@@ -113,7 +113,7 @@ interface ProfitLossData {
 }
 
 export class FinancialService {
-  private forecastCache: { data: CashFlowForecast[]; timestamp: number } | null = null;
+  private forecastCache = new Map<string, { data: CashFlowForecast[]; timestamp: number }>();
   private readonly FORECAST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
   /**
@@ -393,7 +393,7 @@ export class FinancialService {
     }, TRANSACTION_CONFIG);
 
     // Invalidate forecast cache since expense data changed
-    this.forecastCache = null;
+    this.forecastCache.clear();
 
     logger.info('Expense recorded', {
       expenseId: expense.id,
@@ -783,7 +783,7 @@ export class FinancialService {
     }, TRANSACTION_CONFIG);
 
     // Invalidate forecast cache since deposit data changed
-    this.forecastCache = null;
+    this.forecastCache.clear();
 
     logger.info('COD marked as deposited', {
       transactionIds,
@@ -1360,7 +1360,7 @@ export class FinancialService {
     }, TRANSACTION_CONFIG);
 
     // Invalidate forecast cache since expense data changed
-    this.forecastCache = null;
+    this.forecastCache.clear();
 
     logger.info('Expense updated', {
       expenseId,
@@ -1405,7 +1405,7 @@ export class FinancialService {
     }, TRANSACTION_CONFIG);
 
     // Invalidate forecast cache since expense data changed
-    this.forecastCache = null;
+    this.forecastCache.clear();
 
     logger.info('Expense deleted', {
       expenseId,
@@ -1619,8 +1619,10 @@ export class FinancialService {
    */
   async generateCashFlowForecast() {
     const tenantId = getTenantId();
-    if (this.forecastCache && Date.now() - this.forecastCache.timestamp < this.FORECAST_CACHE_DURATION_MS) {
-      return this.forecastCache.data;
+    const cacheKey = tenantId ?? '__system__';
+    const cached = this.forecastCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.FORECAST_CACHE_DURATION_MS) {
+      return cached.data;
     }
 
     // Calculate historical averages (last 30 days)
@@ -1678,7 +1680,7 @@ export class FinancialService {
       });
     }
 
-    this.forecastCache = { data: forecast, timestamp: Date.now() };
+    this.forecastCache.set(cacheKey, { data: forecast, timestamp: Date.now() });
     return forecast;
   }
 

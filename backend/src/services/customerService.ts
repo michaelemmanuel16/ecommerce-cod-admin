@@ -78,6 +78,14 @@ export class CustomerService {
       const params: any[] = [];
       let paramIdx = 1;
 
+      // Tenant isolation for raw SQL (Prisma extension does not intercept $queryRawUnsafe)
+      const tenantId = getTenantId();
+      if (tenantId) {
+        conditions.push(`c.tenant_id = $${paramIdx}`);
+        params.push(tenantId);
+        paramIdx++;
+      }
+
       if (search) {
         conditions.push(`(c.first_name ILIKE $${paramIdx} OR c.last_name ILIKE $${paramIdx} OR c.phone_number LIKE $${paramIdx + 1} OR c.email ILIKE $${paramIdx})`);
         params.push(`%${search}%`, `%${search}%`);

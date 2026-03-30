@@ -192,8 +192,7 @@ export class WebhookService {
   async processWebhook(data: ProcessWebhookData) {
     const { signature, apiKey, body, headers, endpoint, method } = data;
 
-    const tenantId = getTenantId();
-    // Create webhook log
+    // Create webhook log (WebhookLog has no tenantId column)
     const webhookLog = await prisma.webhookLog.create({
       data: {
         endpoint,
@@ -201,7 +200,6 @@ export class WebhookService {
         headers: headers as any,
         body: body as any,
         success: false,
-        ...(tenantId ? { tenantId } : {})
       }
     });
 
@@ -210,7 +208,7 @@ export class WebhookService {
       let webhookConfig = null;
       if (apiKey) {
         webhookConfig = await prisma.webhookConfig.findFirst({
-          where: { apiKey, isActive: true, ...(tenantId ? { tenantId } : {}) }
+          where: { apiKey, isActive: true }
         });
 
         if (!webhookConfig) {
@@ -277,8 +275,7 @@ export class WebhookService {
   async processWebhookByUniqueUrl(data: ProcessWebhookByUniqueUrlData) {
     const { uniqueUrl, signature, body, headers, endpoint, method } = data;
 
-    const tenantId = getTenantId();
-    // Create webhook log
+    // Create webhook log (WebhookLog has no tenantId column)
     const webhookLog = await prisma.webhookLog.create({
       data: {
         endpoint,
@@ -286,7 +283,6 @@ export class WebhookService {
         headers: headers as any,
         body: body as any,
         success: false,
-        ...(tenantId ? { tenantId } : {})
       }
     });
 

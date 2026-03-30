@@ -23,7 +23,8 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
     });
 
     // Mark onboarding as complete in user preferences
-    const currentPreferences = (req.user as any).preferences || {};
+    const dbUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { preferences: true } });
+    const currentPreferences = (dbUser?.preferences as any) || {};
     await prisma.user.update({
       where: { id: req.user.id },
       data: {

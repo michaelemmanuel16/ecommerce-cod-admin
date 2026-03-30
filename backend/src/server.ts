@@ -2,6 +2,16 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Sentry must be initialized before any other imports
+import * as Sentry from '@sentry/node';
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 0,
+  });
+}
+
 import express, { Application } from 'express';
 import http from 'http';
 import cors from 'cors';
@@ -216,6 +226,10 @@ app.get('/', (_req, res) => {
 
 // Error handling
 app.use(notFound);
+// Sentry error handler must be before custom error handler
+if (process.env.SENTRY_DSN) {
+  Sentry.setupExpressErrorHandler(app);
+}
 app.use(errorHandler);
 
 // Start server only if not in test environment
