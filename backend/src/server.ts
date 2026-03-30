@@ -40,6 +40,8 @@ import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
 import smsRoutes from './routes/smsRoutes';
+import emailRoutes from './routes/emailRoutes';
+import paystackRoutes from './routes/paystackRoutes';
 import communicationRoutes from './routes/communicationRoutes';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
@@ -180,6 +182,8 @@ app.get('/api/whatsapp/oauth/callback', apiLimiter, handleOAuthCallback);
 // Admin endpoints use standard rate limiter
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 app.use('/api/sms', apiLimiter, smsRoutes);
+app.use('/api/email', apiLimiter, emailRoutes);
+app.use('/api/paystack', apiLimiter, paystackRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
 
 // Public routes (no authentication required)

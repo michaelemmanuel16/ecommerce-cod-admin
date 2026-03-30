@@ -20,7 +20,9 @@ export interface PublicCheckoutForm {
     price: number;
     imageUrl?: string;
     isActive: boolean;
+    productType?: 'physical' | 'digital';
   };
+  formType?: 'physical' | 'digital';
   name: string;
   slug: string;
   description?: string;
@@ -104,6 +106,8 @@ export interface PublicOrderResponse {
     status: string;
   };
   trackingUrl?: string;
+  authorization_url?: string;
+  paymentReference?: string;
 }
 
 export interface OrderTrackingInfo {
@@ -142,6 +146,11 @@ export const publicOrdersService = {
 
   async submitOrder(slug: string, orderData: PublicOrderData): Promise<PublicOrderResponse> {
     const response = await publicClient.post(`/api/public/forms/${slug}/orders`, orderData);
+    return response.data;
+  },
+
+  async verifyPayment(reference: string): Promise<{ success: boolean; paymentStatus: string; order?: any }> {
+    const response = await publicClient.get(`/api/paystack/verify/${reference}`);
     return response.data;
   },
 

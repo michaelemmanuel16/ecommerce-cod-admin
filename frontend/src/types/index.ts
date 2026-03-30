@@ -146,6 +146,10 @@ export interface Product {
   sku: string;
   isActive: boolean;
   lowStockThreshold: number;
+  productType?: 'physical' | 'digital';
+  digitalFileUrl?: string;
+  digitalFileType?: string;
+  downloadLinkExpiryHours?: number;
   createdAt: string;
   updatedAt: string;
 }

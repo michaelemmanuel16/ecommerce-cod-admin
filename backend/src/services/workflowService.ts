@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import { workflowQueue } from '../queues/workflowQueue';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
 import crypto from 'crypto';
+import { sendEmail } from './emailService';
 
 interface CreateWorkflowData {
   name: string;
@@ -368,18 +369,23 @@ export class WorkflowService {
    * Execute send email action
    */
   private async executeSendEmail(action: any, context: any): Promise<any> {
-    // TODO: Integrate with email provider (SendGrid, etc.)
-    logger.info('Email action executed (mock)', {
-      to: action.email || context.email,
-      subject: action.subject,
-      body: action.body
-    });
+    const to = action.email || context.email;
+    if (!to) {
+      logger.warn('No email address available for send_email action', { context });
+      return { success: false, message: 'No email address available' };
+    }
 
-    return {
-      success: true,
-      message: 'Email sent (mock)',
-      to: action.email || context.email
-    };
+    const subject = action.subject || 'Notification';
+    const body = action.body || '';
+
+    try {
+      await sendEmail({ to, subject, html: body });
+      logger.info('Email sent via workflow', { to, subject });
+      return { success: true, to };
+    } catch (error: any) {
+      logger.error('Failed to send email via workflow', { to, subject, error: error.message });
+      return { success: false, message: error.message, to };
+    }
   }
 
   /**

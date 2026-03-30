@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Save } from 'lucide-react';
+import { Save, SendHorizontal } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 import { adminService, SystemConfig } from '../../../services/admin.service';
+import apiClient from '../../../services/api';
 
 interface EmailIntegrationProps {
   systemConfig: SystemConfig | null;
@@ -18,6 +19,8 @@ export const EmailIntegration: React.FC<EmailIntegrationProps> = ({ systemConfig
     fromName: '',
   });
   const [saving, setSaving] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     if (systemConfig?.emailProvider) {
@@ -44,6 +47,23 @@ export const EmailIntegration: React.FC<EmailIntegrationProps> = ({ systemConfig
     }
   };
 
+  const handleTest = async () => {
+    if (!testEmail) {
+      toast.error('Enter an email address to send the test to');
+      return;
+    }
+    setTesting(true);
+    try {
+      await apiClient.post('/api/email/test', { email: testEmail });
+      toast.success(`Test email sent to ${testEmail}`);
+    } catch (error: any) {
+      const msg = error.response?.data?.error || error.message || 'Failed to send test email';
+      toast.error(msg);
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <Card>
       <form onSubmit={handleSave}>
@@ -58,6 +78,7 @@ export const EmailIntegration: React.FC<EmailIntegrationProps> = ({ systemConfig
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="sendgrid">SendGrid</option>
+                <option value="resend">Resend</option>
                 <option value="smtp">SMTP</option>
               </select>
             </div>
@@ -92,6 +113,33 @@ export const EmailIntegration: React.FC<EmailIntegrationProps> = ({ systemConfig
               />
             </div>
           </div>
+
+          {/* Test Email Section */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <h4 className="text-sm font-medium text-gray-700 mb-3">Test Email</h4>
+            <div className="flex gap-3">
+              <input
+                type="email"
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+                placeholder="Enter email to send test"
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleTest}
+                disabled={testing || !testEmail}
+              >
+                <SendHorizontal className="w-4 h-4 mr-2" />
+                {testing ? 'Sending...' : 'Send Test'}
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-gray-500">
+              Save your settings first, then send a test email to verify the configuration works.
+            </p>
+          </div>
+
           <div className="mt-6 flex justify-end">
             <Button variant="primary" type="submit" disabled={saving}>
               <Save className="w-4 h-4 mr-2" />
