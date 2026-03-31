@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import { workflowQueue } from '../queues/workflowQueue';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
 import crypto from 'crypto';
+import { getTenantId } from '../utils/tenantContext';
 
 interface CreateWorkflowData {
   name: string;
@@ -25,11 +26,13 @@ export class WorkflowService {
    * Get all workflows with filters
    */
   async getAllWorkflows(filters: WorkflowFilters) {
+    const tenantId = getTenantId();
     const { isActive, triggerType } = filters;
 
     const where: Prisma.WorkflowWhereInput = {};
     if (isActive !== undefined) where.isActive = isActive;
     if (triggerType) where.triggerType = triggerType;
+    if (tenantId) where.tenantId = tenantId;
 
     const workflows = await prisma.workflow.findMany({
       where,
@@ -43,6 +46,7 @@ export class WorkflowService {
    * Create new workflow
    */
   async createWorkflow(data: CreateWorkflowData) {
+    const tenantId = getTenantId();
     // Validate actions
     this.validateWorkflowActions(data.actions);
 
@@ -53,7 +57,8 @@ export class WorkflowService {
         triggerType: data.triggerType,
         triggerData: data.triggerData,
         actions: data.actions,
-        conditions: data.conditions || {}
+        conditions: data.conditions || {},
+        ...(tenantId ? { tenantId } : {})
       }
     });
 
@@ -72,8 +77,9 @@ export class WorkflowService {
    * to improve performance and avoid loading unnecessary data
    */
   async getWorkflowById(workflowId: number) {
-    const workflow = await prisma.workflow.findUnique({
-      where: { id: workflowId }
+    const tenantId = getTenantId();
+    const workflow = await prisma.workflow.findFirst({
+      where: { id: workflowId, ...(tenantId ? { tenantId } : {}) }
     });
 
     if (!workflow) {
@@ -87,8 +93,9 @@ export class WorkflowService {
    * Update workflow
    */
   async updateWorkflow(workflowId: number, updateData: Partial<CreateWorkflowData>) {
-    const workflow = await prisma.workflow.findUnique({
-      where: { id: workflowId }
+    const tenantId = getTenantId();
+    const workflow = await prisma.workflow.findFirst({
+      where: { id: workflowId, ...(tenantId ? { tenantId } : {}) }
     });
 
     if (!workflow) {
@@ -113,8 +120,9 @@ export class WorkflowService {
    * Delete workflow
    */
   async deleteWorkflow(workflowId: number) {
-    const workflow = await prisma.workflow.findUnique({
-      where: { id: workflowId }
+    const tenantId = getTenantId();
+    const workflow = await prisma.workflow.findFirst({
+      where: { id: workflowId, ...(tenantId ? { tenantId } : {}) }
     });
 
     if (!workflow) {
@@ -133,8 +141,9 @@ export class WorkflowService {
    * Toggle workflow active status
    */
   async toggleWorkflowStatus(workflowId: number, isActive: boolean) {
-    const workflow = await prisma.workflow.findUnique({
-      where: { id: workflowId }
+    const tenantId = getTenantId();
+    const workflow = await prisma.workflow.findFirst({
+      where: { id: workflowId, ...(tenantId ? { tenantId } : {}) }
     });
 
     if (!workflow) {
@@ -154,8 +163,9 @@ export class WorkflowService {
    * Execute workflow
    */
   async executeWorkflow(workflowId: number, input?: any) {
-    const workflow = await prisma.workflow.findUnique({
-      where: { id: workflowId }
+    const tenantId = getTenantId();
+    const workflow = await prisma.workflow.findFirst({
+      where: { id: workflowId, ...(tenantId ? { tenantId } : {}) }
     });
 
     if (!workflow) {
@@ -181,7 +191,8 @@ export class WorkflowService {
       data: {
         workflowId,
         status: 'pending',
-        input: input || {}
+        input: input || {},
+        ...(tenantId ? { tenantId } : {})
       }
     });
 
@@ -214,9 +225,10 @@ export class WorkflowService {
    * Process workflow execution (called by queue worker)
    */
   async processWorkflowExecution(executionId: number, workflowId: number, actions: any[], input: any) {
+    const tenantId = getTenantId();
     try {
       await prisma.workflowExecution.update({
-        where: { id: executionId },
+        where: { id: executionId, ...(tenantId ? { tenantId } : {}) },
         data: { status: 'running' }
       });
 
@@ -244,7 +256,7 @@ export class WorkflowService {
 
       // Mark execution as completed
       await prisma.workflowExecution.update({
-        where: { id: executionId },
+        where: { id: executionId, ...(tenantId ? { tenantId } : {}) },
         data: {
           status: 'completed',
           output: results,
@@ -256,7 +268,7 @@ export class WorkflowService {
       return results;
     } catch (error: any) {
       await prisma.workflowExecution.update({
-        where: { id: executionId },
+        where: { id: executionId, ...(tenantId ? { tenantId } : {}) },
         data: {
           status: 'failed',
           error: error.message,

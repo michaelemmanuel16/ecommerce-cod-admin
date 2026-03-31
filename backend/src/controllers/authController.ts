@@ -34,6 +34,7 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
         firstName: true,
         lastName: true,
         role: true,
+        tenantId: true,
         commissionAmount: true,
         deliveryRate: true,
         createdAt: true
@@ -44,13 +45,15 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
     const accessToken = generateAccessToken({
       id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenantId ?? null
     });
 
     const refreshToken = generateRefreshToken({
       id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenantId ?? null
     });
 
     // Save refresh token
@@ -98,13 +101,15 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
     const accessToken = generateAccessToken({
       id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenantId ?? null
     });
 
     const refreshToken = generateRefreshToken({
       id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenantId ?? null
     });
 
     await prisma.user.update({
@@ -169,7 +174,8 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
     const newAccessToken = generateAccessToken({
       id: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenantId ?? null
     });
 
     res.json({
@@ -292,6 +298,117 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
 
     res.json({ user, permissions: userPermissions });
   } catch (error) {
+    next(error);
+  }
+};
+
+// Slugify helper
+function slugify(str: string): string {
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+
+export const registerTenant = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { companyName, adminEmail, adminPassword, adminName } = req.body;
+
+    if (!companyName || !adminEmail || !adminPassword || !adminName) {
+      throw new AppError('companyName, adminEmail, adminPassword, and adminName are required', 400);
+    }
+
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
+
+    // Split adminName into first/last
+    const nameParts = adminName.trim().split(/\s+/);
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || nameParts[0];
+
+    // All uniqueness checks + creation inside a single transaction to prevent TOCTOU races
+    const { tenant, user } = await prisma.$transaction(async (tx) => {
+      // Check email uniqueness inside transaction
+      const existing = await tx.user.findUnique({ where: { email: adminEmail } });
+      if (existing) {
+        throw new AppError('An account with this email already exists', 400);
+      }
+
+      // Build unique slug inside transaction
+      const baseSlug = slugify(companyName) || 'company';
+      let slug = baseSlug;
+      let suffix = 1;
+      while (await tx.tenant.findUnique({ where: { slug } })) {
+        slug = `${baseSlug}-${suffix++}`;
+      }
+
+      const tenant = await tx.tenant.create({
+        data: { name: companyName, slug }
+      });
+
+      const user = await tx.user.create({
+        data: {
+          email: adminEmail,
+          password: hashedPassword,
+          firstName,
+          lastName,
+          role: 'super_admin',
+          tenantId: tenant.id,
+          preferences: { onboardingCompleted: false }
+        },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          tenantId: true,
+          preferences: true,
+          createdAt: true
+        }
+      });
+
+      return { tenant, user };
+    });
+
+    const accessToken = generateAccessToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId ?? null
+    });
+
+    const refreshToken = generateRefreshToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId ?? null
+    });
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken }
+    });
+
+    res.status(201).json({
+      message: 'Tenant registered successfully',
+      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+      user,
+      tokens: { accessToken, refreshToken }
+    });
+  } catch (error: any) {
+    // Handle Prisma unique constraint violation (P2002) gracefully
+    if (error?.code === 'P2002') {
+      const target = error?.meta?.target;
+      if (target?.includes('email')) {
+        return next(new AppError('An account with this email already exists', 400));
+      }
+      if (target?.includes('slug')) {
+        return next(new AppError('A tenant with this name already exists. Please choose a different name.', 400));
+      }
+      return next(new AppError('A record with this information already exists', 400));
+    }
     next(error);
   }
 };

@@ -41,6 +41,8 @@ import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
 import smsRoutes from './routes/smsRoutes';
 import communicationRoutes from './routes/communicationRoutes';
+import onboardingRoutes from './routes/onboardingRoutes';
+import billingRoutes from './routes/billingRoutes';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
@@ -181,6 +183,8 @@ app.get('/api/whatsapp/oauth/callback', apiLimiter, handleOAuthCallback);
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 app.use('/api/sms', apiLimiter, smsRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
+app.use('/api/onboarding', onboardingRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);

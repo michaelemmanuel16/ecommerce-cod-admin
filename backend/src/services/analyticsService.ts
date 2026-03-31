@@ -1,6 +1,7 @@
 import prisma from '../utils/prisma';
 import { Prisma } from '@prisma/client';
 import { GL_ACCOUNTS } from '../config/glAccounts';
+import { getTenantId } from '../utils/tenantContext';
 
 interface DateFilters {
   startDate?: Date;
@@ -62,6 +63,7 @@ export class AnalyticsService {
       console.log('[DEBUG] analyticsService.getDashboardMetrics inputs:', { filters, userId, userRole });
     }
 
+    const tenantId = getTenantId();
     const today = new Date();
     const startOfDay = new Date(today.setHours(0, 0, 0, 0));
     const endOfDay = new Date(today.setHours(23, 59, 59, 999));
@@ -96,7 +98,8 @@ export class AnalyticsService {
     const baseWhere: Prisma.OrderWhereInput = {
       ...dateFilter,
       ...userFilter,
-      deletedAt: null
+      deletedAt: null,
+      ...(tenantId ? { tenantId } : {})
     };
 
     if (process.env.NODE_ENV === 'development') {
@@ -123,14 +126,16 @@ export class AnalyticsService {
           createdAt: {
             gte: startOfDay,
             lte: endOfDay
-          }
+          },
+          ...(tenantId ? { tenantId } : {})
         }
       }),
       prisma.order.count({
         where: {
           ...userFilter,
           deletedAt: null,
-          status: 'pending_confirmation'
+          status: 'pending_confirmation',
+          ...(tenantId ? { tenantId } : {})
         }
       }),
       prisma.order.count({
@@ -138,7 +143,8 @@ export class AnalyticsService {
           ...userFilter,
           deletedAt: null,
           status: 'delivered',
-          ...deliveryDateFilter
+          ...deliveryDateFilter,
+          ...(tenantId ? { tenantId } : {})
         }
       }),
       // Revenue from GL (single source of truth — matches Financial page)
@@ -187,7 +193,8 @@ export class AnalyticsService {
         where: {
           actualDeliveryTime: { not: null },
           scheduledTime: { not: null },
-          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // Only last 7 days
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // Only last 7 days
+          ...(tenantId ? { tenantId } : {})
         },
         select: {
           scheduledTime: true,
@@ -275,6 +282,7 @@ export class AnalyticsService {
 
     // Build user scope filter (sales reps only see their assigned orders)
     const userFilter = buildUserScopeFilter(userId, userRole);
+    const tenantId = getTenantId();
 
     const orders = await prisma.order.findMany({
       where: {
@@ -283,7 +291,8 @@ export class AnalyticsService {
         createdAt: {
           gte: startDate,
           lte: endDate
-        }
+        },
+        ...(tenantId ? { tenantId } : {})
       },
       select: {
         createdAt: true,
@@ -333,8 +342,9 @@ export class AnalyticsService {
     userRole?: string
   ) {
     const { startDate, endDate } = filters;
+    const tenantId = getTenantId();
 
-    const where: Prisma.OrderWhereInput = { deletedAt: null };
+    const where: Prisma.OrderWhereInput = { deletedAt: null, ...(tenantId ? { tenantId } : {}) };
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = startDate;

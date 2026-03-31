@@ -7,6 +7,7 @@ import { authLimiter, apiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
+router.post('/register-tenant', authLimiter, authController.registerTenant);
 router.post('/register', authLimiter, registerValidation, validate, authController.register);
 router.post('/login', authLimiter, loginValidation, validate, authController.login);
 router.post('/refresh', authLimiter, authController.refresh);

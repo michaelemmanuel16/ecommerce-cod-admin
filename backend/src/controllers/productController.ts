@@ -2,12 +2,16 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
+import { getTenantId } from '../utils/tenantContext';
 
 export const getAllProducts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const tenantId = getTenantId();
     const { search, category, isActive, page = 1, limit = 20 } = req.query;
 
-    const where: any = {};
+    const where: any = {
+      ...(tenantId ? { tenantId } : {})
+    };
 
     if (search) {
       where.OR = [
@@ -47,10 +51,14 @@ export const getAllProducts = async (req: AuthRequest, res: Response): Promise<v
 
 export const createProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const tenantId = getTenantId();
     const productData = req.body;
 
-    const existingProduct = await prisma.product.findUnique({
-      where: { sku: productData.sku }
+    const existingProduct = await prisma.product.findFirst({
+      where: {
+        sku: productData.sku,
+        ...(tenantId ? { tenantId } : {})
+      }
     });
 
     if (existingProduct) {
@@ -58,7 +66,10 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const product = await prisma.product.create({
-      data: productData
+      data: {
+        ...productData,
+        ...(tenantId ? { tenantId } : {})
+      }
     });
 
     res.status(201).json({ product });
@@ -69,6 +80,7 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
 
 export const getProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const tenantId = getTenantId();
     const { id } = req.params;
     const productId = parseInt(id, 10);
 
@@ -77,8 +89,11 @@ export const getProduct = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    const product = await prisma.product.findUnique({
-      where: { id: productId }
+    const product = await prisma.product.findFirst({
+      where: {
+        id: productId,
+        ...(tenantId ? { tenantId } : {})
+      }
     });
 
     if (!product) {
@@ -93,6 +108,7 @@ export const getProduct = async (req: AuthRequest, res: Response): Promise<void>
 
 export const updateProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const tenantId = getTenantId();
     const { id } = req.params;
     const productId = parseInt(id, 10);
 
@@ -104,7 +120,10 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
     const updateData = req.body;
 
     const product = await prisma.product.update({
-      where: { id: productId },
+      where: {
+        id: productId,
+        ...(tenantId ? { tenantId } : {})
+      },
       data: updateData
     });
 
@@ -116,6 +135,7 @@ export const updateProduct = async (req: AuthRequest, res: Response): Promise<vo
 
 export const deleteProduct = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const tenantId = getTenantId();
     const { id } = req.params;
     const productId = parseInt(id, 10);
 
@@ -125,7 +145,10 @@ export const deleteProduct = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     await prisma.product.update({
-      where: { id: productId },
+      where: {
+        id: productId,
+        ...(tenantId ? { tenantId } : {})
+      },
       data: { isActive: false }
     });
 
@@ -137,6 +160,7 @@ export const deleteProduct = async (req: AuthRequest, res: Response): Promise<vo
 
 export const updateProductStock = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const tenantId = getTenantId();
     const { id } = req.params;
     const productId = parseInt(id, 10);
 
@@ -148,7 +172,10 @@ export const updateProductStock = async (req: AuthRequest, res: Response): Promi
     const { stockQuantity } = req.body;
 
     const product = await prisma.product.update({
-      where: { id: productId },
+      where: {
+        id: productId,
+        ...(tenantId ? { tenantId } : {})
+      },
       data: { stockQuantity }
     });
 
@@ -160,12 +187,14 @@ export const updateProductStock = async (req: AuthRequest, res: Response): Promi
 
 export const getLowStockProducts = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const tenantId = getTenantId();
     const products = await prisma.product.findMany({
       where: {
         isActive: true,
         stockQuantity: {
           lte: prisma.product.fields.lowStockThreshold
-        }
+        },
+        ...(tenantId ? { tenantId } : {})
       },
       orderBy: { stockQuantity: 'asc' }
     });
