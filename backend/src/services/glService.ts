@@ -161,6 +161,7 @@ export class GLService {
    */
   private async generateEntryNumber(tx?: Prisma.TransactionClient): Promise<string> {
     const client = tx || prisma;
+    const tenantId = getTenantId();
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
 
@@ -171,13 +172,22 @@ export class GLService {
     // execution regardless of whether rows exist.
     await client.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('gl_entry_number_sequence'))`;
 
-    const result = await client.$queryRaw<any[]>`
-      SELECT entry_number as "entryNumber"
-      FROM journal_entries
-      WHERE entry_number LIKE ${'JE-' + dateStr + '-%'}
-      ORDER BY entry_number DESC
-      LIMIT 1
-    `;
+    const likePattern = 'JE-' + dateStr + '-%';
+    const result = tenantId
+      ? await client.$queryRaw<any[]>`
+          SELECT entry_number as "entryNumber"
+          FROM journal_entries
+          WHERE entry_number LIKE ${likePattern} AND tenant_id = ${tenantId}
+          ORDER BY entry_number DESC
+          LIMIT 1
+        `
+      : await client.$queryRaw<any[]>`
+          SELECT entry_number as "entryNumber"
+          FROM journal_entries
+          WHERE entry_number LIKE ${likePattern}
+          ORDER BY entry_number DESC
+          LIMIT 1
+        `;
 
     let sequence = 1;
     if (result && result.length > 0) {
@@ -290,13 +300,20 @@ export class GLService {
     tx: Prisma.TransactionClient
   ): Promise<Prisma.Decimal> {
     // Get account with row-level lock to prevent concurrent updates (FOR UPDATE)
-    // This ensures that when multiple transactions try to update the same account, 
+    // This ensures that when multiple transactions try to update the same account,
     // they are serialized to prevent race conditions.
-    const accounts: any[] = await tx.$queryRaw`
-      SELECT normal_balance as "normalBalance", current_balance as "currentBalance"
-      FROM accounts
-      WHERE id = ${accountId}
-      FOR UPDATE
+    const tenantIdForLock = getTenantId();
+    const accounts: any[] = tenantIdForLock
+      ? await tx.$queryRaw`
+          SELECT normal_balance as "normalBalance", current_balance as "currentBalance"
+          FROM accounts
+          WHERE id = ${accountId} AND tenant_id = ${tenantIdForLock}
+          FOR UPDATE`
+      : await tx.$queryRaw`
+          SELECT normal_balance as "normalBalance", current_balance as "currentBalance"
+          FROM accounts
+          WHERE id = ${accountId}
+          FOR UPDATE
     `;
 
     if (!accounts || accounts.length === 0) {

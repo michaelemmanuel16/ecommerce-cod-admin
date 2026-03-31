@@ -2,10 +2,13 @@ import { Prisma } from '@prisma/client';
 import { getTenantId } from './tenantContext';
 
 // Models that carry a tenantId column and need automatic scoping
+// Must match EXACTLY the PascalCase model names in prisma/schema.prisma
 const TENANT_SCOPED_MODELS = new Set([
-  'Order', 'Customer', 'Product', 'CheckoutForm', 'Workflow', 'WorkflowExecution',
-  'Webhook', 'Notification', 'Delivery', 'DeliveryProof', 'DigitalDeliveryToken',
-  'GLEntry', 'Account', 'AgentInventory', 'InventoryShipment',
+  'User', 'Customer', 'Product', 'Order', 'Delivery',
+  'Transaction', 'Expense', 'Account', 'JournalEntry', 'AccountTransaction',
+  'Workflow', 'WorkflowExecution', 'WebhookConfig', 'Notification',
+  'CheckoutForm', 'InventoryShipment', 'InventoryTransfer',
+  'AgentBalance', 'AgentStock',
 ]);
 
 /**
@@ -114,6 +117,24 @@ export const tenantIsolationExtension = Prisma.defineExtension({
         return query(args);
       },
       async groupBy({ model, args, query }) {
+        if (TENANT_SCOPED_MODELS.has(model)) {
+          const tenantId = getTenantId();
+          if (tenantId) {
+            args.where = { ...args.where, tenantId } as any;
+          }
+        }
+        return query(args);
+      },
+      async delete({ model, args, query }) {
+        if (TENANT_SCOPED_MODELS.has(model)) {
+          const tenantId = getTenantId();
+          if (tenantId) {
+            args.where = { ...args.where, tenantId } as any;
+          }
+        }
+        return query(args);
+      },
+      async deleteMany({ model, args, query }) {
         if (TENANT_SCOPED_MODELS.has(model)) {
           const tenantId = getTenantId();
           if (tenantId) {

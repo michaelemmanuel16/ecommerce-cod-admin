@@ -320,20 +320,6 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
       throw new AppError('companyName, adminEmail, adminPassword, and adminName are required', 400);
     }
 
-    // Check email uniqueness
-    const existing = await prisma.user.findUnique({ where: { email: adminEmail } });
-    if (existing) {
-      throw new AppError('An account with this email already exists', 400);
-    }
-
-    // Build unique slug
-    const baseSlug = slugify(companyName) || 'company';
-    let slug = baseSlug;
-    let suffix = 1;
-    while (await prisma.tenant.findUnique({ where: { slug } })) {
-      slug = `${baseSlug}-${suffix++}`;
-    }
-
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
     // Split adminName into first/last
@@ -341,8 +327,22 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || nameParts[0];
 
-    // Create tenant + admin user in a transaction
+    // All uniqueness checks + creation inside a single transaction to prevent TOCTOU races
     const { tenant, user } = await prisma.$transaction(async (tx) => {
+      // Check email uniqueness inside transaction
+      const existing = await tx.user.findUnique({ where: { email: adminEmail } });
+      if (existing) {
+        throw new AppError('An account with this email already exists', 400);
+      }
+
+      // Build unique slug inside transaction
+      const baseSlug = slugify(companyName) || 'company';
+      let slug = baseSlug;
+      let suffix = 1;
+      while (await tx.tenant.findUnique({ where: { slug } })) {
+        slug = `${baseSlug}-${suffix++}`;
+      }
+
       const tenant = await tx.tenant.create({
         data: { name: companyName, slug }
       });
@@ -397,7 +397,18 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
       user,
       tokens: { accessToken, refreshToken }
     });
-  } catch (error) {
+  } catch (error: any) {
+    // Handle Prisma unique constraint violation (P2002) gracefully
+    if (error?.code === 'P2002') {
+      const target = error?.meta?.target;
+      if (target?.includes('email')) {
+        return next(new AppError('An account with this email already exists', 400));
+      }
+      if (target?.includes('slug')) {
+        return next(new AppError('A tenant with this name already exists. Please choose a different name.', 400));
+      }
+      return next(new AppError('A record with this information already exists', 400));
+    }
     next(error);
   }
 };
