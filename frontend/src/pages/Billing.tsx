@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import apiClient from '../services/api';
 import { useAuthStore } from '../stores/authStore';
+import { formatCurrency } from '../utils/format';
 
 interface Plan {
   id: string;
@@ -146,7 +147,7 @@ export function Billing() {
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">{plan.displayName}</h3>
                   <p className="text-2xl font-bold mt-1">
-                    {plan.priceGHS === 0 ? 'Free' : `GHS ${Number(plan.priceGHS).toLocaleString()}/mo`}
+                    {plan.priceGHS === 0 ? 'Free' : `${formatCurrency(Number(plan.priceGHS), 'GHS')}/mo`}
                   </p>
                 </div>
                 <ul className="space-y-1 text-sm text-gray-600 flex-1">

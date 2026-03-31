@@ -11,7 +11,6 @@ model Tenant {
   id                  String    @id @default(uuid())
   name                String
   slug                String    @unique
-  plan                String    @default("free")
   logo                String?
   region              String?
   currency            String    @default("GHS")

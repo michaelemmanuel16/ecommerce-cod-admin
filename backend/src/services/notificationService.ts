@@ -1,7 +1,7 @@
 import prisma from '../utils/prisma';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitNotification } from '../sockets';
-import { getTenantId } from '../utils/tenantContext';
+
 
 export async function createNotification(
   userId: string,
@@ -10,7 +10,6 @@ export async function createNotification(
   message: string,
   data?: any
 ) {
-  const tenantId = getTenantId();
   const notification = await prisma.notification.create({
     data: {
       userId: parseInt(userId, 10),
@@ -18,7 +17,6 @@ export async function createNotification(
       title,
       message,
       data: data || {},
-      ...(tenantId ? { tenantId } : {})
     }
   });
 

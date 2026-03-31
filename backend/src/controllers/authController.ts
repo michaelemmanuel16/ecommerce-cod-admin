@@ -133,7 +133,8 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
         lastName: user.lastName,
         role: user.role,
         commissionAmount: user.commissionAmount || 0,
-        deliveryRate: user.deliveryRate
+        deliveryRate: user.deliveryRate,
+        preferences: user.preferences,
       },
       tokens: {
         accessToken,

@@ -3,6 +3,7 @@ import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { getTenantId } from '../utils/tenantContext';
+import { SUBSCRIPTION_STATUS } from '../config/billing';
 
 /**
  * GET /api/billing/plans — list all active plans (public)
@@ -40,7 +41,7 @@ export const getSubscription = async (_req: AuthRequest, res: Response, next: Ne
       where: { tenantId, createdAt: { gte: monthStart } },
     });
 
-    const plan = tenant.currentPlan ?? (await prisma.plan.findUnique({ where: { name: tenant.plan } }));
+    const plan = tenant.currentPlan;
 
     res.json({
       plan,
@@ -73,9 +74,8 @@ export const upgradePlan = async (req: AuthRequest, res: Response, next: NextFun
     const tenant = await prisma.tenant.update({
       where: { id: tenantId },
       data: {
-        plan: plan.name,
         currentPlanId: plan.id,
-        subscriptionStatus: 'active',
+        subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
       },
       include: { currentPlan: true },
     });

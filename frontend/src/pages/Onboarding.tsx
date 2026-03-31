@@ -5,33 +5,22 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { authService } from '../services/auth.service';
 import { useAuthStore } from '../stores/authStore';
-import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { getRegionsForCountry } from '../utils/countries';
+import { getSupportedCountries, getCurrencyForCountry, SUPPORTED_CURRENCIES } from '../utils/countries';
 import toast from 'react-hot-toast';
 
-// Step schemas
-const brandingSchema = z.object({
-  companyLogo: z.string().url('Must be a valid URL').optional().or(z.literal('')),
-});
-
-const regionSchema = z.object({
-  region: z.string().min(1, 'Please select a region'),
+const setupSchema = z.object({
+  country: z.string().min(1, 'Please select a country'),
   currency: z.string().min(1, 'Currency is required'),
-  defaultDeliveryFee: z.coerce.number().min(0).optional(),
 });
 
-type BrandingData = z.infer<typeof brandingSchema>;
-type RegionData = z.infer<typeof regionSchema>;
+type SetupData = z.infer<typeof setupSchema>;
 
-const CURRENCIES = ['GHS', 'NGN', 'KES', 'ZAR', 'UGX', 'TZS', 'RWF', 'ETB'];
-const GHANA_REGIONS = getRegionsForCountry('Ghana');
+const COUNTRIES = getSupportedCountries();
 
 const steps = [
-  { label: 'Company Branding' },
-  { label: 'Region & Currency' },
-  { label: 'First Checkout Form' },
+  { label: 'Country & Currency' },
   { label: 'Done' },
 ];
 
@@ -39,36 +28,32 @@ export const Onboarding: React.FC = () => {
   const navigate = useNavigate();
   const { user, updatePreferences } = useAuthStore();
   const [step, setStep] = useState(0);
-  const [brandingData, setBrandingData] = useState<BrandingData>({ companyLogo: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const brandingForm = useForm<BrandingData>({
-    resolver: zodResolver(brandingSchema),
-    defaultValues: { companyLogo: '' },
+  const form = useForm<SetupData>({
+    resolver: zodResolver(setupSchema),
+    defaultValues: { country: '', currency: 'GHS' },
   });
 
-  const regionForm = useForm<RegionData>({
-    resolver: zodResolver(regionSchema),
-    defaultValues: { region: '', currency: 'GHS', defaultDeliveryFee: undefined },
-  });
+  const selectedCountry = form.watch('country');
 
-  const handleBrandingNext = brandingForm.handleSubmit((data) => {
-    setBrandingData(data);
-    setStep(1);
-  });
+  // Auto-set currency when country changes
+  React.useEffect(() => {
+    if (selectedCountry) {
+      const currency = getCurrencyForCountry(selectedCountry);
+      form.setValue('currency', currency);
+    }
+  }, [selectedCountry, form]);
 
-  const handleRegionNext = regionForm.handleSubmit(async (data) => {
+  const handleSubmit = form.handleSubmit(async (data) => {
     setIsSubmitting(true);
     try {
       await authService.setupOnboarding({
-        companyLogo: brandingData.companyLogo || undefined,
-        region: data.region,
+        country: data.country,
         currency: data.currency,
-        defaultDeliveryFee: data.defaultDeliveryFee,
       });
-      // Update local user preferences
       await updatePreferences({ onboardingCompleted: true });
-      setStep(2);
+      setStep(1);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Setup failed. Please try again.');
     } finally {
@@ -109,76 +94,41 @@ export const Onboarding: React.FC = () => {
         </div>
 
         <Card>
-          {/* Step 0: Branding */}
+          {/* Step 0: Country & Currency */}
           {step === 0 && (
-            <form onSubmit={handleBrandingNext} className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-800">Company Branding</h2>
-              <p className="text-sm text-gray-500">Add your logo (optional — you can update this later in Settings).</p>
-              <Input
-                label="Logo URL"
-                {...brandingForm.register('companyLogo')}
-                error={brandingForm.formState.errors.companyLogo?.message}
-                placeholder="https://example.com/logo.png"
-              />
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="secondary" onClick={() => setStep(1)}>
-                  Skip
-                </Button>
-                <Button type="submit" variant="primary">
-                  Next
-                </Button>
-              </div>
-            </form>
-          )}
-
-          {/* Step 1: Region & Currency */}
-          {step === 1 && (
-            <form onSubmit={handleRegionNext} className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-800">Region & Currency</h2>
-              <p className="text-sm text-gray-500">Configure your operating region and default currency.</p>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <h2 className="text-lg font-semibold text-gray-800">Country & Currency</h2>
+              <p className="text-sm text-gray-500">Select the country you operate in and your preferred currency.</p>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Region</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
                 <select
-                  {...regionForm.register('region')}
+                  {...form.register('country')}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Select a region…</option>
-                  {GHANA_REGIONS.map((r) => (
-                    <option key={r} value={r}>{r}</option>
+                  <option value="">Select a country…</option>
+                  {COUNTRIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
-                {regionForm.formState.errors.region && (
-                  <p className="text-xs text-red-500 mt-1">{regionForm.formState.errors.region.message}</p>
+                {form.formState.errors.country && (
+                  <p className="text-xs text-red-500 mt-1">{form.formState.errors.country.message}</p>
                 )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
                 <select
-                  {...regionForm.register('currency')}
+                  {...form.register('currency')}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {CURRENCIES.map((c) => (
+                  {SUPPORTED_CURRENCIES.map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
               </div>
 
-              <Input
-                label="Default Delivery Fee (optional)"
-                type="number"
-                min="0"
-                step="0.01"
-                {...regionForm.register('defaultDeliveryFee')}
-                error={regionForm.formState.errors.defaultDeliveryFee?.message}
-                placeholder="e.g. 15.00"
-              />
-
-              <div className="flex justify-between gap-2 pt-2">
-                <Button type="button" variant="secondary" onClick={() => setStep(0)}>
-                  Back
-                </Button>
+              <div className="flex justify-end gap-2 pt-2">
                 <Button type="submit" variant="primary" isLoading={isSubmitting}>
                   Save & Continue
                 </Button>
@@ -186,34 +136,9 @@ export const Onboarding: React.FC = () => {
             </form>
           )}
 
-          {/* Step 2: Create first checkout form (optional) */}
-          {step === 2 && (
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-800">Create Your First Checkout Form</h2>
-              <p className="text-sm text-gray-500">
-                Checkout forms let customers place COD orders directly. You can create one now or skip and do it later from the dashboard.
-              </p>
-              <div className="flex justify-between gap-2 pt-2">
-                <Button type="button" variant="secondary" onClick={() => setStep(3)}>
-                  Skip for now
-                </Button>
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={() => {
-                    navigate('/checkout-forms?new=1');
-                  }}
-                >
-                  Create Form
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Done */}
-          {step === 3 && (
+          {/* Step 1: Done */}
+          {step === 1 && (
             <div className="space-y-4 text-center">
-              <div className="text-5xl mb-4">🎉</div>
               <h2 className="text-lg font-semibold text-gray-800">You're all set!</h2>
               <p className="text-sm text-gray-500">
                 Your company is configured and ready. Head to the dashboard to start managing orders.

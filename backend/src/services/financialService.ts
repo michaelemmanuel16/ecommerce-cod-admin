@@ -128,7 +128,6 @@ export class FinancialService {
    * COD collected and pipeline revenue remain operational metrics from Order/Transaction tables.
    */
   async getFinancialSummary(filters: DateFilters, requester?: Requester) {
-    const tenantId = getTenantId();
     let { startDate, endDate } = filters;
     // Normalise endDate to end-of-day so it aligns with P&L / Profitability
     if (endDate) {
@@ -154,11 +153,9 @@ export class FinancialService {
     const glAggregations = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
-        ...(tenantId ? { tenantId } : {}),
-        journalEntry: {
+                journalEntry: {
           isVoided: false,
-          ...(tenantId ? { tenantId } : {}),
-          ...(startDate || endDate ? {
+                    ...(startDate || endDate ? {
             entryDate: {
               ...(startDate ? { gte: startDate } : {}),
               ...(endDate ? { lte: endDate } : {})
@@ -221,7 +218,6 @@ export class FinancialService {
     const transactionWhere: Prisma.TransactionWhereInput = {
       type: 'cod_collection',
       order: { deletedAt: null },
-      ...(tenantId ? { tenantId } : {})
     };
     if (Object.keys(dateWhere).length > 0) {
       transactionWhere.createdAt = dateWhere.createdAt;
@@ -260,8 +256,7 @@ export class FinancialService {
           status: 'out_for_delivery',
           codAmount: { not: null },
           deletedAt: null,
-          ...(tenantId ? { tenantId } : {}),
-          ...(requester && requester.role === 'delivery_agent' ? { deliveryAgentId: requester.id } : {}),
+                    ...(requester && requester.role === 'delivery_agent' ? { deliveryAgentId: requester.id } : {}),
           ...(requester && requester.role === 'sales_rep' ? { customerRepId: requester.id } : {})
         },
         _sum: { totalAmount: true }
@@ -289,13 +284,12 @@ export class FinancialService {
    * Get all transactions with filters
    */
   async getAllTransactions(filters: TransactionFilters, requester?: Requester) {
-    const tenantId = getTenantId();
     const { type, status, page = 1, limit = 20 } = filters;
 
     const where: Prisma.TransactionWhereInput = {};
     if (type) where.type = type;
     if (status) where.status = status;
-    if (tenantId) where.tenantId = tenantId;
+
 
     // Role-based filtering for transactions
     if (requester && requester.role === 'sales_rep') {
@@ -350,7 +344,6 @@ export class FinancialService {
    * Create expense record
    */
   async recordExpense(data: CreateExpenseData, requester?: Requester) {
-    const tenantId = getTenantId();
     if (!data.amount || data.amount <= 0) {
       throw new AppError('Expense amount must be a positive number', 400);
     }
@@ -366,8 +359,7 @@ export class FinancialService {
           expenseDate: data.expenseDate,
           recordedBy: userId,
           receiptUrl: data.receiptUrl,
-          ...(tenantId ? { tenantId } : {})
-        },
+            },
         include: {
           user: {
             select: {
@@ -414,7 +406,6 @@ export class FinancialService {
    * Get all expenses
    */
   async getAllExpenses(filters: DateFilters & { category?: string; page?: number; limit?: number }, requester?: Requester) {
-    const tenantId = getTenantId();
     const { startDate, endDate, category, page = 1, limit = 20 } = filters;
 
     const where: Prisma.ExpenseWhereInput = {};
@@ -426,7 +417,7 @@ export class FinancialService {
     }
 
     if (category) where.category = category;
-    if (tenantId) where.tenantId = tenantId;
+
 
     // Role-based filtering for expenses
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
@@ -479,7 +470,6 @@ export class FinancialService {
     page?: number;
     limit?: number;
   }, requester?: Requester) {
-    const tenantId = getTenantId();
     const { agentId, status, page = 1, limit = 20 } = filters;
 
     const where: Prisma.TransactionWhereInput = {
@@ -487,7 +477,6 @@ export class FinancialService {
       order: {
         deletedAt: null
       },
-      ...(tenantId ? { tenantId } : {})
     };
 
     if (status) where.status = status;
@@ -557,7 +546,6 @@ export class FinancialService {
    * Get COD collections by agent
    */
   async getCODCollectionsByAgent(agentId: string, filters?: DateFilters, requester?: Requester) {
-    const tenantId = getTenantId();
     // Role-based ownership check for COD collections by agent
     if (requester && requester.role === 'delivery_agent' && parseInt(agentId, 10) !== requester.id) {
       throw new AppError('You do not have permission to view other agents collections', 403);
@@ -569,7 +557,6 @@ export class FinancialService {
         deliveryAgentId: parseInt(agentId, 10),
         deletedAt: null
       },
-      ...(tenantId ? { tenantId } : {})
     };
 
     if (filters?.startDate || filters?.endDate) {
@@ -625,11 +612,10 @@ export class FinancialService {
    * Reconcile transaction (update status)
    */
   async reconcileTransaction(data: ReconcileTransactionData, requester?: Requester) {
-    const tenantId = getTenantId();
     const { transactionId, status, reference, notes } = data;
 
     const transaction = await prisma.transaction.findUnique({
-      where: { id: parseInt(transactionId, 10), ...(tenantId ? { tenantId } : {}) }
+      where: { id: parseInt(transactionId, 10) }
     });
 
     if (!transaction) {
@@ -685,7 +671,6 @@ export class FinancialService {
    * Mark COD as deposited
    */
   async markCODAsDeposited(transactionIds: string[], depositReference?: string, requester?: Requester) {
-    const tenantId = getTenantId();
     if (!transactionIds || transactionIds.length === 0) {
       throw new AppError('No transaction IDs provided', 400);
     }
@@ -701,8 +686,7 @@ export class FinancialService {
         order: {
           deletedAt: null
         },
-        ...(tenantId ? { tenantId } : {})
-      },
+        },
       include: {
         order: {
           select: {
@@ -807,7 +791,6 @@ export class FinancialService {
    * Get financial reports
    */
   async getFinancialReports(filters: { period?: string; startDate?: Date; endDate?: Date }, requester?: Requester) {
-    const tenantId = getTenantId();
     const { period = 'daily', startDate, endDate } = filters;
 
     const start = startDate || new Date();
@@ -820,7 +803,6 @@ export class FinancialService {
         lte: end
       },
       deletedAt: null,
-      ...(tenantId ? { tenantId } : {})
     };
 
     // Role-based filtering for financial reports
@@ -848,7 +830,6 @@ export class FinancialService {
         gte: start,
         lte: end
       },
-      ...(tenantId ? { tenantId } : {})
     };
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
       expenseWhere.recordedBy = requester.id;
@@ -914,7 +895,6 @@ export class FinancialService {
    * Get expense breakdown by category
    */
   async getExpenseBreakdown(filters: DateFilters, requester?: Requester) {
-    const tenantId = getTenantId();
     const where: Prisma.ExpenseWhereInput = {};
 
     if (filters.startDate || filters.endDate) {
@@ -923,7 +903,7 @@ export class FinancialService {
       if (filters.endDate) where.expenseDate.lte = filters.endDate;
     }
 
-    if (tenantId) where.tenantId = tenantId;
+
 
     // Role-based filtering for expense breakdown
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
@@ -982,10 +962,8 @@ export class FinancialService {
    * Calculate profit margins
    */
   async calculateProfitMargins(filters: DateFilters, requester?: Requester) {
-    const tenantId = getTenantId();
     const where: Prisma.OrderWhereInput = {
       status: 'delivered',
-      ...(tenantId ? { tenantId } : {})
     };
 
     if (filters.startDate || filters.endDate) {
@@ -1043,7 +1021,6 @@ export class FinancialService {
    * Get comprehensive profitability analysis
    */
   async getProfitabilityAnalysis(filters: { startDate?: Date; endDate?: Date; productId?: number }) {
-    const tenantId = getTenantId();
     const { startDate, productId } = filters;
     // Normalise endDate to end-of-day so it aligns with P&L / GL entryDate filtering
     let endDate = filters.endDate;
@@ -1060,7 +1037,6 @@ export class FinancialService {
       status: 'delivered',
       revenueRecognized: true,
       deletedAt: null,
-      ...(tenantId ? { tenantId } : {})
     };
 
     if (startDate || endDate) {
@@ -1073,8 +1049,7 @@ export class FinancialService {
             ...(startDate ? { gte: startDate } : {}),
             ...(endDate ? { lte: endDate } : {}),
           },
-          ...(tenantId ? { tenantId } : {})
-        },
+            },
         select: { sourceId: true },
       });
       const glOrderIds = glOrderEntries
@@ -1195,8 +1170,7 @@ export class FinancialService {
       where: {
         account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
         journalEntry: { isVoided: false, ...glEntryDateFilter },
-        ...(tenantId ? { tenantId } : {})
-      },
+        },
       _sum: { debitAmount: true, creditAmount: true }
     });
     // Revenue account has credit-normal balance
@@ -1209,8 +1183,7 @@ export class FinancialService {
       where: {
         account: { accountType: 'expense' },
         journalEntry: { isVoided: false, ...glEntryDateFilter },
-        ...(tenantId ? { tenantId } : {})
-      },
+        },
       _sum: { debitAmount: true, creditAmount: true }
     });
 
@@ -1302,13 +1275,12 @@ export class FinancialService {
       expenseDate?: Date;
     }
     , requester?: Requester) {
-    const tenantId = getTenantId();
     if (data.amount !== undefined && data.amount <= 0) {
       throw new AppError('Expense amount must be a positive number', 400);
     }
 
     const expense = await prisma.expense.findUnique({
-      where: { id: parseInt(expenseId, 10), ...(tenantId ? { tenantId } : {}) }
+      where: { id: parseInt(expenseId, 10) }
     });
 
     if (!expense) {
@@ -1380,9 +1352,8 @@ export class FinancialService {
    * Delete an expense
    */
   async deleteExpense(expenseId: string, requester?: Requester) {
-    const tenantId = getTenantId();
     const expense = await prisma.expense.findUnique({
-      where: { id: parseInt(expenseId, 10), ...(tenantId ? { tenantId } : {}) }
+      where: { id: parseInt(expenseId, 10) }
     });
 
     if (!expense) {
@@ -1426,13 +1397,11 @@ export class FinancialService {
    * Get pipeline revenue (expected revenue from active orders)
    */
   async getPipelineRevenue(requester?: Requester) {
-    const tenantId = getTenantId();
     const where: Prisma.OrderWhereInput = {
       status: {
         in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery']
       },
       deletedAt: null,
-      ...(tenantId ? { tenantId } : {})
     };
 
     // Role-based filtering for pipeline revenue
@@ -1479,11 +1448,9 @@ export class FinancialService {
    * Get agent cash holdings (collected but not deposited)
    */
   async getAgentCashHoldings(requester?: Requester) {
-    const tenantId = getTenantId();
     // 1. Get all agents with a non-zero balance from AgentBalance
     const query: Prisma.AgentBalanceWhereInput = {
       currentBalance: { gt: 0 },
-      ...(tenantId ? { tenantId } : {})
     };
 
     if (requester && requester.role === 'delivery_agent') {
@@ -1559,7 +1526,6 @@ export class FinancialService {
    * Get Cash Flow Report
    */
   async getCashFlowReport(requester?: Requester) {
-    const tenantId = getTenantId();
     // 1. Get current cash position KPIs from GL
     const [cashInHand, , arAgents] = await Promise.all([
       prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_HAND } }),
@@ -1574,8 +1540,7 @@ export class FinancialService {
           status: 'delivered',
           paymentStatus: { notIn: ['reconciled', 'deposited'] },
           deletedAt: null,
-          ...(tenantId ? { tenantId } : {})
-        },
+            },
         _sum: { totalAmount: true }
       }),
       prisma.order.aggregate({
@@ -1583,8 +1548,7 @@ export class FinancialService {
           status: 'out_for_delivery',
           deletedAt: null,
           codAmount: { not: null },
-          ...(tenantId ? { tenantId } : {})
-        },
+            },
         _sum: { totalAmount: true }
       })
     ]);
@@ -1638,15 +1602,13 @@ export class FinancialService {
           order: {
             deletedAt: null
           },
-          ...(tenantId ? { tenantId } : {})
-        },
+            },
         _sum: { amount: true }
       }),
       prisma.expense.aggregate({
         where: {
           expenseDate: { gte: thirtyDaysAgo },
-          ...(tenantId ? { tenantId } : {})
-        },
+            },
         _sum: { amount: true }
       })
     ]);
@@ -1714,7 +1676,6 @@ export class FinancialService {
    * Get Balance Sheet as of a specific date
    */
   async getBalanceSheet(asOfDateValue?: string | Date) {
-    const tenantId = getTenantId();
     const asOfDate = asOfDateValue ? new Date(asOfDateValue) : new Date();
     // Ensure asOfDate includes the entire day
     asOfDate.setHours(23, 59, 59, 999);
@@ -1736,8 +1697,7 @@ export class FinancialService {
       by: ['accountId'],
       where: {
         journalEntry: { isVoided: false, entryDate: { lte: asOfDate } },
-        ...(tenantId ? { tenantId } : {})
-      },
+        },
       _sum: {
         debitAmount: true,
         creditAmount: true
@@ -1811,7 +1771,6 @@ export class FinancialService {
    * Get Profit and Loss Statement for a specific period
    */
   async getProfitLoss(startDateValue: string | Date, endDateValue: string | Date) {
-    const tenantId = getTenantId();
     const startDate = new Date(startDateValue);
     const endDate = new Date(endDateValue);
     // Ensure endDate includes the entire day
@@ -1836,8 +1795,7 @@ export class FinancialService {
       by: ['accountId'],
       where: {
         journalEntry: { isVoided: false, entryDate: { gte: startDate, lte: endDate } },
-        ...(tenantId ? { tenantId } : {})
-      },
+        },
       _sum: {
         debitAmount: true,
         creditAmount: true

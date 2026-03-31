@@ -104,7 +104,7 @@ describe('OrderService', () => {
     };
 
     it('should create order with valid data', async () => {
-      (prismaMock.customer.findFirst as any).mockResolvedValue(mockCustomer);
+      (prismaMock.customer.findUnique as any).mockResolvedValue(mockCustomer);
       (prismaMock.product.findMany as any).mockResolvedValue([mockProduct]);
       (prismaMock.order.count as any).mockResolvedValue(0);
 
@@ -154,7 +154,7 @@ describe('OrderService', () => {
     });
 
     it('should throw error when customer not found', async () => {
-      (prismaMock.customer.findFirst as any).mockResolvedValue(null);
+      (prismaMock.customer.findUnique as any).mockResolvedValue(null);
 
       await expect(orderService.createOrder(createOrderData as any)).rejects.toThrow(
         new AppError('Customer not found', 404)
@@ -162,7 +162,7 @@ describe('OrderService', () => {
     });
 
     it('should throw error when product not found', async () => {
-      (prismaMock.customer.findFirst as any).mockResolvedValue(mockCustomer);
+      (prismaMock.customer.findUnique as any).mockResolvedValue(mockCustomer);
       (prismaMock.product.findMany as any).mockResolvedValue([]);
 
       await expect(orderService.createOrder(createOrderData as any)).rejects.toThrow(
@@ -171,7 +171,7 @@ describe('OrderService', () => {
     });
 
     it('should throw error when product is out of stock (atomic check)', async () => {
-      (prismaMock.customer.findFirst as any).mockResolvedValue(mockCustomer);
+      (prismaMock.customer.findUnique as any).mockResolvedValue(mockCustomer);
       (prismaMock.product.findMany as any).mockResolvedValue([mockProduct]);
 
       (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {

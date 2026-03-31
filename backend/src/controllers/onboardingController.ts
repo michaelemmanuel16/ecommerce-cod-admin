@@ -7,18 +7,31 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
   try {
     if (!req.user) throw new AppError('Not authenticated', 401);
 
-    const tenantId = req.user.tenantId;
+    // Get tenantId from JWT or fall back to DB lookup (handles stale tokens)
+    let tenantId = req.user.tenantId;
+    if (!tenantId) {
+      const existingUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { tenantId: true, email: true, firstName: true } });
+      tenantId = existingUser?.tenantId ?? null;
+
+      // Legacy user with no tenant — create one automatically
+      if (!tenantId && existingUser) {
+        const slug = `company-${req.user.id}`;
+        const tenant = await prisma.tenant.create({
+          data: { name: `${existingUser.firstName}'s Company`, slug }
+        });
+        await prisma.user.update({ where: { id: req.user.id }, data: { tenantId: tenant.id } });
+        tenantId = tenant.id;
+      }
+    }
     if (!tenantId) throw new AppError('User has no tenant assigned', 400);
 
-    const { companyLogo, region, currency, defaultDeliveryFee } = req.body;
+    const { country, currency } = req.body;
 
     const updatedTenant = await prisma.tenant.update({
       where: { id: tenantId },
       data: {
-        ...(companyLogo !== undefined && { logo: companyLogo }),
-        ...(region !== undefined && { region }),
+        ...(country !== undefined && { region: country }),
         ...(currency !== undefined && { currency }),
-        ...(defaultDeliveryFee !== undefined && { defaultDeliveryFee: Number(defaultDeliveryFee) })
       }
     });
 

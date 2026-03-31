@@ -58,7 +58,7 @@ describe('DeliveryService', () => {
     };
 
     it('should create delivery assignment successfully', async () => {
-      (prismaMock.order.findFirst as any).mockResolvedValue(mockOrder);
+      (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder);
       (prismaMock.delivery.findFirst as any).mockResolvedValue(null);
       (prismaMock.user.findUnique as any).mockResolvedValue(mockAgent);
 
@@ -102,14 +102,14 @@ describe('DeliveryService', () => {
     };
 
     it('should complete delivery successfully', async () => {
-      (prismaMock.delivery.findFirst as any).mockResolvedValue(mockDelivery);
+      (prismaMock.delivery.findUnique as any).mockResolvedValue(mockDelivery);
       (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
           delivery: {
             update: jest.fn().mockResolvedValue(mockDelivery)
           },
           order: {
-            findFirst: jest.fn().mockResolvedValue({
+            findUnique: jest.fn().mockResolvedValue({
               id: 1,
               totalAmount: 210,
               orderItems: [{
@@ -183,7 +183,7 @@ describe('DeliveryService', () => {
     };
 
     it('should mark delivery as failed and increment attempts', async () => {
-      (prismaMock.delivery.findFirst as any).mockResolvedValue(mockDelivery);
+      (prismaMock.delivery.findUnique as any).mockResolvedValue(mockDelivery);
       (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
           delivery: {
@@ -214,7 +214,7 @@ describe('DeliveryService', () => {
     });
 
     it('should update order status to failed_delivery when not rescheduling', async () => {
-      (prismaMock.delivery.findFirst as any).mockResolvedValue(mockDelivery);
+      (prismaMock.delivery.findUnique as any).mockResolvedValue(mockDelivery);
 
       prismaMock.$transaction.mockImplementation(async (callback: any) => {
         return callback({

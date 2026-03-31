@@ -19,7 +19,7 @@ import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
-import { getTenantId } from '../utils/tenantContext';
+
 
 
 interface CreateOrderData {
@@ -93,7 +93,6 @@ export class OrderService {
    * Get all orders with filters and pagination
    */
   async getAllOrders(filters: OrderFilters, requester?: Requester) {
-    const tenantId = getTenantId();
     const {
       status,
       customerId,
@@ -109,7 +108,6 @@ export class OrderService {
 
     const where: Prisma.OrderWhereInput = {
       deletedAt: null, // Filter out soft-deleted orders
-      ...(tenantId ? { tenantId } : {})
     };
 
     if (status && status.length > 0) where.status = { in: status };
@@ -207,14 +205,13 @@ export class OrderService {
    * Create a new order
    */
   async createOrder(data: CreateOrderData) {
-    const tenantId = getTenantId();
     // Find or create customer
     let customer;
 
     if (data.customerId) {
       // Use existing customer ID
-      customer = await prisma.customer.findFirst({
-        where: { id: data.customerId, ...(tenantId ? { tenantId } : {}) }
+      customer = await prisma.customer.findUnique({
+        where: { id: data.customerId }
       });
 
       if (!customer) {
@@ -223,7 +220,7 @@ export class OrderService {
     } else if (data.customerPhone) {
       // Find customer by phone or create new one
       customer = await prisma.customer.findFirst({
-        where: { phoneNumber: data.customerPhone, ...(tenantId ? { tenantId } : {}) }
+        where: { phoneNumber: data.customerPhone }
       });
 
       if (!customer) {
@@ -243,7 +240,6 @@ export class OrderService {
             address: data.deliveryAddress,
             state: data.deliveryState,
             area: data.deliveryArea,
-            ...(tenantId ? { tenantId } : {})
           }
         });
       } else if (data.alternatePhone && customer.alternatePhone !== data.alternatePhone) {
@@ -260,7 +256,7 @@ export class OrderService {
     // Validate products and check stock (batch query to avoid N+1)
     const productIds = [...new Set(data.orderItems.map(item => item.productId))];
     const products = await prisma.product.findMany({
-      where: { id: { in: productIds }, ...(tenantId ? { tenantId } : {}) }
+      where: { id: { in: productIds } }
     });
     const productMap = new Map<number, any>(products.map(p => [p.id, p]));
     for (const item of data.orderItems) {
@@ -298,8 +294,7 @@ export class OrderService {
           notes: data.notes,
           estimatedDelivery: data.estimatedDelivery || null,
           createdById: data.createdById,
-          ...(tenantId ? { tenantId } : {}),
-          orderItems: {
+                    orderItems: {
             create: data.orderItems.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,

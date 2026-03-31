@@ -58,10 +58,8 @@ export const authService = {
   },
 
   async setupOnboarding(data: {
-    companyLogo?: string;
-    region: string;
+    country: string;
     currency: string;
-    defaultDeliveryFee?: number;
   }): Promise<{ tenant: any }> {
     const response = await apiClient.post('/api/onboarding/setup', data);
     return response.data;
