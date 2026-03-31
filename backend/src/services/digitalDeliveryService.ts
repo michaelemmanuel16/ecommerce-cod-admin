@@ -43,52 +43,46 @@ export const digitalDeliveryService = {
    * Validate a download token and return the file URL if valid.
    */
   async validateAndGetDownloadUrl(token: string): Promise<{ fileUrl: string; productName: string } | null> {
-    const downloadToken = await prisma.downloadToken.findUnique({
-      where: { token },
-      include: {
-        order: {
-          include: {
-            orderItems: { include: { product: true } },
-          },
-        },
-      },
+    // Atomic check-and-increment: prevents TOCTOU race condition where concurrent
+    // requests could exceed maxDownloads. Uses raw SQL because Prisma updateMany
+    // doesn't support comparing two columns in a WHERE clause.
+    const updated: { id: number; orderId: number }[] = await prisma.$queryRaw`
+      UPDATE "DownloadToken"
+      SET "downloadCount" = "downloadCount" + 1
+      WHERE "token" = ${token}
+        AND "isRevoked" = false
+        AND "expiresAt" > NOW()
+        AND "downloadCount" < "maxDownloads"
+      RETURNING "id", "orderId"
+    `;
+
+    if (!updated || updated.length === 0) {
+      logger.warn('Download token invalid, expired, revoked, or limit reached', { token: token.substring(0, 8) + '...' });
+      return null;
+    }
+
+    const { orderId } = updated[0];
+
+    // Fetch the order with digital product info
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { orderItems: { include: { product: true } } },
     });
 
-    if (!downloadToken) {
-      logger.warn('Download token not found', { token: token.substring(0, 8) + '...' });
-      return null;
-    }
-
-    if (downloadToken.isRevoked) {
-      logger.warn('Download token revoked', { tokenId: downloadToken.id });
-      return null;
-    }
-
-    if (new Date() > downloadToken.expiresAt) {
-      logger.warn('Download token expired', { tokenId: downloadToken.id, expiresAt: downloadToken.expiresAt });
-      return null;
-    }
-
-    if (downloadToken.downloadCount >= downloadToken.maxDownloads) {
-      logger.warn('Download limit reached', { tokenId: downloadToken.id, count: downloadToken.downloadCount });
+    if (!order) {
+      logger.error('Order not found for download token', { orderId });
       return null;
     }
 
     // Find the digital product's file URL
-    const digitalItem = downloadToken.order.orderItems.find(
-      (item) => item.product.productType === 'digital' && item.product.digitalFileUrl
+    const digitalItem = order.orderItems.find(
+      (item: any) => item.product.productType === 'digital' && item.product.digitalFileUrl
     );
 
     if (!digitalItem?.product.digitalFileUrl) {
-      logger.error('No digital file URL found for order', { orderId: downloadToken.orderId });
+      logger.error('No digital file URL found for order', { orderId });
       return null;
     }
-
-    // Increment download count
-    await prisma.downloadToken.update({
-      where: { id: downloadToken.id },
-      data: { downloadCount: { increment: 1 } },
-    });
 
     return {
       fileUrl: digitalItem.product.digitalFileUrl,
@@ -131,7 +125,7 @@ export const digitalDeliveryService = {
           downloadUrl,
           expiryHours,
         );
-        logger.info('Digital product email sent', { orderId, email: order.customer.email });
+        logger.info('Digital product email sent', { orderId, email: order.customer.email.replace(/(.{2}).*(@.*)/, '$1***$2') });
       } catch (error: any) {
         logger.error('Failed to send digital product email', { orderId, error: error.message });
       }

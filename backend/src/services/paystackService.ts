@@ -168,7 +168,13 @@ export const paystackService = {
       .update(rawBody)
       .digest('hex');
 
-    return hash === signature;
+    // Use timing-safe comparison to prevent timing attacks
+    try {
+      return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(signature, 'hex'));
+    } catch {
+      // Length mismatch throws — treat as invalid signature
+      return false;
+    }
   },
 
   /**

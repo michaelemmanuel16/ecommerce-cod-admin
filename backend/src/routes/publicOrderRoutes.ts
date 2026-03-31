@@ -83,6 +83,13 @@ router.get('/download/:token', async (req, res) => {
       return;
     }
 
+    // Validate URL to prevent open redirect attacks
+    if (!result.fileUrl.startsWith('https://')) {
+      logger.error('Download file URL is not HTTPS, blocking redirect', { fileUrl: result.fileUrl });
+      res.status(400).json({ error: 'Invalid download URL configuration' });
+      return;
+    }
+
     res.redirect(302, result.fileUrl);
   } catch (error: any) {
     logger.error('Download processing failed', { error: error.message });

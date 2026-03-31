@@ -159,17 +159,23 @@ async function sendViaSmtp(config: EmailConfig, options: SendEmailOptions): Prom
   await transporter.sendMail({ from, to: options.to, subject: options.subject, html: options.html });
 }
 
+// ---------- Helpers ----------
+
+function maskEmail(email: string): string {
+  return email.replace(/(.{2}).*(@.*)/, '$1***$2');
+}
+
 // ---------- Unified send function ----------
 
 export async function sendEmail(options: SendEmailOptions): Promise<void> {
   const config = await getConfig();
 
   if (!config.apiKey) {
-    logger.warn('Email not configured — cannot send email', { to: options.to, subject: options.subject });
+    logger.warn('Email not configured — cannot send email', { to: maskEmail(options.to), subject: options.subject });
     throw new Error('Email provider not configured. Please configure email settings in Settings → Integrations.');
   }
 
-  logger.info('Sending email', { provider: config.provider, to: options.to, subject: options.subject });
+  logger.info('Sending email', { provider: config.provider, to: maskEmail(options.to), subject: options.subject });
 
   switch (config.provider) {
     case 'sendgrid':
@@ -185,7 +191,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
       throw new Error(`Unsupported email provider: ${config.provider}`);
   }
 
-  logger.info('Email sent successfully', { provider: config.provider, to: options.to });
+  logger.info('Email sent successfully', { provider: config.provider, to: maskEmail(options.to) });
 }
 
 // ---------- Pre-built email functions ----------

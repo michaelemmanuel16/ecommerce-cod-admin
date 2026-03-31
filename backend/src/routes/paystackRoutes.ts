@@ -1,12 +1,11 @@
 import { Router } from 'express';
-import express from 'express';
 import { authenticate, requireRole } from '../middleware/auth';
 import { handleWebhook, verifyPayment, publicVerifyPayment } from '../controllers/paystackController';
 
 const router = Router();
 
-// Webhook — must use raw body for HMAC verification, no auth
-router.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
+// Webhook — raw body preserved via verify callback in server.ts for HMAC verification, no auth
+router.post('/webhook', handleWebhook);
 
 // Public verification (used by PaymentCallback page)
 router.get('/verify/:reference', publicVerifyPayment);

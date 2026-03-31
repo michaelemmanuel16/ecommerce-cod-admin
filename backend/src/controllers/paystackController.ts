@@ -17,8 +17,13 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // req.body is raw Buffer due to express.raw() middleware on this route
-    const rawBody = typeof req.body === 'string' ? req.body : req.body.toString();
+    // Use rawBody preserved by the verify callback in server.ts (avoids express.json() parsing issue)
+    const rawBody = (req as any).rawBody;
+    if (!rawBody) {
+      logger.error('Paystack webhook: rawBody not available — check server.ts verify callback');
+      res.status(500).json({ error: 'Server configuration error' });
+      return;
+    }
     const isValid = await paystackService.validateWebhookSignature(rawBody, signature);
     if (!isValid) {
       logger.warn('Invalid Paystack webhook signature');
@@ -26,7 +31,8 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const event = JSON.parse(rawBody);
+    // req.body is already parsed by express.json(); use it directly
+    const event = req.body;
     logger.info('Paystack webhook received', { event: event.event });
 
     if (event.event === 'charge.success') {
@@ -149,7 +155,30 @@ async function handleChargeSuccess(data: any): Promise<void> {
         },
       });
     } catch (err: any) {
-      logger.error('Failed to deliver digital product', { orderId, error: err.message });
+      logger.error('Failed to deliver digital product — customer paid but delivery failed', {
+        orderId,
+        reference,
+        error: err.message,
+      });
+      // Flag the order so admins can see and retry manually
+      // Use 'confirmed' status (payment succeeded) with notes explaining delivery failure
+      try {
+        await prisma.order.update({
+          where: { id: Number(orderId) },
+          data: {
+            notes: `DELIVERY FAILED: Digital delivery failed after payment (ref: ${reference}): ${err.message}. Manual intervention required.`,
+          },
+        });
+        await prisma.orderHistory.create({
+          data: {
+            orderId: Number(orderId),
+            status: 'confirmed',
+            notes: `Automatic digital delivery failed: ${err.message}. Customer was charged. Manual resend required.`,
+          },
+        });
+      } catch (flagErr: any) {
+        logger.error('Failed to flag digital delivery failure on order', { orderId, error: flagErr.message });
+      }
     }
   }
 }
