@@ -198,7 +198,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
 
   const addField = () => {
     const newField: FormField = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       label: 'New Field',
       type: 'text',
       required: false,
