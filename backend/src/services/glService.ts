@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma, AccountType, NormalBalance, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
+import { getTenantId } from '../utils/tenantContext';
 
 
 interface AccountFilters {
