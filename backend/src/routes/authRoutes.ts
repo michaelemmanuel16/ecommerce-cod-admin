@@ -3,11 +3,11 @@ import * as authController from '../controllers/authController';
 import { authenticate } from '../middleware/auth';
 import { validate } from '../middleware/validation';
 import { registerValidation, registerTenantValidation, loginValidation, forgotPasswordValidation, resetPasswordValidation } from '../utils/validators';
-import { authLimiter, apiLimiter } from '../middleware/rateLimiter';
+import { authLimiter, registrationLimiter, apiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-router.post('/register-tenant', authLimiter, registerTenantValidation, validate, authController.registerTenant);
+router.post('/register-tenant', registrationLimiter, registerTenantValidation, validate, authController.registerTenant);
 router.post('/register', authLimiter, registerValidation, validate, authController.register);
 router.post('/login', authLimiter, loginValidation, validate, authController.login);
 router.post('/refresh', authLimiter, authController.refresh);

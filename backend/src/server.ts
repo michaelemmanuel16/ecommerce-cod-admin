@@ -9,6 +9,19 @@ if (process.env.SENTRY_DSN) {
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || 'development',
     tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 0,
+    sendDefaultPii: false,
+    beforeSend(event) {
+      // Scrub PII from request data before sending to Sentry
+      if (event.request) {
+        delete event.request.cookies;
+        delete event.request.data;
+        if (event.request.headers) {
+          delete event.request.headers.authorization;
+          delete event.request.headers.cookie;
+        }
+      }
+      return event;
+    },
   });
 }
 
@@ -122,7 +135,9 @@ app.use('/api/public', (_req, res, next) => {
 
 // CORS for protected routes - restricted to frontend URL only
 // Trust proxy - we are behind nginx reverse proxy
-app.set("trust proxy", true);
+// SECURITY: Trust only the first proxy (nginx). Using `true` trusts ALL proxies,
+// allowing attackers to spoof X-Forwarded-For and bypass rate limiting.
+app.set("trust proxy", 1);
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',

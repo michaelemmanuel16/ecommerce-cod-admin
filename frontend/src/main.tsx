@@ -11,6 +11,13 @@ if (import.meta.env.VITE_SENTRY_DSN) {
     tracesSampleRate: import.meta.env.PROD ? 0.1 : 0,
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: import.meta.env.PROD ? 1.0 : 0,
+    integrations: [
+      Sentry.replayIntegration({
+        maskAllText: true,
+        maskAllInputs: true,
+        blockAllMedia: true,
+      }),
+    ],
   });
 }
 
