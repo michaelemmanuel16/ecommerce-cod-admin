@@ -6,7 +6,7 @@ import { parsePackageField } from '../utils/packageParser';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
-import { getTenantId } from '../utils/tenantContext';
+
 
 interface CreateWebhookData {
   name: string;
@@ -41,9 +41,9 @@ export class WebhookService {
    * Get all webhook configurations
    */
   async getAllWebhooks() {
-    const tenantId = getTenantId();
+
     const webhooks = await prisma.webhookConfig.findMany({
-      where: { ...(tenantId ? { tenantId } : {}) },
+      where: {},
       orderBy: { createdAt: 'desc' },
       include: {
         product: {
@@ -63,7 +63,7 @@ export class WebhookService {
    * Create new webhook configuration
    */
   async createWebhook(data: CreateWebhookData) {
-    const tenantId = getTenantId();
+
     const webhook = await prisma.webhookConfig.create({
       data: {
         name: data.name,
@@ -73,8 +73,7 @@ export class WebhookService {
         productId: data.productId,
         fieldMapping: data.fieldMapping,
         headers: data.headers || {},
-        ...(tenantId ? { tenantId } : {})
-      },
+              },
       include: {
         product: true
       }
@@ -93,9 +92,9 @@ export class WebhookService {
    * Get webhook by ID
    */
   async getWebhookById(webhookId: number) {
-    const tenantId = getTenantId();
+
     const webhook = await prisma.webhookConfig.findUnique({
-      where: { id: webhookId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: webhookId },
       include: {
         product: {
           select: {
@@ -122,9 +121,9 @@ export class WebhookService {
    * Update webhook configuration
    */
   async updateWebhook(webhookId: number, updateData: Partial<CreateWebhookData>) {
-    const tenantId = getTenantId();
+
     const webhook = await prisma.webhookConfig.findUnique({
-      where: { id: webhookId, ...(tenantId ? { tenantId } : {}) }
+      where: { id: webhookId }
     });
 
     if (!webhook) {
@@ -153,9 +152,9 @@ export class WebhookService {
    * Delete webhook configuration
    */
   async deleteWebhook(webhookId: number) {
-    const tenantId = getTenantId();
+
     const webhook = await prisma.webhookConfig.findUnique({
-      where: { id: webhookId, ...(tenantId ? { tenantId } : {}) }
+      where: { id: webhookId }
     });
 
     if (!webhook) {
@@ -192,8 +191,7 @@ export class WebhookService {
   async processWebhook(data: ProcessWebhookData) {
     const { signature, apiKey, body, headers, endpoint, method } = data;
 
-    const tenantId = getTenantId();
-    // Create webhook log
+    // Create webhook log (WebhookLog has no tenantId column)
     const webhookLog = await prisma.webhookLog.create({
       data: {
         endpoint,
@@ -201,7 +199,6 @@ export class WebhookService {
         headers: headers as any,
         body: body as any,
         success: false,
-        ...(tenantId ? { tenantId } : {})
       }
     });
 
@@ -210,7 +207,7 @@ export class WebhookService {
       let webhookConfig = null;
       if (apiKey) {
         webhookConfig = await prisma.webhookConfig.findFirst({
-          where: { apiKey, isActive: true, ...(tenantId ? { tenantId } : {}) }
+          where: { apiKey, isActive: true }
         });
 
         if (!webhookConfig) {
@@ -277,8 +274,7 @@ export class WebhookService {
   async processWebhookByUniqueUrl(data: ProcessWebhookByUniqueUrlData) {
     const { uniqueUrl, signature, body, headers, endpoint, method } = data;
 
-    const tenantId = getTenantId();
-    // Create webhook log
+    // Create webhook log (WebhookLog has no tenantId column)
     const webhookLog = await prisma.webhookLog.create({
       data: {
         endpoint,
@@ -286,7 +282,6 @@ export class WebhookService {
         headers: headers as any,
         body: body as any,
         success: false,
-        ...(tenantId ? { tenantId } : {})
       }
     });
 
@@ -393,10 +388,10 @@ export class WebhookService {
       .filter(Boolean) as string[];
 
     const existingExternalIdSet = new Set<string>();
-    const tenantId = getTenantId();
+
     if (batchExternalIds.length > 0) {
       const existing = await prisma.order.findMany({
-        where: { externalOrderId: { in: batchExternalIds }, deletedAt: null, ...(tenantId ? { tenantId } : {}) },
+        where: { externalOrderId: { in: batchExternalIds }, deletedAt: null },
         select: { externalOrderId: true },
       });
       existing.forEach((o) => existingExternalIdSet.add(o.externalOrderId!));
@@ -497,8 +492,7 @@ export class WebhookService {
               shippingCost,
               totalAmount,
               codAmount: totalAmount,
-              ...(tenantId ? { tenantId } : {}),
-              deliveryAddress: mappedData.deliveryAddress || externalOrder.address || customer.address,
+                            deliveryAddress: mappedData.deliveryAddress || externalOrder.address || customer.address,
               deliveryState: mappedData.deliveryState || externalOrder.state || customer.state,
               deliveryArea: mappedData.deliveryArea || externalOrder.area || customer.area,
               notes: mappedData.notes || externalOrder.notes || (packageInfo ? `Package: ${packageInfo}` : undefined),
@@ -590,15 +584,14 @@ export class WebhookService {
    * Find product by name or SKU (case-insensitive)
    */
   private async findProductByName(productName: string): Promise<any> {
-    const tenantId = getTenantId();
+
     const product = await prisma.product.findFirst({
       where: {
         OR: [
           { name: { equals: productName, mode: 'insensitive' } },
           { sku: { equals: productName, mode: 'insensitive' } }
         ],
-        ...(tenantId ? { tenantId } : {})
-      }
+              }
     });
 
     if (!product) {
@@ -618,9 +611,9 @@ export class WebhookService {
       throw new Error('Customer phone number is required');
     }
 
-    const tenantId = getTenantId();
+
     let customer = await prisma.customer.findUnique({
-      where: { phoneNumber: customerPhone, ...(tenantId ? { tenantId } : {}) }
+      where: { phoneNumber: customerPhone }
     });
 
     if (!customer) {
@@ -634,8 +627,7 @@ export class WebhookService {
           address: mappedData.deliveryAddress || externalOrder.address || '',
           state: mappedData.deliveryState || externalOrder.state || '',
           area: mappedData.deliveryArea || externalOrder.area || '',
-          ...(tenantId ? { tenantId } : {})
-        }
+                  }
       });
 
       logger.info('Customer created from webhook', {
@@ -707,9 +699,9 @@ export class WebhookService {
    * Test webhook field mapping
    */
   async testWebhook(webhookId: number, sampleData: any) {
-    const tenantId = getTenantId();
+
     const webhook = await prisma.webhookConfig.findUnique({
-      where: { id: webhookId, ...(tenantId ? { tenantId } : {}) }
+      where: { id: webhookId }
     });
 
     if (!webhook) {

@@ -4,7 +4,7 @@ import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { GLAutomationService } from '../services/glAutomationService';
 import logger from '../utils/logger';
-import { getTenantId } from '../utils/tenantContext';
+
 
 const SHIPMENT_INCLUDE = {
   product: { select: { id: true, name: true, sku: true } },
@@ -17,11 +17,11 @@ function computeTotalCost(unitCost: number, quantity: number, shippingCost: numb
 
 export const listShipments = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const tenantId = getTenantId();
+
     const { status, productId } = req.query;
 
     const where: Prisma.InventoryShipmentWhereInput = {
-      ...(tenantId ? { tenantId } : {})
+
     };
     if (status && (status === 'pending' || status === 'arrived')) {
       where.status = status;
@@ -45,7 +45,7 @@ export const listShipments = async (req: AuthRequest, res: Response): Promise<vo
 
 export const createShipment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const tenantId = getTenantId();
+
     const { productId, supplier, quantity, unitCost, shippingCost, customsDuties, otherCosts, expectedArrivalDate, notes } = req.body;
 
     if (!productId || !quantity || quantity < 1) {
@@ -53,10 +53,9 @@ export const createShipment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const product = await prisma.product.findFirst({
+    const product = await prisma.product.findUnique({
       where: {
         id: productId,
-        ...(tenantId ? { tenantId } : {})
       }
     });
     if (!product) {
@@ -83,7 +82,7 @@ export const createShipment = async (req: AuthRequest, res: Response): Promise<v
         expectedArrivalDate: expectedArrivalDate ? new Date(expectedArrivalDate) : null,
         notes: notes || null,
         createdById: req.user!.id,
-        ...(tenantId ? { tenantId } : {})
+  
       },
       include: SHIPMENT_INCLUDE,
     });
@@ -97,7 +96,7 @@ export const createShipment = async (req: AuthRequest, res: Response): Promise<v
 
 export const getShipment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const tenantId = getTenantId();
+
     const { id } = req.params;
     const shipmentId = parseInt(id);
     if (isNaN(shipmentId)) {
@@ -105,10 +104,9 @@ export const getShipment = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    const shipment = await prisma.inventoryShipment.findFirst({
+    const shipment = await prisma.inventoryShipment.findUnique({
       where: {
         id: shipmentId,
-        ...(tenantId ? { tenantId } : {})
       },
       include: SHIPMENT_INCLUDE,
     });
@@ -127,7 +125,7 @@ export const getShipment = async (req: AuthRequest, res: Response): Promise<void
 
 export const updateShipment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const tenantId = getTenantId();
+
     const { id } = req.params;
     const shipmentId = parseInt(id);
     if (isNaN(shipmentId)) {
@@ -135,10 +133,9 @@ export const updateShipment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const shipment = await prisma.inventoryShipment.findFirst({
+    const shipment = await prisma.inventoryShipment.findUnique({
       where: {
         id: shipmentId,
-        ...(tenantId ? { tenantId } : {})
       }
     });
     if (!shipment) {
@@ -162,7 +159,7 @@ export const updateShipment = async (req: AuthRequest, res: Response): Promise<v
     const updated = await prisma.inventoryShipment.update({
       where: {
         id: shipmentId,
-        ...(tenantId ? { tenantId } : {})
+  
       },
       data: {
         supplier: supplier !== undefined ? (supplier || null) : undefined,
@@ -189,7 +186,7 @@ export const updateShipment = async (req: AuthRequest, res: Response): Promise<v
 
 export const markArrived = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const tenantId = getTenantId();
+
     const { id } = req.params;
     const shipmentId = parseInt(id);
     if (isNaN(shipmentId)) {
@@ -198,10 +195,9 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
     }
 
     // Pre-check outside transaction
-    const existing = await prisma.inventoryShipment.findFirst({
+    const existing = await prisma.inventoryShipment.findUnique({
       where: {
         id: shipmentId,
-        ...(tenantId ? { tenantId } : {})
       }
     });
     if (!existing) {
@@ -222,7 +218,7 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
         where: {
           id: shipmentId,
           status: 'pending',
-          ...(tenantId ? { tenantId } : {})
+    
         },
         data: { status: 'arrived', arrivedAt: new Date() },
       });
@@ -248,7 +244,7 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
       await tx.product.update({
         where: {
           id: shipment.productId,
-          ...(tenantId ? { tenantId } : {})
+    
         },
         data: {
           stockQuantity: { increment: newQty },
@@ -267,7 +263,7 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
       const updated = await tx.inventoryShipment.update({
         where: {
           id: shipmentId,
-          ...(tenantId ? { tenantId } : {})
+    
         },
         data: { glJournalEntryId: glEntry.id },
         include: SHIPMENT_INCLUDE,
@@ -292,7 +288,7 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
 
 export const deleteShipment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const tenantId = getTenantId();
+
     const { id } = req.params;
     const shipmentId = parseInt(id);
     if (isNaN(shipmentId)) {
@@ -300,10 +296,9 @@ export const deleteShipment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const shipment = await prisma.inventoryShipment.findFirst({
+    const shipment = await prisma.inventoryShipment.findUnique({
       where: {
         id: shipmentId,
-        ...(tenantId ? { tenantId } : {})
       }
     });
     if (!shipment) {
@@ -318,7 +313,7 @@ export const deleteShipment = async (req: AuthRequest, res: Response): Promise<v
     await prisma.inventoryShipment.delete({
       where: {
         id: shipmentId,
-        ...(tenantId ? { tenantId } : {})
+  
       }
     });
     res.json({ message: 'Shipment deleted' });

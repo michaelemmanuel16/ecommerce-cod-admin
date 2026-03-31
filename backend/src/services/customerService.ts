@@ -35,10 +35,9 @@ export class CustomerService {
    * Get all customers with filters and pagination
    */
   async getAllCustomers(filters: CustomerFilters, requester?: Requester) {
-    const tenantId = getTenantId();
     const { search, area, tags, page = 1, limit = 20, sortBy, sortOrder = 'desc' } = filters;
 
-    const where: Prisma.CustomerWhereInput = { isActive: true, ...(tenantId ? { tenantId } : {}) };
+    const where: Prisma.CustomerWhereInput = { isActive: true };
 
     // Role-based filtering for customers
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
@@ -77,6 +76,14 @@ export class CustomerService {
       const conditions: string[] = ['c.is_active = true', 'c.deleted_at IS NULL'];
       const params: any[] = [];
       let paramIdx = 1;
+
+      // Tenant isolation for raw SQL (Prisma extension does not intercept $queryRawUnsafe)
+      const tenantId = getTenantId();
+      if (tenantId) {
+        conditions.push(`c.tenant_id = $${paramIdx}`);
+        params.push(tenantId);
+        paramIdx++;
+      }
 
       if (search) {
         conditions.push(`(c.first_name ILIKE $${paramIdx} OR c.last_name ILIKE $${paramIdx} OR c.phone_number LIKE $${paramIdx + 1} OR c.email ILIKE $${paramIdx})`);
@@ -186,10 +193,9 @@ export class CustomerService {
    * Create new customer
    */
   async createCustomer(data: CreateCustomerData) {
-    const tenantId = getTenantId();
     // Check if customer with phone number already exists
     const existingCustomer = await prisma.customer.findFirst({
-      where: { phoneNumber: data.phoneNumber, ...(tenantId ? { tenantId } : {}) }
+      where: { phoneNumber: data.phoneNumber }
     });
 
     if (existingCustomer) {
@@ -201,7 +207,6 @@ export class CustomerService {
         ...data,
         firstName: data.firstName || 'Unknown',
         lastName: data.lastName || '',
-        ...(tenantId ? { tenantId } : {})
       }
     });
 
@@ -285,9 +290,8 @@ export class CustomerService {
    * Get customer by phone number
    */
   async getCustomerByPhone(phoneNumber: string, requester?: Requester) {
-    const tenantId = getTenantId();
     const customer = await prisma.customer.findFirst({
-      where: { phoneNumber, ...(tenantId ? { tenantId } : {}) },
+      where: { phoneNumber },
       include: {
         orders: {
           where: { deletedAt: null },
@@ -353,7 +357,7 @@ export class CustomerService {
     // If updating phone number, check for duplicates
     if (updateData.phoneNumber && updateData.phoneNumber !== customer.phoneNumber) {
       const existingCustomer = await prisma.customer.findFirst({
-        where: { phoneNumber: updateData.phoneNumber, ...(getTenantId() ? { tenantId: getTenantId()! } : {}) }
+        where: { phoneNumber: updateData.phoneNumber }
       });
 
       if (existingCustomer) {
@@ -667,10 +671,8 @@ export class CustomerService {
    * Search customers by multiple criteria
    */
   async searchCustomers(query: string, requester?: Requester, filters?: { area?: string; limit?: number }) {
-    const tenantId = getTenantId();
     const where: Prisma.CustomerWhereInput = {
       isActive: true,
-      ...(tenantId ? { tenantId } : {}),
       OR: [
         { firstName: { contains: query, mode: 'insensitive' } },
         { lastName: { contains: query, mode: 'insensitive' } },
@@ -717,8 +719,7 @@ export class CustomerService {
    * Get top customers by spending
    */
   async getTopCustomers(limit: number = 10, requester?: Requester, filters?: { area?: string }) {
-    const tenantId = getTenantId();
-    const where: Prisma.CustomerWhereInput = { isActive: true, ...(tenantId ? { tenantId } : {}) };
+    const where: Prisma.CustomerWhereInput = { isActive: true };
 
     // Role-based filtering for top customers
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
@@ -758,10 +759,9 @@ export class CustomerService {
    * Get customers by area distribution
    */
   async getCustomerDistribution() {
-    const tenantId = getTenantId();
     const byArea = await prisma.customer.groupBy({
       by: ['area'],
-      where: { isActive: true, ...(tenantId ? { tenantId } : {}) },
+      where: { isActive: true },
       _count: true,
       orderBy: {
         _count: {

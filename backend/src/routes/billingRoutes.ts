@@ -5,7 +5,7 @@ import { listPlans, getSubscription, upgradePlan } from '../controllers/billingC
 
 const router = Router();
 
-router.get('/plans', listPlans);
+router.get('/plans', apiLimiter, listPlans);
 router.get('/subscription', apiLimiter, authenticate, getSubscription);
 router.post('/upgrade', apiLimiter, authenticate, requireRole('super_admin'), upgradePlan);
 

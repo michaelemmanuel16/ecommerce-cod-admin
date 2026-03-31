@@ -133,7 +133,8 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
         lastName: user.lastName,
         role: user.role,
         commissionAmount: user.commissionAmount || 0,
-        deliveryRate: user.deliveryRate
+        deliveryRate: user.deliveryRate,
+        preferences: user.preferences,
       },
       tokens: {
         accessToken,
@@ -167,7 +168,11 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
       where: { id: decoded.id }
     });
 
-    if (!user || user.refreshToken !== refreshToken) {
+    // SECURITY: Use timing-safe comparison to prevent timing attacks on refresh tokens
+    const isValidToken = user && user.refreshToken && refreshToken &&
+      user.refreshToken.length === refreshToken.length &&
+      crypto.timingSafeEqual(Buffer.from(user.refreshToken), Buffer.from(refreshToken));
+    if (!user || !isValidToken) {
       throw new AppError('Invalid refresh token', 401);
     }
 

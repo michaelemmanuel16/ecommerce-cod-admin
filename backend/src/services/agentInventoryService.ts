@@ -2,7 +2,7 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, TransferType } from '@prisma/client';
 import logger from '../utils/logger';
-import { getTenantId } from '../utils/tenantContext';
+
 
 export class AgentInventoryService {
   /**
@@ -15,14 +15,12 @@ export class AgentInventoryService {
     createdById: number,
     notes?: string
   ) {
-    const tenantId = getTenantId();
-
     if (quantity <= 0) {
       throw new AppError('Quantity must be greater than zero', 400);
     }
 
     const [product, agent] = await Promise.all([
-      prisma.product.findUnique({ where: { id: productId, ...(tenantId ? { tenantId } : {}) } }),
+      prisma.product.findUnique({ where: { id: productId,  } }),
       prisma.user.findUnique({ where: { id: agentId } }),
     ]);
 
@@ -73,8 +71,7 @@ export class AgentInventoryService {
           toAgentId: agentId,
           notes,
           createdById,
-          ...(tenantId ? { tenantId } : {}),
-        },
+                  },
         include: {
           product: { select: { id: true, name: true, sku: true } },
           toAgent: { select: { id: true, firstName: true, lastName: true } },
@@ -104,8 +101,6 @@ export class AgentInventoryService {
     createdById: number,
     notes?: string
   ) {
-    const tenantId = getTenantId();
-
     if (quantity <= 0) {
       throw new AppError('Quantity must be greater than zero', 400);
     }
@@ -174,8 +169,7 @@ export class AgentInventoryService {
           toAgentId,
           notes,
           createdById,
-          ...(tenantId ? { tenantId } : {}),
-        },
+                  },
         include: {
           product: { select: { id: true, name: true, sku: true } },
           fromAgent: { select: { id: true, firstName: true, lastName: true } },
@@ -202,8 +196,6 @@ export class AgentInventoryService {
     createdById: number,
     notes?: string
   ) {
-    const tenantId = getTenantId();
-
     if (quantity <= 0) {
       throw new AppError('Quantity must be greater than zero', 400);
     }
@@ -246,8 +238,7 @@ export class AgentInventoryService {
           toAgentId: null,
           notes,
           createdById,
-          ...(tenantId ? { tenantId } : {}),
-        },
+                  },
         include: {
           product: { select: { id: true, name: true, sku: true } },
           fromAgent: { select: { id: true, firstName: true, lastName: true } },
@@ -444,7 +435,7 @@ export class AgentInventoryService {
     createdById: number,
     notes: string
   ) {
-    const tenantId = getTenantId();
+
 
     if (newQuantity < 0) {
       throw new AppError('Quantity cannot be negative', 400);
@@ -515,8 +506,7 @@ export class AgentInventoryService {
           toAgentId: difference > 0 ? agentId : null,
           notes: `Adjustment: ${currentQuantity} → ${newQuantity}. ${notes}`,
           createdById,
-          ...(tenantId ? { tenantId } : {}),
-        },
+                  },
         include: {
           product: { select: { id: true, name: true, sku: true } },
           fromAgent: { select: { id: true, firstName: true, lastName: true } },
@@ -538,17 +528,17 @@ export class AgentInventoryService {
    * Get all agent stock holdings for a specific product
    */
   async getProductAgentStock(productId: number) {
-    const tenantId = getTenantId();
+
 
     const product = await prisma.product.findUnique({
-      where: { id: productId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: productId,  },
       select: { id: true, name: true, sku: true, price: true },
     });
 
     if (!product) throw new AppError('Product not found', 404);
 
     const agentStocks = await prisma.agentStock.findMany({
-      where: { productId, OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }], ...(tenantId ? { tenantId } : {}) },
+      where: { productId, OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }],  },
       include: {
         agent: {
           select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true },
@@ -582,7 +572,7 @@ export class AgentInventoryService {
    * Get all stock held by a specific agent
    */
   async getAgentInventory(agentId: number) {
-    const tenantId = getTenantId();
+
 
     const agent = await prisma.user.findUnique({
       where: { id: agentId },
@@ -592,7 +582,7 @@ export class AgentInventoryService {
     if (!agent) throw new AppError('Agent not found', 404);
 
     const stocks = await prisma.agentStock.findMany({
-      where: { agentId, OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }], ...(tenantId ? { tenantId } : {}) },
+      where: { agentId, OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }],  },
       include: {
         product: {
           select: { id: true, name: true, sku: true, price: true, imageUrl: true },
@@ -637,7 +627,7 @@ export class AgentInventoryService {
     page?: number;
     limit?: number;
   }) {
-    const tenantId = getTenantId();
+
     const { productId, agentId, type, startDate, endDate, page = 1, limit = 50 } = filters;
 
     const where: Prisma.InventoryTransferWhereInput = {};
@@ -651,7 +641,6 @@ export class AgentInventoryService {
       if (startDate) where.createdAt.gte = startDate;
       if (endDate) where.createdAt.lte = endDate;
     }
-    if (tenantId) where.tenantId = tenantId;
 
     const [transfers, total] = await Promise.all([
       prisma.inventoryTransfer.findMany({
@@ -685,13 +674,13 @@ export class AgentInventoryService {
    * Get summary of all agent-held inventory
    */
   async getSummary() {
-    const tenantId = getTenantId();
+
 
     // NOTE: this loads all agent stock into memory for in-process grouping.
     // At large fleet scale (1000+ agents × many products) consider replacing with
     // a $queryRaw GROUP BY query. Current limit prevents unbounded memory growth.
     const agentStocks = await prisma.agentStock.findMany({
-      where: { OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }], ...(tenantId ? { tenantId } : {}) },
+      where: { OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }],  },
       include: {
         agent: { select: { id: true, firstName: true, lastName: true } },
         product: { select: { id: true, name: true, price: true } },

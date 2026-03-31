@@ -33,6 +33,23 @@ export const validatePassword = (password: string): { valid: boolean; errors: st
   };
 };
 
+export const registerTenantValidation: ValidationChain[] = [
+  body('adminEmail').isEmail().normalizeEmail(),
+  body('adminPassword')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters long')
+    .matches(/[A-Z]/)
+    .withMessage('Password must contain at least one uppercase letter')
+    .matches(/[a-z]/)
+    .withMessage('Password must contain at least one lowercase letter')
+    .matches(/[0-9]/)
+    .withMessage('Password must contain at least one number')
+    .matches(/[!@#$%^&*(),.?":{}|<>]/)
+    .withMessage('Password must contain at least one special character'),
+  body('adminName').notEmpty().trim(),
+  body('companyName').notEmpty().trim().isLength({ max: 100 }),
+];
+
 export const registerValidation: ValidationChain[] = [
   body('email').isEmail().normalizeEmail(),
   body('password')
@@ -48,7 +65,7 @@ export const registerValidation: ValidationChain[] = [
     .withMessage('Password must contain at least one special character'),
   body('firstName').notEmpty().trim(),
   body('lastName').notEmpty().trim(),
-  body('role').isIn(['super_admin', 'admin', 'manager', 'sales_rep', 'inventory_manager', 'delivery_agent', 'accountant'])
+  body('role').isIn(['manager', 'sales_rep', 'inventory_manager', 'delivery_agent', 'accountant'])
 ];
 
 export const loginValidation: ValidationChain[] = [
