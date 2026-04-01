@@ -62,7 +62,7 @@ export const Onboarding: React.FC = () => {
   });
 
   const handleFinish = () => {
-    navigate('/dashboard');
+    navigate('/');
   };
 
   const progressPct = ((step + 1) / steps.length) * 100;

@@ -8,7 +8,7 @@ const TENANT_SCOPED_MODELS = new Set([
   'Transaction', 'Expense', 'Account', 'JournalEntry', 'AccountTransaction',
   'Workflow', 'WorkflowExecution', 'WebhookConfig', 'Notification',
   'CheckoutForm', 'InventoryShipment', 'InventoryTransfer',
-  'AgentBalance', 'AgentStock',
+  'AgentBalance', 'AgentStock', 'MessageLog',
 ]);
 
 /**
@@ -103,6 +103,7 @@ export const tenantIsolationExtension = Prisma.defineExtension({
           if (tenantId) {
             args.where = { ...args.where, tenantId } as any;
             args.create = { ...args.create, tenantId } as any;
+            args.update = { ...args.update, tenantId } as any;
           }
         }
         return query(args);

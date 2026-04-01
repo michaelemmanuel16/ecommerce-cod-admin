@@ -232,10 +232,11 @@ export class FinancialService {
     // Outstanding Receivables from non-reconciled AgentCollection records (net of commission)
     // Uses operational records rather than GL account 1015 to ensure all delivered orders
     // are counted, including any that pre-date the GL automation system
+    const tenantFilter = getTenantId();
     const outstandingCollections = await (prisma as any).agentCollection.aggregate({
       where: {
         status: { in: ['draft', 'verified', 'approved', 'deposited'] },
-        order: { deletedAt: null }
+        order: { deletedAt: null, ...(tenantFilter ? { tenantId: tenantFilter } : {}) }
       },
       _sum: { amount: true }
     });
