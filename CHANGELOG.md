@@ -34,6 +34,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[Financial]**: Deposit reference format improved to date-based DEP-YYYYMMDD-XXXX (MAN-28)
 - **[Financial]**: "Verify Collections" button renamed to "View Details" in Agent Collections (MAN-28)
 
+## [2.0.0-alpha] - Sprint 2–4 (Multi-Tenant SaaS)
+
+### Added
+- **[Multi-Tenancy]**: Tenant model with shared-DB row-level isolation on all business tables (MAN-8)
+- **[Multi-Tenancy]**: Prisma extension auto-injects tenantId into every query via AsyncLocalStorage (MAN-9)
+- **[Multi-Tenancy]**: Explicit tenantId in all 15+ service-layer methods as defence-in-depth (MAN-10)
+- **[Multi-Tenancy]**: Integration test suite proving cross-tenant data contamination is impossible (MAN-11)
+- **[Onboarding]**: Public tenant registration with company name, admin setup in one transaction (MAN-12)
+- **[Onboarding]**: Multi-step onboarding wizard — country, currency, branding configuration (MAN-12)
+- **[Billing]**: Plan model with Free/Starter/Pro tiers, order and user limits (MAN-13)
+- **[Billing]**: Subscription management page with plan comparison and usage tracking (MAN-13)
+- **[Database]**: Foreign key constraints with CASCADE delete on all 19 tenant_id columns
+- **[Database]**: tenantId added to MessageLog model for communication isolation
+- **[Security]**: OWASP hardening — input sanitization, CSP headers, improved rate limiting (MAN-15)
+- **[Observability]**: Sentry integration for error tracking and performance monitoring (MAN-15)
+- **[Testing]**: 832 unit tests passing, 40%+ branch coverage target met (MAN-15)
+- **[Testing]**: Playwright E2E tests for tenant onboarding and public checkout flows
+- **[Testing]**: Load test harness for 100 concurrent agents + 500 orders
+
+### Fixed
+- **[Security]**: Cross-tenant data leak via response cache — cache keys now include tenantId
+- **[Security]**: Cross-tenant financial data leak in AgentCollection aggregate queries
+- **[Security]**: MessageLog queries returned data from all tenants (model had no tenantId)
+- **[Security]**: Tenant registration TOCTOU race — uniqueness checks moved inside transaction with P2002 handling
+- **[Security]**: Prisma upsert handler missing tenantId on update branch
+- **[Security]**: TENANT_SCOPED_MODELS had wrong model names (GLEntry, AgentInventory, Webhook)
+- **[Security]**: delete/deleteMany operations not scoped by tenant in Prisma extension
+- **[UI]**: Onboarding wizard navigated to non-existent /dashboard route (changed to /)
+
 ## [1.0.0] - 2025-10-08
 
 ### Added

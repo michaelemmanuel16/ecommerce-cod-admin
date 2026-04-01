@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { AuthRequest } from '../types';
 import logger from '../utils/logger';
 
 interface CacheEntry {
@@ -11,7 +12,8 @@ const DEFAULT_TTL = 300;
 
 function getCacheKey(req: Request): string {
   const query = JSON.stringify(req.query);
-  return req.method + ':' + req.path + ':' + query;
+  const tenantId = (req as AuthRequest).user?.tenantId || 'no-tenant';
+  return req.method + ':' + req.path + ':' + tenantId + ':' + query;
 }
 
 export function cacheMiddleware(ttl: number = DEFAULT_TTL) {

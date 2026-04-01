@@ -269,18 +269,23 @@ docker-compose -f docker-compose.prod.yml down
 - **Queues** (`src/queues/*.ts`) - Bull/Redis background jobs
 
 **Key Technologies:**
-- PostgreSQL + Prisma ORM
-- JWT authentication with refresh tokens
+- PostgreSQL + Prisma ORM (with tenant isolation extension)
+- JWT authentication with refresh tokens (includes tenantId claim)
 - Socket.io for real-time updates
 - Bull + Redis for job queues (workflow automation)
+- Sentry for error tracking and performance monitoring
 - Express rate limiting (10k dev / 100 prod per 15min)
 
 **Database Models:**
+- Tenant, Plan (multi-tenant SaaS)
 - User (7 roles: super_admin, admin, manager, sales_rep, inventory_manager, delivery_agent, accountant)
 - Order, Customer, Product, OrderItem
 - Delivery, DeliveryProof
+- Account, JournalEntry, AccountTransaction, Transaction, Expense (GL/financial)
+- AgentBalance, AgentStock, AgentCollection, AgentDeposit, InventoryShipment, InventoryTransfer
 - Workflow, WorkflowExecution
-- Webhook, Notification, CheckoutForm
+- WebhookConfig, Notification, CheckoutForm
+- MessageLog, SmsTemplate
 
 **Order Status Flow:**
 ```
@@ -290,8 +295,15 @@ pending_confirmation → confirmed → preparing → ready_for_pickup
 Can branch to: cancelled, returned, failed_delivery
 ```
 
+**Multi-Tenant Architecture:**
+- Shared-DB row-level isolation via `tenantId` on all business tables
+- Prisma extension (`prismaExtensions.ts`) auto-injects tenantId into all queries
+- AsyncLocalStorage (`tenantContext.ts`) propagates tenant scope from JWT
+- Cache keys include tenantId to prevent cross-tenant data leaks
+- FK constraints with CASCADE delete on all tenant_id columns
+
 **API Endpoints:**
-- `/api/auth` - Authentication (login, register, refresh)
+- `/api/auth` - Authentication (login, register, refresh, register-tenant)
 - `/api/admin` - Admin panel (user management, settings)
 - `/api/users` - User CRUD
 - `/api/customers` - Customer management
@@ -303,6 +315,9 @@ Can branch to: cancelled, returned, failed_delivery
 - `/api/webhooks` - External integrations
 - `/api/analytics` - Analytics and reports
 - `/api/checkout-forms` - Public checkout form builder
+- `/api/billing` - Subscription plans and upgrades
+- `/api/onboarding` - Tenant setup wizard
+- `/api/communications` - SMS/WhatsApp messaging
 - `/api/public` - Public endpoints (no auth required)
 
 ### Frontend
@@ -358,9 +373,12 @@ Can branch to: cancelled, returned, failed_delivery
 - `JWT_REFRESH_SECRET` - Refresh token secret
 - `NODE_ENV` - development | production (affects rate limits)
 - `FRONTEND_URL` - CORS origin (default: http://localhost:5173)
+- `SENTRY_DSN` - Sentry error tracking DSN (optional)
+- `PROVIDER_ENCRYPTION_KEY` - AES key for encrypting provider credentials
 
 **Frontend** (`.env`):
 - `VITE_API_URL` - Backend URL (default: http://localhost:3000)
+- `VITE_SENTRY_DSN` - Sentry error tracking DSN (optional)
 
 ### Database Migrations
 
@@ -474,7 +492,10 @@ See Development Commands section for test commands.
 **Backend:**
 - `prisma/schema.prisma` - Database schema
 - `src/server.ts` - Express app setup
-- `src/middleware/auth.ts` - Authentication
+- `src/middleware/auth.ts` - Authentication (sets tenant context via AsyncLocalStorage)
+- `src/utils/prismaExtensions.ts` - Tenant isolation + soft delete Prisma extensions
+- `src/utils/tenantContext.ts` - AsyncLocalStorage for tenant scope propagation
+- `src/middleware/cache.ts` - Response cache (tenant-aware keys)
 - `src/sockets/index.ts` - Socket.io setup
 - `src/queues/workflowQueue.ts` - Background jobs
 
