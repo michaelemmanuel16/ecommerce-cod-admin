@@ -69,7 +69,7 @@ export const PaystackIntegration: React.FC<PaystackIntegrationProps> = ({ system
                 type="password"
                 value={form.secretKey}
                 onChange={(e) => setForm({ ...form, secretKey: e.target.value })}
-                placeholder="sk_live_xxxxxxxxxx or sk_test_xxxxxxxxxx"
+                placeholder="Your Paystack secret key"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
