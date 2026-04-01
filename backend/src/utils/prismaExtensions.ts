@@ -8,7 +8,7 @@ const TENANT_SCOPED_MODELS = new Set([
   'Transaction', 'Expense', 'Account', 'JournalEntry', 'AccountTransaction',
   'Workflow', 'WorkflowExecution', 'WebhookConfig', 'Notification',
   'CheckoutForm', 'InventoryShipment', 'InventoryTransfer',
-  'AgentBalance', 'AgentStock', 'MessageLog',
+  'AgentBalance', 'AgentStock', 'MessageLog', 'SystemConfig',
 ]);
 
 /**

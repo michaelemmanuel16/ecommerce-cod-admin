@@ -44,6 +44,7 @@ model Tenant {
   inventoryTransfers InventoryTransfer[]
   agentStocks        AgentStock[]
   messageLogs        MessageLog[]
+  systemConfigs      SystemConfig[]
 
   @@map("tenants")
 }
@@ -580,7 +581,10 @@ model SystemConfig {
   rolePermissions       Json?    @map("role_permissions")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
+  tenantId              String?  @map("tenant_id")
+  tenant                Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
   @@map("system_config")
 }
 
