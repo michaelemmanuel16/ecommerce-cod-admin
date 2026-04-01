@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import { Requester, canManageRole } from '../utils/authUtils';
 import { clearWhatsAppConfigCache } from './whatsappService';
 import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/providerCrypto';
+import { getTenantId } from '../utils/tenantContext';
 
 export const adminService = {
   /**
@@ -75,10 +76,26 @@ export const adminService = {
     let config = await prisma.systemConfig.findFirst();
 
     if (!config) {
-      // Create default config if none exists
+      // Seed from tenant data if available (business name, currency)
+      const tenantId = getTenantId();
+      let tenantDefaults: { businessName?: string; currency?: string } = {};
+      if (tenantId) {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { name: true, currency: true },
+        });
+        if (tenant) {
+          tenantDefaults = {
+            businessName: tenant.name,
+            currency: tenant.currency || 'USD',
+          };
+        }
+      }
+
       config = await prisma.systemConfig.create({
         data: {
-          currency: 'USD',
+          currency: tenantDefaults.currency || 'USD',
+          businessName: tenantDefaults.businessName || null,
           rolePermissions: this.getDefaultPermissions(),
         },
       });

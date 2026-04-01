@@ -252,32 +252,6 @@ export const Settings: React.FC = () => {
             </div>
           </Card>
 
-          {!isSalesRep && user?.role !== 'delivery_agent' && (
-            <Card>
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Display Preferences</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between py-4 border-b border-gray-200">
-                    <div>
-                      <h4 className="font-medium text-gray-900">Default Orders View</h4>
-                      <p className="text-sm text-gray-600">Choose your preferred view for the Orders page</p>
-                    </div>
-                    <select
-                      value={user?.preferences?.ordersDefaultView || 'kanban'}
-                      onChange={(e) => {
-                        const { updatePreferences } = useAuthStore.getState();
-                        updatePreferences({ ordersDefaultView: e.target.value as 'kanban' | 'list' });
-                      }}
-                      className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="kanban">Kanban Board</option>
-                      <option value="list">List View</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          )}
         </div>
       )}
 
