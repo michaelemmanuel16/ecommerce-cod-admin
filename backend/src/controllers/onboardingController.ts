@@ -7,10 +7,10 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
   try {
     if (!req.user) throw new AppError('Not authenticated', 401);
 
-    // Get tenantId from JWT or fall back to DB lookup (handles stale tokens)
+    // Get tenantId and preferences in one read (handles stale JWT tokens)
     let tenantId = req.user.tenantId;
+    const existingUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { tenantId: true, email: true, firstName: true, preferences: true } });
     if (!tenantId) {
-      const existingUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { tenantId: true, email: true, firstName: true } });
       tenantId = existingUser?.tenantId ?? null;
 
       // Legacy user with no tenant — create one automatically
@@ -65,9 +65,8 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
       }
     }
 
-    // Mark onboarding as complete in user preferences
-    const dbUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { preferences: true } });
-    const currentPreferences = (dbUser?.preferences as any) || {};
+    // Mark onboarding as complete in user preferences (using data from initial read)
+    const currentPreferences = (existingUser?.preferences as any) || {};
     await prisma.user.update({
       where: { id: req.user.id },
       data: {

@@ -57,6 +57,11 @@ export const authService = {
     return response.data;
   },
 
+  async deleteAccount(password: string): Promise<{ message: string }> {
+    const response = await apiClient.delete('/api/auth/delete-account', { data: { password } });
+    return response.data;
+  },
+
   async setupOnboarding(data: {
     country: string;
     currency: string;

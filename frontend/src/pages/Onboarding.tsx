@@ -86,6 +86,20 @@ export const Onboarding: React.FC = () => {
     }
   });
 
+  const handleSkip = async () => {
+    setIsSubmitting(true);
+    try {
+      const data = form.getValues();
+      await authService.setupOnboarding({ country: data.country, currency: data.currency });
+      await updatePreferences({ onboardingCompleted: true });
+      setStep(2);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Setup failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleFinish = () => {
     navigate('/');
   };
@@ -215,20 +229,7 @@ export const Onboarding: React.FC = () => {
                   Back
                 </Button>
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={async () => {
-                    // Skip business details, submit with just country/currency
-                    setIsSubmitting(true);
-                    try {
-                      const data = form.getValues();
-                      await authService.setupOnboarding({ country: data.country, currency: data.currency });
-                      await updatePreferences({ onboardingCompleted: true });
-                      setStep(2);
-                    } catch (error: any) {
-                      toast.error(error?.response?.data?.message || 'Setup failed.');
-                    } finally {
-                      setIsSubmitting(false);
-                    }
-                  }}>
+                  <Button type="button" variant="outline" onClick={handleSkip}>
                     Skip
                   </Button>
                   <Button type="submit" variant="primary" isLoading={isSubmitting}>

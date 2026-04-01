@@ -10,8 +10,8 @@ import { UserManagementTable } from '../components/admin/UserManagementTable';
 import { RolePermissionsMatrix } from '../components/admin/RolePermissionsMatrix';
 import { IntegrationsPanel } from '../components/settings/IntegrationsPanel';
 import { adminService, SystemConfig } from '../services/admin.service';
+import { authService } from '../services/auth.service';
 import { useConfigStore } from '../stores/configStore';
-import apiClient from '../services/api';
 
 type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'integrations' | 'checkout-forms';
 
@@ -58,7 +58,7 @@ export const Settings: React.FC = () => {
     }
     setDeleteLoading(true);
     try {
-      await apiClient.delete('/api/auth/delete-account', { data: { password: deletePassword } });
+      await authService.deleteAccount(deletePassword);
       toast.success('Account deleted successfully');
       logout();
       navigate('/login');
@@ -106,13 +106,11 @@ export const Settings: React.FC = () => {
     e.preventDefault();
     try {
       await adminService.updateSystemConfig(businessForm);
-      alert('Business settings saved successfully');
+      toast.success('Business settings saved successfully');
       loadSystemConfig();
-      // Update global store
-      useConfigStore.getState().fetchConfig();
     } catch (error) {
       console.error('Failed to save business settings:', error);
-      alert('Failed to save business settings');
+      toast.error('Failed to save business settings');
     }
   };
 
