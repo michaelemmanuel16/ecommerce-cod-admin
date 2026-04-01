@@ -4,6 +4,7 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import appEvents, { AppEvent } from '../utils/appEvents';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
+import { getTenantId } from '../utils/tenantContext';
 
 export class AgentReconciliationService {
     /**
@@ -433,8 +434,9 @@ export class AgentReconciliationService {
      * Get specific agent balance
      */
     async getAgentBalance(agentId: number) {
+        const tenantId = getTenantId();
         return await (prisma as unknown as any).agentBalance.findUnique({
-            where: { agentId },
+            where: { agentId, ...(tenantId ? { tenantId } : {}) },
         });
     }
 
@@ -442,7 +444,9 @@ export class AgentReconciliationService {
      * Get all agent balances
      */
     async getAllAgentBalances(): Promise<any[]> {
+        const tenantId = getTenantId();
         return await (prisma as unknown as any).agentBalance.findMany({
+            where: { ...(tenantId ? { tenantId } : {}) },
             include: {
                 agent: {
                     select: {
@@ -641,8 +645,9 @@ export class AgentReconciliationService {
      * Get all currently blocked agents
      */
     async getBlockedAgents() {
+        const tenantId = getTenantId();
         return await (prisma as any).agentBalance.findMany({
-            where: { isBlocked: true },
+            where: { isBlocked: true, ...(tenantId ? { tenantId } : {}) },
             include: {
                 agent: {
                     select: { id: true, firstName: true, lastName: true, email: true }

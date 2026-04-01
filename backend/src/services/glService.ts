@@ -3,6 +3,8 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma, AccountType, NormalBalance, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
+import { getTenantId } from '../utils/tenantContext';
+
 
 interface AccountFilters {
   accountType?: AccountType;
@@ -160,6 +162,7 @@ export class GLService {
    */
   private async generateEntryNumber(tx?: Prisma.TransactionClient): Promise<string> {
     const client = tx || prisma;
+    const tenantId = getTenantId();
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
 
@@ -170,13 +173,22 @@ export class GLService {
     // execution regardless of whether rows exist.
     await client.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('gl_entry_number_sequence'))`;
 
-    const result = await client.$queryRaw<any[]>`
-      SELECT entry_number as "entryNumber"
-      FROM journal_entries
-      WHERE entry_number LIKE ${'JE-' + dateStr + '-%'}
-      ORDER BY entry_number DESC
-      LIMIT 1
-    `;
+    const likePattern = 'JE-' + dateStr + '-%';
+    const result = tenantId
+      ? await client.$queryRaw<any[]>`
+          SELECT entry_number as "entryNumber"
+          FROM journal_entries
+          WHERE entry_number LIKE ${likePattern} AND tenant_id = ${tenantId}
+          ORDER BY entry_number DESC
+          LIMIT 1
+        `
+      : await client.$queryRaw<any[]>`
+          SELECT entry_number as "entryNumber"
+          FROM journal_entries
+          WHERE entry_number LIKE ${likePattern}
+          ORDER BY entry_number DESC
+          LIMIT 1
+        `;
 
     let sequence = 1;
     if (result && result.length > 0) {
@@ -289,13 +301,20 @@ export class GLService {
     tx: Prisma.TransactionClient
   ): Promise<Prisma.Decimal> {
     // Get account with row-level lock to prevent concurrent updates (FOR UPDATE)
-    // This ensures that when multiple transactions try to update the same account, 
+    // This ensures that when multiple transactions try to update the same account,
     // they are serialized to prevent race conditions.
-    const accounts: any[] = await tx.$queryRaw`
-      SELECT normal_balance as "normalBalance", current_balance as "currentBalance"
-      FROM accounts
-      WHERE id = ${accountId}
-      FOR UPDATE
+    const tenantIdForLock = getTenantId();
+    const accounts: any[] = tenantIdForLock
+      ? await tx.$queryRaw`
+          SELECT normal_balance as "normalBalance", current_balance as "currentBalance"
+          FROM accounts
+          WHERE id = ${accountId} AND tenant_id = ${tenantIdForLock}
+          FOR UPDATE`
+      : await tx.$queryRaw`
+          SELECT normal_balance as "normalBalance", current_balance as "currentBalance"
+          FROM accounts
+          WHERE id = ${accountId}
+          FOR UPDATE
     `;
 
     if (!accounts || accounts.length === 0) {
@@ -334,6 +353,7 @@ export class GLService {
     const where: Prisma.AccountWhereInput = {};
     if (accountType) where.accountType = accountType;
     if (isActive !== undefined) where.isActive = isActive;
+
 
     const skip = (page - 1) * limit;
 
@@ -378,8 +398,8 @@ export class GLService {
         by: ['accountId'],
         where: {
           accountId: { in: accountIds },
-          journalEntry: { entryDate: dateFilter, isVoided: false }
-        },
+          journalEntry: { entryDate: dateFilter, isVoided: false },
+            },
         _sum: { debitAmount: true, creditAmount: true }
       });
       periodActivityMap = new Map();
@@ -490,8 +510,8 @@ export class GLService {
         accountType,
         normalBalance,
         parentId,
-        isSystem: false // User-created accounts are never system accounts
-      },
+        isSystem: false, // User-created accounts are never system accounts
+        },
       include: {
         parent: {
           select: {
@@ -756,7 +776,7 @@ export class GLService {
           sourceType: data.sourceType,
           sourceId: data.sourceId,
           createdBy: requester?.id || 0,
-          transactions: {
+                    transactions: {
             create: transactionsWithRunningBalance
           }
         },
@@ -833,6 +853,7 @@ export class GLService {
       if (startDate) where.entryDate.gte = new Date(startDate);
       if (endDate) where.entryDate.lte = new Date(endDate);
     }
+
 
     const skip = (page - 1) * limit;
 
@@ -969,7 +990,7 @@ export class GLService {
           sourceType: JournalSourceType.reversal,
           sourceId: entry.id,
           createdBy: requester?.id || 0,
-          transactions: {
+                    transactions: {
             create: entry.transactions.map(t => ({
               accountId: t.accountId,
               debitAmount: t.creditAmount,  // Swapped
@@ -1103,7 +1124,7 @@ export class GLService {
     const { startDate, endDate, page = 1, limit = 100 } = filters;
 
     const where: Prisma.AccountTransactionWhereInput = {
-      accountId: id
+      accountId: id,
     };
 
     // Filter by journal entry date if provided
@@ -1177,8 +1198,8 @@ export class GLService {
         accountId: id,
         journalEntry: {
           isVoided: false
-        }
-      },
+        },
+        },
       select: {
         debitAmount: true,
         creditAmount: true

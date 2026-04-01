@@ -59,7 +59,7 @@ describe('DeliveryService', () => {
 
     it('should create delivery assignment successfully', async () => {
       (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder);
-      (prismaMock.delivery.findUnique as any).mockResolvedValue(null);
+      (prismaMock.delivery.findFirst as any).mockResolvedValue(null);
       (prismaMock.user.findUnique as any).mockResolvedValue(mockAgent);
 
       const mockDelivery = {

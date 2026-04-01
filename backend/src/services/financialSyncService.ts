@@ -14,6 +14,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { GLAutomationService, OrderWithItems } from './glAutomationService';
 import logger from '../utils/logger';
 import { SYSTEM_USER_ID } from '../config/constants';
+import { getTenantId } from '../utils/tenantContext';
 
 interface OrderForSync extends Order {
   orderItems: (OrderItem & { product: Product })[];
@@ -52,10 +53,12 @@ export class FinancialSyncService {
     }
 
     // Check if already synced
+    const tenantId = getTenantId();
     const existingTransaction = await tx.transaction.findFirst({
       where: {
         orderId: order.id,
-        type: 'cod_collection'
+        type: 'cod_collection',
+        ...(tenantId ? { tenantId } : {})
       }
     });
 
@@ -80,6 +83,7 @@ export class FinancialSyncService {
           amount: order.totalAmount,
           paymentMethod: 'cod',
           reference: `COD-${order.id}`,
+          ...(tenantId ? { tenantId } : {}),
           metadata: {
             autoSync: true,
             syncedAt: new Date().toISOString(),
@@ -218,8 +222,9 @@ export class FinancialSyncService {
     orderId: number,
     userId: number = SYSTEM_USER_ID
   ): Promise<void> {
+    const tenantId = getTenantId();
     const order = await prisma.order.findUnique({
-      where: { id: orderId, deletedAt: null },
+      where: { id: orderId, deletedAt: null, ...(tenantId ? { tenantId } : {}) },
       include: {
         orderItems: {
           include: { product: true }
@@ -251,8 +256,9 @@ export class FinancialSyncService {
    * @returns true if order needs sync, false otherwise
    */
   static async needsSync(orderId: number): Promise<boolean> {
+    const tenantId = getTenantId();
     const order = await prisma.order.findUnique({
-      where: { id: orderId },
+      where: { id: orderId, ...(tenantId ? { tenantId } : {}) },
       select: {
         status: true,
         codAmount: true,
@@ -271,7 +277,8 @@ export class FinancialSyncService {
     const hasTransaction = await prisma.transaction.findFirst({
       where: {
         orderId,
-        type: 'cod_collection'
+        type: 'cod_collection',
+        ...(tenantId ? { tenantId } : {})
       }
     });
 

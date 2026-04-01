@@ -27,7 +27,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       totalAmount
     } = req.body;
 
-    // Get form with product
+    // Get form with product — the form's tenantId determines the tenant context
+    // for this unauthenticated request
     const form = await prisma.checkoutForm.findFirst({
       where: {
         slug: slug,
@@ -47,6 +48,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       res.status(400).json({ error: 'Product is no longer available' });
       return;
     }
+
+    // Derive tenantId from the checkout form (public routes have no auth context)
+    const formTenantId = (form as any).tenantId as string | null;
 
     const isDigital = form.product.productType === 'digital';
 
@@ -88,7 +92,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           state: formData.state || '',
           area: formData.state || '',
           landmark: formData.landmark || null,
-          notes: formData.notes || null
+          notes: formData.notes || null,
+          ...(formTenantId ? { tenantId: formTenantId } : {})
         }
       });
     } else {
@@ -203,7 +208,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
     }
 
-    // Create order
+    // Create order with the checkout form's tenantId
     const order = await prisma.order.create({
       data: {
         customerId: customer.id,
@@ -220,6 +225,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         deliveryArea: formData.state || null,
         notes: formData.notes || null,
         source: 'checkout_form',
+        ...(formTenantId ? { tenantId: formTenantId } : {}),
         orderItems: {
           create: orderItemsData
         }

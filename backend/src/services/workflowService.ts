@@ -7,6 +7,7 @@ import { evaluateConditions as evaluateConditionRules } from '../utils/condition
 import crypto from 'crypto';
 import { sendEmail } from './emailService';
 
+
 interface CreateWorkflowData {
   name: string;
   description?: string;
@@ -26,11 +27,13 @@ export class WorkflowService {
    * Get all workflows with filters
    */
   async getAllWorkflows(filters: WorkflowFilters) {
+
     const { isActive, triggerType } = filters;
 
     const where: Prisma.WorkflowWhereInput = {};
     if (isActive !== undefined) where.isActive = isActive;
     if (triggerType) where.triggerType = triggerType;
+
 
     const workflows = await prisma.workflow.findMany({
       where,
@@ -44,6 +47,7 @@ export class WorkflowService {
    * Create new workflow
    */
   async createWorkflow(data: CreateWorkflowData) {
+
     // Validate actions
     this.validateWorkflowActions(data.actions);
 
@@ -54,8 +58,8 @@ export class WorkflowService {
         triggerType: data.triggerType,
         triggerData: data.triggerData,
         actions: data.actions,
-        conditions: data.conditions || {}
-      }
+        conditions: data.conditions || {},
+              }
     });
 
     logger.info('Workflow created', {
@@ -73,6 +77,7 @@ export class WorkflowService {
    * to improve performance and avoid loading unnecessary data
    */
   async getWorkflowById(workflowId: number) {
+
     const workflow = await prisma.workflow.findUnique({
       where: { id: workflowId }
     });
@@ -88,6 +93,7 @@ export class WorkflowService {
    * Update workflow
    */
   async updateWorkflow(workflowId: number, updateData: Partial<CreateWorkflowData>) {
+
     const workflow = await prisma.workflow.findUnique({
       where: { id: workflowId }
     });
@@ -114,6 +120,7 @@ export class WorkflowService {
    * Delete workflow
    */
   async deleteWorkflow(workflowId: number) {
+
     const workflow = await prisma.workflow.findUnique({
       where: { id: workflowId }
     });
@@ -134,6 +141,7 @@ export class WorkflowService {
    * Toggle workflow active status
    */
   async toggleWorkflowStatus(workflowId: number, isActive: boolean) {
+
     const workflow = await prisma.workflow.findUnique({
       where: { id: workflowId }
     });
@@ -155,6 +163,7 @@ export class WorkflowService {
    * Execute workflow
    */
   async executeWorkflow(workflowId: number, input?: any) {
+
     const workflow = await prisma.workflow.findUnique({
       where: { id: workflowId }
     });
@@ -182,8 +191,8 @@ export class WorkflowService {
       data: {
         workflowId,
         status: 'pending',
-        input: input || {}
-      }
+        input: input || {},
+              }
     });
 
     // Add to queue for async processing (with 5s timeout to prevent API hang)
@@ -215,6 +224,7 @@ export class WorkflowService {
    * Process workflow execution (called by queue worker)
    */
   async processWorkflowExecution(executionId: number, workflowId: number, actions: any[], input: any) {
+
     try {
       await prisma.workflowExecution.update({
         where: { id: executionId },

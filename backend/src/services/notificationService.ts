@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitNotification } from '../sockets';
 
+
 export async function createNotification(
   userId: string,
   type: string,
@@ -15,7 +16,7 @@ export async function createNotification(
       type,
       title,
       message,
-      data: data || {}
+      data: data || {},
     }
   });
 

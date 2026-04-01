@@ -9,6 +9,7 @@ import agentReconciliationService from './agentReconciliationService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitGLEntryCreated } from '../sockets/index';
 
+
 interface CreateDeliveryData {
   orderId: number;
   agentId: number;
@@ -45,9 +46,11 @@ export class DeliveryService {
    * Get all deliveries with filters
    */
   async getAllDeliveries(filters: DeliveryFilters) {
+
     const { agentId, page = 1, limit = 20 } = filters;
 
     const where: Prisma.DeliveryWhereInput = {};
+
     if (agentId) where.agentId = parseInt(agentId, 10);
 
     const skip = (page - 1) * limit;
@@ -98,6 +101,7 @@ export class DeliveryService {
    * Get single delivery by ID
    */
   async getDeliveryById(deliveryId: string) {
+
     const delivery = await prisma.delivery.findUnique({
       where: { id: parseInt(deliveryId, 10) },
       include: {
@@ -126,6 +130,7 @@ export class DeliveryService {
    * Create new delivery assignment
    */
   async createDelivery(data: CreateDeliveryData) {
+
     // Validate order exists and is ready for delivery
     const order = await prisma.order.findUnique({
       where: { id: data.orderId }
@@ -143,7 +148,7 @@ export class DeliveryService {
     }
 
     // Check if delivery already exists
-    const existingDelivery = await prisma.delivery.findUnique({
+    const existingDelivery = await prisma.delivery.findFirst({
       where: { orderId: data.orderId }
     });
 
@@ -169,7 +174,7 @@ export class DeliveryService {
         orderId: data.orderId,
         agentId: data.agentId,
         scheduledTime: data.scheduledTime || new Date(),
-        notes: data.notes
+        notes: data.notes,
       },
       include: {
         order: {
@@ -210,6 +215,7 @@ export class DeliveryService {
    * Update delivery details
    */
   async updateDelivery(deliveryId: string, updateData: Partial<CreateDeliveryData>) {
+
     const deliveryIdNum = parseInt(deliveryId, 10);
     const delivery = await prisma.delivery.findUnique({
       where: { id: deliveryIdNum }
@@ -236,6 +242,7 @@ export class DeliveryService {
    * Upload proof of delivery
    */
   async uploadProofOfDelivery(deliveryId: string, data: UpdateProofData) {
+
     const deliveryIdNum = parseInt(deliveryId, 10);
     const delivery = await prisma.delivery.findUnique({
       where: { id: deliveryIdNum },
@@ -269,6 +276,7 @@ export class DeliveryService {
    * Complete delivery
    */
   async completeDelivery(deliveryId: string, data: CompleteDeliveryData, userId?: string) {
+
     const delivery = await prisma.delivery.findUnique({
       where: { id: parseInt(deliveryId, 10) },
       include: { order: true }
@@ -449,6 +457,7 @@ export class DeliveryService {
     userId?: string,
     reschedule?: boolean
   ) {
+
     const delivery = await prisma.delivery.findUnique({
       where: { id: parseInt(deliveryId, 10) },
       include: { order: true }

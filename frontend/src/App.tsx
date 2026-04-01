@@ -15,6 +15,7 @@ import { useConfigStore } from './stores/configStore';
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { Onboarding } from './pages/Onboarding';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
@@ -41,6 +42,7 @@ const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
 const Communications = lazy(() => import('./pages/Communications'));
+const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
 
 // Mobile pages
 const MobileLayout = lazy(() => import('./components/layout/MobileLayout').then(m => ({ default: m.MobileLayout })));
@@ -56,9 +58,14 @@ const AgentInventoryRoute: React.FC = () => {
   return <AgentInventoryManagement />;
 };
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuthStore();
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+const ProtectedRoute: React.FC<{ children: React.ReactNode; skipOnboardingCheck?: boolean }> = ({ children, skipOnboardingCheck }) => {
+  const { isAuthenticated, needsOnboarding } = useAuthStore();
+  const location = useLocation();
+  if (!isAuthenticated) return <Navigate to="/login" />;
+  if (!skipOnboardingCheck && needsOnboarding() && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" replace />;
+  }
+  return <>{children}</>;
 };
 
 const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }> = ({ children, allowedRoles }) => {
@@ -131,6 +138,11 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/onboarding" element={
+              <ProtectedRoute skipOnboardingCheck>
+                <Onboarding />
+              </ProtectedRoute>
+            } />
             {/* Mobile routes for delivery agents */}
             <Route
               path="/m"
@@ -260,6 +272,11 @@ function App() {
               <Route path="settings" element={
                 <Suspense fallback={<Loading />}>
                   <Settings />
+                </Suspense>
+              } />
+              <Route path="settings/billing" element={
+                <Suspense fallback={<Loading />}>
+                  <Billing />
                 </Suspense>
               } />
               <Route path="checkout-forms" element={

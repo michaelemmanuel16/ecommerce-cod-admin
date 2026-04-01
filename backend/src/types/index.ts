@@ -6,6 +6,7 @@ export interface AuthRequest extends Request {
     id: number;
     email: string;
     role: UserRole;
+    tenantId?: string | null;
   };
 }
 
@@ -13,6 +14,7 @@ export interface JWTPayload {
   id: number;
   email: string;
   role: UserRole;
+  tenantId?: string | null;
 }
 
 export interface PaginationParams {

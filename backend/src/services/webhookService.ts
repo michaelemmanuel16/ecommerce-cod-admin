@@ -7,6 +7,7 @@ import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 
+
 interface CreateWebhookData {
   name: string;
   url: string;
@@ -40,7 +41,9 @@ export class WebhookService {
    * Get all webhook configurations
    */
   async getAllWebhooks() {
+
     const webhooks = await prisma.webhookConfig.findMany({
+      where: {},
       orderBy: { createdAt: 'desc' },
       include: {
         product: {
@@ -60,6 +63,7 @@ export class WebhookService {
    * Create new webhook configuration
    */
   async createWebhook(data: CreateWebhookData) {
+
     const webhook = await prisma.webhookConfig.create({
       data: {
         name: data.name,
@@ -68,8 +72,8 @@ export class WebhookService {
         apiKey: data.apiKey,
         productId: data.productId,
         fieldMapping: data.fieldMapping,
-        headers: data.headers || {}
-      },
+        headers: data.headers || {},
+              },
       include: {
         product: true
       }
@@ -88,6 +92,7 @@ export class WebhookService {
    * Get webhook by ID
    */
   async getWebhookById(webhookId: number) {
+
     const webhook = await prisma.webhookConfig.findUnique({
       where: { id: webhookId },
       include: {
@@ -116,6 +121,7 @@ export class WebhookService {
    * Update webhook configuration
    */
   async updateWebhook(webhookId: number, updateData: Partial<CreateWebhookData>) {
+
     const webhook = await prisma.webhookConfig.findUnique({
       where: { id: webhookId }
     });
@@ -146,6 +152,7 @@ export class WebhookService {
    * Delete webhook configuration
    */
   async deleteWebhook(webhookId: number) {
+
     const webhook = await prisma.webhookConfig.findUnique({
       where: { id: webhookId }
     });
@@ -184,14 +191,14 @@ export class WebhookService {
   async processWebhook(data: ProcessWebhookData) {
     const { signature, apiKey, body, headers, endpoint, method } = data;
 
-    // Create webhook log
+    // Create webhook log (WebhookLog has no tenantId column)
     const webhookLog = await prisma.webhookLog.create({
       data: {
         endpoint,
         method,
         headers: headers as any,
         body: body as any,
-        success: false
+        success: false,
       }
     });
 
@@ -267,14 +274,14 @@ export class WebhookService {
   async processWebhookByUniqueUrl(data: ProcessWebhookByUniqueUrlData) {
     const { uniqueUrl, signature, body, headers, endpoint, method } = data;
 
-    // Create webhook log
+    // Create webhook log (WebhookLog has no tenantId column)
     const webhookLog = await prisma.webhookLog.create({
       data: {
         endpoint,
         method,
         headers: headers as any,
         body: body as any,
-        success: false
+        success: false,
       }
     });
 
@@ -381,6 +388,7 @@ export class WebhookService {
       .filter(Boolean) as string[];
 
     const existingExternalIdSet = new Set<string>();
+
     if (batchExternalIds.length > 0) {
       const existing = await prisma.order.findMany({
         where: { externalOrderId: { in: batchExternalIds }, deletedAt: null },
@@ -484,7 +492,7 @@ export class WebhookService {
               shippingCost,
               totalAmount,
               codAmount: totalAmount,
-              deliveryAddress: mappedData.deliveryAddress || externalOrder.address || customer.address,
+                            deliveryAddress: mappedData.deliveryAddress || externalOrder.address || customer.address,
               deliveryState: mappedData.deliveryState || externalOrder.state || customer.state,
               deliveryArea: mappedData.deliveryArea || externalOrder.area || customer.area,
               notes: mappedData.notes || externalOrder.notes || (packageInfo ? `Package: ${packageInfo}` : undefined),
@@ -576,13 +584,14 @@ export class WebhookService {
    * Find product by name or SKU (case-insensitive)
    */
   private async findProductByName(productName: string): Promise<any> {
+
     const product = await prisma.product.findFirst({
       where: {
         OR: [
           { name: { equals: productName, mode: 'insensitive' } },
           { sku: { equals: productName, mode: 'insensitive' } }
-        ]
-      }
+        ],
+              }
     });
 
     if (!product) {
@@ -602,6 +611,7 @@ export class WebhookService {
       throw new Error('Customer phone number is required');
     }
 
+
     let customer = await prisma.customer.findUnique({
       where: { phoneNumber: customerPhone }
     });
@@ -616,8 +626,8 @@ export class WebhookService {
           email: mappedData.customerEmail || externalOrder.email || undefined,
           address: mappedData.deliveryAddress || externalOrder.address || '',
           state: mappedData.deliveryState || externalOrder.state || '',
-          area: mappedData.deliveryArea || externalOrder.area || ''
-        }
+          area: mappedData.deliveryArea || externalOrder.area || '',
+                  }
       });
 
       logger.info('Customer created from webhook', {
@@ -689,6 +699,7 @@ export class WebhookService {
    * Test webhook field mapping
    */
   async testWebhook(webhookId: number, sampleData: any) {
+
     const webhook = await prisma.webhookConfig.findUnique({
       where: { id: webhookId }
     });

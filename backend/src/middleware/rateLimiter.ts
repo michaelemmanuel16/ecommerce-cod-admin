@@ -12,10 +12,20 @@ const commonSettings = {
   }
 };
 
-export const authLimiter = isDevelopment ? (_req: any, _res: any, next: any) => next() : rateLimit({
+// SECURITY: Never fully disable rate limiting — use higher limits in dev instead of a passthrough.
+// This prevents accidental exposure if NODE_ENV is unset in production.
+export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300,
+  max: isDevelopment ? 1000 : 40, // Strict in production (40/15min), relaxed in dev
   message: { message: 'Too many authentication attempts, please try again later' },
+  ...commonSettings
+});
+
+// SECURITY: Very strict rate limit for tenant registration to prevent abuse.
+export const registrationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isDevelopment ? 100 : 5, // 5 registrations per 15min per IP in production
+  message: { message: 'Too many registration attempts, please try again later' },
   ...commonSettings
 });
 

@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { Prisma } from '@prisma/client';
 import { GL_ACCOUNTS } from '../config/glAccounts';
 
+
 interface DateFilters {
   startDate?: Date;
   endDate?: Date;
@@ -96,7 +97,7 @@ export class AnalyticsService {
     const baseWhere: Prisma.OrderWhereInput = {
       ...dateFilter,
       ...userFilter,
-      deletedAt: null
+      deletedAt: null,
     };
 
     if (process.env.NODE_ENV === 'development') {
@@ -123,23 +124,23 @@ export class AnalyticsService {
           createdAt: {
             gte: startOfDay,
             lte: endOfDay
-          }
-        }
+          },
+            }
       }),
       prisma.order.count({
         where: {
           ...userFilter,
           deletedAt: null,
-          status: 'pending_confirmation'
-        }
+          status: 'pending_confirmation',
+            }
       }),
       prisma.order.count({
         where: {
           ...userFilter,
           deletedAt: null,
           status: 'delivered',
-          ...deliveryDateFilter
-        }
+          ...deliveryDateFilter,
+            }
       }),
       // Revenue from GL (single source of truth — matches Financial page)
       prisma.accountTransaction.aggregate({
@@ -187,8 +188,8 @@ export class AnalyticsService {
         where: {
           actualDeliveryTime: { not: null },
           scheduledTime: { not: null },
-          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // Only last 7 days
-        },
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // Only last 7 days
+            },
         select: {
           scheduledTime: true,
           actualDeliveryTime: true
@@ -276,6 +277,7 @@ export class AnalyticsService {
     // Build user scope filter (sales reps only see their assigned orders)
     const userFilter = buildUserScopeFilter(userId, userRole);
 
+
     const orders = await prisma.order.findMany({
       where: {
         ...userFilter,
@@ -283,8 +285,8 @@ export class AnalyticsService {
         createdAt: {
           gte: startDate,
           lte: endDate
-        }
-      },
+        },
+        },
       select: {
         createdAt: true,
         totalAmount: true,
@@ -333,6 +335,7 @@ export class AnalyticsService {
     userRole?: string
   ) {
     const { startDate, endDate } = filters;
+
 
     const where: Prisma.OrderWhereInput = { deletedAt: null };
     if (startDate || endDate) {
