@@ -10,6 +10,7 @@ import logger from '../utils/logger';
 
 interface EmailConfig {
   provider: 'sendgrid' | 'smtp' | 'resend';
+  /** API key for SendGrid/Resend, or SMTP password when provider is 'smtp'. */
   apiKey: string;
   fromEmail: string;
   fromName: string;

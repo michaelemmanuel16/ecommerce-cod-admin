@@ -24,7 +24,7 @@ export const PaymentCallback: React.FC = () => {
       const result = await publicOrdersService.verifyPayment(reference);
       if (result.success) {
         setStatus('success');
-        setMessage('Your download link has been sent to your email and WhatsApp.');
+        setMessage('Payment confirmed! Your download link will be sent to your email and WhatsApp shortly.');
       } else {
         setStatus('failed');
         setMessage('Payment could not be verified. Please contact support.');

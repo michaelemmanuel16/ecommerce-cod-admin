@@ -31,7 +31,7 @@ export const digitalDeliveryService = {
         orderId,
         token,
         expiresAt,
-        maxDownloads: 5,
+        maxDownloads: digitalProduct?.maxDownloads ?? 5,
       },
     });
 
@@ -113,6 +113,7 @@ export const digitalDeliveryService = {
     const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL?.replace(':5173', ':3000') || 'http://localhost:3000';
     const downloadUrl = `${backendUrl}/api/public/download/${token}`;
     const expiryHours = digitalProduct.downloadLinkExpiryHours ?? 72;
+    const maxDownloads = digitalProduct.maxDownloads ?? 5;
     const productName = digitalProduct.name;
 
     // Send via email
@@ -124,6 +125,7 @@ export const digitalDeliveryService = {
           productName,
           downloadUrl,
           expiryHours,
+          maxDownloads,
         );
         logger.info('Digital product email sent', { orderId, email: order.customer.email.replace(/(.{2}).*(@.*)/, '$1***$2') });
       } catch (error: any) {
@@ -133,7 +135,7 @@ export const digitalDeliveryService = {
 
     // Send via WhatsApp
     try {
-      const message = `Thank you for your purchase of ${productName}! 🎉\n\nHere is your download link:\n${downloadUrl}\n\nThis link expires in ${expiryHours} hours and can be used up to 5 times.`;
+      const message = `Thank you for your purchase of ${productName}! 🎉\n\nHere is your download link:\n${downloadUrl}\n\nThis link expires in ${expiryHours} hours and can be used up to ${maxDownloads} times.`;
 
       await whatsappService.sendText({
         to: order.customer.phoneNumber,
@@ -177,6 +179,7 @@ async function sendDigitalProductEmail(
   productName: string,
   downloadUrl: string,
   expiryHours: number,
+  maxDownloads: number = 5,
 ): Promise<void> {
   await sendEmail({
     to: email,
@@ -193,7 +196,7 @@ async function sendDigitalProductEmail(
           </a>
         </div>
         <p style="color: #6b7280; font-size: 14px;">
-          This link expires in <strong>${expiryHours} hours</strong> and can be used up to 5 times.
+          This link expires in <strong>${expiryHours} hours</strong> and can be used up to ${maxDownloads} times.
         </p>
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
         <p style="color: #9ca3af; font-size: 12px;">
