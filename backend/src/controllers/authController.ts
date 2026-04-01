@@ -440,7 +440,32 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
     const tenantId = req.user.tenantId;
     if (!tenantId) throw new AppError('No tenant associated with this account', 400);
 
-    // Delete the tenant. CASCADE FK constraints will remove all tenant data.
+    // Validate tenantId is a UUID before using in raw queries
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new AppError('Invalid tenant ID', 400);
+    }
+
+    // Delete all tenant data in dependency order.
+    // Many tables have RESTRICT FKs to users, so we must delete those first
+    // before the tenant CASCADE can delete users.
+    const userIds = `SELECT id FROM users WHERE tenant_id = '${tenantId}'`;
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe(`DELETE FROM notifications WHERE user_id IN (${userIds})`),
+      prisma.$executeRawUnsafe(`DELETE FROM audit_logs WHERE user_id IN (${userIds})`),
+      prisma.$executeRawUnsafe(`DELETE FROM payouts WHERE rep_id IN (${userIds})`),
+      prisma.$executeRawUnsafe(`DELETE FROM calls WHERE sales_rep_id IN (${userIds})`),
+      prisma.$executeRawUnsafe(`DELETE FROM agent_deposits WHERE agent_id IN (${userIds})`),
+      prisma.$executeRawUnsafe(`DELETE FROM agent_collections WHERE agent_id IN (${userIds})`),
+      prisma.$executeRawUnsafe(`DELETE FROM agent_aging_buckets WHERE agent_id IN (${userIds})`),
+      prisma.$executeRawUnsafe(`DELETE FROM agent_balances WHERE agent_id IN (${userIds})`),
+      prisma.$executeRawUnsafe(`DELETE FROM agent_stock WHERE agent_id IN (${userIds})`),
+      prisma.$executeRawUnsafe(`DELETE FROM inventory_transfers WHERE tenant_id = '${tenantId}'`),
+      prisma.$executeRawUnsafe(`DELETE FROM inventory_shipments WHERE tenant_id = '${tenantId}'`),
+      prisma.$executeRawUnsafe(`DELETE FROM account_transactions WHERE tenant_id = '${tenantId}'`),
+      prisma.$executeRawUnsafe(`DELETE FROM journal_entries WHERE tenant_id = '${tenantId}'`),
+    ]);
+
+    // Now delete the tenant — CASCADE handles the remaining tenant_id FKs
     await prisma.tenant.delete({ where: { id: tenantId } });
 
     res.json({ message: 'Account and all associated data have been permanently deleted' });
