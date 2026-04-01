@@ -417,3 +417,34 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
     next(error);
   }
 };
+
+/**
+ * Delete the current tenant and all associated data.
+ * Only super_admin can do this. Requires password confirmation.
+ */
+export const deleteTenantAccount = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.user) throw new AppError('Not authenticated', 401);
+    if (req.user.role !== 'super_admin') throw new AppError('Only the super admin can delete the account', 403);
+
+    const { password } = req.body;
+    if (!password) throw new AppError('Password is required to confirm deletion', 400);
+
+    // Verify password
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user) throw new AppError('User not found', 404);
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) throw new AppError('Incorrect password', 401);
+
+    const tenantId = req.user.tenantId;
+    if (!tenantId) throw new AppError('No tenant associated with this account', 400);
+
+    // Delete the tenant. CASCADE FK constraints will remove all tenant data.
+    await prisma.tenant.delete({ where: { id: tenantId } });
+
+    res.json({ message: 'Account and all associated data have been permanently deleted' });
+  } catch (error) {
+    next(error);
+  }
+};

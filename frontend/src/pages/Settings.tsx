@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, FileText, Puzzle } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, FileText, Puzzle, Trash2, AlertTriangle } from 'lucide-react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useAuthStore } from '../stores/authStore';
@@ -10,6 +11,7 @@ import { RolePermissionsMatrix } from '../components/admin/RolePermissionsMatrix
 import { IntegrationsPanel } from '../components/settings/IntegrationsPanel';
 import { adminService, SystemConfig } from '../services/admin.service';
 import { useConfigStore } from '../stores/configStore';
+import apiClient from '../services/api';
 
 type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'integrations' | 'checkout-forms';
 
@@ -40,9 +42,32 @@ export const Settings: React.FC = () => {
     params.delete('message');
     setSearchParams(params, { replace: true });
   };
-  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  const { user, logout } = useAuthStore();
   const { isSuperAdmin, isAdmin } = usePermissions();
   const isSalesRep = user?.role === 'sales_rep';
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleDeleteAccount = async () => {
+    if (!deletePassword) {
+      toast.error('Please enter your password to confirm');
+      return;
+    }
+    setDeleteLoading(true);
+    try {
+      await apiClient.delete('/api/auth/delete-account', { data: { password: deletePassword } });
+      toast.success('Account deleted successfully');
+      logout();
+      navigate('/login');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Failed to delete account');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null);
   const [businessForm, setBusinessForm] = useState({
@@ -355,6 +380,74 @@ export const Settings: React.FC = () => {
               )}
             </div>
           </Card>
+
+          {/* Delete Account - Super Admin only */}
+          {isSuperAdmin && (
+            <Card>
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-red-600 mb-2">Danger Zone</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Permanently delete your company account and all associated data. This action cannot be undone.
+                </p>
+                <Button
+                  variant="outline"
+                  className="border-red-300 text-red-600 hover:bg-red-50"
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Account
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {/* Delete confirmation modal */}
+          {showDeleteConfirm && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900">Delete Account</h3>
+                </div>
+                <p className="text-sm text-gray-600 mb-2">
+                  This will permanently delete your company account including:
+                </p>
+                <ul className="text-sm text-gray-600 mb-4 list-disc list-inside space-y-1">
+                  <li>All orders, customers, and products</li>
+                  <li>All financial records and transactions</li>
+                  <li>All team members and their data</li>
+                  <li>All integration settings and configurations</li>
+                </ul>
+                <p className="text-sm font-medium text-gray-900 mb-2">
+                  Enter your password to confirm:
+                </p>
+                <input
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  placeholder="Your password"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 mb-4"
+                />
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => { setShowDeleteConfirm(false); setDeletePassword(''); }}
+                  >
+                    Cancel
+                  </Button>
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={deleteLoading || !deletePassword}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  >
+                    {deleteLoading ? 'Deleting...' : 'Delete Permanently'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

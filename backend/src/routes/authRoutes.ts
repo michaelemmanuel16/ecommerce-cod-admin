@@ -15,5 +15,6 @@ router.post('/forgot-password', authLimiter, forgotPasswordValidation, validate,
 router.post('/reset-password', authLimiter, resetPasswordValidation, validate, authController.resetPassword);
 router.post('/logout', apiLimiter, authenticate, authController.logout);
 router.get('/me', apiLimiter, authenticate, authController.me);
+router.delete('/delete-account', apiLimiter, authenticate, authController.deleteTenantAccount);
 
 export default router;
