@@ -25,7 +25,7 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
     }
     if (!tenantId) throw new AppError('User has no tenant assigned', 400);
 
-    const { country, currency } = req.body;
+    const { country, currency, businessEmail, businessPhone, businessAddress, taxId } = req.body;
 
     const updatedTenant = await prisma.tenant.update({
       where: { id: tenantId },
@@ -34,6 +34,36 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
         ...(currency !== undefined && { currency }),
       }
     });
+
+    // Save business details to SystemConfig (create if needed)
+    if (businessEmail || businessPhone || businessAddress || taxId) {
+      let config = await prisma.systemConfig.findFirst({ where: { tenantId } });
+      if (config) {
+        await prisma.systemConfig.update({
+          where: { id: config.id },
+          data: {
+            ...(businessEmail && { businessEmail }),
+            ...(businessPhone && { businessPhone }),
+            ...(businessAddress && { businessAddress }),
+            ...(taxId && { taxId }),
+            businessName: updatedTenant.name,
+            currency: updatedTenant.currency,
+          },
+        });
+      } else {
+        await prisma.systemConfig.create({
+          data: {
+            businessName: updatedTenant.name,
+            currency: updatedTenant.currency,
+            ...(businessEmail && { businessEmail }),
+            ...(businessPhone && { businessPhone }),
+            ...(businessAddress && { businessAddress }),
+            ...(taxId && { taxId }),
+            tenantId,
+          },
+        });
+      }
+    }
 
     // Mark onboarding as complete in user preferences
     const dbUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { preferences: true } });
