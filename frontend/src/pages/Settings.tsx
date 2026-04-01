@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, FileText, Puzzle, Trash2, AlertTriangle } from 'lucide-react';
+import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, FileText, Puzzle, Trash2, AlertTriangle, CreditCard } from 'lucide-react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Card } from '../components/ui/Card';
@@ -9,13 +9,14 @@ import { usePermissions } from '../hooks/usePermissions';
 import { UserManagementTable } from '../components/admin/UserManagementTable';
 import { RolePermissionsMatrix } from '../components/admin/RolePermissionsMatrix';
 import { IntegrationsPanel } from '../components/settings/IntegrationsPanel';
+import { Billing } from './Billing';
 import { adminService, SystemConfig } from '../services/admin.service';
 import { authService } from '../services/auth.service';
 import { useConfigStore } from '../stores/configStore';
 
-type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'integrations' | 'checkout-forms';
+type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'integrations' | 'checkout-forms' | 'billing';
 
-const VALID_TABS: SettingsTab[] = ['profile', 'notifications', 'security', 'users', 'business', 'permissions', 'integrations', 'checkout-forms'];
+const VALID_TABS: SettingsTab[] = ['profile', 'notifications', 'security', 'users', 'business', 'permissions', 'integrations', 'checkout-forms', 'billing'];
 
 export const Settings: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -123,6 +124,7 @@ export const Settings: React.FC = () => {
     { id: 'checkout-forms' as SettingsTab, label: 'Checkout Forms', icon: FileText, adminOnly: true },
     { id: 'integrations' as SettingsTab, label: 'Integrations', icon: Puzzle, adminOnly: true },
     { id: 'permissions' as SettingsTab, label: 'Role Permissions', icon: Shield, adminOnly: true },
+    { id: 'billing' as SettingsTab, label: 'Billing & Plans', icon: CreditCard, adminOnly: true },
   ];
 
   const visibleTabs = tabs.filter(tab => !tab.adminOnly || isSuperAdmin);
@@ -603,6 +605,11 @@ export const Settings: React.FC = () => {
       {/* Super Admin Only - Role Permissions */}
       {activeTab === 'permissions' && isSuperAdmin && (
         <RolePermissionsMatrix />
+      )}
+
+      {/* Super Admin Only - Billing & Plans */}
+      {activeTab === 'billing' && isSuperAdmin && (
+        <Billing />
       )}
     </div>
   );
