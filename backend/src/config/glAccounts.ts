@@ -19,11 +19,16 @@ export const GL_ACCOUNTS = {
   AR_AGENTS: '1020',                 // Accounts Receivable - Delivery Agents
   INVENTORY: '1200',                 // Product inventory value
 
+  // Asset Accounts - Digital/Payment
+  PAYSTACK_RECEIVABLE: '1030',       // Money in Paystack awaiting settlement
+
   // Revenue Accounts (4000-4999)
   PRODUCT_REVENUE: '4010',           // Sales revenue from products
+  DIGITAL_REVENUE: '4020',           // Digital product sales revenue
 
   // Expense Accounts (5000-5999)
   COGS: '5010',                      // Cost of goods sold
+  PAYSTACK_FEES: '5060',             // Payment gateway fees
   FAILED_DELIVERY_EXPENSE: '5020',   // Delivery failure operational costs
   RETURN_PROCESSING_EXPENSE: '5030', // Return handling costs
   DELIVERY_AGENT_COMMISSION: '5040', // Delivery agent commission expense

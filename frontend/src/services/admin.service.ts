@@ -38,6 +38,12 @@ export interface SystemConfig {
     oauthDisplayPhone?: string;
     oauthUserId?: string;
   };
+  paystackProvider?: {
+    publicKey?: string;
+    secretKey?: string;
+    webhookSecret?: string;
+    isEnabled?: boolean;
+  };
   notificationTemplates?: {
     orderConfirmation?: { sms: string; email: string };
     outForDelivery?: { sms: string; email: string };

@@ -198,7 +198,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
 
   const addField = () => {
     const newField: FormField = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       label: 'New Field',
       type: 'text',
       required: false,
@@ -525,26 +525,37 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
                     />
                   </div>
 
-                  {/* Show Name / Show Description toggles */}
-                  <div className="space-y-1">
-                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={showName}
-                        onChange={e => setShowName(e.target.checked)}
-                        className="rounded border-gray-300"
-                      />
-                      Show form name on checkout
+                  {/* Description */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Description
                     </label>
-                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={showDescription}
-                        onChange={e => setShowDescription(e.target.checked)}
-                        className="rounded border-gray-300"
-                      />
-                      Show description on checkout
-                    </label>
+                    <textarea
+                      {...register('description')}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter form description..."
+                    />
+                    <div className="mt-2 space-y-1">
+                      <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showName}
+                          onChange={e => setShowName(e.target.checked)}
+                          className="rounded border-gray-300"
+                        />
+                        Show form name on checkout
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showDescription}
+                          onChange={e => setShowDescription(e.target.checked)}
+                          className="rounded border-gray-300"
+                        />
+                        Show description on checkout
+                      </label>
+                    </div>
                   </div>
 
                   {/* Form Fields */}

@@ -38,6 +38,7 @@ const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.S
 const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ default: m.CheckoutForms })));
 const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
+const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
@@ -129,7 +130,11 @@ function App() {
               </Suspense>
             } />
             <Route path="/pricing" element={<Pricing />} />
-
+            <Route path="/checkout/payment/callback" element={
+              <Suspense fallback={<Loading />}>
+                <PaymentCallback />
+              </Suspense>
+            } />
             {/* Auth routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />

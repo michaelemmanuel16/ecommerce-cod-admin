@@ -1,19 +1,21 @@
 import React, { useState, useCallback } from 'react';
-import { MessageSquare, Phone, Mail, Webhook, ChevronRight } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Webhook, ChevronRight, CreditCard } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { SystemConfig } from '../../services/admin.service';
 import { SmsIntegration } from './integrations/SmsIntegration';
 import { WhatsAppIntegration } from './integrations/WhatsAppIntegration';
 import { EmailIntegration } from './integrations/EmailIntegration';
+import { PaystackIntegration } from './integrations/PaystackIntegration';
 import { WebhooksOverview } from './integrations/WebhooksOverview';
 
-type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'webhooks';
-const VALID_SECTIONS: IntegrationSection[] = ['sms', 'whatsapp', 'email', 'webhooks'];
+type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'paystack' | 'webhooks';
+const VALID_SECTIONS: IntegrationSection[] = ['sms', 'whatsapp', 'email', 'paystack', 'webhooks'];
 
 const NAV_ITEMS: { id: IntegrationSection; label: string; description: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'sms', label: 'SMS', description: 'Arkesel SMS', icon: Phone },
   { id: 'whatsapp', label: 'WhatsApp', description: 'Business API', icon: MessageSquare },
   { id: 'email', label: 'Email', description: 'SendGrid / SMTP', icon: Mail },
+  { id: 'paystack', label: 'Paystack', description: 'Online Payments', icon: CreditCard },
   { id: 'webhooks', label: 'Webhooks', description: 'Order imports', icon: Webhook },
 ];
 
@@ -44,6 +46,8 @@ export const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ systemConf
         return systemConfig.whatsappProvider?.accessToken ? 'configured' : 'not-configured';
       case 'email':
         return systemConfig.emailProvider?.apiKey ? 'configured' : 'not-configured';
+      case 'paystack':
+        return systemConfig.paystackProvider?.secretKey ? 'configured' : 'not-configured';
       default:
         return null;
     }
@@ -57,6 +61,8 @@ export const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ systemConf
         return <WhatsAppIntegration systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
       case 'email':
         return <EmailIntegration systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
+      case 'paystack':
+        return <PaystackIntegration systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
       case 'webhooks':
         return <WebhooksOverview />;
     }

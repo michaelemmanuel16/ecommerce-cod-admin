@@ -170,6 +170,12 @@ export const PublicCheckout: React.FC = () => {
       const response = await publicOrdersService.submitOrder(slug, orderData as any);
 
       if (response.success) {
+        // Digital products: redirect to Paystack payment
+        if (response.authorization_url) {
+          window.location.href = response.authorization_url;
+          return;
+        }
+
         setSubmittedTotal(totalAmount);
         setOrderId(response.orderId);
         setCooldown(slug, response.orderId, totalAmount);
@@ -180,6 +186,7 @@ export const PublicCheckout: React.FC = () => {
     } catch (err: any) {
       console.error('Order submission error:', err);
       toast.error(err.response?.data?.message || 'Failed to place order. Please try again.');
+      throw err; // Re-throw so CheckoutForm resets isSubmitting
     }
   };
 

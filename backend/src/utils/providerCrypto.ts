@@ -5,6 +5,7 @@ const SENSITIVE_FIELDS: Record<string, string[]> = {
   whatsappProvider: ['accessToken', 'appSecret', 'webhookVerifyToken'],
   smsProvider: ['authToken'],
   emailProvider: ['apiKey'],
+  paystackProvider: ['secretKey', 'webhookSecret'],
 };
 
 const ALGORITHM = 'aes-256-gcm';

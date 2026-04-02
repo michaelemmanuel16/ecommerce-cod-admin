@@ -1035,8 +1035,11 @@ export class GLAutomationService {
           [GL_ACCOUNTS.CASH_IN_TRANSIT]: { name: 'Cash in Transit', type: 'asset', balance: 'debit' },
           [GL_ACCOUNTS.AR_AGENTS]: { name: 'Accounts Receivable - Agents', type: 'asset', balance: 'debit' },
           [GL_ACCOUNTS.INVENTORY]: { name: 'Inventory', type: 'asset', balance: 'debit' },
+          [GL_ACCOUNTS.PAYSTACK_RECEIVABLE]: { name: 'Paystack Receivable', type: 'asset', balance: 'debit' },
           [GL_ACCOUNTS.PRODUCT_REVENUE]: { name: 'Product Sales Revenue', type: 'revenue', balance: 'credit' },
+          [GL_ACCOUNTS.DIGITAL_REVENUE]: { name: 'Digital Product Revenue', type: 'revenue', balance: 'credit' },
           [GL_ACCOUNTS.COGS]: { name: 'Cost of Goods Sold', type: 'expense', balance: 'debit' },
+          [GL_ACCOUNTS.PAYSTACK_FEES]: { name: 'Paystack Transaction Fees', type: 'expense', balance: 'debit' },
           [GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE]: { name: 'Failed Delivery Expense', type: 'expense', balance: 'debit' },
           [GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE]: { name: 'Return Processing Expense', type: 'expense', balance: 'debit' },
           [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION]: { name: 'Delivery Agent Commission', type: 'expense', balance: 'debit' },
@@ -1127,6 +1130,75 @@ export class GLAutomationService {
       description: `Inventory purchase - ${shipment.product.name} x${shipment.quantity} from ${shipment.supplier || 'Unknown'}`,
       sourceType: JournalSourceType.inventory_purchase,
       sourceId: shipment.id,
+      createdBy: userId,
+      transactions: {
+        create: transactions,
+      },
+    });
+  }
+
+  /**
+   * Create GL entry for a digital product sale.
+   * Revenue is recognized immediately on payment (not on delivery like physical).
+   *
+   * Journal entries:
+   *   DR  Paystack Receivable (1030)    totalAmount
+   *   CR  Digital Revenue (4020)         totalAmount
+   *
+   *   DR  Paystack Fees (5060)          paystackFee
+   *   CR  Paystack Receivable (1030)    paystackFee
+   */
+  async createDigitalSaleEntry(
+    tx: Prisma.TransactionClient,
+    orderId: number,
+    totalAmount: number,
+    paystackFee: number,
+    userId: number,
+  ): Promise<JournalEntry> {
+    const paystackReceivableId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PAYSTACK_RECEIVABLE);
+    const digitalRevenueId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DIGITAL_REVENUE);
+
+    const totalAmountDec = new Decimal(totalAmount);
+    const transactions: TransactionCreateData[] = [
+      {
+        accountId: paystackReceivableId,
+        debitAmount: totalAmountDec,
+        creditAmount: new Decimal(0),
+        description: `Paystack payment received for digital order #${orderId}`,
+      },
+      {
+        accountId: digitalRevenueId,
+        debitAmount: new Decimal(0),
+        creditAmount: totalAmountDec,
+        description: `Digital product revenue - order #${orderId}`,
+      },
+    ];
+
+    // Add Paystack fee entries if fee > 0
+    if (paystackFee > 0) {
+      const paystackFeesId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PAYSTACK_FEES);
+      const feeDec = new Decimal(paystackFee);
+      transactions.push(
+        {
+          accountId: paystackFeesId,
+          debitAmount: feeDec,
+          creditAmount: new Decimal(0),
+          description: `Paystack fee for order #${orderId}`,
+        },
+        {
+          accountId: paystackReceivableId,
+          debitAmount: new Decimal(0),
+          creditAmount: feeDec,
+          description: `Paystack fee deduction - order #${orderId}`,
+        },
+      );
+    }
+
+    return await GLAutomationService.createJournalEntryWithRetry(tx, {
+      entryDate: new Date(),
+      description: `Digital product sale - order #${orderId}`,
+      sourceType: JournalSourceType.digital_sale,
+      sourceId: orderId,
       createdBy: userId,
       transactions: {
         create: transactions,
