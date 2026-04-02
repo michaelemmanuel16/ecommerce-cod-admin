@@ -43,6 +43,7 @@ const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
 const Communications = lazy(() => import('./pages/Communications'));
 const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
+const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
 const PlatformDashboard = lazy(() => import('./pages/PlatformDashboard').then(m => ({ default: m.PlatformDashboard })));
 const PlatformTenants = lazy(() => import('./pages/PlatformTenants').then(m => ({ default: m.PlatformTenants })));
 const PlatformTenantDetail = lazy(() => import('./pages/PlatformTenantDetail').then(m => ({ default: m.PlatformTenantDetail })));
@@ -83,10 +84,10 @@ const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }>
 };
 
 const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
 
-  if (!user?.isPlatformAdmin) {
-    return <Navigate to="/" replace />;
+  if (!isAuthenticated || !user?.isPlatformAdmin) {
+    return <Navigate to="/platform/login" replace />;
   }
 
   return <>{children}</>;
@@ -148,6 +149,12 @@ function App() {
               </Suspense>
             } />
             {/* Auth routes */}
+            {/* Platform admin login */}
+            <Route path="/platform/login" element={
+              <Suspense fallback={<Loading />}>
+                <PlatformLogin />
+              </Suspense>
+            } />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
