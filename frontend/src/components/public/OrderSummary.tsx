@@ -98,7 +98,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
 
       <div className="flex justify-between items-center mb-6 pt-3 border-t-2 border-gray-300">
         <span className="text-lg font-semibold text-gray-900">Total</span>
-        <span className="text-2xl font-bold text-[#0f172a]">
+        <span className="text-2xl font-bold" style={{ color: accentColor }}>
           {currency} {total.toFixed(2)}
         </span>
       </div>
