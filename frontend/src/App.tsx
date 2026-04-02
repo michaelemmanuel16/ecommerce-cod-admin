@@ -43,6 +43,10 @@ const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
 const Communications = lazy(() => import('./pages/Communications'));
 const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
+const PlatformDashboard = lazy(() => import('./pages/PlatformDashboard').then(m => ({ default: m.PlatformDashboard })));
+const PlatformTenants = lazy(() => import('./pages/PlatformTenants').then(m => ({ default: m.PlatformTenants })));
+const PlatformTenantDetail = lazy(() => import('./pages/PlatformTenantDetail').then(m => ({ default: m.PlatformTenantDetail })));
+const PlatformAnnouncements = lazy(() => import('./pages/PlatformAnnouncements').then(m => ({ default: m.PlatformAnnouncements })));
 
 // Mobile pages
 const MobileLayout = lazy(() => import('./components/layout/MobileLayout').then(m => ({ default: m.MobileLayout })));
@@ -302,6 +306,34 @@ function App() {
                 <RoleGuard allowedRoles={['sales_rep']}>
                   <Suspense fallback={<Loading />}>
                     <EarningsHistory />
+                  </Suspense>
+                </RoleGuard>
+              } />
+              <Route path="platform" element={
+                <RoleGuard allowedRoles={['super_admin']}>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformDashboard />
+                  </Suspense>
+                </RoleGuard>
+              } />
+              <Route path="platform/tenants" element={
+                <RoleGuard allowedRoles={['super_admin']}>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformTenants />
+                  </Suspense>
+                </RoleGuard>
+              } />
+              <Route path="platform/tenants/:id" element={
+                <RoleGuard allowedRoles={['super_admin']}>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformTenantDetail />
+                  </Suspense>
+                </RoleGuard>
+              } />
+              <Route path="platform/announcements" element={
+                <RoleGuard allowedRoles={['super_admin']}>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformAnnouncements />
                   </Suspense>
                 </RoleGuard>
               } />

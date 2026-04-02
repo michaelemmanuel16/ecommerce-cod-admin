@@ -17,6 +17,9 @@ import {
   History,
   Smartphone,
   MessageSquare,
+  LayoutGrid,
+  Building2,
+  Megaphone,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -83,6 +86,40 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
           </button>
         </div>
       </div>
+
+      {/* Platform Admin Navigation — super_admin only */}
+      {user?.role === 'super_admin' && (
+        <nav className="space-y-1 mb-4">
+          {!isCollapsed && (
+            <p className="text-gray-500 text-xs uppercase tracking-wider px-4 mb-2">Platform Admin</p>
+          )}
+          {[
+            { path: '/platform', icon: LayoutGrid, label: 'Platform' },
+            { path: '/platform/tenants', icon: Building2, label: 'Tenants' },
+            { path: '/platform/announcements', icon: Megaphone, label: 'Announcements' },
+          ].map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              end={item.path === '/platform'}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center rounded-lg transition-colors',
+                  isCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-4 py-3',
+                  isActive
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800'
+                )
+              }
+              title={isCollapsed ? item.label : undefined}
+            >
+              <item.icon className="w-5 h-5 flex-shrink-0" />
+              {!isCollapsed && <span>{item.label}</span>}
+            </NavLink>
+          ))}
+          {!isCollapsed && <hr className="border-gray-700 mt-4" />}
+        </nav>
+      )}
 
       {/* Navigation */}
       <nav className="space-y-1">
