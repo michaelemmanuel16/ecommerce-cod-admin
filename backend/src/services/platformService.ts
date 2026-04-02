@@ -226,28 +226,30 @@ export async function deleteTenant(id: string, confirmSlug: string) {
   if (tenant.slug !== confirmSlug) throw new AppError('Slug confirmation does not match', 400);
 
   // Delete all tenant-scoped data in dependency order
-  const tenantFilter = { where: { tenantId: id } };
-  await prisma.workflowExecution.deleteMany(tenantFilter);
-  await prisma.workflow.deleteMany(tenantFilter);
-  await prisma.notification.deleteMany(tenantFilter);
-  await prisma.webhookConfig.deleteMany(tenantFilter);
-  await prisma.accountTransaction.deleteMany(tenantFilter);
-  await prisma.journalEntry.deleteMany(tenantFilter);
-  await prisma.account.deleteMany(tenantFilter);
-  await prisma.delivery.deleteMany(tenantFilter);
-  await prisma.order.deleteMany(tenantFilter);
-  await prisma.customer.deleteMany(tenantFilter);
-  await prisma.product.deleteMany(tenantFilter);
-  await prisma.transaction.deleteMany(tenantFilter);
-  await prisma.expense.deleteMany(tenantFilter);
-  await prisma.checkoutForm.deleteMany(tenantFilter);
-  await prisma.agentBalance.deleteMany(tenantFilter);
-  await prisma.agentStock.deleteMany(tenantFilter);
-  await prisma.inventoryShipment.deleteMany(tenantFilter);
-  await prisma.inventoryTransfer.deleteMany(tenantFilter);
-  await prisma.messageLog.deleteMany(tenantFilter);
-  await prisma.user.deleteMany(tenantFilter);
-  await prisma.tenant.delete({ where: { id } });
+  await prisma.$transaction(async (tx) => {
+    const tenantFilter = { where: { tenantId: id } };
+    await tx.workflowExecution.deleteMany(tenantFilter);
+    await tx.workflow.deleteMany(tenantFilter);
+    await tx.notification.deleteMany(tenantFilter);
+    await tx.webhookConfig.deleteMany(tenantFilter);
+    await tx.accountTransaction.deleteMany(tenantFilter);
+    await tx.journalEntry.deleteMany(tenantFilter);
+    await tx.account.deleteMany(tenantFilter);
+    await tx.delivery.deleteMany(tenantFilter);
+    await tx.order.deleteMany(tenantFilter);
+    await tx.customer.deleteMany(tenantFilter);
+    await tx.product.deleteMany(tenantFilter);
+    await tx.transaction.deleteMany(tenantFilter);
+    await tx.expense.deleteMany(tenantFilter);
+    await tx.checkoutForm.deleteMany(tenantFilter);
+    await tx.agentBalance.deleteMany(tenantFilter);
+    await tx.agentStock.deleteMany(tenantFilter);
+    await tx.inventoryShipment.deleteMany(tenantFilter);
+    await tx.inventoryTransfer.deleteMany(tenantFilter);
+    await tx.messageLog.deleteMany(tenantFilter);
+    await tx.user.deleteMany(tenantFilter);
+    await tx.tenant.delete({ where: { id } });
+  });
 
   return { deleted: true };
 }
