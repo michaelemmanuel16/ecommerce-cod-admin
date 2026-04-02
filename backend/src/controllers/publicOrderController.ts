@@ -97,6 +97,29 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
     }
 
+    // IP-based cooldown: block repeat orders from same IP on same form within 10 minutes
+    {
+      const cooldownFrom = new Date(Date.now() - 10 * 60 * 1000);
+      const recentSubmission = await prisma.formSubmission.findFirst({
+        where: {
+          formId: form.id,
+          ipAddress: req.ip,
+          createdAt: { gte: cooldownFrom }
+        },
+        select: { orderId: true },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (recentSubmission?.orderId) {
+        res.status(429).json({
+          success: false,
+          message: 'Please wait before placing another order',
+          existingOrderId: recentSubmission.orderId
+        });
+        return;
+      }
+    }
+
     // Dedup guard: prevent double-submits within 30 minutes (same phone + amount + form)
     {
       const dedupeFrom = new Date(Date.now() - 30 * 60 * 1000);
