@@ -20,7 +20,7 @@ export const PlatformLogin: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      await login(email, password);
+      await login({ email, password });
       // Check if the logged-in user is a platform admin
       const state = useAuthStore.getState();
       if (!(state.user as any)?.isPlatformAdmin) {
