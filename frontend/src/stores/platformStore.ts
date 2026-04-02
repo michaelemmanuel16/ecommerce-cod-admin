@@ -71,32 +71,53 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
   },
 
   createTenant: async (data) => {
-    await platformService.createTenant(data);
-    toast.success('Tenant created');
-    get().fetchTenants();
+    try {
+      await platformService.createTenant(data);
+      toast.success('Tenant created');
+      get().fetchTenants();
+    } catch {
+      toast.error('Failed to create tenant');
+    }
   },
 
   updateTenant: async (id, data) => {
-    await platformService.updateTenant(id, data);
-    toast.success('Tenant updated');
-    get().fetchTenant(id);
+    try {
+      await platformService.updateTenant(id, data);
+      toast.success('Tenant updated');
+      get().fetchTenant(id);
+    } catch {
+      toast.error('Failed to update tenant');
+    }
   },
 
   suspendTenant: async (id) => {
-    await platformService.suspendTenant(id);
-    toast.success('Tenant suspended');
-    get().fetchTenant(id);
+    try {
+      await platformService.suspendTenant(id);
+      toast.success('Tenant suspended');
+      get().fetchTenant(id);
+    } catch {
+      toast.error('Failed to suspend tenant');
+    }
   },
 
   reactivateTenant: async (id) => {
-    await platformService.reactivateTenant(id);
-    toast.success('Tenant reactivated');
-    get().fetchTenant(id);
+    try {
+      await platformService.reactivateTenant(id);
+      toast.success('Tenant reactivated');
+      get().fetchTenant(id);
+    } catch {
+      toast.error('Failed to reactivate tenant');
+    }
   },
 
   deleteTenant: async (id, confirmSlug) => {
-    await platformService.deleteTenant(id, confirmSlug);
-    toast.success('Tenant deleted');
+    try {
+      await platformService.deleteTenant(id, confirmSlug);
+      toast.success('Tenant deleted');
+      get().fetchTenants();
+    } catch {
+      toast.error('Failed to delete tenant');
+    }
   },
 
   fetchAnnouncements: async () => {
@@ -107,14 +128,22 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
   },
 
   createAnnouncement: async (data) => {
-    await platformService.createAnnouncement(data);
-    toast.success('Announcement created');
-    get().fetchAnnouncements();
+    try {
+      await platformService.createAnnouncement(data);
+      toast.success('Announcement created');
+      get().fetchAnnouncements();
+    } catch {
+      toast.error('Failed to create announcement');
+    }
   },
 
   deleteAnnouncement: async (id) => {
-    await platformService.deleteAnnouncement(id);
-    toast.success('Announcement deleted');
-    get().fetchAnnouncements();
+    try {
+      await platformService.deleteAnnouncement(id);
+      toast.success('Announcement deleted');
+      get().fetchAnnouncements();
+    } catch {
+      toast.error('Failed to delete announcement');
+    }
   },
 }));
