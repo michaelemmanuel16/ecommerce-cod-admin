@@ -35,6 +35,7 @@ import path from 'path';
 import { initializeSocket } from './sockets';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { apiLimiter, whatsappWebhookLimiter } from './middleware/rateLimiter';
+import { requestTimeout } from './middleware/requestTimeout';
 import logger from './utils/logger';
 import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
@@ -158,6 +159,8 @@ app.use(express.json({
   },
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+app.use(requestTimeout(30000));
 
 // Request logging (sanitized - no auth headers or sensitive data)
 app.use((req, _res, next) => {
