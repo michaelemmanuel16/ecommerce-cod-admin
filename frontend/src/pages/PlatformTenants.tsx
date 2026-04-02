@@ -80,8 +80,7 @@ export const PlatformTenants: React.FC = () => {
       status: status || undefined,
       page: 1,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, plan, status]);
+  }, [search, plan, status, fetchTenants]);
 
   // Reload when page changes
   useEffect(() => {
@@ -91,8 +90,7 @@ export const PlatformTenants: React.FC = () => {
       status: status || undefined,
       page,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, search, plan, status, fetchTenants]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
