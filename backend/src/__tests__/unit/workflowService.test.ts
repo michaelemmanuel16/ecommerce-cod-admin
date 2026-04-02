@@ -20,6 +20,12 @@ jest.mock('../../services/smsService', () => ({
   clearSmsConfigCache: jest.fn(),
 }));
 
+// Mock the email service
+jest.mock('../../services/emailService', () => ({
+  sendEmail: jest.fn().mockResolvedValue(undefined),
+  clearEmailConfigCache: jest.fn(),
+}));
+
 describe('WorkflowService', () => {
   let workflowService: WorkflowService;
 

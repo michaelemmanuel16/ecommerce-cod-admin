@@ -5,6 +5,7 @@ import checkoutFormService from '../services/checkoutFormService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 import prisma from '../utils/prisma';
+import { paystackService } from '../services/paystackService';
 
 export const getPublicForm = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -51,13 +52,23 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // Derive tenantId from the checkout form (public routes have no auth context)
     const formTenantId = (form as any).tenantId as string | null;
 
-    // Validate required fields
-    const requiredFields = ['name', 'phoneNumber', 'address', 'state'];
+    const isDigital = form.product.productType === 'digital';
+
+    // Validate required fields — digital products don't need address/state
+    const requiredFields = isDigital
+      ? ['name', 'phoneNumber']
+      : ['name', 'phoneNumber', 'address', 'state'];
     for (const field of requiredFields) {
       if (!formData[field]) {
         res.status(400).json({ error: `Missing required field: ${field}` });
         return;
       }
+    }
+
+    // Digital products require email for download link delivery
+    if (isDigital && !formData.email) {
+      res.status(400).json({ error: 'Email is required for digital products' });
+      return;
     }
 
     // Check if customer exists or create new one
@@ -77,9 +88,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           phoneNumber: formData.phoneNumber,
           email: formData.email || null,
           alternatePhone: formData.alternatePhone || null,
-          address: formData.address,
-          state: formData.state,
-          area: formData.state,
+          address: formData.address || '',
+          state: formData.state || '',
+          area: formData.state || '',
           landmark: formData.landmark || null,
           notes: formData.notes || null,
           ...(formTenantId ? { tenantId: formTenantId } : {})
@@ -201,15 +212,17 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     const order = await prisma.order.create({
       data: {
         customerId: customer.id,
-        status: OrderStatus.pending_confirmation,
+        status: isDigital ? OrderStatus.payment_pending : OrderStatus.pending_confirmation,
+        orderType: isDigital ? 'digital' : 'physical',
+        paymentMethod: isDigital ? 'paystack' : 'cod',
         subtotal,
         shippingCost,
         discount,
         totalAmount: finalTotal,
-        codAmount: finalTotal,
-        deliveryAddress: formData.address,
-        deliveryState: formData.state,
-        deliveryArea: formData.state,
+        codAmount: isDigital ? 0 : finalTotal,
+        deliveryAddress: formData.address || null,
+        deliveryState: formData.state || null,
+        deliveryArea: formData.state || null,
         notes: formData.notes || null,
         source: 'checkout_form',
         ...(formTenantId ? { tenantId: formTenantId } : {}),
@@ -257,6 +270,36 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     // Emit socket event for real-time update
     emitOrderCreated(getSocketInstance() as any, order);
+
+    // For digital products: initialize Paystack payment
+    if (isDigital) {
+      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback`;
+      // Amount in pesewas (minor units) for GHS
+      const amountInMinorUnits = Math.round(finalTotal * 100);
+      const currency = form.currency || 'GHS';
+
+      const paystackResult = await paystackService.initializeTransaction(
+        formData.email,
+        amountInMinorUnits,
+        currency,
+        { orderId: order.id, formSlug: slug },
+        callbackUrl,
+      );
+
+      res.status(201).json({
+        success: true,
+        orderId: order.id,
+        order: {
+          id: order.id,
+          totalAmount: order.totalAmount,
+          status: order.status,
+        },
+        authorization_url: paystackResult.authorization_url,
+        paymentReference: paystackResult.reference,
+        message: 'Order created — redirecting to payment',
+      });
+      return;
+    }
 
     res.status(201).json({
       success: true,

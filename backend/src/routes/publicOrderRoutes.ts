@@ -3,6 +3,8 @@ import * as publicOrderController from '../controllers/publicOrderController';
 import { webhookLimiter, publicOrderLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validation';
 import { body, param } from 'express-validator';
+import { digitalDeliveryService } from '../services/digitalDeliveryService';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -24,8 +26,9 @@ const createOrderValidation = [
   body('formData.alternatePhone').optional()
     .matches(/^\+?[0-9]{8,15}$/).withMessage('Invalid alternate phone number format'),
   body('formData.email').optional({ nullable: true, checkFalsy: true }).isEmail().withMessage('Invalid email format'),
-  body('formData.address').notEmpty().withMessage('Address is required'),
-  body('formData.state').notEmpty().withMessage('State is required'),
+  // Address and state are optional for digital products — validated in controller
+  body('formData.address').optional().notEmpty().withMessage('Address is required'),
+  body('formData.state').optional().notEmpty().withMessage('State is required'),
   body('selectedPackage').isObject().withMessage('Package selection is required'),
   body('selectedPackage.name').notEmpty().withMessage('Package name is required'),
   body('selectedPackage.price').isFloat({ min: 0 }).withMessage('Package price must be positive'),
@@ -66,5 +69,32 @@ router.post(
   validate,
   publicOrderController.trackOrder
 );
+
+// Download digital product by token
+router.get('/download/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const result = await digitalDeliveryService.validateAndGetDownloadUrl(token);
+
+    if (!result) {
+      res.status(404).json({
+        error: 'Download link is invalid, expired, or has reached its download limit.',
+      });
+      return;
+    }
+
+    // Validate URL to prevent open redirect attacks
+    if (!result.fileUrl.startsWith('https://')) {
+      logger.error('Download file URL is not HTTPS, blocking redirect', { fileUrl: result.fileUrl });
+      res.status(400).json({ error: 'Invalid download URL configuration' });
+      return;
+    }
+
+    res.redirect(302, result.fileUrl);
+  } catch (error: any) {
+    logger.error('Download processing failed', { error: error.message });
+    res.status(500).json({ error: 'Failed to process download' });
+  }
+});
 
 export default router;

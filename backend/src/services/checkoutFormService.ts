@@ -261,13 +261,15 @@ export class CheckoutFormService {
         currency: true,
         regions: true,
         pixelConfig: true,
+        formType: true,
         product: {
           select: {
             name: true,
             description: true,
             price: true,
             imageUrl: true,
-            stockQuantity: true
+            stockQuantity: true,
+            productType: true,
           }
         },
         packages: {

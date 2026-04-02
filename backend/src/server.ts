@@ -63,6 +63,8 @@ import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
 import smsRoutes from './routes/smsRoutes';
+import emailRoutes from './routes/emailRoutes';
+import paystackRoutes from './routes/paystackRoutes';
 import communicationRoutes from './routes/communicationRoutes';
 import onboardingRoutes from './routes/onboardingRoutes';
 import billingRoutes from './routes/billingRoutes';
@@ -148,7 +150,8 @@ app.use(express.json({
   limit: '10mb',
   // Preserve raw body buffer on webhook routes for HMAC signature verification
   verify: (req: any, _res, buf) => {
-    if (req.originalUrl?.startsWith('/api/whatsapp/webhook')) {
+    if (req.originalUrl?.startsWith('/api/whatsapp/webhook') ||
+        req.originalUrl?.startsWith('/api/paystack/webhook')) {
       req.rawBody = buf;
     }
   },
@@ -207,6 +210,8 @@ app.get('/api/whatsapp/oauth/callback', apiLimiter, handleOAuthCallback);
 // Admin endpoints use standard rate limiter
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 app.use('/api/sms', apiLimiter, smsRoutes);
+app.use('/api/email', apiLimiter, emailRoutes);
+app.use('/api/paystack', apiLimiter, paystackRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/billing', billingRoutes);
