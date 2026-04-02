@@ -23,7 +23,7 @@ export interface TenantListItem {
   createdAt: string;
   rateLimitEnabled: boolean;
   rateLimitConfig: { requestsPer15Min: number; burstPerSec: number } | null;
-  currentPlan: { name: string; displayName: string } | null;
+  currentPlan: { id: string; name: string; displayName: string } | null;
   _count: { users: number; orders: number };
 }
 
@@ -45,6 +45,13 @@ export interface Announcement {
   isActive: boolean;
   expiresAt: string | null;
   createdAt: string;
+}
+
+export interface PlanItem {
+  id: string;
+  name: string;
+  displayName: string;
+  priceGHS: string;
 }
 
 export const platformService = {
@@ -115,6 +122,12 @@ export const platformService = {
 
   async deleteAnnouncement(id: string): Promise<void> {
     await apiClient.delete(`/api/platform/announcements/${id}`);
+  },
+
+  // Plans
+  async listPlans(): Promise<{ plans: PlanItem[] }> {
+    const res = await apiClient.get('/api/platform/plans');
+    return res.data;
   },
 
   // Health

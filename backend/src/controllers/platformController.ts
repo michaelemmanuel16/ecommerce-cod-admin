@@ -1,5 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
+import prisma from '../utils/prisma';
 import * as platformService from '../services/platformService';
 
 // ── Metrics ──────────────────────────────────────────────
@@ -108,6 +109,19 @@ export const removeAnnouncement = async (req: AuthRequest, res: Response, next: 
   try {
     await platformService.deleteAnnouncement(req.params.id);
     res.json({ message: 'Announcement deleted' });
+  } catch (err) { next(err); }
+};
+
+// ── Plans ───────────────────────────────────────────────
+
+export const listPlans = async (_req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const plans = await prisma.plan.findMany({
+      where: { isActive: true },
+      orderBy: { priceGHS: 'asc' },
+      select: { id: true, name: true, displayName: true, priceGHS: true },
+    });
+    res.json({ plans });
   } catch (err) { next(err); }
 };
 

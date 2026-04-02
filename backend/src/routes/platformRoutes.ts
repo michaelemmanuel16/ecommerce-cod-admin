@@ -33,6 +33,9 @@ router.get('/announcements', pc.listAnnouncements);
 router.post('/announcements', pc.addAnnouncement);
 router.delete('/announcements/:id', pc.removeAnnouncement);
 
+// Plans
+router.get('/plans', pc.listPlans);
+
 // System health
 router.get('/health', pc.getHealth);
 

@@ -34,8 +34,8 @@ export const PlatformDashboard: React.FC = () => {
     fetchTrends(period);
   }, [fetchTrends, period]);
 
-  const formatGHS = (value: number) =>
-    `GHS ${value.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const formatUSD = (value: number) =>
+    `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const chartData = trends.map(t => ({
     date: t.date,
@@ -57,7 +57,7 @@ export const PlatformDashboard: React.FC = () => {
         />
         <StatCard
           title="MRR"
-          value={isLoading ? '...' : formatGHS(metrics?.mrr ?? 0)}
+          value={isLoading ? '...' : formatUSD(metrics?.mrr ?? 0)}
           icon={DollarSign}
           iconColor="text-green-600"
         />
@@ -109,7 +109,7 @@ export const PlatformDashboard: React.FC = () => {
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
               <Tooltip
                 formatter={(value: number, name: string) =>
-                  name === 'revenue' ? [formatGHS(value), 'Revenue'] : [value, 'New Tenants']
+                  name === 'revenue' ? [formatUSD(value), 'Revenue'] : [value, 'New Tenants']
                 }
               />
               <Legend />

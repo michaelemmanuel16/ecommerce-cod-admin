@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { platformService, PlatformMetrics, TrendData, TenantListItem, TenantDetail, Announcement } from '../services/platform.service';
+import { platformService, PlatformMetrics, TrendData, TenantListItem, TenantDetail, Announcement, PlanItem } from '../services/platform.service';
 import toast from 'react-hot-toast';
 
 interface PlatformState {
@@ -11,10 +11,12 @@ interface PlatformState {
   tenantsTotalPages: number;
   currentTenant: TenantDetail | null;
   announcements: Announcement[];
+  plans: PlanItem[];
   isLoading: boolean;
 
   fetchMetrics: () => Promise<void>;
   fetchTrends: (period?: string) => Promise<void>;
+  fetchPlans: () => Promise<void>;
   fetchTenants: (params?: { search?: string; plan?: string; status?: string; page?: number }) => Promise<void>;
   fetchTenant: (id: string) => Promise<void>;
   createTenant: (data: { name: string; slug: string; planName?: string; region?: string; currency?: string }) => Promise<void>;
@@ -36,7 +38,15 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
   tenantsTotalPages: 1,
   currentTenant: null,
   announcements: [],
+  plans: [],
   isLoading: false,
+
+  fetchPlans: async () => {
+    try {
+      const { plans } = await platformService.listPlans();
+      set({ plans });
+    } catch { /* silent — plans dropdown just stays empty */ }
+  },
 
   fetchMetrics: async () => {
     try {

@@ -21,7 +21,7 @@ const formatGHS = (value: number) =>
 export const PlatformTenantDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentTenant, isLoading, fetchTenant, updateTenant, suspendTenant, reactivateTenant, deleteTenant } =
+  const { currentTenant, isLoading, fetchTenant, updateTenant, suspendTenant, reactivateTenant, deleteTenant, plans, fetchPlans } =
     usePlatformStore();
 
   // Plan management state
@@ -41,7 +41,8 @@ export const PlatformTenantDetail: React.FC = () => {
 
   useEffect(() => {
     if (id) fetchTenant(id);
-  }, [id, fetchTenant]);
+    fetchPlans();
+  }, [id, fetchTenant, fetchPlans]);
 
   // Populate state from tenant data
   useEffect(() => {
@@ -49,7 +50,7 @@ export const PlatformTenantDetail: React.FC = () => {
       setRateLimitEnabled(currentTenant.rateLimitEnabled);
       setRequestsPer15Min(currentTenant.rateLimitConfig?.requestsPer15Min ?? 900);
       setBurstPerSec(currentTenant.rateLimitConfig?.burstPerSec ?? 30);
-      setPlanId(currentTenant.currentPlan?.name ?? '');
+      setPlanId(currentTenant.currentPlan?.id ?? '');
     }
   }, [currentTenant]);
 
@@ -182,13 +183,18 @@ export const PlatformTenantDetail: React.FC = () => {
         <div className="flex flex-col sm:flex-row gap-3 items-end">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">Current Plan</label>
-            <input
-              type="text"
+            <select
               value={planId}
               onChange={(e) => setPlanId(e.target.value)}
-              placeholder="Plan ID (e.g. free, starter, pro)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">No plan</option>
+              {plans.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.displayName} ({p.name})
+                </option>
+              ))}
+            </select>
           </div>
           <button
             onClick={handleSavePlan}
