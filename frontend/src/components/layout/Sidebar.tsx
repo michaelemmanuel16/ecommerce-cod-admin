@@ -89,8 +89,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
         </div>
       </div>
 
-      {/* Platform Admin Navigation — super_admin only */}
-      {user?.role === 'super_admin' && (
+      {/* Platform Admin Navigation — isPlatformAdmin only */}
+      {user?.isPlatformAdmin && (
         <nav className="space-y-1 mb-4">
           {!isCollapsed && (
             <p className="text-gray-500 text-xs uppercase tracking-wider px-4 mb-2">Platform Admin</p>

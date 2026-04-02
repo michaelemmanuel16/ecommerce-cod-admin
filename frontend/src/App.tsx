@@ -82,6 +82,16 @@ const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }>
   return <>{children}</>;
 };
 
+const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuthStore();
+
+  if (!user?.isPlatformAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 const MobileRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuthStore();
   const isMobile = useIsMobile();
@@ -310,32 +320,32 @@ function App() {
                 </RoleGuard>
               } />
               <Route path="platform" element={
-                <RoleGuard allowedRoles={['super_admin']}>
+                <PlatformGuard>
                   <Suspense fallback={<Loading />}>
                     <PlatformDashboard />
                   </Suspense>
-                </RoleGuard>
+                </PlatformGuard>
               } />
               <Route path="platform/tenants" element={
-                <RoleGuard allowedRoles={['super_admin']}>
+                <PlatformGuard>
                   <Suspense fallback={<Loading />}>
                     <PlatformTenants />
                   </Suspense>
-                </RoleGuard>
+                </PlatformGuard>
               } />
               <Route path="platform/tenants/:id" element={
-                <RoleGuard allowedRoles={['super_admin']}>
+                <PlatformGuard>
                   <Suspense fallback={<Loading />}>
                     <PlatformTenantDetail />
                   </Suspense>
-                </RoleGuard>
+                </PlatformGuard>
               } />
               <Route path="platform/announcements" element={
-                <RoleGuard allowedRoles={['super_admin']}>
+                <PlatformGuard>
                   <Suspense fallback={<Loading />}>
                     <PlatformAnnouncements />
                   </Suspense>
-                </RoleGuard>
+                </PlatformGuard>
               } />
             </Route>
           </Routes>

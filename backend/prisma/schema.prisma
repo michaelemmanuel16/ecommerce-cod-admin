@@ -88,6 +88,7 @@ model User {
   phoneNumber           String?           @map("phone_number")
   role                  UserRole
   isActive              Boolean           @default(true) @map("is_active")
+  isPlatformAdmin       Boolean           @default(false) @map("is_platform_admin")
   isAvailable           Boolean           @default(true) @map("is_available")
   lastLogin             DateTime?         @map("last_login")
   refreshToken          String?           @map("refresh_token")

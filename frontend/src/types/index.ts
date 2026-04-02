@@ -15,6 +15,7 @@ export interface User {
   firstName: string;
   lastName: string;
   role: 'super_admin' | 'admin' | 'manager' | 'sales_rep' | 'inventory_manager' | 'delivery_agent' | 'accountant' | 'customer_rep';
+  isPlatformAdmin?: boolean;
   avatar?: string;
   preferences?: UserPreferences;
   commissionAmount?: number;
