@@ -19,6 +19,7 @@ import { Onboarding } from './pages/Onboarding';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
+import { Pricing } from './pages/Pricing';
 
 // Lazy load all other pages for better initial load performance
 const Orders = lazy(() => import('./pages/Orders').then(m => ({ default: m.Orders })));
@@ -127,6 +128,7 @@ function App() {
                 <PublicCheckout />
               </Suspense>
             } />
+            <Route path="/pricing" element={<Pricing />} />
 
             {/* Auth routes */}
             <Route path="/login" element={<Login />} />
