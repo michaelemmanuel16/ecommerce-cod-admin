@@ -18,6 +18,8 @@ model Tenant {
   currentPlanId       String?   @map("current_plan_id")
   subscriptionStatus  String    @default("active") @map("subscription_status")
   trialEndsAt         DateTime? @map("trial_ends_at")
+  rateLimitEnabled    Boolean   @default(false) @map("rate_limit_enabled")
+  rateLimitConfig     Json?     @map("rate_limit_config")
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -63,6 +65,20 @@ model Plan {
   tenants Tenant[]
 
   @@map("plans")
+}
+
+model PlatformAnnouncement {
+  id        String    @id @default(uuid())
+  title     String
+  body      String
+  type      String    @default("info")
+  isActive  Boolean   @default(true) @map("is_active")
+  expiresAt DateTime? @map("expires_at")
+  createdBy Int?      @map("created_by")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("platform_announcements")
 }
 
 model User {
