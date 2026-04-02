@@ -68,6 +68,7 @@ import paystackRoutes from './routes/paystackRoutes';
 import communicationRoutes from './routes/communicationRoutes';
 import onboardingRoutes from './routes/onboardingRoutes';
 import billingRoutes from './routes/billingRoutes';
+import platformRoutes from './routes/platformRoutes';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
@@ -215,6 +216,7 @@ app.use('/api/paystack', apiLimiter, paystackRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/platform', platformRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);
