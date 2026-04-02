@@ -3,16 +3,15 @@ import { apiClient } from './api';
 export interface PlatformMetrics {
   totalTenants: number;
   activeTenants: number;
+  suspendedTenants: number;
   mrr: number;
   activeUsers: number;
-  ordersThisMonth: number;
 }
 
 export interface TrendData {
   date: string;
   newTenants: number;
-  revenue: number;
-  orders: number;
+  totalTenants: number;
 }
 
 export interface TenantListItem {

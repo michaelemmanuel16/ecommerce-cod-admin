@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Users, DollarSign, Activity, ShoppingBag } from 'lucide-react';
+import { Users, DollarSign, Activity, AlertTriangle } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -39,7 +39,7 @@ export const PlatformDashboard: React.FC = () => {
 
   const chartData = trends.map(t => ({
     date: t.date,
-    revenue: t.revenue,
+    totalTenants: t.totalTenants,
     newTenants: t.newTenants,
   }));
 
@@ -68,17 +68,17 @@ export const PlatformDashboard: React.FC = () => {
           iconColor="text-purple-600"
         />
         <StatCard
-          title="Orders This Month"
-          value={isLoading ? '...' : (metrics?.ordersThisMonth ?? 0)}
-          icon={ShoppingBag}
-          iconColor="text-orange-600"
+          title="Suspended Tenants"
+          value={isLoading ? '...' : (metrics?.suspendedTenants ?? 0)}
+          icon={AlertTriangle}
+          iconColor="text-red-600"
         />
       </div>
 
       {/* Trends Chart */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Platform Trends</h3>
+          <h3 className="text-lg font-semibold">Tenant Growth</h3>
           <div className="flex gap-2">
             {PERIODS.map(({ label, value }) => (
               <button
@@ -105,22 +105,22 @@ export const PlatformDashboard: React.FC = () => {
             <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
+              <YAxis yAxisId="left" tick={{ fontSize: 12 }} allowDecimals={false} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} allowDecimals={false} />
               <Tooltip
                 formatter={(value: number, name: string) =>
-                  name === 'revenue' ? [formatUSD(value), 'Revenue'] : [value, 'New Tenants']
+                  name === 'totalTenants' ? [value, 'Total Tenants'] : [value, 'New Tenants']
                 }
               />
               <Legend />
               <Line
                 yAxisId="left"
                 type="monotone"
-                dataKey="revenue"
+                dataKey="totalTenants"
                 stroke="#2563eb"
                 strokeWidth={2}
                 dot={false}
-                name="revenue"
+                name="totalTenants"
               />
               <Line
                 yAxisId="right"

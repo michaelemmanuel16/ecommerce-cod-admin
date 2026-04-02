@@ -5,15 +5,13 @@ import { redis } from '../middleware/cache.middleware';
 // ── Metrics ──────────────────────────────────────────────
 
 export async function getPlatformMetrics() {
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-  const [totalTenants, activeTenants, activeUsers, ordersThisMonth, plans] = await Promise.all([
+  const [totalTenants, activeTenants, suspendedTenants, activeUsers, plans] = await Promise.all([
     prisma.tenant.count(),
     prisma.tenant.count({ where: { subscriptionStatus: 'active' } }),
+    prisma.tenant.count({ where: { subscriptionStatus: 'suspended' } }),
     prisma.user.count({ where: { lastLogin: { gte: thirtyDaysAgo }, isActive: true } }),
-    prisma.order.count({ where: { createdAt: { gte: monthStart } } }),
     prisma.plan.findMany({ where: { isActive: true } }),
   ]);
 
@@ -30,46 +28,43 @@ export async function getPlatformMetrics() {
     return sum + (plan ? Number(plan.priceGHS) * group._count : 0);
   }, 0);
 
-  return { totalTenants, activeTenants, mrr, activeUsers, ordersThisMonth };
+  return { totalTenants, activeTenants, suspendedTenants, mrr, activeUsers };
 }
 
 export async function getPlatformTrends(period: string) {
   const days = period === '90d' ? 90 : period === '1y' ? 365 : 30;
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-  const [tenants, orders] = await Promise.all([
+  // Get all tenants (including those created before the period for cumulative count)
+  const [tenantsBeforePeriod, tenantsDuringPeriod] = await Promise.all([
+    prisma.tenant.count({ where: { createdAt: { lt: since } } }),
     prisma.tenant.findMany({
       where: { createdAt: { gte: since } },
       select: { createdAt: true },
       orderBy: { createdAt: 'asc' },
     }),
-    prisma.order.findMany({
-      where: { createdAt: { gte: since } },
-      select: { createdAt: true, totalAmount: true },
-      orderBy: { createdAt: 'asc' },
-    }),
   ]);
 
-  // Group by date
-  const dataMap = new Map<string, { date: string; newTenants: number; revenue: number; orders: number }>();
+  // Group new tenants by date
+  const dataMap = new Map<string, { date: string; newTenants: number; totalTenants: number }>();
   const toDateKey = (d: Date) => d.toISOString().split('T')[0];
 
-  for (const t of tenants) {
+  for (const t of tenantsDuringPeriod) {
     const key = toDateKey(t.createdAt);
-    const entry = dataMap.get(key) || { date: key, newTenants: 0, revenue: 0, orders: 0 };
+    const entry = dataMap.get(key) || { date: key, newTenants: 0, totalTenants: 0 };
     entry.newTenants++;
     dataMap.set(key, entry);
   }
 
-  for (const o of orders) {
-    const key = toDateKey(o.createdAt);
-    const entry = dataMap.get(key) || { date: key, newTenants: 0, revenue: 0, orders: 0 };
-    entry.orders++;
-    entry.revenue += Number(o.totalAmount);
-    dataMap.set(key, entry);
+  // Fill cumulative tenant count
+  const sorted = Array.from(dataMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  let running = tenantsBeforePeriod;
+  for (const entry of sorted) {
+    running += entry.newTenants;
+    entry.totalTenants = running;
   }
 
-  return { data: Array.from(dataMap.values()).sort((a, b) => a.date.localeCompare(b.date)) };
+  return { data: sorted };
 }
 
 // ── Tenant Management ────────────────────────────────────
