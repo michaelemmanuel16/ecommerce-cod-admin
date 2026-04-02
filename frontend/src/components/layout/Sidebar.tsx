@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -50,6 +50,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
   const { canAccessMenu } = usePermissions();
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isOnPlatformPage = location.pathname.startsWith('/platform');
 
   const visibleMenuItems = menuItems.filter(item => canAccessMenu(item.key));
 
@@ -121,8 +123,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
         </nav>
       )}
 
-      {/* Navigation */}
-      <nav className="space-y-1">
+      {/* Navigation — hidden on platform admin pages */}
+      {!isOnPlatformPage && <nav className="space-y-1">
         {visibleMenuItems.map((item) => (
           <NavLink
             key={item.path}
@@ -142,7 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
             {!isCollapsed && <span>{item.label}</span>}
           </NavLink>
         ))}
-      </nav>
+      </nav>}
 
       {/* Switch to Mobile button for delivery agents */}
       {user?.role === 'delivery_agent' && (
