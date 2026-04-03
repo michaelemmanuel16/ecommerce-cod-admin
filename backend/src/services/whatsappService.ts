@@ -3,6 +3,7 @@ import logger from '../utils/logger';
 import { MessageChannel, MessageDirection, MessageStatus, Prisma } from '@prisma/client';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { refreshTokenIfNeeded } from './whatsappTokenRefreshService';
+import { getTenantId } from '../utils/tenantContext';
 
 // WhatsApp Business Cloud API configuration
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
@@ -18,14 +19,16 @@ interface WhatsAppConfig {
   oauthTokenExpiry?: string;
 }
 
-// Cached DB config to avoid per-message DB queries
-let cachedDbConfig: { data: any; fetchedAt: number } | null = null;
+// Tenant-aware cached DB config to avoid per-message DB queries
+const configCache = new Map<string, { data: any; fetchedAt: number }>();
 const CACHE_TTL_MS = 60_000; // 60 seconds
 
 export async function getDbWhatsappConfig(): Promise<any | null> {
+  const tenantId = getTenantId() || '__default__';
   const now = Date.now();
-  if (cachedDbConfig && now - cachedDbConfig.fetchedAt < CACHE_TTL_MS) {
-    return cachedDbConfig.data;
+  const cached = configCache.get(tenantId);
+  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.data;
   }
 
   try {
@@ -34,8 +37,8 @@ export async function getDbWhatsappConfig(): Promise<any | null> {
     });
     const provider = config?.whatsappProvider as any;
     const decrypted = provider ? decryptProviderSecrets('whatsappProvider', provider) : null;
-    cachedDbConfig = { data: decrypted, fetchedAt: now };
-    return cachedDbConfig.data;
+    configCache.set(tenantId, { data: decrypted, fetchedAt: now });
+    return decrypted;
   } catch (error: any) {
     logger.warn('Failed to read WhatsApp config from DB, falling back to env vars', { error: error.message });
     return null;
@@ -44,7 +47,7 @@ export async function getDbWhatsappConfig(): Promise<any | null> {
 
 /** Clear cached DB config (call after admin saves new settings). */
 export function clearWhatsAppConfigCache(): void {
-  cachedDbConfig = null;
+  configCache.clear();
 }
 
 async function getConfig(): Promise<WhatsAppConfig> {

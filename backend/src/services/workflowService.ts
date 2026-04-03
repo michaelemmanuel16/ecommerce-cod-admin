@@ -6,6 +6,7 @@ import { workflowQueue } from '../queues/workflowQueue';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
 import crypto from 'crypto';
 import { sendEmail } from './emailService';
+import { getTenantId } from '../utils/tenantContext';
 
 
 interface CreateWorkflowData {
@@ -195,6 +196,9 @@ export class WorkflowService {
               }
     });
 
+    // Capture tenant context so the queue worker can restore it
+    const tenantId = getTenantId();
+
     // Add to queue for async processing (with 5s timeout to prevent API hang)
     await Promise.race([
       workflowQueue.add('execute-workflow', {
@@ -202,7 +206,8 @@ export class WorkflowService {
         workflowId: workflow.id,
         actions: workflow.actions,
         conditions: workflow.conditions,
-        input: input || {}
+        input: input || {},
+        tenantId,
       }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Workflow queue is currently unavailable. Please try again later.')), 5000)
