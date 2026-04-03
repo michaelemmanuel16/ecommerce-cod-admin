@@ -275,6 +275,7 @@ docker-compose -f docker-compose.prod.yml down
 - Bull + Redis for job queues (workflow automation)
 - Sentry for error tracking and performance monitoring
 - Express rate limiting (10k dev / 100 prod per 15min)
+- Per-tenant rate limiting via Redis sliding window (opt-in per tenant)
 
 **Database Models:**
 - Tenant, Plan (multi-tenant SaaS)
@@ -286,6 +287,8 @@ docker-compose -f docker-compose.prod.yml down
 - Workflow, WorkflowExecution
 - WebhookConfig, Notification, CheckoutForm
 - MessageLog, SmsTemplate
+- PlatformAnnouncement (cross-tenant, managed by platform admin)
+- SystemConfig (per-tenant integration credentials and business settings)
 
 **Order Status Flow:**
 ```
@@ -301,9 +304,11 @@ Can branch to: cancelled, returned, failed_delivery
 - AsyncLocalStorage (`tenantContext.ts`) propagates tenant scope from JWT
 - Cache keys include tenantId to prevent cross-tenant data leaks
 - FK constraints with CASCADE delete on all tenant_id columns
+- Platform admin (`isPlatformAdmin: true`) bypasses tenant scoping with `tenantId: null`
+- Permissions cache is keyed per-tenant to prevent cross-tenant leakage
 
 **API Endpoints:**
-- `/api/auth` - Authentication (login, register, refresh, register-tenant)
+- `/api/auth` - Authentication (login, register, refresh, register-tenant, delete-account)
 - `/api/admin` - Admin panel (user management, settings)
 - `/api/users` - User CRUD
 - `/api/customers` - Customer management
@@ -318,6 +323,7 @@ Can branch to: cancelled, returned, failed_delivery
 - `/api/billing` - Subscription plans and upgrades
 - `/api/onboarding` - Tenant setup wizard
 - `/api/communications` - SMS/WhatsApp messaging
+- `/api/platform` - Platform admin (metrics, tenant CRUD, announcements, health)
 - `/api/public` - Public endpoints (no auth required)
 
 ### Frontend
@@ -353,6 +359,8 @@ Can branch to: cancelled, returned, failed_delivery
 - Delivery Agents, Customer Reps, Financial, Analytics
 - Workflows, Checkout Forms, Settings
 - Public Checkout (unauthenticated, embeddable)
+- Public Pricing page (unauthenticated)
+- Platform Admin: Dashboard, Tenants, Tenant Detail, Announcements (isPlatformAdmin only)
 
 **Special Features:**
 - **Public Checkout Forms**: Create embeddable checkout forms for COD orders
@@ -498,10 +506,14 @@ See Development Commands section for test commands.
 - `src/middleware/cache.ts` - Response cache (tenant-aware keys)
 - `src/sockets/index.ts` - Socket.io setup
 - `src/queues/workflowQueue.ts` - Background jobs
+- `src/services/platformService.ts` - Platform admin business logic
+- `src/middleware/platformAuth.ts` - Platform admin auth (requirePlatformAdmin)
+- `src/middleware/tenantRateLimiter.ts` - Per-tenant rate limiting
 
 **Frontend:**
 - `src/services/api.ts` - Axios interceptor
 - `src/stores/authStore.ts` - Session management
+- `src/stores/platformStore.ts` - Platform admin state
 - `src/App.tsx` - Route definitions
 - `src/types/index.ts` - TypeScript types
 
