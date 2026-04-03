@@ -17,28 +17,40 @@ echo -e "${BLUE}║   E-Commerce COD Admin - Staging Deployment                 
 echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Check if .env.staging exists
-if [ ! -f .env.staging ]; then
-    echo -e "${RED}Error: .env.staging file not found!${NC}"
-    echo -e "${YELLOW}Please create .env.staging with proper configuration${NC}"
-    exit 1
-fi
-
-# Load environment variables (safely handle comments and whitespace)
+# Load environment variables from .env.staging (preferred) or .env (fallback)
 if [ -f .env.staging ]; then
-    # We use a temp file to avoid export issues with comments
+    echo -e "${GREEN}Loading .env.staging${NC}"
     set -a
     source <(grep -v '^#' .env.staging | sed -e 's/ = /=/g' -e 's/=[[:space:]]*/=/g' -e 's/[[:space:]]*=/=/g')
     set +a
+elif [ -f .env ]; then
+    echo -e "${YELLOW}No .env.staging found, falling back to .env${NC}"
+    set -a
+    source <(grep -v '^#' .env | sed -e 's/ = /=/g' -e 's/=[[:space:]]*/=/g' -e 's/[[:space:]]*=/=/g')
+    set +a
+else
+    echo -e "${YELLOW}No .env file found, using docker-compose defaults${NC}"
 fi
 
 echo -e "${GREEN}Starting staging deployment...${NC}"
 
 # Step 1: Backup database (if running)
-echo -e "${BLUE}[1/6] Checking for existing database...${NC}"
+echo -e "${BLUE}[1/6] Creating database backup...${NC}"
+mkdir -p ./backups
 if docker ps | grep -q "ecommerce-cod-postgres-staging"; then
-    echo -e "${YELLOW}Creating database backup...${NC}"
-    docker exec ecommerce-cod-postgres-staging pg_dump -U ${POSTGRES_USER:-ecommerce_user} ${POSTGRES_DB:-ecommerce_cod_staging} > ./backups/staging-backup-$(date +%Y%m%d-%H%M%S).sql || echo -e "${YELLOW}Warning: Backup skipped${NC}"
+    BACKUP_FILE="./backups/staging-backup-$(date +%Y%m%d-%H%M%S).sql"
+    echo -e "${YELLOW}Backing up to ${BACKUP_FILE}...${NC}"
+    if docker exec ecommerce-cod-postgres-staging pg_dump -U ${POSTGRES_USER:-ecommerce_user} ${POSTGRES_DB:-ecommerce_cod_staging} > "${BACKUP_FILE}" 2>/dev/null; then
+        BACKUP_SIZE=$(wc -c < "${BACKUP_FILE}" 2>/dev/null || echo "0")
+        if [ "$BACKUP_SIZE" -gt 1000 ]; then
+            echo -e "${GREEN}✓ Database backup completed (${BACKUP_SIZE} bytes)${NC}"
+        else
+            echo -e "${RED}✗ Backup file is suspiciously small (${BACKUP_SIZE} bytes) - database may be empty${NC}"
+        fi
+    else
+        echo -e "${RED}✗ Database backup FAILED${NC}"
+        echo -e "${YELLOW}Continuing with deployment - check backup manually${NC}"
+    fi
 else
     echo -e "${YELLOW}No existing database found, skipping backup${NC}"
 fi
@@ -48,40 +60,54 @@ echo -e "${BLUE}[2/6] Pulling latest Docker images (develop branch)...${NC}"
 docker pull ghcr.io/michaelemmanuel16/ecommerce-cod-admin/backend:develop || echo -e "${YELLOW}Warning: Failed to pull backend image, will use existing${NC}"
 docker pull ghcr.io/michaelemmanuel16/ecommerce-cod-admin/frontend:develop || echo -e "${YELLOW}Warning: Failed to pull frontend image, will use existing${NC}"
 
-# Step 3: Stop and remove existing containers
-echo -e "${BLUE}[3/6] Stopping existing staging containers...${NC}"
-# Stop containers using docker-compose
-docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging down --remove-orphans || true
+# Step 3: Ensure infrastructure is running, then rolling-update app containers
+echo -e "${BLUE}[3/6] Updating staging containers (rolling update)...${NC}"
 
-# Remove any orphan containers with staging in the name
-echo -e "${YELLOW}Removing any orphan staging containers...${NC}"
-docker ps -aq --filter "name=staging" | xargs -r docker rm -f || true
+# Check if postgres/redis are already running
+POSTGRES_EXISTS=$(docker ps --filter "name=ecommerce-cod-postgres-staging" --format "{{.Names}}" 2>/dev/null || true)
 
-# Remove stale PostgreSQL PID file that can prevent postgres from starting after
-# an unclean container shutdown (force-remove leaves postmaster.pid in the volume)
-echo -e "${YELLOW}Removing stale PostgreSQL PID file if present...${NC}"
-docker run --rm \
-  -v staging_postgres_data_staging:/var/lib/postgresql/data \
-  alpine:latest \
-  sh -c "rm -f /var/lib/postgresql/data/postmaster.pid && echo 'PID cleanup done'" || true
+if [ -z "$POSTGRES_EXISTS" ]; then
+    # Fresh deployment - start full stack
+    echo -e "${YELLOW}Fresh deployment detected - starting full stack...${NC}"
+    docker-compose -p staging -f docker-compose.staging.yml up -d || {
+        echo -e "${RED}Failed to start containers${NC}"
+        docker logs ecommerce-cod-postgres-staging 2>&1 || true
+        exit 1
+    }
+else
+    # Rolling update - only update app containers, leave postgres/redis untouched
+    echo -e "${YELLOW}Existing deployment detected - performing rolling update...${NC}"
 
-# Step 4: Start new containers
-echo -e "${BLUE}[4/6] Starting staging containers...${NC}"
-docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging up -d || {
-  echo -e "${RED}Failed to start containers. Capturing postgres logs...${NC}"
-  docker logs ecommerce-cod-postgres-staging 2>&1 || true
-  exit 1
-}
+    # Remove old app containers to prevent name conflicts
+    docker rm -f ecommerce-cod-backend-staging ecommerce-cod-frontend-staging 2>/dev/null || true
+
+    # Start app containers without touching infrastructure
+    docker-compose -p staging -f docker-compose.staging.yml up -d --no-deps backend frontend || {
+        echo -e "${RED}Failed to update app containers${NC}"
+        exit 1
+    }
+fi
+
+echo -e "${GREEN}✓ Containers updated${NC}"
+
+# Step 4: Wait for backend to be healthy
+echo -e "${BLUE}[4/6] Waiting for backend to be healthy...${NC}"
+for i in $(seq 1 12); do
+    HEALTH=$(docker inspect --format='{{.State.Health.Status}}' ecommerce-cod-backend-staging 2>/dev/null || echo "unknown")
+    if [ "$HEALTH" = "healthy" ]; then
+        echo -e "${GREEN}✓ Backend is healthy${NC}"
+        break
+    fi
+    echo -e "${YELLOW}Attempt $i/12: Backend status is '$HEALTH', waiting 10s...${NC}"
+    sleep 10
+done
 
 # Step 5: Run database migrations
 echo -e "${BLUE}[5/6] Running database migrations...${NC}"
-sleep 10  # Wait for containers to be ready
-docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging exec -T backend npx prisma migrate deploy || echo -e "${YELLOW}Warning: Migrations may have failed or already applied${NC}"
+docker-compose -p staging -f docker-compose.staging.yml exec -T backend npx prisma migrate deploy || echo -e "${YELLOW}Warning: Migrations may have failed or already applied${NC}"
 
 # Step 6: Health checks
-echo -e "${BLUE}[6/6] Performing health checks...${NC}"
-echo -e "${YELLOW}Waiting 60 seconds for services to fully start...${NC}"
-sleep 60  # Wait for services to start (backend has 60s start_period)
+echo -e "${BLUE}[6/6] Final health checks...${NC}"
 
 # Check backend health
 MAX_RETRIES=5
@@ -119,7 +145,7 @@ echo -e "${GREEN}║   Staging Deployment Completed Successfully!               
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${BLUE}Application Status:${NC}"
-docker-compose -p staging -f docker-compose.staging.yml --env-file .env.staging ps
+docker-compose -p staging -f docker-compose.staging.yml ps
 echo ""
 echo -e "${BLUE}Access staging at:${NC}"
 echo "  https://staging.codadminpro.com (via nginx reverse proxy)"
