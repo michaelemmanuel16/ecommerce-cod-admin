@@ -17,6 +17,8 @@ SET tenant_id = (SELECT id FROM tenants LIMIT 1)
 WHERE tenant_id IS NULL
   AND (SELECT COUNT(*) FROM tenants) = 1;
 
--- Delete orphaned rows that couldn't be matched to any tenant
--- (multi-tenant with no business_name match — these are stale)
-DELETE FROM system_config WHERE tenant_id IS NULL;
+-- Delete orphaned rows that couldn't be matched to any tenant,
+-- but ONLY if tenants exist (don't wipe config in pre-tenant deployments)
+DELETE FROM system_config
+WHERE tenant_id IS NULL
+  AND (SELECT COUNT(*) FROM tenants) > 0;
