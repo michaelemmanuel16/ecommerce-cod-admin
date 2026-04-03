@@ -124,8 +124,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       if (recentSubmission?.orderId) {
         res.status(429).json({
           success: false,
-          message: 'Please wait before placing another order',
-          existingOrderId: recentSubmission.orderId
+          message: 'Please wait before placing another order'
         });
         return;
       }

@@ -19,9 +19,8 @@ import { Onboarding } from './pages/Onboarding';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
-import { Pricing } from './pages/Pricing';
-
 // Lazy load all other pages for better initial load performance
+const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
 const Orders = lazy(() => import('./pages/Orders').then(m => ({ default: m.Orders })));
 const OrderDetails = lazy(() => import('./pages/OrderDetails').then(m => ({ default: m.OrderDetails })));
 const Products = lazy(() => import('./pages/Products').then(m => ({ default: m.Products })));
@@ -129,7 +128,11 @@ function App() {
                 <PublicCheckout />
               </Suspense>
             } />
-            <Route path="/pricing" element={<Pricing />} />
+            <Route path="/pricing" element={
+              <Suspense fallback={<Loading />}>
+                <Pricing />
+              </Suspense>
+            } />
             <Route path="/checkout/payment/callback" element={
               <Suspense fallback={<Loading />}>
                 <PaymentCallback />

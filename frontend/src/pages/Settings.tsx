@@ -67,6 +67,7 @@ export const Settings: React.FC = () => {
       toast.error(error?.response?.data?.error || 'Failed to delete account');
     } finally {
       setDeleteLoading(false);
+      setDeletePassword('');
     }
   };
 
@@ -109,6 +110,7 @@ export const Settings: React.FC = () => {
       await adminService.updateSystemConfig(businessForm);
       toast.success('Business settings saved successfully');
       loadSystemConfig();
+      useConfigStore.getState().fetchConfig();
     } catch (error) {
       console.error('Failed to save business settings:', error);
       toast.error('Failed to save business settings');
