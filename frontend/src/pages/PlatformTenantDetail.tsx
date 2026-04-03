@@ -145,6 +145,9 @@ export const PlatformTenantDetail: React.FC = () => {
             </div>
           </div>
           <div className="text-sm text-gray-500 space-y-1 sm:text-right">
+            {t.adminEmail && (
+              <p>Admin: <a href={`mailto:${t.adminEmail}`} className="font-medium text-blue-600 hover:underline">{t.adminEmail}</a></p>
+            )}
             {t.region && <p>Region: <span className="font-medium text-gray-700">{t.region}</span></p>}
             <p>Currency: <span className="font-medium text-gray-700">{t.currency}</span></p>
             <p>Created: <span className="font-medium text-gray-700">{new Date(t.createdAt).toLocaleDateString()}</span></p>

@@ -29,6 +29,8 @@ export interface TenantListItem {
 export interface TenantDetail extends TenantListItem {
   region: string | null;
   currency: string;
+  adminEmail: string | null;
+  adminName: string | null;
   usage: {
     ordersThisMonth: number;
     revenueThisMonth: number;

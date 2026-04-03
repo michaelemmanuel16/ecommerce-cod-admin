@@ -118,16 +118,23 @@ export async function getTenantDetail(id: string) {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [ordersThisMonth, revenue] = await Promise.all([
+  const [ordersThisMonth, revenue, adminUser] = await Promise.all([
     prisma.order.count({ where: { tenantId: id, createdAt: { gte: monthStart } } }),
     prisma.order.aggregate({
       where: { tenantId: id, createdAt: { gte: monthStart } },
       _sum: { totalAmount: true },
     }),
+    prisma.user.findFirst({
+      where: { tenantId: id, role: 'super_admin', isActive: true },
+      select: { email: true, firstName: true, lastName: true },
+      orderBy: { createdAt: 'asc' },
+    }),
   ]);
 
   return {
     ...tenant,
+    adminEmail: adminUser?.email ?? null,
+    adminName: adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : null,
     usage: {
       ordersThisMonth,
       revenueThisMonth: Number(revenue._sum.totalAmount || 0),
