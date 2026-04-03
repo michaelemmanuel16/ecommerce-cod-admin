@@ -7,6 +7,7 @@ import prisma from '../utils/prisma';
  * Requires isPlatformAdmin flag on the user and nullifies tenant context
  * so Prisma queries return cross-tenant data.
  * This is separate from the tenant-level super_admin role.
+ * Verifies isPlatformAdmin via DB lookup (not in JWT payload).
  */
 export const requirePlatformAdmin = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   if (!req.user) {
@@ -14,7 +15,6 @@ export const requirePlatformAdmin = async (req: AuthRequest, res: Response, next
     return;
   }
 
-  // Check the isPlatformAdmin flag from the database
   const user = await prisma.user.findUnique({
     where: { id: req.user.id },
     select: { isPlatformAdmin: true },

@@ -256,32 +256,11 @@ describe('deleteTenant', () => {
       slug: 'acme',
     } as any);
 
-    // Mock $transaction to execute the callback with a tx proxy
+    // Mock $transaction to execute the callback with a tx proxy (uses $executeRaw)
     (prismaMock.$transaction as jest.Mock).mockImplementationOnce(
       async (fn: (tx: any) => Promise<any>) => {
         const txMock = {
-          workflowExecution: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          workflow: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          notification: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          webhookConfig: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          accountTransaction: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          journalEntry: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          account: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          systemConfig: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          delivery: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          order: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          customer: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          product: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          transaction: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          expense: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          checkoutForm: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          agentBalance: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          agentStock: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          inventoryShipment: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          inventoryTransfer: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          messageLog: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          user: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
-          tenant: { delete: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
+          $executeRaw: jest.fn<() => Promise<number>>().mockResolvedValue(0),
         };
         return fn(txMock);
       }

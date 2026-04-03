@@ -227,31 +227,40 @@ export async function deleteTenant(id: string, confirmSlug: string) {
   if (!tenant) throw new AppError('Tenant not found', 404);
   if (tenant.slug !== confirmSlug) throw new AppError('Slug confirmation does not match', 400);
 
-  // Delete all tenant-scoped data in dependency order
+  // Delete all tenant-scoped data in dependency order using raw SQL.
+  // Raw SQL bypasses Prisma's soft-delete extension and avoids RESTRICT FK conflicts.
   await prisma.$transaction(async (tx) => {
-    const tenantFilter = { where: { tenantId: id } };
-    await tx.workflowExecution.deleteMany(tenantFilter);
-    await tx.workflow.deleteMany(tenantFilter);
-    await tx.notification.deleteMany(tenantFilter);
-    await tx.webhookConfig.deleteMany(tenantFilter);
-    await tx.accountTransaction.deleteMany(tenantFilter);
-    await tx.journalEntry.deleteMany(tenantFilter);
-    await tx.account.deleteMany(tenantFilter);
-    await (tx.systemConfig as any).deleteMany({ where: { tenantId: id } });
-    await tx.delivery.deleteMany(tenantFilter);
-    await tx.order.deleteMany(tenantFilter);
-    await tx.customer.deleteMany(tenantFilter);
-    await tx.product.deleteMany(tenantFilter);
-    await tx.transaction.deleteMany(tenantFilter);
-    await tx.expense.deleteMany(tenantFilter);
-    await tx.checkoutForm.deleteMany(tenantFilter);
-    await tx.agentBalance.deleteMany(tenantFilter);
-    await tx.agentStock.deleteMany(tenantFilter);
-    await tx.inventoryShipment.deleteMany(tenantFilter);
-    await tx.inventoryTransfer.deleteMany(tenantFilter);
-    await tx.messageLog.deleteMany(tenantFilter);
-    await tx.user.deleteMany(tenantFilter);
-    await tx.tenant.delete({ where: { id } });
+    // 1. Delete records with RESTRICT FKs to users
+    await tx.$executeRaw`DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${id})`;
+    await tx.$executeRaw`DELETE FROM audit_logs WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${id})`;
+    await tx.$executeRaw`DELETE FROM payouts WHERE rep_id IN (SELECT id FROM users WHERE tenant_id = ${id})`;
+    await tx.$executeRaw`DELETE FROM calls WHERE sales_rep_id IN (SELECT id FROM users WHERE tenant_id = ${id})`;
+    await tx.$executeRaw`DELETE FROM agent_deposits WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${id})`;
+    await tx.$executeRaw`DELETE FROM agent_collections WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${id})`;
+    await tx.$executeRaw`DELETE FROM agent_aging_buckets WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${id})`;
+    await tx.$executeRaw`DELETE FROM agent_balances WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${id})`;
+    await tx.$executeRaw`DELETE FROM agent_stock WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${id})`;
+
+    // 2. NULL out user FK columns on tenant-scoped tables to avoid RESTRICT violations on cascade
+    await tx.$executeRaw`UPDATE orders SET created_by_id = NULL, customer_rep_id = NULL, delivery_agent_id = NULL WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`UPDATE deliveries SET agent_id = NULL WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`UPDATE inventory_shipments SET created_by_id = NULL WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`UPDATE inventory_transfers SET from_agent_id = NULL, to_agent_id = NULL, created_by_id = NULL WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`UPDATE journal_entries SET created_by = NULL, voided_by = NULL WHERE tenant_id = ${id}`;
+
+    // 3. Delete remaining tenant-scoped data
+    await tx.$executeRaw`DELETE FROM workflow_executions WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`DELETE FROM workflows WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`DELETE FROM webhook_configs WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`DELETE FROM account_transactions WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`DELETE FROM journal_entries WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`DELETE FROM accounts WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`DELETE FROM system_config WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`DELETE FROM message_logs WHERE tenant_id = ${id}`;
+
+    // 4. Delete tenant — CASCADE handles orders, customers, products, etc.
+    await tx.$executeRaw`DELETE FROM users WHERE tenant_id = ${id}`;
+    await tx.$executeRaw`DELETE FROM tenants WHERE id = ${id}`;
   });
 
   return { deleted: true };

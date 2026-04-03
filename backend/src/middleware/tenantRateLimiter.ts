@@ -5,7 +5,7 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 
 /**
- * Per-tenant rate limiting middleware using Redis sliding window.
+ * Per-tenant rate limiting middleware using Redis fixed window counter.
  * Only active when tenant.rateLimitEnabled is true.
  * Applied after authenticate middleware (needs req.user.tenantId).
  */
@@ -42,10 +42,13 @@ export const tenantRateLimiter = async (req: AuthRequest, res: Response, next: N
     const maxRequests = config.requestsPer15Min || 5000;
     const windowKey = `ratelimit:tenant:${tenantId}:${Math.floor(Date.now() / windowMs)}`;
 
-    const current = await redis.incr(windowKey);
-    if (current === 1) {
-      await redis.expire(windowKey, Math.ceil(windowMs / 1000));
-    }
+    // Atomic INCR + EXPIRE to prevent orphaned keys if process crashes between calls
+    const ttl = Math.ceil(windowMs / 1000);
+    const pipeline = redis.pipeline();
+    pipeline.incr(windowKey);
+    pipeline.expire(windowKey, ttl);
+    const results = await pipeline.exec();
+    const current = (results?.[0]?.[1] as number) || 0;
 
     const remaining = Math.max(0, maxRequests - current);
     const resetTime = Math.ceil((Math.floor(Date.now() / windowMs) + 1) * windowMs / 1000);
