@@ -418,3 +418,67 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
     next(error);
   }
 };
+
+/**
+ * Delete the current tenant and all associated data.
+ * Only super_admin can do this. Requires password confirmation.
+ */
+export const deleteTenantAccount = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.user) throw new AppError('Not authenticated', 401);
+    if (req.user.role !== 'super_admin') throw new AppError('Only the super admin can delete the account', 403);
+
+    const { password } = req.body;
+    if (!password) throw new AppError('Password is required to confirm deletion', 400);
+
+    // Verify password
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user) throw new AppError('User not found', 404);
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) throw new AppError('Incorrect password', 401);
+
+    const tenantId = req.user.tenantId;
+    if (!tenantId) throw new AppError('No tenant associated with this account', 400);
+
+    // Delete all tenant data atomically in dependency order.
+    // Uses parameterized queries (Prisma.sql) to prevent SQL injection.
+    // Tables with RESTRICT FKs to users must be cleaned before user/tenant delete.
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete records that reference users via RESTRICT FKs
+      await tx.$executeRaw`DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
+      await tx.$executeRaw`DELETE FROM audit_logs WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
+      await tx.$executeRaw`DELETE FROM payouts WHERE rep_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
+      await tx.$executeRaw`DELETE FROM calls WHERE sales_rep_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
+      await tx.$executeRaw`DELETE FROM agent_deposits WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
+      await tx.$executeRaw`DELETE FROM agent_collections WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
+      await tx.$executeRaw`DELETE FROM agent_aging_buckets WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
+      await tx.$executeRaw`DELETE FROM agent_balances WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
+      await tx.$executeRaw`DELETE FROM agent_stock WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
+
+      // 2. NULL out user FK columns on tenant-scoped tables (these cascade from tenant delete,
+      //    but RESTRICT FKs on user columns would block the cascade)
+      await tx.$executeRaw`UPDATE orders SET created_by_id = NULL, customer_rep_id = NULL, delivery_agent_id = NULL WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`UPDATE deliveries SET agent_id = NULL WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`UPDATE inventory_shipments SET created_by_id = NULL WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`UPDATE inventory_transfers SET from_agent_id = NULL, to_agent_id = NULL, created_by_id = NULL WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`UPDATE journal_entries SET created_by = NULL, voided_by = NULL WHERE tenant_id = ${tenantId}`;
+
+      // 3. Delete remaining tenant-scoped data in dependency order
+      await tx.$executeRaw`DELETE FROM inventory_transfers WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`DELETE FROM inventory_shipments WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`DELETE FROM account_transactions WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`DELETE FROM journal_entries WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`DELETE FROM system_config WHERE tenant_id = ${tenantId}`;
+
+      // 4. Delete tenant — CASCADE handles remaining tenant_id FKs (orders, customers, etc.)
+      //    Using raw SQL to bypass Prisma soft-delete extensions
+      await tx.$executeRaw`DELETE FROM users WHERE tenant_id = ${tenantId}`;
+      await tx.$executeRaw`DELETE FROM tenants WHERE id = ${tenantId}`;
+    });
+
+    res.json({ message: 'Account and all associated data have been permanently deleted' });
+  } catch (error) {
+    next(error);
+  }
+};

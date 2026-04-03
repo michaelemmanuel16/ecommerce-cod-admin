@@ -24,8 +24,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[Financial]**: Collection modal pagination for high-volume agents (MAN-28)
 - **[Financial]**: Agent inventory history tracking on mobile (MAN-28)
 - **[Inventory]**: Mobile inventory view with per-product allocation history drill-down (MAN-27)
+- **[Platform]**: Super-admin dashboard with tenant metrics, MRR, active users, and growth trends (MAN-46)
+- **[Platform]**: Tenant management: list, detail, create, suspend, reactivate, delete with full cascade (MAN-46)
+- **[Platform]**: Global announcements system with banner display for all authenticated users (MAN-46)
+- **[Platform]**: System health endpoint showing database and Redis status (MAN-46)
+- **[Platform]**: Dedicated platform admin login at `/platform/login` with `isPlatformAdmin` flag (MAN-46)
+- **[Performance]**: Per-tenant rate limiting via Redis sliding window, configurable per tenant (MAN-47)
+- **[Performance]**: Request timeout middleware with 30s default (MAN-47)
+- **[Performance]**: Tenant-aware Redis cache key partitioning (MAN-47)
+- **[Onboarding]**: Business details collection (email, phone, address, tax ID) during setup wizard (MAN-16)
+- **[Settings]**: Delete Account with password confirmation for tenant super admins (MAN-16)
+- **[Settings]**: Billing & Plans tab with plan comparison and usage display (MAN-16)
+- **[Checkout]**: Duplicate order prevention with 10-minute IP + localStorage cooldown (MAN-16)
+- **[Public]**: Pricing page at `/pricing` with Free/Starter/Pro tiers and FAQ (MAN-16)
+- **[Docs]**: SaaS onboarding guide for new tenants (MAN-16)
+- **[CI/CD]**: Sentry DSN injected into staging and production deployments (MAN-16)
 
 ### Fixed
+- **[Security]**: Tenant deletion now fully atomic with parameterized SQL, preventing partial corruption
+- **[Security]**: Permissions cache keyed per-tenant to prevent cross-tenant permission leakage
+- **[Security]**: Route-level `requireSuperAdmin` guard on DELETE /api/auth/delete-account
+- **[Security]**: Zod input validation on platform tenant create/update endpoints
+- **[Security]**: Tenant rate limiter moved to run after auth (was a no-op when global)
+- **[Platform]**: SystemConfig included in tenant delete cascade, preventing FK violations
 - **[Financial]**: Bulk deposit verification self-deadlock from raw SQL FOR UPDATE (MAN-28)
 - **[Financial]**: Double-click on verify buttons causing duplicate requests (MAN-28)
 - **[Financial]**: Deposit verification timeout by extending API timeouts (MAN-28)

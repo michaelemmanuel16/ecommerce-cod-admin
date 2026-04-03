@@ -7,6 +7,25 @@ import { initPixels, trackInitiateCheckout } from '../utils/pixelTracking';
 import { PixelConfig } from '../types/checkout-form';
 import toast from 'react-hot-toast';
 
+const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+
+function getCooldown(slug: string): { orderId: number; total: number } | null {
+  try {
+    const raw = localStorage.getItem(`checkout_cooldown_${slug}`);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (Date.now() - data.timestamp < COOLDOWN_MS) {
+      return { orderId: data.orderId, total: data.total };
+    }
+    localStorage.removeItem(`checkout_cooldown_${slug}`);
+  } catch { /* ignore corrupt data */ }
+  return null;
+}
+
+function setCooldown(slug: string, orderId: number, total: number) {
+  localStorage.setItem(`checkout_cooldown_${slug}`, JSON.stringify({ orderId, total, timestamp: Date.now() }));
+}
+
 export const PublicCheckout: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -19,6 +38,15 @@ export const PublicCheckout: React.FC = () => {
   useEffect(() => {
     if (!slug) {
       setError('Invalid form URL');
+      setLoading(false);
+      return;
+    }
+
+    // Check localStorage cooldown before loading form
+    const cooldown = getCooldown(slug);
+    if (cooldown) {
+      setOrderId(cooldown.orderId);
+      setSubmittedTotal(cooldown.total);
       setLoading(false);
       return;
     }
@@ -150,6 +178,7 @@ export const PublicCheckout: React.FC = () => {
 
         setSubmittedTotal(totalAmount);
         setOrderId(response.orderId);
+        setCooldown(slug, response.orderId, totalAmount);
         toast.success('Order placed successfully!');
       } else {
         toast.error(response.message || 'Failed to place order');
@@ -159,11 +188,6 @@ export const PublicCheckout: React.FC = () => {
       toast.error(err.response?.data?.message || 'Failed to place order. Please try again.');
       throw err; // Re-throw so CheckoutForm resets isSubmitting
     }
-  };
-
-  const handleNewOrder = () => {
-    setOrderId(null);
-    loadForm();
   };
 
   // Loading state
@@ -221,7 +245,6 @@ export const PublicCheckout: React.FC = () => {
         orderTotal={submittedTotal}
         currency={formData?.currency}
         pixelConfig={formData?.pixelConfig as PixelConfig | undefined}
-        onClose={handleNewOrder}
       />
     );
   }

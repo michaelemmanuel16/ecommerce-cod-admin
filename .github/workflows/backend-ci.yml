@@ -203,6 +203,7 @@ jobs:
             export META_APP_ID="${{ secrets.META_APP_ID }}"
             export META_APP_SECRET="${{ secrets.META_APP_SECRET }}"
             export WHATSAPP_APP_SECRET="${{ secrets.WHATSAPP_APP_SECRET }}"
+            export SENTRY_DSN="${{ secrets.BACKEND_SENTRY_DSN }}"
             echo "Running staging deployment script..."
             bash scripts/deploy-staging.sh
 
@@ -233,5 +234,6 @@ jobs:
             export META_APP_ID="${{ secrets.META_APP_ID }}"
             export META_APP_SECRET="${{ secrets.META_APP_SECRET }}"
             export WHATSAPP_APP_SECRET="${{ secrets.WHATSAPP_APP_SECRET }}"
+            export SENTRY_DSN="${{ secrets.BACKEND_SENTRY_DSN }}"
             echo "Running deployment script..."
             bash scripts/deploy-github-actions.sh

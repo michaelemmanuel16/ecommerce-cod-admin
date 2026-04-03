@@ -4,39 +4,48 @@ import { verifyAccessToken } from '../utils/jwt';
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { tenantStorage } from '../utils/tenantContext';
+import { tenantStorage, getTenantId } from '../utils/tenantContext';
 
-// Cache for role permissions to avoid database hits on every request
-let permissionsCache: any = null;
-let cacheTimestamp = 0;
+// Per-tenant cache for role permissions to avoid database hits on every request.
+// Keyed by tenantId to prevent cross-tenant permission leakage.
+const permissionsCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 60000; // 1 minute
 
 async function getPermissionsFromDatabase() {
   const now = Date.now();
+  const tenantId = getTenantId() || '__global__';
 
-  // Return cached permissions if still valid
-  if (permissionsCache && (now - cacheTimestamp) < CACHE_TTL) {
-    return permissionsCache;
+  const cached = permissionsCache.get(tenantId);
+  if (cached && (now - cached.timestamp) < CACHE_TTL) {
+    return cached.data;
   }
 
-  // Fetch fresh permissions from database
+  let permissions: any;
   try {
     const config = await prisma.systemConfig.findFirst();
 
     if (!config || !config.rolePermissions) {
       logger.info('[auth.getPermissionsFromDatabase] No config or rolePermissions found, using defaults');
-      permissionsCache = getDefaultPermissions();
+      permissions = getDefaultPermissions();
     } else {
       logger.info('[auth.getPermissionsFromDatabase] Loaded permissions from database');
-      permissionsCache = config.rolePermissions as any;
+      permissions = config.rolePermissions as any;
     }
   } catch (error) {
     logger.error('[auth.getPermissionsFromDatabase] Error fetching from database, using defaults:', error);
-    permissionsCache = getDefaultPermissions();
+    permissions = getDefaultPermissions();
   }
 
-  cacheTimestamp = now;
-  return permissionsCache;
+  permissionsCache.set(tenantId, { data: permissions, timestamp: now });
+
+  // Evict stale entries to prevent unbounded growth
+  if (permissionsCache.size > 100) {
+    for (const [key, entry] of permissionsCache) {
+      if (now - entry.timestamp > CACHE_TTL) permissionsCache.delete(key);
+    }
+  }
+
+  return permissions;
 }
 
 function getDefaultPermissions() {
@@ -341,8 +350,7 @@ export const requireEitherPermission = (checks: Array<{ resource: string, action
 
 // Helper to clear permissions cache (call after updating permissions)
 export const clearPermissionsCache = (): void => {
-  permissionsCache = null;
-  cacheTimestamp = 0;
+  permissionsCache.clear();
 };
 
 export const requireSuperAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as authController from '../controllers/authController';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireSuperAdmin } from '../middleware/auth';
 import { validate } from '../middleware/validation';
 import { registerValidation, registerTenantValidation, loginValidation, forgotPasswordValidation, resetPasswordValidation } from '../utils/validators';
 import { authLimiter, registrationLimiter, apiLimiter } from '../middleware/rateLimiter';
@@ -15,5 +15,6 @@ router.post('/forgot-password', authLimiter, forgotPasswordValidation, validate,
 router.post('/reset-password', authLimiter, resetPasswordValidation, validate, authController.resetPassword);
 router.post('/logout', apiLimiter, authenticate, authController.logout);
 router.get('/me', apiLimiter, authenticate, authController.me);
+router.delete('/delete-account', authLimiter, authenticate, requireSuperAdmin, authController.deleteTenantAccount);
 
 export default router;

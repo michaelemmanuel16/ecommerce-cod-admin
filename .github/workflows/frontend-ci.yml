@@ -97,6 +97,7 @@ jobs:
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
           VITE_WS_URL: ${{ secrets.VITE_WS_URL }}
+          VITE_SENTRY_DSN: ${{ secrets.FRONTEND_SENTRY_DSN }}
         run: npm run build
 
       - name: Upload build artifacts
@@ -168,6 +169,7 @@ jobs:
           build-args: |
             VITE_API_URL=${{ steps.env-vars.outputs.VITE_API_URL }}
             VITE_WS_URL=${{ steps.env-vars.outputs.VITE_WS_URL }}
+            VITE_SENTRY_DSN=${{ secrets.FRONTEND_SENTRY_DSN }}
 
   deploy-staging:
     name: Deploy to Staging
@@ -196,6 +198,7 @@ jobs:
             export META_APP_ID="${{ secrets.META_APP_ID }}"
             export META_APP_SECRET="${{ secrets.META_APP_SECRET }}"
             export WHATSAPP_APP_SECRET="${{ secrets.WHATSAPP_APP_SECRET }}"
+            export VITE_SENTRY_DSN="${{ secrets.FRONTEND_SENTRY_DSN }}"
             echo "Running staging deployment script..."
             bash scripts/deploy-staging.sh
 
@@ -226,5 +229,6 @@ jobs:
             export META_APP_ID="${{ secrets.META_APP_ID }}"
             export META_APP_SECRET="${{ secrets.META_APP_SECRET }}"
             export WHATSAPP_APP_SECRET="${{ secrets.WHATSAPP_APP_SECRET }}"
+            export VITE_SENTRY_DSN="${{ secrets.FRONTEND_SENTRY_DSN }}"
             echo "Running deployment script..."
             bash scripts/deploy-github-actions.sh
