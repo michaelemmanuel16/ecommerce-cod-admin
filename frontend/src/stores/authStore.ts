@@ -103,6 +103,7 @@ export const useAuthStore = create<AuthState>()(
       needsOnboarding: () => {
         const { user, isAuthenticated } = get();
         if (!isAuthenticated || !user) return false;
+        if (user.isPlatformAdmin) return false;
         const prefs = user.preferences as any;
         return !prefs?.onboardingCompleted;
       },

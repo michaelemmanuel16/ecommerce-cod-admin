@@ -132,6 +132,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        isPlatformAdmin: user.isPlatformAdmin || false,
         commissionAmount: user.commissionAmount || 0,
         deliveryRate: user.deliveryRate,
         preferences: user.preferences,

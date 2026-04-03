@@ -43,6 +43,11 @@ const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
 const Communications = lazy(() => import('./pages/Communications'));
 const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
+const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
+const PlatformDashboard = lazy(() => import('./pages/PlatformDashboard').then(m => ({ default: m.PlatformDashboard })));
+const PlatformTenants = lazy(() => import('./pages/PlatformTenants').then(m => ({ default: m.PlatformTenants })));
+const PlatformTenantDetail = lazy(() => import('./pages/PlatformTenantDetail').then(m => ({ default: m.PlatformTenantDetail })));
+const PlatformAnnouncements = lazy(() => import('./pages/PlatformAnnouncements').then(m => ({ default: m.PlatformAnnouncements })));
 
 // Mobile pages
 const MobileLayout = lazy(() => import('./components/layout/MobileLayout').then(m => ({ default: m.MobileLayout })));
@@ -73,6 +78,16 @@ const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }>
 
   if (!user || !allowedRoles.includes(user.role)) {
     return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, user } = useAuthStore();
+
+  if (!isAuthenticated || !user?.isPlatformAdmin) {
+    return <Navigate to="/platform/login" replace />;
   }
 
   return <>{children}</>;
@@ -134,6 +149,12 @@ function App() {
               </Suspense>
             } />
             {/* Auth routes */}
+            {/* Platform admin login */}
+            <Route path="/platform/login" element={
+              <Suspense fallback={<Loading />}>
+                <PlatformLogin />
+              </Suspense>
+            } />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -304,6 +325,34 @@ function App() {
                     <EarningsHistory />
                   </Suspense>
                 </RoleGuard>
+              } />
+              <Route path="platform" element={
+                <PlatformGuard>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformDashboard />
+                  </Suspense>
+                </PlatformGuard>
+              } />
+              <Route path="platform/tenants" element={
+                <PlatformGuard>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformTenants />
+                  </Suspense>
+                </PlatformGuard>
+              } />
+              <Route path="platform/tenants/:id" element={
+                <PlatformGuard>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformTenantDetail />
+                  </Suspense>
+                </PlatformGuard>
+              } />
+              <Route path="platform/announcements" element={
+                <PlatformGuard>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformAnnouncements />
+                  </Suspense>
+                </PlatformGuard>
               } />
             </Route>
           </Routes>

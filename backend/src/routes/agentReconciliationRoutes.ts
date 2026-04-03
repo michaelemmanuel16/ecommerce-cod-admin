@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import agentReconciliationController from '../controllers/agentReconciliationController';
 import { authenticate, requireRole } from '../middleware/auth';
+import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { body, param, query } from 'express-validator';
 import { validate } from '../middleware/validation';
 import { apiLimiter } from '../middleware/rateLimiter';
@@ -10,6 +11,7 @@ const router = Router();
 // All routes require authentication
 router.use(apiLimiter);
 router.use(authenticate);
+router.use(tenantRateLimiter);
 
 // Listing and stats (Available to Accountant, Manager, Admin)
 router.get('/',

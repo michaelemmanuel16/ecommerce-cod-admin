@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -17,6 +17,9 @@ import {
   History,
   Smartphone,
   MessageSquare,
+  LayoutGrid,
+  Building2,
+  Megaphone,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -47,6 +50,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
   const { canAccessMenu } = usePermissions();
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isOnPlatformPage = location.pathname.startsWith('/platform');
 
   const visibleMenuItems = menuItems.filter(item => canAccessMenu(item.key));
 
@@ -84,8 +89,42 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="space-y-1">
+      {/* Platform Admin Navigation — isPlatformAdmin only */}
+      {user?.isPlatformAdmin && (
+        <nav className="space-y-1 mb-4">
+          {!isCollapsed && (
+            <p className="text-gray-500 text-xs uppercase tracking-wider px-4 mb-2">Platform Admin</p>
+          )}
+          {[
+            { path: '/platform', icon: LayoutGrid, label: 'Platform' },
+            { path: '/platform/tenants', icon: Building2, label: 'Tenants' },
+            { path: '/platform/announcements', icon: Megaphone, label: 'Announcements' },
+          ].map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              end={item.path === '/platform'}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center rounded-lg transition-colors',
+                  isCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-4 py-3',
+                  isActive
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800'
+                )
+              }
+              title={isCollapsed ? item.label : undefined}
+            >
+              <item.icon className="w-5 h-5 flex-shrink-0" />
+              {!isCollapsed && <span>{item.label}</span>}
+            </NavLink>
+          ))}
+          {!isCollapsed && <hr className="border-gray-700 mt-4" />}
+        </nav>
+      )}
+
+      {/* Navigation — hidden on platform admin pages */}
+      {!isOnPlatformPage && <nav className="space-y-1">
         {visibleMenuItems.map((item) => (
           <NavLink
             key={item.path}
@@ -105,7 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
             {!isCollapsed && <span>{item.label}</span>}
           </NavLink>
         ))}
-      </nav>
+      </nav>}
 
       {/* Switch to Mobile button for delivery agents */}
       {user?.role === 'delivery_agent' && (

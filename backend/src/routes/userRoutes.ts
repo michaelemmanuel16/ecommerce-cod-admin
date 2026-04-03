@@ -2,12 +2,14 @@ import { Router } from 'express';
 import * as userController from '../controllers/userController';
 import * as payoutController from '../controllers/payoutController';
 import { authenticate, requirePermission, requireSelf } from '../middleware/auth';
+import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(tenantRateLimiter);
 
 router.get('/', requirePermission(['super_admin', 'admin', 'manager']), paginationValidation, validate, userController.getAllUsers);
 router.post('/', requirePermission(['super_admin', 'admin']), userController.createUser);

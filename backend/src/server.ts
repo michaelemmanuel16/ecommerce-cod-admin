@@ -35,6 +35,7 @@ import path from 'path';
 import { initializeSocket } from './sockets';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { apiLimiter, whatsappWebhookLimiter } from './middleware/rateLimiter';
+import { requestTimeout } from './middleware/requestTimeout';
 import logger from './utils/logger';
 import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
@@ -68,6 +69,7 @@ import paystackRoutes from './routes/paystackRoutes';
 import communicationRoutes from './routes/communicationRoutes';
 import onboardingRoutes from './routes/onboardingRoutes';
 import billingRoutes from './routes/billingRoutes';
+import platformRoutes from './routes/platformRoutes';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
@@ -158,6 +160,9 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+app.use(requestTimeout(30000));
+// tenantRateLimiter is applied per-route after authenticate (in route files), not globally.
+
 // Request logging (sanitized - no auth headers or sensitive data)
 app.use((req, _res, next) => {
   // Sanitize user-agent to prevent log injection
@@ -215,6 +220,7 @@ app.use('/api/paystack', apiLimiter, paystackRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/platform', platformRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);

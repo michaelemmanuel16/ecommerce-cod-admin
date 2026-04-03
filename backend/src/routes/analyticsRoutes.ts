@@ -14,6 +14,7 @@ import {
     getAreaDistribution
 } from '../controllers/analyticsController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import cacheMiddleware from '../middleware/cache';
 import { apiLimiter } from '../middleware/rateLimiter';
 import { query } from 'express-validator';
@@ -23,6 +24,7 @@ const router = Router();
 
 router.use(apiLimiter); // Add rate limiting to prevent DoS on database-heavy queries
 router.use(authenticate);
+router.use(tenantRateLimiter);
 
 // Reusable date range validators
 const dateRangeValidators = [

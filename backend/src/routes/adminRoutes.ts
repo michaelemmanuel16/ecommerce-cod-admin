@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import * as adminController from '../controllers/adminController';
 import { authenticate, requireSuperAdmin, requirePermission } from '../middleware/auth';
-
+import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 const router = Router();
 
 // Public Configuration (No auth required)
 router.get('/config', adminController.getPublicConfig);
 
 router.use(authenticate);
+router.use(tenantRateLimiter);
 
 // System Configuration
 router.get('/settings', requireSuperAdmin, adminController.getSystemConfig);
