@@ -11,7 +11,7 @@ export async function getPlatformMetrics() {
     prisma.tenant.count(),
     prisma.tenant.count({ where: { subscriptionStatus: 'active' } }),
     prisma.tenant.count({ where: { subscriptionStatus: 'suspended' } }),
-    prisma.user.count({ where: { lastLogin: { gte: thirtyDaysAgo }, isActive: true } }),
+    prisma.user.count({ where: { lastLogin: { gte: thirtyDaysAgo }, isActive: true, isPlatformAdmin: false } }),
     prisma.plan.findMany({ where: { isActive: true } }),
   ]);
 
