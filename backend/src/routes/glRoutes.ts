@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as glController from '../controllers/glController';
 import { authenticate, requireResourcePermission, requireSuperAdmin } from '../middleware/auth';
+import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import {
   paginationValidation,
@@ -13,6 +14,7 @@ import {
 const router = Router();
 
 router.use(authenticate);
+router.use(tenantRateLimiter);
 
 // Chart of Accounts
 router.get('/accounts', requireResourcePermission('gl', 'view'), paginationValidation, validate, glController.getAllAccounts);

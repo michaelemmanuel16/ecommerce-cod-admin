@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import agentInventoryController from '../controllers/agentInventoryController';
 import { authenticate, requireRole } from '../middleware/auth';
+import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { body, param, query } from 'express-validator';
 import { validate } from '../middleware/validation';
 
@@ -8,6 +9,7 @@ const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+router.use(tenantRateLimiter);
 
 // --- Mutations (admin, manager, inventory_manager, super_admin) ---
 

@@ -1,7 +1,30 @@
 import { Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
+import { AppError } from '../middleware/errorHandler';
 import * as platformService from '../services/platformService';
+
+const createTenantSchema = z.object({
+  name: z.string().min(1).max(255),
+  slug: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, 'Slug must be lowercase alphanumeric with hyphens'),
+  planName: z.string().optional(),
+  region: z.string().max(100).optional(),
+  currency: z.string().max(10).optional(),
+});
+
+const updateTenantSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  slug: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/).optional(),
+  region: z.string().max(100).optional(),
+  currency: z.string().max(10).optional(),
+  currentPlanId: z.string().uuid().optional(),
+  rateLimitEnabled: z.boolean().optional(),
+  rateLimitConfig: z.object({
+    requestsPer15Min: z.number().int().min(1),
+    burstPerSec: z.number().int().min(1),
+  }).nullable().optional(),
+});
 
 // ── Metrics ──────────────────────────────────────────────
 
@@ -45,14 +68,18 @@ export const getTenant = async (req: AuthRequest, res: Response, next: NextFunct
 
 export const createTenant = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenant = await platformService.createTenant(req.body);
+    const parsed = createTenantSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError(parsed.error.issues[0].message, 400);
+    const tenant = await platformService.createTenant(parsed.data);
     res.status(201).json(tenant);
   } catch (err) { next(err); }
 };
 
 export const updateTenant = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenant = await platformService.updateTenant(req.params.id, req.body);
+    const parsed = updateTenantSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError(parsed.error.issues[0].message, 400);
+    const tenant = await platformService.updateTenant(req.params.id, parsed.data);
     res.json(tenant);
   } catch (err) { next(err); }
 };

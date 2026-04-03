@@ -237,6 +237,7 @@ export async function deleteTenant(id: string, confirmSlug: string) {
     await tx.accountTransaction.deleteMany(tenantFilter);
     await tx.journalEntry.deleteMany(tenantFilter);
     await tx.account.deleteMany(tenantFilter);
+    await (tx.systemConfig as any).deleteMany({ where: { tenantId: id } });
     await tx.delivery.deleteMany(tenantFilter);
     await tx.order.deleteMany(tenantFilter);
     await tx.customer.deleteMany(tenantFilter);

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { authenticate, requireRole } from '../middleware/auth';
 import { handleArkeselWebhook, getStatus, testSend } from '../controllers/smsController';
 
@@ -9,6 +10,7 @@ router.post('/webhook', handleArkeselWebhook);
 
 // Admin-only endpoints
 router.use(authenticate);
+router.use(tenantRateLimiter);
 router.get('/status', requireRole('super_admin', 'admin'), getStatus);
 router.post('/test', requireRole('super_admin', 'admin'), testSend);
 

@@ -30,11 +30,10 @@ describe('getPlatformMetrics', () => {
   it('should return correct shape with computed mrr', async () => {
     prismaMock.tenant.count
       .mockResolvedValueOnce(10)  // totalTenants
-      .mockResolvedValueOnce(7);  // activeTenants
+      .mockResolvedValueOnce(7)   // activeTenants
+      .mockResolvedValueOnce(2);  // suspendedTenants
 
     prismaMock.user.count.mockResolvedValueOnce(42); // activeUsers
-
-    prismaMock.order.count.mockResolvedValueOnce(200); // ordersThisMonth
 
     prismaMock.plan.findMany.mockResolvedValueOnce([
       { id: 'plan-1', name: 'starter', priceGHS: 50, isActive: true } as any,
@@ -50,8 +49,8 @@ describe('getPlatformMetrics', () => {
 
     expect(result.totalTenants).toBe(10);
     expect(result.activeTenants).toBe(7);
+    expect(result.suspendedTenants).toBe(2);
     expect(result.activeUsers).toBe(42);
-    expect(result.ordersThisMonth).toBe(200);
     // MRR = (3 * 50) + (2 * 150) = 150 + 300 = 450
     expect(result.mrr).toBe(450);
   });
@@ -59,7 +58,6 @@ describe('getPlatformMetrics', () => {
   it('should return zero mrr when no active tenants with plans', async () => {
     prismaMock.tenant.count.mockResolvedValue(0);
     prismaMock.user.count.mockResolvedValue(0);
-    prismaMock.order.count.mockResolvedValue(0);
     prismaMock.plan.findMany.mockResolvedValueOnce([]);
     prismaMock.tenant.groupBy.mockResolvedValueOnce([]);
 
@@ -269,6 +267,7 @@ describe('deleteTenant', () => {
           accountTransaction: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
           journalEntry: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
           account: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
+          systemConfig: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
           delivery: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
           order: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },
           customer: { deleteMany: jest.fn<() => Promise<any>>().mockResolvedValue({}) },

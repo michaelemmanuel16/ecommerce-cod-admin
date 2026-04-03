@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import * as workflowController from '../controllers/workflowController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(tenantRateLimiter);
 
 // Templates endpoint must come before /:id to avoid matching "templates" as an ID
 router.get('/templates', requireResourcePermission('workflows', 'view'), workflowController.getWorkflowTemplates);
