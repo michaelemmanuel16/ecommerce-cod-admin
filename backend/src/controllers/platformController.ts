@@ -7,7 +7,7 @@ import * as platformService from '../services/platformService';
 
 const createTenantSchema = z.object({
   name: z.string().min(1).max(255),
-  slug: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, 'Slug must be lowercase alphanumeric with hyphens'),
+  slug: z.string().min(2).max(100).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, 'Slug must be lowercase alphanumeric with hyphens, min 2 chars'),
   planName: z.string().optional(),
   region: z.string().max(100).optional(),
   currency: z.string().max(10).optional(),
@@ -15,7 +15,7 @@ const createTenantSchema = z.object({
 
 const updateTenantSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  slug: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/).optional(),
+  slug: z.string().min(2).max(100).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/).optional(),
   region: z.string().max(100).optional(),
   currency: z.string().max(10).optional(),
   currentPlanId: z.string().uuid().optional(),
@@ -24,6 +24,17 @@ const updateTenantSchema = z.object({
     requestsPer15Min: z.number().int().min(1),
     burstPerSec: z.number().int().min(1),
   }).nullable().optional(),
+});
+
+const createAnnouncementSchema = z.object({
+  title: z.string().min(1).max(255),
+  body: z.string().min(1).max(5000),
+  type: z.enum(['info', 'warning', 'maintenance']).optional(),
+  expiresAt: z.string().datetime().optional(),
+});
+
+const deleteTenantSchema = z.object({
+  confirmSlug: z.string().min(1),
 });
 
 // ── Metrics ──────────────────────────────────────────────
@@ -100,8 +111,9 @@ export const reactivateTenant = async (req: AuthRequest, res: Response, next: Ne
 
 export const removeTenant = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { confirmSlug } = req.body;
-    await platformService.deleteTenant(req.params.id, confirmSlug);
+    const parsed = deleteTenantSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError(parsed.error.issues[0].message, 400);
+    await platformService.deleteTenant(req.params.id, parsed.data.confirmSlug);
     res.json({ message: 'Tenant deleted' });
   } catch (err) { next(err); }
 };
@@ -124,8 +136,10 @@ export const getActiveAnnouncements = async (_req: AuthRequest, res: Response, n
 
 export const addAnnouncement = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const parsed = createAnnouncementSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError(parsed.error.issues[0].message, 400);
     const announcement = await platformService.createAnnouncement({
-      ...req.body,
+      ...parsed.data,
       createdBy: req.user?.id,
     });
     res.status(201).json(announcement);
