@@ -7,6 +7,81 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Tenant {
+  id                  String    @id @default(uuid())
+  name                String
+  slug                String    @unique
+  logo                String?
+  region              String?
+  currency            String    @default("GHS")
+  defaultDeliveryFee  Float?    @map("default_delivery_fee")
+  currentPlanId       String?   @map("current_plan_id")
+  subscriptionStatus  String    @default("active") @map("subscription_status")
+  trialEndsAt         DateTime? @map("trial_ends_at")
+  rateLimitEnabled    Boolean   @default(false) @map("rate_limit_enabled")
+  rateLimitConfig     Json?     @map("rate_limit_config")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  currentPlan Plan? @relation(fields: [currentPlanId], references: [id])
+
+  // Reverse relations for tenant-scoped models
+  users              User[]
+  customers          Customer[]
+  products           Product[]
+  orders             Order[]
+  deliveries         Delivery[]
+  transactions       Transaction[]
+  expenses           Expense[]
+  accounts           Account[]
+  journalEntries     JournalEntry[]
+  accountTransactions AccountTransaction[]
+  workflows          Workflow[]
+  workflowExecutions WorkflowExecution[]
+  webhookConfigs     WebhookConfig[]
+  notifications      Notification[]
+  checkoutForms      CheckoutForm[]
+  inventoryShipments InventoryShipment[]
+  agentBalances      AgentBalance[]
+  inventoryTransfers InventoryTransfer[]
+  agentStocks        AgentStock[]
+  messageLogs        MessageLog[]
+  systemConfigs      SystemConfig[]
+
+  @@map("tenants")
+}
+
+model Plan {
+  id               String   @id @default(uuid())
+  name             String   @unique
+  displayName      String   @map("display_name")
+  maxOrders        Int?     @map("max_orders")
+  maxUsers         Int?     @map("max_users")
+  priceGHS         Decimal  @map("price_ghs") @db.Decimal(10, 2)
+  paystackPlanCode String?  @map("paystack_plan_code")
+  features         Json
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenants Tenant[]
+
+  @@map("plans")
+}
+
+model PlatformAnnouncement {
+  id        String    @id @default(uuid())
+  title     String
+  body      String
+  type      String    @default("info")
+  isActive  Boolean   @default(true) @map("is_active")
+  expiresAt DateTime? @map("expires_at")
+  createdBy Int?      @map("created_by")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt      @map("updated_at")
+
+  @@map("platform_announcements")
+}
+
 model User {
   id                    Int               @id @default(autoincrement())
   email                 String            @unique
@@ -14,6 +89,7 @@ model User {
   phoneNumber           String?           @map("phone_number")
   role                  UserRole
   isActive              Boolean           @default(true) @map("is_active")
+  isPlatformAdmin       Boolean           @default(false) @map("is_platform_admin")
   isAvailable           Boolean           @default(true) @map("is_available")
   lastLogin             DateTime?         @map("last_login")
   refreshToken          String?           @map("refresh_token")
@@ -56,9 +132,12 @@ model User {
   transfersTo           InventoryTransfer[] @relation("TransferTo")
   transfersCreated      InventoryTransfer[] @relation("TransferCreator")
   shipmentsCreated      InventoryShipment[] @relation("ShipmentCreator")
+  tenantId              String?             @map("tenant_id")
+  tenant                Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
+  @@index([tenantId])
   @@map("users")
 }
 
@@ -85,11 +164,14 @@ model Customer {
   calls          Call[]
   orders         Order[]
   messageLogs    MessageLog[]
+  tenantId       String?      @map("tenant_id")
+  tenant         Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([isActive])
   @@index([email])
   @@index([area])
   @@index([totalSpent])
+  @@index([tenantId])
   @@map("customers")
 }
 
@@ -110,6 +192,10 @@ model Product {
   updatedAt            DateTime               @updatedAt @map("updated_at")
   batch_quantity       Int                    @default(1)
   cogs                 Decimal?               @default(0) @db.Decimal(10, 2)
+  productType          String                 @default("physical") @map("product_type")
+  digitalFileUrl       String?                @map("digital_file_url")
+  digitalFileType      String?                @map("digital_file_type")
+  downloadLinkExpiryHours Int?                @default(72) @map("download_link_expiry_hours")
   checkoutForms        CheckoutForm[]
   formUpsells          FormUpsell[]
   orderItems           OrderItem[]
@@ -118,10 +204,14 @@ model Product {
   agentStock           AgentStock[]
   inventoryTransfers   InventoryTransfer[]
   inventoryShipments   InventoryShipment[]
+  tenantId             String?             @map("tenant_id")
+  tenant               Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([isActive])
   @@index([category, isActive])
   @@index([stockQuantity])
+  @@index([productType])
+  @@index([tenantId])
   @@map("products")
 }
 
@@ -139,9 +229,12 @@ model Order {
   codAmount         Float?           @map("cod_amount")
   notes             String?
   internalNotes     String?          @map("internal_notes")
-  deliveryAddress   String           @map("delivery_address")
-  deliveryState     String           @map("delivery_state")
-  deliveryArea      String           @map("delivery_area")
+  orderType         String           @default("physical") @map("order_type")
+  paymentMethod     String           @default("cod") @map("payment_method")
+  paymentReference  String?          @map("payment_reference")
+  deliveryAddress   String?          @map("delivery_address")
+  deliveryState     String?          @map("delivery_state")
+  deliveryArea      String?          @map("delivery_area")
   estimatedDelivery DateTime?        @map("estimated_delivery")
   priority          Int              @default(0)
   tags              String[]         @default([])
@@ -173,6 +266,9 @@ model Order {
   agentCollection   AgentCollection?
   inventoryTransfers InventoryTransfer[]
   messageLogs       MessageLog[]
+  downloadTokens    DownloadToken[]
+  tenantId          String?          @map("tenant_id")
+  tenant            Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
   @@index([status])
@@ -194,6 +290,8 @@ model Order {
   @@index([revenueRecognized])
   @@index([glJournalEntryId])
   @@index([status, deliveryDate])
+  @@index([orderType])
+  @@index([tenantId])
   @@map("orders")
 }
 
@@ -248,12 +346,15 @@ model Delivery {
   updatedAt          DateTime           @updatedAt @map("updated_at")
   agent              User?              @relation(fields: [agentId], references: [id])
   order              Order              @relation(fields: [orderId], references: [id])
+  tenantId           String?            @map("tenant_id")
+  tenant             Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([agentId])
   @@index([scheduledTime])
   @@index([agentId, scheduledTime])
   @@index([orderId, actualDeliveryTime])
   @@index([scheduledTime, actualDeliveryTime])
+  @@index([tenantId])
   @@map("deliveries")
 }
 
@@ -269,6 +370,8 @@ model Transaction {
   metadata      Json?
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
+  tenantId      String?       @map("tenant_id")
+  tenant        Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   order         Order?        @relation(fields: [orderId], references: [id])
 
   @@index([type])
@@ -277,6 +380,7 @@ model Transaction {
   @@index([type, status])
   @@index([type, createdAt])
   @@index([status, createdAt])
+  @@index([tenantId])
   @@map("transactions")
 }
 
@@ -289,10 +393,13 @@ model Expense {
   recordedBy  Int?     @map("recorded_by")
   expenseDate DateTime @map("expense_date")
   createdAt   DateTime @default(now()) @map("created_at")
+  tenantId    String?  @map("tenant_id")
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user        User?    @relation(fields: [recordedBy], references: [id])
 
   @@index([category])
   @@index([expenseDate])
+  @@index([tenantId])
   @@map("expenses")
 }
 
@@ -312,11 +419,14 @@ model Account {
   parent         Account?             @relation("AccountHierarchy", fields: [parentId], references: [id])
   children       Account[]            @relation("AccountHierarchy")
   transactions   AccountTransaction[]
+  tenantId       String?              @map("tenant_id")
+  tenant         Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([accountType])
   @@index([isActive])
   @@index([parentId])
   @@index([code])
+  @@index([tenantId])
   @@map("accounts")
 }
 
@@ -343,12 +453,15 @@ model JournalEntry {
   voider       User?                @relation("VoidedByUser", fields: [voidedBy], references: [id])
   orders       Order[]
   shipments    InventoryShipment[]
+  tenantId     String?              @map("tenant_id")
+  tenant       Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([sourceType, sourceId])
   @@index([entryDate])
   @@index([createdAt])
   @@index([isVoided])
   @@index([sourceType, sourceId, isVoided])
+  @@index([tenantId])
   @@map("journal_entries")
 }
 
@@ -361,6 +474,8 @@ model AccountTransaction {
   runningBalance Decimal  @default(0) @map("running_balance") @db.Decimal(19, 4)
   description    String?
   createdAt      DateTime @default(now()) @map("created_at")
+  tenantId       String?  @map("tenant_id")
+  tenant         Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   account      Account      @relation(fields: [accountId], references: [id])
@@ -368,6 +483,7 @@ model AccountTransaction {
   @@index([journalEntryId])
   @@index([accountId])
   @@index([accountId, createdAt])
+  @@index([tenantId])
   @@map("account_transactions")
 }
 
@@ -383,11 +499,14 @@ model Workflow {
   createdAt   DateTime            @default(now()) @map("created_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
   executions  WorkflowExecution[]
+  tenantId    String?             @map("tenant_id")
+  tenant      Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([isActive])
   @@index([triggerType])
   @@index([createdAt])
   @@index([isActive, triggerType])
+  @@index([tenantId])
   @@map("workflows")
 }
 
@@ -400,11 +519,14 @@ model WorkflowExecution {
   error       String?
   startedAt   DateTime  @default(now()) @map("started_at")
   completedAt DateTime? @map("completed_at")
-  workflow    Workflow  @relation(fields: [workflowId], references: [id])
+  workflow    Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  tenantId    String?   @map("tenant_id")
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([workflowId])
   @@index([status])
   @@index([startedAt])
+  @@index([tenantId])
   @@map("workflow_executions")
 }
 
@@ -423,8 +545,11 @@ model WebhookConfig {
   productId    Int?         @map("product_id")
   product      Product?     @relation(fields: [productId], references: [id])
   logs         WebhookLog[]
+  tenantId     String?      @map("tenant_id")
+  tenant       Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([productId])
+  @@index([tenantId])
   @@map("webhook_configs")
 }
 
@@ -457,10 +582,13 @@ model Notification {
   isRead    Boolean  @default(false) @map("is_read")
   createdAt DateTime @default(now()) @map("created_at")
   user      User     @relation(fields: [userId], references: [id])
+  tenantId  String?  @map("tenant_id")
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([isRead])
   @@index([createdAt])
+  @@index([tenantId])
   @@map("notifications")
 }
 
@@ -476,11 +604,15 @@ model SystemConfig {
   smsProvider           Json?    @map("sms_provider")
   emailProvider         Json?    @map("email_provider")
   whatsappProvider      Json?    @map("whatsapp_provider")
+  paystackProvider      Json?    @map("paystack_provider")
   notificationTemplates Json?    @map("notification_templates")
   rolePermissions       Json?    @map("role_permissions")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
+  tenantId              String?  @map("tenant_id")
+  tenant                Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
   @@map("system_config")
 }
 
@@ -499,13 +631,17 @@ model CheckoutForm {
   updatedAt   DateTime         @updatedAt @map("updated_at")
   currency    String           @default("GHS")
   pixelConfig Json?            @map("pixel_config")
+  formType    String           @default("physical") @map("form_type")
   product     Product          @relation(fields: [productId], references: [id])
   packages    FormPackage[]
   submissions FormSubmission[]
   upsells     FormUpsell[]
+  tenantId    String?          @map("tenant_id")
+  tenant      Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([slug])
   @@index([isActive])
+  @@index([tenantId])
   @@map("checkout_forms")
 }
 
@@ -652,10 +788,13 @@ model InventoryShipment {
   product             Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
   createdBy           User             @relation("ShipmentCreator", fields: [createdById], references: [id])
   glJournalEntry      JournalEntry?    @relation(fields: [glJournalEntryId], references: [id])
+  tenantId            String?          @map("tenant_id")
+  tenant              Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([productId])
   @@index([status])
   @@index([expectedArrivalDate])
+  @@index([tenantId])
   @@map("inventory_shipments")
 }
 
@@ -714,10 +853,13 @@ model AgentBalance {
   blockedById        Int?      @map("blocked_by_id")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
+  tenantId           String?   @map("tenant_id")
 
   agent     User  @relation(fields: [agentId], references: [id])
   blockedBy User? @relation("BlockedBy", fields: [blockedById], references: [id])
+  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
   @@map("agent_balances")
 }
 
@@ -787,18 +929,22 @@ enum UserRole {
 
 enum OrderStatus {
   pending_confirmation
+  payment_pending
   confirmed
   preparing
   ready_for_pickup
   out_for_delivery
   delivered
+  digital_delivered
   cancelled
   returned
   failed_delivery
+  payment_failed
 }
 
 enum PaymentStatus {
   pending
+  paid
   collected
   deposited
   reconciled
@@ -875,6 +1021,8 @@ enum JournalSourceType {
   order_return
   agent_collection
   inventory_purchase
+  period_close
+  digital_sale
 }
 
 enum MessageChannel {
@@ -914,12 +1062,14 @@ model InventoryTransfer {
   notes        String?
   createdById  Int          @map("created_by_id")
   createdAt    DateTime     @default(now()) @map("created_at")
+  tenantId     String?      @map("tenant_id")
 
   product   Product @relation(fields: [productId], references: [id])
   fromAgent User?   @relation("TransferFrom", fields: [fromAgentId], references: [id])
   toAgent   User?   @relation("TransferTo", fields: [toAgentId], references: [id])
   order     Order?  @relation(fields: [orderId], references: [id])
   createdBy User    @relation("TransferCreator", fields: [createdById], references: [id])
+  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([productId])
   @@index([fromAgentId])
@@ -927,6 +1077,7 @@ model InventoryTransfer {
   @@index([transferType])
   @@index([createdAt])
   @@index([orderId])
+  @@index([tenantId])
   @@map("inventory_transfers")
 }
 
@@ -944,13 +1095,33 @@ model AgentStock {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  agent   User    @relation("AgentStockHoldings", fields: [agentId], references: [id])
-  product Product @relation(fields: [productId], references: [id])
+  agent    User    @relation("AgentStockHoldings", fields: [agentId], references: [id])
+  product  Product @relation(fields: [productId], references: [id])
+  tenantId String? @map("tenant_id")
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([agentId, productId])
   @@index([agentId])
   @@index([productId])
+  @@index([tenantId])
   @@map("agent_stock")
+}
+
+model DownloadToken {
+  id             Int      @id @default(autoincrement())
+  orderId        Int      @map("order_id")
+  token          String   @unique
+  expiresAt      DateTime @map("expires_at")
+  downloadCount  Int      @default(0) @map("download_count")
+  maxDownloads   Int      @default(5) @map("max_downloads")
+  isRevoked      Boolean  @default(false) @map("is_revoked")
+  createdAt      DateTime @default(now()) @map("created_at")
+  order          Order    @relation(fields: [orderId], references: [id])
+
+  @@index([token])
+  @@index([orderId])
+  @@index([expiresAt])
+  @@map("download_tokens")
 }
 
 model MessageLog {
@@ -973,11 +1144,14 @@ model MessageLog {
 
   order    Order?    @relation(fields: [orderId], references: [id])
   customer Customer? @relation(fields: [customerId], references: [id])
+  tenantId String?   @map("tenant_id")
+  tenant   Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([customerId])
   @@index([channel, status])
   @@index([createdAt])
+  @@index([tenantId])
   @@map("message_logs")
 }
 

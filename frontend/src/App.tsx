@@ -15,11 +15,12 @@ import { useConfigStore } from './stores/configStore';
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { Onboarding } from './pages/Onboarding';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
-
 // Lazy load all other pages for better initial load performance
+const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
 const Orders = lazy(() => import('./pages/Orders').then(m => ({ default: m.Orders })));
 const OrderDetails = lazy(() => import('./pages/OrderDetails').then(m => ({ default: m.OrderDetails })));
 const Products = lazy(() => import('./pages/Products').then(m => ({ default: m.Products })));
@@ -36,10 +37,17 @@ const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.S
 const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ default: m.CheckoutForms })));
 const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
+const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
 const Communications = lazy(() => import('./pages/Communications'));
+const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
+const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
+const PlatformDashboard = lazy(() => import('./pages/PlatformDashboard').then(m => ({ default: m.PlatformDashboard })));
+const PlatformTenants = lazy(() => import('./pages/PlatformTenants').then(m => ({ default: m.PlatformTenants })));
+const PlatformTenantDetail = lazy(() => import('./pages/PlatformTenantDetail').then(m => ({ default: m.PlatformTenantDetail })));
+const PlatformAnnouncements = lazy(() => import('./pages/PlatformAnnouncements').then(m => ({ default: m.PlatformAnnouncements })));
 
 // Mobile pages
 const MobileLayout = lazy(() => import('./components/layout/MobileLayout').then(m => ({ default: m.MobileLayout })));
@@ -55,9 +63,14 @@ const AgentInventoryRoute: React.FC = () => {
   return <AgentInventoryManagement />;
 };
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuthStore();
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+const ProtectedRoute: React.FC<{ children: React.ReactNode; skipOnboardingCheck?: boolean }> = ({ children, skipOnboardingCheck }) => {
+  const { isAuthenticated, needsOnboarding } = useAuthStore();
+  const location = useLocation();
+  if (!isAuthenticated) return <Navigate to="/login" />;
+  if (!skipOnboardingCheck && needsOnboarding() && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" replace />;
+  }
+  return <>{children}</>;
 };
 
 const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }> = ({ children, allowedRoles }) => {
@@ -65,6 +78,16 @@ const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }>
 
   if (!user || !allowedRoles.includes(user.role)) {
     return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, user } = useAuthStore();
+
+  if (!isAuthenticated || !user?.isPlatformAdmin) {
+    return <Navigate to="/platform/login" replace />;
   }
 
   return <>{children}</>;
@@ -120,12 +143,32 @@ function App() {
                 <PublicCheckout />
               </Suspense>
             } />
-
+            <Route path="/pricing" element={
+              <Suspense fallback={<Loading />}>
+                <Pricing />
+              </Suspense>
+            } />
+            <Route path="/checkout/payment/callback" element={
+              <Suspense fallback={<Loading />}>
+                <PaymentCallback />
+              </Suspense>
+            } />
             {/* Auth routes */}
+            {/* Platform admin login */}
+            <Route path="/platform/login" element={
+              <Suspense fallback={<Loading />}>
+                <PlatformLogin />
+              </Suspense>
+            } />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/onboarding" element={
+              <ProtectedRoute skipOnboardingCheck>
+                <Onboarding />
+              </ProtectedRoute>
+            } />
             {/* Mobile routes for delivery agents */}
             <Route
               path="/m"
@@ -257,6 +300,11 @@ function App() {
                   <Settings />
                 </Suspense>
               } />
+              <Route path="settings/billing" element={
+                <Suspense fallback={<Loading />}>
+                  <Billing />
+                </Suspense>
+              } />
               <Route path="checkout-forms" element={
                 <Suspense fallback={<Loading />}>
                   <CheckoutForms />
@@ -282,6 +330,34 @@ function App() {
                     <EarningsHistory />
                   </Suspense>
                 </RoleGuard>
+              } />
+              <Route path="platform" element={
+                <PlatformGuard>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformDashboard />
+                  </Suspense>
+                </PlatformGuard>
+              } />
+              <Route path="platform/tenants" element={
+                <PlatformGuard>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformTenants />
+                  </Suspense>
+                </PlatformGuard>
+              } />
+              <Route path="platform/tenants/:id" element={
+                <PlatformGuard>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformTenantDetail />
+                  </Suspense>
+                </PlatformGuard>
+              } />
+              <Route path="platform/announcements" element={
+                <PlatformGuard>
+                  <Suspense fallback={<Loading />}>
+                    <PlatformAnnouncements />
+                  </Suspense>
+                </PlatformGuard>
               } />
             </Route>
           </Routes>

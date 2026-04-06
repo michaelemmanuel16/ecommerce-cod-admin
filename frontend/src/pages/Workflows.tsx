@@ -59,9 +59,11 @@ export const Workflows: React.FC = () => {
   const handleToggleWorkflow = async (id: string, currentStatus: boolean) => {
     try {
       await workflowsService.updateWorkflow(id, { isActive: !currentStatus });
+      toast.success(currentStatus ? 'Workflow paused' : 'Workflow activated');
       await loadWorkflows();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to toggle workflow:', error);
+      toast.error(error.response?.data?.error || 'Failed to update workflow');
     }
   };
 
@@ -70,9 +72,11 @@ export const Workflows: React.FC = () => {
 
     try {
       await workflowsService.deleteWorkflow(id);
+      toast.success('Workflow deleted');
       await loadWorkflows();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete workflow:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete workflow');
     }
   };
 

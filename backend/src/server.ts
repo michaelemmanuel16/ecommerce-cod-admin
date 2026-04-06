@@ -2,6 +2,29 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Sentry must be initialized before any other imports
+import * as Sentry from '@sentry/node';
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 0,
+    sendDefaultPii: false,
+    beforeSend(event) {
+      // Scrub PII from request data before sending to Sentry
+      if (event.request) {
+        delete event.request.cookies;
+        delete event.request.data;
+        if (event.request.headers) {
+          delete event.request.headers.authorization;
+          delete event.request.headers.cookie;
+        }
+      }
+      return event;
+    },
+  });
+}
+
 import express, { Application } from 'express';
 import http from 'http';
 import cors from 'cors';
@@ -12,6 +35,7 @@ import path from 'path';
 import { initializeSocket } from './sockets';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { apiLimiter, whatsappWebhookLimiter } from './middleware/rateLimiter';
+import { requestTimeout } from './middleware/requestTimeout';
 import logger from './utils/logger';
 import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
@@ -40,7 +64,12 @@ import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
 import agentInventoryRoutes from './routes/agentInventoryRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
 import smsRoutes from './routes/smsRoutes';
+import emailRoutes from './routes/emailRoutes';
+import paystackRoutes from './routes/paystackRoutes';
 import communicationRoutes from './routes/communicationRoutes';
+import onboardingRoutes from './routes/onboardingRoutes';
+import billingRoutes from './routes/billingRoutes';
+import platformRoutes from './routes/platformRoutes';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
@@ -110,7 +139,9 @@ app.use('/api/public', (_req, res, next) => {
 
 // CORS for protected routes - restricted to frontend URL only
 // Trust proxy - we are behind nginx reverse proxy
-app.set("trust proxy", true);
+// SECURITY: Trust only the first proxy (nginx). Using `true` trusts ALL proxies,
+// allowing attackers to spoof X-Forwarded-For and bypass rate limiting.
+app.set("trust proxy", 1);
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
@@ -121,12 +152,16 @@ app.use(express.json({
   limit: '10mb',
   // Preserve raw body buffer on webhook routes for HMAC signature verification
   verify: (req: any, _res, buf) => {
-    if (req.originalUrl?.startsWith('/api/whatsapp/webhook')) {
+    if (req.originalUrl?.startsWith('/api/whatsapp/webhook') ||
+        req.originalUrl?.startsWith('/api/paystack/webhook')) {
       req.rawBody = buf;
     }
   },
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+app.use(requestTimeout(30000));
+// tenantRateLimiter is applied per-route after authenticate (in route files), not globally.
 
 // Request logging (sanitized - no auth headers or sensitive data)
 app.use((req, _res, next) => {
@@ -180,7 +215,12 @@ app.get('/api/whatsapp/oauth/callback', apiLimiter, handleOAuthCallback);
 // Admin endpoints use standard rate limiter
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 app.use('/api/sms', apiLimiter, smsRoutes);
+app.use('/api/email', apiLimiter, emailRoutes);
+app.use('/api/paystack', apiLimiter, paystackRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
+app.use('/api/onboarding', apiLimiter, onboardingRoutes);
+app.use('/api/billing', apiLimiter, billingRoutes);
+app.use('/api/platform', platformRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);
@@ -212,6 +252,10 @@ app.get('/', (_req, res) => {
 
 // Error handling
 app.use(notFound);
+// Sentry error handler must be before custom error handler
+if (process.env.SENTRY_DSN) {
+  Sentry.setupExpressErrorHandler(app);
+}
 app.use(errorHandler);
 
 // Start server only if not in test environment

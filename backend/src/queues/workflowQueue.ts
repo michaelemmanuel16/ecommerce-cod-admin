@@ -4,6 +4,7 @@ import logger from '../utils/logger';
 import { evaluateConditions } from '../utils/conditionEvaluator';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderUpdated, emitOrderAssigned } from '../sockets/index';
+import { tenantStorage } from '../utils/tenantContext';
 
 const redisConfig = {
   host: process.env.REDIS_HOST || 'localhost',
@@ -32,91 +33,101 @@ export const workflowQueue = process.env.NODE_ENV === 'test'
 
 
 workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
-  const { executionId, workflowId, actions, conditions, input } = job.data;
+  const { executionId, workflowId, actions, conditions, input, tenantId } = job.data;
 
-  logger.info('Processing workflow execution', { executionId, workflowId, hasConditions: !!conditions });
+  // Restore tenant context so all Prisma queries (MessageLog, SystemConfig, etc.)
+  // are scoped to the correct tenant
+  const processJob = async () => {
+    logger.info('Processing workflow execution', { executionId, workflowId, tenantId, hasConditions: !!conditions });
 
-  const io = getSocketInstance();
-  if (io) {
-    io.emit('workflow:execution_started', { workflowId, executionId });
-  }
+    const io = getSocketInstance();
+    if (io) {
+      io.emit('workflow:execution_started', { workflowId, executionId });
+    }
 
-  try {
-    await prisma.workflowExecution.update({
-      where: { id: executionId },
-      data: { status: 'running' }
-    });
+    try {
+      await prisma.workflowExecution.update({
+        where: { id: executionId },
+        data: { status: 'running' }
+      });
 
-    const output: any = { steps: [] };
+      const output: any = { steps: [] };
 
-    // Execute actions sequentially
-    for (const action of actions) {
-      try {
-        const result = await executeAction(action, input, conditions);
-        output.steps.push({
-          action: action.type,
-          success: true,
-          result
-        });
+      // Execute actions sequentially
+      for (const action of actions) {
+        try {
+          const result = await executeAction(action, input, conditions);
+          output.steps.push({
+            action: action.type,
+            success: true,
+            result
+          });
 
-        // If action has a wait, delay
-        if (action.type === 'wait' && action.config.duration) {
-          await new Promise(resolve => setTimeout(resolve, action.config.duration));
+          // If action has a wait, delay
+          if (action.type === 'wait' && action.config.duration) {
+            await new Promise(resolve => setTimeout(resolve, action.config.duration));
+          }
+        } catch (error: any) {
+          output.steps.push({
+            action: action.type,
+            success: false,
+            error: error.message
+          });
+
+          // If action fails, stop execution
+          throw error;
         }
-      } catch (error: any) {
-        output.steps.push({
-          action: action.type,
-          success: false,
+      }
+
+      await prisma.workflowExecution.update({
+        where: { id: executionId },
+        data: {
+          status: 'completed',
+          output,
+          completedAt: new Date()
+        }
+      });
+
+      logger.info('Workflow execution completed', { executionId });
+
+      if (io) {
+        io.emit('workflow:execution_completed', {
+          workflowId,
+          executionId,
+          status: 'completed',
+          completedAt: new Date()
+        });
+      }
+    } catch (error: any) {
+      logger.error('Workflow execution failed', { executionId, error: error.message });
+
+      if (io) {
+        io.emit('workflow:execution_completed', {
+          workflowId,
+          executionId,
+          status: 'failed',
           error: error.message
         });
-
-        // If action fails, stop execution
-        throw error;
       }
-    }
 
-    await prisma.workflowExecution.update({
-      where: { id: executionId },
-      data: {
-        status: 'completed',
-        output,
-        completedAt: new Date()
-      }
-    });
-
-    logger.info('Workflow execution completed', { executionId });
-
-    if (io) {
-      io.emit('workflow:execution_completed', {
-        workflowId,
-        executionId,
-        status: 'completed',
-        completedAt: new Date()
+      await prisma.workflowExecution.update({
+        where: { id: executionId },
+        data: {
+          status: 'failed',
+          error: error.message,
+          completedAt: new Date()
+        }
       });
+
+      throw error;
     }
-  } catch (error: any) {
-    logger.error('Workflow execution failed', { executionId, error: error.message });
+  };
 
-    if (io) {
-      io.emit('workflow:execution_completed', {
-        workflowId,
-        executionId,
-        status: 'failed',
-        error: error.message
-      });
-    }
-
-    await prisma.workflowExecution.update({
-      where: { id: executionId },
-      data: {
-        status: 'failed',
-        error: error.message,
-        completedAt: new Date()
-      }
-    });
-
-    throw error;
+  // Run with tenant context if available, otherwise run without (backwards compat)
+  if (tenantId) {
+    return tenantStorage.run({ tenantId }, processJob);
   }
+  return processJob();
 });
 
 async function executeAssignUserAction(action: any, _input: any, conditions?: any): Promise<any> {

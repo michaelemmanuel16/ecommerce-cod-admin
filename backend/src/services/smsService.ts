@@ -3,6 +3,7 @@ import logger from '../utils/logger';
 import { MessageChannel, MessageDirection, MessageStatus } from '@prisma/client';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { formatPhoneNumber, OrderContext } from './whatsappService';
+import { getTenantId } from '../utils/tenantContext';
 
 // Arkesel SMS API
 const ARKESEL_API_URL = 'https://sms.arkesel.com/api/v2/sms/send';
@@ -13,14 +14,16 @@ interface SmsConfig {
   isEnabled: boolean;
 }
 
-// Cached DB config with 60s TTL (mirrors WhatsApp pattern)
-let cachedDbConfig: { data: any; fetchedAt: number } | null = null;
+// Tenant-aware cached DB config with 60s TTL (mirrors WhatsApp pattern)
+const configCache = new Map<string, { data: SmsConfig | null; fetchedAt: number }>();
 const CONFIG_CACHE_TTL = 60_000;
 
 export async function getDbSmsConfig(): Promise<SmsConfig | null> {
+  const tenantId = getTenantId() || '__default__';
   const now = Date.now();
-  if (cachedDbConfig && now - cachedDbConfig.fetchedAt < CONFIG_CACHE_TTL) {
-    return cachedDbConfig.data;
+  const cached = configCache.get(tenantId);
+  if (cached && now - cached.fetchedAt < CONFIG_CACHE_TTL) {
+    return cached.data;
   }
 
   try {
@@ -29,7 +32,7 @@ export async function getDbSmsConfig(): Promise<SmsConfig | null> {
     const decrypted = provider ? decryptProviderSecrets('smsProvider', provider) : null;
 
     if (!decrypted || !decrypted.authToken) {
-      cachedDbConfig = { data: null, fetchedAt: now };
+      configCache.set(tenantId, { data: null, fetchedAt: now });
       return null;
     }
 
@@ -39,7 +42,7 @@ export async function getDbSmsConfig(): Promise<SmsConfig | null> {
       isEnabled: decrypted.isEnabled !== false,
     };
 
-    cachedDbConfig = { data: smsConfig, fetchedAt: now };
+    configCache.set(tenantId, { data: smsConfig, fetchedAt: now });
     return smsConfig;
   } catch (error: any) {
     logger.warn('Failed to read SMS config from DB', { error: error.message });
@@ -48,7 +51,7 @@ export async function getDbSmsConfig(): Promise<SmsConfig | null> {
 }
 
 export function clearSmsConfigCache(): void {
-  cachedDbConfig = null;
+  configCache.clear();
 }
 
 // Plain-text SMS templates matching WhatsApp templates

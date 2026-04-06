@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 
+
 interface CreateCheckoutFormData {
   name: string;
   slug: string;
@@ -67,8 +68,9 @@ export class CheckoutFormService {
    * Create new checkout form with packages and upsells
    */
   async createCheckoutForm(data: CreateCheckoutFormData) {
+
     // Check if slug already exists
-    const existingForm = await prisma.checkoutForm.findUnique({
+    const existingForm = await prisma.checkoutForm.findFirst({
       where: { slug: data.slug }
     });
 
@@ -97,7 +99,7 @@ export class CheckoutFormService {
           styling: data.styling,
           country: data.country || 'Ghana',
           regions: data.regions,
-          packages: {
+                    packages: {
             create: data.packages.map((pkg) => ({
               name: pkg.name,
               description: pkg.description,
@@ -155,6 +157,7 @@ export class CheckoutFormService {
    * Get all checkout forms with packages and upsells
    */
   async getAllCheckoutForms(filters?: { isActive?: boolean }) {
+
     const where: Prisma.CheckoutFormWhereInput = {};
 
     if (filters?.isActive !== undefined) {
@@ -258,13 +261,15 @@ export class CheckoutFormService {
         currency: true,
         regions: true,
         pixelConfig: true,
+        formType: true,
         product: {
           select: {
             name: true,
             description: true,
             price: true,
             imageUrl: true,
-            stockQuantity: true
+            stockQuantity: true,
+            productType: true,
           }
         },
         packages: {
@@ -275,14 +280,14 @@ export class CheckoutFormService {
             description: true,
             price: true,
             quantity: true,
+            originalPrice: true,
+            discountType: true,
+            discountValue: true,
             isPopular: true,
             isDefault: true,
-            originalPrice: true,
-            showDiscount: true,
             showHighlight: true,
             highlightText: true,
-            discountType: true,
-            discountValue: true
+            showDiscount: true
           }
         },
         upsells: {
@@ -338,7 +343,7 @@ export class CheckoutFormService {
 
     // If updating slug, check for duplicates
     if (data.slug && data.slug !== existingForm.slug) {
-      const slugExists = await prisma.checkoutForm.findUnique({
+      const slugExists = await prisma.checkoutForm.findFirst({
         where: { slug: data.slug }
       });
 

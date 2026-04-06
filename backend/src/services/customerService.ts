@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
+import { getTenantId } from '../utils/tenantContext';
 
 interface CreateCustomerData {
   firstName: string;
@@ -75,6 +76,14 @@ export class CustomerService {
       const conditions: string[] = ['c.is_active = true', 'c.deleted_at IS NULL'];
       const params: any[] = [];
       let paramIdx = 1;
+
+      // Tenant isolation for raw SQL (Prisma extension does not intercept $queryRawUnsafe)
+      const tenantId = getTenantId();
+      if (tenantId) {
+        conditions.push(`c.tenant_id = $${paramIdx}`);
+        params.push(tenantId);
+        paramIdx++;
+      }
 
       if (search) {
         conditions.push(`(c.first_name ILIKE $${paramIdx} OR c.last_name ILIKE $${paramIdx} OR c.phone_number LIKE $${paramIdx + 1} OR c.email ILIKE $${paramIdx})`);
@@ -185,7 +194,7 @@ export class CustomerService {
    */
   async createCustomer(data: CreateCustomerData) {
     // Check if customer with phone number already exists
-    const existingCustomer = await prisma.customer.findUnique({
+    const existingCustomer = await prisma.customer.findFirst({
       where: { phoneNumber: data.phoneNumber }
     });
 
@@ -197,7 +206,7 @@ export class CustomerService {
       data: {
         ...data,
         firstName: data.firstName || 'Unknown',
-        lastName: data.lastName || ''
+        lastName: data.lastName || '',
       }
     });
 
@@ -281,7 +290,7 @@ export class CustomerService {
    * Get customer by phone number
    */
   async getCustomerByPhone(phoneNumber: string, requester?: Requester) {
-    const customer = await prisma.customer.findUnique({
+    const customer = await prisma.customer.findFirst({
       where: { phoneNumber },
       include: {
         orders: {
@@ -347,7 +356,7 @@ export class CustomerService {
 
     // If updating phone number, check for duplicates
     if (updateData.phoneNumber && updateData.phoneNumber !== customer.phoneNumber) {
-      const existingCustomer = await prisma.customer.findUnique({
+      const existingCustomer = await prisma.customer.findFirst({
         where: { phoneNumber: updateData.phoneNumber }
       });
 

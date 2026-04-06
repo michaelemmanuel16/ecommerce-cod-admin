@@ -19,12 +19,14 @@ interface AuthState {
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
+  registerTenant: (data: { companyName: string; adminEmail: string; adminPassword: string; adminName: string }) => Promise<void>;
   logout: (showToast?: boolean) => void;
   setAccessToken: (token: string) => void;
   updatePreferences: (preferences: UserPreferences) => Promise<void>;
   refreshPermissions: () => Promise<void>;
   setupPermissionListener: () => void;
   initSocket: () => void;
+  needsOnboarding: () => boolean;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -76,6 +78,34 @@ export const useAuthStore = create<AuthState>()(
           set({ isLoading: false });
           throw error;
         }
+      },
+
+      registerTenant: async (data) => {
+        set({ isLoading: true });
+        try {
+          const { user, tokens } = await authService.registerTenant(data);
+          set({
+            user,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            permissions: null,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+          toast.success(`Welcome, ${user.firstName}! Let's set up your company.`);
+          connectSocket();
+        } catch (error) {
+          set({ isLoading: false });
+          throw error;
+        }
+      },
+
+      needsOnboarding: () => {
+        const { user, isAuthenticated } = get();
+        if (!isAuthenticated || !user) return false;
+        if (user.isPlatformAdmin) return false;
+        const prefs = user.preferences as any;
+        return !prefs?.onboardingCompleted;
       },
 
       logout: (showToast = true) => {

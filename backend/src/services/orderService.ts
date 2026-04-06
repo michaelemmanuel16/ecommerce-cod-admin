@@ -21,6 +21,7 @@ import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
 
 
+
 interface CreateOrderData {
   customerId?: number;
   customerPhone?: string;
@@ -106,7 +107,7 @@ export class OrderService {
     } = filters;
 
     const where: Prisma.OrderWhereInput = {
-      deletedAt: null // Filter out soft-deleted orders
+      deletedAt: null, // Filter out soft-deleted orders
     };
 
     if (status && status.length > 0) where.status = { in: status };
@@ -218,7 +219,7 @@ export class OrderService {
       }
     } else if (data.customerPhone) {
       // Find customer by phone or create new one
-      customer = await prisma.customer.findUnique({
+      customer = await prisma.customer.findFirst({
         where: { phoneNumber: data.customerPhone }
       });
 
@@ -238,7 +239,7 @@ export class OrderService {
             alternatePhone: data.alternatePhone || null,
             address: data.deliveryAddress,
             state: data.deliveryState,
-            area: data.deliveryArea
+            area: data.deliveryArea,
           }
         });
       } else if (data.alternatePhone && customer.alternatePhone !== data.alternatePhone) {
@@ -293,7 +294,7 @@ export class OrderService {
           notes: data.notes,
           estimatedDelivery: data.estimatedDelivery || null,
           createdById: data.createdById,
-          orderItems: {
+                    orderItems: {
             create: data.orderItems.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,

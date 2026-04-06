@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { CheckCircle } from 'lucide-react';
-import { Button } from '../ui/Button';
 import { PixelConfig } from '../../types/checkout-form';
 import { trackPurchase } from '../../utils/pixelTracking';
 
@@ -9,10 +8,9 @@ interface OrderSuccessProps {
   orderTotal?: number;
   currency?: string;
   pixelConfig?: PixelConfig;
-  onClose?: () => void;
 }
 
-export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal, currency = 'GHS', pixelConfig, onClose }) => {
+export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal, currency = 'GHS', pixelConfig }) => {
   useEffect(() => {
     if (pixelConfig) {
       trackPurchase(pixelConfig, orderTotal ?? 0, currency, orderId);
@@ -67,16 +65,6 @@ export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal,
             </li>
           </ul>
         </div>
-
-        {/* Action Button */}
-        {onClose && (
-          <Button
-            onClick={onClose}
-            className="w-full bg-[#0f172a] hover:bg-[#1e293b] text-white font-semibold py-3"
-          >
-            Place Another Order
-          </Button>
-        )}
 
         {/* Contact Info */}
         <p className="text-xs text-gray-500 mt-6">

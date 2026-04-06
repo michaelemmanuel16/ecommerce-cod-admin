@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { ArrowLeft, Upload, X } from 'lucide-react';
+import { ArrowLeft, Upload, X, Package, FileText } from 'lucide-react';
 import { productsService } from '../services/products.service';
 import { Product } from '../types';
 import { apiClient } from '../services/api';
@@ -32,6 +32,10 @@ export const ProductForm: React.FC = () => {
         category: '',
         imageUrl: '',
         isActive: true,
+        productType: 'physical' as 'physical' | 'digital',
+        digitalFileUrl: '',
+        digitalFileType: '',
+        downloadLinkExpiryHours: '72',
     });
 
     useEffect(() => {
@@ -68,6 +72,10 @@ export const ProductForm: React.FC = () => {
                 category: product.category || '',
                 imageUrl: product.imageUrl || '',
                 isActive: product.isActive ?? true,
+                productType: product.productType || 'physical',
+                digitalFileUrl: product.digitalFileUrl || '',
+                digitalFileType: product.digitalFileType || '',
+                downloadLinkExpiryHours: (product.downloadLinkExpiryHours ?? 72).toString(),
             });
 
             if (product.imageUrl) {
@@ -145,12 +153,16 @@ export const ProductForm: React.FC = () => {
             alert('Valid price is required');
             return;
         }
-        if (!formData.cogs || parseFloat(formData.cogs) <= 0) {
+        if (!formData.cogs || parseFloat(formData.cogs) < 0) {
             alert('Valid COGS is required');
             return;
         }
-        if (!formData.stockQuantity || parseInt(formData.stockQuantity) < 0) {
+        if (formData.productType === 'physical' && (!formData.stockQuantity || parseInt(formData.stockQuantity) < 0)) {
             alert('Valid stock quantity is required');
+            return;
+        }
+        if (formData.productType === 'digital' && !formData.digitalFileUrl) {
+            alert('File URL is required for digital products');
             return;
         }
 
@@ -179,17 +191,21 @@ export const ProductForm: React.FC = () => {
                 }
             }
 
-            const productData = {
+            const productData: Partial<Product> = {
                 name: formData.name.trim(),
                 description: formData.description.trim(),
                 sku: formData.sku.trim().toUpperCase(),
                 price: parseFloat(formData.price),
                 cogs: parseFloat(formData.cogs),
-                stockQuantity: parseInt(formData.stockQuantity),
-                lowStockThreshold: parseInt(formData.lowStockThreshold),
+                stockQuantity: formData.productType === 'digital' ? 0 : parseInt(formData.stockQuantity),
+                lowStockThreshold: formData.productType === 'digital' ? 0 : parseInt(formData.lowStockThreshold),
                 category: formData.category.trim(),
                 imageUrl: finalImageUrl || undefined,
                 isActive: formData.isActive,
+                productType: formData.productType,
+                digitalFileUrl: formData.productType === 'digital' ? formData.digitalFileUrl.trim() : undefined,
+                digitalFileType: formData.productType === 'digital' ? (formData.digitalFileType || undefined) : undefined,
+                downloadLinkExpiryHours: formData.productType === 'digital' ? (parseInt(formData.downloadLinkExpiryHours) || 72) : undefined,
             };
 
             if (isEditMode && id) {
@@ -241,6 +257,43 @@ export const ProductForm: React.FC = () => {
                         Product Information
                     </h2>
                     <div className="space-y-4">
+                        {/* Product Type Selector */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Product Type</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData((prev) => ({ ...prev, productType: 'physical' }))}
+                                    className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
+                                        formData.productType === 'physical'
+                                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                            : 'border-gray-200 hover:border-gray-300'
+                                    }`}
+                                >
+                                    <Package className="w-5 h-5" />
+                                    <div className="text-left">
+                                        <div className="font-medium text-sm">Physical</div>
+                                        <div className="text-xs text-gray-500">Shipped product</div>
+                                    </div>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData((prev) => ({ ...prev, productType: 'digital' }))}
+                                    className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-colors ${
+                                        formData.productType === 'digital'
+                                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                            : 'border-gray-200 hover:border-gray-300'
+                                    }`}
+                                >
+                                    <FileText className="w-5 h-5" />
+                                    <div className="text-left">
+                                        <div className="font-medium text-sm">Digital</div>
+                                        <div className="text-xs text-gray-500">Download link</div>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+
                         <Input
                             label="Product Name"
                             name="name"
@@ -332,7 +385,7 @@ export const ProductForm: React.FC = () => {
 
                 <Card className="mb-6">
                     <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                        Pricing & Inventory
+                        Pricing {formData.productType === 'physical' ? '& Inventory' : ''}
                     </h2>
                     <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -360,39 +413,43 @@ export const ProductForm: React.FC = () => {
                             />
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <Input
-                                label="Stock Quantity"
-                                name="stockQuantity"
-                                type="number"
-                                min="0"
-                                value={formData.stockQuantity}
-                                onChange={handleInputChange}
-                                placeholder="0"
-                                required
-                            />
-                            <div className="flex items-center pt-7 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
-                                <span className="text-sm text-gray-600 mr-2">Profit Margin:</span>
-                                <span className="text-sm font-semibold text-green-600">
-                                    {formData.price && formData.cogs
-                                        ? `${currencySymbol}${(parseFloat(formData.price) - parseFloat(formData.cogs)).toFixed(2)} (${(((parseFloat(formData.price) - parseFloat(formData.cogs)) / parseFloat(formData.price)) * 100).toFixed(1)}%)`
-                                        : '—'}
-                                </span>
-                            </div>
-                        </div>
+                        {formData.productType === 'physical' && (
+                            <>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <Input
+                                        label="Stock Quantity"
+                                        name="stockQuantity"
+                                        type="number"
+                                        min="0"
+                                        value={formData.stockQuantity}
+                                        onChange={handleInputChange}
+                                        placeholder="0"
+                                        required
+                                    />
+                                    <div className="flex items-center pt-7 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                                        <span className="text-sm text-gray-600 mr-2">Profit Margin:</span>
+                                        <span className="text-sm font-semibold text-green-600">
+                                            {formData.price && formData.cogs
+                                                ? `${currencySymbol}${(parseFloat(formData.price) - parseFloat(formData.cogs)).toFixed(2)} (${(((parseFloat(formData.price) - parseFloat(formData.cogs)) / parseFloat(formData.price)) * 100).toFixed(1)}%)`
+                                                : '—'}
+                                        </span>
+                                    </div>
+                                </div>
 
-                        <Input
-                            label="Low Stock Threshold"
-                            name="lowStockThreshold"
-                            type="number"
-                            min="0"
-                            value={formData.lowStockThreshold}
-                            onChange={handleInputChange}
-                            placeholder="10"
-                        />
-                        <p className="text-sm text-gray-500 -mt-2">
-                            Alert when stock falls below this number
-                        </p>
+                                <Input
+                                    label="Low Stock Threshold"
+                                    name="lowStockThreshold"
+                                    type="number"
+                                    min="0"
+                                    value={formData.lowStockThreshold}
+                                    onChange={handleInputChange}
+                                    placeholder="10"
+                                />
+                                <p className="text-sm text-gray-500 -mt-2">
+                                    Alert when stock falls below this number
+                                </p>
+                            </>
+                        )}
 
                         <div className="flex items-center">
                             <input
@@ -409,6 +466,57 @@ export const ProductForm: React.FC = () => {
                         </div>
                     </div>
                 </Card>
+
+                {/* Digital Product Settings */}
+                {formData.productType === 'digital' && (
+                    <Card className="mb-6">
+                        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                            Digital Product Settings
+                        </h2>
+                        <div className="space-y-4">
+                            <Input
+                                label="File URL"
+                                name="digitalFileUrl"
+                                value={formData.digitalFileUrl}
+                                onChange={handleInputChange}
+                                placeholder="https://drive.google.com/file/d/... or Dropbox link"
+                                required
+                            />
+                            <p className="text-sm text-gray-500 -mt-2">
+                                Link to the file on Google Drive, Dropbox, or other hosting
+                            </p>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">File Type</label>
+                                    <select
+                                        name="digitalFileType"
+                                        value={formData.digitalFileType}
+                                        onChange={(e) => setFormData((prev) => ({ ...prev, digitalFileType: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="">Select type</option>
+                                        <option value="pdf">PDF</option>
+                                        <option value="ebook">E-book</option>
+                                        <option value="zip">ZIP Archive</option>
+                                        <option value="video">Video</option>
+                                        <option value="audio">Audio</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                <Input
+                                    label="Download Link Expiry (hours)"
+                                    name="downloadLinkExpiryHours"
+                                    type="number"
+                                    min="1"
+                                    value={formData.downloadLinkExpiryHours}
+                                    onChange={handleInputChange}
+                                    placeholder="72"
+                                />
+                            </div>
+                        </div>
+                    </Card>
+                )}
 
                 {/* Actions */}
                 <div className="flex justify-end gap-3 pb-8">

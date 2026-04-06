@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as orderController from '../controllers/orderController';
 import * as bulkOrderController from '../controllers/bulkOrderController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate, validateRequest } from '../middleware/validation';
 import { spreadsheetUpload, handleUploadErrors } from '../config/multer';
 import { createOrderValidation, updateOrderStatusValidation, paginationValidation, bulkDeleteValidation } from '../utils/validators';
@@ -10,6 +11,7 @@ import { bulkOrderRateLimiter, bulkImportRateLimiter } from '../middleware/bulkR
 const router = Router();
 
 router.use(authenticate);
+router.use(tenantRateLimiter);
 
 router.get('/', paginationValidation, validate, requireResourcePermission('orders', 'view'), orderController.getAllOrders);
 router.get('/export', bulkOrderRateLimiter, requireResourcePermission('orders', 'view'), bulkOrderController.exportOrders);

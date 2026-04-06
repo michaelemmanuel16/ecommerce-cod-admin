@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { cn } from '../../utils/cn';
+import { AnnouncementBanner } from '../announcements/AnnouncementBanner';
 
 export const Layout: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -27,6 +28,7 @@ export const Layout: React.FC = () => {
       >
         <Header />
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-6">
+          <AnnouncementBanner />
           <Outlet />
         </main>
       </div>

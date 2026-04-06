@@ -46,4 +46,31 @@ export const authService = {
     const response = await apiClient.get('/api/auth/me');
     return response.data;
   },
+
+  async registerTenant(data: {
+    companyName: string;
+    adminEmail: string;
+    adminPassword: string;
+    adminName: string;
+  }): Promise<{ user: User; tokens: AuthTokens; tenant: { id: string; name: string; slug: string } }> {
+    const response = await apiClient.post('/api/auth/register-tenant', data);
+    return response.data;
+  },
+
+  async deleteAccount(password: string): Promise<{ message: string }> {
+    const response = await apiClient.delete('/api/auth/delete-account', { data: { password } });
+    return response.data;
+  },
+
+  async setupOnboarding(data: {
+    country: string;
+    currency: string;
+    businessEmail?: string;
+    businessPhone?: string;
+    businessAddress?: string;
+    taxId?: string;
+  }): Promise<{ tenant: any }> {
+    const response = await apiClient.post('/api/onboarding/setup', data);
+    return response.data;
+  },
 };

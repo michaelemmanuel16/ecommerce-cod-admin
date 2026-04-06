@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma, TransferType } from '@prisma/client';
 import logger from '../utils/logger';
 
+
 export class AgentInventoryService {
   /**
    * Allocate stock from warehouse to an agent
@@ -19,7 +20,7 @@ export class AgentInventoryService {
     }
 
     const [product, agent] = await Promise.all([
-      prisma.product.findUnique({ where: { id: productId } }),
+      prisma.product.findUnique({ where: { id: productId,  } }),
       prisma.user.findUnique({ where: { id: agentId } }),
     ]);
 
@@ -70,7 +71,7 @@ export class AgentInventoryService {
           toAgentId: agentId,
           notes,
           createdById,
-        },
+                  },
         include: {
           product: { select: { id: true, name: true, sku: true } },
           toAgent: { select: { id: true, firstName: true, lastName: true } },
@@ -168,7 +169,7 @@ export class AgentInventoryService {
           toAgentId,
           notes,
           createdById,
-        },
+                  },
         include: {
           product: { select: { id: true, name: true, sku: true } },
           fromAgent: { select: { id: true, firstName: true, lastName: true } },
@@ -237,7 +238,7 @@ export class AgentInventoryService {
           toAgentId: null,
           notes,
           createdById,
-        },
+                  },
         include: {
           product: { select: { id: true, name: true, sku: true } },
           fromAgent: { select: { id: true, firstName: true, lastName: true } },
@@ -434,6 +435,8 @@ export class AgentInventoryService {
     createdById: number,
     notes: string
   ) {
+
+
     if (newQuantity < 0) {
       throw new AppError('Quantity cannot be negative', 400);
     }
@@ -503,7 +506,7 @@ export class AgentInventoryService {
           toAgentId: difference > 0 ? agentId : null,
           notes: `Adjustment: ${currentQuantity} → ${newQuantity}. ${notes}`,
           createdById,
-        },
+                  },
         include: {
           product: { select: { id: true, name: true, sku: true } },
           fromAgent: { select: { id: true, firstName: true, lastName: true } },
@@ -525,15 +528,17 @@ export class AgentInventoryService {
    * Get all agent stock holdings for a specific product
    */
   async getProductAgentStock(productId: number) {
+
+
     const product = await prisma.product.findUnique({
-      where: { id: productId },
+      where: { id: productId,  },
       select: { id: true, name: true, sku: true, price: true },
     });
 
     if (!product) throw new AppError('Product not found', 404);
 
     const agentStocks = await prisma.agentStock.findMany({
-      where: { productId, OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }] },
+      where: { productId, OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }],  },
       include: {
         agent: {
           select: { id: true, firstName: true, lastName: true, email: true, phoneNumber: true },
@@ -567,6 +572,8 @@ export class AgentInventoryService {
    * Get all stock held by a specific agent
    */
   async getAgentInventory(agentId: number) {
+
+
     const agent = await prisma.user.findUnique({
       where: { id: agentId },
       select: { id: true, firstName: true, lastName: true, role: true },
@@ -575,7 +582,7 @@ export class AgentInventoryService {
     if (!agent) throw new AppError('Agent not found', 404);
 
     const stocks = await prisma.agentStock.findMany({
-      where: { agentId, OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }] },
+      where: { agentId, OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }],  },
       include: {
         product: {
           select: { id: true, name: true, sku: true, price: true, imageUrl: true },
@@ -620,6 +627,7 @@ export class AgentInventoryService {
     page?: number;
     limit?: number;
   }) {
+
     const { productId, agentId, type, startDate, endDate, page = 1, limit = 50 } = filters;
 
     const where: Prisma.InventoryTransferWhereInput = {};
@@ -666,11 +674,13 @@ export class AgentInventoryService {
    * Get summary of all agent-held inventory
    */
   async getSummary() {
+
+
     // NOTE: this loads all agent stock into memory for in-process grouping.
     // At large fleet scale (1000+ agents × many products) consider replacing with
     // a $queryRaw GROUP BY query. Current limit prevents unbounded memory growth.
     const agentStocks = await prisma.agentStock.findMany({
-      where: { OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }] },
+      where: { OR: [{ quantity: { gt: 0 } }, { totalInTransit: { gt: 0 } }],  },
       include: {
         agent: { select: { id: true, firstName: true, lastName: true } },
         product: { select: { id: true, name: true, price: true } },

@@ -24,8 +24,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[Financial]**: Collection modal pagination for high-volume agents (MAN-28)
 - **[Financial]**: Agent inventory history tracking on mobile (MAN-28)
 - **[Inventory]**: Mobile inventory view with per-product allocation history drill-down (MAN-27)
+- **[Platform]**: Super-admin dashboard with tenant metrics, MRR, active users, and growth trends (MAN-46)
+- **[Platform]**: Tenant management: list, detail, create, suspend, reactivate, delete with full cascade (MAN-46)
+- **[Platform]**: Global announcements system with banner display for all authenticated users (MAN-46)
+- **[Platform]**: System health endpoint showing database and Redis status (MAN-46)
+- **[Platform]**: Dedicated platform admin login at `/platform/login` with `isPlatformAdmin` flag (MAN-46)
+- **[Performance]**: Per-tenant rate limiting via Redis sliding window, configurable per tenant (MAN-47)
+- **[Performance]**: Request timeout middleware with 30s default (MAN-47)
+- **[Performance]**: Tenant-aware Redis cache key partitioning (MAN-47)
+- **[Onboarding]**: Business details collection (email, phone, address, tax ID) during setup wizard (MAN-16)
+- **[Settings]**: Delete Account with password confirmation for tenant super admins (MAN-16)
+- **[Settings]**: Billing & Plans tab with plan comparison and usage display (MAN-16)
+- **[Checkout]**: Duplicate order prevention with 10-minute IP + localStorage cooldown (MAN-16)
+- **[Public]**: Pricing page at `/pricing` with Free/Starter/Pro tiers and FAQ (MAN-16)
+- **[Docs]**: SaaS onboarding guide for new tenants (MAN-16)
+- **[CI/CD]**: Sentry DSN injected into staging and production deployments (MAN-16)
 
 ### Fixed
+- **[Security]**: Tenant deletion now fully atomic with parameterized SQL, preventing partial corruption
+- **[Security]**: Permissions cache keyed per-tenant to prevent cross-tenant permission leakage
+- **[Security]**: Route-level `requireSuperAdmin` guard on DELETE /api/auth/delete-account
+- **[Security]**: Zod input validation on platform tenant create/update endpoints
+- **[Security]**: Tenant rate limiter moved to run after auth (was a no-op when global)
+- **[Platform]**: SystemConfig included in tenant delete cascade, preventing FK violations
 - **[Financial]**: Bulk deposit verification self-deadlock from raw SQL FOR UPDATE (MAN-28)
 - **[Financial]**: Double-click on verify buttons causing duplicate requests (MAN-28)
 - **[Financial]**: Deposit verification timeout by extending API timeouts (MAN-28)
@@ -33,6 +54,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **[Financial]**: Deposit reference format improved to date-based DEP-YYYYMMDD-XXXX (MAN-28)
 - **[Financial]**: "Verify Collections" button renamed to "View Details" in Agent Collections (MAN-28)
+
+## [2.0.0-alpha] - Sprint 2–4 (Multi-Tenant SaaS)
+
+### Added
+- **[Multi-Tenancy]**: Tenant model with shared-DB row-level isolation on all business tables (MAN-8)
+- **[Multi-Tenancy]**: Prisma extension auto-injects tenantId into every query via AsyncLocalStorage (MAN-9)
+- **[Multi-Tenancy]**: Explicit tenantId in all 15+ service-layer methods as defence-in-depth (MAN-10)
+- **[Multi-Tenancy]**: Integration test suite proving cross-tenant data contamination is impossible (MAN-11)
+- **[Onboarding]**: Public tenant registration with company name, admin setup in one transaction (MAN-12)
+- **[Onboarding]**: Multi-step onboarding wizard — country, currency, branding configuration (MAN-12)
+- **[Billing]**: Plan model with Free/Starter/Pro tiers, order and user limits (MAN-13)
+- **[Billing]**: Subscription management page with plan comparison and usage tracking (MAN-13)
+- **[Database]**: Foreign key constraints with CASCADE delete on all 19 tenant_id columns
+- **[Database]**: tenantId added to MessageLog model for communication isolation
+- **[Security]**: OWASP hardening — input sanitization, CSP headers, improved rate limiting (MAN-15)
+- **[Observability]**: Sentry integration for error tracking and performance monitoring (MAN-15)
+- **[Testing]**: 832 unit tests passing, 40%+ branch coverage target met (MAN-15)
+- **[Testing]**: Playwright E2E tests for tenant onboarding and public checkout flows
+- **[Testing]**: Load test harness for 100 concurrent agents + 500 orders
+
+### Fixed
+- **[Security]**: Cross-tenant data leak via response cache — cache keys now include tenantId
+- **[Security]**: Cross-tenant financial data leak in AgentCollection aggregate queries
+- **[Security]**: MessageLog queries returned data from all tenants (model had no tenantId)
+- **[Security]**: Tenant registration TOCTOU race — uniqueness checks moved inside transaction with P2002 handling
+- **[Security]**: Prisma upsert handler missing tenantId on update branch
+- **[Security]**: TENANT_SCOPED_MODELS had wrong model names (GLEntry, AgentInventory, Webhook)
+- **[Security]**: delete/deleteMany operations not scoped by tenant in Prisma extension
+- **[UI]**: Onboarding wizard navigated to non-existent /dashboard route (changed to /)
 
 ## [1.0.0] - 2025-10-08
 

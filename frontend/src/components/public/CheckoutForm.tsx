@@ -79,6 +79,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<Set<number>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isDigital = formData.formType === 'digital' || formData.product?.productType === 'digital';
 
   const {
     register,
@@ -103,8 +104,6 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
   }
 
   function getFieldError(formKey: string): FieldError | undefined {
-    // For standard fields, look up directly; for custom fields (dotted paths),
-    // traverse the errors object
     if (formKey.startsWith('customFields.')) {
       const customKey = formKey.replace('customFields.', '');
       const customErrors = errors.customFields as Record<string, FieldError> | undefined;
@@ -130,7 +129,9 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
   function renderField(field: FormField): React.JSX.Element {
     const standard = getStandardField(field.label);
     const formKey = standard ? standard.key : `customFields.${field.label}`;
-    const isRequired = field.required ?? (standard ? DEFAULT_REQUIRED_KEYS.has(standard.key) : false);
+    let isRequired = field.required ?? (standard ? DEFAULT_REQUIRED_KEYS.has(standard.key) : false);
+    // For digital products: email is always required
+    if (isDigital && standard?.key === 'email') isRequired = true;
     const error = getFieldError(formKey);
     const validation: RegisterOptions | undefined = isRequired ? requiredRule(field.label) : undefined;
 
@@ -329,6 +330,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
                 onSubmit={handleSubmit(onFormSubmit)}
                 buttonColor={formData.styling?.buttonColor}
                 accentColor={formData.styling?.accentColor}
+                submitLabel={isDigital ? 'Proceed to Payment' : 'Place Order'}
               />
             </div>
           </div>

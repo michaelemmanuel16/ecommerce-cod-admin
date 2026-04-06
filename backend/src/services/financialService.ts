@@ -16,6 +16,7 @@ import { GL_ACCOUNTS } from '../config/glAccounts';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { GLAutomationService } from './glAutomationService';
 import { SYSTEM_USER_ID } from '../config/constants';
+import { getTenantId } from '../utils/tenantContext';
 
 interface DateFilters {
   startDate?: Date;
@@ -112,7 +113,7 @@ interface ProfitLossData {
 }
 
 export class FinancialService {
-  private forecastCache: { data: CashFlowForecast[]; timestamp: number } | null = null;
+  private forecastCache = new Map<string, { data: CashFlowForecast[]; timestamp: number }>();
   private readonly FORECAST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
   /**
@@ -152,9 +153,9 @@ export class FinancialService {
     const glAggregations = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
-        journalEntry: {
+                journalEntry: {
           isVoided: false,
-          ...(startDate || endDate ? {
+                    ...(startDate || endDate ? {
             entryDate: {
               ...(startDate ? { gte: startDate } : {}),
               ...(endDate ? { lte: endDate } : {})
@@ -216,7 +217,7 @@ export class FinancialService {
 
     const transactionWhere: Prisma.TransactionWhereInput = {
       type: 'cod_collection',
-      order: { deletedAt: null }
+      order: { deletedAt: null },
     };
     if (Object.keys(dateWhere).length > 0) {
       transactionWhere.createdAt = dateWhere.createdAt;
@@ -231,10 +232,11 @@ export class FinancialService {
     // Outstanding Receivables from non-reconciled AgentCollection records (net of commission)
     // Uses operational records rather than GL account 1015 to ensure all delivered orders
     // are counted, including any that pre-date the GL automation system
+    const tenantFilter = getTenantId();
     const outstandingCollections = await (prisma as any).agentCollection.aggregate({
       where: {
         status: { in: ['draft', 'verified', 'approved', 'deposited'] },
-        order: { deletedAt: null }
+        order: { deletedAt: null, ...(tenantFilter ? { tenantId: tenantFilter } : {}) }
       },
       _sum: { amount: true }
     });
@@ -255,7 +257,7 @@ export class FinancialService {
           status: 'out_for_delivery',
           codAmount: { not: null },
           deletedAt: null,
-          ...(requester && requester.role === 'delivery_agent' ? { deliveryAgentId: requester.id } : {}),
+                    ...(requester && requester.role === 'delivery_agent' ? { deliveryAgentId: requester.id } : {}),
           ...(requester && requester.role === 'sales_rep' ? { customerRepId: requester.id } : {})
         },
         _sum: { totalAmount: true }
@@ -288,6 +290,7 @@ export class FinancialService {
     const where: Prisma.TransactionWhereInput = {};
     if (type) where.type = type;
     if (status) where.status = status;
+
 
     // Role-based filtering for transactions
     if (requester && requester.role === 'sales_rep') {
@@ -356,8 +359,8 @@ export class FinancialService {
           description: data.description,
           expenseDate: data.expenseDate,
           recordedBy: userId,
-          receiptUrl: data.receiptUrl
-        },
+          receiptUrl: data.receiptUrl,
+            },
         include: {
           user: {
             select: {
@@ -383,7 +386,7 @@ export class FinancialService {
     }, TRANSACTION_CONFIG);
 
     // Invalidate forecast cache since expense data changed
-    this.forecastCache = null;
+    this.forecastCache.clear();
 
     logger.info('Expense recorded', {
       expenseId: expense.id,
@@ -415,6 +418,7 @@ export class FinancialService {
     }
 
     if (category) where.category = category;
+
 
     // Role-based filtering for expenses
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
@@ -473,7 +477,7 @@ export class FinancialService {
       type: 'cod_collection',
       order: {
         deletedAt: null
-      }
+      },
     };
 
     if (status) where.status = status;
@@ -553,7 +557,7 @@ export class FinancialService {
       order: {
         deliveryAgentId: parseInt(agentId, 10),
         deletedAt: null
-      }
+      },
     };
 
     if (filters?.startDate || filters?.endDate) {
@@ -682,8 +686,8 @@ export class FinancialService {
         status: 'collected',
         order: {
           deletedAt: null
-        }
-      },
+        },
+        },
       include: {
         order: {
           select: {
@@ -764,7 +768,7 @@ export class FinancialService {
     }, TRANSACTION_CONFIG);
 
     // Invalidate forecast cache since deposit data changed
-    this.forecastCache = null;
+    this.forecastCache.clear();
 
     logger.info('COD marked as deposited', {
       transactionIds,
@@ -799,7 +803,7 @@ export class FinancialService {
         gte: start,
         lte: end
       },
-      deletedAt: null
+      deletedAt: null,
     };
 
     // Role-based filtering for financial reports
@@ -826,7 +830,7 @@ export class FinancialService {
       expenseDate: {
         gte: start,
         lte: end
-      }
+      },
     };
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
       expenseWhere.recordedBy = requester.id;
@@ -900,6 +904,8 @@ export class FinancialService {
       if (filters.endDate) where.expenseDate.lte = filters.endDate;
     }
 
+
+
     // Role-based filtering for expense breakdown
     if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
       where.recordedBy = requester.id;
@@ -958,7 +964,7 @@ export class FinancialService {
    */
   async calculateProfitMargins(filters: DateFilters, requester?: Requester) {
     const where: Prisma.OrderWhereInput = {
-      status: 'delivered'
+      status: 'delivered',
     };
 
     if (filters.startDate || filters.endDate) {
@@ -1044,7 +1050,7 @@ export class FinancialService {
             ...(startDate ? { gte: startDate } : {}),
             ...(endDate ? { lte: endDate } : {}),
           },
-        },
+            },
         select: { sourceId: true },
       });
       const glOrderIds = glOrderEntries
@@ -1164,8 +1170,8 @@ export class FinancialService {
     const revenueAgg = await prisma.accountTransaction.aggregate({
       where: {
         account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
-        journalEntry: { isVoided: false, ...glEntryDateFilter }
-      },
+        journalEntry: { isVoided: false, ...glEntryDateFilter },
+        },
       _sum: { debitAmount: true, creditAmount: true }
     });
     // Revenue account has credit-normal balance
@@ -1177,8 +1183,8 @@ export class FinancialService {
       by: ['accountId'],
       where: {
         account: { accountType: 'expense' },
-        journalEntry: { isVoided: false, ...glEntryDateFilter }
-      },
+        journalEntry: { isVoided: false, ...glEntryDateFilter },
+        },
       _sum: { debitAmount: true, creditAmount: true }
     });
 
@@ -1327,7 +1333,7 @@ export class FinancialService {
     }, TRANSACTION_CONFIG);
 
     // Invalidate forecast cache since expense data changed
-    this.forecastCache = null;
+    this.forecastCache.clear();
 
     logger.info('Expense updated', {
       expenseId,
@@ -1371,7 +1377,7 @@ export class FinancialService {
     }, TRANSACTION_CONFIG);
 
     // Invalidate forecast cache since expense data changed
-    this.forecastCache = null;
+    this.forecastCache.clear();
 
     logger.info('Expense deleted', {
       expenseId,
@@ -1396,7 +1402,7 @@ export class FinancialService {
       status: {
         in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery']
       },
-      deletedAt: null
+      deletedAt: null,
     };
 
     // Role-based filtering for pipeline revenue
@@ -1445,7 +1451,7 @@ export class FinancialService {
   async getAgentCashHoldings(requester?: Requester) {
     // 1. Get all agents with a non-zero balance from AgentBalance
     const query: Prisma.AgentBalanceWhereInput = {
-      currentBalance: { gt: 0 }
+      currentBalance: { gt: 0 },
     };
 
     if (requester && requester.role === 'delivery_agent') {
@@ -1534,16 +1540,16 @@ export class FinancialService {
         where: {
           status: 'delivered',
           paymentStatus: { notIn: ['reconciled', 'deposited'] },
-          deletedAt: null
-        },
+          deletedAt: null,
+            },
         _sum: { totalAmount: true }
       }),
       prisma.order.aggregate({
         where: {
           status: 'out_for_delivery',
           deletedAt: null,
-          codAmount: { not: null }
-        },
+          codAmount: { not: null },
+            },
         _sum: { totalAmount: true }
       })
     ]);
@@ -1577,8 +1583,11 @@ export class FinancialService {
    * Uses historical data (last 30 days) to project future flows
    */
   async generateCashFlowForecast() {
-    if (this.forecastCache && Date.now() - this.forecastCache.timestamp < this.FORECAST_CACHE_DURATION_MS) {
-      return this.forecastCache.data;
+    const tenantId = getTenantId();
+    const cacheKey = tenantId ?? '__system__';
+    const cached = this.forecastCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.FORECAST_CACHE_DURATION_MS) {
+      return cached.data;
     }
 
     // Calculate historical averages (last 30 days)
@@ -1593,14 +1602,14 @@ export class FinancialService {
           createdAt: { gte: thirtyDaysAgo },
           order: {
             deletedAt: null
-          }
-        },
+          },
+            },
         _sum: { amount: true }
       }),
       prisma.expense.aggregate({
         where: {
-          expenseDate: { gte: thirtyDaysAgo }
-        },
+          expenseDate: { gte: thirtyDaysAgo },
+            },
         _sum: { amount: true }
       })
     ]);
@@ -1634,7 +1643,7 @@ export class FinancialService {
       });
     }
 
-    this.forecastCache = { data: forecast, timestamp: Date.now() };
+    this.forecastCache.set(cacheKey, { data: forecast, timestamp: Date.now() });
     return forecast;
   }
 
@@ -1688,8 +1697,8 @@ export class FinancialService {
     const aggregations = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
-        journalEntry: { isVoided: false, entryDate: { lte: asOfDate } }
-      },
+        journalEntry: { isVoided: false, entryDate: { lte: asOfDate } },
+        },
       _sum: {
         debitAmount: true,
         creditAmount: true
@@ -1786,8 +1795,8 @@ export class FinancialService {
     const aggregations = await prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
-        journalEntry: { isVoided: false, entryDate: { gte: startDate, lte: endDate } }
-      },
+        journalEntry: { isVoided: false, entryDate: { gte: startDate, lte: endDate } },
+        },
       _sum: {
         debitAmount: true,
         creditAmount: true

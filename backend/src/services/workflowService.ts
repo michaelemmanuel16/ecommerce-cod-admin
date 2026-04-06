@@ -5,6 +5,9 @@ import logger from '../utils/logger';
 import { workflowQueue } from '../queues/workflowQueue';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
 import crypto from 'crypto';
+import { sendEmail } from './emailService';
+import { getTenantId } from '../utils/tenantContext';
+
 
 interface CreateWorkflowData {
   name: string;
@@ -25,11 +28,13 @@ export class WorkflowService {
    * Get all workflows with filters
    */
   async getAllWorkflows(filters: WorkflowFilters) {
+
     const { isActive, triggerType } = filters;
 
     const where: Prisma.WorkflowWhereInput = {};
     if (isActive !== undefined) where.isActive = isActive;
     if (triggerType) where.triggerType = triggerType;
+
 
     const workflows = await prisma.workflow.findMany({
       where,
@@ -43,6 +48,7 @@ export class WorkflowService {
    * Create new workflow
    */
   async createWorkflow(data: CreateWorkflowData) {
+
     // Validate actions
     this.validateWorkflowActions(data.actions);
 
@@ -53,8 +59,8 @@ export class WorkflowService {
         triggerType: data.triggerType,
         triggerData: data.triggerData,
         actions: data.actions,
-        conditions: data.conditions || {}
-      }
+        conditions: data.conditions || {},
+              }
     });
 
     logger.info('Workflow created', {
@@ -72,6 +78,7 @@ export class WorkflowService {
    * to improve performance and avoid loading unnecessary data
    */
   async getWorkflowById(workflowId: number) {
+
     const workflow = await prisma.workflow.findUnique({
       where: { id: workflowId }
     });
@@ -87,6 +94,7 @@ export class WorkflowService {
    * Update workflow
    */
   async updateWorkflow(workflowId: number, updateData: Partial<CreateWorkflowData>) {
+
     const workflow = await prisma.workflow.findUnique({
       where: { id: workflowId }
     });
@@ -100,9 +108,15 @@ export class WorkflowService {
       this.validateWorkflowActions(updateData.actions);
     }
 
+    // Prisma ignores undefined fields on update. Explicitly convert to null
+    // so clearing conditions/description actually persists to the DB.
+    const data: any = { ...updateData };
+    if ('conditions' in data && data.conditions === undefined) data.conditions = null;
+    if ('description' in data && data.description === undefined) data.description = null;
+
     const updated = await prisma.workflow.update({
       where: { id: workflowId },
-      data: updateData
+      data,
     });
 
     logger.info('Workflow updated', { workflowId });
@@ -113,6 +127,7 @@ export class WorkflowService {
    * Delete workflow
    */
   async deleteWorkflow(workflowId: number) {
+
     const workflow = await prisma.workflow.findUnique({
       where: { id: workflowId }
     });
@@ -133,6 +148,7 @@ export class WorkflowService {
    * Toggle workflow active status
    */
   async toggleWorkflowStatus(workflowId: number, isActive: boolean) {
+
     const workflow = await prisma.workflow.findUnique({
       where: { id: workflowId }
     });
@@ -154,6 +170,7 @@ export class WorkflowService {
    * Execute workflow
    */
   async executeWorkflow(workflowId: number, input?: any) {
+
     const workflow = await prisma.workflow.findUnique({
       where: { id: workflowId }
     });
@@ -181,9 +198,12 @@ export class WorkflowService {
       data: {
         workflowId,
         status: 'pending',
-        input: input || {}
-      }
+        input: input || {},
+              }
     });
+
+    // Capture tenant context so the queue worker can restore it
+    const tenantId = getTenantId();
 
     // Add to queue for async processing (with 5s timeout to prevent API hang)
     await Promise.race([
@@ -192,7 +212,8 @@ export class WorkflowService {
         workflowId: workflow.id,
         actions: workflow.actions,
         conditions: workflow.conditions,
-        input: input || {}
+        input: input || {},
+        tenantId,
       }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Workflow queue is currently unavailable. Please try again later.')), 5000)
@@ -214,6 +235,7 @@ export class WorkflowService {
    * Process workflow execution (called by queue worker)
    */
   async processWorkflowExecution(executionId: number, workflowId: number, actions: any[], input: any) {
+
     try {
       await prisma.workflowExecution.update({
         where: { id: executionId },
@@ -368,18 +390,23 @@ export class WorkflowService {
    * Execute send email action
    */
   private async executeSendEmail(action: any, context: any): Promise<any> {
-    // TODO: Integrate with email provider (SendGrid, etc.)
-    logger.info('Email action executed (mock)', {
-      to: action.email || context.email,
-      subject: action.subject,
-      body: action.body
-    });
+    const to = action.email || context.email;
+    if (!to) {
+      logger.warn('No email address available for send_email action', { context });
+      return { success: false, message: 'No email address available' };
+    }
 
-    return {
-      success: true,
-      message: 'Email sent (mock)',
-      to: action.email || context.email
-    };
+    const subject = action.subject || 'Notification';
+    const body = action.body || '';
+
+    try {
+      await sendEmail({ to, subject, html: body });
+      logger.info('Email sent via workflow', { to, subject });
+      return { success: true, to };
+    } catch (error: any) {
+      logger.error('Failed to send email via workflow', { to, subject, error: error.message });
+      return { success: false, message: error.message, to };
+    }
   }
 
   /**

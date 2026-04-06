@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import Redis from 'ioredis';
 import logger from '../utils/logger';
+import { getTenantId } from '../utils/tenantContext';
 
 // Redis client configuration
 const redis = new Redis({
@@ -59,7 +60,9 @@ export const cacheMiddleware = (options: CacheOptions = {}) => {
         ? `?${new URLSearchParams(queryParams as any).toString()}`
         : '';
 
-      const cacheKey = `${keyPrefix}:${req.path}${queryString}`;
+      const tenantId = getTenantId();
+      const tenantPrefix = tenantId ? `tenant:${tenantId}` : 'platform';
+      const cacheKey = `${keyPrefix}:${tenantPrefix}:${req.path}${queryString}`;
 
       // Try to get from cache
       const cachedData = await redis.get(cacheKey);

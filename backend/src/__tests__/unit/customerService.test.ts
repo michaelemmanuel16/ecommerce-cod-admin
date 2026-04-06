@@ -24,7 +24,7 @@ describe('CustomerService', () => {
     };
 
     it('should create customer with valid data', async () => {
-      prismaMock.customer.findUnique.mockResolvedValue(null);
+      prismaMock.customer.findFirst.mockResolvedValue(null);
 
       const mockCustomer = {
         id: 1,
@@ -47,7 +47,7 @@ describe('CustomerService', () => {
     });
 
     it('should throw error when phone number already exists', async () => {
-      prismaMock.customer.findUnique.mockResolvedValue({
+      prismaMock.customer.findFirst.mockResolvedValue({
         id: 2,
         phoneNumber: '+1234567890'
       } as any);
@@ -93,9 +93,8 @@ describe('CustomerService', () => {
     });
 
     it('should throw error when updating to duplicate phone number', async () => {
-      prismaMock.customer.findUnique
-        .mockResolvedValueOnce(mockCustomer as any)
-        .mockResolvedValueOnce({ id: 3 } as any);
+      prismaMock.customer.findUnique.mockResolvedValueOnce(mockCustomer as any);
+      prismaMock.customer.findFirst.mockResolvedValueOnce({ id: 3 } as any);
 
       await expect(
         customerService.updateCustomer('1', {

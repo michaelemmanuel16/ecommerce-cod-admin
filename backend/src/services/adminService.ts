@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import { Requester, canManageRole } from '../utils/authUtils';
 import { clearWhatsAppConfigCache } from './whatsappService';
 import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/providerCrypto';
+import { getTenantId } from '../utils/tenantContext';
 
 export const adminService = {
   /**
@@ -75,10 +76,26 @@ export const adminService = {
     let config = await prisma.systemConfig.findFirst();
 
     if (!config) {
-      // Create default config if none exists
+      // Seed from tenant data if available (business name, currency)
+      const tenantId = getTenantId();
+      let tenantDefaults: { businessName?: string; currency?: string } = {};
+      if (tenantId) {
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { name: true, currency: true },
+        });
+        if (tenant) {
+          tenantDefaults = {
+            businessName: tenant.name,
+            currency: tenant.currency || 'USD',
+          };
+        }
+      }
+
       config = await prisma.systemConfig.create({
         data: {
-          currency: 'USD',
+          currency: tenantDefaults.currency || 'USD',
+          businessName: tenantDefaults.businessName || null,
           rolePermissions: this.getDefaultPermissions(),
         },
       });
@@ -89,6 +106,7 @@ export const adminService = {
     decrypted.whatsappProvider = decryptProviderSecrets('whatsappProvider', decrypted.whatsappProvider);
     decrypted.smsProvider = decryptProviderSecrets('smsProvider', decrypted.smsProvider);
     decrypted.emailProvider = decryptProviderSecrets('emailProvider', decrypted.emailProvider);
+    decrypted.paystackProvider = decryptProviderSecrets('paystackProvider', decrypted.paystackProvider);
 
     // Mask sensitive provider credentials before returning
     const masked = { ...decrypted } as any;
@@ -108,6 +126,12 @@ export const adminService = {
       const ep = { ...masked.emailProvider };
       if (ep.apiKey) ep.apiKey = '••••••••';
       masked.emailProvider = ep;
+    }
+    if (masked.paystackProvider) {
+      const pp = { ...masked.paystackProvider };
+      if (pp.secretKey) pp.secretKey = '••••••••';
+      if (pp.webhookSecret) pp.webhookSecret = '••••••••';
+      masked.paystackProvider = pp;
     }
     return masked;
   },
@@ -131,6 +155,7 @@ export const adminService = {
     smsProvider?: any;
     emailProvider?: any;
     whatsappProvider?: any;
+    paystackProvider?: any;
     notificationTemplates?: any;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
@@ -171,6 +196,13 @@ export const adminService = {
       if (ep.apiKey === MASK) ep.apiKey = existing.apiKey;
       data.emailProvider = ep;
     }
+    if (data.paystackProvider) {
+      const existing = (config.paystackProvider as any) || {};
+      const pp = { ...data.paystackProvider };
+      if (pp.secretKey === MASK) pp.secretKey = existing.secretKey;
+      if (pp.webhookSecret === MASK) pp.webhookSecret = existing.webhookSecret;
+      data.paystackProvider = pp;
+    }
 
     // Encrypt sensitive fields before writing to DB
     if (data.whatsappProvider) {
@@ -181,6 +213,9 @@ export const adminService = {
     }
     if (data.emailProvider) {
       data.emailProvider = encryptProviderSecrets('emailProvider', data.emailProvider);
+    }
+    if (data.paystackProvider) {
+      data.paystackProvider = encryptProviderSecrets('paystackProvider', data.paystackProvider);
     }
 
     const updatedConfig = await prisma.systemConfig.update({
@@ -195,6 +230,14 @@ export const adminService = {
     if (data.smsProvider !== undefined) {
       const { clearSmsConfigCache } = await import('./smsService');
       clearSmsConfigCache();
+    }
+    if (data.emailProvider !== undefined) {
+      const { clearEmailConfigCache } = await import('./emailService');
+      clearEmailConfigCache();
+    }
+    if (data.paystackProvider !== undefined) {
+      const { clearPaystackConfigCache } = await import('./paystackService');
+      clearPaystackConfigCache();
     }
 
     await this.createAuditLog(requester, 'update', 'system_config', config.id.toString(), { changes: Object.keys(data) });

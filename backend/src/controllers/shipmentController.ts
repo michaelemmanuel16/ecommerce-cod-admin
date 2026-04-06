@@ -5,6 +5,7 @@ import prisma from '../utils/prisma';
 import { GLAutomationService } from '../services/glAutomationService';
 import logger from '../utils/logger';
 
+
 const SHIPMENT_INCLUDE = {
   product: { select: { id: true, name: true, sku: true } },
   createdBy: { select: { id: true, firstName: true, lastName: true } },
@@ -16,9 +17,12 @@ function computeTotalCost(unitCost: number, quantity: number, shippingCost: numb
 
 export const listShipments = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+
     const { status, productId } = req.query;
 
-    const where: Prisma.InventoryShipmentWhereInput = {};
+    const where: Prisma.InventoryShipmentWhereInput = {
+
+    };
     if (status && (status === 'pending' || status === 'arrived')) {
       where.status = status;
     }
@@ -41,6 +45,7 @@ export const listShipments = async (req: AuthRequest, res: Response): Promise<vo
 
 export const createShipment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+
     const { productId, supplier, quantity, unitCost, shippingCost, customsDuties, otherCosts, expectedArrivalDate, notes } = req.body;
 
     if (!productId || !quantity || quantity < 1) {
@@ -48,7 +53,11 @@ export const createShipment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const product = await prisma.product.findUnique({ where: { id: productId } });
+    const product = await prisma.product.findUnique({
+      where: {
+        id: productId,
+      }
+    });
     if (!product) {
       res.status(404).json({ error: 'Product not found' });
       return;
@@ -73,6 +82,7 @@ export const createShipment = async (req: AuthRequest, res: Response): Promise<v
         expectedArrivalDate: expectedArrivalDate ? new Date(expectedArrivalDate) : null,
         notes: notes || null,
         createdById: req.user!.id,
+  
       },
       include: SHIPMENT_INCLUDE,
     });
@@ -86,6 +96,7 @@ export const createShipment = async (req: AuthRequest, res: Response): Promise<v
 
 export const getShipment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+
     const { id } = req.params;
     const shipmentId = parseInt(id);
     if (isNaN(shipmentId)) {
@@ -94,7 +105,9 @@ export const getShipment = async (req: AuthRequest, res: Response): Promise<void
     }
 
     const shipment = await prisma.inventoryShipment.findUnique({
-      where: { id: shipmentId },
+      where: {
+        id: shipmentId,
+      },
       include: SHIPMENT_INCLUDE,
     });
 
@@ -112,6 +125,7 @@ export const getShipment = async (req: AuthRequest, res: Response): Promise<void
 
 export const updateShipment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+
     const { id } = req.params;
     const shipmentId = parseInt(id);
     if (isNaN(shipmentId)) {
@@ -119,7 +133,11 @@ export const updateShipment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const shipment = await prisma.inventoryShipment.findUnique({ where: { id: shipmentId } });
+    const shipment = await prisma.inventoryShipment.findUnique({
+      where: {
+        id: shipmentId,
+      }
+    });
     if (!shipment) {
       res.status(404).json({ error: 'Shipment not found' });
       return;
@@ -139,7 +157,10 @@ export const updateShipment = async (req: AuthRequest, res: Response): Promise<v
     const totalCost = computeTotalCost(uc, qty, sc, cd, oc);
 
     const updated = await prisma.inventoryShipment.update({
-      where: { id: shipmentId },
+      where: {
+        id: shipmentId,
+  
+      },
       data: {
         supplier: supplier !== undefined ? (supplier || null) : undefined,
         quantity: qty,
@@ -165,6 +186,7 @@ export const updateShipment = async (req: AuthRequest, res: Response): Promise<v
 
 export const markArrived = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+
     const { id } = req.params;
     const shipmentId = parseInt(id);
     if (isNaN(shipmentId)) {
@@ -173,7 +195,11 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
     }
 
     // Pre-check outside transaction
-    const existing = await prisma.inventoryShipment.findUnique({ where: { id: shipmentId } });
+    const existing = await prisma.inventoryShipment.findUnique({
+      where: {
+        id: shipmentId,
+      }
+    });
     if (!existing) {
       res.status(404).json({ error: 'Shipment not found' });
       return;
@@ -189,7 +215,11 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
 
       // Atomic status flip — prevents double-processing under concurrent requests
       const flipped = await tx.inventoryShipment.updateMany({
-        where: { id: shipmentId, status: 'pending' },
+        where: {
+          id: shipmentId,
+          status: 'pending',
+    
+        },
         data: { status: 'arrived', arrivedAt: new Date() },
       });
       if (flipped.count === 0) {
@@ -212,7 +242,10 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
         : landedCostPerUnit;
 
       await tx.product.update({
-        where: { id: shipment.productId },
+        where: {
+          id: shipment.productId,
+    
+        },
         data: {
           stockQuantity: { increment: newQty },
           cogs: weightedCogs,
@@ -228,7 +261,10 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
 
       // 3. Link GL entry to shipment
       const updated = await tx.inventoryShipment.update({
-        where: { id: shipmentId },
+        where: {
+          id: shipmentId,
+    
+        },
         data: { glJournalEntryId: glEntry.id },
         include: SHIPMENT_INCLUDE,
       });
@@ -252,6 +288,7 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
 
 export const deleteShipment = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+
     const { id } = req.params;
     const shipmentId = parseInt(id);
     if (isNaN(shipmentId)) {
@@ -259,7 +296,11 @@ export const deleteShipment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const shipment = await prisma.inventoryShipment.findUnique({ where: { id: shipmentId } });
+    const shipment = await prisma.inventoryShipment.findUnique({
+      where: {
+        id: shipmentId,
+      }
+    });
     if (!shipment) {
       res.status(404).json({ error: 'Shipment not found' });
       return;
@@ -269,7 +310,12 @@ export const deleteShipment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    await prisma.inventoryShipment.delete({ where: { id: shipmentId } });
+    await prisma.inventoryShipment.delete({
+      where: {
+        id: shipmentId,
+  
+      }
+    });
     res.json({ message: 'Shipment deleted' });
   } catch (error) {
     logger.error('Failed to delete shipment:', error);

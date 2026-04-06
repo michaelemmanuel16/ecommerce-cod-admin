@@ -57,6 +57,8 @@ export function getCurrencyForCountry(countryName: string): string {
  * Get currency symbol for a given currency code
  * Note: country-state-city doesn't provide symbols, so we maintain a small map
  */
+export const SUPPORTED_CURRENCIES = ['GHS', 'NGN', 'KES', 'ZAR', 'UGX', 'TZS', 'RWF', 'ETB'] as const;
+
 const CURRENCY_SYMBOLS: Record<string, string> = {
   'GHS': 'GH₵',
   'NGN': '₦',

@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import * as customerController from '../controllers/customerController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { createCustomerValidation, paginationValidation } from '../utils/validators';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(tenantRateLimiter);
 
 router.get('/', paginationValidation, validate, requireResourcePermission('customers', 'view'), customerController.getAllCustomers);
 router.post('/', createCustomerValidation, validate, requireResourcePermission('customers', 'create'), customerController.createCustomer);
