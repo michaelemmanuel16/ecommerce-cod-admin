@@ -123,6 +123,11 @@ export function refreshLongLivedToken(currentToken: string): Promise<TokenExchan
  * Must be called after OAuth connection with the user's access token.
  */
 export async function subscribeWABAToApp(wabaId: string, token: string): Promise<boolean> {
+  if (!/^\d+$/.test(wabaId)) {
+    logger.error('Invalid WABA ID format', { wabaId });
+    return false;
+  }
+
   const response = await fetch(`${GRAPH_API_BASE}/${wabaId}/subscribed_apps`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
