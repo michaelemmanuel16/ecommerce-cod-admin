@@ -12,6 +12,10 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
   try {
     const { email, password, firstName, lastName, phoneNumber, role } = req.body;
 
+    if (!password || password.length > 72) {
+      throw new AppError('Password is required and must be 72 characters or fewer', 400);
+    }
+
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       throw new AppError('User already exists', 400);
@@ -259,6 +263,10 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
       throw new AppError('Invalid or expired reset token', 400);
     }
 
+    if (!password || password.length > 72) {
+      throw new AppError('Password is required and must be 72 characters or fewer', 400);
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     await prisma.user.update({
@@ -324,6 +332,10 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
 
     if (!companyName || !adminEmail || !adminPassword || !adminName) {
       throw new AppError('companyName, adminEmail, adminPassword, and adminName are required', 400);
+    }
+
+    if (adminPassword.length > 72) {
+      throw new AppError('Password must be 72 characters or fewer', 400);
     }
 
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
@@ -465,6 +477,7 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
       await tx.$executeRaw`UPDATE journal_entries SET created_by = NULL, voided_by = NULL WHERE tenant_id = ${tenantId}`;
 
       // 3. Delete remaining tenant-scoped data in dependency order
+      await tx.$executeRaw`DELETE FROM form_submissions WHERE form_id IN (SELECT id FROM checkout_forms WHERE tenant_id = ${tenantId})`;
       await tx.$executeRaw`DELETE FROM inventory_transfers WHERE tenant_id = ${tenantId}`;
       await tx.$executeRaw`DELETE FROM inventory_shipments WHERE tenant_id = ${tenantId}`;
       await tx.$executeRaw`DELETE FROM account_transactions WHERE tenant_id = ${tenantId}`;
