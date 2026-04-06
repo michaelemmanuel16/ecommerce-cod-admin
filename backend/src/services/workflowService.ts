@@ -108,9 +108,15 @@ export class WorkflowService {
       this.validateWorkflowActions(updateData.actions);
     }
 
+    // Prisma ignores undefined fields on update. Explicitly convert to null
+    // so clearing conditions/description actually persists to the DB.
+    const data: any = { ...updateData };
+    if ('conditions' in data && data.conditions === undefined) data.conditions = null;
+    if ('description' in data && data.description === undefined) data.description = null;
+
     const updated = await prisma.workflow.update({
       where: { id: workflowId },
-      data: updateData
+      data,
     });
 
     logger.info('Workflow updated', { workflowId });
