@@ -132,6 +132,10 @@ export async function sendWhatsAppForOrder(
   orderId: number,
   customLink?: string,
 ): Promise<{ messageLogId: number; providerMessageId?: string }> {
+  if (!orderId) {
+    throw new Error(`Cannot send WhatsApp: orderId is required (got ${orderId}). For manual workflow tests, provide an orderId in the input.`);
+  }
+
   const templateConfig = ORDER_STATUS_TEMPLATES[templateKey];
   if (!templateConfig) {
     throw new Error(`Unknown WhatsApp template: ${templateKey}`);
