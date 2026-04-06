@@ -218,8 +218,8 @@ app.use('/api/sms', apiLimiter, smsRoutes);
 app.use('/api/email', apiLimiter, emailRoutes);
 app.use('/api/paystack', apiLimiter, paystackRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
-app.use('/api/onboarding', onboardingRoutes);
-app.use('/api/billing', billingRoutes);
+app.use('/api/onboarding', apiLimiter, onboardingRoutes);
+app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/platform', platformRoutes);
 
 // Public routes (no authentication required)

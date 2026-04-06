@@ -249,6 +249,7 @@ export async function deleteTenant(id: string, confirmSlug: string) {
     await tx.$executeRaw`UPDATE journal_entries SET created_by = NULL, voided_by = NULL WHERE tenant_id = ${id}`;
 
     // 3. Delete remaining tenant-scoped data
+    await tx.$executeRaw`DELETE FROM form_submissions WHERE form_id IN (SELECT id FROM checkout_forms WHERE tenant_id = ${id})`;
     await tx.$executeRaw`DELETE FROM workflow_executions WHERE tenant_id = ${id}`;
     await tx.$executeRaw`DELETE FROM workflows WHERE tenant_id = ${id}`;
     await tx.$executeRaw`DELETE FROM webhook_configs WHERE tenant_id = ${id}`;

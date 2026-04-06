@@ -57,7 +57,7 @@ export const tenantRateLimiter = async (req: AuthRequest, res: Response, next: N
     res.setHeader('X-RateLimit-Remaining', remaining);
     res.setHeader('X-RateLimit-Reset', resetTime);
 
-    if (current > maxRequests) {
+    if (current >= maxRequests) {
       const retryAfter = Math.ceil((resetTime * 1000 - Date.now()) / 1000);
       res.setHeader('Retry-After', retryAfter);
       logger.warn(`Tenant ${tenantId} rate limited: ${current}/${maxRequests}`);

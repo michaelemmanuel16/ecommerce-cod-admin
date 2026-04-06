@@ -71,9 +71,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       return;
     }
 
-    // Check if customer exists or create new one
-    let customer = await prisma.customer.findUnique({
-      where: { phoneNumber: formData.phoneNumber }
+    // Check if customer exists or create new one (scoped to tenant)
+    let customer = await prisma.customer.findFirst({
+      where: { phoneNumber: formData.phoneNumber, ...(formTenantId ? { tenantId: formTenantId } : {}) }
     });
 
     if (!customer) {
