@@ -95,7 +95,7 @@ export const ORDER_STATUS_TEMPLATES: Record<string, {
   },
   out_for_delivery: {
     templateName: 'order_out_for_delivery',
-    bodyParams: (o) => [o.customerName, `#${o.orderId}`],
+    bodyParams: (o) => [o.customerName, `#${o.orderId}, ${o.productName || 'your items'}`],
   },
   delivered: {
     templateName: 'order_delivered',
@@ -268,7 +268,7 @@ function buildMessageBody(templateName: string, bodyParams: string[]): string {
   const templates: Record<string, string> = {
     order_created: `Hi {1}, we've received your order {2}! Total: {3}. We'll confirm it shortly and keep you updated.`,
     order_confirmed: `Hi {1}, your order {2} has been confirmed! Total: {3}. We'll update you as it progresses.`,
-    order_out_for_delivery: `Hi {1}, your order {2} is out for delivery! {3} is on the way.`,
+    order_out_for_delivery: `Hi {1}, Your order {2} has been shipped and is on its way to you.`,
     order_delivered: `Hi {1}, your order {2} has been delivered! Visit {3} for your product guide. Thank you for your purchase!`,
     order_delivery_failed: `Hi {1}, we were unable to deliver your order {2}. We'll contact you to reschedule.`,
   };

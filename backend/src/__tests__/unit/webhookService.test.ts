@@ -109,7 +109,7 @@ describe('WebhookService', () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findUnique.mockResolvedValue({
+      prismaMock.customer.findFirst.mockResolvedValue({
         id: 'customer-1',
         phoneNumber: '+1234567890'
       } as any);
@@ -142,7 +142,7 @@ describe('WebhookService', () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findUnique.mockResolvedValue(null);
+      prismaMock.customer.findFirst.mockResolvedValue(null);
       prismaMock.customer.create.mockResolvedValue({
         id: 'customer-new',
         phoneNumber: '+1234567890'
@@ -177,7 +177,7 @@ describe('WebhookService', () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findUnique.mockResolvedValue(null);
+      prismaMock.customer.findFirst.mockResolvedValue(null);
       // Return different phone numbers so fingerprints are distinct
       prismaMock.customer.create
         .mockResolvedValueOnce({ id: 'customer-1', phoneNumber: '+1234567890' } as any)
@@ -200,7 +200,7 @@ describe('WebhookService', () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findUnique.mockResolvedValue(null);
+      prismaMock.customer.findFirst.mockResolvedValue(null);
       prismaMock.customer.create.mockRejectedValue(new Error('Database error'));
 
       const result = await webhookService.processWebhook(webhookData);
@@ -327,7 +327,7 @@ describe('WebhookService', () => {
       } as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findUnique.mockResolvedValue({
+      prismaMock.customer.findFirst.mockResolvedValue({
         id: 'customer-1'
       } as any);
       prismaMock.order.count.mockResolvedValue(0);
