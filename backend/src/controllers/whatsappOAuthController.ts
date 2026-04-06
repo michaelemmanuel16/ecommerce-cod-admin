@@ -8,6 +8,7 @@ import {
   exchangeForLongLivedToken,
   fetchUserIdFromToken,
   fetchWABAPhoneNumbers,
+  subscribeWABAToApp,
   revokeToken,
   getRedirectUri,
   isOAuthConfigured,
@@ -254,6 +255,17 @@ export async function selectPhoneNumber(req: AuthRequest, res: Response): Promis
 
     clearWhatsAppConfigCache();
     pendingOAuthStore.delete(userId);
+
+    // Subscribe WABA to this app so Meta sends webhook events (delivery receipts)
+    const effectiveWabaId = wabaId || existingProvider.wabaId;
+    if (effectiveWabaId) {
+      const subscribed = await subscribeWABAToApp(effectiveWabaId, pending.accessToken);
+      if (!subscribed) {
+        logger.warn('WABA webhook subscription failed — delivery receipts may not work', { wabaId: effectiveWabaId });
+      }
+    } else {
+      logger.warn('No WABA ID available — skipping webhook subscription. Delivery receipts require manual setup.');
+    }
 
     logger.info('WhatsApp OAuth phone selected and config saved', { userId, phoneNumberId });
 

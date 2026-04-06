@@ -148,7 +148,7 @@ export const tenantIsolationExtension = Prisma.defineExtension({
   },
 });
 
-const SOFT_DELETE_IS_ACTIVE = new Set(['User', 'Customer', 'Product', 'CheckoutForm', 'Workflow', 'Automation']);
+const SOFT_DELETE_IS_ACTIVE = new Set(['User', 'Customer', 'Product', 'CheckoutForm', 'Automation']);
 const SOFT_DELETE_DELETED_AT = new Set(['Order']);
 
 export const softDeleteExtension = Prisma.defineExtension({

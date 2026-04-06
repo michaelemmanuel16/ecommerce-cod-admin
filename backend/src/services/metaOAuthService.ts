@@ -118,6 +118,32 @@ export function refreshLongLivedToken(currentToken: string): Promise<TokenExchan
   return exchangeToken(currentToken, 'token refresh');
 }
 
+/**
+ * Subscribe a WABA to this app so Meta sends webhook events (delivery receipts, etc.)
+ * Must be called after OAuth connection with the user's access token.
+ */
+export async function subscribeWABAToApp(wabaId: string, token: string): Promise<boolean> {
+  if (!/^\d+$/.test(wabaId)) {
+    logger.error('Invalid WABA ID format', { wabaId });
+    return false;
+  }
+
+  const response = await fetch(`${GRAPH_API_BASE}/${wabaId}/subscribed_apps`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    logger.error('Failed to subscribe WABA to app', { wabaId, status: response.status, body });
+    return false;
+  }
+
+  const data = await response.json() as any;
+  logger.info('WABA subscribed to app for webhooks', { wabaId, success: data.success });
+  return !!data.success;
+}
+
 export async function revokeToken(token: string): Promise<void> {
   const response = await fetch(`${GRAPH_API_BASE}/me/permissions?access_token=${token}`, {
     method: 'DELETE',

@@ -519,7 +519,7 @@ model WorkflowExecution {
   error       String?
   startedAt   DateTime  @default(now()) @map("started_at")
   completedAt DateTime? @map("completed_at")
-  workflow    Workflow  @relation(fields: [workflowId], references: [id])
+  workflow    Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
   tenantId    String?   @map("tenant_id")
   tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
