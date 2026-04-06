@@ -144,7 +144,7 @@ model User {
 model Customer {
   id             Int      @id @default(autoincrement())
   email          String?
-  phoneNumber    String   @unique @map("phone_number")
+  phoneNumber    String   @map("phone_number")
   alternatePhone String?  @map("alternate_phone")
   address        String
   state          String
@@ -167,6 +167,7 @@ model Customer {
   tenantId       String?      @map("tenant_id")
   tenant         Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@unique([phoneNumber, tenantId])
   @@index([isActive])
   @@index([email])
   @@index([area])

@@ -80,7 +80,7 @@ describe('Webhook Controller', () => {
       prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
       prismaMock.webhookConfig.findFirst.mockResolvedValue(mockWebhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
-      prismaMock.customer.findUnique.mockResolvedValue(null);
+      prismaMock.customer.findFirst.mockResolvedValue(null);
       prismaMock.customer.create.mockResolvedValue(mockCustomer as any);
       prismaMock.order.findMany.mockResolvedValue([]);
       prismaMock.order.findFirst.mockResolvedValue(null);
@@ -159,7 +159,7 @@ describe('Webhook Controller', () => {
         fieldMapping: {},
       } as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
-      prismaMock.customer.findUnique.mockResolvedValue(null);
+      prismaMock.customer.findFirst.mockResolvedValue(null);
       // Return distinct phone numbers for each customer so fingerprints differ
       prismaMock.customer.create
         .mockResolvedValueOnce({ id: 'c1', phoneNumber: '+1111111111' } as any)
@@ -190,7 +190,7 @@ describe('Webhook Controller', () => {
       prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
-      prismaMock.customer.findUnique.mockResolvedValue(customer as any);
+      prismaMock.customer.findFirst.mockResolvedValue(customer as any);
     });
 
     it('Guard 1: skips order when same externalOrderId already exists', async () => {

@@ -510,8 +510,11 @@ export class OrderService {
 
           const createdOrder = await prisma.$transaction(async (tx) => {
             // 3. Upsert Customer (handles race conditions safely)
-            const customer = await tx.customer.upsert({
+            const existingCustomer = await tx.customer.findFirst({
               where: { phoneNumber: orderData.customerPhone },
+            });
+            const customer = await tx.customer.upsert({
+              where: { id: existingCustomer?.id ?? 0 },
               update: {
                 // Update existing customer with new data if provided
                 ...(orderData.customerAlternatePhone && { alternatePhone: orderData.customerAlternatePhone }),
