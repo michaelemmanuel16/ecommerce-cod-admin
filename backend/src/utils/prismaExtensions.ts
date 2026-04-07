@@ -9,6 +9,7 @@ const TENANT_SCOPED_MODELS = new Set([
   'Workflow', 'WorkflowExecution', 'WebhookConfig', 'Notification',
   'CheckoutForm', 'InventoryShipment', 'InventoryTransfer',
   'AgentBalance', 'AgentStock', 'MessageLog', 'SystemConfig',
+  'McpApiKey',
 ]);
 
 /**

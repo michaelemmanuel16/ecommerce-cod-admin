@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { MessageSquare, Phone, Mail, Webhook, ChevronRight, CreditCard } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Webhook, ChevronRight, CreditCard, Bot } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { SystemConfig } from '../../services/admin.service';
 import { SmsIntegration } from './integrations/SmsIntegration';
@@ -7,9 +7,10 @@ import { WhatsAppIntegration } from './integrations/WhatsAppIntegration';
 import { EmailIntegration } from './integrations/EmailIntegration';
 import { PaystackIntegration } from './integrations/PaystackIntegration';
 import { WebhooksOverview } from './integrations/WebhooksOverview';
+import { McpIntegration } from './integrations/McpIntegration';
 
-type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'paystack' | 'webhooks';
-const VALID_SECTIONS: IntegrationSection[] = ['sms', 'whatsapp', 'email', 'paystack', 'webhooks'];
+type IntegrationSection = 'sms' | 'whatsapp' | 'email' | 'paystack' | 'webhooks' | 'ai-assistant';
+const VALID_SECTIONS: IntegrationSection[] = ['sms', 'whatsapp', 'email', 'paystack', 'webhooks', 'ai-assistant'];
 
 const NAV_ITEMS: { id: IntegrationSection; label: string; description: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'sms', label: 'SMS', description: 'Arkesel SMS', icon: Phone },
@@ -17,6 +18,7 @@ const NAV_ITEMS: { id: IntegrationSection; label: string; description: string; i
   { id: 'email', label: 'Email', description: 'SendGrid / SMTP', icon: Mail },
   { id: 'paystack', label: 'Paystack', description: 'Online Payments', icon: CreditCard },
   { id: 'webhooks', label: 'Webhooks', description: 'Order imports', icon: Webhook },
+  { id: 'ai-assistant', label: 'AI Assistant', description: 'MCP / Claude Desktop', icon: Bot },
 ];
 
 interface IntegrationsPanelProps {
@@ -65,6 +67,8 @@ export const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ systemConf
         return <PaystackIntegration systemConfig={systemConfig} onConfigSaved={onConfigSaved} />;
       case 'webhooks':
         return <WebhooksOverview />;
+      case 'ai-assistant':
+        return <McpIntegration />;
     }
   };
 
