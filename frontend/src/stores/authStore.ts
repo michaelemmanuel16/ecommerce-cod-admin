@@ -104,6 +104,8 @@ export const useAuthStore = create<AuthState>()(
         const { user, isAuthenticated } = get();
         if (!isAuthenticated || !user) return false;
         if (user.isPlatformAdmin) return false;
+        // Only admin/super_admin should see the tenant setup wizard
+        if (user.role !== 'super_admin') return false;
         const prefs = user.preferences as any;
         return !prefs?.onboardingCompleted;
       },

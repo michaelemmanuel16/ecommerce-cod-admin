@@ -612,7 +612,7 @@ export class WebhookService {
     }
 
 
-    let customer = await prisma.customer.findUnique({
+    let customer = await prisma.customer.findFirst({
       where: { phoneNumber: customerPhone }
     });
 
