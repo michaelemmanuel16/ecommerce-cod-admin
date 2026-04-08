@@ -509,29 +509,33 @@ export class OrderService {
           }
 
           const createdOrder = await prisma.$transaction(async (tx) => {
-            // 3. Upsert Customer (handles race conditions safely)
-            const existingCustomer = await tx.customer.findFirst({
+            // 3. Find or create customer by phone (tenant-scoped via Prisma extension)
+            let customer = await tx.customer.findFirst({
               where: { phoneNumber: orderData.customerPhone },
             });
-            const customer = await tx.customer.upsert({
-              where: { id: existingCustomer?.id ?? 0 },
-              update: {
-                // Update existing customer with new data if provided
-                ...(orderData.customerAlternatePhone && { alternatePhone: orderData.customerAlternatePhone }),
-                ...(orderData.deliveryAddress && { address: orderData.deliveryAddress }),
-                ...(orderData.deliveryState && { state: orderData.deliveryState }),
-                ...(orderData.deliveryArea && { area: orderData.deliveryArea })
-              },
-              create: {
-                firstName: orderData.customerFirstName || 'Unknown',
-                lastName: orderData.customerLastName || '',
-                phoneNumber: orderData.customerPhone,
-                alternatePhone: orderData.customerAlternatePhone,
-                address: orderData.deliveryAddress,
-                state: orderData.deliveryState,
-                area: orderData.deliveryArea
-              }
-            });
+            if (customer) {
+              customer = await tx.customer.update({
+                where: { id: customer.id },
+                data: {
+                  ...(orderData.customerAlternatePhone && { alternatePhone: orderData.customerAlternatePhone }),
+                  ...(orderData.deliveryAddress && { address: orderData.deliveryAddress }),
+                  ...(orderData.deliveryState && { state: orderData.deliveryState }),
+                  ...(orderData.deliveryArea && { area: orderData.deliveryArea }),
+                },
+              });
+            } else {
+              customer = await tx.customer.create({
+                data: {
+                  firstName: orderData.customerFirstName || 'Unknown',
+                  lastName: orderData.customerLastName || '',
+                  phoneNumber: orderData.customerPhone,
+                  alternatePhone: orderData.customerAlternatePhone,
+                  address: orderData.deliveryAddress,
+                  state: orderData.deliveryState,
+                  area: orderData.deliveryArea,
+                },
+              });
+            }
 
             // 4. Handle product lookup
             let orderItemsData: any[] = [];
