@@ -89,7 +89,7 @@ router.post('/', async (req: Request, res: Response) => {
       label: mcpKey.label,
       expiresAt: mcpKey.expiresAt,
       createdAt: mcpKey.createdAt,
-      claudeDesktopConfig: {
+      mcpConfig: {
         mcpServers: {
           'cod-admin': {
             command: 'node',

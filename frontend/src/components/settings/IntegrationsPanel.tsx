@@ -18,7 +18,7 @@ const NAV_ITEMS: { id: IntegrationSection; label: string; description: string; i
   { id: 'email', label: 'Email', description: 'SendGrid / SMTP', icon: Mail },
   { id: 'paystack', label: 'Paystack', description: 'Online Payments', icon: CreditCard },
   { id: 'webhooks', label: 'Webhooks', description: 'Order imports', icon: Webhook },
-  { id: 'ai-assistant', label: 'AI Assistant', description: 'MCP / Claude Desktop', icon: Bot },
+  { id: 'ai-assistant', label: 'AI Assistant', description: 'MCP Server', icon: Bot },
 ];
 
 interface IntegrationsPanelProps {
