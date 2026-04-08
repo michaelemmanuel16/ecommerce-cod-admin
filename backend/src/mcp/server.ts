@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+import path from 'path';
+import { config as dotenvConfig } from 'dotenv';
+
+// Auto-load .env from the backend root (two levels up from dist/mcp/server.js)
+dotenvConfig({ path: path.resolve(__dirname, '..', '..', '.env') });
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { tenantStorage } from '../utils/tenantContext';

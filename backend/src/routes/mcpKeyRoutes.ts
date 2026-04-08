@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { randomBytes, createHash } from 'crypto';
+import path from 'path';
 import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { prismaBase } from '../utils/prisma';
@@ -93,7 +94,7 @@ router.post('/', async (req: Request, res: Response) => {
         mcpServers: {
           'cod-admin': {
             command: 'node',
-            args: ['path/to/backend/dist/mcp/server.js'],
+            args: [path.resolve(__dirname, '..', 'mcp', 'server.js')],
             env: { COD_ADMIN_API_KEY: rawKey },
           },
         },
