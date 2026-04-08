@@ -22,7 +22,6 @@ export const useCallsStore = create<CallsState>((set, get) => {
   if (socket) {
     socket.on('call:logged', (call: Call) => {
       get().addCallToStore(call);
-      toast.success('Call logged successfully');
     });
   }
 
@@ -69,9 +68,10 @@ export const useCallsStore = create<CallsState>((set, get) => {
     },
 
     addCallToStore: (call: Call) => {
-      set((state) => ({
-        calls: [call, ...state.calls]
-      }));
+      set((state) => {
+        if (state.calls.some((c) => c.id === call.id)) return state;
+        return { calls: [call, ...state.calls] };
+      });
     }
   };
 });
