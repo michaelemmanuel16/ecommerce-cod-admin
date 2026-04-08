@@ -100,6 +100,7 @@ router.post('/', async (req: Request, res: Response) => {
         remote: {
           mcpServers: {
             'cod-admin': {
+              type: 'http',
               url: `${baseUrl}/mcp`,
               headers: { Authorization: `Bearer ${rawKey}` },
             },
