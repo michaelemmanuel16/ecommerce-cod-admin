@@ -5,26 +5,10 @@ import { config as dotenvConfig } from 'dotenv';
 // Auto-load .env from the backend root (two levels up from dist/mcp/server.js)
 dotenvConfig({ path: path.resolve(__dirname, '..', '..', '.env') });
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { tenantStorage } from '../utils/tenantContext';
 import { validateKey, disconnectPrisma } from './auth';
-import { rateLimiter } from './rateLimiter';
 import { MCP_CONFIG } from './config';
-import { mcpError } from './utils';
-
-// Import tool registrations
-import { registerOrderTools } from './tools/orders';
-import { registerAnalyticsTools } from './tools/analytics';
-import { registerAgentTools } from './tools/agents';
-import { registerDeliveryTools } from './tools/deliveries';
-import { registerCustomerTools } from './tools/customers';
-import { registerProductTools } from './tools/products';
-import { registerFinancialTools } from './tools/financial';
-import { registerCustomerRepTools } from './tools/customerReps';
-
-// Import resource registrations
-import { registerResources } from './resources/schema';
+import { createMcpServer } from './createServer';
 
 const apiKey = process.env[MCP_CONFIG.auth.keyEnvVar];
 if (!apiKey) {
@@ -41,51 +25,14 @@ async function main() {
     process.exit(1);
   }
 
-  const server = new McpServer({
-    name: MCP_CONFIG.name,
-    version: MCP_CONFIG.version,
-  });
-
-  // Helper to wrap tool handlers with tenant context, auth re-validation, and rate limiting
-  function wrapHandler<T>(handler: (args: T) => Promise<any>) {
-    return async (args: T) => {
-      // Rate limit check
-      if (!rateLimiter.tryConsume()) {
-        return mcpError('Rate limit exceeded. Please wait before making more requests.');
-      }
-
-      // Re-validate API key (cached for 60s) — local const to avoid race on concurrent calls
-      let resolvedTenantId: string;
-      try {
-        resolvedTenantId = await validateKey(apiKey!);
-      } catch (err) {
-        return mcpError((err as Error).message);
-      }
-
-      // Run handler within tenant context
-      return tenantStorage.run({ tenantId: resolvedTenantId }, () => handler(args));
-    };
-  }
-
-  // Register all tools
-  registerOrderTools(server, wrapHandler);
-  registerAnalyticsTools(server, wrapHandler);
-  registerAgentTools(server, wrapHandler);
-  registerDeliveryTools(server, wrapHandler);
-  registerCustomerTools(server, wrapHandler);
-  registerProductTools(server, wrapHandler);
-  registerFinancialTools(server, wrapHandler);
-  registerCustomerRepTools(server, wrapHandler);
-
-  // Register resources
-  registerResources(server);
+  const server = createMcpServer(() => apiKey!);
 
   // Connect via stdio transport
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
-// Graceful shutdown — disconnect both the auth Prisma client and the main (extended) client
+// Graceful shutdown
 async function shutdown() {
   const { prismaBase } = await import('../utils/prisma');
   await Promise.all([disconnectPrisma(), prismaBase.$disconnect()]);

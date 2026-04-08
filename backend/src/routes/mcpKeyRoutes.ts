@@ -82,6 +82,12 @@ router.post('/', async (req: Request, res: Response) => {
       });
     });
 
+    // FRONTEND_URL doubles as the public base URL since nginx fronts both frontend and
+    // backend on the same domain. If the architecture ever splits them across subdomains,
+    // add a dedicated BACKEND_URL or MCP_BASE_URL env var here.
+    const envBase = process.env.FRONTEND_URL;
+    const baseUrl = envBase || `${req.protocol}://${req.get('host')}`;
+
     // Return the raw key ONCE — it's hashed in the DB and can never be retrieved again
     res.status(201).json({
       id: mcpKey.id,
@@ -91,11 +97,21 @@ router.post('/', async (req: Request, res: Response) => {
       expiresAt: mcpKey.expiresAt,
       createdAt: mcpKey.createdAt,
       mcpConfig: {
-        mcpServers: {
-          'cod-admin': {
-            command: 'node',
-            args: [path.resolve(__dirname, '..', 'mcp', 'server.js')],
-            env: { COD_ADMIN_API_KEY: rawKey },
+        remote: {
+          mcpServers: {
+            'cod-admin': {
+              url: `${baseUrl}/mcp`,
+              headers: { Authorization: `Bearer ${rawKey}` },
+            },
+          },
+        },
+        local: {
+          mcpServers: {
+            'cod-admin': {
+              command: 'node',
+              args: [path.resolve(__dirname, '..', 'mcp', 'server.js')],
+              env: { COD_ADMIN_API_KEY: rawKey },
+            },
           },
         },
       },

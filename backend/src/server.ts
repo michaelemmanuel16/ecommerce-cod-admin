@@ -71,6 +71,7 @@ import onboardingRoutes from './routes/onboardingRoutes';
 import billingRoutes from './routes/billingRoutes';
 import platformRoutes from './routes/platformRoutes';
 import mcpKeyRoutes from './routes/mcpKeyRoutes';
+import mcpHttpTransport from './mcp/httpTransport';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
@@ -223,6 +224,9 @@ app.use('/api/onboarding', apiLimiter, onboardingRoutes);
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/mcp-keys', apiLimiter, mcpKeyRoutes);
+
+// MCP Streamable HTTP transport (auth via API key in Authorization header)
+app.use('/mcp', apiLimiter, mcpHttpTransport);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);
