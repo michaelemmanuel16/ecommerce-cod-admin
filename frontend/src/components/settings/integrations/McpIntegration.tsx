@@ -18,7 +18,7 @@ interface GeneratedKey {
   keyPrefix: string;
   label: string;
   expiresAt: string;
-  mcpConfig: Record<string, unknown>;
+  mcpConfig: { remote: Record<string, unknown>; local: Record<string, unknown> };
 }
 
 export const McpIntegration: React.FC = () => {
@@ -239,13 +239,13 @@ export const McpIntegration: React.FC = () => {
                     </button>
                   </div>
 
-                  <label className="block text-xs font-medium text-gray-500 mb-1">MCP Client Config</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">MCP Client Config (Remote)</label>
                   <div className="flex items-start gap-2 mb-4">
                     <pre className="flex-1 bg-gray-900 text-gray-300 px-3 py-2 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre">
-{JSON.stringify(generatedKey.mcpConfig, null, 2)}
+{JSON.stringify(generatedKey.mcpConfig.remote, null, 2)}
                     </pre>
                     <button
-                      onClick={() => copyToClipboard(JSON.stringify(generatedKey.mcpConfig, null, 2), 'config')}
+                      onClick={() => copyToClipboard(JSON.stringify(generatedKey.mcpConfig.remote, null, 2), 'config')}
                       className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex-shrink-0 mt-1"
                       title="Copy config"
                     >
@@ -258,8 +258,7 @@ export const McpIntegration: React.FC = () => {
                     <ol className="text-xs text-blue-700 space-y-1 list-decimal list-inside">
                       <li>Open your MCP client's settings (e.g., Claude Desktop, Cursor)</li>
                       <li>Find the MCP server configuration</li>
-                      <li>Paste the config JSON above</li>
-                      <li>Update the path to your backend's dist/mcp/server.js</li>
+                      <li>Paste the remote config JSON above</li>
                       <li>Restart the client</li>
                     </ol>
                   </div>

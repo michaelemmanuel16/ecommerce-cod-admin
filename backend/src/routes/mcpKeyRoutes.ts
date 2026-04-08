@@ -82,6 +82,11 @@ router.post('/', async (req: Request, res: Response) => {
       });
     });
 
+    // Build the base URL from the request (works for both local and production)
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    const baseUrl = `${protocol}://${host}`;
+
     // Return the raw key ONCE — it's hashed in the DB and can never be retrieved again
     res.status(201).json({
       id: mcpKey.id,
@@ -91,11 +96,21 @@ router.post('/', async (req: Request, res: Response) => {
       expiresAt: mcpKey.expiresAt,
       createdAt: mcpKey.createdAt,
       mcpConfig: {
-        mcpServers: {
-          'cod-admin': {
-            command: 'node',
-            args: [path.resolve(__dirname, '..', 'mcp', 'server.js')],
-            env: { COD_ADMIN_API_KEY: rawKey },
+        remote: {
+          mcpServers: {
+            'cod-admin': {
+              url: `${baseUrl}/mcp`,
+              headers: { Authorization: `Bearer ${rawKey}` },
+            },
+          },
+        },
+        local: {
+          mcpServers: {
+            'cod-admin': {
+              command: 'node',
+              args: [path.resolve(__dirname, '..', 'mcp', 'server.js')],
+              env: { COD_ADMIN_API_KEY: rawKey },
+            },
           },
         },
       },
