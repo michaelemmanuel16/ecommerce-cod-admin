@@ -1180,6 +1180,5 @@ model McpApiKey {
   lastUsedAt DateTime? @map("last_used_at")
 
   @@index([tenantId])
-  @@index([keyHash])
   @@map("mcp_api_keys")
 }

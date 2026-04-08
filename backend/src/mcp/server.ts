@@ -28,9 +28,8 @@ if (!apiKey) {
 
 async function main() {
   // Validate API key at startup to fail fast
-  let tenantId: string;
   try {
-    tenantId = await validateKey(apiKey!);
+    await validateKey(apiKey!);
   } catch (err) {
     console.error(`Auth failed: ${(err as Error).message}`);
     process.exit(1);
@@ -49,15 +48,16 @@ async function main() {
         return mcpError('Rate limit exceeded. Please wait before making more requests.');
       }
 
-      // Re-validate API key (cached for 60s)
+      // Re-validate API key (cached for 60s) — local const to avoid race on concurrent calls
+      let resolvedTenantId: string;
       try {
-        tenantId = await validateKey(apiKey!);
+        resolvedTenantId = await validateKey(apiKey!);
       } catch (err) {
         return mcpError((err as Error).message);
       }
 
       // Run handler within tenant context
-      return tenantStorage.run({ tenantId }, () => handler(args));
+      return tenantStorage.run({ tenantId: resolvedTenantId }, () => handler(args));
     };
   }
 
