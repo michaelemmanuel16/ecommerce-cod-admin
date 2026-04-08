@@ -28,8 +28,15 @@ async function getPermissionsFromDatabase() {
       logger.info('[auth.getPermissionsFromDatabase] No config or rolePermissions found, using defaults');
       permissions = getDefaultPermissions();
     } else {
-      logger.info('[auth.getPermissionsFromDatabase] Loaded permissions from database');
-      permissions = config.rolePermissions as any;
+      logger.info('[auth.getPermissionsFromDatabase] Loaded permissions from database, merging with defaults');
+      // Merge stored permissions with defaults so new resources (e.g. calls, gl)
+      // are available even if the tenant saved permissions before those resources existed.
+      const defaults = getDefaultPermissions();
+      const stored = config.rolePermissions as Record<string, Record<string, string[]>>;
+      permissions = {} as any;
+      for (const role of Object.keys(defaults) as Array<keyof typeof defaults>) {
+        permissions[role] = { ...defaults[role], ...(stored[role] || {}) };
+      }
     }
   } catch (error) {
     logger.error('[auth.getPermissionsFromDatabase] Error fetching from database, using defaults:', error);

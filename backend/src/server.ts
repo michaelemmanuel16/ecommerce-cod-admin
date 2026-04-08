@@ -70,6 +70,7 @@ import communicationRoutes from './routes/communicationRoutes';
 import onboardingRoutes from './routes/onboardingRoutes';
 import billingRoutes from './routes/billingRoutes';
 import platformRoutes from './routes/platformRoutes';
+import mcpKeyRoutes from './routes/mcpKeyRoutes';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
@@ -221,6 +222,7 @@ app.use('/api/communications', apiLimiter, communicationRoutes);
 app.use('/api/onboarding', apiLimiter, onboardingRoutes);
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/platform', platformRoutes);
+app.use('/api/mcp-keys', apiLimiter, mcpKeyRoutes);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);

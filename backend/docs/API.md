@@ -599,7 +599,7 @@ Create a new customer.
 **Validation Rules:**
 - `firstName`: Required
 - `lastName`: Required
-- `phoneNumber`: Required, unique
+- `phoneNumber`: Required, unique per tenant
 - `email`: Optional, valid email format
 - `zipCode`: Required
 

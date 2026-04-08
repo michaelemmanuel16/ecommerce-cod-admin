@@ -155,8 +155,11 @@ Categories of notifications.
 - `created_at` (TIMESTAMP) - Record creation time
 - `updated_at` (TIMESTAMP) - Last update time
 
+**Unique Constraints:**
+- `(phone, tenant_id)` - Phone number unique per tenant
+
 **Indexes:**
-- `idx_customers_phone` - Lookup by phone
+- `idx_customers_phone` - Lookup by phone (via compound unique)
 - `idx_customers_email` - Lookup by email
 - `idx_customers_area` - Delivery area filtering
 - `idx_customers_city` - City-based filtering
