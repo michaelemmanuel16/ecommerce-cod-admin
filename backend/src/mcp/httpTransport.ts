@@ -12,6 +12,26 @@ const router = Router();
  * Auth: API key in Authorization header (Bearer mcp_...).
  * Each request gets a fresh server + stateless transport (no sessions, no cache).
  */
+// Middleware: normalize Accept header at the raw IncomingMessage level.
+// The MCP SDK converts req to a Web Standard Request via getRequestListener,
+// reading headers from the raw Node.js IncomingMessage — not Express's req.headers.
+// We must set it here so the Web Standard Request sees the correct Accept header.
+router.use((req: Request, _res: Response, next) => {
+  const accept = req.headers.accept || '';
+  if (!accept.includes('text/event-stream') || !accept.includes('application/json')) {
+    const normalized = 'application/json, text/event-stream';
+    req.headers.accept = normalized;
+    // Also patch the raw headers array that Node's http.IncomingMessage uses
+    const rawIdx = req.rawHeaders.findIndex((h) => h.toLowerCase() === 'accept');
+    if (rawIdx >= 0) {
+      req.rawHeaders[rawIdx + 1] = normalized;
+    } else {
+      req.rawHeaders.push('Accept', normalized);
+    }
+  }
+  next();
+});
+
 router.post('/', async (req: Request, res: Response) => {
   try {
     // Extract API key from Authorization header
