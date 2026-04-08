@@ -15,7 +15,10 @@ function getPrisma(): PrismaClient {
   if (!mcpPrisma) {
     // Separate Prisma client with small connection pool for MCP server
     const url = process.env.DATABASE_URL;
-    const separator = url?.includes('?') ? '&' : '?';
+    if (!url) {
+      throw new Error('DATABASE_URL environment variable is required');
+    }
+    const separator = url.includes('?') ? '&' : '?';
     mcpPrisma = new PrismaClient({
       datasources: {
         db: {
