@@ -82,7 +82,9 @@ router.post('/', async (req: Request, res: Response) => {
       });
     });
 
-    // Use FRONTEND_URL as authoritative base (avoids header spoofing), fall back to request
+    // FRONTEND_URL doubles as the public base URL since nginx fronts both frontend and
+    // backend on the same domain. If the architecture ever splits them across subdomains,
+    // add a dedicated BACKEND_URL or MCP_BASE_URL env var here.
     const envBase = process.env.FRONTEND_URL;
     const baseUrl = envBase || `${req.protocol}://${req.get('host')}`;
 

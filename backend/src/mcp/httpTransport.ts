@@ -27,7 +27,9 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    // Validate the key (cached for 60s)
+    // Validate key upfront to reject bad requests before creating a server.
+    // wrapHandler inside createMcpServer also re-validates per tool call (defense-in-depth).
+    // Both hit the 60s auth cache so the double check is effectively free.
     try {
       await validateKey(apiKey);
     } catch (err) {
