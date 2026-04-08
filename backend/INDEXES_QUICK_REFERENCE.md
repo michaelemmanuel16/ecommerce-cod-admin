@@ -62,7 +62,7 @@ Composite Indexes (NEW):
 ### Customers Table (4 single-column = 4 total)
 ```
 Single-Column Indexes:
-  [phoneNumber]         - Unique constraint (automatic)
+  [phoneNumber, tenantId] - Compound unique constraint (per-tenant)
   [isActive]            (NEW) - Active customers
   [email]               (NEW) - Email lookup
   [totalSpent]          (NEW) - VIP customers

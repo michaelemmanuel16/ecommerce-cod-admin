@@ -107,7 +107,7 @@ Successfully implemented 18 critical composite indexes across 6 core database ta
 ```
 
 **Removed Redundant:**
-- `@@index([phoneNumber])` - Already indexed by unique constraint
+- `@@index([phoneNumber])` - Already indexed by compound unique constraint `@@unique([phoneNumber, tenantId])`
 
 **Query Patterns Optimized:**
 - Customer search and lookup
