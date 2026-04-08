@@ -6,6 +6,7 @@ import { parsePackageField } from '../utils/packageParser';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
+import { tenantStorage } from '../utils/tenantContext';
 
 
 interface CreateWebhookData {
@@ -238,8 +239,11 @@ export class WebhookService {
         }
       }
 
-      // Process orders
-      const results = await this.processOrdersFromWebhook(body, webhookConfig);
+      // Process orders within tenant context derived from webhook config
+      const tenantId = webhookConfig?.tenantId as string | null;
+      const results = tenantId
+        ? await tenantStorage.run({ tenantId }, () => this.processOrdersFromWebhook(body, webhookConfig))
+        : await this.processOrdersFromWebhook(body, webhookConfig);
 
       // Update webhook log as successful
       await this.updateWebhookLog(webhookLog.id, {
@@ -322,8 +326,11 @@ export class WebhookService {
         }
       }
 
-      // Process orders
-      const results = await this.processOrdersFromWebhook(body, webhookConfig);
+      // Process orders within tenant context derived from webhook config
+      const tenantId = webhookConfig?.tenantId as string | null;
+      const results = tenantId
+        ? await tenantStorage.run({ tenantId }, () => this.processOrdersFromWebhook(body, webhookConfig))
+        : await this.processOrdersFromWebhook(body, webhookConfig);
 
       // Update webhook log as successful
       await this.updateWebhookLog(webhookLog.id, {
