@@ -18,7 +18,7 @@ interface GeneratedKey {
   keyPrefix: string;
   label: string;
   expiresAt: string;
-  claudeDesktopConfig: Record<string, unknown>;
+  mcpConfig: Record<string, unknown>;
 }
 
 export const McpIntegration: React.FC = () => {
@@ -105,8 +105,8 @@ export const McpIntegration: React.FC = () => {
           </div>
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Connect an AI assistant to your business data</h3>
           <p className="text-sm text-gray-500 mb-6">
-            Ask Claude about your orders, customers, deliveries, and revenue in natural language.
-            Generate an API key to connect Claude Desktop to your account.
+            Query your orders, customers, deliveries, and revenue using natural language.
+            Generate an API key to connect any MCP-compatible AI assistant to your account.
           </p>
           <button
             onClick={() => { setLabel(''); setGeneratedKey(null); setShowGenerateModal(true); }}
@@ -126,7 +126,7 @@ export const McpIntegration: React.FC = () => {
       <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
         <div>
           <h3 className="text-base font-semibold text-gray-900">AI Assistant</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Connect Claude Desktop to query your business data</p>
+          <p className="text-xs text-gray-500 mt-0.5">Connect an AI assistant to query your business data</p>
         </div>
         <button
           onClick={() => { setLabel(''); setGeneratedKey(null); setShowGenerateModal(true); }}
@@ -200,7 +200,7 @@ export const McpIntegration: React.FC = () => {
                     type="text"
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
-                    placeholder="e.g., My MacBook Claude Desktop"
+                    placeholder="e.g., My MacBook AI Assistant"
                     maxLength={50}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     autoFocus
@@ -239,13 +239,13 @@ export const McpIntegration: React.FC = () => {
                     </button>
                   </div>
 
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Claude Desktop Config</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">MCP Client Config</label>
                   <div className="flex items-start gap-2 mb-4">
                     <pre className="flex-1 bg-gray-900 text-gray-300 px-3 py-2 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre">
-{JSON.stringify(generatedKey.claudeDesktopConfig, null, 2)}
+{JSON.stringify(generatedKey.mcpConfig, null, 2)}
                     </pre>
                     <button
-                      onClick={() => copyToClipboard(JSON.stringify(generatedKey.claudeDesktopConfig, null, 2), 'config')}
+                      onClick={() => copyToClipboard(JSON.stringify(generatedKey.mcpConfig, null, 2), 'config')}
                       className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex-shrink-0 mt-1"
                       title="Copy config"
                     >
@@ -256,11 +256,11 @@ export const McpIntegration: React.FC = () => {
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
                     <p className="text-xs font-medium text-blue-800 mb-2">Setup Instructions:</p>
                     <ol className="text-xs text-blue-700 space-y-1 list-decimal list-inside">
-                      <li>Open Claude Desktop Settings</li>
-                      <li>Click "Edit Config" (Developer tab)</li>
+                      <li>Open your MCP client's settings (e.g., Claude Desktop, Cursor)</li>
+                      <li>Find the MCP server configuration</li>
                       <li>Paste the config JSON above</li>
                       <li>Update the path to your backend's dist/mcp/server.js</li>
-                      <li>Restart Claude Desktop</li>
+                      <li>Restart the client</li>
                     </ol>
                   </div>
 
