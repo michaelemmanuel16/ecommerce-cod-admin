@@ -14,6 +14,14 @@ const router = Router();
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
+    // Ensure Accept header includes both types the SDK requires.
+    // Some MCP clients (Claude Code) may not send the full Accept header,
+    // causing the SDK to reject with 406. We normalize it here.
+    const accept = req.headers.accept || '';
+    if (!accept.includes('text/event-stream') || !accept.includes('application/json')) {
+      req.headers.accept = 'application/json, text/event-stream';
+    }
+
     // Extract API key from Authorization header
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
