@@ -10,21 +10,8 @@ const router = Router();
  * POST /mcp — Streamable HTTP transport for remote MCP clients.
  *
  * Auth: API key in Authorization header (Bearer mcp_...).
- * Each request gets a fresh stateless transport (no sessions).
- * The MCP server is created once per validated API key and cached.
+ * Each request gets a fresh server + stateless transport (no sessions, no cache).
  */
-
-const serverCache = new Map<string, ReturnType<typeof createMcpServer>>();
-
-function getOrCreateServer(apiKey: string) {
-  // Cache key is the API key itself (one server per key, same tenant)
-  if (!serverCache.has(apiKey)) {
-    const server = createMcpServer(() => apiKey);
-    serverCache.set(apiKey, server);
-  }
-  return serverCache.get(apiKey)!;
-}
-
 router.post('/', async (req: Request, res: Response) => {
   try {
     // Extract API key from Authorization header
@@ -48,9 +35,10 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    const server = getOrCreateServer(apiKey);
+    // Create a fresh server per request — no cache, no raw keys in memory,
+    // no EventEmitter leak from repeated server.connect() on a cached instance
+    const server = createMcpServer(() => apiKey);
 
-    // Create stateless transport for this request (no session persistence)
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -66,6 +54,13 @@ router.post('/', async (req: Request, res: Response) => {
       res.status(500).json({ error: 'MCP request failed' });
     }
   }
+});
+
+// GET /mcp — Stateless mode doesn't support SSE streams
+router.get('/', (_req: Request, res: Response) => {
+  res.status(405).json({
+    error: 'Method Not Allowed. This MCP endpoint uses stateless mode — send POST requests only.',
+  });
 });
 
 export default router;

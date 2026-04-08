@@ -226,7 +226,7 @@ app.use('/api/platform', platformRoutes);
 app.use('/api/mcp-keys', apiLimiter, mcpKeyRoutes);
 
 // MCP Streamable HTTP transport (auth via API key in Authorization header)
-app.use('/mcp', mcpHttpTransport);
+app.use('/mcp', apiLimiter, mcpHttpTransport);
 
 // Public routes (no authentication required)
 app.use('/api/public', publicOrderRoutes);

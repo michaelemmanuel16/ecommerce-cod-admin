@@ -82,10 +82,9 @@ router.post('/', async (req: Request, res: Response) => {
       });
     });
 
-    // Build the base URL from the request (works for both local and production)
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const host = req.headers['x-forwarded-host'] || req.get('host');
-    const baseUrl = `${protocol}://${host}`;
+    // Use FRONTEND_URL as authoritative base (avoids header spoofing), fall back to request
+    const envBase = process.env.FRONTEND_URL;
+    const baseUrl = envBase || `${req.protocol}://${req.get('host')}`;
 
     // Return the raw key ONCE — it's hashed in the DB and can never be retrieved again
     res.status(201).json({
