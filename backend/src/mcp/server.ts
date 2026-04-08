@@ -15,6 +15,7 @@ import { registerDeliveryTools } from './tools/deliveries';
 import { registerCustomerTools } from './tools/customers';
 import { registerProductTools } from './tools/products';
 import { registerFinancialTools } from './tools/financial';
+import { registerCustomerRepTools } from './tools/customerReps';
 
 // Import resource registrations
 import { registerResources } from './resources/schema';
@@ -68,6 +69,7 @@ async function main() {
   registerCustomerTools(server, wrapHandler);
   registerProductTools(server, wrapHandler);
   registerFinancialTools(server, wrapHandler);
+  registerCustomerRepTools(server, wrapHandler);
 
   // Register resources
   registerResources(server);

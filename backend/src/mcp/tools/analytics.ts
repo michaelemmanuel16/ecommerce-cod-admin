@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
+import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { mcpJson, mcpError } from '../utils';
 
 const dailySchema = z.object({
@@ -34,11 +35,26 @@ export function registerAnalyticsTools(
 
         const dateFilter = { createdAt: { gte: start, lte: end } };
 
-        const [orders, revenue, statusCounts, topProducts] = await Promise.all([
+        const [orders, glRevenue, deliveredCount, statusCounts, topProducts] = await Promise.all([
           prisma.order.count({ where: { ...dateFilter, deletedAt: null } }),
-          prisma.order.aggregate({
-            where: { ...dateFilter, deletedAt: null, status: 'delivered' },
-            _sum: { totalAmount: true },
+          // Revenue from GL (matches dashboard)
+          prisma.accountTransaction.aggregate({
+            where: {
+              account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
+              journalEntry: {
+                isVoided: false,
+                entryDate: { gte: start, lte: end },
+              },
+            },
+            _sum: { creditAmount: true, debitAmount: true },
+          }),
+          // Delivered count by deliveryDate (matches dashboard)
+          prisma.order.count({
+            where: {
+              deletedAt: null,
+              status: 'delivered',
+              deliveryDate: { gte: start, lte: end },
+            },
           }),
           prisma.order.groupBy({
             by: ['status'],
@@ -54,6 +70,8 @@ export function registerAnalyticsTools(
           }),
         ]);
 
+        const revenue = Number(glRevenue._sum.creditAmount || 0) - Number(glRevenue._sum.debitAmount || 0);
+
         // Resolve product names for top products
         const productIds = topProducts.map((p) => p.productId);
         const products = productIds.length > 0
@@ -67,9 +85,9 @@ export function registerAnalyticsTools(
         return mcpJson({
           date: start.toISOString().split('T')[0],
           totalOrders: orders,
-          revenue: revenue._sum.totalAmount ?? 0,
+          revenue,
           statusBreakdown: Object.fromEntries(statusCounts.map((s) => [s.status, s._count.id])),
-          delivered: statusCounts.find((s) => s.status === 'delivered')?._count.id ?? 0,
+          delivered: deliveredCount,
           returned: statusCounts.find((s) => s.status === 'returned')?._count.id ?? 0,
           cancelled: statusCounts.find((s) => s.status === 'cancelled')?._count.id ?? 0,
           failedDelivery: statusCounts.find((s) => s.status === 'failed_delivery')?._count.id ?? 0,
@@ -184,19 +202,35 @@ export function registerAnalyticsTools(
 async function getWeekStats(start: Date, end: Date) {
   const dateFilter = { createdAt: { gte: start, lte: end } };
 
-  const [total, delivered, revenue] = await Promise.all([
+  const [total, delivered, glRevenue] = await Promise.all([
     prisma.order.count({ where: { ...dateFilter, deletedAt: null } }),
-    prisma.order.count({ where: { ...dateFilter, deletedAt: null, status: 'delivered' } }),
-    prisma.order.aggregate({
-      where: { ...dateFilter, deletedAt: null, status: 'delivered' },
-      _sum: { totalAmount: true },
+    // Count delivered orders by deliveryDate (matches dashboard)
+    prisma.order.count({
+      where: {
+        deletedAt: null,
+        status: 'delivered',
+        deliveryDate: { gte: start, lte: end },
+      },
+    }),
+    // Revenue from GL (matches dashboard)
+    prisma.accountTransaction.aggregate({
+      where: {
+        account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
+        journalEntry: {
+          isVoided: false,
+          entryDate: { gte: start, lte: end },
+        },
+      },
+      _sum: { creditAmount: true, debitAmount: true },
     }),
   ]);
+
+  const revenue = Number(glRevenue._sum.creditAmount || 0) - Number(glRevenue._sum.debitAmount || 0);
 
   return {
     totalOrders: total,
     delivered,
-    revenue: revenue._sum.totalAmount ?? 0,
+    revenue,
     deliveryRate: total > 0 ? parseFloat(((delivered / total) * 100).toFixed(1)) : 0,
   };
 }
