@@ -29,6 +29,7 @@ import { importOrdersViaWebhook } from '../../controllers/webhookController';
 describe('Webhook Controller', () => {
   let mockReq: any;
   let mockRes: any;
+  let mockNext: any;
 
   beforeEach(() => {
     mockReq = {
@@ -41,6 +42,7 @@ describe('Webhook Controller', () => {
       status: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),
     };
+    mockNext = jest.fn();
   });
 
   describe('importOrdersViaWebhook', () => {
@@ -87,7 +89,7 @@ describe('Webhook Controller', () => {
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.create.mockResolvedValue({} as any);
 
-      await importOrdersViaWebhook(mockReq, mockRes);
+      await importOrdersViaWebhook(mockReq, mockRes, mockNext);
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -115,9 +117,10 @@ describe('Webhook Controller', () => {
       } as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      await expect(importOrdersViaWebhook(mockReq, mockRes)).rejects.toThrow(
-        'Invalid webhook signature'
-      );
+      await importOrdersViaWebhook(mockReq, mockRes, mockNext);
+      expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'Invalid webhook signature'
+      }));
     });
 
     it('should reject invalid API key', async () => {
@@ -128,7 +131,10 @@ describe('Webhook Controller', () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue(null);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      await expect(importOrdersViaWebhook(mockReq, mockRes)).rejects.toThrow('Invalid API key');
+      await importOrdersViaWebhook(mockReq, mockRes, mockNext);
+      expect(mockNext).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'Invalid API key'
+      }));
     });
 
     it('should handle multiple orders in batch', async () => {
@@ -169,7 +175,7 @@ describe('Webhook Controller', () => {
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.create.mockResolvedValue({} as any);
 
-      await importOrdersViaWebhook(mockReq, mockRes);
+      await importOrdersViaWebhook(mockReq, mockRes, mockNext);
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -201,7 +207,7 @@ describe('Webhook Controller', () => {
       prismaMock.order.findMany.mockResolvedValue([{ externalOrderId: 'dup-ext-1' }] as any);
       prismaMock.order.findFirst.mockResolvedValue(null);
 
-      await importOrdersViaWebhook(mockReq, mockRes);
+      await importOrdersViaWebhook(mockReq, mockRes, mockNext);
 
       expect(prismaMock.order.create).not.toHaveBeenCalled();
       expect(mockRes.json).toHaveBeenCalledWith(
@@ -223,7 +229,7 @@ describe('Webhook Controller', () => {
       prismaError.meta = { target: ['webhook_fingerprint'] };
       prismaMock.order.create.mockRejectedValue(prismaError);
 
-      await importOrdersViaWebhook(mockReq, mockRes);
+      await importOrdersViaWebhook(mockReq, mockRes, mockNext);
 
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -240,7 +246,7 @@ describe('Webhook Controller', () => {
       prismaMock.order.findFirst.mockResolvedValue(null); // outside window
       prismaMock.order.create.mockResolvedValue({ id: 1000 } as any);
 
-      await importOrdersViaWebhook(mockReq, mockRes);
+      await importOrdersViaWebhook(mockReq, mockRes, mockNext);
 
       expect(prismaMock.order.create).toHaveBeenCalledTimes(1);
       expect(mockRes.json).toHaveBeenCalledWith(
