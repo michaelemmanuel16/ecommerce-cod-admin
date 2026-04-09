@@ -1,17 +1,17 @@
-import { Response, Request } from 'express';
+import { Response, Request, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import webhookService from '../services/webhookService';
 
-export const getAllWebhooks = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getAllWebhooks = async (_req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const webhooks = await webhookService.getAllWebhooks();
     res.json({ webhooks });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const createWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
+export const createWebhook = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { name, url, secret, productId, apiKey, fieldMapping, headers } = req.body;
 
@@ -27,42 +27,42 @@ export const createWebhook = async (req: AuthRequest, res: Response): Promise<vo
 
     res.status(201).json({ webhook });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const getWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getWebhook = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
     const webhook = await webhookService.getWebhookById(Number(id));
     res.json({ webhook });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const updateWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updateWebhook = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
     const updateData = req.body;
     const webhook = await webhookService.updateWebhook(Number(id), updateData);
     res.json({ webhook });
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const deleteWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
+export const deleteWebhook = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
     const result = await webhookService.deleteWebhook(Number(id));
     res.json(result);
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const importOrdersViaWebhook = async (req: Request, res: Response): Promise<void> => {
+export const importOrdersViaWebhook = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const signature = req.headers['x-webhook-signature'] as string;
     const apiKey = req.headers['x-api-key'] as string;
@@ -78,7 +78,7 @@ export const importOrdersViaWebhook = async (req: Request, res: Response): Promi
 
     res.json(result);
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
@@ -86,7 +86,7 @@ export const importOrdersViaWebhook = async (req: Request, res: Response): Promi
  * Import orders via unique webhook URL
  * Simpler endpoint that doesn't require API keys in headers
  */
-export const importOrdersViaUniqueUrl = async (req: Request, res: Response): Promise<void> => {
+export const importOrdersViaUniqueUrl = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { uniqueUrl } = req.params;
     const signature = req.headers['x-webhook-signature'] as string;
@@ -102,11 +102,11 @@ export const importOrdersViaUniqueUrl = async (req: Request, res: Response): Pro
 
     res.json(result);
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const getWebhookLogs = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getWebhookLogs = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
     const { page = 1, limit = 20 } = req.query;
@@ -118,11 +118,11 @@ export const getWebhookLogs = async (req: AuthRequest, res: Response): Promise<v
 
     res.json(result);
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
 
-export const testWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
+export const testWebhook = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
     const { sampleData } = req.body;
@@ -130,6 +130,6 @@ export const testWebhook = async (req: AuthRequest, res: Response): Promise<void
     const result = await webhookService.testWebhook(Number(id), sampleData);
     res.json(result);
   } catch (error) {
-    throw error;
+    next(error);
   }
 };
