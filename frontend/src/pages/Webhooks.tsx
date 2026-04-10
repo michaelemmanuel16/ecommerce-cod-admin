@@ -28,6 +28,7 @@ export const Webhooks: React.FC = () => {
   const [isLogsOpen, setIsLogsOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [copiedApiKeyId, setCopiedApiKeyId] = useState<number | null>(null);
+  const [copiedUrlId, setCopiedUrlId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchWebhooks();
@@ -64,6 +65,19 @@ export const Webhooks: React.FC = () => {
   const handleViewLogs = (webhook: Webhook) => {
     setSelectedWebhook(webhook);
     setIsLogsOpen(true);
+  };
+
+  const handleCopyUrl = async (webhook: Webhook) => {
+    const url = `${getApiBaseUrl()}/api/webhooks/import/${webhook.uniqueUrl}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedUrlId(webhook.id);
+      setTimeout(() => setCopiedUrlId(null), 2000);
+      toast.success('Webhook URL copied to clipboard');
+    } catch (error) {
+      console.error('Failed to copy URL:', error);
+      toast.error('Failed to copy URL');
+    }
   };
 
   const handleCopyApiKey = async (webhook: Webhook) => {
@@ -238,11 +252,26 @@ export const Webhooks: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900">
+                      <div className="flex items-center gap-1.5">
                         <Tooltip content={`${getApiBaseUrl()}/api/webhooks/import/${webhook.uniqueUrl}`} position="top">
-                          <span className="truncate max-w-xs inline-block">
+                          <button
+                            onClick={() => handleCopyUrl(webhook)}
+                            className="text-sm text-gray-900 hover:text-blue-600 transition-colors truncate max-w-xs inline-block text-left cursor-pointer"
+                          >
                             {truncateUrl(`${getApiBaseUrl()}/api/webhooks/import/${webhook.uniqueUrl}`)}
-                          </span>
+                          </button>
+                        </Tooltip>
+                        <Tooltip content="Copy URL" position="top">
+                          <button
+                            onClick={() => handleCopyUrl(webhook)}
+                            className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+                          >
+                            {copiedUrlId === webhook.id ? (
+                              <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
                         </Tooltip>
                       </div>
                     </td>

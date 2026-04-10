@@ -122,6 +122,21 @@ export const getWebhookLogs = async (req: AuthRequest, res: Response, next: Next
   }
 };
 
+export const getWebhookStats = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { days } = req.query;
+
+    const stats = await webhookService.getWebhookStats(Number(id), {
+      days: days ? Number(days) : undefined
+    });
+
+    res.json(stats);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const testWebhook = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { id } = req.params;
