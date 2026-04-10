@@ -26,7 +26,7 @@ export const WebhookIntegrationDetails: React.FC<WebhookIntegrationDetailsProps>
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedApiKey, setCopiedApiKey] = useState(false);
 
-  const webhookUrl = `${getApiBaseUrl()}/api/webhooks/import`;
+  const webhookUrl = `${getApiBaseUrl()}/api/webhooks/import/${webhook.uniqueUrl}`;
 
   const handleCopyUrl = async () => {
     try {
