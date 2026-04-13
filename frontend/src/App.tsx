@@ -83,11 +83,13 @@ const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }>
   return <>{children}</>;
 };
 
+const isPlatformDomain = window.location.hostname === 'platform.codadminpro.com';
+
 const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, user } = useAuthStore();
 
   if (!isAuthenticated || !user?.isPlatformAdmin) {
-    return <Navigate to="/platform/login" replace />;
+    return <Navigate to={isPlatformDomain ? '/login' : '/platform/login'} replace />;
   }
 
   return <>{children}</>;
@@ -118,20 +120,65 @@ function App() {
   const { isAuthenticated, refreshPermissions, setupPermissionListener } = useAuthStore();
   const { fetchConfig } = useConfigStore();
 
-  // Refresh permissions and setup socket listener on mount
   useEffect(() => {
-    // Always fetch public config (includes business name and currency)
     fetchConfig();
 
     if (isAuthenticated) {
-      // Refresh permissions to ensure they're up to date
       refreshPermissions();
-
-      // Initialize socket connection and listeners
       useAuthStore.getState().initSocket();
     }
   }, [isAuthenticated, refreshPermissions, setupPermissionListener, fetchConfig]);
 
+  // Platform subdomain — show only platform admin routes
+  if (isPlatformDomain) {
+    return (
+      <ErrorBoundary>
+        <BrowserRouter>
+          <Suspense fallback={<Loading />}>
+            <Routes>
+              <Route path="/login" element={<PlatformLogin />} />
+              <Route
+                path="/"
+                element={
+                  <PlatformGuard>
+                    <PlatformDashboard />
+                  </PlatformGuard>
+                }
+              />
+              <Route
+                path="/tenants"
+                element={
+                  <PlatformGuard>
+                    <PlatformTenants />
+                  </PlatformGuard>
+                }
+              />
+              <Route
+                path="/tenants/:id"
+                element={
+                  <PlatformGuard>
+                    <PlatformTenantDetail />
+                  </PlatformGuard>
+                }
+              />
+              <Route
+                path="/announcements"
+                element={
+                  <PlatformGuard>
+                    <PlatformAnnouncements />
+                  </PlatformGuard>
+                }
+              />
+              <Route path="*" element={<Navigate to="/login" replace />} />
+            </Routes>
+          </Suspense>
+          <Toast />
+        </BrowserRouter>
+      </ErrorBoundary>
+    );
+  }
+
+  // Main tenant domain — full app
   return (
     <ErrorBoundary>
       <OnboardingProvider>
@@ -154,12 +201,6 @@ function App() {
               </Suspense>
             } />
             {/* Auth routes */}
-            {/* Platform admin login */}
-            <Route path="/platform/login" element={
-              <Suspense fallback={<Loading />}>
-                <PlatformLogin />
-              </Suspense>
-            } />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -217,146 +258,96 @@ function App() {
             >
               <Route index element={<DynamicDashboard />} />
               <Route path="orders" element={
-                <Suspense fallback={<Loading />}>
-                  <Orders />
-                </Suspense>
+                <Suspense fallback={<Loading />}><Orders /></Suspense>
               } />
               <Route path="orders/:id" element={
-                <Suspense fallback={<Loading />}>
-                  <OrderDetails />
-                </Suspense>
+                <Suspense fallback={<Loading />}><OrderDetails /></Suspense>
               } />
               <Route path="products" element={
-                <Suspense fallback={<Loading />}>
-                  <Products />
-                </Suspense>
+                <Suspense fallback={<Loading />}><Products /></Suspense>
               } />
               <Route path="products/new" element={
-                <Suspense fallback={<Loading />}>
-                  <ProductForm />
-                </Suspense>
+                <Suspense fallback={<Loading />}><ProductForm /></Suspense>
               } />
               <Route path="products/:id/edit" element={
-                <Suspense fallback={<Loading />}>
-                  <ProductForm />
-                </Suspense>
+                <Suspense fallback={<Loading />}><ProductForm /></Suspense>
               } />
               <Route path="customers" element={
-                <Suspense fallback={<Loading />}>
-                  <Customers />
-                </Suspense>
+                <Suspense fallback={<Loading />}><Customers /></Suspense>
               } />
               <Route path="customers/:id" element={
-                <Suspense fallback={<Loading />}>
-                  <CustomerDetails />
-                </Suspense>
+                <Suspense fallback={<Loading />}><CustomerDetails /></Suspense>
               } />
               <Route path="delivery-agents" element={
-                <Suspense fallback={<Loading />}>
-                  <DeliveryAgents />
-                </Suspense>
+                <Suspense fallback={<Loading />}><DeliveryAgents /></Suspense>
               } />
               <Route path="customer-reps" element={
-                <Suspense fallback={<Loading />}>
-                  <CustomerReps />
-                </Suspense>
+                <Suspense fallback={<Loading />}><CustomerReps /></Suspense>
               } />
               <Route path="financial" element={
-                <Suspense fallback={<Loading />}>
-                  <Financial />
-                </Suspense>
+                <Suspense fallback={<Loading />}><Financial /></Suspense>
               } />
               <Route path="analytics" element={
                 <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'accountant']}>
-                  <Suspense fallback={<Loading />}>
-                    <Analytics />
-                  </Suspense>
+                  <Suspense fallback={<Loading />}><Analytics /></Suspense>
                 </RoleGuard>
               } />
               <Route path="workflows" element={
-                <Suspense fallback={<Loading />}>
-                  <Workflows />
-                </Suspense>
+                <Suspense fallback={<Loading />}><Workflows /></Suspense>
               } />
               <Route path="workflows/new" element={
-                <Suspense fallback={<Loading />}>
-                  <WorkflowWizard />
-                </Suspense>
+                <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
               } />
               <Route path="workflows/:id" element={
-                <Suspense fallback={<Loading />}>
-                  <WorkflowWizard />
-                </Suspense>
+                <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
               } />
               <Route path="communications" element={
                 <RoleGuard allowedRoles={['super_admin', 'admin', 'manager']}>
-                  <Suspense fallback={<Loading />}>
-                    <Communications />
-                  </Suspense>
+                  <Suspense fallback={<Loading />}><Communications /></Suspense>
                 </RoleGuard>
               } />
               <Route path="settings" element={
-                <Suspense fallback={<Loading />}>
-                  <Settings />
-                </Suspense>
+                <Suspense fallback={<Loading />}><Settings /></Suspense>
               } />
               <Route path="settings/billing" element={
-                <Suspense fallback={<Loading />}>
-                  <Billing />
-                </Suspense>
+                <Suspense fallback={<Loading />}><Billing /></Suspense>
               } />
               <Route path="checkout-forms" element={
-                <Suspense fallback={<Loading />}>
-                  <CheckoutForms />
-                </Suspense>
+                <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
               } />
               <Route path="webhooks" element={
                 <RoleGuard allowedRoles={['super_admin', 'admin']}>
-                  <Suspense fallback={<Loading />}>
-                    <Webhooks />
-                  </Suspense>
+                  <Suspense fallback={<Loading />}><Webhooks /></Suspense>
                 </RoleGuard>
               } />
               <Route path="agent-inventory" element={
                 <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'inventory_manager', 'delivery_agent']}>
-                  <Suspense fallback={<Loading />}>
-                    <AgentInventoryRoute />
-                  </Suspense>
+                  <Suspense fallback={<Loading />}><AgentInventoryRoute /></Suspense>
                 </RoleGuard>
               } />
               <Route path="earnings-history" element={
                 <RoleGuard allowedRoles={['sales_rep']}>
-                  <Suspense fallback={<Loading />}>
-                    <EarningsHistory />
-                  </Suspense>
+                  <Suspense fallback={<Loading />}><EarningsHistory /></Suspense>
                 </RoleGuard>
               } />
               <Route path="platform" element={
                 <PlatformGuard>
-                  <Suspense fallback={<Loading />}>
-                    <PlatformDashboard />
-                  </Suspense>
+                  <Suspense fallback={<Loading />}><PlatformDashboard /></Suspense>
                 </PlatformGuard>
               } />
               <Route path="platform/tenants" element={
                 <PlatformGuard>
-                  <Suspense fallback={<Loading />}>
-                    <PlatformTenants />
-                  </Suspense>
+                  <Suspense fallback={<Loading />}><PlatformTenants /></Suspense>
                 </PlatformGuard>
               } />
               <Route path="platform/tenants/:id" element={
                 <PlatformGuard>
-                  <Suspense fallback={<Loading />}>
-                    <PlatformTenantDetail />
-                  </Suspense>
+                  <Suspense fallback={<Loading />}><PlatformTenantDetail /></Suspense>
                 </PlatformGuard>
               } />
               <Route path="platform/announcements" element={
                 <PlatformGuard>
-                  <Suspense fallback={<Loading />}>
-                    <PlatformAnnouncements />
-                  </Suspense>
+                  <Suspense fallback={<Loading />}><PlatformAnnouncements /></Suspense>
                 </PlatformGuard>
               } />
             </Route>
