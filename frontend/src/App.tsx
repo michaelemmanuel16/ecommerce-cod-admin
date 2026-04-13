@@ -188,6 +188,10 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            {/* Platform login on main domain — used by PlatformGuard redirect in local dev */}
+            <Route path="/platform/login" element={
+              <Suspense fallback={<Loading />}><PlatformLogin /></Suspense>
+            } />
             <Route path="/onboarding" element={
               <ProtectedRoute skipOnboardingCheck>
                 <Onboarding />
