@@ -89,6 +89,13 @@ function isPlatformDomain(): boolean {
   return window.location.hostname === PLATFORM_DOMAIN;
 }
 
+// Wraps a platform admin page with guard + suspense for use in the tenant domain tree
+const platformRoute = (Component: React.ComponentType) => (
+  <PlatformGuard>
+    <Suspense fallback={<Loading />}><Component /></Suspense>
+  </PlatformGuard>
+);
+
 const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, user } = useAuthStore();
 
@@ -334,26 +341,10 @@ function App() {
                   <Suspense fallback={<Loading />}><EarningsHistory /></Suspense>
                 </RoleGuard>
               } />
-              <Route path="platform" element={
-                <PlatformGuard>
-                  <Suspense fallback={<Loading />}><PlatformDashboard /></Suspense>
-                </PlatformGuard>
-              } />
-              <Route path="platform/tenants" element={
-                <PlatformGuard>
-                  <Suspense fallback={<Loading />}><PlatformTenants /></Suspense>
-                </PlatformGuard>
-              } />
-              <Route path="platform/tenants/:id" element={
-                <PlatformGuard>
-                  <Suspense fallback={<Loading />}><PlatformTenantDetail /></Suspense>
-                </PlatformGuard>
-              } />
-              <Route path="platform/announcements" element={
-                <PlatformGuard>
-                  <Suspense fallback={<Loading />}><PlatformAnnouncements /></Suspense>
-                </PlatformGuard>
-              } />
+              <Route path="platform" element={platformRoute(PlatformDashboard)} />
+              <Route path="platform/tenants" element={platformRoute(PlatformTenants)} />
+              <Route path="platform/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
+              <Route path="platform/announcements" element={platformRoute(PlatformAnnouncements)} />
             </Route>
           </Routes>
           {/* Onboarding Tour Components - Only visible for sales_rep role */}
