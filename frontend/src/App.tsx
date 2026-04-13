@@ -128,7 +128,7 @@ const MobileRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 function App() {
-  const { isAuthenticated, refreshPermissions, setupPermissionListener } = useAuthStore();
+  const { isAuthenticated, refreshPermissions } = useAuthStore();
   const { fetchConfig } = useConfigStore();
 
   useEffect(() => {
@@ -138,51 +138,23 @@ function App() {
       refreshPermissions();
       useAuthStore.getState().initSocket();
     }
-  }, [isAuthenticated, refreshPermissions, setupPermissionListener, fetchConfig]);
+  }, [isAuthenticated, refreshPermissions, fetchConfig]);
 
   // Platform subdomain — show only platform admin routes
   if (isPlatformDomain()) {
     return (
       <ErrorBoundary>
         <BrowserRouter>
-          <Suspense fallback={<Loading />}>
-            <Routes>
-              <Route path="/login" element={<PlatformLogin />} />
-              <Route
-                path="/"
-                element={
-                  <PlatformGuard>
-                    <PlatformDashboard />
-                  </PlatformGuard>
-                }
-              />
-              <Route
-                path="/tenants"
-                element={
-                  <PlatformGuard>
-                    <PlatformTenants />
-                  </PlatformGuard>
-                }
-              />
-              <Route
-                path="/tenants/:id"
-                element={
-                  <PlatformGuard>
-                    <PlatformTenantDetail />
-                  </PlatformGuard>
-                }
-              />
-              <Route
-                path="/announcements"
-                element={
-                  <PlatformGuard>
-                    <PlatformAnnouncements />
-                  </PlatformGuard>
-                }
-              />
-              <Route path="*" element={<Navigate to="/login" replace />} />
-            </Routes>
-          </Suspense>
+          <Routes>
+            <Route path="/login" element={
+              <Suspense fallback={<Loading />}><PlatformLogin /></Suspense>
+            } />
+            <Route path="/" element={platformRoute(PlatformDashboard)} />
+            <Route path="/tenants" element={platformRoute(PlatformTenants)} />
+            <Route path="/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
+            <Route path="/announcements" element={platformRoute(PlatformAnnouncements)} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
           <Toast />
         </BrowserRouter>
       </ErrorBoundary>

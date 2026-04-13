@@ -118,6 +118,11 @@ git push -u origin feature/descriptive-name
 - Staging Frontend: https://staging.codadminpro.com (develop branch)
 - Staging Backend: https://staging.codadminpro.com/api (develop branch)
 
+### Server Access
+```bash
+ssh root@143.110.197.200
+```
+
 ### Rules
 ✅ Always create feature branches from `develop`
 ✅ Always test in staging before production

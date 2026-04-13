@@ -4,10 +4,13 @@ import express from 'express';
 import cors from 'cors';
 
 // Replicate the CORS setup from server.ts to unit-test the origin logic
-function makeApp(frontendUrl: string, platformUrl: string) {
+function makeApp(frontendUrl: string, platformUrl?: string) {
   const app = express();
   app.use(cors({
-    origin: [frontendUrl, platformUrl],
+    origin: [
+      frontendUrl,
+      ...(platformUrl ? [platformUrl] : []),
+    ],
     credentials: true,
   }));
   app.get('/test', (_req, res) => res.json({ ok: true }));
@@ -35,6 +38,14 @@ describe('CORS origin configuration', () => {
     const res = await request(app)
       .get('/test')
       .set('Origin', 'https://evil.com');
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('does not include platform origin when PLATFORM_URL is not set', async () => {
+    const appNoPlatform = makeApp('https://codadminpro.com');
+    const res = await request(appNoPlatform)
+      .get('/test')
+      .set('Origin', 'https://platform.codadminpro.com');
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
 });
