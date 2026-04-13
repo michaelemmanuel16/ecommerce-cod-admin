@@ -148,7 +148,7 @@ app.set("trust proxy", 1);
 app.use(cors({
   origin: [
     process.env.FRONTEND_URL || 'http://localhost:5173',
-    'https://platform.codadminpro.com',
+    process.env.PLATFORM_URL || 'https://platform.codadminpro.com',
   ],
   credentials: true,
 }));

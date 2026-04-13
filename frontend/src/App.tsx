@@ -83,13 +83,17 @@ const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }>
   return <>{children}</>;
 };
 
-const isPlatformDomain = window.location.hostname === 'platform.codadminpro.com';
+const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN || 'platform.codadminpro.com';
+
+function isPlatformDomain(): boolean {
+  return window.location.hostname === PLATFORM_DOMAIN;
+}
 
 const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, user } = useAuthStore();
 
   if (!isAuthenticated || !user?.isPlatformAdmin) {
-    return <Navigate to={isPlatformDomain ? '/login' : '/platform/login'} replace />;
+    return <Navigate to={isPlatformDomain() ? '/login' : '/platform/login'} replace />;
   }
 
   return <>{children}</>;
@@ -130,7 +134,7 @@ function App() {
   }, [isAuthenticated, refreshPermissions, setupPermissionListener, fetchConfig]);
 
   // Platform subdomain — show only platform admin routes
-  if (isPlatformDomain) {
+  if (isPlatformDomain()) {
     return (
       <ErrorBoundary>
         <BrowserRouter>

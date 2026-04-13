@@ -7,43 +7,6 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-// ─── Unit tests for the isPlatformDomain logic ───────────────────────────────
-
-describe('isPlatformDomain detection', () => {
-  it('returns false for localhost (default JSDOM hostname)', () => {
-    const isPlatformDomain = window.location.hostname === 'platform.codadminpro.com';
-    expect(isPlatformDomain).toBe(false);
-  });
-
-  it('returns true when hostname is platform.codadminpro.com', () => {
-    vi.stubGlobal('location', { hostname: 'platform.codadminpro.com' });
-    const isPlatformDomain = window.location.hostname === 'platform.codadminpro.com';
-    expect(isPlatformDomain).toBe(true);
-  });
-
-  it('returns false for main domain', () => {
-    vi.stubGlobal('location', { hostname: 'codadminpro.com' });
-    const isPlatformDomain = window.location.hostname === 'platform.codadminpro.com';
-    expect(isPlatformDomain).toBe(false);
-  });
-});
-
-// ─── PlatformGuard redirect target logic ─────────────────────────────────────
-
-describe('PlatformGuard redirect target', () => {
-  it('redirects unauthenticated users to /login on platform domain', () => {
-    const isPlatformDomain = true; // simulating platform.codadminpro.com
-    const redirectTarget = isPlatformDomain ? '/login' : '/platform/login';
-    expect(redirectTarget).toBe('/login');
-  });
-
-  it('redirects unauthenticated users to /platform/login on main domain', () => {
-    const isPlatformDomain = false; // simulating codadminpro.com
-    const redirectTarget = isPlatformDomain ? '/login' : '/platform/login';
-    expect(redirectTarget).toBe('/platform/login');
-  });
-});
-
 // ─── Platform domain router tree — route isolation ───────────────────────────
 
 // Simulates the platform domain router tree (what App renders when isPlatformDomain=true)

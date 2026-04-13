@@ -4,13 +4,10 @@ import express from 'express';
 import cors from 'cors';
 
 // Replicate the CORS setup from server.ts to unit-test the origin logic
-function makeApp(frontendUrl: string) {
+function makeApp(frontendUrl: string, platformUrl: string) {
   const app = express();
   app.use(cors({
-    origin: [
-      frontendUrl,
-      'https://platform.codadminpro.com',
-    ],
+    origin: [frontendUrl, platformUrl],
     credentials: true,
   }));
   app.get('/test', (_req, res) => res.json({ ok: true }));
@@ -18,7 +15,7 @@ function makeApp(frontendUrl: string) {
 }
 
 describe('CORS origin configuration', () => {
-  const app = makeApp('https://codadminpro.com');
+  const app = makeApp('https://codadminpro.com', 'https://platform.codadminpro.com');
 
   it('allows requests from FRONTEND_URL', async () => {
     const res = await request(app)
