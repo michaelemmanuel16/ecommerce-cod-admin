@@ -4,6 +4,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownItem } from '../ui/Dropdown';
 import { Avatar } from '../ui/Avatar';
+import { platformLoginPath } from '../../utils/platformDomain';
 
 export const UserMenu: React.FC = () => {
   const { user, logout } = useAuthStore();
@@ -13,7 +14,7 @@ export const UserMenu: React.FC = () => {
 
   const handleLogout = () => {
     logout();
-    navigate(isPlatformAdmin ? '/platform/login' : '/login');
+    navigate(isPlatformAdmin ? platformLoginPath() : '/login');
   };
 
   return (
