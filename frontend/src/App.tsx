@@ -49,6 +49,9 @@ const PlatformTenants = lazy(() => import('./pages/PlatformTenants').then(m => (
 const PlatformTenantDetail = lazy(() => import('./pages/PlatformTenantDetail').then(m => ({ default: m.PlatformTenantDetail })));
 const PlatformAnnouncements = lazy(() => import('./pages/PlatformAnnouncements').then(m => ({ default: m.PlatformAnnouncements })));
 
+// Platform admin layout (sidebar + outlet for the platform subdomain tree)
+const PlatformLayout = lazy(() => import('./components/layout/PlatformLayout').then(m => ({ default: m.PlatformLayout })));
+
 // Mobile pages
 const MobileLayout = lazy(() => import('./components/layout/MobileLayout').then(m => ({ default: m.MobileLayout })));
 const MobileDeliveries = lazy(() => import('./pages/mobile/MobileDeliveries'));
@@ -140,7 +143,7 @@ function App() {
     }
   }, [isAuthenticated, refreshPermissions, fetchConfig]);
 
-  // Platform subdomain — show only platform admin routes
+  // Platform subdomain — show only platform admin routes, wrapped in PlatformLayout
   if (isPlatformDomain()) {
     return (
       <ErrorBoundary>
@@ -149,10 +152,19 @@ function App() {
             <Route path="/login" element={
               <Suspense fallback={<Loading />}><PlatformLogin /></Suspense>
             } />
-            <Route path="/" element={platformRoute(PlatformDashboard)} />
-            <Route path="/tenants" element={platformRoute(PlatformTenants)} />
-            <Route path="/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
-            <Route path="/announcements" element={platformRoute(PlatformAnnouncements)} />
+            <Route
+              path="/"
+              element={
+                <PlatformGuard>
+                  <Suspense fallback={<Loading />}><PlatformLayout /></Suspense>
+                </PlatformGuard>
+              }
+            >
+              <Route index element={<Suspense fallback={<Loading />}><PlatformDashboard /></Suspense>} />
+              <Route path="tenants" element={<Suspense fallback={<Loading />}><PlatformTenants /></Suspense>} />
+              <Route path="tenants/:id" element={<Suspense fallback={<Loading />}><PlatformTenantDetail /></Suspense>} />
+              <Route path="announcements" element={<Suspense fallback={<Loading />}><PlatformAnnouncements /></Suspense>} />
+            </Route>
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
           <Toast />

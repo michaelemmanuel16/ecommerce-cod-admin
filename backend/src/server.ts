@@ -40,6 +40,7 @@ import logger from './utils/logger';
 import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
 import { validateGLAccountCodes } from './config/glAccounts';
+import { derivePlatformOrigin } from './utils/corsOrigins';
 
 // Routes
 import authRoutes from './routes/authRoutes';
@@ -145,10 +146,13 @@ app.use('/api/public', (_req, res, next) => {
 // allowing attackers to spoof X-Forwarded-For and bypass rate limiting.
 app.set("trust proxy", 1);
 
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+const platformUrl = process.env.PLATFORM_URL || derivePlatformOrigin(frontendUrl);
+
 app.use(cors({
   origin: [
-    process.env.FRONTEND_URL || 'http://localhost:5173',
-    ...(process.env.PLATFORM_URL ? [process.env.PLATFORM_URL] : []),
+    frontendUrl,
+    ...(platformUrl ? [platformUrl] : []),
   ],
   credentials: true,
 }));

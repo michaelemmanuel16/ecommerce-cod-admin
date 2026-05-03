@@ -1,19 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { cn } from '../../utils/cn';
 import { AnnouncementBanner } from '../announcements/AnnouncementBanner';
+import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 
 export const Layout: React.FC = () => {
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    const saved = localStorage.getItem('sidebarCollapsed');
-    return saved ? JSON.parse(saved) : false;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', JSON.stringify(isCollapsed));
-  }, [isCollapsed]);
+  const [isCollapsed, setIsCollapsed] = useSidebarCollapse('sidebarCollapsed');
 
   const toggleSidebar = () => setIsCollapsed(!isCollapsed);
 
