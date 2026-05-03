@@ -11,6 +11,7 @@ import { CustomerRepOnboarding, OnboardingWelcomeModal } from './components/onbo
 import { useIsMobile } from './hooks/useIsMobile';
 import { DESKTOP_FLAG, MOBILE_OPT_IN } from './constants/mobile';
 import { useConfigStore } from './stores/configStore';
+import { isPlatformDomain, platformLoginPath } from './utils/platformDomain';
 
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
@@ -86,12 +87,6 @@ const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }>
   return <>{children}</>;
 };
 
-const PLATFORM_DOMAIN = import.meta.env.VITE_PLATFORM_DOMAIN || 'platform.codadminpro.com';
-
-function isPlatformDomain(): boolean {
-  return window.location.hostname === PLATFORM_DOMAIN;
-}
-
 // Wraps a platform admin page with guard + suspense for use in the tenant domain tree
 const platformRoute = (Component: React.ComponentType) => (
   <PlatformGuard>
@@ -103,7 +98,7 @@ const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const { isAuthenticated, user } = useAuthStore();
 
   if (!isAuthenticated || !user?.isPlatformAdmin) {
-    return <Navigate to={isPlatformDomain() ? '/login' : '/platform/login'} replace />;
+    return <Navigate to={platformLoginPath()} replace />;
   }
 
   return <>{children}</>;

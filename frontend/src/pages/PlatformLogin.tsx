@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
+import { platformDashboardPath } from '../utils/platformDomain';
 
 export const PlatformLogin: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -11,10 +12,10 @@ export const PlatformLogin: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const { login, user, isAuthenticated } = useAuthStore();
   const navigate = useNavigate();
+  const dashboardPath = platformDashboardPath();
 
-  // If already logged in as platform admin, redirect
   if (isAuthenticated && (user as any)?.isPlatformAdmin) {
-    navigate('/platform', { replace: true });
+    navigate(dashboardPath, { replace: true });
     return null;
   }
 
@@ -23,15 +24,13 @@ export const PlatformLogin: React.FC = () => {
     setLoading(true);
     try {
       await login({ email, password });
-      // Check if the logged-in user is a platform admin
       const state = useAuthStore.getState();
       if (!(state.user as any)?.isPlatformAdmin) {
-        // Not a platform admin, logout and show error
         useAuthStore.getState().logout();
         toast.error('Access denied. Platform admin credentials required.');
         return;
       }
-      navigate('/platform', { replace: true });
+      navigate(dashboardPath, { replace: true });
     } catch {
       toast.error('Invalid credentials');
     } finally {
