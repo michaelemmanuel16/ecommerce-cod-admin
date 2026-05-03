@@ -8,6 +8,7 @@ import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Pagination } from '../components/ui/Pagination';
 import { usePlatformStore } from '../stores/platformStore';
+import { platformPath } from '../utils/platformDomain';
 
 const PLAN_OPTIONS = [
   { value: '', label: 'All Plans' },
@@ -192,7 +193,7 @@ export const PlatformTenants: React.FC = () => {
                       <tr
                         key={t.id}
                         className="hover:bg-gray-50 cursor-pointer"
-                        onClick={() => navigate(`/platform/tenants/${t.id}`)}
+                        onClick={() => navigate(platformPath(`tenants/${t.id}`))}
                       >
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{t.name}</td>
                         <td className="px-4 py-3 text-sm text-gray-500 font-mono">{t.slug}</td>
@@ -217,7 +218,7 @@ export const PlatformTenants: React.FC = () => {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              navigate(`/platform/tenants/${t.id}`);
+                              navigate(platformPath(`tenants/${t.id}`));
                             }}
                             className="text-blue-600 hover:text-blue-800 text-xs font-medium"
                           >
