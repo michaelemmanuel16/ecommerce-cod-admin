@@ -2,19 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import request from 'supertest';
 import express from 'express';
 import cors from 'cors';
-
-// Replicate the CORS setup from server.ts to unit-test the origin logic.
-function derivePlatformOrigin(frontendUrl: string): string | null {
-  try {
-    const url = new URL(frontendUrl);
-    if (!url.hostname || url.hostname === 'localhost' || url.hostname.startsWith('platform.')) {
-      return null;
-    }
-    return `${url.protocol}//platform.${url.hostname}`;
-  } catch {
-    return null;
-  }
-}
+import { derivePlatformOrigin } from '../../utils/corsOrigins';
 
 function makeApp(frontendUrl: string, platformUrl?: string) {
   const app = express();

@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
-import * as readline from 'readline';
+import { promptInput, promptPassword } from './lib/prompts';
 
 const prisma = new PrismaClient();
 
@@ -29,51 +29,6 @@ interface PlatformAdminInput {
  * if a new one is supplied.
  */
 
-const CTRL_C = String.fromCharCode(3);
-const CTRL_D = String.fromCharCode(4);
-const DEL = String.fromCharCode(127);
-
-async function promptInput(question: string): Promise<string> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
-
-async function promptPassword(question: string): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    let password = '';
-    process.stdout.write(question);
-    if (process.stdin.isTTY) process.stdin.setRawMode(true);
-
-    process.stdin.on('data', (char) => {
-      const str = char.toString('utf-8');
-      if (str === '\n' || str === '\r' || str === CTRL_D) {
-        if (process.stdin.isTTY) process.stdin.setRawMode(false);
-        rl.close();
-        process.stdout.write('\n');
-        resolve(password);
-      } else if (str === CTRL_C) {
-        if (process.stdin.isTTY) process.stdin.setRawMode(false);
-        process.stdout.write('\n');
-        process.exit(0);
-      } else if (str === DEL || str === '\b') {
-        if (password.length > 0) {
-          password = password.slice(0, -1);
-          process.stdout.write('\b \b');
-        }
-      } else if (str >= ' ' && str <= '~') {
-        password += str;
-        process.stdout.write('*');
-      }
-    });
-  });
-}
-
 function getInputFromEnv(): PlatformAdminInput | null {
   const email = process.env.PLATFORM_ADMIN_EMAIL;
   const password = process.env.PLATFORM_ADMIN_PASSWORD;
@@ -83,10 +38,7 @@ function getInputFromEnv(): PlatformAdminInput | null {
   return null;
 }
 
-async function getInputInteractive(existingUser: boolean): Promise<PlatformAdminInput> {
-  console.log('\nPlatform admin details:');
-  console.log('-'.repeat(50));
-  const email = await promptInput('Email: ');
+async function getInputInteractive(email: string, existingUser: boolean): Promise<PlatformAdminInput> {
   const password = await promptPassword(
     existingUser
       ? 'New password (leave blank to keep existing): '
@@ -100,12 +52,15 @@ async function getInputInteractive(existingUser: boolean): Promise<PlatformAdmin
 function validateInput(input: PlatformAdminInput, existingUser: boolean): string[] {
   const errors: string[] = [];
   if (!input.email || !input.email.includes('@')) errors.push('Invalid email');
-  if (!existingUser && (!input.password || input.password.length < 8)) {
+
+  const passwordRequired = !existingUser;
+  const passwordProvided = !!input.password && input.password.length > 0;
+  if (passwordRequired && !passwordProvided) {
+    errors.push('Password must be at least 8 characters');
+  } else if (passwordProvided && input.password.length < 8) {
     errors.push('Password must be at least 8 characters');
   }
-  if (existingUser && input.password && input.password.length > 0 && input.password.length < 8) {
-    errors.push('Password must be at least 8 characters');
-  }
+
   if (!input.firstName || input.firstName.length < 2) errors.push('First name too short');
   if (!input.lastName || input.lastName.length < 2) errors.push('Last name too short');
   return errors;
@@ -128,13 +83,14 @@ async function run(): Promise<void> {
       console.error('Set PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD, or run interactively.');
       process.exit(1);
     }
-    const tempEmail = await promptInput('Email: ');
+    console.log('\nPlatform admin details:');
+    console.log('-'.repeat(50));
+    const email = await promptInput('Email: ');
     existingUser = await prisma.user.findUnique({
-      where: { email: tempEmail },
+      where: { email },
       select: { id: true, email: true, isPlatformAdmin: true },
     });
-    const rest = await getInputInteractive(!!existingUser);
-    input = { ...rest, email: tempEmail };
+    input = await getInputInteractive(email, !!existingUser);
   }
 
   const errors = validateInput(input, !!existingUser);

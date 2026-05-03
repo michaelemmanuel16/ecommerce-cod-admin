@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { UserMenu } from '../common/UserMenu';
+import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
@@ -17,14 +18,7 @@ const navItems = [
 ];
 
 export const PlatformLayout: React.FC = () => {
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    const saved = localStorage.getItem('platformSidebarCollapsed');
-    return saved ? JSON.parse(saved) : false;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('platformSidebarCollapsed', JSON.stringify(isCollapsed));
-  }, [isCollapsed]);
+  const [isCollapsed, setIsCollapsed] = useSidebarCollapse('platformSidebarCollapsed');
 
   return (
     <div className="flex h-screen bg-gray-50">
