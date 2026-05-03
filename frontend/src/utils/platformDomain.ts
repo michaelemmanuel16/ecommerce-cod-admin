@@ -21,3 +21,17 @@ export function platformDashboardPath(): string {
 export function platformLoginPath(): string {
   return isPlatformDomain() ? '/login' : '/platform/login';
 }
+
+/**
+ * Build a path inside the platform admin tree, prefixed correctly per domain.
+ *   platformPath('tenants')        → '/tenants' or '/platform/tenants'
+ *   platformPath(`tenants/${id}`)  → '/tenants/123' or '/platform/tenants/123'
+ *   platformPath('')               → '/' or '/platform'
+ */
+export function platformPath(suffix: string): string {
+  const cleaned = suffix.replace(/^\/+/, '');
+  if (isPlatformDomain()) {
+    return cleaned ? `/${cleaned}` : '/';
+  }
+  return cleaned ? `/platform/${cleaned}` : '/platform';
+}
