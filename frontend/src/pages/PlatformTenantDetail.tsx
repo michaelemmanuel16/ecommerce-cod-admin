@@ -7,6 +7,7 @@ import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { StatCard } from '../components/common/StatCard';
 import { usePlatformStore } from '../stores/platformStore';
+import { platformPath } from '../utils/platformDomain';
 
 const statusBadgeVariant = (status: string): 'success' | 'danger' | 'default' | 'warning' => {
   if (status === 'active') return 'success';
@@ -92,7 +93,7 @@ export const PlatformTenantDetail: React.FC = () => {
     setDeleting(true);
     try {
       await deleteTenant(id, currentTenant.slug);
-      navigate('/platform/tenants');
+      navigate(platformPath('tenants'));
     } finally {
       setDeleting(false);
     }
@@ -109,7 +110,7 @@ export const PlatformTenantDetail: React.FC = () => {
   if (!currentTenant) {
     return (
       <div className="space-y-4">
-        <Link to="/platform/tenants" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
+        <Link to={platformPath('tenants')} className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline">
           <ArrowLeft className="w-4 h-4" /> Back to Tenants
         </Link>
         <p className="text-gray-500">Tenant not found.</p>
@@ -123,7 +124,7 @@ export const PlatformTenantDetail: React.FC = () => {
     <div className="space-y-6">
       {/* Back */}
       <Link
-        to="/platform/tenants"
+        to={platformPath('tenants')}
         className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
       >
         <ArrowLeft className="w-4 h-4" /> Back to Tenants
