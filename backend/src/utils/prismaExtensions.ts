@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { AsyncLocalStorage } from 'async_hooks';
 import { getTenantId } from './tenantContext';
 
 // Models that carry a tenantId column and need automatic scoping
@@ -152,6 +153,48 @@ export const tenantIsolationExtension = Prisma.defineExtension({
 const SOFT_DELETE_IS_ACTIVE = new Set(['User', 'Customer', 'Product', 'CheckoutForm', 'Automation']);
 const SOFT_DELETE_DELETED_AT = new Set(['Order']);
 
+// AsyncLocalStorage scope for opting out of the soft-delete auto-inject.
+// Symbol keys on `args.where` would not survive Prisma's extension framework
+// (they're stripped before reaching the hook), so a context-based mechanism
+// is required. Same pattern as tenantContext.ts.
+const softDeleteStorage = new AsyncLocalStorage<{ skip: boolean }>();
+
+/**
+ * Run `fn` in a scope where the soft-delete extension does not auto-inject
+ * its filter. Use this for admin lookups that must see inactive/deleted
+ * rows (e.g. reactivating a deactivated user).
+ *
+ * Tenant-isolation auto-inject is unaffected.
+ *
+ * Implementation note: AsyncLocalStorage.run only preserves the store for
+ * the synchronous portion of its callback. If `fn` is a sync arrow that
+ * returns a Promise, the store is reset before that Promise's continuations
+ * run — so the Prisma extension hook sees `undefined`. Wrapping in an async
+ * function keeps the scope alive until the inner promise resolves.
+ */
+export function withSoftDeleted<T>(fn: () => Promise<T>): Promise<T> {
+  return softDeleteStorage.run({ skip: true }, async () => fn());
+}
+
+// Auto-inject the soft-delete filter only when the caller hasn't already
+// expressed an intent for that field — otherwise an admin endpoint that
+// wants to list inactive rows can never see them. Shallow check by design;
+// callers using AND/OR composites must opt out via withSoftDeleted().
+function applySoftDeleteFilter(model: string, args: { where?: any }) {
+  if (softDeleteStorage.getStore()?.skip) return;
+
+  const isActiveModel = SOFT_DELETE_IS_ACTIVE.has(model);
+  const deletedAtModel = !isActiveModel && SOFT_DELETE_DELETED_AT.has(model);
+  if (!isActiveModel && !deletedAtModel) return;
+
+  const w = args.where as any;
+  if (isActiveModel) {
+    if (w?.isActive === undefined) args.where = { ...w, isActive: true };
+  } else {
+    if (w?.deletedAt === undefined) args.where = { ...w, deletedAt: null };
+  }
+}
+
 export const softDeleteExtension = Prisma.defineExtension({
   name: 'softDelete',
   query: {
@@ -197,33 +240,19 @@ export const softDeleteExtension = Prisma.defineExtension({
         return query(args);
       },
       async findUnique({ model, args, query }) {
-
-        if (SOFT_DELETE_IS_ACTIVE.has(model)) {
-          args.where = { ...args.where, isActive: true } as any;
-        } else if (SOFT_DELETE_DELETED_AT.has(model)) {
-          args.where = { ...args.where, deletedAt: null } as any;
-        }
-
+        applySoftDeleteFilter(model, args);
         return query(args);
       },
       async findFirst({ model, args, query }) {
-
-        if (SOFT_DELETE_IS_ACTIVE.has(model)) {
-          args.where = { ...args.where, isActive: true } as any;
-        } else if (SOFT_DELETE_DELETED_AT.has(model)) {
-          args.where = { ...args.where, deletedAt: null } as any;
-        }
-
+        applySoftDeleteFilter(model, args);
         return query(args);
       },
       async findMany({ model, args, query }) {
-
-        if (SOFT_DELETE_IS_ACTIVE.has(model)) {
-          args.where = { ...args.where, isActive: true } as any;
-        } else if (SOFT_DELETE_DELETED_AT.has(model)) {
-          args.where = { ...args.where, deletedAt: null } as any;
-        }
-
+        applySoftDeleteFilter(model, args);
+        return query(args);
+      },
+      async count({ model, args, query }) {
+        applySoftDeleteFilter(model, args);
         return query(args);
       },
     },

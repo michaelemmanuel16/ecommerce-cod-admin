@@ -1,4 +1,5 @@
 import prisma from '../utils/prisma';
+import { withSoftDeleted } from '../utils/prismaExtensions';
 import bcrypt from 'bcrypt';
 import { UserRole } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
@@ -377,7 +378,7 @@ export const adminService = {
   },
 
   // User Management
-  async getAllUsers(requester: Requester, page = 1, limit = 20, role?: UserRole, isActive?: boolean) {
+  async getAllUsers(requester: Requester, page = 1, limit = 20, role?: UserRole, isActive?: boolean | 'all') {
     await this.checkAdminPrivilege(requester, 'admin');
     const skip = (page - 1) * limit;
 
@@ -385,7 +386,7 @@ export const adminService = {
     if (role) where.role = role;
     if (typeof isActive === 'boolean') where.isActive = isActive;
 
-    const [users, total] = await Promise.all([
+    const fetchUsers = () => Promise.all([
       prisma.user.findMany({
         where,
         skip,
@@ -410,6 +411,10 @@ export const adminService = {
       }),
       prisma.user.count({ where }),
     ]);
+
+    const [users, total] = isActive === 'all'
+      ? await withSoftDeleted(fetchUsers)
+      : await fetchUsers();
 
     return {
       users,
@@ -487,10 +492,12 @@ export const adminService = {
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
-    const targetUser = await prisma.user.findUnique({
+    // withSoftDeleted bypasses the soft-delete auto-inject so this lookup
+    // can find inactive users — admins must be able to reactivate them.
+    const targetUser = await withSoftDeleted(() => prisma.user.findUnique({
       where: { id: userId },
       select: { role: true }
-    });
+    }));
 
     if (!targetUser) {
       throw new AppError('User not found', 404);
