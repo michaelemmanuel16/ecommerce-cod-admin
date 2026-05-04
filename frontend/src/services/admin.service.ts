@@ -149,7 +149,7 @@ export const adminService = {
     page?: number;
     limit?: number;
     role?: string;
-    isActive?: boolean;
+    isActive?: boolean | 'all';
   }): Promise<{
     users: AdminUser[];
     total: number;

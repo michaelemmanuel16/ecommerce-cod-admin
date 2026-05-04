@@ -152,6 +152,35 @@ export const tenantIsolationExtension = Prisma.defineExtension({
 const SOFT_DELETE_IS_ACTIVE = new Set(['User', 'Customer', 'Product', 'CheckoutForm', 'Automation']);
 const SOFT_DELETE_DELETED_AT = new Set(['Order']);
 
+// Out-of-band marker on a Prisma `where` clause that opts the caller out
+// of the auto-injected soft-delete filter. Symbol keys are invisible to
+// Prisma's serializer (it walks string keys via Object.keys), so they pass
+// through findUnique's strict input validation without affecting the SQL
+// — the extension strips the marker before calling query().
+export const INCLUDE_SOFT_DELETED = Symbol('codadmin.includeSoftDeleted');
+
+// Auto-inject the soft-delete filter only when the caller hasn't already
+// expressed an intent for that field — otherwise an admin endpoint that
+// wants to list inactive rows can never see them. Shallow check by design;
+// callers using AND/OR composites must opt out via INCLUDE_SOFT_DELETED.
+function applySoftDeleteFilter(model: string, args: { where?: any }) {
+  const isActiveModel = SOFT_DELETE_IS_ACTIVE.has(model);
+  const deletedAtModel = !isActiveModel && SOFT_DELETE_DELETED_AT.has(model);
+  if (!isActiveModel && !deletedAtModel) return;
+
+  const w = args.where as any;
+  if (w && w[INCLUDE_SOFT_DELETED]) {
+    delete w[INCLUDE_SOFT_DELETED];
+    return;
+  }
+
+  if (isActiveModel) {
+    if (w?.isActive === undefined) args.where = { ...w, isActive: true };
+  } else {
+    if (w?.deletedAt === undefined) args.where = { ...w, deletedAt: null };
+  }
+}
+
 export const softDeleteExtension = Prisma.defineExtension({
   name: 'softDelete',
   query: {
@@ -197,33 +226,19 @@ export const softDeleteExtension = Prisma.defineExtension({
         return query(args);
       },
       async findUnique({ model, args, query }) {
-
-        if (SOFT_DELETE_IS_ACTIVE.has(model)) {
-          args.where = { ...args.where, isActive: true } as any;
-        } else if (SOFT_DELETE_DELETED_AT.has(model)) {
-          args.where = { ...args.where, deletedAt: null } as any;
-        }
-
+        applySoftDeleteFilter(model, args);
         return query(args);
       },
       async findFirst({ model, args, query }) {
-
-        if (SOFT_DELETE_IS_ACTIVE.has(model)) {
-          args.where = { ...args.where, isActive: true } as any;
-        } else if (SOFT_DELETE_DELETED_AT.has(model)) {
-          args.where = { ...args.where, deletedAt: null } as any;
-        }
-
+        applySoftDeleteFilter(model, args);
         return query(args);
       },
       async findMany({ model, args, query }) {
-
-        if (SOFT_DELETE_IS_ACTIVE.has(model)) {
-          args.where = { ...args.where, isActive: true } as any;
-        } else if (SOFT_DELETE_DELETED_AT.has(model)) {
-          args.where = { ...args.where, deletedAt: null } as any;
-        }
-
+        applySoftDeleteFilter(model, args);
+        return query(args);
+      },
+      async count({ model, args, query }) {
+        applySoftDeleteFilter(model, args);
         return query(args);
       },
     },
