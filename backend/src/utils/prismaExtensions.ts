@@ -152,36 +152,32 @@ export const tenantIsolationExtension = Prisma.defineExtension({
 const SOFT_DELETE_IS_ACTIVE = new Set(['User', 'Customer', 'Product', 'CheckoutForm', 'Automation']);
 const SOFT_DELETE_DELETED_AT = new Set(['Order']);
 
+// Out-of-band marker on a Prisma `where` clause that opts the caller out
+// of the auto-injected soft-delete filter. Symbol keys are invisible to
+// Prisma's serializer (it walks string keys via Object.keys), so they pass
+// through findUnique's strict input validation without affecting the SQL
+// — the extension strips the marker before calling query().
+export const INCLUDE_SOFT_DELETED = Symbol.for('codadmin.includeSoftDeleted');
+
 // Auto-inject the soft-delete filter only when the caller hasn't already
 // expressed an intent for that field — otherwise an admin endpoint that
 // wants to list inactive rows can never see them. Shallow check by design;
-// callers using AND/OR composites must opt out of the auto-inject themselves.
-//
-// Sentinel: passing `isActive: null` (for IS_ACTIVE models) means "include
-// both active and inactive rows" — the extension drops the field before the
-// query runs. Same convention applies to `deletedAt: 'all'` for DELETED_AT
-// models.
+// callers using AND/OR composites must opt out via INCLUDE_SOFT_DELETED.
 function applySoftDeleteFilter(model: string, args: { where?: any }) {
-  if (SOFT_DELETE_IS_ACTIVE.has(model)) {
-    const w = args.where as any;
-    if (w && w.isActive === null) {
-      const { isActive, ...rest } = w;
-      args.where = rest;
-      return;
-    }
-    if (w?.isActive === undefined) {
-      args.where = { ...args.where, isActive: true };
-    }
-  } else if (SOFT_DELETE_DELETED_AT.has(model)) {
-    const w = args.where as any;
-    if (w && w.deletedAt === 'all') {
-      const { deletedAt, ...rest } = w;
-      args.where = rest;
-      return;
-    }
-    if (w?.deletedAt === undefined) {
-      args.where = { ...args.where, deletedAt: null };
-    }
+  const isActiveModel = SOFT_DELETE_IS_ACTIVE.has(model);
+  const deletedAtModel = !isActiveModel && SOFT_DELETE_DELETED_AT.has(model);
+  if (!isActiveModel && !deletedAtModel) return;
+
+  const w = args.where as any;
+  if (w && w[INCLUDE_SOFT_DELETED]) {
+    delete w[INCLUDE_SOFT_DELETED];
+    return;
+  }
+
+  if (isActiveModel) {
+    if (w?.isActive === undefined) args.where = { ...w, isActive: true };
+  } else {
+    if (w?.deletedAt === undefined) args.where = { ...w, deletedAt: null };
   }
 }
 

@@ -67,12 +67,8 @@ export const getAllUsers = async (req: AuthRequest, res: Response, next: NextFun
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const role = req.query.role as any;
-    const isActiveRaw = req.query.isActive as string | undefined;
-    const isActive: boolean | 'all' | undefined =
-      isActiveRaw === 'true' ? true :
-      isActiveRaw === 'false' ? false :
-      isActiveRaw === 'all' ? 'all' :
-      undefined;
+    const ACTIVE_FILTER = { true: true, false: false, all: 'all' } as const;
+    const isActive = ACTIVE_FILTER[req.query.isActive as keyof typeof ACTIVE_FILTER];
 
     const result = await adminService.getAllUsers(req.user!, page, limit, role, isActive);
     res.json(result);

@@ -52,9 +52,10 @@ export const UserManagementTable: React.FC = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
+      const STATUS_TO_API = { active: true, inactive: false, all: 'all' as const };
       const response = await adminService.getUsers({
         role: roleFilter || undefined,
-        isActive: statusFilter === 'all' ? 'all' : statusFilter === 'active',
+        isActive: STATUS_TO_API[statusFilter],
         page: currentPage,
         limit: 20,
       });

@@ -1,4 +1,5 @@
 import prisma from '../utils/prisma';
+import { INCLUDE_SOFT_DELETED } from '../utils/prismaExtensions';
 import bcrypt from 'bcrypt';
 import { UserRole } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
@@ -383,9 +384,7 @@ export const adminService = {
 
     const where: any = {};
     if (role) where.role = role;
-    // 'all' uses the soft-delete extension's null sentinel to bypass
-    // auto-injection of `isActive: true`.
-    if (isActive === 'all') where.isActive = null;
+    if (isActive === 'all') where[INCLUDE_SOFT_DELETED] = true;
     else if (typeof isActive === 'boolean') where.isActive = isActive;
 
     const [users, total] = await Promise.all([
@@ -490,11 +489,10 @@ export const adminService = {
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
-    // findFirst with the soft-delete extension's null sentinel so inactive
-    // users aren't hidden from this lookup — admins must be able to
-    // reactivate them.
-    const targetUser = await prisma.user.findFirst({
-      where: { id: userId, isActive: null as any },
+    // INCLUDE_SOFT_DELETED bypasses the soft-delete auto-inject so this
+    // lookup can find inactive users (admins must be able to reactivate them).
+    const targetUser = await prisma.user.findUnique({
+      where: { id: userId, [INCLUDE_SOFT_DELETED]: true } as any,
       select: { role: true }
     });
 
