@@ -157,7 +157,7 @@ const SOFT_DELETE_DELETED_AT = new Set(['Order']);
 // Prisma's serializer (it walks string keys via Object.keys), so they pass
 // through findUnique's strict input validation without affecting the SQL
 // — the extension strips the marker before calling query().
-export const INCLUDE_SOFT_DELETED = Symbol.for('codadmin.includeSoftDeleted');
+export const INCLUDE_SOFT_DELETED = Symbol('codadmin.includeSoftDeleted');
 
 // Auto-inject the soft-delete filter only when the caller hasn't already
 // expressed an intent for that field — otherwise an admin endpoint that
@@ -234,6 +234,10 @@ export const softDeleteExtension = Prisma.defineExtension({
         return query(args);
       },
       async findMany({ model, args, query }) {
+        applySoftDeleteFilter(model, args);
+        return query(args);
+      },
+      async count({ model, args, query }) {
         applySoftDeleteFilter(model, args);
         return query(args);
       },

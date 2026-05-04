@@ -15,6 +15,8 @@ const USER_ROLES = [
   { value: 'accountant', label: 'Accountant' },
 ];
 
+const STATUS_TO_API = { active: true, inactive: false, all: 'all' as const };
+
 export const UserManagementTable: React.FC = () => {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +54,6 @@ export const UserManagementTable: React.FC = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const STATUS_TO_API = { active: true, inactive: false, all: 'all' as const };
       const response = await adminService.getUsers({
         role: roleFilter || undefined,
         isActive: STATUS_TO_API[statusFilter],
