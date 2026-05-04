@@ -377,13 +377,16 @@ export const adminService = {
   },
 
   // User Management
-  async getAllUsers(requester: Requester, page = 1, limit = 20, role?: UserRole, isActive?: boolean) {
+  async getAllUsers(requester: Requester, page = 1, limit = 20, role?: UserRole, isActive?: boolean | 'all') {
     await this.checkAdminPrivilege(requester, 'admin');
     const skip = (page - 1) * limit;
 
     const where: any = {};
     if (role) where.role = role;
-    if (typeof isActive === 'boolean') where.isActive = isActive;
+    // 'all' uses the soft-delete extension's null sentinel to bypass
+    // auto-injection of `isActive: true`.
+    if (isActive === 'all') where.isActive = null;
+    else if (typeof isActive === 'boolean') where.isActive = isActive;
 
     const [users, total] = await Promise.all([
       prisma.user.findMany({
@@ -487,8 +490,11 @@ export const adminService = {
   }) {
     await this.checkAdminPrivilege(requester, 'admin');
 
-    const targetUser = await prisma.user.findUnique({
-      where: { id: userId },
+    // findFirst with the soft-delete extension's null sentinel so inactive
+    // users aren't hidden from this lookup — admins must be able to
+    // reactivate them.
+    const targetUser = await prisma.user.findFirst({
+      where: { id: userId, isActive: null as any },
       select: { role: true }
     });
 

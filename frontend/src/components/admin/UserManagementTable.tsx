@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, RefreshCw, Search, Key, Eye, EyeOff } from 'lucide-react';
+import { Plus, Edit2, Trash2, RefreshCw, Search, Key, Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { adminService, AdminUser, CreateUserData } from '../../services/admin.service';
@@ -25,6 +25,7 @@ export const UserManagementTable: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
@@ -46,13 +47,14 @@ export const UserManagementTable: React.FC = () => {
 
   useEffect(() => {
     fetchUsers();
-  }, [roleFilter, currentPage]);
+  }, [roleFilter, statusFilter, currentPage]);
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
       const response = await adminService.getUsers({
         role: roleFilter || undefined,
+        isActive: statusFilter === 'all' ? 'all' : statusFilter === 'active',
         page: currentPage,
         limit: 20,
       });
@@ -148,6 +150,15 @@ export const UserManagementTable: React.FC = () => {
     }
   };
 
+  const handleReactivate = async (user: AdminUser) => {
+    try {
+      await adminService.updateUser(user.id, { isActive: true });
+      fetchUsers();
+    } catch (error) {
+      console.error('Failed to reactivate user:', error);
+    }
+  };
+
   const openEditModal = (user: AdminUser) => {
     setSelectedUser(user);
     setFormData({
@@ -201,6 +212,18 @@ export const UserManagementTable: React.FC = () => {
             {USER_ROLES.map(role => (
               <option key={role.value} value={role.value}>{role.label}</option>
             ))}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as 'active' | 'inactive' | 'all');
+              setCurrentPage(1);
+            }}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="all">All Statuses</option>
           </select>
         </div>
         <Button variant="primary" onClick={() => setShowCreateModal(true)}>
@@ -272,15 +295,26 @@ export const UserManagementTable: React.FC = () => {
                     >
                       <Key className="w-4 h-4 inline" />
                     </button>
-                    <button
-                      onClick={() => {
-                        setSelectedUser(user);
-                        setShowDeleteModal(true);
-                      }}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      <Trash2 className="w-4 h-4 inline" />
-                    </button>
+                    {user.isActive ? (
+                      <button
+                        onClick={() => {
+                          setSelectedUser(user);
+                          setShowDeleteModal(true);
+                        }}
+                        className="text-red-600 hover:text-red-900"
+                        title="Deactivate or delete user"
+                      >
+                        <Trash2 className="w-4 h-4 inline" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleReactivate(user)}
+                        className="text-green-600 hover:text-green-900"
+                        title="Reactivate user"
+                      >
+                        <RotateCcw className="w-4 h-4 inline" />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
