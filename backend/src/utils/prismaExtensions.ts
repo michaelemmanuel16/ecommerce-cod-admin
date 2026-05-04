@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { AsyncLocalStorage } from 'async_hooks';
 import { getTenantId } from './tenantContext';
 
 // Models that carry a tenantId column and need automatic scoping
@@ -152,28 +153,41 @@ export const tenantIsolationExtension = Prisma.defineExtension({
 const SOFT_DELETE_IS_ACTIVE = new Set(['User', 'Customer', 'Product', 'CheckoutForm', 'Automation']);
 const SOFT_DELETE_DELETED_AT = new Set(['Order']);
 
-// Out-of-band marker on a Prisma `where` clause that opts the caller out
-// of the auto-injected soft-delete filter. Symbol keys are invisible to
-// Prisma's serializer (it walks string keys via Object.keys), so they pass
-// through findUnique's strict input validation without affecting the SQL
-// — the extension strips the marker before calling query().
-export const INCLUDE_SOFT_DELETED = Symbol('codadmin.includeSoftDeleted');
+// AsyncLocalStorage scope for opting out of the soft-delete auto-inject.
+// Symbol keys on `args.where` would not survive Prisma's extension framework
+// (they're stripped before reaching the hook), so a context-based mechanism
+// is required. Same pattern as tenantContext.ts.
+const softDeleteStorage = new AsyncLocalStorage<{ skip: boolean }>();
+
+/**
+ * Run `fn` in a scope where the soft-delete extension does not auto-inject
+ * its filter. Use this for admin lookups that must see inactive/deleted
+ * rows (e.g. reactivating a deactivated user).
+ *
+ * Tenant-isolation auto-inject is unaffected.
+ *
+ * Implementation note: AsyncLocalStorage.run only preserves the store for
+ * the synchronous portion of its callback. If `fn` is a sync arrow that
+ * returns a Promise, the store is reset before that Promise's continuations
+ * run — so the Prisma extension hook sees `undefined`. Wrapping in an async
+ * function keeps the scope alive until the inner promise resolves.
+ */
+export function withSoftDeleted<T>(fn: () => Promise<T>): Promise<T> {
+  return softDeleteStorage.run({ skip: true }, async () => fn());
+}
 
 // Auto-inject the soft-delete filter only when the caller hasn't already
 // expressed an intent for that field — otherwise an admin endpoint that
 // wants to list inactive rows can never see them. Shallow check by design;
-// callers using AND/OR composites must opt out via INCLUDE_SOFT_DELETED.
+// callers using AND/OR composites must opt out via withSoftDeleted().
 function applySoftDeleteFilter(model: string, args: { where?: any }) {
+  if (softDeleteStorage.getStore()?.skip) return;
+
   const isActiveModel = SOFT_DELETE_IS_ACTIVE.has(model);
   const deletedAtModel = !isActiveModel && SOFT_DELETE_DELETED_AT.has(model);
   if (!isActiveModel && !deletedAtModel) return;
 
   const w = args.where as any;
-  if (w && w[INCLUDE_SOFT_DELETED]) {
-    delete w[INCLUDE_SOFT_DELETED];
-    return;
-  }
-
   if (isActiveModel) {
     if (w?.isActive === undefined) args.where = { ...w, isActive: true };
   } else {
