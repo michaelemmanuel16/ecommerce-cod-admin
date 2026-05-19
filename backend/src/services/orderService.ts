@@ -1039,7 +1039,14 @@ export class OrderService {
               });
 
               if (result.count === 0) {
-                throw new AppError(`Insufficient stock for product ID ${item.productId} `, 400);
+                const product = await tx.product.findUnique({
+                  where: { id: item.productId },
+                  select: { name: true, stockQuantity: true }
+                });
+                throw new AppError(
+                  `"${product?.name ?? 'A product'}" is out of stock (${product?.stockQuantity ?? 0} units available). Please restock before marking this order as delivered.`,
+                  400
+                );
               }
             }
           } else if (isOldDeducted && !isNewDeducted) {
