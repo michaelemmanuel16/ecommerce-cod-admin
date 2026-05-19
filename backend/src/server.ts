@@ -25,6 +25,7 @@ if (process.env.SENTRY_DSN) {
   });
 }
 
+import 'express-async-errors';
 import express, { Application } from 'express';
 import http from 'http';
 import cors from 'cors';
