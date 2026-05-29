@@ -8,46 +8,47 @@ datasource db {
 }
 
 model Tenant {
-  id                  String    @id @default(uuid())
-  name                String
-  slug                String    @unique
-  logo                String?
-  region              String?
-  currency            String    @default("GHS")
-  defaultDeliveryFee  Float?    @map("default_delivery_fee")
-  currentPlanId       String?   @map("current_plan_id")
-  subscriptionStatus  String    @default("active") @map("subscription_status")
-  trialEndsAt         DateTime? @map("trial_ends_at")
-  rateLimitEnabled    Boolean   @default(false) @map("rate_limit_enabled")
-  rateLimitConfig     Json?     @map("rate_limit_config")
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                 String    @id @default(uuid())
+  name               String
+  slug               String    @unique
+  logo               String?
+  region             String?
+  currency           String    @default("GHS")
+  defaultDeliveryFee Float?    @map("default_delivery_fee")
+  currentPlanId      String?   @map("current_plan_id")
+  subscriptionStatus String    @default("active") @map("subscription_status")
+  trialEndsAt        DateTime? @map("trial_ends_at")
+  rateLimitEnabled   Boolean   @default(false) @map("rate_limit_enabled")
+  rateLimitConfig    Json?     @map("rate_limit_config")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   currentPlan Plan? @relation(fields: [currentPlanId], references: [id])
 
   // Reverse relations for tenant-scoped models
-  users              User[]
-  customers          Customer[]
-  products           Product[]
-  orders             Order[]
-  deliveries         Delivery[]
-  transactions       Transaction[]
-  expenses           Expense[]
-  accounts           Account[]
-  journalEntries     JournalEntry[]
+  users               User[]
+  customers           Customer[]
+  products            Product[]
+  orders              Order[]
+  deliveries          Delivery[]
+  transactions        Transaction[]
+  expenses            Expense[]
+  accounts            Account[]
+  journalEntries      JournalEntry[]
   accountTransactions AccountTransaction[]
-  workflows          Workflow[]
-  workflowExecutions WorkflowExecution[]
-  webhookConfigs     WebhookConfig[]
-  notifications      Notification[]
-  checkoutForms      CheckoutForm[]
-  inventoryShipments InventoryShipment[]
-  agentBalances      AgentBalance[]
-  inventoryTransfers InventoryTransfer[]
-  agentStocks        AgentStock[]
-  messageLogs        MessageLog[]
-  systemConfigs      SystemConfig[]
-  mcpApiKeys         McpApiKey[]
+  workflows           Workflow[]
+  workflowExecutions  WorkflowExecution[]
+  webhookConfigs      WebhookConfig[]
+  notifications       Notification[]
+  checkoutForms       CheckoutForm[]
+  inventoryShipments  InventoryShipment[]
+  agentBalances       AgentBalance[]
+  inventoryTransfers  InventoryTransfer[]
+  agentStocks         AgentStock[]
+  messageLogs         MessageLog[]
+  systemConfigs       SystemConfig[]
+  mcpApiKeys          McpApiKey[]
+  webhookEvents       WebhookEvent[]
 
   @@map("tenants")
 }
@@ -78,57 +79,57 @@ model PlatformAnnouncement {
   expiresAt DateTime? @map("expires_at")
   createdBy Int?      @map("created_by")
   createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt      @map("updated_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   @@map("platform_announcements")
 }
 
 model User {
-  id                    Int               @id @default(autoincrement())
-  email                 String            @unique
+  id                    Int                 @id @default(autoincrement())
+  email                 String              @unique
   password              String
-  phoneNumber           String?           @map("phone_number")
+  phoneNumber           String?             @map("phone_number")
   role                  UserRole
-  isActive              Boolean           @default(true) @map("is_active")
-  isPlatformAdmin       Boolean           @default(false) @map("is_platform_admin")
-  isAvailable           Boolean           @default(true) @map("is_available")
-  lastLogin             DateTime?         @map("last_login")
-  refreshToken          String?           @map("refresh_token")
-  passwordResetToken    String?           @unique @map("password_reset_token")
-  passwordResetExpires  DateTime?         @map("password_reset_expires")
-  commissionAmount      Float?            @default(0) @map("commission_amount") /// Fixed commission amount per delivery (GHS)
+  isActive              Boolean             @default(true) @map("is_active")
+  isPlatformAdmin       Boolean             @default(false) @map("is_platform_admin")
+  isAvailable           Boolean             @default(true) @map("is_available")
+  lastLogin             DateTime?           @map("last_login")
+  refreshToken          String?             @map("refresh_token")
+  passwordResetToken    String?             @unique @map("password_reset_token")
+  passwordResetExpires  DateTime?           @map("password_reset_expires")
+  commissionAmount      Float?              @default(0) @map("commission_amount") /// Fixed commission amount per delivery (GHS)
   country               String?
   preferences           Json?
-  vehicleType           String?           @map("vehicle_type")
-  vehicleId             String?           @map("vehicle_id")
-  deliveryRate          Float?            @default(0) @map("delivery_rate")
-  totalEarnings         Float?            @default(0) @map("total_earnings")
-  totalCollected        Decimal           @default(0) @map("total_collected") @db.Decimal(19, 4)
+  vehicleType           String?             @map("vehicle_type")
+  vehicleId             String?             @map("vehicle_id")
+  deliveryRate          Float?              @default(0) @map("delivery_rate")
+  totalEarnings         Float?              @default(0) @map("total_earnings")
+  totalCollected        Decimal             @default(0) @map("total_collected") @db.Decimal(19, 4)
   location              String?
-  createdAt             DateTime          @default(now()) @map("created_at")
-  updatedAt             DateTime          @updatedAt @map("updated_at")
-  firstName             String            @map("first_name")
-  lastName              String            @map("last_name")
-  calls                 Call[]            @relation("CallSalesRep")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+  firstName             String              @map("first_name")
+  lastName              String              @map("last_name")
+  calls                 Call[]              @relation("CallSalesRep")
   deliveries            Delivery[]
   expenses              Expense[]
   notifications         Notification[]
-  createdOrders         Order[]           @relation("OrderCreatedBy")
-  assignedOrdersAsRep   Order[]           @relation("OrderCustomerRep")
-  assignedOrdersAsAgent Order[]           @relation("OrderDeliveryAgent")
+  createdOrders         Order[]             @relation("OrderCreatedBy")
+  assignedOrdersAsRep   Order[]             @relation("OrderCustomerRep")
+  assignedOrdersAsAgent Order[]             @relation("OrderDeliveryAgent")
   payouts               Payout[]
   auditLogs             AuditLog[]
-  journalEntriesCreated JournalEntry[]    @relation("JournalEntryCreator")
-  journalEntriesVoided  JournalEntry[]    @relation("VoidedByUser")
-  collections           AgentCollection[] @relation("AgentCollections")
-  verifiedCollections   AgentCollection[] @relation("VerifiedCollections")
-  approvedCollections   AgentCollection[] @relation("ApprovedCollections")
+  journalEntriesCreated JournalEntry[]      @relation("JournalEntryCreator")
+  journalEntriesVoided  JournalEntry[]      @relation("VoidedByUser")
+  collections           AgentCollection[]   @relation("AgentCollections")
+  verifiedCollections   AgentCollection[]   @relation("VerifiedCollections")
+  approvedCollections   AgentCollection[]   @relation("ApprovedCollections")
   balance               AgentBalance?
-  deposits              AgentDeposit[]    @relation("AgentDeposits")
-  verifiedDeposits      AgentDeposit[]    @relation("VerifiedDeposits")
+  deposits              AgentDeposit[]      @relation("AgentDeposits")
+  verifiedDeposits      AgentDeposit[]      @relation("VerifiedDeposits")
   agingBucket           AgentAgingBucket?
-  blockedBalances       AgentBalance[]    @relation("BlockedBy")
-  agentStock            AgentStock[]      @relation("AgentStockHoldings")
+  blockedBalances       AgentBalance[]      @relation("BlockedBy")
+  agentStock            AgentStock[]        @relation("AgentStockHoldings")
   transfersFrom         InventoryTransfer[] @relation("TransferFrom")
   transfersTo           InventoryTransfer[] @relation("TransferTo")
   transfersCreated      InventoryTransfer[] @relation("TransferCreator")
@@ -143,25 +144,25 @@ model User {
 }
 
 model Customer {
-  id             Int      @id @default(autoincrement())
+  id             Int          @id @default(autoincrement())
   email          String?
-  phoneNumber    String   @map("phone_number")
-  alternatePhone String?  @map("alternate_phone")
+  phoneNumber    String       @map("phone_number")
+  alternatePhone String?      @map("alternate_phone")
   address        String
   state          String
   area           String
   landmark       String?
-  tags           String[] @default([])
+  tags           String[]     @default([])
   notes          String?
-  totalOrders    Int      @default(0) @map("total_orders")
-  totalSpent     Float    @default(0) @map("total_spent")
-  isActive       Boolean  @default(true) @map("is_active")
-  smsOptOut      Boolean  @default(false) @map("sms_opt_out")
-  whatsappOptOut Boolean  @default(false) @map("whatsapp_opt_out")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-  firstName      String   @map("first_name")
-  lastName       String   @map("last_name")
+  totalOrders    Int          @default(0) @map("total_orders")
+  totalSpent     Float        @default(0) @map("total_spent")
+  isActive       Boolean      @default(true) @map("is_active")
+  smsOptOut      Boolean      @default(false) @map("sms_opt_out")
+  whatsappOptOut Boolean      @default(false) @map("whatsapp_opt_out")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  firstName      String       @map("first_name")
+  lastName       String       @map("last_name")
   calls          Call[]
   orders         Order[]
   messageLogs    MessageLog[]
@@ -178,36 +179,36 @@ model Customer {
 }
 
 model Product {
-  id                   Int                    @id @default(autoincrement())
-  sku                  String                 @unique
-  name                 String
-  description          String?
-  category             String
-  price                Float
-  stockQuantity        Int                    @map("stock_quantity")
-  lowStockThreshold    Int                    @default(10) @map("low_stock_threshold")
-  imageUrl             String?                @map("image_url")
-  weight               Float?
-  dimensions           Json?
-  isActive             Boolean                @default(true) @map("is_active")
-  createdAt            DateTime               @default(now()) @map("created_at")
-  updatedAt            DateTime               @updatedAt @map("updated_at")
-  batch_quantity       Int                    @default(1)
-  cogs                 Decimal?               @default(0) @db.Decimal(10, 2)
-  productType          String                 @default("physical") @map("product_type")
-  digitalFileUrl       String?                @map("digital_file_url")
-  digitalFileType      String?                @map("digital_file_type")
-  downloadLinkExpiryHours Int?                @default(72) @map("download_link_expiry_hours")
-  checkoutForms        CheckoutForm[]
-  formUpsells          FormUpsell[]
-  orderItems           OrderItem[]
-  product_cost_entries product_cost_entries[]
-  webhookConfigs       WebhookConfig[]
-  agentStock           AgentStock[]
-  inventoryTransfers   InventoryTransfer[]
-  inventoryShipments   InventoryShipment[]
-  tenantId             String?             @map("tenant_id")
-  tenant               Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                      Int                    @id @default(autoincrement())
+  sku                     String                 @unique
+  name                    String
+  description             String?
+  category                String
+  price                   Float
+  stockQuantity           Int                    @map("stock_quantity")
+  lowStockThreshold       Int                    @default(10) @map("low_stock_threshold")
+  imageUrl                String?                @map("image_url")
+  weight                  Float?
+  dimensions              Json?
+  isActive                Boolean                @default(true) @map("is_active")
+  createdAt               DateTime               @default(now()) @map("created_at")
+  updatedAt               DateTime               @updatedAt @map("updated_at")
+  batch_quantity          Int                    @default(1)
+  cogs                    Decimal?               @default(0) @db.Decimal(10, 2)
+  productType             String                 @default("physical") @map("product_type")
+  digitalFileUrl          String?                @map("digital_file_url")
+  digitalFileType         String?                @map("digital_file_type")
+  downloadLinkExpiryHours Int?                   @default(72) @map("download_link_expiry_hours")
+  checkoutForms           CheckoutForm[]
+  formUpsells             FormUpsell[]
+  orderItems              OrderItem[]
+  product_cost_entries    product_cost_entries[]
+  webhookConfigs          WebhookConfig[]
+  agentStock              AgentStock[]
+  inventoryTransfers      InventoryTransfer[]
+  inventoryShipments      InventoryShipment[]
+  tenantId                String?                @map("tenant_id")
+  tenant                  Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([isActive])
   @@index([category, isActive])
@@ -218,59 +219,59 @@ model Product {
 }
 
 model Order {
-  id                Int              @id @default(autoincrement())
-  customerId        Int              @map("customer_id")
-  customerRepId     Int?             @map("customer_rep_id")
-  deliveryAgentId   Int?             @map("delivery_agent_id")
-  status            OrderStatus      @default(pending_confirmation)
-  paymentStatus     PaymentStatus    @default(pending) @map("payment_status")
-  subtotal          Float
-  shippingCost      Float            @default(0) @map("shipping_cost")
-  discount          Float            @default(0)
-  totalAmount       Float            @map("total_amount")
-  codAmount         Float?           @map("cod_amount")
-  notes             String?
-  internalNotes     String?          @map("internal_notes")
-  orderType         String           @default("physical") @map("order_type")
-  paymentMethod     String           @default("cod") @map("payment_method")
-  paymentReference  String?          @map("payment_reference")
-  deliveryAddress   String?          @map("delivery_address")
-  deliveryState     String?          @map("delivery_state")
-  deliveryArea      String?          @map("delivery_area")
-  estimatedDelivery DateTime?        @map("estimated_delivery")
-  priority          Int              @default(0)
-  tags              String[]         @default([])
-  source            String           @default("manual")
-  externalOrderId   String?          @map("external_order_id")
-  webhookData       Json?            @map("webhook_data")
-  webhookFingerprint String?         @unique @map("webhook_fingerprint")
-  createdById       Int?             @map("created_by_id")
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
-  deletedAt         DateTime?        @map("deleted_at")
-  commissionPaid    Boolean          @default(false) @map("commission_paid")
-  payoutId          Int?             @map("payout_id")
-  revenueRecognized Boolean          @default(false) @map("revenue_recognized")
-  glJournalEntryId  Int?             @map("gl_journal_entry_id")
-  deliveryDate      DateTime?        @map("delivery_date")
-  calls             Call[]
-  delivery          Delivery?
-  formSubmissions   FormSubmission[]
-  orderHistory      OrderHistory[]
-  orderItems          OrderItem[]
-  createdBy         User?            @relation("OrderCreatedBy", fields: [createdById], references: [id])
-  customer            Customer           @relation(fields: [customerId], references: [id])
-  customerRep         User?              @relation("OrderCustomerRep", fields: [customerRepId], references: [id])
-  deliveryAgent       User?              @relation("OrderDeliveryAgent", fields: [deliveryAgentId], references: [id])
-  transaction       Transaction?
-  payout            Payout?          @relation(fields: [payoutId], references: [id])
-  glJournalEntry    JournalEntry?    @relation(fields: [glJournalEntryId], references: [id])
-  agentCollection   AgentCollection?
+  id                 Int                 @id @default(autoincrement())
+  customerId         Int                 @map("customer_id")
+  customerRepId      Int?                @map("customer_rep_id")
+  deliveryAgentId    Int?                @map("delivery_agent_id")
+  status             OrderStatus         @default(pending_confirmation)
+  paymentStatus      PaymentStatus       @default(pending) @map("payment_status")
+  subtotal           Float
+  shippingCost       Float               @default(0) @map("shipping_cost")
+  discount           Float               @default(0)
+  totalAmount        Float               @map("total_amount")
+  codAmount          Float?              @map("cod_amount")
+  notes              String?
+  internalNotes      String?             @map("internal_notes")
+  orderType          String              @default("physical") @map("order_type")
+  paymentMethod      String              @default("cod") @map("payment_method")
+  paymentReference   String?             @map("payment_reference")
+  deliveryAddress    String?             @map("delivery_address")
+  deliveryState      String?             @map("delivery_state")
+  deliveryArea       String?             @map("delivery_area")
+  estimatedDelivery  DateTime?           @map("estimated_delivery")
+  priority           Int                 @default(0)
+  tags               String[]            @default([])
+  source             String              @default("manual")
+  externalOrderId    String?             @map("external_order_id")
+  webhookData        Json?               @map("webhook_data")
+  webhookFingerprint String?             @unique @map("webhook_fingerprint")
+  createdById        Int?                @map("created_by_id")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  deletedAt          DateTime?           @map("deleted_at")
+  commissionPaid     Boolean             @default(false) @map("commission_paid")
+  payoutId           Int?                @map("payout_id")
+  revenueRecognized  Boolean             @default(false) @map("revenue_recognized")
+  glJournalEntryId   Int?                @map("gl_journal_entry_id")
+  deliveryDate       DateTime?           @map("delivery_date")
+  calls              Call[]
+  delivery           Delivery?
+  formSubmissions    FormSubmission[]
+  orderHistory       OrderHistory[]
+  orderItems         OrderItem[]
+  createdBy          User?               @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  customer           Customer            @relation(fields: [customerId], references: [id])
+  customerRep        User?               @relation("OrderCustomerRep", fields: [customerRepId], references: [id])
+  deliveryAgent      User?               @relation("OrderDeliveryAgent", fields: [deliveryAgentId], references: [id])
+  transaction        Transaction?
+  payout             Payout?             @relation(fields: [payoutId], references: [id])
+  glJournalEntry     JournalEntry?       @relation(fields: [glJournalEntryId], references: [id])
+  agentCollection    AgentCollection?
   inventoryTransfers InventoryTransfer[]
-  messageLogs       MessageLog[]
-  downloadTokens    DownloadToken[]
-  tenantId          String?          @map("tenant_id")
-  tenant            Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messageLogs        MessageLog[]
+  downloadTokens     DownloadToken[]
+  tenantId           String?             @map("tenant_id")
+  tenant             Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
   @@index([status])
@@ -574,6 +575,24 @@ model WebhookLog {
   @@map("webhook_logs")
 }
 
+// Inbound webhook idempotency ledger.
+// Insert before any side effect; unique violation = replay, ack and return.
+model WebhookEvent {
+  id          Int      @id @default(autoincrement())
+  provider    String   @default("paystack")
+  eventType   String   @map("event_type")
+  reference   String
+  payloadHash String   @map("payload_hash")
+  tenantId    String?  @map("tenant_id")
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  receivedAt  DateTime @default(now()) @map("received_at")
+
+  @@unique([provider, eventType, reference], name: "provider_event_reference")
+  @@index([tenantId])
+  @@index([receivedAt])
+  @@map("webhook_events")
+}
+
 model Notification {
   id        Int      @id @default(autoincrement())
   userId    Int      @map("user_id")
@@ -769,29 +788,29 @@ model product_cost_entries {
 }
 
 model InventoryShipment {
-  id                  Int              @id @default(autoincrement())
-  productId           Int              @map("product_id")
+  id                  Int            @id @default(autoincrement())
+  productId           Int            @map("product_id")
   supplier            String?
   quantity            Int
-  unitCost            Decimal          @default(0) @map("unit_cost") @db.Decimal(10, 2)
-  shippingCost        Decimal          @default(0) @map("shipping_cost") @db.Decimal(10, 2)
-  customsDuties       Decimal          @default(0) @map("customs_duties") @db.Decimal(10, 2)
-  otherCosts          Decimal          @default(0) @map("other_costs") @db.Decimal(10, 2)
-  totalCost           Decimal          @default(0) @map("total_cost") @db.Decimal(10, 2)
-  status              ShipmentStatus   @default(pending)
-  expectedArrivalDate DateTime?        @map("expected_arrival_date")
-  arrivedAt           DateTime?        @map("arrived_at")
-  glJournalEntryId    Int?             @map("gl_journal_entry_id")
+  unitCost            Decimal        @default(0) @map("unit_cost") @db.Decimal(10, 2)
+  shippingCost        Decimal        @default(0) @map("shipping_cost") @db.Decimal(10, 2)
+  customsDuties       Decimal        @default(0) @map("customs_duties") @db.Decimal(10, 2)
+  otherCosts          Decimal        @default(0) @map("other_costs") @db.Decimal(10, 2)
+  totalCost           Decimal        @default(0) @map("total_cost") @db.Decimal(10, 2)
+  status              ShipmentStatus @default(pending)
+  expectedArrivalDate DateTime?      @map("expected_arrival_date")
+  arrivedAt           DateTime?      @map("arrived_at")
+  glJournalEntryId    Int?           @map("gl_journal_entry_id")
   notes               String?
-  createdById         Int              @map("created_by_id")
-  createdAt           DateTime         @default(now()) @map("created_at")
-  updatedAt           DateTime         @updatedAt @map("updated_at")
+  createdById         Int            @map("created_by_id")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
 
-  product             Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
-  createdBy           User             @relation("ShipmentCreator", fields: [createdById], references: [id])
-  glJournalEntry      JournalEntry?    @relation(fields: [glJournalEntryId], references: [id])
-  tenantId            String?          @map("tenant_id")
-  tenant              Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product        Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdBy      User          @relation("ShipmentCreator", fields: [createdById], references: [id])
+  glJournalEntry JournalEntry? @relation(fields: [glJournalEntryId], references: [id])
+  tenantId       String?       @map("tenant_id")
+  tenant         Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([productId])
   @@index([status])
@@ -857,8 +876,8 @@ model AgentBalance {
   updatedAt          DateTime  @updatedAt @map("updated_at")
   tenantId           String?   @map("tenant_id")
 
-  agent     User  @relation(fields: [agentId], references: [id])
-  blockedBy User? @relation("BlockedBy", fields: [blockedById], references: [id])
+  agent     User    @relation(fields: [agentId], references: [id])
+  blockedBy User?   @relation("BlockedBy", fields: [blockedById], references: [id])
   tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
@@ -1110,15 +1129,15 @@ model AgentStock {
 }
 
 model DownloadToken {
-  id             Int      @id @default(autoincrement())
-  orderId        Int      @map("order_id")
-  token          String   @unique
-  expiresAt      DateTime @map("expires_at")
-  downloadCount  Int      @default(0) @map("download_count")
-  maxDownloads   Int      @default(5) @map("max_downloads")
-  isRevoked      Boolean  @default(false) @map("is_revoked")
-  createdAt      DateTime @default(now()) @map("created_at")
-  order          Order    @relation(fields: [orderId], references: [id])
+  id            Int      @id @default(autoincrement())
+  orderId       Int      @map("order_id")
+  token         String   @unique
+  expiresAt     DateTime @map("expires_at")
+  downloadCount Int      @default(0) @map("download_count")
+  maxDownloads  Int      @default(5) @map("max_downloads")
+  isRevoked     Boolean  @default(false) @map("is_revoked")
+  createdAt     DateTime @default(now()) @map("created_at")
+  order         Order    @relation(fields: [orderId], references: [id])
 
   @@index([token])
   @@index([orderId])
