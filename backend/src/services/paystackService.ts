@@ -16,6 +16,12 @@ interface InitializeResponse {
   reference: string;
 }
 
+interface DisableSubscriptionResponse {
+  status: boolean;
+  message?: string;
+  data?: Record<string, any>;
+}
+
 interface VerifyResponse {
   status: boolean;
   data: {
@@ -146,11 +152,52 @@ export const paystackService = {
   },
 
   /**
+   * Initialize a recurring subscription checkout using a Paystack plan code.
+   * The first charge still goes through Paystack hosted checkout.
+   */
+  async initializeSubscription(
+    email: string,
+    amountInMinorUnits: number,
+    currency: string,
+    planCode: string,
+    metadata: Record<string, any>,
+    callbackUrl?: string,
+  ): Promise<InitializeResponse> {
+    const result = await paystackRequest('POST', '/transaction/initialize', {
+      email,
+      amount: amountInMinorUnits,
+      currency: currency.toUpperCase(),
+      plan: planCode,
+      metadata: {
+        ...metadata,
+        billingKind: 'saas_subscription',
+      },
+      callback_url: callbackUrl,
+    });
+
+    logger.info('Paystack subscription checkout initialized', {
+      reference: result.data.reference,
+      email,
+      planCode,
+    });
+
+    return result.data;
+  },
+
+  /**
    * Verify a transaction by reference.
    */
   async verifyTransaction(reference: string): Promise<VerifyResponse> {
     const result = await paystackRequest('GET', `/transaction/verify/${encodeURIComponent(reference)}`);
     return result;
+  },
+
+  /**
+   * Disable a Paystack subscription. Paystack requires both the subscription
+   * code and email token from the subscription object/webhook.
+   */
+  async disableSubscription(code: string, token: string): Promise<DisableSubscriptionResponse> {
+    return paystackRequest('POST', '/subscription/disable', { code, token });
   },
 
   /**

@@ -4,6 +4,7 @@ import { digitalDeliveryService } from '../services/digitalDeliveryService';
 import { GLAutomationService } from '../services/glAutomationService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import { PLAN_NAMES, SUBSCRIPTION_STATUS } from '../config/billing';
 
 /**
  * Paystack webhook handler — called by Paystack on charge.success.
@@ -37,6 +38,12 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
 
     if (event.event === 'charge.success') {
       await handleChargeSuccess(event.data);
+    } else if (event.event === 'subscription.create') {
+      await handleSubscriptionCreated(event.data);
+    } else if (event.event === 'subscription.disable') {
+      await handleSubscriptionDisabled(event.data);
+    } else if (event.event === 'invoice.payment_failed') {
+      await handleInvoicePaymentFailed(event.data);
     }
 
     // Always return 200 to acknowledge receipt
@@ -50,10 +57,21 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
 
 interface PaystackChargeData {
   reference: string;
-  metadata?: { orderId?: number; order_id?: number };
+  metadata?: { orderId?: number; order_id?: number; tenantId?: string; planId?: string; billingKind?: string };
   amount: number;
   fees: number;
   currency: string;
+  plan?: { plan_code?: string };
+  subscription_code?: string;
+  email_token?: string;
+  next_payment_date?: string;
+  subscription?: {
+    subscription_code?: string;
+    email_token?: string;
+    next_payment_date?: string;
+  };
+  customer?: { customer_code?: string };
+  authorization?: { authorization_code?: string };
 }
 
 async function handleChargeSuccess(data: PaystackChargeData): Promise<void> {
@@ -61,6 +79,11 @@ async function handleChargeSuccess(data: PaystackChargeData): Promise<void> {
   const orderId = metadata?.orderId || metadata?.order_id;
 
   if (!orderId) {
+    if (metadata?.billingKind === 'saas_subscription' || metadata?.tenantId) {
+      await upsertTenantSubscription(data, SUBSCRIPTION_STATUS.ACTIVE);
+      return;
+    }
+
     logger.error('Paystack charge.success missing orderId in metadata', { reference });
     return;
   }
@@ -190,6 +213,131 @@ async function handleChargeSuccess(data: PaystackChargeData): Promise<void> {
       }
     }
   }
+}
+
+interface PaystackSubscriptionData {
+  subscription_code?: string;
+  email_token?: string;
+  next_payment_date?: string;
+  metadata?: { tenantId?: string; planId?: string };
+  plan?: { plan_code?: string };
+  subscription?: {
+    subscription_code?: string;
+    email_token?: string;
+    next_payment_date?: string;
+  };
+  customer?: { customer_code?: string };
+  authorization?: { authorization_code?: string };
+}
+
+function parsePaystackDate(value?: string): Date | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+async function getFreePlanId(): Promise<string | null> {
+  const plan = await prisma.plan.findUnique({
+    where: { name: PLAN_NAMES.FREE },
+    select: { id: true },
+  });
+  return plan?.id ?? null;
+}
+
+async function getPlanIdFromPayload(data: PaystackChargeData | PaystackSubscriptionData): Promise<string | undefined> {
+  if (data.metadata?.planId) return data.metadata.planId;
+
+  const planCode = data.plan?.plan_code;
+  if (!planCode) return undefined;
+
+  const plan = await prisma.plan.findFirst({
+    where: { paystackPlanCode: planCode },
+    select: { id: true },
+  });
+  return plan?.id;
+}
+
+async function resolveTenantForSubscription(data: PaystackSubscriptionData) {
+  const tenantId = data.metadata?.tenantId;
+  if (tenantId) {
+    return prisma.tenant.findUnique({ where: { id: tenantId } });
+  }
+
+  if (!data.subscription_code) return null;
+
+  return prisma.tenant.findFirst({
+    where: { paystackSubscriptionCode: data.subscription_code },
+  });
+}
+
+async function upsertTenantSubscription(
+  data: PaystackChargeData | PaystackSubscriptionData,
+  subscriptionStatus: string,
+): Promise<void> {
+  const tenantId = data.metadata?.tenantId;
+  if (!tenantId) {
+    logger.warn('Paystack subscription event missing tenantId metadata');
+    return;
+  }
+
+  const planId = await getPlanIdFromPayload(data);
+  const subscriptionCode = data.subscription?.subscription_code || data.subscription_code;
+  const subscriptionToken = data.subscription?.email_token || data.email_token;
+  const nextPaymentDate = data.subscription?.next_payment_date || data.next_payment_date;
+
+  await prisma.tenant.update({
+    where: { id: tenantId },
+    data: {
+      ...(planId ? { currentPlanId: planId } : {}),
+      subscriptionStatus,
+      paystackSubscriptionCode: subscriptionCode,
+      paystackSubscriptionToken: subscriptionToken,
+      paystackCustomerCode: data.customer?.customer_code,
+      paystackAuthorizationCode: data.authorization?.authorization_code,
+      subscriptionRenewsAt: parsePaystackDate(nextPaymentDate),
+    },
+  });
+}
+
+async function handleSubscriptionCreated(data: PaystackSubscriptionData): Promise<void> {
+  await upsertTenantSubscription(data, SUBSCRIPTION_STATUS.ACTIVE);
+}
+
+async function handleSubscriptionDisabled(data: PaystackSubscriptionData): Promise<void> {
+  const tenant = await resolveTenantForSubscription(data);
+  if (!tenant) {
+    logger.warn('Paystack subscription.disable could not match a tenant', {
+      subscriptionCode: data.subscription_code,
+    });
+    return;
+  }
+
+  await prisma.tenant.update({
+    where: { id: tenant.id },
+    data: {
+      currentPlanId: await getFreePlanId(),
+      subscriptionStatus: SUBSCRIPTION_STATUS.CANCELLED,
+      paystackSubscriptionCode: null,
+      paystackSubscriptionToken: null,
+      paystackAuthorizationCode: null,
+      subscriptionRenewsAt: null,
+    },
+  });
+}
+
+async function handleInvoicePaymentFailed(data: PaystackSubscriptionData): Promise<void> {
+  const tenant = await resolveTenantForSubscription(data);
+  if (!tenant) {
+    logger.warn('Paystack invoice.payment_failed could not match a tenant', {
+      subscriptionCode: data.subscription_code,
+    });
+    return;
+  }
+
+  await prisma.tenant.update({
+    where: { id: tenant.id },
+    data: { subscriptionStatus: SUBSCRIPTION_STATUS.PAST_DUE },
+  });
 }
 
 /**

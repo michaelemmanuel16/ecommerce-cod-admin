@@ -6,10 +6,23 @@ jest.mock('../../server', () => ({ io: { emit: jest.fn(), to: jest.fn().mockRetu
 jest.mock('../../queues/workflowQueue', () => ({ workflowQueue: { add: jest.fn() } }));
 // Mock tenantContext to return a tenant ID (required for billing controller)
 jest.mock('../../utils/tenantContext');
+jest.mock('../../services/paystackService', () => ({
+  paystackService: {
+    initializeSubscription: jest.fn(),
+    disableSubscription: jest.fn(),
+  },
+}));
 
-import { listPlans, getSubscription, upgradePlan } from '../../controllers/billingController';
+import {
+  listPlans,
+  getSubscription,
+  startSubscription,
+  cancelSubscription,
+  upgradePlan,
+} from '../../controllers/billingController';
 import { AppError } from '../../middleware/errorHandler';
 import * as tenantContext from '../../utils/tenantContext';
+import { paystackService } from '../../services/paystackService';
 
 const mockTenant = {
   id: 'tenant-123',
@@ -29,6 +42,7 @@ const mockPlan = {
   priceGHS: 0,
   maxOrders: 100,
   isActive: true,
+  paystackPlanCode: 'PLN_test',
 };
 
 function makeRes() {
@@ -124,6 +138,103 @@ describe('BillingController', () => {
       const next = makeNext();
       await upgradePlan({ body: { planName: 'unknown' } } as any, makeRes(), next);
       expect(next).toHaveBeenCalledWith(expect.any(AppError));
+    });
+  });
+
+  describe('startSubscription', () => {
+    it('should initialize Paystack hosted checkout with plan code', async () => {
+      (prismaMock.plan.findUnique as any).mockResolvedValue(mockPlan);
+      (prismaMock.tenant.findUnique as any).mockResolvedValue({ currency: 'GHS' });
+      (paystackService.initializeSubscription as jest.Mock).mockResolvedValue({
+        authorization_url: 'https://checkout.paystack.com/test',
+        access_code: 'access-code',
+        reference: 'ref-123',
+      } as never);
+
+      const req = {
+        params: { planId: 'plan-1' },
+        user: { email: 'owner@example.com' },
+      } as any;
+      const res = makeRes();
+      const next = makeNext();
+
+      await startSubscription(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(paystackService.initializeSubscription).toHaveBeenCalledWith(
+        'owner@example.com',
+        0,
+        'GHS',
+        'PLN_test',
+        expect.objectContaining({ tenantId: 'tenant-123', planId: 'plan-1' }),
+        undefined,
+      );
+      expect(res.json).toHaveBeenCalledWith({
+        authorizationUrl: 'https://checkout.paystack.com/test',
+        accessCode: 'access-code',
+        reference: 'ref-123',
+      });
+    });
+
+    it('should reject plans without a Paystack plan code', async () => {
+      (prismaMock.plan.findUnique as any).mockResolvedValue({ ...mockPlan, paystackPlanCode: null });
+      const next = makeNext();
+
+      await startSubscription(
+        { params: { planId: 'plan-1' }, user: { email: 'owner@example.com' } } as any,
+        makeRes(),
+        next,
+      );
+
+      expect(next).toHaveBeenCalledWith(expect.any(AppError));
+      expect(paystackService.initializeSubscription).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancelSubscription', () => {
+    it('should disable the stored Paystack subscription and mark tenant cancelled', async () => {
+      (prismaMock.tenant.findUnique as any).mockResolvedValue({
+        paystackSubscriptionCode: 'SUB_test',
+        paystackSubscriptionToken: 'email-token',
+      });
+      (paystackService.disableSubscription as jest.Mock).mockResolvedValue({ status: true } as never);
+      (prismaMock.tenant.update as any).mockResolvedValue({
+        ...mockTenant,
+        subscriptionStatus: 'cancelled',
+      });
+
+      const res = makeRes();
+      const next = makeNext();
+      await cancelSubscription({} as any, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(paystackService.disableSubscription).toHaveBeenCalledWith('SUB_test', 'email-token');
+      expect(prismaMock.tenant.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'tenant-123' },
+          data: expect.objectContaining({
+            subscriptionStatus: 'cancelled',
+            paystackSubscriptionCode: null,
+            paystackSubscriptionToken: null,
+          }),
+        }),
+      );
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Subscription cancelled' }),
+      );
+    });
+
+    it('should reject cancellation when no subscription is stored', async () => {
+      (prismaMock.tenant.findUnique as any).mockResolvedValue({
+        paystackSubscriptionCode: null,
+        paystackSubscriptionToken: null,
+      });
+      const next = makeNext();
+
+      await cancelSubscription({} as any, makeRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(AppError));
+      expect(paystackService.disableSubscription).not.toHaveBeenCalled();
     });
   });
 });
