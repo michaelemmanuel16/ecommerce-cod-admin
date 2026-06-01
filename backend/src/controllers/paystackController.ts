@@ -1,4 +1,6 @@
 import { Request, Response } from 'express';
+import { createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { paystackService } from '../services/paystackService';
 import { digitalDeliveryService } from '../services/digitalDeliveryService';
 import { GLAutomationService } from '../services/glAutomationService';
@@ -35,6 +37,32 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
     const event = req.body;
     logger.info('Paystack webhook received', { event: event.event });
 
+    // Idempotency gate: record (provider, event_type, reference) before any side effect.
+    // Unique-constraint violation = replay; ack and return without re-processing.
+    const reference: string | undefined = event?.data?.reference;
+    if (reference && event?.event) {
+      const payloadHash = createHash('sha256').update(rawBody).digest('hex');
+      const tenantId = await resolveTenantFromEvent(event);
+      try {
+        await prisma.webhookEvent.create({
+          data: {
+            provider: 'paystack',
+            eventType: event.event,
+            reference,
+            payloadHash,
+            tenantId,
+          },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          logger.info('Paystack webhook replay ignored', { eventType: event.event, reference });
+          res.status(200).json({ received: true, duplicate: true });
+          return;
+        }
+        throw err;
+      }
+    }
+
     if (event.event === 'charge.success') {
       await handleChargeSuccess(event.data);
     }
@@ -54,6 +82,19 @@ interface PaystackChargeData {
   amount: number;
   fees: number;
   currency: string;
+}
+
+// Best-effort tenantId resolution from the event's metadata.orderId.
+// Returns null when the order can't be resolved — the dedup row is still useful.
+async function resolveTenantFromEvent(event: any): Promise<string | null> {
+  const raw = event?.data?.metadata?.orderId ?? event?.data?.metadata?.order_id;
+  const orderId = Number(raw);
+  if (!Number.isInteger(orderId) || orderId <= 0) return null;
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { tenantId: true },
+  });
+  return order?.tenantId ?? null;
 }
 
 async function handleChargeSuccess(data: PaystackChargeData): Promise<void> {

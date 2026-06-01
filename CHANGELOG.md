@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Payments]**: Paystack webhook idempotency via `WebhookEvent` table — duplicate deliveries deduped at DB layer with unique `(provider, event_type, reference)` constraint (MAN-55)
 - **[Communications]**: Full communications dashboard with message history, delivery stats, bulk messaging, template manager, and opt-out management (MAN-32)
 - **[Communications]**: Auto-cleanup queue for MessageLog records with 90-day retention (MAN-32)
 - **[Communications]**: Customer opt-out enforcement in WhatsApp and SMS messaging services (MAN-32)
