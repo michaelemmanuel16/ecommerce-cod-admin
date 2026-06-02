@@ -587,8 +587,10 @@ model WebhookEvent {
   tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   receivedAt  DateTime @default(now()) @map("received_at")
 
-  @@unique([provider, eventType, reference], name: "provider_event_reference")
-  @@index([tenantId])
+  // Tenant-scoped dedup: each tenant has their own Paystack account, so two
+  // tenants can legitimately share a Paystack reference. Postgres NULL is
+  // distinct, so legacy null-tenant rows don't collide.
+  @@unique([tenantId, provider, eventType, reference], name: "tenant_provider_event_reference")
   @@index([receivedAt])
   @@map("webhook_events")
 }
@@ -630,10 +632,9 @@ model SystemConfig {
   rolePermissions       Json?    @map("role_permissions")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
-  tenantId              String?  @map("tenant_id")
+  tenantId              String?  @unique @map("tenant_id")
   tenant                Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
   @@map("system_config")
 }
 

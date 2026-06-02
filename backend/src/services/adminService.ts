@@ -74,22 +74,30 @@ export const adminService = {
       await this.checkAdminPrivilege(requester, 'admin');
     }
 
-    let config = await prisma.systemConfig.findFirst();
+    const tenantId = getTenantId();
+
+    // Per-tenant SystemConfig: scope by the request's tenant. Falls back to
+    // global (null tenant) for legacy single-tenant deployments.
+    let config = tenantId
+      ? await prisma.systemConfig.findUnique({ where: { tenantId } })
+      : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
+
+    let tenantSlug: string | null = null;
 
     if (!config) {
-      // Seed from tenant data if available (business name, currency)
-      const tenantId = getTenantId();
+      // Seed from tenant data if available (business name, currency, tenantId)
       let tenantDefaults: { businessName?: string; currency?: string } = {};
       if (tenantId) {
         const tenant = await prisma.tenant.findUnique({
           where: { id: tenantId },
-          select: { name: true, currency: true },
+          select: { name: true, currency: true, slug: true },
         });
         if (tenant) {
           tenantDefaults = {
             businessName: tenant.name,
             currency: tenant.currency || 'USD',
           };
+          tenantSlug = tenant.slug;
         }
       }
 
@@ -98,8 +106,15 @@ export const adminService = {
           currency: tenantDefaults.currency || 'USD',
           businessName: tenantDefaults.businessName || null,
           rolePermissions: this.getDefaultPermissions(),
+          tenantId: tenantId ?? null,
         },
       });
+    } else if (tenantId) {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { slug: true },
+      });
+      tenantSlug = tenant?.slug ?? null;
     }
 
     // Decrypt provider credentials (no-op if not encrypted or key not set)
@@ -134,6 +149,10 @@ export const adminService = {
       if (pp.webhookSecret) pp.webhookSecret = '••••••••';
       masked.paystackProvider = pp;
     }
+
+    // tenantSlug travels with the config so the admin UI can render the
+    // per-tenant Paystack webhook URL without an extra round-trip.
+    masked.tenantSlug = tenantSlug;
     return masked;
   },
 
@@ -160,7 +179,10 @@ export const adminService = {
     notificationTemplates?: any;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
-    const config = await prisma.systemConfig.findFirst();
+    const tenantId = getTenantId();
+    const config = tenantId
+      ? await prisma.systemConfig.findUnique({ where: { tenantId } })
+      : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
     if (!config) throw new Error('System config not found');
 
     // Strip masked placeholder values so they don't overwrite real secrets
@@ -238,7 +260,7 @@ export const adminService = {
     }
     if (data.paystackProvider !== undefined) {
       const { clearPaystackConfigCache } = await import('./paystackService');
-      clearPaystackConfigCache();
+      clearPaystackConfigCache(config.tenantId ?? undefined);
     }
 
     await this.createAuditLog(requester, 'update', 'system_config', config.id.toString(), { changes: Object.keys(data) });

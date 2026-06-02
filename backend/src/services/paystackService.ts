@@ -7,6 +7,7 @@ interface PaystackConfig {
   publicKey: string;
   secretKey: string;
   webhookSecret: string;
+  mode: 'test' | 'live';
   isEnabled: boolean;
 }
 
@@ -29,19 +30,21 @@ interface VerifyResponse {
   };
 }
 
-// ---------- Config cache ----------
+// ---------- Per-tenant config cache ----------
 
-let cachedConfig: { data: PaystackConfig | null; fetchedAt: number } | null = null;
 const CACHE_TTL_MS = 60_000;
+const configCache: Map<string, { data: PaystackConfig | null; fetchedAt: number }> = new Map();
 
-async function getDbPaystackConfig(): Promise<PaystackConfig | null> {
+async function loadTenantPaystackConfig(tenantId: string): Promise<PaystackConfig | null> {
+  const cached = configCache.get(tenantId);
   const now = Date.now();
-  if (cachedConfig && now - cachedConfig.fetchedAt < CACHE_TTL_MS) {
-    return cachedConfig.data;
+  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.data;
   }
 
   try {
-    const config = await prisma.systemConfig.findFirst({
+    const config = await prisma.systemConfig.findUnique({
+      where: { tenantId },
       select: { paystackProvider: true },
     });
     const provider = config?.paystackProvider as any;
@@ -53,42 +56,42 @@ async function getDbPaystackConfig(): Promise<PaystackConfig | null> {
         publicKey: decrypted.publicKey || '',
         secretKey: decrypted.secretKey,
         webhookSecret: decrypted.webhookSecret || '',
+        mode: decrypted.mode === 'live' ? 'live' : 'test',
         isEnabled: decrypted.isEnabled !== false,
       };
     }
 
-    cachedConfig = { data: result, fetchedAt: now };
+    configCache.set(tenantId, { data: result, fetchedAt: now });
     return result;
   } catch (error: any) {
-    logger.warn('Failed to read Paystack config from DB', { error: error.message });
+    logger.warn('Failed to read tenant Paystack config', { tenantId, error: error.message });
     return null;
   }
 }
 
-export function clearPaystackConfigCache(): void {
-  cachedConfig = null;
+export function clearPaystackConfigCache(tenantId?: string): void {
+  if (tenantId) {
+    configCache.delete(tenantId);
+  } else {
+    configCache.clear();
+  }
 }
 
-async function getConfig(): Promise<PaystackConfig> {
-  const dbConfig = await getDbPaystackConfig();
-  if (dbConfig) return dbConfig;
-
-  // Fallback to env vars
-  return {
-    publicKey: process.env.PAYSTACK_PUBLIC_KEY || '',
-    secretKey: process.env.PAYSTACK_SECRET_KEY || '',
-    webhookSecret: process.env.PAYSTACK_WEBHOOK_SECRET || '',
-    isEnabled: !!process.env.PAYSTACK_SECRET_KEY,
-  };
+async function requireConfig(tenantId: string): Promise<PaystackConfig> {
+  const config = await loadTenantPaystackConfig(tenantId);
+  if (!config || !config.secretKey) {
+    throw new Error('Paystack is not configured for this tenant. Add your keys in Settings → Integrations.');
+  }
+  if (!config.isEnabled) {
+    throw new Error('Paystack is disabled for this tenant. Enable it in Settings → Integrations.');
+  }
+  return config;
 }
 
 // ---------- API calls ----------
 
-async function paystackRequest(method: string, path: string, body?: object): Promise<any> {
-  const config = await getConfig();
-  if (!config.secretKey) {
-    throw new Error('Paystack is not configured. Please add your Paystack keys in Settings → Integrations.');
-  }
+async function paystackRequest(tenantId: string, method: string, path: string, body?: object): Promise<any> {
+  const config = await requireConfig(tenantId);
 
   const url = `https://api.paystack.co${path}`;
   const options: RequestInit = {
@@ -106,7 +109,7 @@ async function paystackRequest(method: string, path: string, body?: object): Pro
   const data: any = await response.json();
 
   if (!response.ok) {
-    logger.error('Paystack API error', { path, status: response.status, data });
+    logger.error('Paystack API error', { tenantId, path, status: response.status, data });
     throw new Error(data.message || `Paystack API error: ${response.status}`);
   }
 
@@ -117,17 +120,18 @@ async function paystackRequest(method: string, path: string, body?: object): Pro
 
 export const paystackService = {
   /**
-   * Initialize a transaction — returns the Paystack checkout URL.
+   * Initialize a transaction against the tenant's Paystack account.
    * Amount is in the smallest currency unit (pesewas for GHS, kobo for NGN).
    */
   async initializeTransaction(
+    tenantId: string,
     email: string,
     amountInMinorUnits: number,
     currency: string,
     metadata: Record<string, any>,
     callbackUrl?: string,
   ): Promise<InitializeResponse> {
-    const result = await paystackRequest('POST', '/transaction/initialize', {
+    const result = await paystackRequest(tenantId, 'POST', '/transaction/initialize', {
       email,
       amount: amountInMinorUnits,
       currency: currency.toUpperCase(),
@@ -136,6 +140,7 @@ export const paystackService = {
     });
 
     logger.info('Paystack transaction initialized', {
+      tenantId,
       reference: result.data.reference,
       email,
       amount: amountInMinorUnits,
@@ -146,20 +151,20 @@ export const paystackService = {
   },
 
   /**
-   * Verify a transaction by reference.
+   * Verify a transaction by reference against the tenant's Paystack account.
    */
-  async verifyTransaction(reference: string): Promise<VerifyResponse> {
-    const result = await paystackRequest('GET', `/transaction/verify/${encodeURIComponent(reference)}`);
+  async verifyTransaction(tenantId: string, reference: string): Promise<VerifyResponse> {
+    const result = await paystackRequest(tenantId, 'GET', `/transaction/verify/${encodeURIComponent(reference)}`);
     return result;
   },
 
   /**
-   * Validate a webhook signature (HMAC SHA-512).
+   * Validate a webhook signature (HMAC SHA-512) using the tenant's webhook secret.
    */
-  async validateWebhookSignature(rawBody: string | Buffer, signature: string): Promise<boolean> {
-    const config = await getConfig();
-    if (!config.webhookSecret) {
-      logger.warn('Paystack webhook secret not configured');
+  async validateWebhookSignature(tenantId: string, rawBody: string | Buffer, signature: string): Promise<boolean> {
+    const config = await loadTenantPaystackConfig(tenantId);
+    if (!config?.webhookSecret) {
+      logger.warn('Paystack webhook secret not configured for tenant', { tenantId });
       return false;
     }
 
@@ -168,7 +173,6 @@ export const paystackService = {
       .update(rawBody)
       .digest('hex');
 
-    // Use timing-safe comparison to prevent timing attacks
     try {
       return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(signature, 'hex'));
     } catch {
@@ -178,18 +182,18 @@ export const paystackService = {
   },
 
   /**
-   * Get public key for frontend.
+   * Get a tenant's Paystack public key for the embed widget / inline popup.
    */
-  async getPublicKey(): Promise<string> {
-    const config = await getConfig();
-    return config.publicKey;
+  async getPublicKey(tenantId: string): Promise<string> {
+    const config = await loadTenantPaystackConfig(tenantId);
+    return config?.publicKey ?? '';
   },
 
   /**
-   * Check if Paystack is configured and enabled.
+   * Whether the tenant has configured + enabled Paystack.
    */
-  async isConfigured(): Promise<boolean> {
-    const config = await getConfig();
-    return config.isEnabled && !!config.secretKey;
+  async isConfigured(tenantId: string): Promise<boolean> {
+    const config = await loadTenantPaystackConfig(tenantId);
+    return !!(config && config.isEnabled && config.secretKey);
   },
 };

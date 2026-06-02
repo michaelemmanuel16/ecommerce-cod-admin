@@ -160,13 +160,21 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
       throw new AppError('Refresh token required', 400);
     }
 
-    const decoded = verifyRefreshToken(refreshToken);
+    let decoded;
+    try {
+      decoded = verifyRefreshToken(refreshToken);
+    } catch (jwtError: any) {
+      if (jwtError.message === 'TOKEN_FORMAT_OUTDATED') {
+        throw new AppError('Token format outdated. Please log in again.', 401, 'TOKEN_FORMAT_OUTDATED');
+      }
+      throw new AppError('Session expired. Please log in again.', 401, 'SESSION_EXPIRED');
+    }
 
     // Validate ID type - handle migration from string (CUID) to integer IDs
     if (typeof decoded.id !== 'number') {
       // Token contains old string ID (from pre-migration era)
       // Force user to re-login to get new token with integer ID
-      throw new AppError('Token format outdated. Please log in again.', 401);
+      throw new AppError('Token format outdated. Please log in again.', 401, 'TOKEN_FORMAT_OUTDATED');
     }
 
     const user = await prisma.user.findUnique({

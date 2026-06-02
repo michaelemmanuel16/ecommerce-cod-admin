@@ -295,12 +295,20 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     // For digital products: initialize Paystack payment
     if (isDigital) {
+      if (!formTenantId) {
+        res.status(400).json({
+          error: 'This checkout form is not attached to a tenant; Paystack cannot be initialized.',
+        });
+        return;
+      }
+
       const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback`;
       // Amount in pesewas (minor units) for GHS
       const amountInMinorUnits = Math.round(finalTotal * 100);
       const currency = form.currency || 'GHS';
 
       const paystackResult = await paystackService.initializeTransaction(
+        formTenantId,
         formData.email,
         amountInMinorUnits,
         currency,

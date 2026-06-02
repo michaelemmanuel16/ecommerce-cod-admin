@@ -9,10 +9,25 @@ import logger from '../utils/logger';
 
 /**
  * Paystack webhook handler — called by Paystack on charge.success.
- * Uses raw body for HMAC signature verification.
+ * Uses raw body for HMAC signature verification, scoped to the URL tenant.
  */
 export async function handleWebhook(req: Request, res: Response): Promise<void> {
   try {
+    const tenantSlug = req.params.tenantSlug;
+    if (!tenantSlug) {
+      res.status(400).json({ error: 'Missing tenant slug' });
+      return;
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+      select: { id: true },
+    });
+    if (!tenant) {
+      res.status(404).json({ error: 'Tenant not found' });
+      return;
+    }
+
     const signature = req.headers['x-paystack-signature'] as string;
     if (!signature) {
       res.status(400).json({ error: 'Missing signature' });
@@ -26,23 +41,22 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
       res.status(500).json({ error: 'Server configuration error' });
       return;
     }
-    const isValid = await paystackService.validateWebhookSignature(rawBody, signature);
+    const isValid = await paystackService.validateWebhookSignature(tenant.id, rawBody, signature);
     if (!isValid) {
-      logger.warn('Invalid Paystack webhook signature');
+      logger.warn('Invalid Paystack webhook signature', { tenantId: tenant.id });
       res.status(401).json({ error: 'Invalid signature' });
       return;
     }
 
     // req.body is already parsed by express.json(); use it directly
     const event = req.body;
-    logger.info('Paystack webhook received', { event: event.event });
+    logger.info('Paystack webhook received', { tenantId: tenant.id, event: event.event });
 
-    // Idempotency gate: record (provider, event_type, reference) before any side effect.
+    // Idempotency gate: record (tenant_id, provider, event_type, reference) before any side effect.
     // Unique-constraint violation = replay; ack and return without re-processing.
     const reference: string | undefined = event?.data?.reference;
     if (reference && event?.event) {
       const payloadHash = createHash('sha256').update(rawBody).digest('hex');
-      const tenantId = await resolveTenantFromEvent(event);
       try {
         await prisma.webhookEvent.create({
           data: {
@@ -50,12 +64,12 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
             eventType: event.event,
             reference,
             payloadHash,
-            tenantId,
+            tenantId: tenant.id,
           },
         });
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-          logger.info('Paystack webhook replay ignored', { eventType: event.event, reference });
+          logger.info('Paystack webhook replay ignored', { tenantId: tenant.id, eventType: event.event, reference });
           res.status(200).json({ received: true, duplicate: true });
           return;
         }
@@ -64,7 +78,7 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
     }
 
     if (event.event === 'charge.success') {
-      await handleChargeSuccess(event.data);
+      await handleChargeSuccess(tenant.id, event.data);
     }
 
     // Always return 200 to acknowledge receipt
@@ -76,6 +90,17 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
   }
 }
 
+/**
+ * Legacy unscoped webhook — pointed at by tenants who haven't updated their
+ * Paystack dashboard yet. Returns 410 so the failure is loud.
+ */
+export function handleLegacyWebhook(_req: Request, res: Response): void {
+  res.status(410).json({
+    error: 'Webhook URL has moved.',
+    hint: 'Use the per-tenant URL from Settings → Integrations → Paystack: /api/paystack/webhook/<tenant-slug>',
+  });
+}
+
 interface PaystackChargeData {
   reference: string;
   metadata?: { orderId?: number; order_id?: number };
@@ -84,32 +109,34 @@ interface PaystackChargeData {
   currency: string;
 }
 
-// Best-effort tenantId resolution from the event's metadata.orderId.
-// Returns null when the order can't be resolved — the dedup row is still useful.
-async function resolveTenantFromEvent(event: any): Promise<string | null> {
-  const raw = event?.data?.metadata?.orderId ?? event?.data?.metadata?.order_id;
-  const orderId = Number(raw);
-  if (!Number.isInteger(orderId) || orderId <= 0) return null;
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    select: { tenantId: true },
-  });
-  return order?.tenantId ?? null;
-}
-
-async function handleChargeSuccess(data: PaystackChargeData): Promise<void> {
+async function handleChargeSuccess(tenantId: string, data: PaystackChargeData): Promise<void> {
   const { reference, metadata, amount, fees, currency } = data;
   const orderId = metadata?.orderId || metadata?.order_id;
 
   if (!orderId) {
-    logger.error('Paystack charge.success missing orderId in metadata', { reference });
+    logger.error('Paystack charge.success missing orderId in metadata', { tenantId, reference });
     return;
   }
 
-  // Double-verify with Paystack API
-  const verification = await paystackService.verifyTransaction(reference);
+  // Anti-cross-tenant guard: the order's tenantId must match the webhook tenant.
+  const orderRef = await prisma.order.findUnique({
+    where: { id: Number(orderId) },
+    select: { tenantId: true },
+  });
+  if (orderRef && orderRef.tenantId && orderRef.tenantId !== tenantId) {
+    logger.warn('Paystack webhook for order from a different tenant — ignoring', {
+      webhookTenantId: tenantId,
+      orderTenantId: orderRef.tenantId,
+      orderId,
+      reference,
+    });
+    return;
+  }
+
+  // Double-verify with Paystack API using the tenant's secret
+  const verification = await paystackService.verifyTransaction(tenantId, reference);
   if (verification.data.status !== 'success') {
-    logger.warn('Paystack verification failed', { orderId, reference, status: verification.data.status });
+    logger.warn('Paystack verification failed', { tenantId, orderId, reference, status: verification.data.status });
     await prisma.order.update({
       where: { id: Number(orderId) },
       data: { status: 'payment_failed' },
@@ -129,7 +156,7 @@ async function handleChargeSuccess(data: PaystackChargeData): Promise<void> {
   `;
 
   if (!updated || updated.length === 0) {
-    logger.info('Paystack payment already processed, skipping', { orderId, reference });
+    logger.info('Paystack payment already processed, skipping', { tenantId, orderId, reference });
     return;
   }
 
@@ -140,7 +167,7 @@ async function handleChargeSuccess(data: PaystackChargeData): Promise<void> {
   });
 
   if (!order) {
-    logger.error('Order not found after payment update', { orderId, reference });
+    logger.error('Order not found after payment update', { tenantId, orderId, reference });
     return;
   }
 
@@ -184,7 +211,7 @@ async function handleChargeSuccess(data: PaystackChargeData): Promise<void> {
     }
   });
 
-  logger.info('Paystack payment processed successfully', { orderId, reference, amount: amount / 100 });
+  logger.info('Paystack payment processed successfully', { tenantId, orderId, reference, amount: amount / 100 });
 
   // For digital orders: generate download token and send links
   if (order.orderType === 'digital') {
@@ -234,20 +261,33 @@ async function handleChargeSuccess(data: PaystackChargeData): Promise<void> {
 }
 
 /**
- * Shared verification helper. Returns verification data and order (if found).
+ * Shared verification helper. Returns verification data and order.
+ * Order lookup is the source of truth for tenantId.
  */
 async function verifyPaymentCore(reference: string) {
-  const verification = await paystackService.verifyTransaction(reference);
-  const orderId = verification.data.metadata?.orderId || verification.data.metadata?.order_id;
+  // Need an order to know which tenant's Paystack secret to verify against.
+  // Look up by paymentReference if the order has been linked already, then
+  // fall through to metadata-based lookup via Paystack itself.
+  let order = await prisma.order.findFirst({
+    where: { paymentReference: reference },
+    select: { id: true, status: true, paymentStatus: true, totalAmount: true, tenantId: true },
+  });
 
-  let order = null;
-  if (orderId) {
-    order = await prisma.order.findUnique({
-      where: { id: Number(orderId) },
-      select: { id: true, status: true, paymentStatus: true, totalAmount: true },
-    });
+  // If the order isn't linked yet (e.g. caller arriving before the webhook),
+  // we can't know the tenant from the order — try one more path via the
+  // metadata.orderId pattern by deferring to caller-supplied context.
+  if (!order) {
+    return {
+      verification: null,
+      order: null,
+    };
   }
 
+  if (!order.tenantId) {
+    throw new Error('Order has no tenant — cannot verify Paystack reference');
+  }
+
+  const verification = await paystackService.verifyTransaction(order.tenantId, reference);
   return { verification, order };
 }
 
@@ -263,6 +303,11 @@ export async function verifyPayment(req: Request, res: Response): Promise<void> 
     }
 
     const { verification, order } = await verifyPaymentCore(reference);
+
+    if (!verification) {
+      res.status(404).json({ error: 'No order linked to this Paystack reference yet' });
+      return;
+    }
 
     res.json({
       success: verification.data.status === 'success',
@@ -294,8 +339,13 @@ export async function publicVerifyPayment(req: Request, res: Response): Promise<
 
     const { verification, order } = await verifyPaymentCore(reference);
 
+    if (!verification || !order) {
+      res.status(404).json({ error: 'Payment not found' });
+      return;
+    }
+
     // Require orderId correlation to prevent enumeration attacks
-    if (expectedOrderId && order && order.id !== Number(expectedOrderId)) {
+    if (expectedOrderId && order.id !== Number(expectedOrderId)) {
       res.status(404).json({ error: 'Payment not found' });
       return;
     }
@@ -303,7 +353,7 @@ export async function publicVerifyPayment(req: Request, res: Response): Promise<
     res.json({
       success: verification.data.status === 'success',
       paymentStatus: verification.data.status,
-      order: order ? { id: order.id, status: order.status, paymentStatus: order.paymentStatus } : null,
+      order: { id: order.id, status: order.status, paymentStatus: order.paymentStatus },
     });
   } catch (error: any) {
     logger.error('Public payment verification failed', { error: error.message });
