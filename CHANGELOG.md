@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Payments]**: Per-tenant Paystack integration — each tenant configures their own Paystack keys in Settings → Integrations; buyer funds settle directly into the tenant's Paystack account via per-tenant webhook URL `/api/paystack/webhook/:tenantSlug` with tenant-scoped HMAC and dedup (MAN-66)
 - **[Payments]**: Paystack webhook idempotency via `WebhookEvent` table — duplicate deliveries deduped at DB layer with unique `(provider, event_type, reference)` constraint (MAN-55)
 - **[Communications]**: Full communications dashboard with message history, delivery stats, bulk messaging, template manager, and opt-out management (MAN-32)
 - **[Communications]**: Auto-cleanup queue for MessageLog records with 90-day retention (MAN-32)
@@ -42,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[CI/CD]**: Sentry DSN injected into staging and production deployments (MAN-16)
 
 ### Fixed
+- **[Auth]**: Session expiry on the Admin Dashboard now shows a single deduped "Your session has expired" toast + redirect to `/login`. Previously, expired refresh tokens leaked `jwt malformed` as a 500 and parallel widget requests stacked 10+ misleading "Server connection lost" toasts (MAN-66)
 - **[Security]**: Tenant deletion now fully atomic with parameterized SQL, preventing partial corruption
 - **[Security]**: Permissions cache keyed per-tenant to prevent cross-tenant permission leakage
 - **[Security]**: Route-level `requireSuperAdmin` guard on DELETE /api/auth/delete-account
