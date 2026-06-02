@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import prisma from '../utils/prisma';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
+import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 
 interface PaystackConfig {
@@ -80,10 +81,18 @@ export function clearPaystackConfigCache(tenantId?: string): void {
 async function requireConfig(tenantId: string): Promise<PaystackConfig> {
   const config = await loadTenantPaystackConfig(tenantId);
   if (!config || !config.secretKey) {
-    throw new Error('Paystack is not configured for this tenant. Add your keys in Settings → Integrations.');
+    throw new AppError(
+      'Paystack is not configured for this tenant. Add your keys in Settings → Integrations.',
+      400,
+      'PAYSTACK_NOT_CONFIGURED',
+    );
   }
   if (!config.isEnabled) {
-    throw new Error('Paystack is disabled for this tenant. Enable it in Settings → Integrations.');
+    throw new AppError(
+      'Paystack is disabled for this tenant. Enable it in Settings → Integrations.',
+      400,
+      'PAYSTACK_DISABLED',
+    );
   }
   return config;
 }

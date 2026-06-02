@@ -33,12 +33,18 @@ function isPublicPage(): boolean {
 // Once session expiry is detected, suppress further auth-error toasts until
 // the redirect to /login completes. Prevents parallel dashboard requests from
 // stacking duplicate toasts on the page being navigated away from.
+//
+// Only latched when we actually redirect: on public pages the redirect is
+// skipped (X-Frame-Options-safe for embedded checkouts), so leaving the flag
+// false there means a later SPA navigation into the admin can still surface
+// the next expiry. The full-page reload triggered by the redirect resets the
+// flag for the post-login session.
 let sessionExpiredHandled = false;
 function handleSessionExpired(message = 'Your session has expired. Please log in again.'): void {
   if (sessionExpiredHandled) return;
-  sessionExpiredHandled = true;
   useAuthStore.getState().logout(false);
   if (!isPublicPage()) {
+    sessionExpiredHandled = true;
     toast.error(message, { id: 'session-expired' });
     window.location.href = '/login';
   }

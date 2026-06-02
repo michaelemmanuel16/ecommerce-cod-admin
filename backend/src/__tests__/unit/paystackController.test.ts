@@ -197,6 +197,56 @@ describe('paystackController.handleWebhook — tenant scoping + idempotency', ()
     // Still ACKs to prevent Paystack retry storms.
     expect(res.status).toHaveBeenCalledWith(200);
   });
+
+  it('refuses to process a legacy order whose tenantId is null', async () => {
+    // Pre-MAN-66 row not yet backfilled by the follow-up migration. The
+    // cross-tenant guard must trip — anyone routing through a per-tenant URL
+    // must own the order, including for unscoped legacy rows.
+    (prismaMock.webhookEvent.create as any).mockResolvedValueOnce({} as any);
+    (prismaMock.order.findUnique as any).mockResolvedValueOnce({ tenantId: null });
+
+    const res = buildRes();
+    await handleWebhook(
+      buildReq(JSON.stringify({ event: 'charge.success', data: { reference: 'r', amount: 1, fees: 0, currency: 'GHS', metadata: { orderId: 42 } } })),
+      res,
+    );
+
+    expect(mockedPaystack.verifyTransaction).not.toHaveBeenCalled();
+    expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('ignores non-numeric metadata.orderId without crashing Prisma', async () => {
+    (prismaMock.webhookEvent.create as any).mockResolvedValueOnce({} as any);
+
+    const res = buildRes();
+    await handleWebhook(
+      buildReq(JSON.stringify({ event: 'charge.success', data: { reference: 'r', amount: 1, fees: 0, currency: 'GHS', metadata: { orderId: 'abc' } } })),
+      res,
+    );
+
+    // No order lookup with NaN, no verify, no update.
+    expect(prismaMock.order.findUnique).not.toHaveBeenCalled();
+    expect(mockedPaystack.verifyTransaction).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('deletes the dedup row when processing throws so Paystack retries succeed', async () => {
+    (prismaMock.webhookEvent.create as any).mockResolvedValueOnce({ id: 999 });
+    // verifyTransaction throws — simulate the isEnabled-toggled-mid-flight scenario.
+    mockedPaystack.verifyTransaction.mockRejectedValueOnce(new Error('Paystack is disabled'));
+    (prismaMock.webhookEvent.delete as any) = jest.fn().mockResolvedValue({});
+
+    const res = buildRes();
+    await handleWebhook(
+      buildReq(JSON.stringify({ event: 'charge.success', data: { reference: 'r', amount: 1, fees: 0, currency: 'GHS', metadata: { orderId: 42 } } })),
+      res,
+    );
+
+    // Outer catch still 200s (always-ACK contract), but the dedup row was removed.
+    expect(prismaMock.webhookEvent.delete).toHaveBeenCalledWith({ where: { id: 999 } });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
 });
 
 describe('paystackController.handleLegacyWebhook', () => {

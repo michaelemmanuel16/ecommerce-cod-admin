@@ -66,6 +66,15 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     }
 
     // Digital products require email for download link delivery
+    // Digital orders settle into the form's tenant Paystack account; without
+    // a tenant we'd create an orphaned unpaid order. Fail fast before any DB write.
+    if (isDigital && !formTenantId) {
+      res.status(400).json({
+        error: 'This checkout form is not attached to a tenant; Paystack cannot be initialized.',
+      });
+      return;
+    }
+
     if (isDigital && !formData.email) {
       res.status(400).json({ error: 'Email is required for digital products' });
       return;
@@ -295,20 +304,16 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     // For digital products: initialize Paystack payment
     if (isDigital) {
-      if (!formTenantId) {
-        res.status(400).json({
-          error: 'This checkout form is not attached to a tenant; Paystack cannot be initialized.',
-        });
-        return;
-      }
-
-      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback`;
+      // formTenantId guaranteed non-null here — guarded at the top before any DB write.
+      // Carry orderId in the callback URL so PaymentCallback can resolve the tenant
+      // even when its verify hits before the webhook (verifyPaymentCore fallback).
+      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback?orderId=${order.id}`;
       // Amount in pesewas (minor units) for GHS
       const amountInMinorUnits = Math.round(finalTotal * 100);
       const currency = form.currency || 'GHS';
 
       const paystackResult = await paystackService.initializeTransaction(
-        formTenantId,
+        formTenantId as string,
         formData.email,
         amountInMinorUnits,
         currency,
