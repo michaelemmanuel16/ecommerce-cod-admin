@@ -29,10 +29,26 @@ export const errorHandler = (
     method: req.method
   });
 
+  // Any JWT verify error from anywhere in the app collapses to a clean 401 +
+  // SESSION_EXPIRED here, instead of leaking 'jwt malformed' as a 500 (MAN-66).
+  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError' || err.name === 'NotBeforeError') {
+    res.status(401).json({
+      message: 'Session expired. Please log in again.',
+      error: 'Session expired. Please log in again.',
+      code: 'SESSION_EXPIRED',
+      errorCode: 'SESSION_EXPIRED',
+      status: 401,
+    });
+    return;
+  }
+
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
       message: err.message,
       error: err.message,
+      // Frontend api.ts reads `data.code`; older callers may read `errorCode`.
+      // Emit both so neither side has to know the other's spelling.
+      code: err.errorCode,
       errorCode: err.errorCode,
       status: err.statusCode
     });

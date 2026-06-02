@@ -6,7 +6,13 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import { Requester, canManageRole } from '../utils/authUtils';
 import { clearWhatsAppConfigCache } from './whatsappService';
-import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/providerCrypto';
+import {
+  encryptProviderSecrets,
+  decryptProviderSecrets,
+  maskProviderSecrets,
+  preserveMaskedSecrets,
+  SENSITIVE_FIELDS,
+} from '../utils/providerCrypto';
 import { getTenantId } from '../utils/tenantContext';
 
 export const adminService = {
@@ -74,22 +80,37 @@ export const adminService = {
       await this.checkAdminPrivilege(requester, 'admin');
     }
 
-    let config = await prisma.systemConfig.findFirst();
+    const tenantId = getTenantId();
+
+    // Per-tenant SystemConfig: scope by the request's tenant. Falls back to
+    // global (null tenant) for legacy single-tenant deployments.
+    // include-load the tenant relation so we get slug in the same round-trip.
+    let config: any = tenantId
+      ? await prisma.systemConfig.findUnique({
+          where: { tenantId },
+          include: { tenant: { select: { slug: true } } },
+        })
+      : await prisma.systemConfig.findFirst({
+          where: { tenantId: null },
+          include: { tenant: { select: { slug: true } } },
+        });
+
+    let tenantSlug: string | null = config?.tenant?.slug ?? null;
 
     if (!config) {
-      // Seed from tenant data if available (business name, currency)
-      const tenantId = getTenantId();
+      // Seed from tenant data if available (business name, currency, tenantId)
       let tenantDefaults: { businessName?: string; currency?: string } = {};
       if (tenantId) {
         const tenant = await prisma.tenant.findUnique({
           where: { id: tenantId },
-          select: { name: true, currency: true },
+          select: { name: true, currency: true, slug: true },
         });
         if (tenant) {
           tenantDefaults = {
             businessName: tenant.name,
             currency: tenant.currency || 'USD',
           };
+          tenantSlug = tenant.slug;
         }
       }
 
@@ -98,43 +119,26 @@ export const adminService = {
           currency: tenantDefaults.currency || 'USD',
           businessName: tenantDefaults.businessName || null,
           rolePermissions: this.getDefaultPermissions(),
+          tenantId: tenantId ?? null,
         },
       });
     }
 
-    // Decrypt provider credentials (no-op if not encrypted or key not set)
-    const decrypted = { ...config } as any;
-    decrypted.whatsappProvider = decryptProviderSecrets('whatsappProvider', decrypted.whatsappProvider);
-    decrypted.smsProvider = decryptProviderSecrets('smsProvider', decrypted.smsProvider);
-    decrypted.emailProvider = decryptProviderSecrets('emailProvider', decrypted.emailProvider);
-    decrypted.paystackProvider = decryptProviderSecrets('paystackProvider', decrypted.paystackProvider);
+    // Decrypt + mask every provider in one pass keyed off SENSITIVE_FIELDS so
+    // adding a new integration is a one-line map update, not a copy-paste.
+    const result: any = { ...config };
+    delete result.tenant; // strip the include before sending
+    for (const providerType of Object.keys(SENSITIVE_FIELDS)) {
+      const raw = result[providerType];
+      if (!raw) continue;
+      const decrypted = decryptProviderSecrets(providerType, raw);
+      result[providerType] = maskProviderSecrets(providerType, decrypted);
+    }
 
-    // Mask sensitive provider credentials before returning
-    const masked = { ...decrypted } as any;
-    if (masked.whatsappProvider) {
-      const wp = { ...masked.whatsappProvider };
-      if (wp.accessToken) wp.accessToken = '••••••••';
-      if (wp.appSecret) wp.appSecret = '••••••••';
-      if (wp.webhookVerifyToken) wp.webhookVerifyToken = '••••••••';
-      masked.whatsappProvider = wp;
-    }
-    if (masked.smsProvider) {
-      const sp = { ...masked.smsProvider };
-      if (sp.authToken) sp.authToken = '••••••••';
-      masked.smsProvider = sp;
-    }
-    if (masked.emailProvider) {
-      const ep = { ...masked.emailProvider };
-      if (ep.apiKey) ep.apiKey = '••••••••';
-      masked.emailProvider = ep;
-    }
-    if (masked.paystackProvider) {
-      const pp = { ...masked.paystackProvider };
-      if (pp.secretKey) pp.secretKey = '••••••••';
-      if (pp.webhookSecret) pp.webhookSecret = '••••••••';
-      masked.paystackProvider = pp;
-    }
-    return masked;
+    // tenantSlug travels with the config so the admin UI can render the
+    // per-tenant Paystack webhook URL without an extra round-trip.
+    result.tenantSlug = tenantSlug;
+    return result;
   },
 
   async getPublicConfig() {
@@ -160,19 +164,26 @@ export const adminService = {
     notificationTemplates?: any;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
-    const config = await prisma.systemConfig.findFirst();
+    const tenantId = getTenantId();
+    const config = tenantId
+      ? await prisma.systemConfig.findUnique({ where: { tenantId } })
+      : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
     if (!config) throw new Error('System config not found');
 
-    // Strip masked placeholder values so they don't overwrite real secrets
-    const MASK = '••••••••';
+    // Strip masked placeholders, preserve OAuth state, then encrypt — keyed off
+    // SENSITIVE_FIELDS so adding a new integration is a one-line map update.
+    for (const providerType of Object.keys(SENSITIVE_FIELDS)) {
+      const incoming = (data as any)[providerType];
+      if (!incoming) continue;
+      const existing = (config as any)[providerType] || {};
+      (data as any)[providerType] = preserveMaskedSecrets(providerType, incoming, existing);
+    }
+
+    // WhatsApp specifically: also preserve OAuth metadata fields that the admin
+    // form doesn't submit but mustn't be overwritten on a manual save.
     if (data.whatsappProvider) {
       const existing = (config.whatsappProvider as any) || {};
-      const wp = { ...data.whatsappProvider };
-      if (wp.accessToken === MASK) wp.accessToken = existing.accessToken;
-      if (wp.appSecret === MASK) wp.appSecret = existing.appSecret;
-      if (wp.webhookVerifyToken === MASK) wp.webhookVerifyToken = existing.webhookVerifyToken;
-
-      // Preserve OAuth fields when manual form saves (prevent overwrite)
+      const wp = { ...data.whatsappProvider } as any;
       const oauthFields = [
         'authMode', 'wabaId', 'oauthTokenExpiry', 'oauthConnectedAt',
         'oauthVerifiedName', 'oauthDisplayPhone', 'oauthUserId',
@@ -182,41 +193,35 @@ export const adminService = {
           wp[field] = existing[field];
         }
       }
-
       data.whatsappProvider = wp;
     }
-    if (data.smsProvider) {
-      const existing = (config.smsProvider as any) || {};
-      const sp = { ...data.smsProvider };
-      if (sp.authToken === MASK) sp.authToken = existing.authToken;
-      data.smsProvider = sp;
-    }
-    if (data.emailProvider) {
-      const existing = (config.emailProvider as any) || {};
-      const ep = { ...data.emailProvider };
-      if (ep.apiKey === MASK) ep.apiKey = existing.apiKey;
-      data.emailProvider = ep;
-    }
+
+    // Reject mismatched test/live key prefixes before persisting — the mode
+    // toggle is decorative without this; tenants would silently route real
+    // money through their test account or vice versa.
     if (data.paystackProvider) {
-      const existing = (config.paystackProvider as any) || {};
-      const pp = { ...data.paystackProvider };
-      if (pp.secretKey === MASK) pp.secretKey = existing.secretKey;
-      if (pp.webhookSecret === MASK) pp.webhookSecret = existing.webhookSecret;
-      data.paystackProvider = pp;
+      const pp = data.paystackProvider as any;
+      if (pp.mode === 'live' && pp.secretKey && !pp.secretKey.startsWith('sk_live_')) {
+        throw new AppError(
+          'Paystack mode is set to Live but the secret key is not a live key (sk_live_...). Match the mode to the key.',
+          400,
+          'PAYSTACK_MODE_KEY_MISMATCH',
+        );
+      }
+      if (pp.mode === 'test' && pp.secretKey && !pp.secretKey.startsWith('sk_test_')) {
+        throw new AppError(
+          'Paystack mode is set to Test but the secret key is not a test key (sk_test_...). Match the mode to the key.',
+          400,
+          'PAYSTACK_MODE_KEY_MISMATCH',
+        );
+      }
     }
 
     // Encrypt sensitive fields before writing to DB
-    if (data.whatsappProvider) {
-      data.whatsappProvider = encryptProviderSecrets('whatsappProvider', data.whatsappProvider);
-    }
-    if (data.smsProvider) {
-      data.smsProvider = encryptProviderSecrets('smsProvider', data.smsProvider);
-    }
-    if (data.emailProvider) {
-      data.emailProvider = encryptProviderSecrets('emailProvider', data.emailProvider);
-    }
-    if (data.paystackProvider) {
-      data.paystackProvider = encryptProviderSecrets('paystackProvider', data.paystackProvider);
+    for (const providerType of Object.keys(SENSITIVE_FIELDS)) {
+      if ((data as any)[providerType]) {
+        (data as any)[providerType] = encryptProviderSecrets(providerType, (data as any)[providerType]);
+      }
     }
 
     const updatedConfig = await prisma.systemConfig.update({
@@ -238,7 +243,11 @@ export const adminService = {
     }
     if (data.paystackProvider !== undefined) {
       const { clearPaystackConfigCache } = await import('./paystackService');
-      clearPaystackConfigCache();
+      // Only clear the specific tenant's cache entry — passing undefined would
+      // wipe every tenant's cached secret and stampede the DB on the next request.
+      if (config.tenantId) {
+        clearPaystackConfigCache(config.tenantId);
+      }
     }
 
     await this.createAuditLog(requester, 'update', 'system_config', config.id.toString(), { changes: Object.keys(data) });

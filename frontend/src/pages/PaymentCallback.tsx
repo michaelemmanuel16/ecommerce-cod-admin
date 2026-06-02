@@ -10,18 +10,19 @@ export const PaymentCallback: React.FC = () => {
 
   useEffect(() => {
     const reference = searchParams.get('reference') || searchParams.get('trxref');
+    const orderId = searchParams.get('orderId') || undefined;
     if (!reference) {
       setStatus('failed');
       setMessage('No payment reference found.');
       return;
     }
 
-    verifyPayment(reference);
+    verifyPayment(reference, orderId);
   }, [searchParams]);
 
-  const verifyPayment = async (reference: string) => {
+  const verifyPayment = async (reference: string, orderId?: string) => {
     try {
-      const result = await publicOrdersService.verifyPayment(reference);
+      const result = await publicOrdersService.verifyPayment(reference, orderId);
       if (result.success) {
         setStatus('success');
         setMessage('Payment confirmed! Your download link will be sent to your email and WhatsApp shortly.');

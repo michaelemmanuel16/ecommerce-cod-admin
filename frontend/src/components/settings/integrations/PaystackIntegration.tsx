@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save } from 'lucide-react';
+import { Save, Copy, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
@@ -10,14 +10,18 @@ interface PaystackIntegrationProps {
   onConfigSaved: () => void;
 }
 
+type PaystackMode = 'test' | 'live';
+
 export const PaystackIntegration: React.FC<PaystackIntegrationProps> = ({ systemConfig, onConfigSaved }) => {
   const [form, setForm] = useState({
     publicKey: '',
     secretKey: '',
     webhookSecret: '',
+    mode: 'test' as PaystackMode,
     isEnabled: true,
   });
   const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (systemConfig?.paystackProvider) {
@@ -25,10 +29,16 @@ export const PaystackIntegration: React.FC<PaystackIntegrationProps> = ({ system
         publicKey: systemConfig.paystackProvider.publicKey || '',
         secretKey: systemConfig.paystackProvider.secretKey || '',
         webhookSecret: systemConfig.paystackProvider.webhookSecret || '',
+        mode: systemConfig.paystackProvider.mode === 'live' ? 'live' : 'test',
         isEnabled: systemConfig.paystackProvider.isEnabled !== false,
       });
     }
   }, [systemConfig]);
+
+  const tenantSlug = systemConfig?.tenantSlug ?? null;
+  const webhookUrl = tenantSlug
+    ? `${window.location.origin}/api/paystack/webhook/${tenantSlug}`
+    : null;
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,15 +54,40 @@ export const PaystackIntegration: React.FC<PaystackIntegrationProps> = ({ system
     }
   };
 
+  const handleCopyWebhookUrl = async () => {
+    if (!webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Failed to copy URL');
+    }
+  };
+
   return (
     <Card>
       <form onSubmit={handleSave}>
         <div className="p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Paystack Payment Settings</h3>
           <p className="text-sm text-gray-500 mb-6">
-            Configure Paystack for accepting online payments on digital products.
+            Each tenant uses their own Paystack account. Buyer payments settle into the bank attached to these keys.
           </p>
           <div className="grid grid-cols-1 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Mode</label>
+              <select
+                value={form.mode}
+                onChange={(e) => setForm({ ...form, mode: e.target.value as PaystackMode })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="test">Test</option>
+                <option value="live">Live</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Use Test keys (<code className="bg-gray-100 px-1 rounded">pk_test_*</code>) before going live.
+              </p>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Public Key</label>
               <input
@@ -82,9 +117,6 @@ export const PaystackIntegration: React.FC<PaystackIntegrationProps> = ({ system
                 placeholder="Paystack webhook secret for signature verification"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Set your webhook URL in Paystack dashboard to: <code className="bg-gray-100 px-1 rounded">{window.location.origin}/api/paystack/webhook</code>
-              </p>
             </div>
             <div className="flex items-center">
               <input
@@ -99,6 +131,25 @@ export const PaystackIntegration: React.FC<PaystackIntegrationProps> = ({ system
               </label>
             </div>
           </div>
+
+          {webhookUrl && (
+            <div className="mt-8 border-t border-gray-200 pt-6">
+              <h4 className="text-sm font-medium text-gray-900 mb-2">Your Webhook URL</h4>
+              <p className="text-xs text-gray-600 mb-3">
+                Open your Paystack dashboard → Settings → API Keys & Webhooks → paste this URL into the Webhook URL field → save.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-gray-100 px-3 py-2 rounded text-sm font-mono break-all">
+                  {webhookUrl}
+                </code>
+                <Button type="button" variant="secondary" onClick={handleCopyWebhookUrl}>
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  <span className="ml-1.5">{copied ? 'Copied' : 'Copy'}</span>
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 flex justify-end">
             <Button variant="primary" type="submit" disabled={saving}>
               <Save className="w-4 h-4 mr-2" />

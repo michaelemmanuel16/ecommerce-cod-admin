@@ -1,12 +1,53 @@
 import crypto from 'crypto';
 import logger from './logger';
 
-const SENSITIVE_FIELDS: Record<string, string[]> = {
+/**
+ * The canonical map of which provider-config fields are secrets. Exported so
+ * adminService can mask/unmask through one source of truth instead of
+ * hand-listing per field. When a new integration adds a secret, update this
+ * map alone and both encryption AND masking pick it up.
+ */
+export const SENSITIVE_FIELDS: Record<string, string[]> = {
   whatsappProvider: ['accessToken', 'appSecret', 'webhookVerifyToken'],
   smsProvider: ['authToken'],
   emailProvider: ['apiKey'],
   paystackProvider: ['secretKey', 'webhookSecret'],
 };
+
+/** Sentinel returned to the client in place of a real secret. */
+export const SECRET_MASK = '••••••••';
+
+/**
+ * Replace every secret field in a provider config with the sentinel.
+ * Mutates a shallow copy; original input is untouched.
+ */
+export function maskProviderSecrets(providerType: string, provider: any): any {
+  if (!provider) return provider;
+  const fields = SENSITIVE_FIELDS[providerType];
+  if (!fields) return provider;
+  const masked = { ...provider };
+  for (const field of fields) {
+    if (masked[field]) masked[field] = SECRET_MASK;
+  }
+  return masked;
+}
+
+/**
+ * Replace sentinel values in an incoming provider config with the values from
+ * the existing stored config, so saving with the masked placeholder visible
+ * doesn't nuke the real secret.
+ */
+export function preserveMaskedSecrets(providerType: string, incoming: any, existing: any): any {
+  if (!incoming) return incoming;
+  const fields = SENSITIVE_FIELDS[providerType];
+  if (!fields) return incoming;
+  const prev = existing || {};
+  const result = { ...incoming };
+  for (const field of fields) {
+    if (result[field] === SECRET_MASK) result[field] = prev[field];
+  }
+  return result;
+}
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
