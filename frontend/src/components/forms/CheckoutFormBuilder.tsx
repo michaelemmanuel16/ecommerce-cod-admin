@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { useForm } from 'react-hook-form';
 import { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
-import { Modal } from '../ui/Modal';
-import { Button } from '../ui/Button';
 import { Tabs } from '../ui/Tabs';
 import {
   CheckoutForm,
@@ -27,12 +25,16 @@ import { UpsellsTab } from './builder/UpsellsTab';
 import { SettingsTab } from './builder/SettingsTab';
 import { DesignTab } from './builder/DesignTab';
 
+export interface CheckoutFormBuilderHandle {
+  submit: () => void;
+}
+
 interface CheckoutFormBuilderProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSave: (form: Partial<CheckoutForm>) => void;
+  onSave: (form: Partial<CheckoutForm>) => Promise<void> | void;
   initialData?: CheckoutForm;
   products: Product[];
+  onDirtyChange?: (dirty: boolean) => void;
+  onSubmittingChange?: (submitting: boolean) => void;
 }
 
 const defaultFields: FormField[] = [
@@ -42,13 +44,13 @@ const defaultFields: FormField[] = [
   { id: '4', label: 'Street Address', type: 'textarea', required: true, enabled: true },
 ];
 
-export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
-  isOpen,
-  onClose,
+export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, CheckoutFormBuilderProps>(({
   onSave,
   initialData,
   products,
-}) => {
+  onDirtyChange,
+  onSubmittingChange,
+}, ref) => {
   const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<BuilderFormValues>({
     defaultValues: {
       name: initialData?.name || '',
@@ -75,9 +77,9 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
     getRegionsForCountry(initialData?.country || 'Ghana')
   );
 
-  // Reset form state when initialData changes / modal opens
+  const initialDataId = initialData?.id;
+  // Re-seed state if the parent swaps to a different form (rare in full-page mode, but covers it)
   useEffect(() => {
-    if (!isOpen) return;
     if (initialData) {
       reset({
         name: initialData.name || '',
@@ -94,26 +96,8 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
       setUpsells(initialData.upsells?.map((u) => ({ ...u, quantity: u.items?.quantity || 1 })) || []);
       setPixelConfig(initialData.pixelConfig || {});
       setDesign(initialData.design || {});
-    } else {
-      reset({
-        name: '',
-        slug: '',
-        productId: 0,
-        description: '',
-        defaultCountry: 'Ghana',
-        buttonColor: '#0f172a',
-        accentColor: '#f97316',
-        currency: 'GHS',
-      });
-      setFields(defaultFields);
-      setPackages([]);
-      setUpsells([]);
-      setPixelConfig({});
-      setDesign({});
     }
-    upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
-    setUpsellImages(new Map());
-  }, [initialData, isOpen, reset]);
+  }, [initialDataId, reset]);
 
   // Auto-generate slug from name (create mode only)
   const nameValue = watch('name');
@@ -139,6 +123,17 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
       upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
     };
   }, []);
+
+  // Dirty tracking — flip to true on the first state change after mount
+  const allFormValues = watch();
+  const hasMountedRef = useRef(false);
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+    onDirtyChange?.(true);
+  }, [allFormValues, fields, packages, upsells, pixelConfig, design, onDirtyChange]);
 
   // Field actions
   const handleFieldDragEnd = (event: DragEndEvent) => {
@@ -245,6 +240,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
     }
 
     setIsSubmitting(true);
+    onSubmittingChange?.(true);
     try {
       const uploadedUpsells = await Promise.all(
         upsells.map(async (upsell) => {
@@ -325,13 +321,19 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
       upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
       setUpsellImages(new Map());
 
-      onSave(formData);
+      await onSave(formData);
+      onDirtyChange?.(false);
     } catch (error) {
       console.error('Failed to save checkout form:', error);
     } finally {
       setIsSubmitting(false);
+      onSubmittingChange?.(false);
     }
   };
+
+  useImperativeHandle(ref, () => ({
+    submit: () => handleSubmit(onSubmit)(),
+  }));
 
   const ctx: CheckoutBuilderContextValue = {
     register,
@@ -366,69 +368,58 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
   };
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      size="xl"
-      title={initialData ? 'Edit Checkout Form' : 'Create Checkout Form'}
-    >
-      <CheckoutBuilderProvider value={ctx}>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <Tabs
-            key={isOpen ? 'open' : 'closed'}
-            tabs={[
-              { id: 'basics', label: 'Basics', content: <BasicsTab /> },
-              {
-                id: 'packages',
-                label: (
-                  <>
-                    Packages{' '}
-                    {packages.length > 0 && (
-                      <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{packages.length}</span>
-                    )}
-                  </>
-                ),
-                content: <PackagesTab />,
-              },
-              {
-                id: 'upsells',
-                label: (
-                  <>
-                    Upsells{' '}
-                    {upsells.length > 0 && (
-                      <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{upsells.length}</span>
-                    )}
-                  </>
-                ),
-                content: <UpsellsTab />,
-              },
-              { id: 'settings', label: 'Settings', content: <SettingsTab /> },
-              {
-                id: 'design',
-                label: (
-                  <>
-                    Design
-                    <span className="ml-1.5 text-[10px] bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5 font-semibold">
-                      NEW
-                    </span>
-                  </>
-                ),
-                content: <DesignTab />,
-              },
-            ]}
-            defaultTab="basics"
-          />
-
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Uploading images...' : initialData ? 'Update Form' : 'Create Form'}
-            </Button>
-          </div>
-        </form>
-      </CheckoutBuilderProvider>
-    </Modal>
+    <CheckoutBuilderProvider value={ctx}>
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="space-y-4"
+        aria-busy={isSubmitting}
+      >
+        <Tabs
+          tabs={[
+            { id: 'basics', label: 'Basics', content: <BasicsTab /> },
+            {
+              id: 'packages',
+              label: (
+                <>
+                  Packages{' '}
+                  {packages.length > 0 && (
+                    <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{packages.length}</span>
+                  )}
+                </>
+              ),
+              content: <PackagesTab />,
+            },
+            {
+              id: 'upsells',
+              label: (
+                <>
+                  Upsells{' '}
+                  {upsells.length > 0 && (
+                    <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{upsells.length}</span>
+                  )}
+                </>
+              ),
+              content: <UpsellsTab />,
+            },
+            { id: 'settings', label: 'Settings', content: <SettingsTab /> },
+            {
+              id: 'design',
+              label: (
+                <>
+                  Design
+                  <span className="ml-1.5 text-[10px] bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5 font-semibold">
+                    NEW
+                  </span>
+                </>
+              ),
+              content: <DesignTab />,
+            },
+          ]}
+          defaultTab="basics"
+        />
+      </form>
+    </CheckoutBuilderProvider>
   );
-};
+});
+
+CheckoutFormBuilder.displayName = 'CheckoutFormBuilder';

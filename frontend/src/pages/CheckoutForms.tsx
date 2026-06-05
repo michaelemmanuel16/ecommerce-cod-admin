@@ -1,28 +1,23 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Edit, Trash2, Copy, ExternalLink, Code2 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Table, TableHead, TableBody, TableRow, TableCell } from '../components/ui/Table';
-import { CheckoutFormBuilder } from '../components/forms/CheckoutFormBuilder';
 import { EmbedCodeModal } from '../components/forms/EmbedCodeModal';
 import { CheckoutForm } from '../types/checkout-form';
-import { Product } from '../types';
-import { productsService } from '../services/products.service';
 import { checkoutFormsService } from '../services/checkout-forms.service';
 
 export const CheckoutForms: React.FC = () => {
-  const [isBuilderOpen, setIsBuilderOpen] = useState(false);
-  const [selectedForm, setSelectedForm] = useState<CheckoutForm | undefined>();
+  const navigate = useNavigate();
   const [embedModalOpen, setEmbedModalOpen] = useState(false);
   const [selectedFormForEmbed, setSelectedFormForEmbed] = useState<CheckoutForm | null>(null);
   const [forms, setForms] = useState<CheckoutForm[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchForms();
-    fetchProducts();
   }, []);
 
   const fetchForms = async () => {
@@ -38,48 +33,9 @@ export const CheckoutForms: React.FC = () => {
     }
   };
 
-  const fetchProducts = async () => {
-    try {
-      const data = await productsService.getProducts();
-      setProducts(data);
-    } catch (error) {
-      console.error('Failed to fetch products:', error);
-    }
-  };
+  const handleCreateForm = () => navigate('/checkout-forms/new');
 
-  const handleCreateForm = () => {
-    setSelectedForm(undefined);
-    setIsBuilderOpen(true);
-  };
-
-  const handleEditForm = (form: CheckoutForm) => {
-    setSelectedForm(form);
-    setIsBuilderOpen(true);
-  };
-
-  const handleSaveForm = async (formData: Partial<CheckoutForm>) => {
-    try {
-      // Validate product selection
-      if (!formData.productId || formData.productId === 0) {
-        alert('Please select a product for this checkout form.');
-        return;
-      }
-
-      if (selectedForm) {
-        await checkoutFormsService.updateCheckoutForm(selectedForm.id, formData);
-        alert('Checkout form updated successfully!');
-      } else {
-        await checkoutFormsService.createCheckoutForm(formData);
-        alert('Checkout form created successfully!');
-      }
-      setIsBuilderOpen(false);
-      await fetchForms();
-    } catch (error: any) {
-      console.error('Failed to save form:', error);
-      const errorMessage = error?.response?.data?.message || 'Failed to save checkout form. Please try again.';
-      alert(errorMessage);
-    }
-  };
+  const handleEditForm = (form: CheckoutForm) => navigate(`/checkout-forms/${form.id}/edit`);
 
   const handleDeleteForm = async (id: number) => {
     if (!confirm('Are you sure you want to delete this checkout form?')) return;
@@ -256,17 +212,6 @@ export const CheckoutForms: React.FC = () => {
           </Table>
         </Card>
       )}
-
-      <CheckoutFormBuilder
-        isOpen={isBuilderOpen}
-        onClose={() => {
-          setIsBuilderOpen(false);
-          setSelectedForm(undefined);
-        }}
-        onSave={handleSaveForm}
-        initialData={selectedForm}
-        products={products}
-      />
 
       <EmbedCodeModal
         isOpen={embedModalOpen}
