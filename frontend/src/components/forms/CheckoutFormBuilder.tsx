@@ -1,20 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { Plus } from 'lucide-react';
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { DragEndEvent } from '@dnd-kit/core';
+import { arrayMove } from '@dnd-kit/sortable';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
-import { Select } from '../ui/Select';
-import { FormFieldEditor } from './FormFieldEditor';
-import { PackageEditor } from './PackageEditor';
-import { UpsellEditor } from './UpsellEditor';
 import { Tabs } from '../ui/Tabs';
-import { CheckoutForm, FormField, ProductPackage, Upsell, PixelConfig } from '../../types/checkout-form';
+import {
+  CheckoutForm,
+  CheckoutFormDesign,
+  FormField,
+  ProductPackage,
+  Upsell,
+  PixelConfig,
+} from '../../types/checkout-form';
 import { Product } from '../../types';
 import apiClient from '../../services/api';
-import { getCurrencyForCountry, getRegionsForCountry, getSupportedCountries } from '../../utils/countries';
+import { getCurrencyForCountry, getRegionsForCountry } from '../../utils/countries';
+import { CheckoutBuilderProvider } from './builder/CheckoutBuilderContext';
+import {
+  BuilderFormValues,
+  CheckoutBuilderContextValue,
+} from './builder/checkoutBuilderContextValue';
+import { BasicsTab } from './builder/BasicsTab';
+import { PackagesTab } from './builder/PackagesTab';
+import { UpsellsTab } from './builder/UpsellsTab';
+import { SettingsTab } from './builder/SettingsTab';
+import { DesignTab } from './builder/DesignTab';
 
 interface CheckoutFormBuilderProps {
   isOpen: boolean;
@@ -38,7 +49,7 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
   initialData,
   products,
 }) => {
-  const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<BuilderFormValues>({
     defaultValues: {
       name: initialData?.name || '',
       slug: initialData?.slug || '',
@@ -51,323 +62,200 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
     },
   });
 
-  // Reset form when initialData changes (for edit mode) or when modal opens for create
-  React.useEffect(() => {
-    if (isOpen) {
-      if (initialData) {
-        // Edit mode - populate form with existing data
-        reset({
-          name: initialData.name || '',
-          slug: initialData.slug || '',
-          productId: initialData.productId || 0,
-          description: initialData.description || '',
-          defaultCountry: initialData.country || 'Ghana',
-          buttonColor: initialData.styling?.buttonColor || '#0f172a',
-          accentColor: initialData.styling?.accentColor || '#f97316',
-          currency: initialData.currency || 'GHS',
-        });
-        // Reset state arrays with initialData
-        setFields(initialData.fields || defaultFields);
-        setPackages(initialData.packages || []);
-        setUpsells(
-          initialData.upsells?.map(u => ({
-            ...u,
-            quantity: u.items?.quantity || 1,
-          })) || []
-        );
-      } else {
-        // Create mode - reset to empty form
-        reset({
-          name: '',
-          slug: '',
-          productId: 0,
-          description: '',
-          defaultCountry: 'Ghana',
-          buttonColor: '#0f172a',
-          accentColor: '#f97316',
-          currency: 'GHS',
-        });
-        // Reset state arrays to defaults
-        setFields(defaultFields);
-        setPackages([]);
-        setUpsells([]);
-      }
-    }
-  }, [initialData, isOpen, reset]);
-
-  // Auto-generate slug from name
-  const nameValue = watch('name');
-  const buttonColorValue = watch('buttonColor');
-  const accentColorValue = watch('accentColor');
-  React.useEffect(() => {
-    if (nameValue && !initialData) {
-      const slug = nameValue
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
-      setValue('slug', slug);
-    }
-  }, [nameValue, setValue, initialData]);
-
-  // Auto-set currency when country changes
-  const countryValue = watch('defaultCountry');
-  React.useEffect(() => {
-    if (countryValue) {
-      const currency = getCurrencyForCountry(countryValue as any);
-      setValue('currency', currency);
-    }
-  }, [countryValue, setValue]);
-
-  // Auto-update regions when country changes
-  React.useEffect(() => {
-    if (countryValue) {
-      const regions = getRegionsForCountry(countryValue);
-      setCurrentRegions(regions);
-    }
-  }, [countryValue]);
-
   const [fields, setFields] = useState<FormField[]>(initialData?.fields || defaultFields);
   const [packages, setPackages] = useState<ProductPackage[]>(initialData?.packages || []);
-  // Transform upsells: extract quantity from items.quantity for UI
   const [upsells, setUpsells] = useState<Upsell[]>(
-    initialData?.upsells?.map(u => ({
-      ...u,
-      quantity: u.items?.quantity || 1,
-    })) || []
+    initialData?.upsells?.map((u) => ({ ...u, quantity: u.items?.quantity || 1 })) || []
   );
   const [upsellImages, setUpsellImages] = useState<Map<number, { file: File; preview: string }>>(new Map());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pixelConfig, setPixelConfig] = useState<PixelConfig>(initialData?.pixelConfig || {});
-  const [showName, setShowName] = useState<boolean>(initialData?.styling?.showName !== false);
-  const [showDescription, setShowDescription] = useState<boolean>(initialData?.styling?.showDescription !== false);
-
-  // Dynamic regions based on selected country
+  const [design, setDesign] = useState<CheckoutFormDesign>(initialData?.design || {});
   const [currentRegions, setCurrentRegions] = useState<string[]>(
     getRegionsForCountry(initialData?.country || 'Ghana')
   );
 
-  // Update state when initialData changes or modal opens
-  React.useEffect(() => {
-    if (isOpen) {
-      if (initialData) {
-        // Edit mode - load existing data
-        setFields(initialData.fields || defaultFields);
-        setPackages(initialData.packages || []);
-        setUpsells(
-          initialData.upsells?.map(u => ({
-            ...u,
-            quantity: u.items?.quantity || 1,
-          })) || []
-        );
-        setShowName(initialData.styling?.showName !== false);
-        setShowDescription(initialData.styling?.showDescription !== false);
-      } else {
-        // Create mode - reset to defaults
-        setFields(defaultFields);
-        setPackages([]);
-        setUpsells([]);
-        setShowName(true);
-        setShowDescription(true);
-      }
-      // Clear any existing upsell image previews
-      upsellImages.forEach(({ preview }) => {
-        if (preview) URL.revokeObjectURL(preview);
+  // Reset form state when initialData changes / modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    if (initialData) {
+      reset({
+        name: initialData.name || '',
+        slug: initialData.slug || '',
+        productId: initialData.productId || 0,
+        description: initialData.description || '',
+        defaultCountry: initialData.country || 'Ghana',
+        buttonColor: initialData.styling?.buttonColor || '#0f172a',
+        accentColor: initialData.styling?.accentColor || '#f97316',
+        currency: initialData.currency || 'GHS',
       });
-      setUpsellImages(new Map());
-      setPixelConfig(initialData?.pixelConfig || {});
-    }
-  }, [initialData, isOpen]);
-
-  const productOptions = [
-    { value: 0, label: 'Select Product' },
-    ...products.map(p => ({ value: p.id, label: p.name })),
-  ];
-
-  const sensors = useSensors(useSensor(PointerSensor));
-
-  const handleFieldDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setFields(prev => {
-        const oldIndex = prev.findIndex(f => f.id === active.id);
-        const newIndex = prev.findIndex(f => f.id === over.id);
-        return arrayMove(prev, oldIndex, newIndex);
-      });
-    }
-  };
-
-  const addField = () => {
-    const newField: FormField = {
-      id: crypto.randomUUID(),
-      label: 'New Field',
-      type: 'text',
-      required: false,
-      enabled: true,
-    };
-    setFields([...fields, newField]);
-  };
-
-  const updateField = (id: string, updatedField: FormField) => {
-    setFields(fields.map(f => f.id === id ? updatedField : f));
-  };
-
-  const deleteField = (id: string) => {
-    setFields(fields.filter(f => f.id !== id));
-  };
-
-  const addPackage = () => {
-    // Get selected product to use its price as default
-    const selectedProductId = watch('productId');
-    const selectedProduct = products.find(p => p.id === Number(selectedProductId));
-    const productPrice = selectedProduct?.price || 0;
-
-    const newPackage: ProductPackage = {
-      id: -Date.now(), // Negative number for temporary IDs before backend save
-      name: '',
-      price: productPrice,
-      quantity: 1,
-      discountType: 'none',
-      discountValue: 0,
-      originalPrice: productPrice,
-      productPrice: productPrice, // Store base product price for auto-calculation
-      isPopular: false,
-      isDefault: false,
-      showHighlight: false,
-      highlightText: '',
-      showDiscount: true,
-    };
-    setPackages([...packages, newPackage]);
-  };
-
-  const updatePackage = (id: number, updatedPackage: ProductPackage) => {
-    // If setting this package as default, uncheck all other packages
-    if (updatedPackage.isDefault) {
-      setPackages(packages.map(p =>
-        p.id === id
-          ? updatedPackage
-          : { ...p, isDefault: false }
-      ));
+      setFields(initialData.fields || defaultFields);
+      setPackages(initialData.packages || []);
+      setUpsells(initialData.upsells?.map((u) => ({ ...u, quantity: u.items?.quantity || 1 })) || []);
+      setPixelConfig(initialData.pixelConfig || {});
+      setDesign(initialData.design || {});
     } else {
-      setPackages(packages.map(p => p.id === id ? updatedPackage : p));
+      reset({
+        name: '',
+        slug: '',
+        productId: 0,
+        description: '',
+        defaultCountry: 'Ghana',
+        buttonColor: '#0f172a',
+        accentColor: '#f97316',
+        currency: 'GHS',
+      });
+      setFields(defaultFields);
+      setPackages([]);
+      setUpsells([]);
+      setPixelConfig({});
+      setDesign({});
     }
-  };
+    upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
+    setUpsellImages(new Map());
+  }, [initialData, isOpen, reset]);
 
-  const deletePackage = (id: number) => {
-    setPackages(packages.filter(p => p.id !== id));
-  };
-
-  const addUpsell = () => {
-    const newUpsell: Upsell = {
-      id: -Date.now(), // Negative number for temporary IDs before backend save
-      name: '',
-      price: 0,
-      quantity: 1,
-      isPopular: false,
-    };
-    setUpsells([...upsells, newUpsell]);
-  };
-
-  const updateUpsell = (id: number, updatedUpsell: Upsell) => {
-    setUpsells(upsells.map(u => u.id === id ? updatedUpsell : u));
-  };
-
-  const deleteUpsell = (id: number) => {
-    // Clean up image preview for deleted upsell
-    const imageData = upsellImages.get(id);
-    if (imageData?.preview) {
-      URL.revokeObjectURL(imageData.preview);
+  // Auto-generate slug from name (create mode only)
+  const nameValue = watch('name');
+  useEffect(() => {
+    if (nameValue && !initialData) {
+      const slug = nameValue.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      setValue('slug', slug);
     }
-    setUpsellImages((prev) => {
-      const newMap = new Map(prev);
-      newMap.delete(id);
-      return newMap;
-    });
-    setUpsells(upsells.filter(u => u.id !== id));
-  };
+  }, [nameValue, setValue, initialData]);
 
-  const handleUpsellImageSelect = (upsellId: number, file: File | null) => {
-    if (!file) return;
-
-    // Create preview URL
-    const preview = URL.createObjectURL(file);
-
-    // Clean up old preview if exists
-    const existing = upsellImages.get(upsellId);
-    if (existing?.preview) {
-      URL.revokeObjectURL(existing.preview);
+  // Auto-set currency + regions when country changes
+  const countryValue = watch('defaultCountry');
+  useEffect(() => {
+    if (countryValue) {
+      setValue('currency', getCurrencyForCountry(countryValue as any));
+      setCurrentRegions(getRegionsForCountry(countryValue));
     }
-
-    // Store file and preview
-    setUpsellImages((prev) => {
-      const newMap = new Map(prev);
-      newMap.set(upsellId, { file, preview });
-      return newMap;
-    });
-  };
-
-  const handleRemoveUpsellImage = (upsellId: number) => {
-    // Clean up preview URL
-    const imageData = upsellImages.get(upsellId);
-    if (imageData?.preview) {
-      URL.revokeObjectURL(imageData.preview);
-    }
-
-    // Remove from map
-    setUpsellImages((prev) => {
-      const newMap = new Map(prev);
-      newMap.delete(upsellId);
-      return newMap;
-    });
-
-    // Clear imageUrl from upsell
-    const upsell = upsells.find(u => u.id === upsellId);
-    if (upsell) {
-      updateUpsell(upsellId, { ...upsell, imageUrl: undefined });
-    }
-  };
+  }, [countryValue, setValue]);
 
   // Cleanup preview URLs on unmount
   useEffect(() => {
     return () => {
-      upsellImages.forEach(({ preview }) => {
-        if (preview) URL.revokeObjectURL(preview);
-      });
+      upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
     };
   }, []);
 
-  const onSubmit = async (data: any) => {
-    // Validate required fields before submitting
+  // Field actions
+  const handleFieldDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setFields((prev) => {
+        const oldIndex = prev.findIndex((f) => f.id === active.id);
+        const newIndex = prev.findIndex((f) => f.id === over.id);
+        return arrayMove(prev, oldIndex, newIndex);
+      });
+    }
+  };
+  const addField = () =>
+    setFields([
+      ...fields,
+      { id: crypto.randomUUID(), label: 'New Field', type: 'text', required: false, enabled: true },
+    ]);
+  const updateField = (id: string, updated: FormField) =>
+    setFields(fields.map((f) => (f.id === id ? updated : f)));
+  const deleteField = (id: string) => setFields(fields.filter((f) => f.id !== id));
+
+  // Package actions
+  const addPackage = () => {
+    const selectedProductId = watch('productId');
+    const selectedProduct = products.find((p) => p.id === Number(selectedProductId));
+    const productPrice = selectedProduct?.price || 0;
+    setPackages([
+      ...packages,
+      {
+        id: -Date.now(),
+        name: '',
+        price: productPrice,
+        quantity: 1,
+        discountType: 'none',
+        discountValue: 0,
+        originalPrice: productPrice,
+        productPrice,
+        isPopular: false,
+        isDefault: false,
+        showHighlight: false,
+        highlightText: '',
+        showDiscount: true,
+      },
+    ]);
+  };
+  const updatePackage = (id: number, updated: ProductPackage) => {
+    if (updated.isDefault) {
+      setPackages(packages.map((p) => (p.id === id ? updated : { ...p, isDefault: false })));
+    } else {
+      setPackages(packages.map((p) => (p.id === id ? updated : p)));
+    }
+  };
+  const deletePackage = (id: number) => setPackages(packages.filter((p) => p.id !== id));
+
+  // Upsell actions
+  const addUpsell = () =>
+    setUpsells([
+      ...upsells,
+      { id: -Date.now(), name: '', price: 0, quantity: 1, isPopular: false },
+    ]);
+  const updateUpsell = (id: number, updated: Upsell) =>
+    setUpsells(upsells.map((u) => (u.id === id ? updated : u)));
+  const deleteUpsell = (id: number) => {
+    const imageData = upsellImages.get(id);
+    if (imageData?.preview) URL.revokeObjectURL(imageData.preview);
+    setUpsellImages((prev) => {
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+    setUpsells(upsells.filter((u) => u.id !== id));
+  };
+  const handleUpsellImageSelect = (upsellId: number, file: File | null) => {
+    if (!file) return;
+    const preview = URL.createObjectURL(file);
+    const existing = upsellImages.get(upsellId);
+    if (existing?.preview) URL.revokeObjectURL(existing.preview);
+    setUpsellImages((prev) => {
+      const next = new Map(prev);
+      next.set(upsellId, { file, preview });
+      return next;
+    });
+  };
+  const handleRemoveUpsellImage = (upsellId: number) => {
+    const imageData = upsellImages.get(upsellId);
+    if (imageData?.preview) URL.revokeObjectURL(imageData.preview);
+    setUpsellImages((prev) => {
+      const next = new Map(prev);
+      next.delete(upsellId);
+      return next;
+    });
+    const upsell = upsells.find((u) => u.id === upsellId);
+    if (upsell) updateUpsell(upsellId, { ...upsell, imageUrl: undefined });
+  };
+
+  const onSubmit = async (data: BuilderFormValues) => {
     if (!data.productId || data.productId === 0) {
       alert('Please select a product for this checkout form.');
       return;
     }
-
     if (packages.length === 0) {
       alert('Please add at least one package. Packages define what products/quantities customers can purchase.');
       return;
     }
 
     setIsSubmitting(true);
-
     try {
-      // Upload all pending images first
       const uploadedUpsells = await Promise.all(
         upsells.map(async (upsell) => {
           const imageData = upsellImages.get(upsell.id);
-
           if (imageData?.file) {
-            // Upload image
             const formData = new FormData();
             formData.append('image', imageData.file);
-
             try {
               const response = await apiClient.post('/upload', formData, {
-                headers: {
-                  'Content-Type': 'multipart/form-data',
-                },
+                headers: { 'Content-Type': 'multipart/form-data' },
               });
-
-              // Return upsell with uploaded imageUrl, items, and discount fields
               return {
                 productId: upsell.productId,
                 name: upsell.name,
@@ -385,8 +273,6 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
               throw error;
             }
           }
-
-          // No new image, keep existing imageUrl, add items and discount fields
           return {
             productId: upsell.productId,
             name: upsell.name,
@@ -401,17 +287,16 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
         })
       );
 
-      // Submit form with uploaded imageUrls
       const formData: any = {
         name: data.name,
         slug: data.slug,
         productId: data.productId,
         description: data.description || '',
-        fields: fields,
+        fields,
         country: data.defaultCountry,
-        currency: data.currency || getCurrencyForCountry(data.defaultCountry),
+        currency: data.currency || getCurrencyForCountry(data.defaultCountry as any),
         regions: { available: currentRegions },
-        packages: packages.map(pkg => ({
+        packages: packages.map((pkg) => ({
           name: pkg.name,
           description: '',
           price: pkg.price,
@@ -426,19 +311,18 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
           showDiscount: pkg.showDiscount !== false,
         })),
         upsells: uploadedUpsells,
+        // Styling mirrored from design.colors for backward-compat with the styling column
+        // (not-null in schema). Phase 1 dropped styling from the public render path; this
+        // keeps writes valid until the column is dropped in a follow-up migration.
         styling: {
-          buttonColor: data.buttonColor,
-          accentColor: data.accentColor,
-          showName,
-          showDescription,
+          buttonColor: design.colors?.cta || data.buttonColor || '#0f172a',
+          accentColor: design.colors?.surface || data.accentColor || '#f97316',
         },
-        pixelConfig: Object.values(pixelConfig).some(v => v) ? pixelConfig : null,
+        design,
+        pixelConfig: Object.values(pixelConfig).some((v) => v) ? pixelConfig : null,
       };
 
-      // Clean up preview URLs
-      upsellImages.forEach(({ preview }) => {
-        if (preview) URL.revokeObjectURL(preview);
-      });
+      upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
       setUpsellImages(new Map());
 
       onSave(formData);
@@ -449,368 +333,102 @@ export const CheckoutFormBuilder: React.FC<CheckoutFormBuilderProps> = ({
     }
   };
 
+  const ctx: CheckoutBuilderContextValue = {
+    register,
+    watch,
+    setValue,
+    errors,
+    fields,
+    setFields,
+    packages,
+    setPackages,
+    upsells,
+    setUpsells,
+    upsellImages,
+    setUpsellImages,
+    pixelConfig,
+    setPixelConfig,
+    design,
+    setDesign,
+    products,
+    addField,
+    updateField,
+    deleteField,
+    handleFieldDragEnd,
+    addPackage,
+    updatePackage,
+    deletePackage,
+    addUpsell,
+    updateUpsell,
+    deleteUpsell,
+    handleUpsellImageSelect,
+    handleRemoveUpsellImage,
+  };
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="xl" title={initialData ? 'Edit Checkout Form' : 'Create Checkout Form'}>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <Tabs
-          key={isOpen ? 'open' : 'closed'}
-          tabs={[
-            {
-              id: 'basics',
-              label: 'Basics',
-              content: (
-                <div className="space-y-6">
-                  {/* Form Name + URL Slug side-by-side */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Form Name <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        {...register('name', { required: 'Form name is required' })}
-                        placeholder="e.g., Summer Sale Checkout"
-                      />
-                      {errors.name && (
-                        <p className="text-xs text-red-500 mt-1">{errors.name.message}</p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        URL Slug <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        {...register('slug', { required: 'Slug is required' })}
-                        placeholder="auto-generated-from-name"
-                        readOnly
-                        className="bg-gray-50"
-                      />
-                      {errors.slug && (
-                        <p className="text-xs text-red-500 mt-1">{errors.slug.message}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Product Selection */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Product <span className="text-red-500">*</span>
-                    </label>
-                    <Select
-                      {...register('productId', {
-                        valueAsNumber: true,
-                        validate: (value) => value > 0 || 'Please select a product'
-                      })}
-                      options={productOptions}
-                    />
-                    {errors.productId && (
-                      <p className="text-xs text-red-500 mt-1">{errors.productId.message}</p>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="xl"
+      title={initialData ? 'Edit Checkout Form' : 'Create Checkout Form'}
+    >
+      <CheckoutBuilderProvider value={ctx}>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <Tabs
+            key={isOpen ? 'open' : 'closed'}
+            tabs={[
+              { id: 'basics', label: 'Basics', content: <BasicsTab /> },
+              {
+                id: 'packages',
+                label: (
+                  <>
+                    Packages{' '}
+                    {packages.length > 0 && (
+                      <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{packages.length}</span>
                     )}
-                    {!errors.productId && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        Required: Choose which product this checkout form is for
-                      </p>
+                  </>
+                ),
+                content: <PackagesTab />,
+              },
+              {
+                id: 'upsells',
+                label: (
+                  <>
+                    Upsells{' '}
+                    {upsells.length > 0 && (
+                      <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{upsells.length}</span>
                     )}
-                  </div>
+                  </>
+                ),
+                content: <UpsellsTab />,
+              },
+              { id: 'settings', label: 'Settings', content: <SettingsTab /> },
+              {
+                id: 'design',
+                label: (
+                  <>
+                    Design
+                    <span className="ml-1.5 text-[10px] bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5 font-semibold">
+                      NEW
+                    </span>
+                  </>
+                ),
+                content: <DesignTab />,
+              },
+            ]}
+            defaultTab="basics"
+          />
 
-                  {/* Description */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      {...register('description')}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter form description..."
-                    />
-                  </div>
-
-                  {/* Description */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      {...register('description')}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter form description..."
-                    />
-                    <div className="mt-2 space-y-1">
-                      <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={showName}
-                          onChange={e => setShowName(e.target.checked)}
-                          className="rounded border-gray-300"
-                        />
-                        Show form name on checkout
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={showDescription}
-                          onChange={e => setShowDescription(e.target.checked)}
-                          className="rounded border-gray-300"
-                        />
-                        Show description on checkout
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Form Fields */}
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold text-gray-900">Form Fields</h3>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={addField}
-                      >
-                        <Plus className="w-4 h-4 mr-1" />
-                        Add Field
-                      </Button>
-                    </div>
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFieldDragEnd}>
-                      <SortableContext items={fields.map(f => f.id)} strategy={verticalListSortingStrategy}>
-                        <div className="space-y-2">
-                          {fields.map(field => (
-                            <FormFieldEditor
-                              key={field.id}
-                              field={field}
-                              onUpdate={(updated) => updateField(field.id, updated)}
-                              onDelete={() => deleteField(field.id)}
-                            />
-                          ))}
-                        </div>
-                      </SortableContext>
-                    </DndContext>
-                  </div>
-                </div>
-              ),
-            },
-            {
-              id: 'packages',
-              label: <>Packages {packages.length > 0 && <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{packages.length}</span>}</>,
-              content: (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-900">Product Packages</h3>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={addPackage}
-                    >
-                      <Plus className="w-4 h-4 mr-1" />
-                      Add Package
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    {packages.map(pkg => {
-                      const selectedProductId = watch('productId');
-                      const selectedProduct = products.find(p => p.id === Number(selectedProductId));
-                      const productPrice = pkg.productPrice || selectedProduct?.price || 0;
-                      const currency = (watch as any)('currency') || getCurrencyForCountry(watch('defaultCountry') as any);
-
-                      return (
-                        <PackageEditor
-                          key={pkg.id}
-                          package={pkg}
-                          productPrice={productPrice}
-                          currency={currency}
-                          onUpdate={(updated) => updatePackage(pkg.id, updated)}
-                          onDelete={() => deletePackage(pkg.id)}
-                        />
-                      );
-                    })}
-                    {packages.length === 0 && (
-                      <p className="text-sm text-gray-500 text-center py-4">
-                        No packages added yet
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ),
-            },
-            {
-              id: 'upsells',
-              label: <>Upsells {upsells.length > 0 && <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{upsells.length}</span>}</>,
-              content: (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-900">Upsells/Add-ons</h3>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={addUpsell}
-                    >
-                      <Plus className="w-4 h-4 mr-1" />
-                      Add Upsell
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    {upsells.map(upsell => {
-                      const currency = (watch as any)('currency') || getCurrencyForCountry(watch('defaultCountry') as any);
-
-                      return (
-                        <UpsellEditor
-                          key={upsell.id}
-                          upsell={upsell}
-                          products={products}
-                          currency={currency}
-                          onUpdate={(updated) => updateUpsell(upsell.id, updated)}
-                          onDelete={() => deleteUpsell(upsell.id)}
-                          imagePreview={upsellImages.get(upsell.id)?.preview}
-                          onImageSelect={(file) => handleUpsellImageSelect(upsell.id, file)}
-                          onImageRemove={() => handleRemoveUpsellImage(upsell.id)}
-                        />
-                      );
-                    })}
-                    {upsells.length === 0 && (
-                      <p className="text-sm text-gray-500 text-center py-4">
-                        No upsells added yet
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ),
-            },
-            {
-              id: 'settings',
-              label: 'Settings',
-              content: (
-                <div className="space-y-6">
-                  {/* Form Settings */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Form Settings</h3>
-                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Default Country
-                      </label>
-                      <Select
-                        {...register('defaultCountry')}
-                        options={getSupportedCountries().map(country => ({
-                          value: country,
-                          label: country
-                        }))}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Styling Settings */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Styling</h3>
-                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Button Color
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="color"
-                              {...register('buttonColor')}
-                              className="h-10 w-20 rounded border border-gray-300"
-                            />
-                            <Input
-                              value={buttonColorValue}
-                              onChange={e => setValue('buttonColor', e.target.value)}
-                              placeholder="#0f172a"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Accent Color
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="color"
-                              {...register('accentColor')}
-                              className="h-10 w-20 rounded border border-gray-300"
-                            />
-                            <Input
-                              value={accentColorValue}
-                              onChange={e => setValue('accentColor', e.target.value)}
-                              placeholder="#f97316"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Tracking & Pixels */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Tracking &amp; Pixels</h3>
-                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Facebook Pixel ID
-                        </label>
-                        <Input
-                          value={pixelConfig.facebookPixelId || ''}
-                          onChange={e => setPixelConfig(p => ({ ...p, facebookPixelId: e.target.value || undefined }))}
-                          placeholder="e.g. 1234567890123456"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Google Analytics 4 ID
-                        </label>
-                        <Input
-                          value={pixelConfig.googleAnalyticsId || ''}
-                          onChange={e => setPixelConfig(p => ({ ...p, googleAnalyticsId: e.target.value || undefined }))}
-                          placeholder="e.g. G-XXXXXXXXXX"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          TikTok Pixel ID
-                        </label>
-                        <Input
-                          value={pixelConfig.tiktokPixelId || ''}
-                          onChange={e => setPixelConfig(p => ({ ...p, tiktokPixelId: e.target.value || undefined }))}
-                          placeholder="e.g. ABCDEFGHIJKLMNOP"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Google Tag Manager ID
-                        </label>
-                        <Input
-                          value={pixelConfig.googleTagManagerId || ''}
-                          onChange={e => setPixelConfig(p => ({ ...p, googleTagManagerId: e.target.value || undefined }))}
-                          placeholder="e.g. GTM-XXXXXXX"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ),
-            },
-          ]}
-          defaultTab="basics"
-        />
-
-        {/* Action buttons — always visible */}
-        <div className="flex justify-end gap-3 pt-4 border-t">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onClose}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Uploading images...' : (initialData ? 'Update Form' : 'Create Form')}
-          </Button>
-        </div>
-      </form>
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={isSubmitting}>
+              {isSubmitting ? 'Uploading images...' : initialData ? 'Update Form' : 'Create Form'}
+            </Button>
+          </div>
+        </form>
+      </CheckoutBuilderProvider>
     </Modal>
   );
 };
