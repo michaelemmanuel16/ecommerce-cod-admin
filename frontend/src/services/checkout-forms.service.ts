@@ -32,6 +32,11 @@ export const checkoutFormsService = {
     return response.data.form || response.data;
   },
 
+  async getCheckoutFormPreviewConfig(id: number): Promise<any> {
+    const response = await apiClient.get(`/api/checkout-forms/${id}/preview-config`);
+    return response.data.form || response.data;
+  },
+
   async createCheckoutForm(data: Partial<CheckoutForm>): Promise<CheckoutForm> {
     const response = await apiClient.post('/api/checkout-forms', data);
     return response.data.form || response.data;

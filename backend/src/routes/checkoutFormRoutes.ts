@@ -105,6 +105,14 @@ router.get(
   checkoutFormController.getCheckoutForm
 );
 
+router.get(
+  '/:id/preview-config',
+  requirePermission(['super_admin', 'admin', 'manager']),
+  param('id').notEmpty().withMessage('Form ID is required'),
+  validate,
+  checkoutFormController.previewCheckoutForm
+);
+
 router.post(
   '/',
   requirePermission(['super_admin', 'admin']),

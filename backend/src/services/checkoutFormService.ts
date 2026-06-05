@@ -325,6 +325,84 @@ export class CheckoutFormService {
   }
 
   /**
+   * ADMIN preview by ID — returns the render-shape payload for any form
+   * (including drafts / inactive). Caller is responsible for verifying
+   * admin auth + tenant scope.
+   */
+  async getCheckoutFormForPreview(id: number, tenantId?: string | null) {
+    const where: Prisma.CheckoutFormWhereInput = { id };
+    if (tenantId) where.tenantId = tenantId;
+    const form = await prisma.checkoutForm.findFirst({
+      where,
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        fields: true,
+        design: true,
+        country: true,
+        currency: true,
+        regions: true,
+        pixelConfig: true,
+        formType: true,
+        product: {
+          select: {
+            name: true,
+            description: true,
+            price: true,
+            imageUrl: true,
+            stockQuantity: true,
+            productType: true,
+          },
+        },
+        packages: {
+          orderBy: { sortOrder: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            price: true,
+            quantity: true,
+            originalPrice: true,
+            discountType: true,
+            discountValue: true,
+            isPopular: true,
+            isDefault: true,
+            showHighlight: true,
+            highlightText: true,
+            showDiscount: true,
+          },
+        },
+        upsells: {
+          orderBy: { sortOrder: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            imageUrl: true,
+            price: true,
+            items: true,
+            originalPrice: true,
+            discountType: true,
+            discountValue: true,
+          },
+        },
+      },
+    });
+
+    if (!form) {
+      throw new AppError('Checkout form not found', 404);
+    }
+
+    const { stockQuantity, ...productData } = form.product;
+    return {
+      ...form,
+      product: { ...productData, inStock: stockQuantity > 0 },
+    };
+  }
+
+  /**
    * Update checkout form with packages and upsells
    */
   async updateCheckoutForm(formId: string, data: UpdateCheckoutFormData) {

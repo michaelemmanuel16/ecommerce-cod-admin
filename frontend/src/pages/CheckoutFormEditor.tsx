@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useBlocker } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Loading } from '../components/ui/Loading';
 import {
   CheckoutFormBuilder,
   CheckoutFormBuilderHandle,
 } from '../components/forms/CheckoutFormBuilder';
+import { CheckoutFormPreviewPane } from '../components/forms/CheckoutFormPreviewPane';
 import { CheckoutForm } from '../types/checkout-form';
 import { Product } from '../types';
 import { checkoutFormsService } from '../services/checkout-forms.service';
@@ -27,6 +28,8 @@ export const CheckoutFormEditor: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [draft, setDraft] = useState<Record<string, any>>({});
+  const [isPreviewOpen, setIsPreviewOpen] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,24 +154,57 @@ export const CheckoutFormEditor: React.FC = () => {
             </span>
           )}
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => builderRef.current?.submit()}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? 'Saving…' : isCreateMode ? 'Create form' : 'Save'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {formId !== null && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsPreviewOpen((v) => !v)}
+              title={isPreviewOpen ? 'Hide preview' : 'Show preview'}
+            >
+              {isPreviewOpen ? (
+                <EyeOff className="w-4 h-4 mr-1" />
+              ) : (
+                <Eye className="w-4 h-4 mr-1" />
+              )}
+              Preview
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => builderRef.current?.submit()}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Saving…' : isCreateMode ? 'Create form' : 'Save'}
+          </Button>
+        </div>
       </div>
 
-      <CheckoutFormBuilder
-        ref={builderRef}
-        initialData={initialForm}
-        products={products}
-        onSave={handleSave}
-        onDirtyChange={setIsDirty}
-        onSubmittingChange={setIsSubmitting}
-      />
+      <div
+        className={
+          isPreviewOpen && formId !== null
+            ? 'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,500px)] gap-6 items-start'
+            : ''
+        }
+      >
+        <div className="min-w-0">
+          <CheckoutFormBuilder
+            ref={builderRef}
+            initialData={initialForm}
+            products={products}
+            onSave={handleSave}
+            onDirtyChange={setIsDirty}
+            onSubmittingChange={setIsSubmitting}
+            onDraftChange={setDraft}
+          />
+        </div>
+        {isPreviewOpen && formId !== null && (
+          <div className="hidden lg:block sticky top-20 h-[calc(100vh-7rem)]">
+            <CheckoutFormPreviewPane formId={formId} draft={draft} />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

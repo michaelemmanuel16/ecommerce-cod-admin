@@ -35,6 +35,12 @@ interface CheckoutFormBuilderProps {
   products: Product[];
   onDirtyChange?: (dirty: boolean) => void;
   onSubmittingChange?: (submitting: boolean) => void;
+  /**
+   * Fires whenever the in-memory draft changes. Used by the editor page to
+   * stream the current state into the live-preview iframe via postMessage.
+   * Shape mirrors the public-checkout payload subset that the preview needs.
+   */
+  onDraftChange?: (draft: Record<string, any>) => void;
 }
 
 const defaultFields: FormField[] = [
@@ -50,6 +56,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   products,
   onDirtyChange,
   onSubmittingChange,
+  onDraftChange,
 }, ref) => {
   const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<BuilderFormValues>({
     defaultValues: {
@@ -130,10 +137,34 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   useEffect(() => {
     if (!hasMountedRef.current) {
       hasMountedRef.current = true;
+      // Still publish the initial draft so the preview can render before the
+      // user has touched anything.
+      onDraftChange?.({
+        name: allFormValues.name,
+        description: allFormValues.description,
+        currency: allFormValues.currency,
+        country: allFormValues.defaultCountry,
+        fields,
+        packages,
+        upsells,
+        design,
+        pixelConfig,
+      });
       return;
     }
     onDirtyChange?.(true);
-  }, [allFormValues, fields, packages, upsells, pixelConfig, design, onDirtyChange]);
+    onDraftChange?.({
+      name: allFormValues.name,
+      description: allFormValues.description,
+      currency: allFormValues.currency,
+      country: allFormValues.defaultCountry,
+      fields,
+      packages,
+      upsells,
+      design,
+      pixelConfig,
+    });
+  }, [allFormValues, fields, packages, upsells, pixelConfig, design, onDirtyChange, onDraftChange]);
 
   // Field actions
   const handleFieldDragEnd = (event: DragEndEvent) => {

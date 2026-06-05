@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
+import checkoutFormService from '../services/checkoutFormService';
 import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
 
 const validateDesign = (
@@ -100,6 +101,31 @@ export const getCheckoutForm = async (req: AuthRequest, res: Response): Promise<
 
     res.json({ form });
   } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Admin preview-config: returns the render-shape payload for the editor's
+ * live preview iframe. Mirrors the public response but allows draft/inactive
+ * forms. Auth + tenant scope are enforced by the route middleware.
+ */
+export const previewCheckoutForm = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const formId = parseInt(id, 10);
+    if (isNaN(formId)) {
+      res.status(400).json({ message: 'Invalid form ID' });
+      return;
+    }
+    const tenantId = (req as any).tenantId || (req as any).user?.tenantId || null;
+    const form = await checkoutFormService.getCheckoutFormForPreview(formId, tenantId);
+    res.json({ form });
+  } catch (error: any) {
+    if (error?.statusCode === 404) {
+      res.status(404).json({ message: 'Checkout form not found' });
+      return;
+    }
     throw error;
   }
 };
