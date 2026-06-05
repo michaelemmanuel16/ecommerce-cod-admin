@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Edit, Trash2, Copy, ExternalLink, Code2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Copy, ExternalLink } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Table, TableHead, TableBody, TableRow, TableCell } from '../components/ui/Table';
-import { EmbedCodeModal } from '../components/forms/EmbedCodeModal';
+import { CopyURLButton, CopyEmbedButton } from '../components/forms/CopyActions';
 import { CheckoutForm } from '../types/checkout-form';
 import { checkoutFormsService } from '../services/checkout-forms.service';
 
 export const CheckoutForms: React.FC = () => {
   const navigate = useNavigate();
-  const [embedModalOpen, setEmbedModalOpen] = useState(false);
-  const [selectedFormForEmbed, setSelectedFormForEmbed] = useState<CheckoutForm | null>(null);
   const [forms, setForms] = useState<CheckoutForm[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -70,11 +68,6 @@ export const CheckoutForms: React.FC = () => {
       const errorMessage = error?.response?.data?.message || 'Failed to update form status. Please try again.';
       alert(errorMessage);
     }
-  };
-
-  const handleShowEmbedCode = (form: CheckoutForm) => {
-    setSelectedFormForEmbed(form);
-    setEmbedModalOpen(true);
   };
 
   if (isLoading) {
@@ -188,14 +181,8 @@ export const CheckoutForms: React.FC = () => {
                       >
                         <ExternalLink className="w-4 h-4" />
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => handleShowEmbedCode(form)}
-                        title="Get Embed Code"
-                      >
-                        <Code2 className="w-4 h-4" />
-                      </Button>
+                      <CopyURLButton form={form} />
+                      <CopyEmbedButton form={form} />
                       <Button
                         size="sm"
                         variant="danger"
@@ -210,17 +197,20 @@ export const CheckoutForms: React.FC = () => {
               ))}
             </TableBody>
           </Table>
+          <p className="text-xs text-gray-500 mt-3 px-4 pb-3">
+            Need help embedding? See{' '}
+            <a
+              href="/docs/embed.md"
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              docs/embed.md
+            </a>{' '}
+            for WordPress, Shopify and custom HTML steps.
+          </p>
         </Card>
       )}
-
-      <EmbedCodeModal
-        isOpen={embedModalOpen}
-        form={selectedFormForEmbed}
-        onClose={() => {
-          setEmbedModalOpen(false);
-          setSelectedFormForEmbed(null);
-        }}
-      />
     </div>
   );
 };

@@ -8,6 +8,7 @@ import {
   CheckoutFormBuilderHandle,
 } from '../components/forms/CheckoutFormBuilder';
 import { CheckoutFormPreviewPane } from '../components/forms/CheckoutFormPreviewPane';
+import { CopyURLButton, CopyEmbedButton } from '../components/forms/CopyActions';
 import { CheckoutForm } from '../types/checkout-form';
 import { Product } from '../types';
 import { checkoutFormsService } from '../services/checkout-forms.service';
@@ -155,6 +156,12 @@ export const CheckoutFormEditor: React.FC = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {initialForm?.slug && (
+            <>
+              <CopyURLButton form={initialForm} />
+              <CopyEmbedButton form={initialForm} />
+            </>
+          )}
           {formId !== null && (
             <Button
               variant="secondary"
