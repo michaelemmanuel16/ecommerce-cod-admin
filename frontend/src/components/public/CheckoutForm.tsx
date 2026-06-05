@@ -269,14 +269,12 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        {(formData.styling?.showName !== false || (formData.styling?.showDescription !== false && formData.description)) && (
+        {!formData.design?.page?.hideProductDisplay && (
           <div className="mb-8">
-            {formData.styling?.showName !== false && (
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                {formData.product?.name || formData.name || 'Product Order'}
-              </h1>
-            )}
-            {formData.styling?.showDescription !== false && formData.description && (
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              {formData.product?.name || formData.name || 'Product Order'}
+            </h1>
+            {formData.description && (
               <p className="text-gray-600">{formData.description}</p>
             )}
           </div>
@@ -328,8 +326,8 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
                 currency={formData.currency}
                 isSubmitting={isSubmitting}
                 onSubmit={handleSubmit(onFormSubmit)}
-                buttonColor={formData.styling?.buttonColor}
-                accentColor={formData.styling?.accentColor}
+                buttonColor={formData.design?.colors?.cta}
+                accentColor={formData.design?.colors?.surface}
                 submitLabel={isDigital ? 'Proceed to Payment' : 'Place Order'}
               />
             </div>

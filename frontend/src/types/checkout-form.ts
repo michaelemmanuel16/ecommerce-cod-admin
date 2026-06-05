@@ -51,6 +51,39 @@ export interface CheckoutFormStyling {
   showDescription?: boolean;
 }
 
+export interface CheckoutFormDesignColors {
+  primary?: string;
+  cta?: string;
+  surface?: string;
+  text?: string;
+}
+
+export interface CheckoutFormDesignButton {
+  shape?: 'square' | 'rounded' | 'pill';
+  size?: 'sm' | 'md' | 'lg';
+  label?: string;
+}
+
+export interface CheckoutFormDesignInput {
+  style?: 'flat' | 'outlined' | 'filled';
+  labelColor?: string;
+  priceColor?: string;
+}
+
+export interface CheckoutFormDesignPage {
+  background?: string;
+  productBanner?: string;
+  hideProductDisplay?: boolean;
+  offerPosition?: 'top' | 'bottom';
+}
+
+export interface CheckoutFormDesign {
+  colors?: CheckoutFormDesignColors;
+  button?: CheckoutFormDesignButton;
+  input?: CheckoutFormDesignInput;
+  page?: CheckoutFormDesignPage;
+}
+
 export interface PixelConfig {
   facebookPixelId?: string;
   googleAnalyticsId?: string;   // G-XXXXXXXX
@@ -72,6 +105,7 @@ export interface CheckoutForm {
   currency: string; // Currency code (e.g., GHS, NGN)
   regions: string[]; // Added from database schema
   styling: CheckoutFormStyling;
+  design?: CheckoutFormDesign;
   pixelConfig?: PixelConfig;
   isActive: boolean;
   createdAt: string;

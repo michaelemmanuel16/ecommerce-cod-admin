@@ -645,6 +645,7 @@ model CheckoutForm {
   description String?
   fields      Json
   styling     Json
+  design      Json?
   country     String           @default("Ghana")
   regions     Json
   isActive    Boolean          @default(true) @map("is_active")

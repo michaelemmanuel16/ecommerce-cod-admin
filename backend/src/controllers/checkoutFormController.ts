@@ -2,6 +2,17 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
+import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
+
+const validateDesign = (
+  raw: unknown,
+): { ok: true; value: Prisma.InputJsonValue | undefined } | { ok: false; issues: unknown } => {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null) return { ok: true, value: Prisma.JsonNull as unknown as Prisma.InputJsonValue };
+  const parsed = checkoutFormDesignSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, issues: parsed.error.issues };
+  return { ok: true, value: parsed.data as Prisma.InputJsonValue };
+};
 
 export const getAllCheckoutForms = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -102,6 +113,7 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       description,
       fields,
       styling,
+      design,
       country,
       currency,
       regions,
@@ -110,6 +122,12 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       isActive,
       pixelConfig
     } = req.body;
+
+    const designValidation = validateDesign(design);
+    if (!designValidation.ok) {
+      res.status(400).json({ error: 'Invalid design payload', issues: designValidation.issues });
+      return;
+    }
 
     // Check if slug already exists
     const existing = await prisma.checkoutForm.findUnique({
@@ -168,6 +186,7 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
             description,
             fields,
             styling,
+            design: designValidation.value,
             country: country || 'Ghana',
             currency: currency || 'GHS',
             regions,
@@ -248,6 +267,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       description,
       fields,
       styling,
+      design,
       country,
       currency,
       regions,
@@ -256,6 +276,12 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       isActive,
       pixelConfig
     } = req.body;
+
+    const designValidation = validateDesign(design);
+    if (!designValidation.ok) {
+      res.status(400).json({ error: 'Invalid design payload', issues: designValidation.issues });
+      return;
+    }
 
     // Check if form exists
     const existing = await prisma.checkoutForm.findUnique({
@@ -299,6 +325,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     if (description !== undefined) updateData.description = description;
     if (fields !== undefined) updateData.fields = fields;
     if (styling !== undefined) updateData.styling = styling;
+    if (design !== undefined) updateData.design = designValidation.value;
     if (country !== undefined) updateData.country = country;
     if (currency !== undefined) updateData.currency = currency;
     if (regions !== undefined) updateData.regions = regions;

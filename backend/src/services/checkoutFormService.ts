@@ -256,7 +256,7 @@ export class CheckoutFormService {
         slug: true,
         description: true,
         fields: true,
-        styling: true,
+        design: true,
         country: true,
         currency: true,
         regions: true,
