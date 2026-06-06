@@ -75,18 +75,23 @@ const PillGroup = <T extends string>({
 export const DesignTab: React.FC = () => {
   const { design, setDesign } = useCheckoutBuilder();
 
-  const updateColors = (key: 'primary' | 'cta' | 'surface' | 'text', hex: string) => {
-    setDesign((d) => ({ ...d, colors: { ...(d.colors || {}), [key]: hex } }));
+  const updateSection = <K extends keyof CheckoutFormDesign>(
+    key: K,
+    patch: Partial<NonNullable<CheckoutFormDesign[K]>>
+  ) => {
+    setDesign((d) => ({
+      ...d,
+      [key]: { ...((d[key] as object) || {}), ...patch } as CheckoutFormDesign[K],
+    }));
   };
-  const updateButton = (patch: Partial<NonNullable<CheckoutFormDesign['button']>>) => {
-    setDesign((d) => ({ ...d, button: { ...(d.button || {}), ...patch } }));
-  };
-  const updateInput = (patch: Partial<NonNullable<CheckoutFormDesign['input']>>) => {
-    setDesign((d) => ({ ...d, input: { ...(d.input || {}), ...patch } }));
-  };
-  const updatePage = (patch: Partial<NonNullable<CheckoutFormDesign['page']>>) => {
-    setDesign((d) => ({ ...d, page: { ...(d.page || {}), ...patch } }));
-  };
+  const updateColors = (key: 'primary' | 'cta' | 'surface' | 'text', hex: string) =>
+    updateSection('colors', { [key]: hex } as Partial<NonNullable<CheckoutFormDesign['colors']>>);
+  const updateButton = (patch: Partial<NonNullable<CheckoutFormDesign['button']>>) =>
+    updateSection('button', patch);
+  const updateInput = (patch: Partial<NonNullable<CheckoutFormDesign['input']>>) =>
+    updateSection('input', patch);
+  const updatePage = (patch: Partial<NonNullable<CheckoutFormDesign['page']>>) =>
+    updateSection('page', patch);
 
   const bannerInvalid =
     !!design.page?.productBanner && !design.page.productBanner.startsWith('https://');

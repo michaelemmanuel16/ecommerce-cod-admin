@@ -331,7 +331,9 @@ export class CheckoutFormService {
    */
   async getCheckoutFormForPreview(id: number, tenantId?: string | null) {
     const where: Prisma.CheckoutFormWhereInput = { id };
-    if (tenantId) where.tenantId = tenantId;
+    // Guard explicitly: empty-string tenantId from a misconfigured token must
+    // not skip the scope filter and leak cross-tenant data.
+    if (tenantId != null && tenantId !== '') where.tenantId = tenantId;
     const form = await prisma.checkoutForm.findFirst({
       where,
       select: {

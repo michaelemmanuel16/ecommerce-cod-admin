@@ -27,7 +27,14 @@ const escapeHtml = (s: string): string =>
   });
 
 const escapeJsString = (s: string): string =>
-  s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+  s
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    // Escape `<` so a slug containing `</script>` cannot terminate the
+    // surrounding <script> block in the embed snippet.
+    .replace(/</g, '\\u003c');
 
 export interface EmbedSnippetForm {
   slug: string;

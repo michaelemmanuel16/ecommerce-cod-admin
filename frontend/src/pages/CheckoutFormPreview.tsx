@@ -56,12 +56,18 @@ export const CheckoutFormPreview: React.FC = () => {
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.source !== window.parent) return;
+      if (event.origin !== window.location.origin) return;
       if (!isPreviewMessage(event.data)) return;
       setPatch(event.data.patch);
     };
     window.addEventListener('message', handler);
-    // Tell parent we're ready so it can replay its current draft.
-    window.parent?.postMessage({ type: 'checkout-preview-ready' }, '*');
+    // Tell parent we're ready so it can replay its current draft. The parent
+    // is same-origin (admin app); pinning the target origin prevents the
+    // handshake from leaking to a cross-origin embedding parent.
+    window.parent?.postMessage(
+      { type: 'checkout-preview-ready' },
+      window.location.origin
+    );
     return () => window.removeEventListener('message', handler);
   }, []);
 

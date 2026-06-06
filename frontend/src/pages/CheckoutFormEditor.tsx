@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, useParams, useBlocker } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Loading } from '../components/ui/Loading';
@@ -70,22 +70,10 @@ export const CheckoutFormEditor: React.FC = () => {
     };
   }, [formId]);
 
-  // In-app navigation guard
-  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    isDirty && !isSubmitting && currentLocation.pathname !== nextLocation.pathname
-  );
-
-  useEffect(() => {
-    if (blocker.state === 'blocked') {
-      if (window.confirm(UNSAVED_PROMPT)) {
-        blocker.proceed();
-      } else {
-        blocker.reset();
-      }
-    }
-  }, [blocker]);
-
-  // Browser-level (tab close / hard refresh / external link) guard
+  // Browser-level (tab close / hard refresh / external link / browser back) guard.
+  // We don't use react-router's useBlocker because it requires a data router and
+  // this app uses the legacy <BrowserRouter>. In-app navigation through our own
+  // Back button is guarded explicitly in handleBack below.
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (!isDirty || isSubmitting) return;
@@ -99,9 +87,8 @@ export const CheckoutFormEditor: React.FC = () => {
   const handleSave = useCallback(
     async (data: Partial<CheckoutForm>) => {
       if (formId !== null) {
-        await checkoutFormsService.updateCheckoutForm(formId, data);
-        const refreshed = await checkoutFormsService.getCheckoutForm(formId);
-        setInitialForm(refreshed);
+        const updated = await checkoutFormsService.updateCheckoutForm(formId, data);
+        setInitialForm(updated);
       } else {
         const created = await checkoutFormsService.createCheckoutForm(data);
         navigate(`/checkout-forms/${created.id}/edit`, { replace: true });
@@ -110,7 +97,10 @@ export const CheckoutFormEditor: React.FC = () => {
     [formId, navigate]
   );
 
-  const handleBack = () => navigate('/checkout-forms');
+  const handleBack = () => {
+    if (isDirty && !isSubmitting && !window.confirm(UNSAVED_PROMPT)) return;
+    navigate('/checkout-forms');
+  };
 
   if (isLoading) {
     return (

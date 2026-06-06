@@ -38,6 +38,15 @@ describe('buildEmbedSnippet', () => {
     expect(out).toContain('&quot;&gt;&lt;script&gt;');
   });
 
+  it('JS-escapes `<` so a slug containing </script> cannot terminate the script block', () => {
+    const out = buildEmbedSnippet({ slug: 'foo</script><script>alert(1)//' }, origin);
+    // The literal characters `</script>` must NOT appear inside the JS string
+    // assignment to iframe.src — they would close the surrounding script tag.
+    const iframeSrcLine = out.split('\n').find((l) => l.includes('iframe.src =')) || '';
+    expect(iframeSrcLine).not.toContain('</script>');
+    expect(iframeSrcLine).toContain('\\u003c');
+  });
+
   it('JS-escapes single quotes in slugs', () => {
     const out = buildEmbedSnippet({ slug: "it's" }, origin);
     expect(out).toContain("/form/it\\'s");

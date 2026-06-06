@@ -27,10 +27,15 @@ export const CheckoutFormPreviewPane: React.FC<CheckoutFormPreviewPaneProps> = (
 
   // Child handshake — when the preview page mounts it pings us; once we hear
   // the ping we know the message channel is live and we can stop dropping
-  // updates.
+  // updates. Origin-pinned so a co-resident cross-origin frame can't flip
+  // childReady prematurely.
   useEffect(() => {
     const handler = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
       if (e.data?.type === 'checkout-preview-ready') {
+        // Toggle so the draft-postMessage effect re-fires and replays the
+        // current draft to a freshly-loaded iframe (e.g. after a reload).
+        setChildReady(false);
         setChildReady(true);
       }
     };

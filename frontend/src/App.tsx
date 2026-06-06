@@ -206,6 +206,14 @@ function App() {
                 <Onboarding />
               </ProtectedRoute>
             } />
+            {/* Admin-only preview route — bare shell so the editor iframe
+                doesn't render the sidebar/header inside itself. Auth is
+                enforced by the backend /preview-config endpoint. */}
+            <Route path="/checkout-forms/:id/preview" element={
+              <ProtectedRoute>
+                <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
+              </ProtectedRoute>
+            } />
             {/* Mobile routes for delivery agents */}
             <Route
               path="/m"
@@ -316,9 +324,6 @@ function App() {
               } />
               <Route path="checkout-forms/:id/edit" element={
                 <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
-              } />
-              <Route path="checkout-forms/:id/preview" element={
-                <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
               } />
               <Route path="webhooks" element={
                 <RoleGuard allowedRoles={['super_admin', 'admin']}>

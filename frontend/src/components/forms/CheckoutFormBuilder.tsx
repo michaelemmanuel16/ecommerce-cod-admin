@@ -124,47 +124,54 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     }
   }, [countryValue, setValue]);
 
-  // Cleanup preview URLs on unmount
+  // Cleanup preview URLs on unmount. Mirror the live Map into a ref so the
+  // unmount cleanup sees the latest set, not the empty mount-time snapshot.
+  const upsellImagesRef = useRef(upsellImages);
+  upsellImagesRef.current = upsellImages;
   useEffect(() => {
     return () => {
-      upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
+      upsellImagesRef.current.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
     };
   }, []);
 
-  // Dirty tracking — flip to true on the first state change after mount
-  const allFormValues = watch();
-  const hasMountedRef = useRef(false);
-  useEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      // Still publish the initial draft so the preview can render before the
-      // user has touched anything.
-      onDraftChange?.({
-        name: allFormValues.name,
-        description: allFormValues.description,
-        currency: allFormValues.currency,
-        country: allFormValues.defaultCountry,
-        fields,
-        packages,
-        upsells,
-        design,
-        pixelConfig,
-      });
-      return;
-    }
-    onDirtyChange?.(true);
-    onDraftChange?.({
-      name: allFormValues.name,
-      description: allFormValues.description,
-      currency: allFormValues.currency,
-      country: allFormValues.defaultCountry,
+  // Dirty tracking — flip to true on the first state change after mount.
+  // We can't depend on `watch()` because it returns a new object identity on
+  // every render (even with no value change), which would fire this effect
+  // and spuriously mark the form dirty on any parent re-render. Instead we
+  // serialise the draft and compare against the previous snapshot.
+  const name = watch('name');
+  const description = watch('description');
+  const currency = watch('currency');
+  const defaultCountry = watch('defaultCountry');
+  const draftPayload = React.useMemo(
+    () => ({
+      name,
+      description,
+      currency,
+      country: defaultCountry,
       fields,
       packages,
       upsells,
       design,
       pixelConfig,
-    });
-  }, [allFormValues, fields, packages, upsells, pixelConfig, design, onDirtyChange, onDraftChange]);
+    }),
+    [name, description, currency, defaultCountry, fields, packages, upsells, design, pixelConfig]
+  );
+  const hasMountedRef = useRef(false);
+  const lastSnapshotRef = useRef<string>('');
+  useEffect(() => {
+    const snapshot = JSON.stringify(draftPayload);
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      lastSnapshotRef.current = snapshot;
+      onDraftChange?.(draftPayload);
+      return;
+    }
+    if (snapshot === lastSnapshotRef.current) return;
+    lastSnapshotRef.current = snapshot;
+    onDirtyChange?.(true);
+    onDraftChange?.(draftPayload);
+  }, [draftPayload, onDirtyChange, onDraftChange]);
 
   // Field actions
   const handleFieldDragEnd = (event: DragEndEvent) => {
@@ -349,10 +356,11 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         pixelConfig: Object.values(pixelConfig).some((v) => v) ? pixelConfig : null,
       };
 
+      await onSave(formData);
+      // Only revoke/clear after a successful save so a failed save can be
+      // retried without re-uploading the images.
       upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
       setUpsellImages(new Map());
-
-      await onSave(formData);
       onDirtyChange?.(false);
     } catch (error) {
       console.error('Failed to save checkout form:', error);
