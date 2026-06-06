@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Checkout Forms]**: Salesgee-style builder rewrite — full-page editor at `/checkout-forms/:id/edit` with 5 tabs (Basics / Packages / Upsells / Settings / Design) and a live-preview iframe pane synced to the editor draft over `postMessage` (debounced 150ms). New Design tab uses a 12-swatch brand palette for primary/CTA/surface/text/background, plus button shape/size, input style, banner URL, label override (60 char), and offer position. Backed by an additive `design Json?` column with a backfill that maps existing `styling.buttonColor`/`accentColor` into `design.colors`. New admin-only `/api/checkout-forms/:id/preview-config` endpoint serves drafts to the preview iframe. (MAN-67)
+- **[Checkout Forms]**: Copy URL and Copy Embed row actions on the list page + editor top bar, replacing the EmbedCodeModal. Embed snippet uses 100% width + auto-grow height with HTML/JS-escaped slug. Platform-specific embed instructions moved to `docs/embed.md`. (MAN-67)
+- **[Checkout Forms]**: Unsaved-changes guard on the editor — React Router `useBlocker` for in-app nav and `beforeunload` for tab close / hard refresh. (MAN-67)
 - **[Payments]**: Per-tenant Paystack integration — each tenant configures their own Paystack keys in Settings → Integrations; buyer funds settle directly into the tenant's Paystack account via per-tenant webhook URL `/api/paystack/webhook/:tenantSlug` with tenant-scoped HMAC and dedup (MAN-66)
 - **[Payments]**: Paystack webhook idempotency via `WebhookEvent` table — duplicate deliveries deduped at DB layer with unique `(provider, event_type, reference)` constraint (MAN-55)
 - **[Communications]**: Full communications dashboard with message history, delivery stats, bulk messaging, template manager, and opt-out management (MAN-32)
