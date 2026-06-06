@@ -23,6 +23,11 @@ export const CheckoutFormPreviewPane: React.FC<CheckoutFormPreviewPaneProps> = (
 }) => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [childReady, setChildReady] = useState(false);
+  // Increments on every ready ping so the draft-postMessage effect re-runs
+  // and replays the current draft after an iframe reload — even when the
+  // `childReady` boolean is already true. A boolean toggle inside a single
+  // handler is batched by React and effectively a no-op.
+  const [readyTick, setReadyTick] = useState(0);
   const [device, setDevice] = useState<Device>('desktop');
 
   // Child handshake — when the preview page mounts it pings us; once we hear
@@ -33,17 +38,16 @@ export const CheckoutFormPreviewPane: React.FC<CheckoutFormPreviewPaneProps> = (
     const handler = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return;
       if (e.data?.type === 'checkout-preview-ready') {
-        // Toggle so the draft-postMessage effect re-fires and replays the
-        // current draft to a freshly-loaded iframe (e.g. after a reload).
-        setChildReady(false);
         setChildReady(true);
+        setReadyTick((n) => n + 1);
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  // Debounced draft → postMessage.
+  // Debounced draft → postMessage. `readyTick` is in the dep array so each
+  // fresh ready ping triggers a replay of the current draft.
   useEffect(() => {
     if (!childReady) return;
     const timer = setTimeout(() => {
@@ -55,7 +59,7 @@ export const CheckoutFormPreviewPane: React.FC<CheckoutFormPreviewPaneProps> = (
       );
     }, debounceMs);
     return () => clearTimeout(timer);
-  }, [draft, childReady, debounceMs]);
+  }, [draft, childReady, debounceMs, readyTick]);
 
   if (formId === null) {
     return (
