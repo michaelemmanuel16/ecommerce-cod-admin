@@ -33,10 +33,29 @@ describe('CheckoutFormPreviewPane', () => {
     vi.useRealTimers();
   });
 
-  it('renders the empty-state hint when formId is null', () => {
+  it('renders an iframe pointing at the create-preview route when formId is null', () => {
     render(<CheckoutFormPreviewPane formId={null} draft={{}} />);
-    expect(screen.getByText(/Save the form once to see a live preview/i)).toBeInTheDocument();
-    expect(screen.queryByTitle('Checkout preview')).toBeNull();
+    const iframe = screen.getByTitle('Checkout preview') as HTMLIFrameElement;
+    expect(iframe).toBeInTheDocument();
+    expect(iframe.getAttribute('src')).toBe('/checkout-forms/new/preview');
+  });
+
+  it('streams the draft in create mode (formId null) once the child is ready', () => {
+    render(<CheckoutFormPreviewPane formId={null} draft={{ name: 'Draft Form' }} debounceMs={50} />);
+    const iframe = screen.getByTitle('Checkout preview') as HTMLIFrameElement;
+    const win = iframe.contentWindow;
+    if (!win) throw new Error('no iframe contentWindow');
+    const postSpy = vi.spyOn(win, 'postMessage');
+
+    sendReady();
+    act(() => {
+      vi.advanceTimersByTime(60);
+    });
+    expect(postSpy).toHaveBeenCalledTimes(1);
+    expect(postSpy.mock.calls[0][0]).toMatchObject({
+      type: 'checkout-preview-update',
+      patch: { name: 'Draft Form' },
+    });
   });
 
   it('renders an iframe pointing at /checkout-forms/:id/preview when formId is set', () => {

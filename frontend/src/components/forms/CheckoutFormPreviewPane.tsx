@@ -61,15 +61,12 @@ export const CheckoutFormPreviewPane: React.FC<CheckoutFormPreviewPaneProps> = (
     return () => clearTimeout(timer);
   }, [draft, childReady, debounceMs, readyTick]);
 
-  if (formId === null) {
-    return (
-      <div className="h-full flex items-center justify-center text-sm text-gray-500 bg-gray-50 border border-dashed border-gray-300 rounded-lg p-6 text-center">
-        Save the form once to see a live preview here.
-      </div>
-    );
-  }
-
-  const src = `/checkout-forms/${formId}/preview`;
+  // In create mode (no saved id yet) we point at the bare create-preview route,
+  // which renders entirely from the streamed draft.
+  const src =
+    formId === null
+      ? '/checkout-forms/new/preview'
+      : `/checkout-forms/${formId}/preview`;
   const frameWidth = device === 'desktop' ? '100%' : '420px';
 
   return (

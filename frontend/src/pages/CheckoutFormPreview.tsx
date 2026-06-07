@@ -12,6 +12,22 @@ type PreviewMessage = {
 const isPreviewMessage = (data: any): data is PreviewMessage =>
   data && data.type === 'checkout-preview-update' && data.patch && typeof data.patch === 'object';
 
+// Minimal valid base used in create mode, where no form has been saved yet.
+// The editor's streamed draft is merged on top, so these are just safe
+// defaults that render until the first patch arrives.
+const EMPTY_PREVIEW_BASE: PublicCheckoutForm = {
+  id: 0,
+  productId: 0,
+  name: '',
+  slug: 'preview',
+  fields: [],
+  packages: [],
+  upsells: [],
+  country: 'GH',
+  currency: 'GHS',
+  regions: {},
+};
+
 /**
  * Admin-only preview route. Mounted inside the editor's preview iframe.
  * 1. Loads the persisted form via /preview-config (allows inactive forms).
@@ -21,7 +37,8 @@ const isPreviewMessage = (data: any): data is PreviewMessage =>
  */
 export const CheckoutFormPreview: React.FC = () => {
   const { id: idParam } = useParams<{ id: string }>();
-  const formId = idParam ? Number(idParam) : null;
+  const isCreateMode = idParam === 'new';
+  const formId = isCreateMode ? null : idParam ? Number(idParam) : null;
 
   const [baseForm, setBaseForm] = useState<PublicCheckoutForm | null>(null);
   const [patch, setPatch] = useState<Partial<PublicCheckoutForm>>({});
@@ -29,6 +46,13 @@ export const CheckoutFormPreview: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // Create mode: no saved form to fetch — render the streamed draft over a
+    // minimal base.
+    if (isCreateMode) {
+      setBaseForm(EMPTY_PREVIEW_BASE);
+      setIsLoading(false);
+      return;
+    }
     if (formId === null || isNaN(formId)) {
       setError('Invalid preview URL');
       setIsLoading(false);
@@ -50,7 +74,7 @@ export const CheckoutFormPreview: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [formId]);
+  }, [formId, isCreateMode]);
 
   // Listen for parent editor draft updates.
   useEffect(() => {

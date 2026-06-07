@@ -152,21 +152,19 @@ export const CheckoutFormEditor: React.FC = () => {
               <CopyEmbedButton form={initialForm} />
             </>
           )}
-          {formId !== null && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setIsPreviewOpen((v) => !v)}
-              title={isPreviewOpen ? 'Hide preview' : 'Show preview'}
-            >
-              {isPreviewOpen ? (
-                <EyeOff className="w-4 h-4 mr-1" />
-              ) : (
-                <Eye className="w-4 h-4 mr-1" />
-              )}
-              Preview
-            </Button>
-          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setIsPreviewOpen((v) => !v)}
+            title={isPreviewOpen ? 'Hide preview' : 'Show preview'}
+          >
+            {isPreviewOpen ? (
+              <EyeOff className="w-4 h-4 mr-1" />
+            ) : (
+              <Eye className="w-4 h-4 mr-1" />
+            )}
+            Preview
+          </Button>
           <Button
             variant="primary"
             size="sm"
@@ -180,7 +178,7 @@ export const CheckoutFormEditor: React.FC = () => {
 
       <div
         className={
-          isPreviewOpen && formId !== null
+          isPreviewOpen
             ? 'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,500px)] gap-6 items-start'
             : ''
         }
@@ -196,7 +194,7 @@ export const CheckoutFormEditor: React.FC = () => {
             onDraftChange={setDraft}
           />
         </div>
-        {isPreviewOpen && formId !== null && (
+        {isPreviewOpen && (
           <div className="hidden lg:block sticky top-20 h-[calc(100vh-7rem)]">
             <CheckoutFormPreviewPane formId={formId} draft={draft} />
           </div>

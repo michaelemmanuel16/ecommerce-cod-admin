@@ -143,19 +143,38 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   const description = watch('description');
   const currency = watch('currency');
   const defaultCountry = watch('defaultCountry');
+  const productIdValue = watch('productId');
+  // Resolved product details so the live preview can render the product hero
+  // from the draft alone — needed in create mode, where no saved form exists
+  // yet to fetch the product from.
+  const previewProduct = React.useMemo(() => {
+    const p = products.find((x) => x.id === Number(productIdValue));
+    if (!p) return undefined;
+    return {
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      price: p.price,
+      imageUrl: p.imageUrl,
+      isActive: p.isActive,
+      productType: p.productType,
+    };
+  }, [products, productIdValue]);
   const draftPayload = React.useMemo(
     () => ({
       name,
       description,
       currency,
       country: defaultCountry,
+      productId: Number(productIdValue) || 0,
+      product: previewProduct,
       fields,
       packages,
       upsells,
       design,
       pixelConfig,
     }),
-    [name, description, currency, defaultCountry, fields, packages, upsells, design, pixelConfig]
+    [name, description, currency, defaultCountry, productIdValue, previewProduct, fields, packages, upsells, design, pixelConfig]
   );
   const hasMountedRef = useRef(false);
   const lastSnapshotRef = useRef<string>('');
