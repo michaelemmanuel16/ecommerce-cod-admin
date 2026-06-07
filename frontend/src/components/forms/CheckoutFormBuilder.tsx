@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { useForm } from 'react-hook-form';
+import toast from 'react-hot-toast';
 import { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { Tabs } from '../ui/Tabs';
@@ -381,8 +382,10 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
       setUpsellImages(new Map());
       onDirtyChange?.(false);
+      toast.success(initialData ? 'Checkout form saved' : 'Checkout form created');
     } catch (error) {
       console.error('Failed to save checkout form:', error);
+      toast.error('Failed to save checkout form. Please try again.');
     } finally {
       setIsSubmitting(false);
       onSubmittingChange?.(false);
