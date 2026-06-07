@@ -129,8 +129,8 @@ export const CheckoutFormEditor: React.FC = () => {
     : initialForm?.name || 'Edit Checkout Form';
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 sticky top-0 bg-gray-50 z-20 py-3 -mt-3">
+    <div className="flex flex-col h-[calc(100vh-7rem)]">
+      <div className="flex items-center justify-between gap-3 flex-none pb-3 border-b border-gray-200">
         <div className="flex items-center gap-3 min-w-0">
           <Button variant="secondary" size="sm" onClick={handleBack}>
             <ArrowLeft className="w-4 h-4 mr-1" />
@@ -179,11 +179,12 @@ export const CheckoutFormEditor: React.FC = () => {
       <div
         className={
           isPreviewOpen
-            ? 'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,500px)] gap-6 items-start'
-            : ''
+            ? 'flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,500px)] gap-6 pt-4'
+            : 'flex-1 min-h-0 pt-4'
         }
       >
-        <div className="min-w-0">
+        {/* Editor column scrolls independently of the preview. */}
+        <div className="min-w-0 overflow-y-auto pr-1">
           <CheckoutFormBuilder
             ref={builderRef}
             initialData={initialForm}
@@ -194,8 +195,9 @@ export const CheckoutFormEditor: React.FC = () => {
             onDraftChange={setDraft}
           />
         </div>
+        {/* Preview column: the iframe scrolls its own content internally. */}
         {isPreviewOpen && (
-          <div className="hidden lg:block sticky top-20 h-[calc(100vh-7rem)]">
+          <div className="hidden lg:block overflow-hidden">
             <CheckoutFormPreviewPane formId={formId} draft={draft} />
           </div>
         )}

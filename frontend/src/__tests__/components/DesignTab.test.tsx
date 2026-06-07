@@ -51,29 +51,46 @@ const readSnapshot = (): CheckoutFormDesign =>
   JSON.parse(screen.getByTestId('design-snapshot').textContent || '{}');
 
 describe('DesignTab', () => {
-  it('renders the color section labels (Primary, CTA, Surface, Text, Background)', () => {
+  it('renders the four colour fields (Primary, CTA, Surface, Text) — no Background', () => {
     render(<Harness />);
     expect(screen.getByText('Primary')).toBeInTheDocument();
     expect(screen.getByText('CTA / Button')).toBeInTheDocument();
     expect(screen.getByText('Surface / Accent')).toBeInTheDocument();
     expect(screen.getByText('Text')).toBeInTheDocument();
-    expect(screen.getByText('Background')).toBeInTheDocument();
+    // Page background control was removed.
+    expect(screen.queryByText('Background')).toBeNull();
   });
 
-  it('selecting a swatch in the CTA grid updates design.colors.cta', () => {
+  it('exposes exactly 5 preset swatches per colour field', () => {
     render(<Harness />);
-    // Pick the second swatch's hex (deterministic across runs).
+    // 5 presets × 4 fields. Each preset button is named by its swatch name.
+    BRAND_PALETTE.forEach((swatch) => {
+      const matches = screen
+        .getAllByRole('button', { name: swatch.name })
+        .filter((b) => b.getAttribute('title') === swatch.name);
+      expect(matches.length).toBe(4);
+    });
+  });
+
+  it('selecting a preset in the CTA grid updates design.colors.cta', () => {
+    render(<Harness />);
     const target = BRAND_PALETTE[1];
-    // There are multiple grids; query all buttons with that swatch hex.
     const swatches = screen
       .getAllByRole('button', { name: target.name })
       .filter((b) => b.getAttribute('title') === target.name);
-    expect(swatches.length).toBeGreaterThan(0);
-    // The 2nd grid is CTA / Button — its swatches are the 2nd batch of 12.
-    // Click the 2nd-grid swatch matching target.name.
-    fireEvent.click(swatches[1] || swatches[0]);
+    // Field order: Primary[0], CTA[1], Surface[2], Text[3].
+    fireEvent.click(swatches[1]);
     const snap = readSnapshot();
     expect(snap.colors?.cta).toBe(target.hex);
+  });
+
+  it('typing a valid hex in a colour field commits it', () => {
+    render(<Harness />);
+    // First hex input belongs to the Primary field.
+    const hexInputs = screen.getAllByPlaceholderText('#0f172a') as HTMLInputElement[];
+    fireEvent.change(hexInputs[0], { target: { value: '#abcdef' } });
+    const snap = readSnapshot();
+    expect(snap.colors?.primary).toBe('#abcdef');
   });
 
   it('clicking a button shape pill updates design.button.shape', () => {
@@ -103,19 +120,18 @@ describe('DesignTab', () => {
     expect(input.maxLength).toBe(60);
   });
 
-  it('marks the banner URL as invalid when it does not start with https://', () => {
+  it('renders the Layout controls (hide product + offer position) and no banner field', () => {
     render(<Harness />);
-    const banner = screen.getByPlaceholderText(/cdn\.example\.com\/banner\.png/i) as HTMLInputElement;
-    fireEvent.change(banner, { target: { value: 'http://insecure.example.com/banner.png' } });
-    expect(screen.getByText(/must start with https:\/\//i)).toBeInTheDocument();
+    expect(screen.getByText(/Hide product name/i)).toBeInTheDocument();
+    expect(screen.getByText('Offer position')).toBeInTheDocument();
+    // Product banner URL control was removed.
+    expect(screen.queryByPlaceholderText(/cdn\.example\.com\/banner\.png/i)).toBeNull();
   });
 
-  it('accepts a banner URL that starts with https://', () => {
+  it('clicking an offer-position pill updates design.page.offerPosition', () => {
     render(<Harness />);
-    const banner = screen.getByPlaceholderText(/cdn\.example\.com\/banner\.png/i) as HTMLInputElement;
-    fireEvent.change(banner, { target: { value: 'https://cdn.example.com/banner.png' } });
-    expect(screen.queryByText(/must start with https:\/\//i)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Top' }));
     const snap = readSnapshot();
-    expect(snap.page?.productBanner).toBe('https://cdn.example.com/banner.png');
+    expect(snap.page?.offerPosition).toBe('top');
   });
 });

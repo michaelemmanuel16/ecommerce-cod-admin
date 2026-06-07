@@ -462,14 +462,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
             { id: 'settings', label: 'Settings', content: <SettingsTab /> },
             {
               id: 'design',
-              label: (
-                <>
-                  Design
-                  <span className="ml-1.5 text-[10px] bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5 font-semibold">
-                    NEW
-                  </span>
-                </>
-              ),
+              label: 'Design',
               content: <DesignTab />,
             },
           ]}

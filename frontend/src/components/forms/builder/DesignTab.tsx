@@ -1,46 +1,87 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { Check, Pipette } from 'lucide-react';
 import { Input } from '../../ui/Input';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
-import { BRAND_PALETTE } from '../../../lib/checkoutPalette';
+import { BRAND_PALETTE, isValidHex } from '../../../lib/checkoutPalette';
 import { CheckoutFormDesign } from '../../../types/checkout-form';
 
-type SwatchTarget = 'primary' | 'cta' | 'surface' | 'text' | 'background';
-
-const SwatchGrid: React.FC<{
+const ColorField: React.FC<{
   label: string;
-  selected: string | undefined;
-  onSelect: (hex: string) => void;
-  includeTransparent?: boolean;
-}> = ({ label, selected, onSelect, includeTransparent }) => (
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-    <div className="grid grid-cols-6 gap-2">
-      {includeTransparent && (
-        <button
-          type="button"
-          onClick={() => onSelect('transparent')}
-          aria-label="Transparent"
-          className={`h-9 rounded border-2 bg-white bg-[linear-gradient(45deg,#ddd_25%,transparent_25%,transparent_75%,#ddd_75%),linear-gradient(45deg,#ddd_25%,transparent_25%,transparent_75%,#ddd_75%)] bg-[length:8px_8px] bg-[position:0_0,4px_4px] ${
-            selected === 'transparent' ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+  value: string | undefined;
+  onChange: (hex: string) => void;
+}> = ({ label, value, onChange }) => {
+  const normalized = value?.toLowerCase();
+  const isPreset = BRAND_PALETTE.some((s) => s.hex.toLowerCase() === normalized);
+  const customActive = !!value && !isPreset;
+  const pickerValue = value && isValidHex(value) ? value : BRAND_PALETTE[0].hex;
+
+  // Local draft so the user can type a partial hex without it being committed
+  // (and rejected) on every keystroke. Commit only valid 7-char hex values.
+  const [hexDraft, setHexDraft] = useState(value || '');
+  useEffect(() => {
+    setHexDraft(value || '');
+  }, [value]);
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <div className="grid grid-cols-6 gap-2">
+        {BRAND_PALETTE.map((swatch) => {
+          const selected = normalized === swatch.hex.toLowerCase();
+          return (
+            <button
+              key={swatch.hex}
+              type="button"
+              onClick={() => onChange(swatch.hex)}
+              aria-label={swatch.name}
+              title={swatch.name}
+              className={`relative h-9 rounded-md border ${
+                selected ? 'ring-2 ring-offset-1 ring-gray-900 border-transparent' : 'border-gray-200'
+              }`}
+              style={{ backgroundColor: swatch.hex }}
+            >
+              {selected && (
+                <Check className="w-4 h-4 text-white absolute inset-0 m-auto drop-shadow" />
+              )}
+            </button>
+          );
+        })}
+        {/* 6th cell: hex colour picker for any colour outside the presets */}
+        <label
+          title="Custom colour"
+          className={`relative h-9 rounded-md border cursor-pointer flex items-center justify-center ${
+            customActive ? 'ring-2 ring-offset-1 ring-gray-900 border-transparent' : 'border-gray-200 bg-white'
           }`}
+          style={customActive ? { backgroundColor: value } : undefined}
+        >
+          <Pipette className={`w-4 h-4 ${customActive ? 'text-white drop-shadow' : 'text-gray-500'}`} />
+          <input
+            type="color"
+            aria-label={`${label} custom colour`}
+            value={pickerValue}
+            onChange={(e) => onChange(e.target.value)}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          />
+        </label>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <span className="text-xs text-gray-500">Hex</span>
+        <Input
+          value={hexDraft}
+          onChange={(e) => {
+            const raw = e.target.value.trim();
+            const next = raw === '' || raw.startsWith('#') ? raw : `#${raw}`;
+            setHexDraft(next);
+            if (next === '' || isValidHex(next)) onChange(next);
+          }}
+          placeholder="#0f172a"
+          maxLength={7}
+          className="h-8 w-28 font-mono text-sm"
         />
-      )}
-      {BRAND_PALETTE.map((swatch) => (
-        <button
-          key={swatch.hex}
-          type="button"
-          onClick={() => onSelect(swatch.hex)}
-          aria-label={swatch.name}
-          title={swatch.name}
-          className={`h-9 rounded border-2 ${
-            selected === swatch.hex ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
-          }`}
-          style={{ backgroundColor: swatch.hex }}
-        />
-      ))}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const PillGroup = <T extends string>({
   label,
@@ -72,6 +113,13 @@ const PillGroup = <T extends string>({
   </div>
 );
 
+const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <div>
+    <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>
+    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">{children}</div>
+  </div>
+);
+
 export const DesignTab: React.FC = () => {
   const { design, setDesign } = useCheckoutBuilder();
 
@@ -93,137 +141,103 @@ export const DesignTab: React.FC = () => {
   const updatePage = (patch: Partial<NonNullable<CheckoutFormDesign['page']>>) =>
     updateSection('page', patch);
 
-  const bannerInvalid =
-    !!design.page?.productBanner && !design.page.productBanner.startsWith('https://');
   const labelOverLimit = (design.button?.label?.length ?? 0) > 60;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Colors</h3>
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
-          <SwatchGrid
-            label="Primary"
-            selected={design.colors?.primary}
-            onSelect={(hex) => updateColors('primary', hex)}
-          />
-          <SwatchGrid
-            label="CTA / Button"
-            selected={design.colors?.cta}
-            onSelect={(hex) => updateColors('cta', hex)}
-          />
-          <SwatchGrid
-            label="Surface / Accent"
-            selected={design.colors?.surface}
-            onSelect={(hex) => updateColors('surface', hex)}
-          />
-          <SwatchGrid
-            label="Text"
-            selected={design.colors?.text}
-            onSelect={(hex) => updateColors('text', hex)}
-          />
-        </div>
-      </div>
+      <Section title="Colors">
+        <ColorField
+          label="Primary"
+          value={design.colors?.primary}
+          onChange={(hex) => updateColors('primary', hex)}
+        />
+        <ColorField
+          label="CTA / Button"
+          value={design.colors?.cta}
+          onChange={(hex) => updateColors('cta', hex)}
+        />
+        <ColorField
+          label="Surface / Accent"
+          value={design.colors?.surface}
+          onChange={(hex) => updateColors('surface', hex)}
+        />
+        <ColorField
+          label="Text"
+          value={design.colors?.text}
+          onChange={(hex) => updateColors('text', hex)}
+        />
+      </Section>
 
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Button</h3>
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
-          <PillGroup
-            label="Shape"
-            value={design.button?.shape}
-            options={[
-              { value: 'square', label: 'Square' },
-              { value: 'rounded', label: 'Rounded' },
-              { value: 'pill', label: 'Pill' },
-            ]}
-            onSelect={(shape) => updateButton({ shape })}
-          />
-          <PillGroup
-            label="Size"
-            value={design.button?.size}
-            options={[
-              { value: 'sm', label: 'S' },
-              { value: 'md', label: 'M' },
-              { value: 'lg', label: 'L' },
-            ]}
-            onSelect={(size) => updateButton({ size })}
-          />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Label override <span className="text-gray-400">(max 60 chars)</span>
-            </label>
-            <Input
-              value={design.button?.label || ''}
-              onChange={(e) => updateButton({ label: e.target.value || undefined })}
-              maxLength={60}
-              placeholder="e.g., Place Order"
-            />
-            {labelOverLimit && (
-              <p className="text-xs text-red-500 mt-1">Label must be 60 characters or fewer.</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Inputs</h3>
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
-          <PillGroup
-            label="Style"
-            value={design.input?.style}
-            options={[
-              { value: 'flat', label: 'Flat' },
-              { value: 'outlined', label: 'Outlined' },
-              { value: 'filled', label: 'Filled' },
-            ]}
-            onSelect={(style) => updateInput({ style })}
-          />
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Page</h3>
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
-          <SwatchGrid
-            label="Background"
-            includeTransparent
-            selected={design.page?.background}
-            onSelect={(hex) => updatePage({ background: hex })}
-          />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Product banner URL <span className="text-gray-400">(https://...)</span>
-            </label>
-            <Input
-              value={design.page?.productBanner || ''}
-              onChange={(e) => updatePage({ productBanner: e.target.value || undefined })}
-              placeholder="https://cdn.example.com/banner.png"
-              maxLength={500}
-            />
-            {bannerInvalid && (
-              <p className="text-xs text-red-500 mt-1">Banner URL must start with https://</p>
-            )}
-          </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={design.page?.hideProductDisplay || false}
-              onChange={(e) => updatePage({ hideProductDisplay: e.target.checked || undefined })}
-              className="rounded border-gray-300"
-            />
-            Hide product name + description on checkout
+      <Section title="Button">
+        <PillGroup
+          label="Shape"
+          value={design.button?.shape}
+          options={[
+            { value: 'square', label: 'Square' },
+            { value: 'rounded', label: 'Rounded' },
+            { value: 'pill', label: 'Pill' },
+          ]}
+          onSelect={(shape) => updateButton({ shape })}
+        />
+        <PillGroup
+          label="Size"
+          value={design.button?.size}
+          options={[
+            { value: 'sm', label: 'S' },
+            { value: 'md', label: 'M' },
+            { value: 'lg', label: 'L' },
+          ]}
+          onSelect={(size) => updateButton({ size })}
+        />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Label override <span className="text-gray-400">(max 60 chars)</span>
           </label>
-          <PillGroup
-            label="Offer position"
-            value={design.page?.offerPosition}
-            options={[
-              { value: 'top', label: 'Top' },
-              { value: 'bottom', label: 'Bottom' },
-            ]}
-            onSelect={(offerPosition) => updatePage({ offerPosition })}
+          <Input
+            value={design.button?.label || ''}
+            onChange={(e) => updateButton({ label: e.target.value || undefined })}
+            maxLength={60}
+            placeholder="e.g., Place Order"
           />
+          {labelOverLimit && (
+            <p className="text-xs text-red-500 mt-1">Label must be 60 characters or fewer.</p>
+          )}
         </div>
-      </div>
+      </Section>
+
+      <Section title="Inputs">
+        <PillGroup
+          label="Style"
+          value={design.input?.style}
+          options={[
+            { value: 'flat', label: 'Flat' },
+            { value: 'outlined', label: 'Outlined' },
+            { value: 'filled', label: 'Filled' },
+          ]}
+          onSelect={(style) => updateInput({ style })}
+        />
+      </Section>
+
+      <Section title="Layout">
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={design.page?.hideProductDisplay || false}
+            onChange={(e) => updatePage({ hideProductDisplay: e.target.checked || undefined })}
+            className="rounded border-gray-300"
+          />
+          Hide product name + description on checkout
+        </label>
+        <PillGroup
+          label="Offer position"
+          value={design.page?.offerPosition}
+          options={[
+            { value: 'top', label: 'Top' },
+            { value: 'bottom', label: 'Bottom' },
+          ]}
+          onSelect={(offerPosition) => updatePage({ offerPosition })}
+        />
+      </Section>
     </div>
   );
 };

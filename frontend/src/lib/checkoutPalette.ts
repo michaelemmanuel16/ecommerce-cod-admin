@@ -3,19 +3,14 @@ export interface PaletteSwatch {
   hex: string;
 }
 
+// Five quick-pick presets. Any other colour is reachable via the hex picker
+// rendered as the 6th cell in each colour grid.
 export const BRAND_PALETTE: readonly PaletteSwatch[] = [
   { name: 'Charcoal', hex: '#0f172a' },
-  { name: 'Slate', hex: '#475569' },
   { name: 'Blue', hex: '#2563eb' },
-  { name: 'Indigo', hex: '#4f46e5' },
-  { name: 'Purple', hex: '#7c3aed' },
   { name: 'Emerald', hex: '#059669' },
-  { name: 'Teal', hex: '#0d9488' },
   { name: 'Amber', hex: '#d97706' },
   { name: 'Red', hex: '#dc2626' },
-  { name: 'Rose', hex: '#e11d48' },
-  { name: 'Pink', hex: '#db2777' },
-  { name: 'Black', hex: '#000000' },
 ] as const;
 
 export const PALETTE_HEX_VALUES: readonly string[] = BRAND_PALETTE.map((s) => s.hex);

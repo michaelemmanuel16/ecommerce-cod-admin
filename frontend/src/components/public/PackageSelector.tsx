@@ -10,6 +10,9 @@ interface PackageSelectorProps {
   selectedPackageId: number | null;
   currency: string;
   onSelectPackage: (packageId: number) => void;
+  primaryColor?: string;
+  accentColor?: string;
+  textColor?: string;
 }
 
 export const PackageSelector: React.FC<PackageSelectorProps> = ({
@@ -17,22 +20,28 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
   selectedPackageId,
   currency,
   onSelectPackage,
+  primaryColor,
+  accentColor,
+  textColor,
 }) => {
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold text-gray-900">Select Package</h2>
+      <h2 className="text-xl font-semibold text-gray-900" style={textColor ? { color: textColor } : undefined}>Select Package</h2>
       <div className="space-y-3">
-        {packages.map((pkg) => (
+        {packages.map((pkg) => {
+          const isSelected = selectedPackageId === pkg.id;
+          return (
           <button
             key={pkg.id}
             type="button"
             onClick={() => onSelectPackage(pkg.id)}
             className={cn(
               'w-full p-4 rounded-lg border-2 transition-all text-left relative',
-              selectedPackageId === pkg.id
+              isSelected
                 ? 'border-[#0f172a] bg-gray-50'
                 : 'border-gray-200 hover:border-gray-300 bg-white'
             )}
+            style={isSelected && primaryColor ? { borderColor: primaryColor } : undefined}
           >
             <div className="space-y-2">
               {/* Top row: radio + name + badge */}
@@ -41,12 +50,13 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                 <div
                   className={cn(
                     'w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 flex-shrink-0',
-                    selectedPackageId === pkg.id
+                    isSelected
                       ? 'border-[#0f172a] bg-[#0f172a]'
                       : 'border-gray-300'
                   )}
+                  style={isSelected && primaryColor ? { borderColor: primaryColor, backgroundColor: primaryColor } : undefined}
                 >
-                  {selectedPackageId === pkg.id && (
+                  {isSelected && (
                     <Check className="w-3 h-3 text-white" />
                   )}
                 </div>
@@ -54,14 +64,14 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                 {/* Package details */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-gray-900 whitespace-nowrap">{pkg.name}</h3>
+                    <h3 className="font-semibold text-gray-900 whitespace-nowrap" style={textColor ? { color: textColor } : undefined}>{pkg.name}</h3>
                     {/* Show custom highlight if enabled, otherwise fall back to "Most Popular" */}
                     {pkg.showHighlight && pkg.highlightText ? (
-                      <span className="px-2 py-0.5 bg-[#f97316] text-white text-xs font-medium rounded whitespace-nowrap flex-shrink-0">
+                      <span className="px-2 py-0.5 bg-[#f97316] text-white text-xs font-medium rounded whitespace-nowrap flex-shrink-0" style={accentColor ? { backgroundColor: accentColor } : undefined}>
                         {pkg.highlightText}
                       </span>
                     ) : pkg.isPopular ? (
-                      <span className="px-2 py-0.5 bg-[#f97316] text-white text-xs font-medium rounded whitespace-nowrap flex-shrink-0">
+                      <span className="px-2 py-0.5 bg-[#f97316] text-white text-xs font-medium rounded whitespace-nowrap flex-shrink-0" style={accentColor ? { backgroundColor: accentColor } : undefined}>
                         Most Popular
                       </span>
                     ) : null}
@@ -101,7 +111,8 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
               </div>
             </div>
           </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

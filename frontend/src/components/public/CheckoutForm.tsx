@@ -59,12 +59,13 @@ interface FieldWrapperProps {
   required: boolean;
   error: FieldError | undefined;
   children: React.ReactNode;
+  labelColor?: string;
 }
 
-function FieldWrapper({ fieldKey, label, required, error, children }: FieldWrapperProps): React.JSX.Element {
+function FieldWrapper({ fieldKey, label, required, error, children, labelColor }: FieldWrapperProps): React.JSX.Element {
   return (
     <div key={fieldKey}>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
+      <label className="block text-sm font-medium text-gray-700 mb-1" style={labelColor ? { color: labelColor } : undefined}>
         {label} {required && <span className="text-red-500">*</span>}
       </label>
       {children}
@@ -112,15 +113,35 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
     return (errors as Record<string, FieldError | undefined>)[formKey];
   }
 
-  const inputClassName = (hasError: boolean) => cn(
-    'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent',
-    hasError ? 'border-red-500' : 'border-gray-300'
-  );
+  // Theme derived from the form's Design settings (live-streamed in preview).
+  const design = formData.design || {};
+  const colors = design.colors || {};
+  const ctaColor = colors.cta || '#0f172a';
+  const surfaceColor = colors.surface || '#f97316';
+  const primaryColor = colors.primary || ctaColor;
+  const textColor = colors.text;
+  const inputStyle = design.input?.style || 'outlined';
+  const buttonShape = design.button?.shape || 'rounded';
+  const buttonSize = design.button?.size || 'md';
+  const buttonLabelOverride = design.button?.label?.trim() || undefined;
+  const offerOnTop = design.page?.offerPosition === 'top';
 
-  const selectClassName = (hasError: boolean) => cn(
-    'w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f172a] focus:border-transparent bg-white',
-    hasError ? 'border-red-500' : 'border-gray-300'
-  );
+  // Custom property drives the Tailwind focus ring colour per input.
+  const fieldStyle = { ['--tw-ring-color' as string]: primaryColor } as React.CSSProperties;
+
+  const fieldBase = (hasError: boolean) => {
+    const base = 'w-full px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition-colors';
+    if (inputStyle === 'flat') {
+      return cn(base, 'border-0 border-b-2 rounded-none bg-transparent px-1', hasError ? 'border-red-500' : 'border-gray-300');
+    }
+    if (inputStyle === 'filled') {
+      return cn(base, 'border rounded-lg bg-gray-100', hasError ? 'border-red-500' : 'border-transparent');
+    }
+    return cn(base, 'border rounded-lg bg-white', hasError ? 'border-red-500' : 'border-gray-300');
+  };
+  const inputClassName = (hasError: boolean) => fieldBase(hasError);
+  const selectClassName = (hasError: boolean) =>
+    cn(fieldBase(hasError), inputStyle === 'flat' ? 'bg-white' : '');
 
   function requiredRule(label: string): RegisterOptions | undefined {
     return { required: `${label} is required` };
@@ -137,10 +158,11 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
 
     if (standard?.key === 'region') {
       return (
-        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor}>
           <select
             {...register(formKey as any, validation)}
             className={selectClassName(!!error)}
+            style={fieldStyle}
           >
             <option value="">Select {field.label.toLowerCase()}</option>
             {(formData.regions?.available || []).map((region: string) => (
@@ -153,12 +175,13 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
 
     if (standard?.key === 'streetAddress' || (!standard && field.type === 'textarea')) {
       return (
-        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor}>
           <textarea
             {...register(formKey as any, validation)}
             rows={3}
             placeholder={`Enter ${field.label.toLowerCase()}`}
             className={cn(inputClassName(!!error), 'resize-none')}
+            style={fieldStyle}
           />
         </FieldWrapper>
       );
@@ -166,10 +189,11 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
 
     if (!standard && field.type === 'select') {
       return (
-        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor}>
           <select
             {...register(formKey as any, validation)}
             className={selectClassName(!!error)}
+            style={fieldStyle}
           >
             <option value="">Select {field.label.toLowerCase()}</option>
             {(field.options || []).map((opt: string) => (
@@ -190,12 +214,13 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
         },
       };
       return (
-        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor}>
           <input
             {...register(formKey as any, phoneValidation)}
             type="tel"
             placeholder={`Enter ${field.label.toLowerCase()}`}
             className={inputClassName(!!error)}
+            style={fieldStyle}
           />
         </FieldWrapper>
       );
@@ -210,12 +235,13 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
         },
       };
       return (
-        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
+        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor}>
           <input
             {...register(formKey as any, emailValidation)}
             type="email"
             placeholder={`Enter ${field.label.toLowerCase()}`}
             className={inputClassName(!!error)}
+            style={fieldStyle}
           />
         </FieldWrapper>
       );
@@ -271,7 +297,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
         {/* Header */}
         {!formData.design?.page?.hideProductDisplay && (
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2" style={textColor ? { color: textColor } : undefined}>
               {formData.product?.name || formData.name || 'Product Order'}
             </h1>
             {formData.description && (
@@ -284,9 +310,24 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Left column - Form fields and selections */}
             <div className="lg:col-span-2 space-y-6">
+              {/* Package Selection — rendered first when offer position is "top" */}
+              {offerOnTop && (
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                  <PackageSelector
+                    packages={formData.packages}
+                    selectedPackageId={selectedPackageId}
+                    currency={formData.currency}
+                    onSelectPackage={setSelectedPackageId}
+                    primaryColor={primaryColor}
+                    accentColor={surfaceColor}
+                    textColor={textColor}
+                  />
+                </div>
+              )}
+
               {/* Customer Information */}
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-6" style={textColor ? { color: textColor } : undefined}>
                   Your Information
                 </h2>
 
@@ -295,15 +336,20 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
                 </div>
               </div>
 
-              {/* Package Selection */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <PackageSelector
-                  packages={formData.packages}
-                  selectedPackageId={selectedPackageId}
-                  currency={formData.currency}
-                  onSelectPackage={setSelectedPackageId}
-                />
-              </div>
+              {/* Package Selection — default position (below customer info) */}
+              {!offerOnTop && (
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                  <PackageSelector
+                    packages={formData.packages}
+                    selectedPackageId={selectedPackageId}
+                    currency={formData.currency}
+                    onSelectPackage={setSelectedPackageId}
+                    primaryColor={primaryColor}
+                    accentColor={surfaceColor}
+                    textColor={textColor}
+                  />
+                </div>
+              )}
 
               {/* Add-ons Selection */}
               {formData.upsells.length > 0 && (
@@ -326,9 +372,12 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
                 currency={formData.currency}
                 isSubmitting={isSubmitting}
                 onSubmit={handleSubmit(onFormSubmit)}
-                buttonColor={formData.design?.colors?.cta}
-                accentColor={formData.design?.colors?.surface}
-                submitLabel={isDigital ? 'Proceed to Payment' : 'Place Order'}
+                buttonColor={ctaColor}
+                accentColor={surfaceColor}
+                textColor={textColor}
+                buttonShape={buttonShape}
+                buttonSize={buttonSize}
+                submitLabel={buttonLabelOverride || (isDigital ? 'Proceed to Payment' : 'Place Order')}
               />
             </div>
           </div>
