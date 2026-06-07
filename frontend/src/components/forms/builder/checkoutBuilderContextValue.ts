@@ -1,6 +1,6 @@
 import React, { createContext, useContext } from 'react';
 import { UseFormRegister, UseFormWatch, UseFormSetValue, FieldErrors } from 'react-hook-form';
-import { CheckoutFormDesign, FormField, ProductPackage, Upsell, PixelConfig } from '../../../types/checkout-form';
+import { CheckoutFormDesign, FieldType, FormField, ProductPackage, Upsell, PixelConfig } from '../../../types/checkout-form';
 import { Product } from '../../../types';
 
 export interface BuilderFormValues {
@@ -12,6 +12,7 @@ export interface BuilderFormValues {
   buttonColor: string;
   accentColor: string;
   currency: string;
+  redirectUrl: string;
 }
 
 export interface CheckoutBuilderContextValue {
@@ -40,7 +41,7 @@ export interface CheckoutBuilderContextValue {
 
   products: Product[];
 
-  addField: () => void;
+  addField: (type: FieldType) => void;
   updateField: (id: string, updated: FormField) => void;
   deleteField: (id: string) => void;
   handleFieldDragEnd: (event: any) => void;

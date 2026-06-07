@@ -5,7 +5,7 @@ import { buildEmbedSnippet, formUrl, EmbedSnippetForm } from '../../lib/embedSni
 
 const COPIED_FEEDBACK_MS = 2000;
 
-const useCopyToClipboard = () => {
+export const useCopyToClipboard = () => {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<number | null>(null);
 

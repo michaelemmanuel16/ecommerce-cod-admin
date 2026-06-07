@@ -21,6 +21,23 @@ export const SettingsTab: React.FC = () => {
       </div>
 
       <div>
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Thank You Page</h3>
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Custom Redirect URL</label>
+          <Input
+            {...ctx.register('redirectUrl')}
+            placeholder="https://yourbrand.com/thank-you"
+          />
+          <p className="text-xs text-gray-500 mt-2">
+            After a successful order, customers are sent here instead of the built-in confirmation
+            screen. Order details are appended as <code>?order_id=</code>, <code>total=</code> &amp;{' '}
+            <code>currency=</code>. Leave blank to keep the default confirmation page. Your page must
+            fire its own purchase pixel.
+          </p>
+        </div>
+      </div>
+
+      <div>
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Tracking &amp; Pixels</h3>
         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
           <div>

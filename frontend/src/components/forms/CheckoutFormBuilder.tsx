@@ -7,6 +7,7 @@ import { Tabs } from '../ui/Tabs';
 import {
   CheckoutForm,
   CheckoutFormDesign,
+  FieldType,
   FormField,
   ProductPackage,
   Upsell,
@@ -21,6 +22,8 @@ import {
   CheckoutBuilderContextValue,
 } from './builder/checkoutBuilderContextValue';
 import { BasicsTab } from './builder/BasicsTab';
+import { FieldsTab } from './builder/FieldsTab';
+import { createFieldOfType } from './builder/fieldTypes';
 import { PackagesTab } from './builder/PackagesTab';
 import { UpsellsTab } from './builder/UpsellsTab';
 import { SettingsTab } from './builder/SettingsTab';
@@ -69,6 +72,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       buttonColor: initialData?.styling?.buttonColor || '#0f172a',
       accentColor: initialData?.styling?.accentColor || '#f97316',
       currency: initialData?.currency || 'GHS',
+      redirectUrl: initialData?.redirectUrl || '',
     },
   });
 
@@ -98,6 +102,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         buttonColor: initialData.styling?.buttonColor || '#0f172a',
         accentColor: initialData.styling?.accentColor || '#f97316',
         currency: initialData.currency || 'GHS',
+        redirectUrl: initialData.redirectUrl || '',
       });
       setFields(initialData.fields || defaultFields);
       setPackages(initialData.packages || []);
@@ -170,12 +175,14 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       productId: Number(productIdValue) || 0,
       product: previewProduct,
       fields,
+      // Streamed so the State field's dropdown updates live when the country changes.
+      regions: { available: currentRegions },
       packages,
       upsells,
       design,
       pixelConfig,
     }),
-    [name, description, currency, defaultCountry, productIdValue, previewProduct, fields, packages, upsells, design, pixelConfig]
+    [name, description, currency, defaultCountry, productIdValue, previewProduct, fields, currentRegions, packages, upsells, design, pixelConfig]
   );
   const hasMountedRef = useRef(false);
   const lastSnapshotRef = useRef<string>('');
@@ -204,11 +211,8 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       });
     }
   };
-  const addField = () =>
-    setFields([
-      ...fields,
-      { id: crypto.randomUUID(), label: 'New Field', type: 'text', required: false, enabled: true },
-    ]);
+  const addField = (type: FieldType) =>
+    setFields([...fields, createFieldOfType(type)]);
   const updateField = (id: string, updated: FormField) =>
     setFields(fields.map((f) => (f.id === id ? updated : f)));
   const deleteField = (id: string) => setFields(fields.filter((f) => f.id !== id));
@@ -374,6 +378,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         },
         design,
         pixelConfig: Object.values(pixelConfig).some((v) => v) ? pixelConfig : null,
+        redirectUrl: data.redirectUrl?.trim() || null,
       };
 
       await onSave(formData);
@@ -439,6 +444,18 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
           tabs={[
             { id: 'basics', label: 'Basics', content: <BasicsTab /> },
             {
+              id: 'fields',
+              label: (
+                <>
+                  Fields{' '}
+                  {fields.length > 0 && (
+                    <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{fields.length}</span>
+                  )}
+                </>
+              ),
+              content: <FieldsTab />,
+            },
+            {
               id: 'packages',
               label: (
                 <>
@@ -462,12 +479,12 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
               ),
               content: <UpsellsTab />,
             },
-            { id: 'settings', label: 'Settings', content: <SettingsTab /> },
             {
               id: 'design',
               label: 'Design',
               content: <DesignTab />,
             },
+            { id: 'settings', label: 'Settings', content: <SettingsTab /> },
           ]}
           defaultTab="basics"
         />

@@ -146,7 +146,8 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       packages,
       upsells,
       isActive,
-      pixelConfig
+      pixelConfig,
+      redirectUrl
     } = req.body;
 
     const designValidation = validateDesign(design);
@@ -218,6 +219,7 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
             regions,
             isActive: isActive !== undefined ? isActive : true,
             pixelConfig: pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : undefined,
+            redirectUrl: redirectUrl ? String(redirectUrl).trim() : null,
             packages: normalizedPackages && normalizedPackages.length > 0 ? {
               create: normalizedPackages
             } : undefined,
@@ -300,7 +302,8 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       packages,
       upsells,
       isActive,
-      pixelConfig
+      pixelConfig,
+      redirectUrl
     } = req.body;
 
     const designValidation = validateDesign(design);
@@ -357,6 +360,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     if (regions !== undefined) updateData.regions = regions;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (pixelConfig !== undefined) updateData.pixelConfig = pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : null;
+    if (redirectUrl !== undefined) updateData.redirectUrl = redirectUrl ? String(redirectUrl).trim() : null;
 
     await prisma.checkoutForm.update({
       where: { id: formId },

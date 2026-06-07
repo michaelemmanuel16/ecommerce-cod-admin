@@ -1,16 +1,10 @@
 import React from 'react';
-import { Plus } from 'lucide-react';
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
 import { Select } from '../../ui/Select';
-import { FormFieldEditor } from '../FormFieldEditor';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
 
 export const BasicsTab: React.FC = () => {
   const ctx = useCheckoutBuilder();
-  const sensors = useSensors(useSensor(PointerSensor));
 
   const productOptions = [
     { value: 0, label: 'Select Product' },
@@ -76,30 +70,6 @@ export const BasicsTab: React.FC = () => {
           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           placeholder="Enter form description..."
         />
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-gray-900">Form Fields</h3>
-          <Button type="button" variant="secondary" size="sm" onClick={ctx.addField}>
-            <Plus className="w-4 h-4 mr-1" />
-            Add Field
-          </Button>
-        </div>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={ctx.handleFieldDragEnd}>
-          <SortableContext items={ctx.fields.map((f) => f.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-2">
-              {ctx.fields.map((field) => (
-                <FormFieldEditor
-                  key={field.id}
-                  field={field}
-                  onUpdate={(updated) => ctx.updateField(field.id, updated)}
-                  onDelete={() => ctx.deleteField(field.id)}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
       </div>
     </div>
   );

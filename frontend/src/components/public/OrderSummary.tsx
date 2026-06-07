@@ -125,8 +125,8 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
         onClick={onSubmit}
         disabled={!selectedPackage || isSubmitting}
         isLoading={isSubmitting}
-        className={`w-full text-white font-semibold px-6 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed ${SHAPE_CLASS[buttonShape]} ${SIZE_CLASS[buttonSize]}`}
-        style={(!selectedPackage || isSubmitting) ? undefined : { backgroundColor: buttonColor }}
+        className={`w-full text-white font-semibold px-6 transition-colors disabled:cursor-not-allowed ${!selectedPackage ? 'opacity-60' : ''} ${SHAPE_CLASS[buttonShape]} ${SIZE_CLASS[buttonSize]}`}
+        style={{ backgroundColor: buttonColor }}
       >
         {isSubmitting ? 'Processing...' : submitLabel}
       </Button>

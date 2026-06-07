@@ -86,6 +86,7 @@ export interface PublicCheckoutForm {
     tiktokPixelId?: string;
     googleTagManagerId?: string;
   };
+  redirectUrl?: string; // Custom thank-you page; overrides the built-in success screen
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

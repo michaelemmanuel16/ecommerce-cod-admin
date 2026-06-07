@@ -4,12 +4,20 @@ import { Button } from '../../ui/Button';
 import { PackageEditor } from '../PackageEditor';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
 import { getCurrencyForCountry } from '../../../utils/countries';
+import { formUrl } from '../../../lib/embedSnippet';
 
 export const PackagesTab: React.FC = () => {
   const ctx = useCheckoutBuilder();
   const selectedProductId = ctx.watch('productId');
   const selectedProduct = ctx.products.find((p) => p.id === Number(selectedProductId));
   const currency = ctx.watch('currency') || getCurrencyForCountry(ctx.watch('defaultCountry') as any);
+  const slug = ctx.watch('slug');
+
+  // A shareable per-package link is only valid once the form is saved: it needs a
+  // slug and the package's real database id (new, unsaved packages carry a negative
+  // temporary id). Until then we show a hint instead of a broken link.
+  const checkoutLinkFor = (packageId: number): string | undefined =>
+    slug && packageId > 0 ? `${formUrl(slug)}?package=${packageId}` : undefined;
 
   return (
     <div className="space-y-4">
@@ -29,6 +37,7 @@ export const PackagesTab: React.FC = () => {
               package={pkg}
               productPrice={productPrice}
               currency={currency}
+              checkoutLink={checkoutLinkFor(pkg.id)}
               onUpdate={(updated) => ctx.updatePackage(pkg.id, updated)}
               onDelete={() => ctx.deletePackage(pkg.id)}
             />

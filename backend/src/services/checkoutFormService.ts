@@ -261,6 +261,7 @@ export class CheckoutFormService {
         currency: true,
         regions: true,
         pixelConfig: true,
+        redirectUrl: true,
         formType: true,
         product: {
           select: {

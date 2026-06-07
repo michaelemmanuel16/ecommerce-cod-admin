@@ -10,6 +10,9 @@ import { cn } from '../../utils/cn';
 interface CheckoutFormProps {
   formData: PublicCheckoutForm;
   onSubmit: (data: CheckoutFormData) => Promise<void>;
+  // When set (from a `?package=<id>` deep link), the checkout is locked to this one
+  // package. An id with no matching package falls back to showing every package.
+  lockedPackageId?: number | null;
 }
 
 export interface CheckoutFormData {
@@ -60,11 +63,15 @@ interface FieldWrapperProps {
   error: FieldError | undefined;
   children: React.ReactNode;
   labelColor?: string;
+  widthPercent?: number;
 }
 
-function FieldWrapper({ fieldKey, label, required, error, children, labelColor }: FieldWrapperProps): React.JSX.Element {
+function FieldWrapper({ fieldKey, label, required, error, children, labelColor, widthPercent }: FieldWrapperProps): React.JSX.Element {
+  // Width is a percentage of the row; the container uses negative side margins so
+  // the px-2 gutters line up. Two 50% fields share a row, full width gets its own.
+  const width = widthPercent && widthPercent < 100 ? `${widthPercent}%` : '100%';
   return (
-    <div key={fieldKey}>
+    <div key={fieldKey} className="px-2 mb-4" style={{ width }}>
       <label className="block text-sm font-medium text-gray-700 mb-1" style={labelColor ? { color: labelColor } : undefined}>
         {label} {required && <span className="text-red-500">*</span>}
       </label>
@@ -76,11 +83,18 @@ function FieldWrapper({ fieldKey, label, required, error, children, labelColor }
   );
 }
 
-export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }) => {
+export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, lockedPackageId }) => {
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<Set<number>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isDigital = formData.formType === 'digital' || formData.product?.productType === 'digital';
+
+  // Deep-link lock: when the page resolves a `?package=<id>`, show only that package
+  // (focused one-option checkout). An id with no match falls back to every package
+  // with the default pre-selected.
+  const lockedPackage =
+    lockedPackageId != null ? formData.packages.find((p) => p.id === lockedPackageId) || null : null;
+  const visiblePackages = lockedPackage ? [lockedPackage] : formData.packages;
 
   const {
     register,
@@ -89,11 +103,15 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
   } = useForm<CheckoutFormData>();
 
   useEffect(() => {
+    if (lockedPackage) {
+      if (selectedPackageId !== lockedPackage.id) setSelectedPackageId(lockedPackage.id);
+      return;
+    }
     const defaultPackage = formData.packages.find(pkg => pkg.isDefault);
     if (defaultPackage && !selectedPackageId) {
       setSelectedPackageId(defaultPackage.id);
     }
-  }, [formData.packages, selectedPackageId]);
+  }, [formData.packages, selectedPackageId, lockedPackage]);
 
   const selectedPackage = formData.packages.find((p) => p.id === selectedPackageId) || null;
 
@@ -147,65 +165,83 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
     return { required: `${label} is required` };
   }
 
+  // Field keys are dynamic (standard keys or `customFields.*` paths), so the
+  // name/options don't line up with the static CheckoutFormData type — cast once here.
+  const reg = (key: string, opts?: RegisterOptions) => register(key as any, opts as any);
+
   function renderField(field: FormField): React.JSX.Element {
     const standard = getStandardField(field.label);
     const formKey = standard ? standard.key : `customFields.${field.label}`;
     let isRequired = field.required ?? (standard ? DEFAULT_REQUIRED_KEYS.has(standard.key) : false);
     // For digital products: email is always required
-    if (isDigital && standard?.key === 'email') isRequired = true;
+    if (isDigital && (standard?.key === 'email' || field.type === 'email')) isRequired = true;
     const error = getFieldError(formKey);
+    const hasError = !!error;
     const validation: RegisterOptions | undefined = isRequired ? requiredRule(field.label) : undefined;
+    const placeholder = field.placeholder || `Enter ${field.label.toLowerCase()}`;
+    const wrapKey = field.id || field.label;
 
-    if (standard?.key === 'region') {
-      return (
-        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor}>
-          <select
-            {...register(formKey as any, validation)}
-            className={selectClassName(!!error)}
-            style={fieldStyle}
-          >
-            <option value="">Select {field.label.toLowerCase()}</option>
-            {(formData.regions?.available || []).map((region: string) => (
-              <option key={region} value={region}>{region}</option>
-            ))}
-          </select>
-        </FieldWrapper>
+    // Each branch builds only the inner control; the shared FieldWrapper (label,
+    // width, error) is rendered once below so its props live in a single place.
+    let control: React.JSX.Element;
+
+    // Country-driven states dropdown (region standard key or the explicit "state" type).
+    if (standard?.key === 'region' || field.type === 'state') {
+      control = (
+        <select {...reg(formKey, validation)} className={selectClassName(hasError)} style={fieldStyle}>
+          <option value="">Select {field.label.toLowerCase()}</option>
+          {(formData.regions?.available || []).map((region: string) => (
+            <option key={region} value={region}>{region}</option>
+          ))}
+        </select>
       );
-    }
-
-    if (standard?.key === 'streetAddress' || (!standard && field.type === 'textarea')) {
-      return (
-        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor}>
-          <textarea
-            {...register(formKey as any, validation)}
-            rows={3}
-            placeholder={`Enter ${field.label.toLowerCase()}`}
-            className={cn(inputClassName(!!error), 'resize-none')}
-            style={fieldStyle}
-          />
-        </FieldWrapper>
+    } else if (standard?.key === 'streetAddress' || (!standard && field.type === 'textarea')) {
+      control = (
+        <textarea
+          {...reg(formKey, validation)}
+          rows={3}
+          placeholder={placeholder}
+          className={cn(inputClassName(hasError), 'resize-none')}
+          style={fieldStyle}
+        />
       );
-    }
-
-    if (!standard && field.type === 'select') {
-      return (
-        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor}>
-          <select
-            {...register(formKey as any, validation)}
-            className={selectClassName(!!error)}
-            style={fieldStyle}
-          >
-            <option value="">Select {field.label.toLowerCase()}</option>
-            {(field.options || []).map((opt: string) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-        </FieldWrapper>
+    } else if (!standard && (field.type === 'select' || field.type === 'multiselect')) {
+      const isMulti = field.type === 'multiselect';
+      control = (
+        <select
+          {...reg(formKey, validation)}
+          multiple={isMulti}
+          className={cn(selectClassName(hasError), isMulti ? 'h-auto min-h-[6rem]' : '')}
+          style={fieldStyle}
+        >
+          {!isMulti && <option value="">Select {field.label.toLowerCase()}</option>}
+          {(field.options || []).map((opt: string) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
       );
-    }
-
-    const isPhone = standard?.key === 'phone' || standard?.key === 'alternativePhone' || (!standard && field.type === 'phone');
-    if (isPhone) {
+    } else if (!standard && field.type === 'checkbox') {
+      const checkboxOptions = field.options || [];
+      control = (
+        <div className="space-y-2">
+          {checkboxOptions.map((opt: string) => (
+            <label key={opt} className="flex items-center gap-2 cursor-pointer">
+              <input
+                {...reg(formKey, validation)}
+                type="checkbox"
+                value={opt}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2"
+                style={fieldStyle}
+              />
+              <span className="text-sm text-gray-700">{opt}</span>
+            </label>
+          ))}
+          {checkboxOptions.length === 0 && (
+            <span className="text-sm text-gray-400">No options configured</span>
+          )}
+        </div>
+      );
+    } else if (standard?.key === 'phone' || standard?.key === 'alternativePhone' || (!standard && field.type === 'phone')) {
       const phoneValidation: RegisterOptions = {
         ...(isRequired ? { required: `${field.label} is required` } : {}),
         pattern: {
@@ -213,20 +249,10 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
           message: 'Please enter a valid phone number (8-15 digits)',
         },
       };
-      return (
-        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor}>
-          <input
-            {...register(formKey as any, phoneValidation)}
-            type="tel"
-            placeholder={`Enter ${field.label.toLowerCase()}`}
-            className={inputClassName(!!error)}
-            style={fieldStyle}
-          />
-        </FieldWrapper>
+      control = (
+        <input {...reg(formKey, phoneValidation)} type="tel" placeholder={placeholder} className={inputClassName(hasError)} style={fieldStyle} />
       );
-    }
-
-    if (standard?.key === 'email') {
+    } else if (standard?.key === 'email' || field.type === 'email') {
       const emailValidation: RegisterOptions = {
         ...(isRequired ? { required: `${field.label} is required` } : {}),
         pattern: {
@@ -234,27 +260,19 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
           message: 'Please enter a valid email address',
         },
       };
-      return (
-        <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor}>
-          <input
-            {...register(formKey as any, emailValidation)}
-            type="email"
-            placeholder={`Enter ${field.label.toLowerCase()}`}
-            className={inputClassName(!!error)}
-            style={fieldStyle}
-          />
-        </FieldWrapper>
+      control = (
+        <input {...reg(formKey, emailValidation)} type="email" placeholder={placeholder} className={inputClassName(hasError)} style={fieldStyle} />
+      );
+    } else {
+      const inputType = !standard && field.type === 'number' ? 'number' : 'text';
+      control = (
+        <input {...reg(formKey, validation)} type={inputType} placeholder={placeholder} className={inputClassName(hasError)} style={fieldStyle} />
       );
     }
 
     return (
-      <FieldWrapper key={field.id || field.label} fieldKey={formKey} label={field.label} required={isRequired} error={error}>
-        <input
-          {...register(formKey as any, validation)}
-          type="text"
-          placeholder={`Enter ${field.label.toLowerCase()}`}
-          className={inputClassName(!!error)}
-        />
+      <FieldWrapper key={wrapKey} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor} widthPercent={field.widthPercent}>
+        {control}
       </FieldWrapper>
     );
   }
@@ -314,7 +332,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
               {offerOnTop && (
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                   <PackageSelector
-                    packages={formData.packages}
+                    packages={visiblePackages}
                     selectedPackageId={selectedPackageId}
                     currency={formData.currency}
                     onSelectPackage={setSelectedPackageId}
@@ -331,7 +349,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
                   Your Information
                 </h2>
 
-                <div className="space-y-4">
+                <div className="flex flex-wrap -mx-2">
                   {getFieldsToRender().map(renderField)}
                 </div>
               </div>
@@ -340,7 +358,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit }
               {!offerOnTop && (
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                   <PackageSelector
-                    packages={formData.packages}
+                    packages={visiblePackages}
                     selectedPackageId={selectedPackageId}
                     currency={formData.currency}
                     onSelectPackage={setSelectedPackageId}

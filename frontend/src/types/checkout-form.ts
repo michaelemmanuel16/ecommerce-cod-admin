@@ -1,4 +1,13 @@
-export type FieldType = 'text' | 'phone' | 'textarea' | 'select';
+export type FieldType =
+  | 'text'
+  | 'phone'
+  | 'textarea'
+  | 'select' // rendered as a "Dropdown" in the builder
+  | 'email'
+  | 'number'
+  | 'checkbox'
+  | 'multiselect'
+  | 'state'; // country-driven states dropdown (uses the form's regions list)
 
 export interface FormField {
   id: string; // UI-only ID, not from database
@@ -6,7 +15,9 @@ export interface FormField {
   type: FieldType;
   required: boolean;
   enabled: boolean;
-  options?: string[]; // For select type
+  options?: string[]; // For select / multiselect types
+  placeholder?: string;
+  widthPercent?: number; // 1-100; controls row width so fields can share a row. Defaults to 100.
 }
 
 export interface ProductPackage {
@@ -107,6 +118,7 @@ export interface CheckoutForm {
   styling: CheckoutFormStyling;
   design?: CheckoutFormDesign;
   pixelConfig?: PixelConfig;
+  redirectUrl?: string; // Custom thank-you page; overrides the built-in success screen
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
