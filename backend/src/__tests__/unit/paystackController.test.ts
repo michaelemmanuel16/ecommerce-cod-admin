@@ -216,6 +216,50 @@ describe('paystackController.handleWebhook — tenant scoping + idempotency', ()
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('rejects an underpayment — marks payment_failed and never runs the paid update', async () => {
+    // Order total is GH₵500 (50000 minor units) but only GH₵240 was paid.
+    (prismaMock.order.findUnique as any).mockResolvedValue({ tenantId: 'tenant-1', totalAmount: 500 });
+    mockedPaystack.verifyTransaction.mockResolvedValueOnce({
+      data: { status: 'success', reference: 'ref_under', amount: 240_00, currency: 'GHS', metadata: { orderId: 42 } },
+    } as any);
+    (prismaMock.webhookEvent.create as any).mockResolvedValueOnce({} as any);
+
+    const res = buildRes();
+    await handleWebhook(
+      buildReq(JSON.stringify({ event: 'charge.success', data: { reference: 'ref_under', amount: 240_00, fees: 0, currency: 'GHS', metadata: { orderId: 42 } } })),
+      res,
+    );
+
+    // Order set to payment_failed; the atomic "mark paid" $queryRaw never runs.
+    expect(prismaMock.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'payment_failed' }) }),
+    );
+    expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('fulfils when the paid amount matches the order total', async () => {
+    // Exact match: GH₵240 order, GH₵240 paid → proceeds to the paid update.
+    (prismaMock.order.findUnique as any).mockResolvedValue({ tenantId: 'tenant-1', totalAmount: 240 });
+    mockedPaystack.verifyTransaction.mockResolvedValueOnce({
+      data: { status: 'success', reference: 'ref_ok', amount: 240_00, currency: 'GHS', metadata: { orderId: 42 } },
+    } as any);
+    (prismaMock.webhookEvent.create as any).mockResolvedValueOnce({} as any);
+
+    const res = buildRes();
+    await handleWebhook(
+      buildReq(JSON.stringify({ event: 'charge.success', data: { reference: 'ref_ok', amount: 240_00, fees: 0, currency: 'GHS', metadata: { orderId: 42 } } })),
+      res,
+    );
+
+    // Reached the atomic paid update; not failed.
+    expect(prismaMock.$queryRaw).toHaveBeenCalled();
+    expect(prismaMock.order.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'payment_failed' }) }),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it('ignores non-numeric metadata.orderId without crashing Prisma', async () => {
     (prismaMock.webhookEvent.create as any).mockResolvedValueOnce({} as any);
 

@@ -1,0 +1,21 @@
+# Code owners — require review from the owner on sensitive paths.
+# Enforced only when branch protection has "Require review from Code Owners"
+# enabled on main/develop (set in GitHub repo settings).
+
+# CI/CD and this file itself — workflow edits can exfiltrate all CI secrets
+# (deploy SSH key, app secrets), so they must not merge unreviewed.
+/.github/                                   @michaelemmanuel16
+
+# Payment, webhook, and order-intake integrity — money paths.
+/backend/src/controllers/paystackController.ts      @michaelemmanuel16
+/backend/src/controllers/publicOrderController.ts   @michaelemmanuel16
+/backend/src/controllers/financialController.ts     @michaelemmanuel16
+/backend/src/services/paystackService.ts            @michaelemmanuel16
+/backend/src/services/webhookService.ts             @michaelemmanuel16
+
+# Auth, tenant isolation, and DB schema.
+/backend/src/middleware/auth.ts             @michaelemmanuel16
+/backend/src/utils/jwt.ts                   @michaelemmanuel16
+/backend/src/utils/prismaExtensions.ts      @michaelemmanuel16
+/backend/src/utils/tenantContext.ts         @michaelemmanuel16
+/backend/prisma/schema.prisma               @michaelemmanuel16

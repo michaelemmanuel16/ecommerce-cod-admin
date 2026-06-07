@@ -35,7 +35,11 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         isActive: true
       },
       include: {
-        product: true
+        product: true,
+        // Load the authoritative package/upsell prices. Order totals are computed
+        // from these, NEVER from the client-supplied amounts (price tampering).
+        packages: true,
+        upsells: true
       }
     });
 
@@ -172,35 +176,58 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
     }
 
-    // Calculate package pricing
-    // Package price is the total bundle price (what customer pays)
-    // Quantity is what customer receives
-    const packageQuantity = selectedPackage.quantity || 1;
-    const packagePrice = selectedPackage.price;
-    const packageTotal = packagePrice; // NOT price * quantity
-    const unitPrice = packagePrice / packageQuantity; // Effective per-item price
-
-    // Calculate upsells total
-    let upsellsTotal = 0;
-    if (selectedUpsells && Array.isArray(selectedUpsells)) {
-      upsellsTotal = selectedUpsells.reduce((sum: number, upsell: any) => sum + upsell.price, 0);
+    // SECURITY: prices are authoritative from the DB, never trusted from the client.
+    // Resolve the selected package and upsells against the form's stored rows and
+    // compute the total from those — otherwise a tampered request body could set
+    // price:1 and buy full-price goods (and digital products auto-fulfil on payment).
+    const dbPackages = (form as any).packages as Array<{
+      id: number; name: string; price: number; quantity: number;
+      originalPrice: number | null; discountType: string; discountValue: number;
+    }>;
+    const selectedDbPackage =
+      dbPackages.find((p) => p.id === Number(selectedPackage?.id)) ||
+      dbPackages.find((p) => p.name === selectedPackage?.name);
+    if (!selectedDbPackage) {
+      res.status(400).json({ error: 'Selected package is not available' });
+      return;
     }
+
+    // Package price is the total bundle price (what customer pays); quantity is
+    // what they receive. unitPrice is the effective per-item price.
+    const packageQuantity = selectedDbPackage.quantity || 1;
+    const packagePrice = selectedDbPackage.price;
+    const packageTotal = packagePrice; // NOT price * quantity
+    const unitPrice = packagePrice / packageQuantity;
+
+    // Resolve each selected upsell against the form's DB upsells (by id) and sum
+    // their server-side prices.
+    const dbUpsells = (form as any).upsells as Array<{
+      id: number; name: string; description: string | null; price: number;
+      productId: number | null; items: any; originalPrice: number | null;
+      discountType: string; discountValue: number;
+    }>;
+    const resolvedUpsells: typeof dbUpsells = [];
+    if (selectedUpsells && Array.isArray(selectedUpsells)) {
+      for (const upsell of selectedUpsells) {
+        const dbUpsell = dbUpsells.find((u) => u.id === Number(upsell?.id));
+        if (!dbUpsell) {
+          res.status(400).json({ error: 'Selected add-on is not available' });
+          return;
+        }
+        resolvedUpsells.push(dbUpsell);
+      }
+    }
+    const upsellsTotal = resolvedUpsells.reduce((sum, u) => sum + u.price, 0);
 
     const subtotal = packageTotal + upsellsTotal;
     const shippingCost = 0; // Can be calculated based on region
     const discount = 0;
     const finalTotal = subtotal + shippingCost - discount;
 
-    // Validate total amount
-    if (Math.abs(finalTotal - totalAmount) > 0.01) {
-      res.status(400).json({ error: 'Total amount mismatch' });
-      return;
-    }
-
     // Prepare order items array: main package + upsells
     const orderItemsData = [];
 
-    // 1. Add main package as order item
+    // 1. Add main package as order item (all values from the DB-resolved package)
     orderItemsData.push({
       productId: form.productId,
       quantity: packageQuantity,
@@ -208,35 +235,33 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       totalPrice: packageTotal,
       itemType: 'package',
       metadata: {
-        packageName: selectedPackage.name,
-        originalPrice: selectedPackage.originalPrice,
-        discountType: selectedPackage.discountType,
-        discountValue: selectedPackage.discountValue
+        packageName: selectedDbPackage.name,
+        originalPrice: selectedDbPackage.originalPrice,
+        discountType: selectedDbPackage.discountType,
+        discountValue: selectedDbPackage.discountValue
       }
     });
 
-    // 2. Add upsells as order items
-    if (selectedUpsells && Array.isArray(selectedUpsells)) {
-      for (const upsell of selectedUpsells) {
-        // Use upsell's productId if available, otherwise fallback to form's productId
-        const upsellProductId = upsell.productId || form.productId;
-        const upsellQuantity = upsell.items?.quantity || 1;
+    // 2. Add upsells as order items (from the DB-resolved upsells)
+    for (const dbUpsell of resolvedUpsells) {
+      // Use upsell's productId if available, otherwise fallback to form's productId
+      const upsellProductId = dbUpsell.productId || form.productId;
+      const upsellQuantity = dbUpsell.items?.quantity || 1;
 
-        orderItemsData.push({
-          productId: upsellProductId,
-          quantity: upsellQuantity,
-          unitPrice: upsell.price / upsellQuantity,
-          totalPrice: upsell.price,
-          itemType: 'upsell',
-          metadata: {
-            upsellName: upsell.name,
-            upsellDescription: upsell.description,
-            originalPrice: upsell.originalPrice,
-            discountType: upsell.discountType,
-            discountValue: upsell.discountValue
-          }
-        });
-      }
+      orderItemsData.push({
+        productId: upsellProductId,
+        quantity: upsellQuantity,
+        unitPrice: dbUpsell.price / upsellQuantity,
+        totalPrice: dbUpsell.price,
+        itemType: 'upsell',
+        metadata: {
+          upsellName: dbUpsell.name,
+          upsellDescription: dbUpsell.description,
+          originalPrice: dbUpsell.originalPrice,
+          discountType: dbUpsell.discountType,
+          discountValue: dbUpsell.discountValue
+        }
+      });
     }
 
     // Create order with the checkout form's tenantId

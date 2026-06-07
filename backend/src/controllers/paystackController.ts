@@ -165,7 +165,7 @@ async function handleChargeSuccess(tenantId: string, data: PaystackChargeData): 
   // order's tenant, including for backfilled rows.
   const orderRef = await prisma.order.findUnique({
     where: { id: numericOrderId },
-    select: { tenantId: true },
+    select: { tenantId: true, totalAmount: true },
   });
   if (orderRef && orderRef.tenantId !== tenantId) {
     logger.warn('Paystack webhook for order from a different tenant — ignoring', {
@@ -184,6 +184,23 @@ async function handleChargeSuccess(tenantId: string, data: PaystackChargeData): 
   const verification = await paystackService.verifyTransaction(tenantId, reference);
   if (verification.data.status !== 'success') {
     logger.warn('Paystack verification failed', { tenantId, orderId, reference, status: verification.data.status });
+    await prisma.order.update({
+      where: { id: Number(orderId) },
+      data: { status: 'payment_failed' },
+    });
+    return;
+  }
+
+  // SECURITY: confirm the amount actually paid covers the order total before
+  // marking it paid. Without this, an underpayment (or a tampered initialize
+  // amount) is accepted as full payment — and digital products auto-fulfil.
+  // Paystack returns amount in minor units (pesewas/kobo).
+  const paidMinorUnits = Number(verification.data.amount ?? amount);
+  const expectedMinorUnits = Math.round(Number(orderRef?.totalAmount ?? 0) * 100);
+  if (!orderRef || paidMinorUnits < expectedMinorUnits) {
+    logger.warn('Paystack amount mismatch — underpaid, not fulfilling', {
+      tenantId, orderId, reference, paidMinorUnits, expectedMinorUnits,
+    });
     await prisma.order.update({
       where: { id: Number(orderId) },
       data: { status: 'payment_failed' },

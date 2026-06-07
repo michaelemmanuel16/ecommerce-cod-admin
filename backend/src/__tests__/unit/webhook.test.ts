@@ -102,7 +102,7 @@ describe('Webhook Controller', () => {
       );
     });
 
-    it('should verify webhook signature when provided', async () => {
+    it('should reject an invalid signature when requireSignature is enabled', async () => {
       const webhookData = { orders: [] };
       mockReq.headers['x-webhook-signature'] = 'invalid-signature';
       mockReq.headers['x-api-key'] = 'test-api-key';
@@ -113,6 +113,7 @@ describe('Webhook Controller', () => {
         id: 'webhook-1',
         apiKey: 'test-api-key',
         secret: 'test-secret',
+        requireSignature: true,
         isActive: true,
       } as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
