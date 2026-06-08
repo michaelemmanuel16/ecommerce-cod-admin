@@ -73,6 +73,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       accentColor: initialData?.styling?.accentColor || '#f97316',
       currency: initialData?.currency || 'GHS',
       redirectUrl: initialData?.redirectUrl || '',
+      allowedOrigins: (initialData?.allowedOrigins || []).join('\n'),
     },
   });
 
@@ -103,6 +104,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         accentColor: initialData.styling?.accentColor || '#f97316',
         currency: initialData.currency || 'GHS',
         redirectUrl: initialData.redirectUrl || '',
+        allowedOrigins: (initialData.allowedOrigins || []).join('\n'),
       });
       setFields(initialData.fields || defaultFields);
       setPackages(initialData.packages || []);
@@ -379,6 +381,10 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         design,
         pixelConfig: Object.values(pixelConfig).some((v) => v) ? pixelConfig : null,
         redirectUrl: data.redirectUrl?.trim() || null,
+        allowedOrigins: data.allowedOrigins
+          .split('\n')
+          .map((o) => o.trim())
+          .filter(Boolean),
       };
 
       await onSave(formData);
@@ -389,8 +395,10 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       onDirtyChange?.(false);
       toast.success(initialData ? 'Checkout form saved' : 'Checkout form created');
     } catch (error) {
+      // The API interceptor (services/api.ts) already shows an error toast with
+      // the backend's specific message (e.g. a bad Allowed Domains entry), so
+      // we don't duplicate it here — just log and let `finally` reset state.
       console.error('Failed to save checkout form:', error);
-      toast.error('Failed to save checkout form. Please try again.');
     } finally {
       setIsSubmitting(false);
       onSubmittingChange?.(false);

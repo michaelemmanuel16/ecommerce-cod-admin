@@ -17,6 +17,45 @@ export const getPublicForm = async (req: Request, res: Response, next: NextFunct
   }
 };
 
+/**
+ * Embed widget config: GET /api/public/forms/:slug/config
+ *
+ * Returns the public form render payload plus the tenant's Paystack PUBLIC key,
+ * for the JS widget dropped onto a host page. The global /api/public CORS is a
+ * blanket `origin: '*'`, so the per-form Origin allowlist is enforced HERE: if
+ * the form has any allowedOrigins configured and the request carries an Origin
+ * that isn't on the list, we 403. An empty allowlist means "no host restriction
+ * yet" (the underlying form data is already public via /forms/:slug). Requests
+ * without an Origin header (non-browser / same-origin) are not gated.
+ *
+ * SECURITY: only the Paystack *public* key is ever returned. The secret key and
+ * allowlist/tenantId are stripped before the response leaves the server.
+ */
+export const getPublicFormConfig = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { slug } = req.params;
+    const form = await checkoutFormService.getCheckoutFormConfigBySlug(slug);
+
+    const { tenantId, allowedOrigins, ...publicForm } = form as typeof form & {
+      tenantId: string | null;
+      allowedOrigins: string[];
+    };
+
+    // Per-form Origin allowlist gate (see doc comment above).
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.length > 0 && !allowedOrigins.includes(origin)) {
+      res.status(403).json({ error: 'This domain is not allowed to embed this checkout form.' });
+      return;
+    }
+
+    const paystackPublicKey = tenantId ? await paystackService.getPublicKey(tenantId) : '';
+
+    res.json({ config: { ...publicForm, paystackPublicKey } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const createPublicOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { slug } = req.params;

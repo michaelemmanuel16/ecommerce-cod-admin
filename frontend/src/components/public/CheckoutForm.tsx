@@ -13,6 +13,9 @@ interface CheckoutFormProps {
   // When set (from a `?package=<id>` deep link), the checkout is locked to this one
   // package. An id with no matching package falls back to showing every package.
   lockedPackageId?: number | null;
+  // Rendered inside the embed widget on a host page — drops the full-screen page
+  // chrome (min-h-screen / page background / outer padding) so it fits inline.
+  embedded?: boolean;
 }
 
 export interface CheckoutFormData {
@@ -83,7 +86,7 @@ function FieldWrapper({ fieldKey, label, required, error, children, labelColor, 
   );
 }
 
-export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, lockedPackageId }) => {
+export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, lockedPackageId, embedded }) => {
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<Set<number>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -143,6 +146,8 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   const buttonSize = design.button?.size || 'md';
   const buttonLabelOverride = design.button?.label?.trim() || undefined;
   const offerOnTop = design.page?.offerPosition === 'top';
+  // Order summary shows by default; only an explicit `false` hides it.
+  const showOrderSummary = design.page?.showOrderSummary !== false;
 
   // Custom property drives the Tailwind focus ring colour per input.
   const fieldStyle = { ['--tw-ring-color' as string]: primaryColor } as React.CSSProperties;
@@ -310,8 +315,8 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-6xl mx-auto">
+    <div className={embedded ? 'w-full' : 'min-h-screen bg-gray-50 py-8 px-4'}>
+      <div className="max-w-2xl mx-auto">
         {/* Header */}
         {!formData.design?.page?.hideProductDisplay && (
           <div className="mb-8">
@@ -325,9 +330,10 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
         )}
 
         <form onSubmit={handleSubmit(onFormSubmit)}>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left column - Form fields and selections */}
-            <div className="lg:col-span-2 space-y-6">
+          {/* Single centered column on all breakpoints — form, then summary stacked */}
+          <div className="space-y-6">
+            {/* Form fields and selections */}
+            <div className="space-y-6">
               {/* Package Selection — rendered first when offer position is "top" */}
               {offerOnTop && (
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -382,8 +388,9 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
               )}
             </div>
 
-            {/* Right column - Order Summary */}
-            <div className="lg:col-span-1">
+            {/* Order Summary — stacked below the form. The price breakdown is
+                hidden when the toggle is off, but the CTA button always renders. */}
+            <div>
               <OrderSummary
                 selectedPackage={selectedPackage}
                 selectedAddons={selectedAddons}
@@ -396,6 +403,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                 buttonShape={buttonShape}
                 buttonSize={buttonSize}
                 submitLabel={buttonLabelOverride || (isDigital ? 'Proceed to Payment' : 'Place Order')}
+                showSummary={showOrderSummary}
               />
             </div>
           </div>

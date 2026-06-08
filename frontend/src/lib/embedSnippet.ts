@@ -80,3 +80,25 @@ export const buildEmbedSnippet = (
   })();
 </script>`;
 };
+
+/**
+ * Builds the inline JS-widget snippet (Mode A) for a checkout form. Unlike the
+ * iframe snippet above, this renders the checkout directly into the host page
+ * (inside a Shadow root) via embed.js. Optionally locks the checkout to a single
+ * package via data-package + data-lock.
+ *
+ * The slug is HTML-escaped so a malicious slug cannot break out of the attribute.
+ */
+export const buildWidgetSnippet = (
+  form: EmbedSnippetForm,
+  origin: string = window.location.origin,
+  lockedPackageId?: number | null,
+): string => {
+  const safeSlug = escapeHtml(form.slug);
+  const lockAttrs =
+    lockedPackageId && lockedPackageId > 0
+      ? ` data-package="${lockedPackageId}" data-lock="1"`
+      : '';
+  return `<div data-codadmin-checkout data-slug="${safeSlug}"${lockAttrs}></div>
+<script src="${origin}/embed.js" defer></script>`;
+};

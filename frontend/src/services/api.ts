@@ -207,6 +207,9 @@ apiClient.interceptors.response.use(
     if (error.response?.status !== 401) {
       const errorMessage =
         (error.response?.data as any)?.message ||
+        // express-validator 400s carry the specific rule message here (e.g. a
+        // bad Allowed Domains entry) — prefer it over the opaque axios message.
+        (error.response?.data as any)?.details?.[0]?.msg ||
         error.message ||
         'An error occurred';
       toast.error(errorMessage);

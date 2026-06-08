@@ -21,6 +21,9 @@ ENV VITE_WS_URL=${VITE_WS_URL}
 
 RUN npm run build
 
+# Build the standalone embed widget (dist-embed/embed.js), served at /embed.js
+RUN npm run build:embed
+
 # Production stage with Nginx
 FROM nginx:1.25-alpine AS production
 
@@ -32,6 +35,8 @@ COPY nginx.conf /etc/nginx/nginx.conf
 
 # Copy built assets from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
+# Serve the embed widget at /embed.js
+COPY --from=builder /app/dist-embed/embed.js /usr/share/nginx/html/embed.js
 
 # Set permissions for nginx user (already exists in base image)
 RUN chown -R nginx:nginx /usr/share/nginx/html && \

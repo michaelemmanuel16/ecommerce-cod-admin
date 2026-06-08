@@ -85,6 +85,7 @@ export interface CheckoutFormDesignPage {
   background?: string;
   productBanner?: string;
   hideProductDisplay?: boolean;
+  showOrderSummary?: boolean;
   offerPosition?: 'top' | 'bottom';
 }
 
@@ -119,6 +120,7 @@ export interface CheckoutForm {
   design?: CheckoutFormDesign;
   pixelConfig?: PixelConfig;
   redirectUrl?: string; // Custom thank-you page; overrides the built-in success screen
+  allowedOrigins?: string[]; // Embed widget Origin allowlist (empty = no host restriction)
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

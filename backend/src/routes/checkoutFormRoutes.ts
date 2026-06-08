@@ -53,7 +53,9 @@ const createFormValidation = [
   }),
   body('upsells.*.price').optional().isFloat({ min: 0 }).withMessage('Upsell price must be positive'),
   body('upsells.*.items').optional().isObject().withMessage('Upsell items must be an object'),
-  body('redirectUrl').optional({ nullable: true, checkFalsy: true }).isURL({ require_protocol: true }).withMessage('Redirect URL must be a valid URL (including http:// or https://)')
+  body('redirectUrl').optional({ nullable: true, checkFalsy: true }).isURL({ require_protocol: true }).withMessage('Redirect URL must be a valid URL (including http:// or https://)'),
+  body('allowedOrigins').optional().isArray().withMessage('Allowed origins must be an array'),
+  body('allowedOrigins.*').optional().isURL({ require_protocol: true }).withMessage('Enter a valid domain URL e.g http://yourbrand.com')
 ];
 
 const updateFormValidation = [
@@ -87,7 +89,9 @@ const updateFormValidation = [
     }
     return true;
   }),
-  body('redirectUrl').optional({ nullable: true, checkFalsy: true }).isURL({ require_protocol: true }).withMessage('Redirect URL must be a valid URL (including http:// or https://)')
+  body('redirectUrl').optional({ nullable: true, checkFalsy: true }).isURL({ require_protocol: true }).withMessage('Redirect URL must be a valid URL (including http:// or https://)'),
+  body('allowedOrigins').optional().isArray().withMessage('Allowed origins must be an array'),
+  body('allowedOrigins.*').optional().isURL({ require_protocol: true }).withMessage('Enter a valid domain URL e.g http://yourbrand.com')
 ];
 
 const paginationValidation = [

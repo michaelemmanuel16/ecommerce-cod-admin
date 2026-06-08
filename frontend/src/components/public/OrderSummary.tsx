@@ -17,6 +17,9 @@ interface OrderSummaryProps {
   buttonShape?: 'square' | 'rounded' | 'pill';
   buttonSize?: 'sm' | 'md' | 'lg';
   submitLabel?: string;
+  // When false, the price breakdown + total are hidden (the host page shows them
+  // elsewhere) and only the CTA button + terms remain. Default true.
+  showSummary?: boolean;
 }
 
 const SHAPE_CLASS: Record<NonNullable<OrderSummaryProps['buttonShape']>, string> = {
@@ -43,6 +46,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
   buttonShape = 'rounded',
   buttonSize = 'md',
   submitLabel = 'Place Order',
+  showSummary = true,
 }) => {
   const hasDiscount = selectedPackage?.originalPrice && selectedPackage.originalPrice > selectedPackage.price && selectedPackage.showDiscount !== false;
   const packageOriginalPrice = hasDiscount ? selectedPackage.originalPrice : selectedPackage?.price || 0;
@@ -55,6 +59,8 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
 
   return (
     <div className="bg-white rounded-lg border-2 border-gray-200 p-6 sticky top-6">
+      {showSummary && (
+        <>
       <h2 className="text-xl font-semibold text-gray-900 mb-4" style={textColor ? { color: textColor } : undefined}>Order Summary</h2>
 
       <div className="space-y-3 mb-6">
@@ -120,6 +126,8 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
           {currency} {total.toFixed(2)}
         </span>
       </div>
+        </>
+      )}
 
       <Button
         onClick={onSubmit}

@@ -53,6 +53,14 @@ router.get(
   publicOrderController.getPublicForm
 );
 
+// Embed widget config (form payload + Paystack public key, Origin-gated)
+router.get(
+  '/forms/:slug/config',
+  getFormValidation,
+  validate,
+  publicOrderController.getPublicFormConfig
+);
+
 // Create order from checkout form
 router.post(
   '/forms/:slug/orders',

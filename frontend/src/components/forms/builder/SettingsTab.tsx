@@ -1,11 +1,20 @@
 import React from 'react';
+import { Check, Code2 } from 'lucide-react';
 import { Input } from '../../ui/Input';
 import { Select } from '../../ui/Select';
+import { Textarea } from '../../ui/Textarea';
+import { Button } from '../../ui/Button';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
 import { getSupportedCountries } from '../../../utils/countries';
+import { buildWidgetSnippet } from '../../../lib/embedSnippet';
+import { useCopyToClipboard } from '../CopyActions';
 
 export const SettingsTab: React.FC = () => {
   const ctx = useCheckoutBuilder();
+  const slug = ctx.watch('slug');
+  const name = ctx.watch('name');
+  const { copied, copy } = useCopyToClipboard();
+  const widgetSnippet = slug ? buildWidgetSnippet({ slug, name }) : '';
 
   return (
     <div className="space-y-6">
@@ -34,6 +43,47 @@ export const SettingsTab: React.FC = () => {
             <code>currency=</code>. Leave blank to keep the default confirmation page. Your page must
             fire its own purchase pixel.
           </p>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Embed on Your Site</h3>
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Allowed Domains</label>
+            <Textarea
+              {...ctx.register('allowedOrigins')}
+              rows={3}
+              placeholder={'https://yourbrand.com\nhttps://shop.yourbrand.com'}
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              One domain per line (including <code>https://</code>). When set, only these sites may
+              embed this checkout. Leave blank to allow any site.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Embed Snippet</label>
+            {widgetSnippet ? (
+              <>
+                <pre className="text-xs bg-white border border-gray-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all text-gray-800">
+                  {widgetSnippet}
+                </pre>
+                <div className="mt-2">
+                  <Button type="button" size="sm" variant="secondary" onClick={() => copy(widgetSnippet)}>
+                    {copied ? <Check className="w-4 h-4" /> : <Code2 className="w-4 h-4" />}
+                    <span className="ml-1">{copied ? 'Copied' : 'Copy snippet'}</span>
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Paste this where you want the checkout to appear. The form renders inline on your
+                  page — no iframe.
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-gray-500">Save the form (it needs a slug) to get the embed snippet.</p>
+            )}
+          </div>
         </div>
       </div>
 

@@ -9,7 +9,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
-import { CheckoutFormService } from '../../services/checkoutFormService';
+import { CheckoutFormService, clearCheckoutFormConfigCache } from '../../services/checkoutFormService';
 import { AppError } from '../../middleware/errorHandler';
 
 const makeForm = (overrides: any = {}) => ({
@@ -190,6 +190,38 @@ describe('CheckoutFormService', () => {
     it('throws 404 when form not found or inactive', async () => {
       (prismaMock.checkoutForm.findUnique as any).mockResolvedValue(null);
       await expect(checkoutFormService.getCheckoutFormBySlug('non-existent')).rejects.toThrow(AppError);
+    });
+  });
+
+  // ───────────────────────── getCheckoutFormConfigBySlug (cache) ─────────────────────────
+  describe('getCheckoutFormConfigBySlug', () => {
+    const configForm = () => ({
+      ...makeForm({ tenantId: 'tenant-x', allowedOrigins: ['https://brand.com'] }),
+      product: { name: 'P', description: '', price: 10, imageUrl: null, stockQuantity: 5 },
+    });
+
+    it('includes tenantId + allowedOrigins and sanitizes stock', async () => {
+      (prismaMock.checkoutForm.findUnique as any).mockResolvedValue(configForm() as any);
+      const result: any = await checkoutFormService.getCheckoutFormConfigBySlug('cache-slug-1');
+      expect(result.tenantId).toBe('tenant-x');
+      expect(result.allowedOrigins).toEqual(['https://brand.com']);
+      expect(result.product).not.toHaveProperty('stockQuantity');
+      expect(result.product.inStock).toBe(true);
+    });
+
+    it('caches the DB read on the second call for the same slug', async () => {
+      (prismaMock.checkoutForm.findUnique as any).mockResolvedValue(configForm() as any);
+      await checkoutFormService.getCheckoutFormConfigBySlug('cache-slug-2');
+      await checkoutFormService.getCheckoutFormConfigBySlug('cache-slug-2');
+      expect((prismaMock.checkoutForm.findUnique as any)).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-reads after clearCheckoutFormConfigCache invalidates the slug', async () => {
+      (prismaMock.checkoutForm.findUnique as any).mockResolvedValue(configForm() as any);
+      await checkoutFormService.getCheckoutFormConfigBySlug('cache-slug-3');
+      clearCheckoutFormConfigCache('cache-slug-3');
+      await checkoutFormService.getCheckoutFormConfigBySlug('cache-slug-3');
+      expect((prismaMock.checkoutForm.findUnique as any)).toHaveBeenCalledTimes(2);
     });
   });
 
