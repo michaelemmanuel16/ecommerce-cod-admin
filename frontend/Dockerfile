@@ -24,6 +24,23 @@ RUN npm run build
 # Build the standalone embed widget (dist-embed/embed.js), served at /embed.js
 RUN npm run build:embed
 
+# Dev stage — Vite dev server with HMR (no build; source is bind-mounted at runtime).
+# Only deps are baked in; the container's node_modules is preserved via an anonymous
+# volume in docker-compose.vite.yml so the host's macOS-built node_modules never
+# shadows the Linux-native ones (esbuild/terser are platform-specific).
+FROM node:20-alpine AS dev
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+# Source is provided by a bind mount at runtime; nothing else is copied in.
+EXPOSE 5173
+
+# --host 0.0.0.0 makes the dev server reachable from outside the container.
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
 # Production stage with Nginx
 FROM nginx:1.25-alpine AS production
 
