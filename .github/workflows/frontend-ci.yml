@@ -100,6 +100,10 @@ jobs:
           VITE_SENTRY_DSN: ${{ secrets.FRONTEND_SENTRY_DSN }}
         run: npm run build
 
+      - name: Build embed widget
+        working-directory: frontend
+        run: npm run build:embed
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:

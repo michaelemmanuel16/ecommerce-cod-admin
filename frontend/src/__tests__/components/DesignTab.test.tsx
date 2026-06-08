@@ -134,4 +134,12 @@ describe('DesignTab', () => {
     const snap = readSnapshot();
     expect(snap.page?.offerPosition).toBe('top');
   });
+
+  it('order-summary toggle defaults to checked and unchecking sets showOrderSummary=false', () => {
+    render(<Harness />);
+    const toggle = screen.getByLabelText(/Show order summary/i) as HTMLInputElement;
+    expect(toggle.checked).toBe(true); // shown by default
+    fireEvent.click(toggle);
+    expect(readSnapshot().page?.showOrderSummary).toBe(false);
+  });
 });

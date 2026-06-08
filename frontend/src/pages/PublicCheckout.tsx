@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckoutForm, CheckoutFormData } from '../components/public/CheckoutForm';
 import { OrderSuccess } from '../components/public/OrderSuccess';
-import { publicOrdersService, PublicCheckoutForm, PublicOrderData } from '../services/public-orders.service';
+import { publicOrdersService, PublicCheckoutForm } from '../services/public-orders.service';
+import { buildOrderPayload, buildRedirectUrl } from '../lib/orderPayload';
 import { initPixels, trackInitiateCheckout } from '../utils/pixelTracking';
 import { PixelConfig } from '../types/checkout-form';
 import toast from 'react-hot-toast';
@@ -123,58 +124,16 @@ export const PublicCheckout: React.FC = () => {
     if (!formData || !slug) return;
 
     try {
-      const selectedPackage = formData.packages.find((p) => p.id === data.selectedPackageId);
-      const selectedAddons = formData.upsells.filter((u) =>
-        data.selectedAddonIds.includes(u.id)
-      );
-
-      if (!selectedPackage) {
+      // Guard before building so we can show the package-specific toast.
+      if (!formData.packages.some((p) => p.id === data.selectedPackageId)) {
         toast.error('Please select a package');
         return;
       }
 
-      // Calculate total amount
-      // Package price is the total bundle price (what customer pays), not per-item price
-      const packageTotal = selectedPackage.price;
-      const upsellsTotal = selectedAddons.reduce((sum, addon) => sum + addon.price, 0);
-      const totalAmount = packageTotal + upsellsTotal;
+      // Shared mapping — identical to what the embed widget posts.
+      const { payload, totalAmount } = buildOrderPayload(formData, data);
 
-      // Map form data to backend API format
-      const orderData = {
-        formData: {
-          name: data.fullName.trim(),
-          phoneNumber: data.phone,
-          alternatePhone: data.alternativePhone || undefined,
-          email: data.email || '',
-          address: data.streetAddress,
-          state: data.region,
-          notes: null,
-          customFields: data.customFields,
-        },
-        selectedPackage: {
-          id: selectedPackage.id,
-          name: selectedPackage.name,
-          price: selectedPackage.price,
-          quantity: selectedPackage.quantity,
-          originalPrice: selectedPackage.originalPrice,
-          discountType: selectedPackage.discountType,
-          discountValue: selectedPackage.discountValue,
-        },
-        selectedUpsells: selectedAddons.map((addon) => ({
-          id: addon.id,
-          productId: addon.productId,
-          name: addon.name,
-          description: addon.description,
-          price: addon.price,
-          quantity: addon.items?.quantity || 1,
-          originalPrice: addon.originalPrice,
-          discountType: addon.discountType,
-          discountValue: addon.discountValue,
-        })),
-        totalAmount,
-      };
-
-      const response = await publicOrdersService.submitOrder(slug, orderData as any);
+      const response = await publicOrdersService.submitOrder(slug, payload as any);
 
       if (response.success) {
         // Digital products: redirect to Paystack payment
@@ -187,17 +146,14 @@ export const PublicCheckout: React.FC = () => {
 
         // Custom thank-you page: redirect with order details appended so the
         // merchant's page can show the order and fire its own purchase pixel.
-        if (formData.redirectUrl) {
-          try {
-            const url = new URL(formData.redirectUrl);
-            url.searchParams.set('order_id', String(response.orderId));
-            url.searchParams.set('total', String(totalAmount));
-            url.searchParams.set('currency', formData.currency);
-            window.location.href = url.toString();
-            return;
-          } catch {
-            // Malformed URL slipped past validation — fall back to the built-in screen.
-          }
+        const redirect = buildRedirectUrl(formData.redirectUrl, {
+          orderId: response.orderId,
+          total: totalAmount,
+          currency: formData.currency,
+        });
+        if (redirect) {
+          window.location.href = redirect;
+          return;
         }
 
         setSubmittedTotal(totalAmount);

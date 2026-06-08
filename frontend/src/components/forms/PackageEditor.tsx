@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Trash2, Percent, DollarSign, Link2, Check } from 'lucide-react';
+import { Trash2, Percent, DollarSign, Link2, Check, Code2 } from 'lucide-react';
 import { ProductPackage } from '../../types/checkout-form';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
@@ -10,6 +10,7 @@ interface PackageEditorProps {
   productPrice: number; // Base product price for auto-calculation
   currency: string; // Currency code (e.g., GHS, NGN)
   checkoutLink?: string; // Deep link that opens checkout locked to this package (undefined until saved)
+  embedSnippet?: string; // Inline widget snippet locked to this package (undefined until saved)
   onUpdate: (pkg: ProductPackage) => void;
   onDelete: () => void;
 }
@@ -19,10 +20,12 @@ export const PackageEditor: React.FC<PackageEditorProps> = ({
   productPrice,
   currency,
   checkoutLink,
+  embedSnippet,
   onUpdate,
   onDelete,
 }) => {
   const { copied, copy } = useCopyToClipboard();
+  const embedCopy = useCopyToClipboard();
 
   const discountType = pkg.discountType || 'none';
   const discountValue = pkg.discountValue || 0;
@@ -257,6 +260,16 @@ export const PackageEditor: React.FC<PackageEditorProps> = ({
               </div>
             ) : (
               <p className="text-xs text-gray-400">Save the form to get a shareable link for this package.</p>
+            )}
+            {embedSnippet && (
+              <button
+                type="button"
+                onClick={() => embedCopy.copy(embedSnippet)}
+                className="mt-2 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors whitespace-nowrap"
+              >
+                {embedCopy.copied ? <Check className="w-3.5 h-3.5" /> : <Code2 className="w-3.5 h-3.5" />}
+                {embedCopy.copied ? 'Copied' : 'Copy embed snippet (locked to this package)'}
+              </button>
             )}
           </div>
         </div>

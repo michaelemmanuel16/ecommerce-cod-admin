@@ -77,6 +77,7 @@ export interface PublicCheckoutForm {
       background?: string;
       productBanner?: string;
       hideProductDisplay?: boolean;
+      showOrderSummary?: boolean;
       offerPosition?: 'top' | 'bottom';
     };
   };

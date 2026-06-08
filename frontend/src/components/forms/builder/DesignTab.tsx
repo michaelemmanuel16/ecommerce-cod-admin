@@ -228,6 +228,15 @@ export const DesignTab: React.FC = () => {
           />
           Hide product name + description on checkout
         </label>
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={design.page?.showOrderSummary !== false}
+            onChange={(e) => updatePage({ showOrderSummary: e.target.checked ? undefined : false })}
+            className="rounded border-gray-300"
+          />
+          Show order summary (price breakdown + total)
+        </label>
         <PillGroup
           label="Offer position"
           value={design.page?.offerPosition}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildEmbedSnippet, formUrl } from '../../lib/embedSnippet';
+import { buildEmbedSnippet, buildWidgetSnippet, formUrl } from '../../lib/embedSnippet';
 
 describe('formUrl', () => {
   it('joins origin and slug', () => {
@@ -60,5 +60,37 @@ describe('buildEmbedSnippet', () => {
   it('falls back to slug for title when name is missing', () => {
     const out = buildEmbedSnippet({ slug: 'magic-groove' }, origin);
     expect(out).toContain("iframe.title = 'magic-groove'");
+  });
+});
+
+describe('buildWidgetSnippet', () => {
+  const origin = 'https://app.example.com';
+
+  it('renders the Mode A container + embed.js script tag', () => {
+    const out = buildWidgetSnippet({ slug: 'magic-groove' }, origin);
+    expect(out).toContain('data-codadmin-checkout data-slug="magic-groove"');
+    expect(out).toContain('<script src="https://app.example.com/embed.js" defer></script>');
+  });
+
+  it('omits package-lock attributes when no package id is given', () => {
+    const out = buildWidgetSnippet({ slug: 's' }, origin);
+    expect(out).not.toContain('data-package');
+    expect(out).not.toContain('data-lock');
+  });
+
+  it('adds data-package + data-lock when a package id is given', () => {
+    const out = buildWidgetSnippet({ slug: 's' }, origin, 12);
+    expect(out).toContain('data-package="12" data-lock="1"');
+  });
+
+  it('ignores a non-positive package id', () => {
+    const out = buildWidgetSnippet({ slug: 's' }, origin, 0);
+    expect(out).not.toContain('data-package');
+  });
+
+  it('HTML-escapes the slug in the container attribute', () => {
+    const out = buildWidgetSnippet({ slug: 'a"><script>x</script>' }, origin);
+    expect(out).not.toContain('data-slug="a"><script>');
+    expect(out).toContain('&quot;&gt;&lt;script&gt;');
   });
 });

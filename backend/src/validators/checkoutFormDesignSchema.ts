@@ -57,6 +57,7 @@ export const checkoutFormDesignSchema = z
         background: backgroundSchema.optional(),
         productBanner: httpsUrlSchema.optional(),
         hideProductDisplay: z.boolean().optional(),
+        showOrderSummary: z.boolean().optional(),
         offerPosition: z.enum(['top', 'bottom']).optional(),
       })
       .strict()

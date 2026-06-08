@@ -13,6 +13,7 @@ export interface BuilderFormValues {
   accentColor: string;
   currency: string;
   redirectUrl: string;
+  allowedOrigins: string; // newline-separated origins; split to string[] on save
 }
 
 export interface CheckoutBuilderContextValue {

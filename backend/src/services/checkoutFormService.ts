@@ -3,6 +3,87 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 
+// Shared PUBLIC render payload — the fields safe to expose on the public
+// checkout page and the embed widget config endpoint. Reused so the page and
+// the widget never drift in what they receive.
+const PUBLIC_FORM_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  description: true,
+  fields: true,
+  design: true,
+  country: true,
+  currency: true,
+  regions: true,
+  pixelConfig: true,
+  redirectUrl: true,
+  formType: true,
+  product: {
+    select: {
+      name: true,
+      description: true,
+      price: true,
+      imageUrl: true,
+      stockQuantity: true,
+      productType: true,
+    },
+  },
+  packages: {
+    orderBy: { sortOrder: 'asc' as const },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      price: true,
+      quantity: true,
+      originalPrice: true,
+      discountType: true,
+      discountValue: true,
+      isPopular: true,
+      isDefault: true,
+      showHighlight: true,
+      highlightText: true,
+      showDiscount: true,
+    },
+  },
+  upsells: {
+    orderBy: { sortOrder: 'asc' as const },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      imageUrl: true,
+      price: true,
+      items: true,
+      originalPrice: true,
+      discountType: true,
+      discountValue: true,
+    },
+  },
+} satisfies Prisma.CheckoutFormSelect;
+
+// Replace the raw stock quantity with a boolean in-stock flag.
+function sanitizePublicForm<T extends { product: { stockQuantity: number } }>(form: T) {
+  const { stockQuantity, ...productData } = form.product;
+  return { ...form, product: { ...productData, inStock: stockQuantity > 0 } };
+}
+
+// ---------- Public embed config cache ----------
+// The embed widget's GET /api/public/forms/:slug/config is hit on every
+// host-page load. Cache the DB form read for 5 minutes, keyed by slug,
+// invalidated whenever the form is saved (see clearCheckoutFormConfigCache).
+const CONFIG_CACHE_TTL_MS = 5 * 60_000;
+const configCache = new Map<string, { data: any; fetchedAt: number }>();
+
+export function clearCheckoutFormConfigCache(slug?: string): void {
+  if (slug) {
+    configCache.delete(slug);
+  } else {
+    configCache.clear();
+  }
+}
+
 
 interface CreateCheckoutFormData {
   name: string;
@@ -250,62 +331,7 @@ export class CheckoutFormService {
         slug,
         isActive: true
       },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        description: true,
-        fields: true,
-        design: true,
-        country: true,
-        currency: true,
-        regions: true,
-        pixelConfig: true,
-        redirectUrl: true,
-        formType: true,
-        product: {
-          select: {
-            name: true,
-            description: true,
-            price: true,
-            imageUrl: true,
-            stockQuantity: true,
-            productType: true,
-          }
-        },
-        packages: {
-          orderBy: { sortOrder: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            price: true,
-            quantity: true,
-            originalPrice: true,
-            discountType: true,
-            discountValue: true,
-            isPopular: true,
-            isDefault: true,
-            showHighlight: true,
-            highlightText: true,
-            showDiscount: true
-          }
-        },
-        upsells: {
-          orderBy: { sortOrder: 'asc' },
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            imageUrl: true,
-            price: true,
-            items: true,
-            originalPrice: true,
-            discountType: true,
-            discountValue: true
-          }
-        }
-      }
+      select: PUBLIC_FORM_SELECT
     });
 
     if (!form) {
@@ -313,16 +339,36 @@ export class CheckoutFormService {
     }
 
     // Sanitize product data: hide exact stock quantity, return status
-    const { stockQuantity, ...productData } = form.product;
-    const sanitizedForm = {
-      ...form,
-      product: {
-        ...productData,
-        inStock: stockQuantity > 0
-      }
-    };
+    return sanitizePublicForm(form);
+  }
 
-    return sanitizedForm;
+  /**
+   * PUBLIC embed config by slug (for the embed widget's
+   * GET /api/public/forms/:slug/config). Same render payload as
+   * getCheckoutFormBySlug, plus `tenantId` and the per-form `allowedOrigins`
+   * allowlist — both consumed by the controller (tenant → Paystack public key,
+   * allowlist → Origin 403 gate) and stripped before the response reaches the
+   * host page. The DB read is cached 5 min, invalidated on form save.
+   */
+  async getCheckoutFormConfigBySlug(slug: string) {
+    const now = Date.now();
+    const cached = configCache.get(slug);
+    if (cached && now - cached.fetchedAt < CONFIG_CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    const form = await prisma.checkoutForm.findUnique({
+      where: { slug, isActive: true },
+      select: { ...PUBLIC_FORM_SELECT, tenantId: true, allowedOrigins: true }
+    });
+
+    if (!form) {
+      throw new AppError('Checkout form not found or inactive', 404);
+    }
+
+    const sanitized = sanitizePublicForm(form);
+    configCache.set(slug, { data: sanitized, fetchedAt: now });
+    return sanitized;
   }
 
   /**

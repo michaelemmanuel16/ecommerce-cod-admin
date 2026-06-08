@@ -2,8 +2,26 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
-import checkoutFormService from '../services/checkoutFormService';
+import checkoutFormService, { clearCheckoutFormConfigCache } from '../services/checkoutFormService';
 import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
+
+// Normalize an allowed-origins payload into canonical Origin form
+// (scheme://host[:port], no path/trailing slash, lowercased host) so stored
+// entries compare cleanly against the browser's `Origin` header at the gate.
+// Entries that aren't parseable URLs are dropped.
+const normalizeAllowedOrigins = (raw: unknown): string[] => {
+  if (!Array.isArray(raw)) return [];
+  const origins = raw.flatMap((o) => {
+    const value = String(o).trim();
+    if (!value) return [];
+    try {
+      return [new URL(value).origin];
+    } catch {
+      return [];
+    }
+  });
+  return Array.from(new Set(origins));
+};
 
 const validateDesign = (
   raw: unknown,
@@ -147,7 +165,8 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       upsells,
       isActive,
       pixelConfig,
-      redirectUrl
+      redirectUrl,
+      allowedOrigins
     } = req.body;
 
     const designValidation = validateDesign(design);
@@ -220,6 +239,7 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
             isActive: isActive !== undefined ? isActive : true,
             pixelConfig: pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : undefined,
             redirectUrl: redirectUrl ? String(redirectUrl).trim() : null,
+            allowedOrigins: normalizeAllowedOrigins(allowedOrigins),
             packages: normalizedPackages && normalizedPackages.length > 0 ? {
               create: normalizedPackages
             } : undefined,
@@ -303,7 +323,8 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       upsells,
       isActive,
       pixelConfig,
-      redirectUrl
+      redirectUrl,
+      allowedOrigins
     } = req.body;
 
     const designValidation = validateDesign(design);
@@ -361,6 +382,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     if (isActive !== undefined) updateData.isActive = isActive;
     if (pixelConfig !== undefined) updateData.pixelConfig = pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : null;
     if (redirectUrl !== undefined) updateData.redirectUrl = redirectUrl ? String(redirectUrl).trim() : null;
+    if (allowedOrigins !== undefined) updateData.allowedOrigins = normalizeAllowedOrigins(allowedOrigins);
 
     await prisma.checkoutForm.update({
       where: { id: formId },
@@ -411,6 +433,12 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
         }))
       });
     }
+
+    // Invalidate the embed config cache only after all writes (form + packages +
+    // upsells) have committed, so a concurrent /config read can't re-cache a
+    // half-updated form. Clear both the old and (if renamed) the new slug.
+    clearCheckoutFormConfigCache(existing.slug);
+    if (slug && slug !== existing.slug) clearCheckoutFormConfigCache(slug);
 
     // Fetch updated form with all relations
     const updatedForm = await prisma.checkoutForm.findUnique({
@@ -492,6 +520,9 @@ export const deleteCheckoutForm = async (req: AuthRequest, res: Response): Promi
     await prisma.checkoutForm.delete({
       where: { id: formId }
     });
+
+    // Drop any cached embed config so the widget stops serving a deleted form.
+    clearCheckoutFormConfigCache(form.slug);
 
     res.json({ message: 'Checkout form deleted successfully' });
   } catch (error) {
