@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link2, Check, Code2 } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { buildEmbedSnippet, formUrl, EmbedSnippetForm } from '../../lib/embedSnippet';
+import { buildWidgetSnippet, formUrl, EmbedSnippetForm } from '../../lib/embedSnippet';
 
 const COPIED_FEEDBACK_MS = 2000;
 
@@ -85,7 +85,7 @@ export const CopyEmbedButton: React.FC<CopyEmbedButtonProps> = ({
       size={size}
       variant={variant}
       title={title}
-      onClick={() => copy(buildEmbedSnippet(form))}
+      onClick={() => copy(buildWidgetSnippet(form))}
     >
       {copied ? (
         <Check className="w-4 h-4" />

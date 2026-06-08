@@ -46,16 +46,16 @@ describe('CopyActions', () => {
   });
 
   describe('CopyEmbedButton', () => {
-    it('writes the embed snippet (with <script>) to the clipboard on click', async () => {
+    it('writes the inline widget snippet (data-codadmin-checkout + embed.js) to the clipboard on click', async () => {
       render(<CopyEmbedButton form={form} label="Copy Embed" />);
       await act(async () => {
         fireEvent.click(screen.getByRole('button'));
       });
       expect(writeTextMock).toHaveBeenCalledTimes(1);
       const snippet = writeTextMock.mock.calls[0][0] as string;
-      expect(snippet).toContain('<script>');
-      expect(snippet).toContain('id="checkout-form-magic-groove"');
-      expect(snippet).toContain('Magic Groove');
+      expect(snippet).toContain('data-codadmin-checkout');
+      expect(snippet).toContain('data-slug="magic-groove"');
+      expect(snippet).toContain('/embed.js');
     });
 
     it('shows the Copied feedback after click', async () => {

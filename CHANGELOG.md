@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[CI/CD]**: Sentry DSN injected into staging and production deployments (MAN-16)
 
 ### Fixed
+- **[Checkout Forms]**: The header/list "Copy embed snippet" button now copies the Mode A inline widget snippet (`data-codadmin-checkout` + `embed.js`), matching the Embed Snippet panel and Packages tab. It previously handed out the legacy iframe embed, so the two surfaces disagreed on what "embed" meant. (MAN-57)
 - **[Auth]**: Session expiry on the Admin Dashboard now shows a single deduped "Your session has expired" toast + redirect to `/login`. Previously, expired refresh tokens leaked `jwt malformed` as a 500 and parallel widget requests stacked 10+ misleading "Server connection lost" toasts (MAN-66)
 - **[Security]**: Tenant deletion now fully atomic with parameterized SQL, preventing partial corruption
 - **[Security]**: Permissions cache keyed per-tenant to prevent cross-tenant permission leakage
