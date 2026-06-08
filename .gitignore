@@ -141,3 +141,7 @@ lovely-riding-blanket.md
 backend/test_output_v2.txt
 backend/test_output.txt
 .gstack/
+
+# Local per-developer docker-compose overrides (machine-specific connection
+# details / local credentials — never commit)
+docker-compose.*.override.yml

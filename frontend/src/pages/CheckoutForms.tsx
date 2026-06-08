@@ -1,28 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Copy, ExternalLink, Code2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Edit, Trash2, Copy, ExternalLink } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
+import { Loading } from '../components/ui/Loading';
 import { Table, TableHead, TableBody, TableRow, TableCell } from '../components/ui/Table';
-import { CheckoutFormBuilder } from '../components/forms/CheckoutFormBuilder';
-import { EmbedCodeModal } from '../components/forms/EmbedCodeModal';
+import { CopyURLButton, CopyEmbedButton } from '../components/forms/CopyActions';
 import { CheckoutForm } from '../types/checkout-form';
-import { Product } from '../types';
-import { productsService } from '../services/products.service';
 import { checkoutFormsService } from '../services/checkout-forms.service';
 
 export const CheckoutForms: React.FC = () => {
-  const [isBuilderOpen, setIsBuilderOpen] = useState(false);
-  const [selectedForm, setSelectedForm] = useState<CheckoutForm | undefined>();
-  const [embedModalOpen, setEmbedModalOpen] = useState(false);
-  const [selectedFormForEmbed, setSelectedFormForEmbed] = useState<CheckoutForm | null>(null);
+  const navigate = useNavigate();
   const [forms, setForms] = useState<CheckoutForm[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchForms();
-    fetchProducts();
   }, []);
 
   const fetchForms = async () => {
@@ -38,48 +32,9 @@ export const CheckoutForms: React.FC = () => {
     }
   };
 
-  const fetchProducts = async () => {
-    try {
-      const data = await productsService.getProducts();
-      setProducts(data);
-    } catch (error) {
-      console.error('Failed to fetch products:', error);
-    }
-  };
+  const handleCreateForm = () => navigate('/checkout-forms/new');
 
-  const handleCreateForm = () => {
-    setSelectedForm(undefined);
-    setIsBuilderOpen(true);
-  };
-
-  const handleEditForm = (form: CheckoutForm) => {
-    setSelectedForm(form);
-    setIsBuilderOpen(true);
-  };
-
-  const handleSaveForm = async (formData: Partial<CheckoutForm>) => {
-    try {
-      // Validate product selection
-      if (!formData.productId || formData.productId === 0) {
-        alert('Please select a product for this checkout form.');
-        return;
-      }
-
-      if (selectedForm) {
-        await checkoutFormsService.updateCheckoutForm(selectedForm.id, formData);
-        alert('Checkout form updated successfully!');
-      } else {
-        await checkoutFormsService.createCheckoutForm(formData);
-        alert('Checkout form created successfully!');
-      }
-      setIsBuilderOpen(false);
-      await fetchForms();
-    } catch (error: any) {
-      console.error('Failed to save form:', error);
-      const errorMessage = error?.response?.data?.message || 'Failed to save checkout form. Please try again.';
-      alert(errorMessage);
-    }
-  };
+  const handleEditForm = (form: CheckoutForm) => navigate(`/checkout-forms/${form.id}/edit`);
 
   const handleDeleteForm = async (id: number) => {
     if (!confirm('Are you sure you want to delete this checkout form?')) return;
@@ -116,18 +71,10 @@ export const CheckoutForms: React.FC = () => {
     }
   };
 
-  const handleShowEmbedCode = (form: CheckoutForm) => {
-    setSelectedFormForEmbed(form);
-    setEmbedModalOpen(true);
-  };
-
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading checkout forms...</p>
-        </div>
+      <div className="py-16">
+        <Loading />
       </div>
     );
   }
@@ -232,14 +179,8 @@ export const CheckoutForms: React.FC = () => {
                       >
                         <ExternalLink className="w-4 h-4" />
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => handleShowEmbedCode(form)}
-                        title="Get Embed Code"
-                      >
-                        <Code2 className="w-4 h-4" />
-                      </Button>
+                      <CopyURLButton form={form} />
+                      <CopyEmbedButton form={form} />
                       <Button
                         size="sm"
                         variant="danger"
@@ -254,28 +195,20 @@ export const CheckoutForms: React.FC = () => {
               ))}
             </TableBody>
           </Table>
+          <p className="text-xs text-gray-500 mt-3 px-4 pb-3">
+            Need help embedding? See{' '}
+            <a
+              href="/docs/embed.md"
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              docs/embed.md
+            </a>{' '}
+            for WordPress, Shopify and custom HTML steps.
+          </p>
         </Card>
       )}
-
-      <CheckoutFormBuilder
-        isOpen={isBuilderOpen}
-        onClose={() => {
-          setIsBuilderOpen(false);
-          setSelectedForm(undefined);
-        }}
-        onSave={handleSaveForm}
-        initialData={selectedForm}
-        products={products}
-      />
-
-      <EmbedCodeModal
-        isOpen={embedModalOpen}
-        form={selectedFormForEmbed}
-        onClose={() => {
-          setEmbedModalOpen(false);
-          setSelectedFormForEmbed(null);
-        }}
-      />
     </div>
   );
 };

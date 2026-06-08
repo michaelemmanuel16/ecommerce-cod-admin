@@ -36,6 +36,8 @@ const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ default: m.CheckoutForms })));
+const CheckoutFormEditor = lazy(() => import('./pages/CheckoutFormEditor').then(m => ({ default: m.CheckoutFormEditor })));
+const CheckoutFormPreview = lazy(() => import('./pages/CheckoutFormPreview').then(m => ({ default: m.CheckoutFormPreview })));
 const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
 const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
@@ -204,6 +206,14 @@ function App() {
                 <Onboarding />
               </ProtectedRoute>
             } />
+            {/* Admin-only preview route — bare shell so the editor iframe
+                doesn't render the sidebar/header inside itself. Auth is
+                enforced by the backend /preview-config endpoint. */}
+            <Route path="/checkout-forms/:id/preview" element={
+              <ProtectedRoute>
+                <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
+              </ProtectedRoute>
+            } />
             {/* Mobile routes for delivery agents */}
             <Route
               path="/m"
@@ -308,6 +318,12 @@ function App() {
               } />
               <Route path="checkout-forms" element={
                 <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
+              } />
+              <Route path="checkout-forms/new" element={
+                <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
+              } />
+              <Route path="checkout-forms/:id/edit" element={
+                <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
               } />
               <Route path="webhooks" element={
                 <RoleGuard allowedRoles={['super_admin', 'admin']}>

@@ -137,6 +137,39 @@ describe('WebhookService', () => {
       ).rejects.toThrow(new AppError('Invalid API key', 401));
     });
 
+    it('should reject when requireSignature is on but the header is missing (no fail-open bypass)', async () => {
+      // Security: when a config opts into signature enforcement, omitting the
+      // signature header must NOT skip verification (previously it did).
+      prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
+      prismaMock.webhookConfig.findFirst.mockResolvedValue({ ...webhookConfig, requireSignature: true } as any);
+      prismaMock.webhookLog.update.mockResolvedValue({} as any);
+
+      const { signature: _omit, ...unsignedData } = webhookData;
+
+      await expect(
+        webhookService.processWebhook(unsignedData as any)
+      ).rejects.toThrow(new AppError('Invalid webhook signature', 401));
+      // Never reached order creation.
+      expect(prismaMock.order.create).not.toHaveBeenCalled();
+    });
+
+    it('should process unsigned webhooks when requireSignature is off (e.g. WPForms)', async () => {
+      // Default-off: integrations that authenticate by API key / unique URL and
+      // cannot HMAC the body must keep working without a signature header.
+      prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
+      prismaMock.webhookConfig.findFirst.mockResolvedValue({ ...webhookConfig, requireSignature: false } as any);
+      prismaMock.webhookLog.update.mockResolvedValue({} as any);
+
+      prismaMock.customer.findFirst.mockResolvedValue({ id: 'customer-1', phoneNumber: '+1234567890' } as any);
+      prismaMock.order.count.mockResolvedValue(0);
+      prismaMock.order.create.mockResolvedValue({ id: 'order-1', orderNumber: '1001' } as any);
+
+      const { signature: _omit, ...unsignedData } = webhookData;
+
+      const result = await webhookService.processWebhook(unsignedData as any);
+      expect(result.results.success).toBe(1);
+    });
+
     it('should create new customer if not exists', async () => {
       prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);

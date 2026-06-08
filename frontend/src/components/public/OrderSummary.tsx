@@ -13,8 +13,23 @@ interface OrderSummaryProps {
   onSubmit: () => void;
   buttonColor?: string;
   accentColor?: string;
+  textColor?: string;
+  buttonShape?: 'square' | 'rounded' | 'pill';
+  buttonSize?: 'sm' | 'md' | 'lg';
   submitLabel?: string;
 }
+
+const SHAPE_CLASS: Record<NonNullable<OrderSummaryProps['buttonShape']>, string> = {
+  square: 'rounded-none',
+  rounded: 'rounded-lg',
+  pill: 'rounded-full',
+};
+
+const SIZE_CLASS: Record<NonNullable<OrderSummaryProps['buttonSize']>, string> = {
+  sm: 'py-2 text-sm',
+  md: 'py-3',
+  lg: 'py-4 text-lg',
+};
 
 export const OrderSummary: React.FC<OrderSummaryProps> = ({
   selectedPackage,
@@ -24,6 +39,9 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
   onSubmit,
   buttonColor = '#0f172a',
   accentColor = '#f97316',
+  textColor,
+  buttonShape = 'rounded',
+  buttonSize = 'md',
   submitLabel = 'Place Order',
 }) => {
   const hasDiscount = selectedPackage?.originalPrice && selectedPackage.originalPrice > selectedPackage.price && selectedPackage.showDiscount !== false;
@@ -37,7 +55,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
 
   return (
     <div className="bg-white rounded-lg border-2 border-gray-200 p-6 sticky top-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">Order Summary</h2>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4" style={textColor ? { color: textColor } : undefined}>Order Summary</h2>
 
       <div className="space-y-3 mb-6">
         {selectedPackage && (
@@ -97,7 +115,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
       </div>
 
       <div className="flex justify-between items-center mb-6 pt-3 border-t-2 border-gray-300">
-        <span className="text-lg font-semibold text-gray-900">Total</span>
+        <span className="text-lg font-semibold text-gray-900" style={textColor ? { color: textColor } : undefined}>Total</span>
         <span className="text-2xl font-bold" style={{ color: accentColor }}>
           {currency} {total.toFixed(2)}
         </span>
@@ -107,8 +125,8 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
         onClick={onSubmit}
         disabled={!selectedPackage || isSubmitting}
         isLoading={isSubmitting}
-        className="w-full text-white font-semibold py-3 px-6 rounded-lg transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
-        style={(!selectedPackage || isSubmitting) ? undefined : { backgroundColor: buttonColor }}
+        className={`w-full text-white font-semibold px-6 transition-colors disabled:cursor-not-allowed ${!selectedPackage ? 'opacity-60' : ''} ${SHAPE_CLASS[buttonShape]} ${SIZE_CLASS[buttonSize]}`}
+        style={{ backgroundColor: buttonColor }}
       >
         {isSubmitting ? 'Processing...' : submitLabel}
       </Button>

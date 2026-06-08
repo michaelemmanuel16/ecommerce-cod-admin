@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckoutForm, CheckoutFormData } from '../components/public/CheckoutForm';
 import { OrderSuccess } from '../components/public/OrderSuccess';
 import { publicOrdersService, PublicCheckoutForm, PublicOrderData } from '../services/public-orders.service';
@@ -29,6 +29,12 @@ function setCooldown(slug: string, orderId: number, total: number) {
 export const PublicCheckout: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // `?package=<id>` deep-links the checkout to a single package (numeric ids only).
+  const lockedPackageParam = searchParams.get('package');
+  const lockedPackageId = lockedPackageParam && /^\d+$/.test(lockedPackageParam)
+    ? Number(lockedPackageParam)
+    : null;
   const [formData, setFormData] = useState<PublicCheckoutForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +152,7 @@ export const PublicCheckout: React.FC = () => {
           customFields: data.customFields,
         },
         selectedPackage: {
+          id: selectedPackage.id,
           name: selectedPackage.name,
           price: selectedPackage.price,
           quantity: selectedPackage.quantity,
@@ -176,9 +183,25 @@ export const PublicCheckout: React.FC = () => {
           return;
         }
 
+        setCooldown(slug, response.orderId, totalAmount);
+
+        // Custom thank-you page: redirect with order details appended so the
+        // merchant's page can show the order and fire its own purchase pixel.
+        if (formData.redirectUrl) {
+          try {
+            const url = new URL(formData.redirectUrl);
+            url.searchParams.set('order_id', String(response.orderId));
+            url.searchParams.set('total', String(totalAmount));
+            url.searchParams.set('currency', formData.currency);
+            window.location.href = url.toString();
+            return;
+          } catch {
+            // Malformed URL slipped past validation — fall back to the built-in screen.
+          }
+        }
+
         setSubmittedTotal(totalAmount);
         setOrderId(response.orderId);
-        setCooldown(slug, response.orderId, totalAmount);
         toast.success('Order placed successfully!');
       } else {
         toast.error(response.message || 'Failed to place order');
@@ -250,5 +273,5 @@ export const PublicCheckout: React.FC = () => {
   }
 
   // Checkout form state
-  return <CheckoutForm formData={formData} onSubmit={handleSubmit} />;
+  return <CheckoutForm formData={formData} onSubmit={handleSubmit} lockedPackageId={lockedPackageId} />;
 };

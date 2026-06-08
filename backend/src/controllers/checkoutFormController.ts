@@ -2,6 +2,18 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
+import checkoutFormService from '../services/checkoutFormService';
+import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
+
+const validateDesign = (
+  raw: unknown,
+): { ok: true; value: Prisma.InputJsonValue | undefined } | { ok: false; issues: unknown } => {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null) return { ok: true, value: Prisma.JsonNull as unknown as Prisma.InputJsonValue };
+  const parsed = checkoutFormDesignSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, issues: parsed.error.issues };
+  return { ok: true, value: parsed.data as Prisma.InputJsonValue };
+};
 
 export const getAllCheckoutForms = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -93,6 +105,31 @@ export const getCheckoutForm = async (req: AuthRequest, res: Response): Promise<
   }
 };
 
+/**
+ * Admin preview-config: returns the render-shape payload for the editor's
+ * live preview iframe. Mirrors the public response but allows draft/inactive
+ * forms. Auth + tenant scope are enforced by the route middleware.
+ */
+export const previewCheckoutForm = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const formId = parseInt(id, 10);
+    if (isNaN(formId)) {
+      res.status(400).json({ message: 'Invalid form ID' });
+      return;
+    }
+    const tenantId = (req as any).tenantId || (req as any).user?.tenantId || null;
+    const form = await checkoutFormService.getCheckoutFormForPreview(formId, tenantId);
+    res.json({ form });
+  } catch (error: any) {
+    if (error?.statusCode === 404) {
+      res.status(404).json({ message: 'Checkout form not found' });
+      return;
+    }
+    throw error;
+  }
+};
+
 export const createCheckoutForm = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const {
@@ -102,14 +139,22 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       description,
       fields,
       styling,
+      design,
       country,
       currency,
       regions,
       packages,
       upsells,
       isActive,
-      pixelConfig
+      pixelConfig,
+      redirectUrl
     } = req.body;
+
+    const designValidation = validateDesign(design);
+    if (!designValidation.ok) {
+      res.status(400).json({ error: 'Invalid design payload', issues: designValidation.issues });
+      return;
+    }
 
     // Check if slug already exists
     const existing = await prisma.checkoutForm.findUnique({
@@ -168,11 +213,13 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
             description,
             fields,
             styling,
+            design: designValidation.value,
             country: country || 'Ghana',
             currency: currency || 'GHS',
             regions,
             isActive: isActive !== undefined ? isActive : true,
             pixelConfig: pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : undefined,
+            redirectUrl: redirectUrl ? String(redirectUrl).trim() : null,
             packages: normalizedPackages && normalizedPackages.length > 0 ? {
               create: normalizedPackages
             } : undefined,
@@ -248,14 +295,22 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       description,
       fields,
       styling,
+      design,
       country,
       currency,
       regions,
       packages,
       upsells,
       isActive,
-      pixelConfig
+      pixelConfig,
+      redirectUrl
     } = req.body;
+
+    const designValidation = validateDesign(design);
+    if (!designValidation.ok) {
+      res.status(400).json({ error: 'Invalid design payload', issues: designValidation.issues });
+      return;
+    }
 
     // Check if form exists
     const existing = await prisma.checkoutForm.findUnique({
@@ -299,11 +354,13 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     if (description !== undefined) updateData.description = description;
     if (fields !== undefined) updateData.fields = fields;
     if (styling !== undefined) updateData.styling = styling;
+    if (design !== undefined) updateData.design = designValidation.value;
     if (country !== undefined) updateData.country = country;
     if (currency !== undefined) updateData.currency = currency;
     if (regions !== undefined) updateData.regions = regions;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (pixelConfig !== undefined) updateData.pixelConfig = pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : null;
+    if (redirectUrl !== undefined) updateData.redirectUrl = redirectUrl ? String(redirectUrl).trim() : null;
 
     await prisma.checkoutForm.update({
       where: { id: formId },

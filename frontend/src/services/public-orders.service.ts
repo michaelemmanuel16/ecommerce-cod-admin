@@ -56,11 +56,29 @@ export interface PublicCheckoutForm {
   country: string;
   currency: string;
   regions: any;
-  styling?: {
-    buttonColor: string;
-    accentColor: string;
-    showName?: boolean;
-    showDescription?: boolean;
+  design?: {
+    colors?: {
+      primary?: string;
+      cta?: string;
+      surface?: string;
+      text?: string;
+    };
+    button?: {
+      shape?: 'square' | 'rounded' | 'pill';
+      size?: 'sm' | 'md' | 'lg';
+      label?: string;
+    };
+    input?: {
+      style?: 'flat' | 'outlined' | 'filled';
+      labelColor?: string;
+      priceColor?: string;
+    };
+    page?: {
+      background?: string;
+      productBanner?: string;
+      hideProductDisplay?: boolean;
+      offerPosition?: 'top' | 'bottom';
+    };
   };
   pixelConfig?: {
     facebookPixelId?: string;
@@ -68,6 +86,7 @@ export interface PublicCheckoutForm {
     tiktokPixelId?: string;
     googleTagManagerId?: string;
   };
+  redirectUrl?: string; // Custom thank-you page; overrides the built-in success screen
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
