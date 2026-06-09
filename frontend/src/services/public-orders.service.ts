@@ -123,9 +123,11 @@ export interface PublicOrderData {
 
 export interface PublicOrderResponse {
   success: boolean;
-  orderId: number;
   message: string;
-  order: {
+  // Present for COD orders (created immediately). Omitted for Paystack, which
+  // defers order creation until payment is confirmed and redirects instead.
+  orderId?: number;
+  order?: {
     id: number;
     totalAmount: number;
     status: string;
@@ -174,11 +176,8 @@ export const publicOrdersService = {
     return response.data;
   },
 
-  async verifyPayment(reference: string, orderId?: string): Promise<{ success: boolean; paymentStatus: string; order?: any }> {
-    const url = orderId
-      ? `/api/paystack/verify/${reference}?orderId=${encodeURIComponent(orderId)}`
-      : `/api/paystack/verify/${reference}`;
-    const response = await publicClient.get(url);
+  async verifyPayment(reference: string): Promise<{ success: boolean; paymentStatus: string; order?: any }> {
+    const response = await publicClient.get(`/api/paystack/verify/${reference}`);
     return response.data;
   },
 

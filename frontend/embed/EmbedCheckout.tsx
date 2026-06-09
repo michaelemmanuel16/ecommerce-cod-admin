@@ -31,9 +31,14 @@ export const EmbedCheckout: React.FC<EmbedCheckoutProps> = ({ apiBase, slug, loc
       const { payload, totalAmount } = buildOrderPayload(form, data);
       const res = await submitOrder(apiBase, slug, payload);
 
-      // Digital products: hand off to Paystack.
+      // Paystack methods: hand off to Paystack (order created after payment).
       if (res.authorization_url) {
         window.location.href = res.authorization_url;
+        return;
+      }
+      // COD: the order was created immediately and carries an orderId.
+      if (res.orderId == null) {
+        setError('Order could not be completed. Please try again.');
         return;
       }
       // Custom thank-you page wins over the built-in success panel.

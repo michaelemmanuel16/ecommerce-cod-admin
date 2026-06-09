@@ -137,6 +137,7 @@ export const paystackService = {
     currency: string,
     metadata: Record<string, any>,
     callbackUrl?: string,
+    customer?: { firstName?: string; lastName?: string; phone?: string },
   ): Promise<InitializeResponse> {
     const result = await paystackRequest(tenantId, 'POST', '/transaction/initialize', {
       email,
@@ -144,6 +145,12 @@ export const paystackService = {
       currency: currency.toUpperCase(),
       metadata,
       callback_url: callbackUrl,
+      // Populate the Paystack customer so the receipt/dashboard shows the buyer's
+      // name instead of the synthesized <phone>@codadminpro.com email. Unknown
+      // top-level fields are safely ignored by Paystack when absent.
+      ...(customer?.firstName ? { first_name: customer.firstName } : {}),
+      ...(customer?.lastName ? { last_name: customer.lastName } : {}),
+      ...(customer?.phone ? { phone: customer.phone } : {}),
     });
 
     logger.info('Paystack transaction initialized', {

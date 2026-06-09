@@ -180,6 +180,11 @@ function attachModeB(form: HTMLFormElement): void {
         window.location.href = res.authorization_url;
         return;
       }
+      // COD: the order was created immediately and carries an orderId.
+      if (res.orderId == null) {
+        setMessage(form, 'Order could not be completed. Please try again.', true);
+        return;
+      }
       const redirect = buildRedirectUrl(config.redirectUrl, {
         orderId: res.orderId,
         total: totalAmount,
