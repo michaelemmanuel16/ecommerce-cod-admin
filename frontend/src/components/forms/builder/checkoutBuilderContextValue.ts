@@ -14,6 +14,12 @@ export interface BuilderFormValues {
   currency: string;
   redirectUrl: string;
   allowedOrigins: string; // newline-separated origins; split to string[] on save
+  codEnabled: boolean;
+  paystackDepositEnabled: boolean;
+  paystackFullEnabled: boolean;
+  depositPercent: number;
+  metaCapiAccessToken: string;
+  metaCapiTestEventCode: string;
 }
 
 export interface CheckoutBuilderContextValue {

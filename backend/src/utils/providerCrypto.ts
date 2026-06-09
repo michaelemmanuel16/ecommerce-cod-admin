@@ -11,7 +11,7 @@ export const SENSITIVE_FIELDS: Record<string, string[]> = {
   whatsappProvider: ['accessToken', 'appSecret', 'webhookVerifyToken'],
   smsProvider: ['authToken'],
   emailProvider: ['apiKey'],
-  paystackProvider: ['secretKey', 'webhookSecret'],
+  paystackProvider: ['secretKey'],
 };
 
 /** Sentinel returned to the client in place of a real secret. */
@@ -91,6 +91,35 @@ function decryptValue(value: string, key: Buffer): string {
 
 function isEncrypted(value: unknown): boolean {
   return typeof value === 'string' && value.startsWith(PREFIX);
+}
+
+/**
+ * Encrypt a single secret string (e.g. a checkout form's Meta CAPI token),
+ * using the same AES-256-GCM scheme as the provider-config secrets. Returns the
+ * input unchanged when there's no key, the value is empty, or it's already
+ * encrypted — so callers can pass it through on every save idempotently.
+ */
+export function encryptString(value: string | null | undefined): string | null | undefined {
+  if (!value || isEncrypted(value)) return value;
+  const key = getEncryptionKey();
+  if (!key) return value;
+  return encryptValue(value, key);
+}
+
+/**
+ * Decrypt a single secret string encrypted by {@link encryptString}. Plaintext
+ * (legacy) values pass through unchanged for backward compatibility.
+ */
+export function decryptString(value: string | null | undefined): string | null | undefined {
+  if (!value || !isEncrypted(value)) return value;
+  const key = getEncryptionKey();
+  if (!key) throw new Error('Cannot decrypt value — PROVIDER_ENCRYPTION_KEY not set');
+  return decryptValue(value, key);
+}
+
+/** True when a value carries the {@link PREFIX} encryption marker. */
+export function isEncryptedString(value: unknown): boolean {
+  return isEncrypted(value);
 }
 
 /**

@@ -136,9 +136,16 @@ export const PublicCheckout: React.FC = () => {
       const response = await publicOrdersService.submitOrder(slug, payload as any);
 
       if (response.success) {
-        // Digital products: redirect to Paystack payment
+        // Paystack methods (digital, deposit, full): redirect to Paystack. The
+        // order isn't created until payment is confirmed, so there's no orderId here.
         if (response.authorization_url) {
           window.location.href = response.authorization_url;
+          return;
+        }
+
+        // COD: order was created immediately and carries an orderId.
+        if (!response.orderId) {
+          toast.error('Order could not be completed. Please try again.');
           return;
         }
 
@@ -150,6 +157,8 @@ export const PublicCheckout: React.FC = () => {
           orderId: response.orderId,
           total: totalAmount,
           currency: formData.currency,
+          reference: response.paymentReference,
+          package: data.selectedPackageId,
         });
         if (redirect) {
           window.location.href = redirect;

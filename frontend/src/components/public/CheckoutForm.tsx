@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useForm, RegisterOptions, FieldError } from 'react-hook-form';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
-import { FormField } from '../../types/checkout-form';
+import { FieldType, FormField, PaymentMethod } from '../../types/checkout-form';
 import { PackageSelector } from './PackageSelector';
 import { AddOnSelector } from './AddOnSelector';
-import { OrderSummary } from './OrderSummary';
+import { OrderSummary, PaymentMethodOption } from './OrderSummary';
 import { cn } from '../../utils/cn';
 
 interface CheckoutFormProps {
@@ -28,6 +28,9 @@ export interface CheckoutFormData {
   selectedPackageId: number;
   selectedAddonIds: number[];
   customFields?: Record<string, string>;
+  // Which payment button the buyer pressed (MAN-58). Omitted on legacy
+  // single-method forms; the server defaults to COD for physical products.
+  paymentMethod?: PaymentMethod;
 }
 
 interface StandardFieldConfig {
@@ -54,9 +57,24 @@ const DEFAULT_FIELDS: FormField[] = [
   { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: true, enabled: true },
 ];
 
-function getStandardField(label: string): StandardFieldConfig | null {
-  const normalized = label.toLowerCase().trim();
-  return STANDARD_FIELDS.find(config => config.aliases.includes(normalized)) ?? null;
+// Field types the builder emits 1:1 onto a standard key, used to map a field
+// whose label doesn't match an alias (e.g. the builder's default "Email Address"
+// label). Only the unambiguous types are listed: `phone` is excluded because it
+// covers both phone and altPhone, and `text`/`textarea` can be any custom field.
+const TYPE_TO_STANDARD_KEY: Partial<Record<FieldType, keyof CheckoutFormData>> = {
+  email: 'email',
+  state: 'region',
+};
+
+function getStandardField(field: FormField): StandardFieldConfig | null {
+  const normalized = field.label.toLowerCase().trim();
+  const byAlias = STANDARD_FIELDS.find(config => config.aliases.includes(normalized));
+  if (byAlias) return byAlias;
+  // Fall back to the field's explicit type so a relabeled standard field (most
+  // commonly an email field labeled "Email Address") still registers under its
+  // standard key instead of leaking into customFields and being dropped.
+  const typeKey = TYPE_TO_STANDARD_KEY[field.type];
+  return typeKey ? STANDARD_FIELDS.find(config => config.key === typeKey) ?? null : null;
 }
 
 interface FieldWrapperProps {
@@ -175,7 +193,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   const reg = (key: string, opts?: RegisterOptions) => register(key as any, opts as any);
 
   function renderField(field: FormField): React.JSX.Element {
-    const standard = getStandardField(field.label);
+    const standard = getStandardField(field);
     const formKey = standard ? standard.key : `customFields.${field.label}`;
     let isRequired = field.required ?? (standard ? DEFAULT_REQUIRED_KEYS.has(standard.key) : false);
     // For digital products: email is always required
@@ -284,6 +302,38 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
 
   const selectedAddons = formData.upsells.filter((u) => selectedAddonIds.has(u.id));
 
+  // Payment-method buttons (MAN-58). Build one option per enabled toggle in the
+  // fixed order COD → Deposit → Full. Digital products always pay full online.
+  // A button carries its contextual amount; the chosen method is captured in a
+  // ref right before submit (the form is posted through react-hook-form, which
+  // doesn't see the click target).
+  const ctaTotal = (selectedPackage?.price || 0) + selectedAddons.reduce((s, a) => s + a.price, 0);
+  const depositPercent = formData.depositPercent ?? 0;
+  const depositAmount = (ctaTotal * depositPercent) / 100;
+  const money = (n: number) => `${formData.currency} ${n.toFixed(2)}`;
+
+  const paymentMethods: PaymentMethodOption[] = (() => {
+    if (isDigital) {
+      return [{ method: 'paystack_full', label: buttonLabelOverride || 'Proceed to Payment' }];
+    }
+    const opts: PaymentMethodOption[] = [];
+    if (formData.codEnabled !== false) opts.push({ method: 'cod', label: 'Cash on Delivery' });
+    if (formData.paystackDepositEnabled) {
+      opts.push({ method: 'paystack_deposit', label: `Pay Deposit — ${money(depositAmount)}` });
+    }
+    if (formData.paystackFullEnabled) {
+      opts.push({ method: 'paystack_full', label: `Pay in Full — ${money(ctaTotal)}` });
+    }
+    // A lone COD button keeps the original "Place Order" label (zero-regression).
+    if (opts.length === 1 && opts[0].method === 'cod') {
+      opts[0].label = buttonLabelOverride || 'Place Order';
+    }
+    return opts.length > 0 ? opts : [{ method: 'cod', label: buttonLabelOverride || 'Place Order' }];
+  })();
+
+  const showRefundPolicy = paymentMethods.some((o) => o.method !== 'cod');
+  const pendingMethodRef = useRef<PaymentMethod>(paymentMethods[0]?.method || 'cod');
+
   const toggleAddon = (addonId: number) => {
     const newSelected = new Set(selectedAddonIds);
     if (newSelected.has(addonId)) {
@@ -306,12 +356,20 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
         ...data as CheckoutFormData,
         selectedPackageId,
         selectedAddonIds: Array.from(selectedAddonIds),
+        paymentMethod: pendingMethodRef.current,
       });
       // Don't reset isSubmitting on success — prevents double-submit while redirecting
     } catch (error) {
       console.error('Order submission error:', error);
       setIsSubmitting(false);
     }
+  };
+
+  // Captures which payment button was pressed, then runs validation + submit
+  // (react-hook-form's handleSubmit doesn't carry the click target through).
+  const submitWithMethod = (method: PaymentMethod) => {
+    pendingMethodRef.current = method;
+    handleSubmit(onFormSubmit)();
   };
 
   return (
@@ -404,6 +462,9 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                 buttonSize={buttonSize}
                 submitLabel={buttonLabelOverride || (isDigital ? 'Proceed to Payment' : 'Place Order')}
                 showSummary={showOrderSummary}
+                paymentMethods={paymentMethods}
+                onSelectMethod={submitWithMethod}
+                showRefundPolicy={showRefundPolicy}
               />
             </div>
           </div>

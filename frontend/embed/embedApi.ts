@@ -23,7 +23,9 @@ export async function fetchFormConfig(apiBase: string, slug: string): Promise<Em
 
 export interface OrderResponse {
   success: boolean;
-  orderId: number;
+  // Present for COD only. Paystack defers order creation until payment is
+  // confirmed and returns authorization_url instead.
+  orderId?: number;
   message?: string;
   authorization_url?: string;
   paymentReference?: string;

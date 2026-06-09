@@ -16,7 +16,6 @@ export const PaystackIntegration: React.FC<PaystackIntegrationProps> = ({ system
   const [form, setForm] = useState({
     publicKey: '',
     secretKey: '',
-    webhookSecret: '',
     mode: 'test' as PaystackMode,
     isEnabled: true,
   });
@@ -28,7 +27,6 @@ export const PaystackIntegration: React.FC<PaystackIntegrationProps> = ({ system
       setForm({
         publicKey: systemConfig.paystackProvider.publicKey || '',
         secretKey: systemConfig.paystackProvider.secretKey || '',
-        webhookSecret: systemConfig.paystackProvider.webhookSecret || '',
         mode: systemConfig.paystackProvider.mode === 'live' ? 'live' : 'test',
         isEnabled: systemConfig.paystackProvider.isEnabled !== false,
       });
@@ -105,16 +103,6 @@ export const PaystackIntegration: React.FC<PaystackIntegrationProps> = ({ system
                 value={form.secretKey}
                 onChange={(e) => setForm({ ...form, secretKey: e.target.value })}
                 placeholder="Your Paystack secret key"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Webhook Secret</label>
-              <input
-                type="password"
-                value={form.webhookSecret}
-                onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })}
-                placeholder="Paystack webhook secret for signature verification"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { CheckoutForm } from '../../components/public/CheckoutForm';
 import type { PublicCheckoutForm } from '../../services/public-orders.service';
 
@@ -141,5 +142,27 @@ describe('CheckoutForm — render + design + CTA (R5)', () => {
     expect(screen.getByText(/Order Summary/i)).toBeInTheDocument();
     // No add-on entries.
     expect(screen.queryByText(/Bonus/i)).toBeNull();
+  });
+
+  // Regression: an email-typed field whose label isn't a literal "email" alias
+  // (the builder's default label is "Email Address") must still register under
+  // the standard `email` key — otherwise the value leaks into customFields and
+  // the buyer's email is silently dropped from the order/customer.
+  it('maps an email-typed field labeled "Email Address" to the standard email key', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const form = baseForm({
+      fields: [
+        { id: 'e1', type: 'email', label: 'Email Address', required: true, enabled: true },
+      ] as any,
+    });
+    render(<CheckoutForm formData={form} onSubmit={onSubmit} />);
+
+    await userEvent.type(screen.getByPlaceholderText(/enter email address/i), 'buyer@example.com');
+    await userEvent.click(screen.getByRole('button', { name: /Place Order/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const submitted = onSubmit.mock.calls[0][0];
+    expect(submitted.email).toBe('buyer@example.com');
+    expect(submitted.customFields?.['Email Address']).toBeUndefined();
   });
 });

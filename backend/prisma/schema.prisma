@@ -235,6 +235,9 @@ model Order {
   orderType          String              @default("physical") @map("order_type")
   paymentMethod      String              @default("cod") @map("payment_method")
   paymentReference   String?             @map("payment_reference")
+  depositPaid        Int                 @default(0) @map("deposit_paid")
+  balanceDue         Int                 @default(0) @map("balance_due")
+  capiEventFired     Boolean             @default(false) @map("capi_event_fired")
   deliveryAddress    String?             @map("delivery_address")
   deliveryState      String?             @map("delivery_state")
   deliveryArea       String?             @map("delivery_area")
@@ -295,6 +298,11 @@ model Order {
   @@index([status, deliveryDate])
   @@index([orderType])
   @@index([tenantId])
+  // Settlement resolves an order by its Paystack reference; scope uniqueness to the
+  // tenant so a cross-account reference collision can never map to another tenant's
+  // order (NULL payment_reference rows — COD — are exempt: Postgres treats NULLs as
+  // distinct in a unique index).
+  @@unique([tenantId, paymentReference])
   @@map("orders")
 }
 
@@ -657,6 +665,12 @@ model CheckoutForm {
   redirectUrl String?          @map("redirect_url")
   formType    String           @default("physical") @map("form_type")
   allowedOrigins String[]      @default([]) @map("allowed_origins")
+  codEnabled             Boolean @default(true)  @map("cod_enabled")
+  paystackDepositEnabled Boolean @default(false) @map("paystack_deposit_enabled")
+  paystackFullEnabled    Boolean @default(false) @map("paystack_full_enabled")
+  depositPercent         Int?                     @map("deposit_percent")
+  metaCapiAccessToken    String?                  @map("meta_capi_access_token")
+  metaCapiTestEventCode  String?                  @map("meta_capi_test_event_code")
   product     Product          @relation(fields: [productId], references: [id])
   packages    FormPackage[]
   submissions FormSubmission[]
@@ -733,6 +747,41 @@ model FormSubmission {
   @@index([orderId])
   @@index([createdAt])
   @@map("form_submissions")
+}
+
+/// A checkout that initialized a Paystack transaction but hasn't been paid yet.
+/// Paystack orders are NOT created at checkout — only after payment is confirmed
+/// (webhook or callback verify). This holds the fully-computed order snapshot
+/// keyed by the Paystack reference so settlement can materialize the real Order.
+/// Abandoned/failed checkouts never become Orders; stale rows are swept by the
+/// pending-checkout cleanup cron. customerId/tenantId are plain scalars (no FK)
+/// since the row is transient.
+model PendingCheckout {
+  id                  Int      @id @default(autoincrement())
+  reference           String   @unique
+  tenantId            String   @map("tenant_id")
+  customerId          Int      @map("customer_id")
+  formId              Int      @map("form_id")
+  paymentMethod       String   @map("payment_method")
+  orderType           String   @map("order_type")
+  currency            String
+  subtotal            Float
+  shippingCost        Float    @default(0) @map("shipping_cost")
+  discount            Float    @default(0)
+  totalAmount         Float    @map("total_amount")
+  codAmount           Float?   @map("cod_amount")
+  balanceDue          Int      @default(0) @map("balance_due")
+  paystackChargeMinor Int      @map("paystack_charge_minor")
+  orderItems          Json     @map("order_items")
+  formData            Json     @map("form_data")
+  selectedPackage     Json     @map("selected_package")
+  selectedUpsells     Json?    @map("selected_upsells")
+  ipAddress           String?  @map("ip_address")
+  userAgent           String?  @map("user_agent")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("pending_checkouts")
 }
 
 model Call {

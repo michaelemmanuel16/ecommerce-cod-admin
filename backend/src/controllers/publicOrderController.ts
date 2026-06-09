@@ -6,6 +6,15 @@ import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 import prisma from '../utils/prisma';
 import { paystackService } from '../services/paystackService';
+import { metaCapiService } from '../services/metaCapiService';
+
+/**
+ * Buyer-selectable payment methods. `cod` settles on delivery; the two Paystack
+ * methods charge online against the form tenant's own Paystack account —
+ * `paystack_full` for the whole total, `paystack_deposit` for a percentage with
+ * the balance collected on delivery.
+ */
+type PaymentMethod = 'cod' | 'paystack_deposit' | 'paystack_full';
 
 export const getPublicForm = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -40,6 +49,10 @@ export const getPublicFormConfig = async (req: Request, res: Response, next: Nex
       tenantId: string | null;
       allowedOrigins: string[];
     };
+    // Defense-in-depth: never let the server-only Meta CAPI secrets reach a host
+    // page, even if a future select change starts including them.
+    delete (publicForm as Record<string, unknown>).metaCapiAccessToken;
+    delete (publicForm as Record<string, unknown>).metaCapiTestEventCode;
 
     // Per-form Origin allowlist gate (see doc comment above).
     const origin = req.headers.origin;
@@ -97,6 +110,29 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     const isDigital = form.product.productType === 'digital';
 
+    // Resolve the payment method. Digital products always pay full via Paystack
+    // (unchanged). Physical products honor the form's toggle matrix and the
+    // buyer's choice; the server cross-checks the chosen method against the
+    // form's enabled toggles, so a tampered request body can't pay through a
+    // method the merchant disabled.
+    const requestedMethod = req.body.paymentMethod as PaymentMethod | undefined;
+    let paymentMethod: PaymentMethod;
+    if (isDigital) {
+      paymentMethod = 'paystack_full';
+    } else {
+      paymentMethod = requestedMethod ?? 'cod';
+      const enabledFor: Record<PaymentMethod, boolean> = {
+        cod: form.codEnabled,
+        paystack_deposit: form.paystackDepositEnabled,
+        paystack_full: form.paystackFullEnabled,
+      };
+      if (!enabledFor[paymentMethod]) {
+        res.status(400).json({ error: 'Selected payment method is not available for this form' });
+        return;
+      }
+    }
+    const isPaystack = paymentMethod === 'paystack_deposit' || paymentMethod === 'paystack_full';
+
     // Validate required fields — digital products don't need address/state
     const requiredFields = isDigital
       ? ['name', 'phoneNumber']
@@ -108,10 +144,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
     }
 
-    // Digital products require email for download link delivery
-    // Digital orders settle into the form's tenant Paystack account; without
+    // Paystack orders settle into the form's tenant Paystack account; without
     // a tenant we'd create an orphaned unpaid order. Fail fast before any DB write.
-    if (isDigital && !formTenantId) {
+    if (isPaystack && !formTenantId) {
       res.status(400).json({
         error: 'This checkout form is not attached to a tenant; Paystack cannot be initialized.',
       });
@@ -150,8 +185,14 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       });
     } else {
       const updateData: Prisma.CustomerUpdateInput = {};
-      if (formData.email && !customer.email) updateData.email = formData.email;
-      if (formData.alternatePhone && !customer.alternatePhone) updateData.alternatePhone = formData.alternatePhone;
+      // Always link the email / alternate phone the buyer typed at checkout —
+      // including for repeat customers whose record was first created without one
+      // — so it shows on the order and customer details. (Previously this only
+      // wrote when the field was empty, silently dropping repeat-buyer emails.)
+      if (formData.email && formData.email !== customer.email) updateData.email = formData.email;
+      if (formData.alternatePhone && formData.alternatePhone !== customer.alternatePhone) {
+        updateData.alternatePhone = formData.alternatePhone;
+      }
       if (Object.keys(updateData).length > 0) {
         customer = await prisma.customer.update({
           where: { id: customer.id },
@@ -263,6 +304,19 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     const discount = 0;
     const finalTotal = subtotal + shippingCost - discount;
 
+    // Payment amounts in minor units (pesewas/kobo) — Paystack charges in minor
+    // units, and Order.depositPaid/balanceDue are stored the same way. For a
+    // deposit, the buyer pays `depositPercent` of the total online now and the
+    // remaining balance is collected on delivery (COD-style).
+    const totalMinorUnits = Math.round(finalTotal * 100);
+    let balanceDueMinor = 0;
+    let paystackChargeMinor = totalMinorUnits;
+    if (paymentMethod === 'paystack_deposit') {
+      const pct = form.depositPercent ?? 0;
+      paystackChargeMinor = Math.round((totalMinorUnits * pct) / 100);
+      balanceDueMinor = totalMinorUnits - paystackChargeMinor;
+    }
+
     // Prepare order items array: main package + upsells
     const orderItemsData = [];
 
@@ -303,18 +357,86 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       });
     }
 
-    // Create order with the checkout form's tenantId
+    // --- Paystack (deferred creation) ---
+    // Don't create the Order yet. Initialize the Paystack transaction, then stash
+    // a PendingCheckout snapshot keyed by the returned reference. The real Order
+    // is materialized only when payment is confirmed (webhook or callback verify),
+    // so abandoned/failed payments never enter the system as orders, and a new
+    // Paystack order never appears as "payment pending".
+    if (isPaystack) {
+      // formTenantId guaranteed non-null here — guarded at the top before any DB write.
+      const currency = form.currency || 'GHS';
+      // Paystack requires an email; synthesize a stable one from the phone when
+      // the buyer left it blank (physical Paystack orders don't require email).
+      const buyerEmail =
+        formData.email || `${String(formData.phoneNumber).replace(/\D/g, '')}@codadminpro.com`;
+      // Paystack appends ?reference=...&trxref=... to the callback URL on redirect;
+      // the PaymentCallback page settles by that reference.
+      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback`;
+
+      const paystackResult = await paystackService.initializeTransaction(
+        formTenantId as string,
+        buyerEmail,
+        paystackChargeMinor,
+        currency,
+        { formSlug: slug, paymentMethod },
+        callbackUrl,
+        { firstName: customer.firstName, lastName: customer.lastName, phone: formData.phoneNumber },
+      );
+
+      await prisma.pendingCheckout.create({
+        data: {
+          reference: paystackResult.reference,
+          tenantId: formTenantId as string,
+          customerId: customer.id,
+          formId: form.id,
+          paymentMethod,
+          orderType: isDigital ? 'digital' : 'physical',
+          currency,
+          subtotal,
+          shippingCost,
+          discount,
+          totalAmount: finalTotal,
+          // What the agent collects on delivery: the balance for a deposit, 0 for full.
+          codAmount: paymentMethod === 'paystack_deposit' ? balanceDueMinor / 100 : 0,
+          balanceDue: balanceDueMinor,
+          paystackChargeMinor,
+          orderItems: orderItemsData,
+          formData,
+          selectedPackage,
+          selectedUpsells: selectedUpsells ?? Prisma.JsonNull,
+          ipAddress: req.ip,
+          userAgent: req.get('user-agent'),
+        },
+      });
+
+      res.status(201).json({
+        success: true,
+        paymentMethod,
+        amount: paystackChargeMinor,
+        currency,
+        authorization_url: paystackResult.authorization_url,
+        paymentReference: paystackResult.reference,
+        message: 'Order received — redirecting to payment',
+      });
+      return;
+    }
+
+    // --- COD ---
+    // Cash-on-delivery settles on delivery, so the order is created now at
+    // pending_confirmation and the Meta Purchase event fires immediately.
     const order = await prisma.order.create({
       data: {
         customerId: customer.id,
-        status: isDigital ? OrderStatus.payment_pending : OrderStatus.pending_confirmation,
+        status: OrderStatus.pending_confirmation,
         orderType: isDigital ? 'digital' : 'physical',
-        paymentMethod: isDigital ? 'paystack' : 'cod',
+        paymentMethod,
         subtotal,
         shippingCost,
         discount,
         totalAmount: finalTotal,
-        codAmount: isDigital ? 0 : finalTotal,
+        codAmount: finalTotal,
+        balanceDue: 0,
         deliveryAddress: formData.address || null,
         deliveryState: formData.state || null,
         deliveryArea: formData.state || null,
@@ -366,39 +488,12 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // Emit socket event for real-time update
     emitOrderCreated(getSocketInstance() as any, order);
 
-    // For digital products: initialize Paystack payment
-    if (isDigital) {
-      // formTenantId guaranteed non-null here — guarded at the top before any DB write.
-      // Carry orderId in the callback URL so PaymentCallback can resolve the tenant
-      // even when its verify hits before the webhook (verifyPaymentCore fallback).
-      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback?orderId=${order.id}`;
-      // Amount in pesewas (minor units) for GHS
-      const amountInMinorUnits = Math.round(finalTotal * 100);
-      const currency = form.currency || 'GHS';
-
-      const paystackResult = await paystackService.initializeTransaction(
-        formTenantId as string,
-        formData.email,
-        amountInMinorUnits,
-        currency,
-        { orderId: order.id, formSlug: slug },
-        callbackUrl,
-      );
-
-      res.status(201).json({
-        success: true,
-        orderId: order.id,
-        order: {
-          id: order.id,
-          totalAmount: order.totalAmount,
-          status: order.status,
-        },
-        authorization_url: paystackResult.authorization_url,
-        paymentReference: paystackResult.reference,
-        message: 'Order created — redirecting to payment',
-      });
-      return;
-    }
+    // COD orders are "purchased" at creation (payment settles on delivery), so
+    // fire the server-side Meta Purchase event now. Best-effort + idempotent;
+    // Paystack orders fire instead on settlement (see paystackSettlementService).
+    metaCapiService.fireCapiPurchaseEvent(order.id).catch((err) => {
+      console.error('Meta CAPI fire failed for COD order:', err);
+    });
 
     res.status(201).json({
       success: true,

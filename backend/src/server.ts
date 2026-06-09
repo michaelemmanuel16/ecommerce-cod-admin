@@ -86,6 +86,7 @@ import './queues/workflowQueue';
 import { setupAgingCron } from './queues/agingQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
+import { setupPendingCheckoutCleanupCron } from './queues/pendingCheckoutCleanupQueue';
 
 // Validate environment variables before starting server
 try {
@@ -285,6 +286,9 @@ if (process.env.NODE_ENV !== 'test') {
 
     // Setup Message Log Cleanup Cron Job
     await setupMessageCleanupCron();
+
+    // Setup abandoned Paystack pending-checkout cleanup
+    await setupPendingCheckoutCleanupCron();
 
     // Daily GL balance verification at 02:00 AM
     cron.schedule('0 2 * * *', async () => {
