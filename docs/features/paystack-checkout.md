@@ -17,8 +17,8 @@ Epic status:
 | MAN-56 (CODA-2a) | Order state machine + `statusVersion` | ✅ Done |
 | MAN-67 (CODA-2b) | Checkout builder (Fields tab) | ✅ Done — **skins descoped, see below** |
 | MAN-57 (CODA-3) | Embed widget (Mode A/B) + package lock | ✅ Done |
-| MAN-58 (CODA-4) | Multi-button COD / Deposit / Full Paystack | ⏳ Blocked by MAN-57 |
-| MAN-59 (CODA-5) | Meta CAPI + custom thank-you URL | ⏳ Blocked by MAN-58 |
+| MAN-58 (CODA-4) | Multi-button COD / Deposit / Full Paystack | ✅ Done |
+| MAN-59 (CODA-5) | Meta CAPI + custom thank-you URL | ✅ Done |
 | MAN-60 (CODA-6) | Tenant payouts / Paystack Transfers | ❌ Cancelled |
 | MAN-61 (CODA-7) | Paystack subscription billing (CodAdmin SaaS) | ⏳ Independent track |
 | MAN-62 (CODA-8) | Magic Groove dogfood | ⏳ Ops, post-deploy |
@@ -131,3 +131,71 @@ Tenants can now embed their checkout on any external page. A new `frontend/embed
 - Snippet XSS: `</script>` in slug escaped via `escapeJsString`; slug regex `^[a-z0-9-]+$`.
 - Security review (`/cso`, diff-scoped): 0 critical/high/medium; 1 low informational (Origin allowlist is an embedding control, not an access boundary — order endpoint not Origin-gated; abuse-bounded by rate limiter + IP cooldown + dedup).
 - Not live-tested: the digital→Paystack `authorization_url` redirect branch through the embed (the dev smoke-test form is physical/COD).
+
+---
+
+## MAN-58 — Multi-button COD / Deposit / Full Paystack payments
+**Date:** 2026-06-09 | **Type:** feat | **Branch:** feature/man-58-59-payments-capi | **Commit:** 6d149d3 (pre-merge tip; final SHA assigned on PR #229 merge)
+
+### Summary
+The public checkout previously hardcoded payment by product type (digital → Paystack, physical → COD) with no buyer choice. This adds a per-form payment matrix — `codEnabled`, `paystackDepositEnabled`, `paystackFullEnabled` — with **at most two enabled at once**, so the public form renders **max two CTAs** (fixed order COD → Deposit → Full, with an "or" divider and a refund-policy block when Paystack is offered). The server cross-checks the chosen method against the form's toggles and never trusts the client. **Deposit** orders charge `round(total × depositPercent/100)` via per-tenant Paystack and persist the remainder on `Order.balanceDue` (minor units); on settlement they land in `PaymentStatus.deposited` and full payments in `PaymentStatus.paid` (no new `OrderStatus` — payment states live on `PaymentStatus` per project convention). Settlement happens **only** in the webhook (`handleChargeSuccess`); the callback stays read-only polling. Saving a form with a Paystack method enabled but no tenant Paystack keys returns a `400` with a Settings → Integrations link.
+
+### Changes
+- **Schema:** `CheckoutForm` + `codEnabled` (default true — preserves every existing form's behavior), `paystackDepositEnabled`, `paystackFullEnabled` (both default false), `depositPercent Int?`. `Order` + `depositPaid Int @default(0)`, `balanceDue Int @default(0)` (minor units). Reuses existing `Order.paymentReference` and the `PaymentStatus.deposited`/`paid` enum values. Migration `20260609065935_add_payment_method_toggles_and_deposit`.
+- **Backend (save validation):** `validatePaymentConfig(body, existing, tenantId)` in `checkoutFormController` — ≥1 toggle true, ≤2 toggles true (rejects all-three), `depositPercent ∈ 1..99` when deposit on, and `paystackService.isConfigured(tenantId)` required when any Paystack toggle is on. Failures return `{ error, message, link }` (the `message` field is what the frontend toast surfaces). Wired into create + update.
+- **Backend (public order):** `createPublicOrder` accepts `paymentMethod: 'cod' | 'paystack_deposit' | 'paystack_full'` (digital products force `paystack_full`); cross-checks `enabledFor[paymentMethod]`; computes `totalMinorUnits` / `balanceDueMinor` / `paystackChargeMinor`; creates the order with `status = isPaystack ? payment_pending : pending_confirmation`, `codAmount = cod ? finalTotal : balanceDueMinor/100`, `balanceDue = balanceDueMinor`. Unified `if (isPaystack)` init branch synthesizes `<phone-digits>@codadminpro.com` when the buyer leaves email blank.
+- **Backend (settlement):** `handleChargeSuccess` resolves `isDeposit` from `paymentMethod`, sets `expectedMinorUnits = isDeposit ? total - balanceDue : total`, validates the Paystack-reported amount (anti-tampering), atomically writes `payment_status` (`deposited`/`paid`) + `deposit_paid`, guarded by `WHERE payment_status NOT IN ('paid','deposited')` for idempotency on repeat webhooks.
+- **Frontend (admin builder):** Payment Methods section in `SettingsTab` — three toggles with **max-2 enforcement** (the third disables once two are on, with a "Two methods are enabled" helper) + a deposit-% input; the keys-missing 400 surfaces as a toast with the Integrations link.
+- **Frontend (public form):** `OrderSummary` normalizes a `PaymentMethodOption[]` into one button per method (filled primary + outline secondary, "or" divider, refund block); `CheckoutForm` builds the method list and posts the chosen `paymentMethod` via `buildOrderPayload`. `PaymentMethod` is a single shared type in `types/checkout-form.ts` (was duplicated across frontend + backend).
+
+### Key Files
+- `backend/prisma/schema.prisma` + `migrations/20260609065935_add_payment_method_toggles_and_deposit/`
+- `backend/src/controllers/publicOrderController.ts` — paymentMethod resolution, deposit math, server toggle enforcement
+- `backend/src/controllers/paystackController.ts` — deposit-aware settlement in `handleChargeSuccess`
+- `backend/src/controllers/checkoutFormController.ts` — `validatePaymentConfig`, `paymentTogglePatch`
+- `backend/src/services/checkoutFormService.ts` — `PUBLIC_FORM_SELECT` adds the toggle fields
+- `frontend/src/types/checkout-form.ts` — shared `PaymentMethod` type + matrix fields
+- `frontend/src/components/public/OrderSummary.tsx`, `CheckoutForm.tsx` — multi-button CTA
+- `frontend/src/components/forms/builder/SettingsTab.tsx` — Payment Methods section + max-2 guard
+- `frontend/src/lib/orderPayload.ts` — `paymentMethod` in payload
+- `backend/src/controllers/__tests__/checkoutFormController.test.ts`, `publicOrderController.test.ts` (new); extended `paystackController.test.ts`
+
+### Verification
+- Backend build + lint pass; `npm test` (`--runInBand`) 965/965, touched suites 43/43. Frontend build + lint pass. Workflow validation passes.
+- Save validation: all-three-on → 400; deposit-on with `depositPercent` out of 1..99 → 400; Paystack-on without tenant keys → 400 with `message` + `link`.
+- Anti-tampering: client posting a `paymentMethod` whose toggle is off → 400; deposit settlement amount mismatch → guarded; repeat webhook → no-op (status guard).
+- Browser (localhost:5173): builder max-2 enforcement + deposit-% field; save-blocked toast "Paystack disabled until you add keys"; public form COD + "or" + Pay in Full (GHS 477.60) + refund block. No console errors.
+- Not live-tested this sprint: a real Paystack deposit charge end-to-end (no sandbox keys on the dev tenant); covered by unit tests + mocked verify.
+
+---
+
+## MAN-59 — Meta CAPI purchase events (thank-you URL already shipped as `redirectUrl`)
+**Date:** 2026-06-09 | **Type:** feat | **Branch:** feature/man-58-59-payments-capi | **Commit:** 189933d (pre-merge tip; final SHA assigned on PR #229 merge)
+
+### Summary
+Adds server-side Meta Conversions API `Purchase` events so ad attribution survives iOS / in-app-browser client-pixel loss. The custom thank-you URL half of this issue **already shipped** under the name `redirectUrl` (MAN-57 era), so this collapses to the CAPI service plus extending the redirect params. `metaCapiService.fireCapiPurchaseEvent(orderId)` POSTs to the Graph API with SHA-256-hashed PII, `event_id = paymentReference || orderId` (dedups against the client pixel), and `custom_data` (value, currency, content_ids, content_type). It fires on the COD-create path and on Paystack settlement; the `Order.capiEventFired` flag guarantees exactly-once across both. It is best-effort (never throws, never blocks the order) and does a single DB query. The access token is encrypted at rest, write-only-masked in admin reads, and stripped from the public form config.
+
+### Changes
+- **Schema:** `CheckoutForm` + `metaCapiAccessToken String?` (encrypted at rest), `metaCapiTestEventCode String?`. `Order` + `capiEventFired Boolean @default(false)`. Migration `20260609072352_add_meta_capi_and_capi_event_fired`.
+- **Backend (service, new):** `metaCapiService.fireCapiPurchaseEvent(orderId)` — one `order.findUnique` with nested latest `formSubmissions → form` + customer; shared `sha256` helper; `hash`/`hashPhone`/`compact`; `COUNTRY_ISO` map (ghana→gh etc.); pixel id from `pixelConfig.facebookPixelId`; honors `metaCapiTestEventCode`; sets `capiEventFired` only **after** a successful POST; swallows all errors.
+- **Backend (encryption):** Extracted reusable `encryptString`/`decryptString`/`isEncryptedString` in `providerCrypto.ts` (AES-256-GCM, `enc:v1:` prefix, plaintext back-compat) for the CAPI token.
+- **Backend (fire sites + no-leak):** Fired from `publicOrderController` (COD create) and `paystackController.handleChargeSuccess` (settlement). `getPublicFormConfig` strips `metaCapiAccessToken` + `metaCapiTestEventCode`; `maskCapiToken` masks the token at every admin read (`getAllCheckoutForms`, `getCheckoutForm`, `updateCheckoutForm`); `metaCapiPatch` encrypts on write and skips re-encrypt on the mask sentinel.
+- **Frontend (admin):** Meta CAPI access-token (masked/write-only) + test-event-code inputs in `SettingsTab`.
+- **Frontend (thank-you params):** `buildRedirectUrl` now also appends `reference` + `package` alongside `order_id`/`total`/`currency`; `PublicCheckout` passes them through.
+
+### Key Files
+- `backend/src/services/metaCapiService.ts` (new)
+- `backend/src/utils/providerCrypto.ts` — `encryptString`/`decryptString`/`isEncryptedString`
+- `backend/src/controllers/publicOrderController.ts` — COD-path fire + public-config strip
+- `backend/src/controllers/paystackController.ts` — settlement-path fire
+- `backend/src/controllers/checkoutFormController.ts` — `metaCapiPatch`, `maskCapiToken`
+- `backend/prisma/schema.prisma` + `migrations/20260609072352_add_meta_capi_and_capi_event_fired/`
+- `frontend/src/components/forms/builder/SettingsTab.tsx` — CAPI inputs
+- `frontend/src/lib/orderPayload.ts`, `frontend/src/pages/PublicCheckout.tsx` — redirect params
+- `backend/src/services/__tests__/metaCapiService.test.ts`, `controllers/__tests__/publicFormConfigController.test.ts` (new)
+
+### Verification
+- Backend build + lint pass; touched suites pass (metaCapiService payload shape + hashing + idempotency single-query mock; publicFormConfig no-leak regression asserts neither CAPI field appears in `JSON.stringify(config)`).
+- Idempotency: second `fireCapiPurchaseEvent` call no-ops via `capiEventFired`; flag set only after a 2xx Graph response.
+- No-leak: public `/config` response contains neither `metaCapiAccessToken` nor `metaCapiTestEventCode`; admin reads return the mask, not the ciphertext.
+- Per the approved plan (decision 3): built + unit-tested against a mocked Graph API this sprint; real Meta pixel/token + live Test Events verification wired later. No live Meta call made.
