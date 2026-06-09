@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useForm, RegisterOptions, FieldError } from 'react-hook-form';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
-import { FormField, PaymentMethod } from '../../types/checkout-form';
+import { FieldType, FormField, PaymentMethod } from '../../types/checkout-form';
 import { PackageSelector } from './PackageSelector';
 import { AddOnSelector } from './AddOnSelector';
 import { OrderSummary, PaymentMethodOption } from './OrderSummary';
@@ -57,9 +57,24 @@ const DEFAULT_FIELDS: FormField[] = [
   { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: true, enabled: true },
 ];
 
-function getStandardField(label: string): StandardFieldConfig | null {
-  const normalized = label.toLowerCase().trim();
-  return STANDARD_FIELDS.find(config => config.aliases.includes(normalized)) ?? null;
+// Field types the builder emits 1:1 onto a standard key, used to map a field
+// whose label doesn't match an alias (e.g. the builder's default "Email Address"
+// label). Only the unambiguous types are listed: `phone` is excluded because it
+// covers both phone and altPhone, and `text`/`textarea` can be any custom field.
+const TYPE_TO_STANDARD_KEY: Partial<Record<FieldType, keyof CheckoutFormData>> = {
+  email: 'email',
+  state: 'region',
+};
+
+function getStandardField(field: FormField): StandardFieldConfig | null {
+  const normalized = field.label.toLowerCase().trim();
+  const byAlias = STANDARD_FIELDS.find(config => config.aliases.includes(normalized));
+  if (byAlias) return byAlias;
+  // Fall back to the field's explicit type so a relabeled standard field (most
+  // commonly an email field labeled "Email Address") still registers under its
+  // standard key instead of leaking into customFields and being dropped.
+  const typeKey = TYPE_TO_STANDARD_KEY[field.type];
+  return typeKey ? STANDARD_FIELDS.find(config => config.key === typeKey) ?? null : null;
 }
 
 interface FieldWrapperProps {
@@ -178,7 +193,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   const reg = (key: string, opts?: RegisterOptions) => register(key as any, opts as any);
 
   function renderField(field: FormField): React.JSX.Element {
-    const standard = getStandardField(field.label);
+    const standard = getStandardField(field);
     const formKey = standard ? standard.key : `customFields.${field.label}`;
     let isRequired = field.required ?? (standard ? DEFAULT_REQUIRED_KEYS.has(standard.key) : false);
     // For digital products: email is always required

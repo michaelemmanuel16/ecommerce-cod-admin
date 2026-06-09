@@ -139,18 +139,33 @@ export const paystackService = {
     callbackUrl?: string,
     customer?: { firstName?: string; lastName?: string; phone?: string },
   ): Promise<InitializeResponse> {
+    // The receipt/dashboard shows the payer's NAME only when the Paystack
+    // Customer behind this email has one — `/transaction/initialize` ignores
+    // first_name/last_name. So upsert the customer first (Paystack keys customers
+    // by email; a repeat email returns the existing record). Best-effort: a
+    // customer-API hiccup must never block the actual payment.
+    if (customer && (customer.firstName || customer.lastName || customer.phone)) {
+      try {
+        await paystackRequest(tenantId, 'POST', '/customer', {
+          email,
+          ...(customer.firstName ? { first_name: customer.firstName } : {}),
+          ...(customer.lastName ? { last_name: customer.lastName } : {}),
+          ...(customer.phone ? { phone: customer.phone } : {}),
+        });
+      } catch (err) {
+        logger.warn('Paystack customer upsert failed; receipt may show email only', {
+          tenantId,
+          error: (err as Error)?.message,
+        });
+      }
+    }
+
     const result = await paystackRequest(tenantId, 'POST', '/transaction/initialize', {
       email,
       amount: amountInMinorUnits,
       currency: currency.toUpperCase(),
       metadata,
       callback_url: callbackUrl,
-      // Populate the Paystack customer so the receipt/dashboard shows the buyer's
-      // name instead of the synthesized <phone>@codadminpro.com email. Unknown
-      // top-level fields are safely ignored by Paystack when absent.
-      ...(customer?.firstName ? { first_name: customer.firstName } : {}),
-      ...(customer?.lastName ? { last_name: customer.lastName } : {}),
-      ...(customer?.phone ? { phone: customer.phone } : {}),
     });
 
     logger.info('Paystack transaction initialized', {

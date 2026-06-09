@@ -56,6 +56,63 @@ describe('paystackService — per-tenant scoping', () => {
     expect(fetchCall[1].headers.Authorization).toBe('Bearer sk_test_A');
   });
 
+  it('initializeTransaction upserts the Paystack customer (name) before initializing, so the receipt shows the buyer name', async () => {
+    (prismaMock.systemConfig.findUnique as any).mockResolvedValue({
+      paystackProvider: { publicKey: 'pk', secretKey: 'sk_test_A', mode: 'test', isEnabled: true },
+    });
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { authorization_url: 'https://paystack.co/x', reference: 'ref_1' } }),
+    });
+
+    await paystackService.initializeTransaction(
+      'tenant-A',
+      'buyer@example.com',
+      10000,
+      'GHS',
+      { orderId: 1 },
+      'https://app/callback',
+      { firstName: 'Qwerty', lastName: 'Test', phone: '0241234567' },
+    );
+
+    // First call upserts the customer with the name; second initializes the txn.
+    const [customerUrl, customerOpts] = (global.fetch as any).mock.calls[0];
+    expect(customerUrl).toContain('/customer');
+    expect(JSON.parse(customerOpts.body)).toMatchObject({
+      email: 'buyer@example.com',
+      first_name: 'Qwerty',
+      last_name: 'Test',
+      phone: '0241234567',
+    });
+    const [initUrl] = (global.fetch as any).mock.calls[1];
+    expect(initUrl).toContain('/transaction/initialize');
+  });
+
+  it('initializeTransaction still initializes if the customer upsert fails (best-effort)', async () => {
+    (prismaMock.systemConfig.findUnique as any).mockResolvedValue({
+      paystackProvider: { publicKey: 'pk', secretKey: 'sk_test_A', mode: 'test', isEnabled: true },
+    });
+    (global.fetch as any)
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ message: 'boom' }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { authorization_url: 'https://paystack.co/x', reference: 'ref_1' } }),
+      });
+
+    const result = await paystackService.initializeTransaction(
+      'tenant-A',
+      'buyer@example.com',
+      10000,
+      'GHS',
+      {},
+      undefined,
+      { firstName: 'Qwerty' },
+    );
+
+    expect(result.reference).toBe('ref_1');
+    expect((global.fetch as any).mock.calls[1][0]).toContain('/transaction/initialize');
+  });
+
   it('two tenants resolve to separate secret keys', async () => {
     (prismaMock.systemConfig.findUnique as any).mockImplementation(async (args: any) => {
       if (args.where.tenantId === 'tenant-A') {
