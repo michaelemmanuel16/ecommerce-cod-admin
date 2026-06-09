@@ -159,6 +159,8 @@ function attachModeB(form: HTMLFormElement): void {
         orderId: res.orderId,
         total: totalAmount,
         currency: config.currency,
+        reference: res.paymentReference,
+        package: pkgValue,
       });
       if (redirect) {
         window.location.href = redirect;

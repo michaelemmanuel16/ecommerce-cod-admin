@@ -16,7 +16,7 @@ export interface BuiltOrder {
       notes: null;
       customFields?: Record<string, string>;
     };
-    paymentMethod?: 'cod' | 'paystack_deposit' | 'paystack_full';
+    paymentMethod?: CheckoutFormData['paymentMethod'];
     selectedPackage: {
       id: number;
       name: string;
@@ -94,9 +94,11 @@ export function buildOrderPayload(form: PublicCheckoutForm, data: CheckoutFormDa
 
 // Appends order details to a merchant's custom thank-you URL. Returns null when
 // no URL is set or it fails to parse (caller falls back to the built-in screen).
+// `reference` (Paystack) and `package` are appended when available so the
+// merchant's page can reconcile the payment and show package-specific upsells.
 export function buildRedirectUrl(
   redirectUrl: string | undefined,
-  params: { orderId: number; total: number; currency: string },
+  params: { orderId: number; total: number; currency: string; reference?: string | null; package?: number | string | null },
 ): string | null {
   if (!redirectUrl) return null;
   try {
@@ -104,6 +106,8 @@ export function buildRedirectUrl(
     url.searchParams.set('order_id', String(params.orderId));
     url.searchParams.set('total', String(params.total));
     url.searchParams.set('currency', params.currency);
+    if (params.reference) url.searchParams.set('reference', String(params.reference));
+    if (params.package != null) url.searchParams.set('package', String(params.package));
     return url.toString();
   } catch {
     return null;

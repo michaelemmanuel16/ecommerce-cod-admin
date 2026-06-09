@@ -150,6 +150,8 @@ export const PublicCheckout: React.FC = () => {
           orderId: response.orderId,
           total: totalAmount,
           currency: formData.currency,
+          reference: response.paymentReference,
+          package: data.selectedPackageId,
         });
         if (redirect) {
           window.location.href = redirect;

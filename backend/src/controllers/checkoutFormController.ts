@@ -5,6 +5,30 @@ import prisma from '../utils/prisma';
 import checkoutFormService, { clearCheckoutFormConfigCache } from '../services/checkoutFormService';
 import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
 import { paystackService } from '../services/paystackService';
+import { encryptString, SECRET_MASK } from '../utils/providerCrypto';
+
+// The Meta CAPI access token is a write-only secret: admin reads get the mask
+// sentinel (never the ciphertext), and a save that echoes the mask preserves
+// the stored value. metaCapiTestEventCode is a non-secret dev code, sent plain.
+const maskCapiToken = <T extends { metaCapiAccessToken?: string | null }>(form: T): T =>
+  ({ ...form, metaCapiAccessToken: form.metaCapiAccessToken ? SECRET_MASK : null });
+
+// Builds the Prisma patch for the two CAPI fields from a request body, encrypting
+// a freshly-entered token and skipping the field when the masked sentinel comes
+// back unchanged. Returns only the keys the client actually sent.
+const metaCapiPatch = (body: any): Record<string, unknown> => {
+  const patch: Record<string, unknown> = {};
+  if (body.metaCapiAccessToken !== undefined && body.metaCapiAccessToken !== SECRET_MASK) {
+    const raw = body.metaCapiAccessToken ? String(body.metaCapiAccessToken).trim() : '';
+    patch.metaCapiAccessToken = raw ? encryptString(raw) : null;
+  }
+  if (body.metaCapiTestEventCode !== undefined) {
+    patch.metaCapiTestEventCode = body.metaCapiTestEventCode
+      ? String(body.metaCapiTestEventCode).trim()
+      : null;
+  }
+  return patch;
+};
 
 interface PaymentToggleState {
   codEnabled?: boolean | null;
@@ -157,7 +181,7 @@ export const getAllCheckoutForms = async (req: AuthRequest, res: Response): Prom
     ]);
 
     res.json({
-      forms,
+      forms: forms.map(maskCapiToken),
       pagination: {
         total,
         page: Number(page),
@@ -201,7 +225,7 @@ export const getCheckoutForm = async (req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    res.json({ form });
+    res.json({ form: maskCapiToken(form) });
   } catch (error) {
     throw error;
   }
@@ -331,6 +355,7 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
             redirectUrl: redirectUrl ? String(redirectUrl).trim() : null,
             allowedOrigins: normalizeAllowedOrigins(allowedOrigins),
             ...paymentTogglePatch(req.body),
+            ...metaCapiPatch(req.body),
             packages: normalizedPackages && normalizedPackages.length > 0 ? {
               create: normalizedPackages
             } : undefined,
@@ -481,6 +506,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     if (redirectUrl !== undefined) updateData.redirectUrl = redirectUrl ? String(redirectUrl).trim() : null;
     if (allowedOrigins !== undefined) updateData.allowedOrigins = normalizeAllowedOrigins(allowedOrigins);
     Object.assign(updateData, paymentTogglePatch(req.body));
+    Object.assign(updateData, metaCapiPatch(req.body));
 
     await prisma.checkoutForm.update({
       where: { id: formId },
@@ -552,7 +578,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       }
     });
 
-    res.json({ form: updatedForm });
+    res.json({ form: updatedForm ? maskCapiToken(updatedForm) : updatedForm });
   } catch (error) {
     console.error('Error updating checkout form:', error);
 

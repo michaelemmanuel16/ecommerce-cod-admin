@@ -237,6 +237,7 @@ model Order {
   paymentReference   String?             @map("payment_reference")
   depositPaid        Int                 @default(0) @map("deposit_paid")
   balanceDue         Int                 @default(0) @map("balance_due")
+  capiEventFired     Boolean             @default(false) @map("capi_event_fired")
   deliveryAddress    String?             @map("delivery_address")
   deliveryState      String?             @map("delivery_state")
   deliveryArea       String?             @map("delivery_area")
@@ -663,6 +664,8 @@ model CheckoutForm {
   paystackDepositEnabled Boolean @default(false) @map("paystack_deposit_enabled")
   paystackFullEnabled    Boolean @default(false) @map("paystack_full_enabled")
   depositPercent         Int?                     @map("deposit_percent")
+  metaCapiAccessToken    String?                  @map("meta_capi_access_token")
+  metaCapiTestEventCode  String?                  @map("meta_capi_test_event_code")
   product     Product          @relation(fields: [productId], references: [id])
   packages    FormPackage[]
   submissions FormSubmission[]

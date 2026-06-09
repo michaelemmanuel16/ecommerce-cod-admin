@@ -78,6 +78,8 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       paystackDepositEnabled: initialData?.paystackDepositEnabled ?? false,
       paystackFullEnabled: initialData?.paystackFullEnabled ?? false,
       depositPercent: initialData?.depositPercent ?? 50,
+      metaCapiAccessToken: initialData?.metaCapiAccessToken || '',
+      metaCapiTestEventCode: initialData?.metaCapiTestEventCode || '',
     },
   });
 
@@ -113,6 +115,8 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         paystackDepositEnabled: initialData.paystackDepositEnabled ?? false,
         paystackFullEnabled: initialData.paystackFullEnabled ?? false,
         depositPercent: initialData.depositPercent ?? 50,
+        metaCapiAccessToken: initialData.metaCapiAccessToken || '',
+        metaCapiTestEventCode: initialData.metaCapiTestEventCode || '',
       });
       setFields(initialData.fields || defaultFields);
       setPackages(initialData.packages || []);
@@ -405,6 +409,11 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         paystackDepositEnabled: Boolean(data.paystackDepositEnabled),
         paystackFullEnabled: Boolean(data.paystackFullEnabled),
         depositPercent: Number(data.depositPercent) || null,
+        // Write-only secret: send only when the admin typed a new value (an
+        // untouched field still holds the "••••••••" mask, which the server
+        // treats as "keep existing"). An emptied field clears it.
+        metaCapiAccessToken: data.metaCapiAccessToken?.trim() ?? '',
+        metaCapiTestEventCode: data.metaCapiTestEventCode?.trim() || null,
       };
 
       await onSave(formData);

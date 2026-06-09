@@ -41,6 +41,8 @@ export const EmbedCheckout: React.FC<EmbedCheckoutProps> = ({ apiBase, slug, loc
         orderId: res.orderId,
         total: totalAmount,
         currency: form.currency,
+        reference: res.paymentReference,
+        package: data.selectedPackageId,
       });
       if (redirect) {
         window.location.href = redirect;

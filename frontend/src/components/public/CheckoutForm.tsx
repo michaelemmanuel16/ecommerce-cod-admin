@@ -1,13 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useForm, RegisterOptions, FieldError } from 'react-hook-form';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
-import { FormField } from '../../types/checkout-form';
+import { FormField, PaymentMethod } from '../../types/checkout-form';
 import { PackageSelector } from './PackageSelector';
 import { AddOnSelector } from './AddOnSelector';
 import { OrderSummary, PaymentMethodOption } from './OrderSummary';
 import { cn } from '../../utils/cn';
-
-type PaymentMethod = NonNullable<CheckoutFormData['paymentMethod']>;
 
 interface CheckoutFormProps {
   formData: PublicCheckoutForm;
@@ -32,7 +30,7 @@ export interface CheckoutFormData {
   customFields?: Record<string, string>;
   // Which payment button the buyer pressed (MAN-58). Omitted on legacy
   // single-method forms; the server defaults to COD for physical products.
-  paymentMethod?: 'cod' | 'paystack_deposit' | 'paystack_full';
+  paymentMethod?: PaymentMethod;
 }
 
 interface StandardFieldConfig {

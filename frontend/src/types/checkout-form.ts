@@ -1,3 +1,7 @@
+// Buyer-selectable checkout payment methods (MAN-58). Shared so the form,
+// order-summary buttons, and order payload all reference one source of truth.
+export type PaymentMethod = 'cod' | 'paystack_deposit' | 'paystack_full';
+
 export type FieldType =
   | 'text'
   | 'phone'
@@ -127,6 +131,9 @@ export interface CheckoutForm {
   paystackDepositEnabled?: boolean;
   paystackFullEnabled?: boolean;
   depositPercent?: number | null; // 1–99; only meaningful when paystackDepositEnabled
+  // Meta CAPI (MAN-59). Token is write-only — reads return the mask "••••••••".
+  metaCapiAccessToken?: string | null;
+  metaCapiTestEventCode?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

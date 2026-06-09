@@ -5,6 +5,7 @@ import { paystackService } from '../services/paystackService';
 import { digitalDeliveryService } from '../services/digitalDeliveryService';
 import { GLAutomationService } from '../services/glAutomationService';
 import { AppError } from '../middleware/errorHandler';
+import { metaCapiService } from '../services/metaCapiService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 
@@ -284,6 +285,11 @@ async function handleChargeSuccess(tenantId: string, data: PaystackChargeData): 
   });
 
   logger.info('Paystack payment processed successfully', { tenantId, orderId, reference, amount: amount / 100 });
+
+  // Fire the server-side Meta Purchase event now that payment is confirmed
+  // (covers both popup-callback and tab-death-webhook paths). Best-effort +
+  // idempotent via Order.capiEventFired — never blocks fulfilment.
+  await metaCapiService.fireCapiPurchaseEvent(Number(orderId));
 
   // For digital orders: generate download token and send links
   if (order.orderType === 'digital') {

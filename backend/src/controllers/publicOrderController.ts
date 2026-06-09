@@ -6,6 +6,7 @@ import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 import prisma from '../utils/prisma';
 import { paystackService } from '../services/paystackService';
+import { metaCapiService } from '../services/metaCapiService';
 
 /**
  * Buyer-selectable payment methods. `cod` settles on delivery; the two Paystack
@@ -48,6 +49,10 @@ export const getPublicFormConfig = async (req: Request, res: Response, next: Nex
       tenantId: string | null;
       allowedOrigins: string[];
     };
+    // Defense-in-depth: never let the server-only Meta CAPI secrets reach a host
+    // page, even if a future select change starts including them.
+    delete (publicForm as Record<string, unknown>).metaCapiAccessToken;
+    delete (publicForm as Record<string, unknown>).metaCapiTestEventCode;
 
     // Per-form Origin allowlist gate (see doc comment above).
     const origin = req.headers.origin;
@@ -359,14 +364,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         shippingCost,
         discount,
         totalAmount: finalTotal,
-        // What the delivery agent collects: full for COD, the balance for a
-        // deposit order, nothing for a fully-prepaid order.
-        codAmount:
-          paymentMethod === 'cod'
-            ? finalTotal
-            : paymentMethod === 'paystack_deposit'
-              ? balanceDueMinor / 100
-              : 0,
+        // What the delivery agent collects: full for COD, otherwise the balance
+        // due (the deposit's remainder, or 0 for a fully-prepaid order).
+        codAmount: paymentMethod === 'cod' ? finalTotal : balanceDueMinor / 100,
         balanceDue: balanceDueMinor,
         deliveryAddress: formData.address || null,
         deliveryState: formData.state || null,
@@ -460,6 +460,13 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       });
       return;
     }
+
+    // COD orders are "purchased" at creation (payment settles on delivery), so
+    // fire the server-side Meta Purchase event now. Best-effort + idempotent;
+    // Paystack orders fire instead on settlement (see paystackController).
+    metaCapiService.fireCapiPurchaseEvent(order.id).catch((err) => {
+      console.error('Meta CAPI fire failed for COD order:', err);
+    });
 
     res.status(201).json({
       success: true,

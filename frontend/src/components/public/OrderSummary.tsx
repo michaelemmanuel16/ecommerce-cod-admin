@@ -1,5 +1,6 @@
 import React from 'react';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
+import { PaymentMethod } from '../../types/checkout-form';
 import { Button } from '../ui/Button';
 
 type ProductPackage = PublicCheckoutForm['packages'][number];
@@ -8,7 +9,7 @@ type Upsell = PublicCheckoutForm['upsells'][number];
 // One CTA per enabled payment method (MAN-58). The form posts the chosen
 // `method`; the label carries its contextual amount (e.g. the deposit value).
 export interface PaymentMethodOption {
-  method: 'cod' | 'paystack_deposit' | 'paystack_full';
+  method: PaymentMethod;
   label: string;
 }
 
@@ -74,6 +75,13 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
   const addonsTotal = selectedAddons.reduce((sum, addon) => sum + addon.price, 0);
   const subtotal = packageFinalPrice + addonsTotal;
   const total = subtotal;
+
+  // Normalize to a single button list: the multi-method matrix when provided,
+  // else the legacy single CTA (driven by onSubmit / submitLabel).
+  const buttons: PaymentMethodOption[] =
+    paymentMethods && paymentMethods.length > 0
+      ? paymentMethods
+      : [{ method: 'cod', label: submitLabel }];
 
   return (
     <div className="bg-white rounded-lg border-2 border-gray-200 p-6 sticky top-6">
@@ -156,42 +164,30 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
         </div>
       )}
 
-      {paymentMethods && paymentMethods.length > 0 ? (
-        <div className="space-y-3">
-          {paymentMethods.map((opt, i) => (
-            <React.Fragment key={opt.method}>
-              {i > 0 && (
-                <div className="flex items-center gap-3 text-xs text-gray-400">
-                  <span className="h-px flex-1 bg-gray-200" />
-                  or
-                  <span className="h-px flex-1 bg-gray-200" />
-                </div>
-              )}
-              <Button
-                onClick={() => onSelectMethod?.(opt.method)}
-                disabled={!selectedPackage || isSubmitting}
-                isLoading={isSubmitting}
-                // The first/primary method uses the filled brand colour; secondary
-                // methods render as outline so the pair reads as one choice.
-                className={`w-full font-semibold px-6 transition-colors disabled:cursor-not-allowed ${!selectedPackage ? 'opacity-60' : ''} ${SHAPE_CLASS[buttonShape]} ${SIZE_CLASS[buttonSize]} ${i === 0 ? 'text-white' : 'border-2 bg-white'}`}
-                style={i === 0 ? { backgroundColor: buttonColor } : { borderColor: buttonColor, color: buttonColor }}
-              >
-                {isSubmitting ? 'Processing...' : opt.label}
-              </Button>
-            </React.Fragment>
-          ))}
-        </div>
-      ) : (
-        <Button
-          onClick={onSubmit}
-          disabled={!selectedPackage || isSubmitting}
-          isLoading={isSubmitting}
-          className={`w-full text-white font-semibold px-6 transition-colors disabled:cursor-not-allowed ${!selectedPackage ? 'opacity-60' : ''} ${SHAPE_CLASS[buttonShape]} ${SIZE_CLASS[buttonSize]}`}
-          style={{ backgroundColor: buttonColor }}
-        >
-          {isSubmitting ? 'Processing...' : submitLabel}
-        </Button>
-      )}
+      <div className="space-y-3">
+        {buttons.map((opt, i) => (
+          <React.Fragment key={opt.method}>
+            {i > 0 && (
+              <div className="flex items-center gap-3 text-xs text-gray-400">
+                <span className="h-px flex-1 bg-gray-200" />
+                or
+                <span className="h-px flex-1 bg-gray-200" />
+              </div>
+            )}
+            <Button
+              onClick={() => (onSelectMethod ? onSelectMethod(opt.method) : onSubmit())}
+              disabled={!selectedPackage || isSubmitting}
+              isLoading={isSubmitting}
+              // The first/primary method uses the filled brand colour; secondary
+              // methods render as outline so the pair reads as one choice.
+              className={`w-full font-semibold px-6 transition-colors disabled:cursor-not-allowed ${!selectedPackage ? 'opacity-60' : ''} ${SHAPE_CLASS[buttonShape]} ${SIZE_CLASS[buttonSize]} ${i === 0 ? 'text-white' : 'border-2 bg-white'}`}
+              style={i === 0 ? { backgroundColor: buttonColor } : { borderColor: buttonColor, color: buttonColor }}
+            >
+              {isSubmitting ? 'Processing...' : opt.label}
+            </Button>
+          </React.Fragment>
+        ))}
+      </div>
 
       <p className="text-xs text-gray-500 text-center mt-4">
         By placing this order, you agree to our terms and conditions

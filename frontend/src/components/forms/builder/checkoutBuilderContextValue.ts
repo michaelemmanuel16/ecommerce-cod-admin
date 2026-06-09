@@ -18,6 +18,8 @@ export interface BuilderFormValues {
   paystackDepositEnabled: boolean;
   paystackFullEnabled: boolean;
   depositPercent: number;
+  metaCapiAccessToken: string;
+  metaCapiTestEventCode: string;
 }
 
 export interface CheckoutBuilderContextValue {

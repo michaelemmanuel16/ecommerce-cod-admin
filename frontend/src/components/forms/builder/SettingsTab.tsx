@@ -206,6 +206,32 @@ export const SettingsTab: React.FC = () => {
               placeholder="e.g. GTM-XXXXXXX"
             />
           </div>
+
+          <div className="border-t border-gray-200 pt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Meta Conversion API Access Token</label>
+            <Input
+              type="password"
+              autoComplete="off"
+              {...ctx.register('metaCapiAccessToken')}
+              placeholder="Paste your Meta CAPI access token"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Sends server-side <code>Purchase</code> events (paired with the Facebook Pixel ID above)
+              so conversions survive iOS / in-app-browser blockers. Stored encrypted; leave the dots in
+              place to keep the saved token.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Meta CAPI Test Event Code (dev only)</label>
+            <Input
+              {...ctx.register('metaCapiTestEventCode')}
+              placeholder="e.g. TEST12345"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Optional. Routes events to Meta&apos;s Test Events tool for debugging. Remove before going live.
+            </p>
+          </div>
         </div>
       </div>
     </div>
