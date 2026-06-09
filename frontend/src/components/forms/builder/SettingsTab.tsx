@@ -39,7 +39,7 @@ export const SettingsTab: React.FC = () => {
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Payment Methods</h3>
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Payment Methods <span className="font-normal text-gray-400">(Nigeria only)</span></h3>
         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
           <p className="text-xs text-gray-500">
             Choose which payment buttons appear on the checkout. Enable up to two.

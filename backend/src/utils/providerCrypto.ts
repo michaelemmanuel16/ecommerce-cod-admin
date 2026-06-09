@@ -11,7 +11,7 @@ export const SENSITIVE_FIELDS: Record<string, string[]> = {
   whatsappProvider: ['accessToken', 'appSecret', 'webhookVerifyToken'],
   smsProvider: ['authToken'],
   emailProvider: ['apiKey'],
-  paystackProvider: ['secretKey', 'webhookSecret'],
+  paystackProvider: ['secretKey'],
 };
 
 /** Sentinel returned to the client in place of a real secret. */

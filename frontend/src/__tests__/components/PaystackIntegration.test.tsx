@@ -22,7 +22,6 @@ const baseConfig: SystemConfig = {
   paystackProvider: {
     publicKey: 'pk_test_abc',
     secretKey: '••••••••',
-    webhookSecret: '••••••••',
     mode: 'test',
     isEnabled: true,
   },

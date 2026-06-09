@@ -7,7 +7,6 @@ import logger from '../utils/logger';
 interface PaystackConfig {
   publicKey: string;
   secretKey: string;
-  webhookSecret: string;
   mode: 'test' | 'live';
   isEnabled: boolean;
 }
@@ -56,7 +55,6 @@ async function loadTenantPaystackConfig(tenantId: string): Promise<PaystackConfi
       result = {
         publicKey: decrypted.publicKey || '',
         secretKey: decrypted.secretKey,
-        webhookSecret: decrypted.webhookSecret || '',
         mode: decrypted.mode === 'live' ? 'live' : 'test',
         isEnabled: decrypted.isEnabled !== false,
       };
@@ -172,13 +170,15 @@ export const paystackService = {
    */
   async validateWebhookSignature(tenantId: string, rawBody: string | Buffer, signature: string): Promise<boolean> {
     const config = await loadTenantPaystackConfig(tenantId);
-    if (!config?.webhookSecret) {
-      logger.warn('Paystack webhook secret not configured for tenant', { tenantId });
+    // Paystack signs webhooks with HMAC-SHA512 keyed on the account's SECRET KEY
+    // (there is no separate "webhook secret"). See Paystack's verify-webhook docs.
+    if (!config?.secretKey) {
+      logger.warn('Paystack secret key not configured for tenant', { tenantId });
       return false;
     }
 
     const hash = crypto
-      .createHmac('sha512', config.webhookSecret)
+      .createHmac('sha512', config.secretKey)
       .update(rawBody)
       .digest('hex');
 

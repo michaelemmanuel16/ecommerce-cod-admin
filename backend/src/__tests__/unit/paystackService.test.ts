@@ -30,7 +30,6 @@ describe('paystackService — per-tenant scoping', () => {
       paystackProvider: {
         publicKey: 'pk_test_A',
         secretKey: 'sk_test_A',
-        webhookSecret: 'whsec_A',
         mode: 'test',
         isEnabled: true,
       },
@@ -104,11 +103,11 @@ describe('paystackService — per-tenant scoping', () => {
     expect(key).toBe('pk_test_visible');
   });
 
-  it('validateWebhookSignature uses the tenant\'s webhook secret', async () => {
+  it('validateWebhookSignature uses the tenant\'s secret key (Paystack signs with sk)', async () => {
     const crypto = await import('crypto');
-    const secret = 'whsec_tenantA';
+    const secret = 'sk_test_tenantA';
     (prismaMock.systemConfig.findUnique as any).mockResolvedValue({
-      paystackProvider: { publicKey: 'pk', secretKey: 'sk', webhookSecret: secret, isEnabled: true },
+      paystackProvider: { publicKey: 'pk', secretKey: secret, isEnabled: true },
     });
 
     const rawBody = JSON.stringify({ event: 'charge.success' });

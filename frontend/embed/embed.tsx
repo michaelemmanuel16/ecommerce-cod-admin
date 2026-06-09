@@ -16,6 +16,10 @@
  *        <input name="name"> <input name="phone"> <input name="email">
  *        <input name="address"> <input name="state"> <button>Order</button>
  *      </form>
+ *  On a successful (non-redirect) order the widget fires a bubbling
+ *  `codadmin:success` CustomEvent on the form and, if data-on-success names a
+ *  global function, calls it — both receive { orderId, total, currency,
+ *  reference, package } so the host can show a thank-you or fire its own pixel.
  */
 import { createElement } from 'react';
 import { render } from 'react-dom';
@@ -117,6 +121,27 @@ function setMessage(form: HTMLFormElement, text: string, isError: boolean): void
   node.style.color = isError ? '#dc2626' : '#16a34a';
 }
 
+// Notify the host page that an order succeeded so it can run its own logic
+// (thank-you UI, conversion pixel). Two channels, both fired:
+//   1. a bubbling `codadmin:success` CustomEvent on the form
+//   2. a global callback named by the form's data-on-success attribute
+// Only used in Mode B's inline-success path; redirect orders hand off via the
+// thank-you URL instead.
+function fireSuccess(form: HTMLFormElement, detail: Record<string, unknown>): void {
+  form.dispatchEvent(new CustomEvent('codadmin:success', { detail, bubbles: true }));
+  const cbName = form.getAttribute('data-on-success');
+  if (cbName) {
+    const cb = (window as unknown as Record<string, unknown>)[cbName];
+    if (typeof cb === 'function') {
+      try {
+        (cb as (d: Record<string, unknown>) => void)(detail);
+      } catch {
+        // A throwing host callback must not break the widget's own flow.
+      }
+    }
+  }
+}
+
 function attachModeB(form: HTMLFormElement): void {
   if (mounted.has(form)) return;
   mounted.add(form);
@@ -167,6 +192,13 @@ function attachModeB(form: HTMLFormElement): void {
         return;
       }
       setMessage(form, `Order #${res.orderId} placed successfully!`, false);
+      fireSuccess(form, {
+        orderId: res.orderId,
+        total: totalAmount,
+        currency: config.currency,
+        reference: res.paymentReference,
+        package: pkgValue,
+      });
       form.reset();
     } catch (e: any) {
       setMessage(form, e.message || 'Failed to place order', true);

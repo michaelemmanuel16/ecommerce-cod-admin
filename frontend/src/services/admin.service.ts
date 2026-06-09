@@ -41,7 +41,6 @@ export interface SystemConfig {
   paystackProvider?: {
     publicKey?: string;
     secretKey?: string;
-    webhookSecret?: string;
     mode?: 'test' | 'live';
     isEnabled?: boolean;
   };
