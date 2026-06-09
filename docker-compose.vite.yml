@@ -1,0 +1,63 @@
+# Vite dev-server overlay — instant HMR for the admin frontend, no image rebuilds.
+#
+# The default `frontend` service serves a production Nginx build, so every UI
+# source change needs a full image rebuild to show up. This overlay swaps in a
+# Vite dev server with Hot Module Replacement: edit a .tsx file and the browser
+# updates in ~1s, no rebuild.
+#
+# Usage (compose with the dev stack so backend/postgres/redis + network exist):
+#
+#   docker compose \
+#     -f docker-compose.dev.yml \
+#     -f docker-compose.dev.override.yml \
+#     -f docker-compose.vite.yml \
+#     -p codadmin up -d --build frontend-dev
+#
+# First run builds the `dev` Dockerfile stage (deps only — fast). After that,
+# code changes hot-reload with zero rebuilds. Open http://localhost:5173.
+#
+# Including this file gates the Nginx `frontend` behind the `nginx` profile, so
+# it won't start and fight over port 5173. To go back to the Nginx build, drop
+# this -f flag (or add `--profile nginx`).
+#
+# Caveats:
+# - This serves the ADMIN DASHBOARD with HMR. The embeddable widget (/embed.js)
+#   is a separate build artifact (`npm run build:embed`) and is NOT served by the
+#   Vite dev server — test the live widget against the Nginx build.
+# - Adding/removing an npm dependency means rebuilding the image and recreating
+#   the anonymous node_modules volume:
+#     docker compose ... -p codadmin up -d --build --force-recreate -V frontend-dev
+
+services:
+  # Disable the Nginx prod frontend whenever this overlay is active so it doesn't
+  # contend for host port 5173. It still runs in the default dev stack (this file
+  # absent), and can be forced on here with `--profile nginx`.
+  frontend:
+    profiles: ["nginx"]
+
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: ecommerce-frontend-dev-vite
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      # Browser-side: the SPA talks to the host-mapped backend directly.
+      VITE_API_URL: http://localhost:3000
+      VITE_WS_URL: http://localhost:3000
+      # Server-side: Vite's /api + /uploads proxy reaches the backend container
+      # over the compose network (localhost:3000 wouldn't resolve in-container).
+      VITE_PROXY_TARGET: http://backend:3000
+    volumes:
+      # Live source mount for HMR...
+      - ./frontend:/app
+      # ...with an anonymous volume shadowing node_modules so the host's
+      # macOS-built deps never clobber the container's Linux-native ones.
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - ecommerce-dev-network
