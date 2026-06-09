@@ -74,6 +74,10 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       currency: initialData?.currency || 'GHS',
       redirectUrl: initialData?.redirectUrl || '',
       allowedOrigins: (initialData?.allowedOrigins || []).join('\n'),
+      codEnabled: initialData?.codEnabled ?? true,
+      paystackDepositEnabled: initialData?.paystackDepositEnabled ?? false,
+      paystackFullEnabled: initialData?.paystackFullEnabled ?? false,
+      depositPercent: initialData?.depositPercent ?? 50,
     },
   });
 
@@ -105,6 +109,10 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         currency: initialData.currency || 'GHS',
         redirectUrl: initialData.redirectUrl || '',
         allowedOrigins: (initialData.allowedOrigins || []).join('\n'),
+        codEnabled: initialData.codEnabled ?? true,
+        paystackDepositEnabled: initialData.paystackDepositEnabled ?? false,
+        paystackFullEnabled: initialData.paystackFullEnabled ?? false,
+        depositPercent: initialData.depositPercent ?? 50,
       });
       setFields(initialData.fields || defaultFields);
       setPackages(initialData.packages || []);
@@ -152,6 +160,10 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   const currency = watch('currency');
   const defaultCountry = watch('defaultCountry');
   const productIdValue = watch('productId');
+  const codEnabledValue = watch('codEnabled');
+  const depositEnabledValue = watch('paystackDepositEnabled');
+  const fullEnabledValue = watch('paystackFullEnabled');
+  const depositPercentValue = watch('depositPercent');
   // Resolved product details so the live preview can render the product hero
   // from the draft alone — needed in create mode, where no saved form exists
   // yet to fetch the product from.
@@ -183,8 +195,12 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       upsells,
       design,
       pixelConfig,
+      codEnabled: codEnabledValue,
+      paystackDepositEnabled: depositEnabledValue,
+      paystackFullEnabled: fullEnabledValue,
+      depositPercent: depositPercentValue,
     }),
-    [name, description, currency, defaultCountry, productIdValue, previewProduct, fields, currentRegions, packages, upsells, design, pixelConfig]
+    [name, description, currency, defaultCountry, productIdValue, previewProduct, fields, currentRegions, packages, upsells, design, pixelConfig, codEnabledValue, depositEnabledValue, fullEnabledValue, depositPercentValue]
   );
   const hasMountedRef = useRef(false);
   const lastSnapshotRef = useRef<string>('');
@@ -385,6 +401,10 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
           .split('\n')
           .map((o) => o.trim())
           .filter(Boolean),
+        codEnabled: Boolean(data.codEnabled),
+        paystackDepositEnabled: Boolean(data.paystackDepositEnabled),
+        paystackFullEnabled: Boolean(data.paystackFullEnabled),
+        depositPercent: Number(data.depositPercent) || null,
       };
 
       await onSave(formData);

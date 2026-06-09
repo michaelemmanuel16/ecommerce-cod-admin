@@ -19,6 +19,10 @@ const PUBLIC_FORM_SELECT = {
   pixelConfig: true,
   redirectUrl: true,
   formType: true,
+  codEnabled: true,
+  paystackDepositEnabled: true,
+  paystackFullEnabled: true,
+  depositPercent: true,
   product: {
     select: {
       name: true,

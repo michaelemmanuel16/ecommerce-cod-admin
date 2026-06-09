@@ -143,6 +143,9 @@ function attachModeB(form: HTMLFormElement): void {
         streetAddress: field(form, 'address', 'streetAddress', 'street_address'),
         selectedPackageId: pkgValue,
         selectedAddonIds: [],
+        // Optional in Mode B — the host form may carry a [name=paymentMethod]
+        // control. Absent → the server defaults physical orders to COD.
+        paymentMethod: (field(form, 'paymentMethod') || undefined) as CheckoutFormData['paymentMethod'],
       };
 
       const { payload, totalAmount } = buildOrderPayload(config, data);

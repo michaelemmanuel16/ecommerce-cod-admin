@@ -88,6 +88,11 @@ export interface PublicCheckoutForm {
     googleTagManagerId?: string;
   };
   redirectUrl?: string; // Custom thank-you page; overrides the built-in success screen
+  // Payment-method matrix (MAN-58). Drives which CTA buttons the form renders.
+  codEnabled?: boolean;
+  paystackDepositEnabled?: boolean;
+  paystackFullEnabled?: boolean;
+  depositPercent?: number | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

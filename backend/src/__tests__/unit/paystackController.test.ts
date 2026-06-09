@@ -260,6 +260,60 @@ describe('paystackController.handleWebhook — tenant scoping + idempotency', ()
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('settles a deposit order when only the deposit portion is paid (MAN-58)', async () => {
+    // GH₵500 order, 20% deposit → GH₵100 expected, GH₵400 balance due. Paying
+    // exactly the deposit must NOT be treated as an underpayment.
+    (prismaMock.order.findUnique as any).mockResolvedValue({
+      tenantId: 'tenant-1',
+      totalAmount: 500,
+      paymentMethod: 'paystack_deposit',
+      balanceDue: 400_00,
+    });
+    mockedPaystack.verifyTransaction.mockResolvedValueOnce({
+      data: { status: 'success', reference: 'ref_dep', amount: 100_00, currency: 'GHS', metadata: { orderId: 42 } },
+    } as any);
+    (prismaMock.webhookEvent.create as any).mockResolvedValueOnce({} as any);
+
+    const res = buildRes();
+    await handleWebhook(
+      buildReq(JSON.stringify({ event: 'charge.success', data: { reference: 'ref_dep', amount: 100_00, fees: 0, currency: 'GHS', metadata: { orderId: 42 } } })),
+      res,
+    );
+
+    // Deposit covers the expected amount → proceeds to the settle update, not failed.
+    expect(prismaMock.$queryRaw).toHaveBeenCalled();
+    expect(prismaMock.order.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'payment_failed' }) }),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('rejects a deposit order that underpays even the deposit portion (MAN-58)', async () => {
+    // GH₵500 order, GH₵100 deposit expected, but only GH₵50 paid → underpaid.
+    (prismaMock.order.findUnique as any).mockResolvedValue({
+      tenantId: 'tenant-1',
+      totalAmount: 500,
+      paymentMethod: 'paystack_deposit',
+      balanceDue: 400_00,
+    });
+    mockedPaystack.verifyTransaction.mockResolvedValueOnce({
+      data: { status: 'success', reference: 'ref_dep_low', amount: 50_00, currency: 'GHS', metadata: { orderId: 42 } },
+    } as any);
+    (prismaMock.webhookEvent.create as any).mockResolvedValueOnce({} as any);
+
+    const res = buildRes();
+    await handleWebhook(
+      buildReq(JSON.stringify({ event: 'charge.success', data: { reference: 'ref_dep_low', amount: 50_00, fees: 0, currency: 'GHS', metadata: { orderId: 42 } } })),
+      res,
+    );
+
+    expect(prismaMock.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'payment_failed' }) }),
+    );
+    expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it('ignores non-numeric metadata.orderId without crashing Prisma', async () => {
     (prismaMock.webhookEvent.create as any).mockResolvedValueOnce({} as any);
 

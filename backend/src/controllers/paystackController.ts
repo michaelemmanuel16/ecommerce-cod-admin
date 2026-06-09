@@ -165,7 +165,7 @@ async function handleChargeSuccess(tenantId: string, data: PaystackChargeData): 
   // order's tenant, including for backfilled rows.
   const orderRef = await prisma.order.findUnique({
     where: { id: numericOrderId },
-    select: { tenantId: true, totalAmount: true },
+    select: { tenantId: true, totalAmount: true, paymentMethod: true, balanceDue: true },
   });
   if (orderRef && orderRef.tenantId !== tenantId) {
     logger.warn('Paystack webhook for order from a different tenant — ignoring', {
@@ -191,15 +191,21 @@ async function handleChargeSuccess(tenantId: string, data: PaystackChargeData): 
     return;
   }
 
-  // SECURITY: confirm the amount actually paid covers the order total before
-  // marking it paid. Without this, an underpayment (or a tampered initialize
-  // amount) is accepted as full payment — and digital products auto-fulfil.
+  // SECURITY: confirm the amount actually paid covers what's expected for this
+  // payment method before marking it settled. For a deposit order the expected
+  // amount is the deposit portion (total − balance due), not the full total;
+  // for COD/full it's the full total. Without this, an underpayment (or a
+  // tampered initialize amount) is accepted — and digital products auto-fulfil.
   // Paystack returns amount in minor units (pesewas/kobo).
+  const isDeposit = orderRef?.paymentMethod === 'paystack_deposit';
+  const totalMinorUnits = Math.round(Number(orderRef?.totalAmount ?? 0) * 100);
   const paidMinorUnits = Number(verification.data.amount ?? amount);
-  const expectedMinorUnits = Math.round(Number(orderRef?.totalAmount ?? 0) * 100);
+  const expectedMinorUnits = isDeposit
+    ? totalMinorUnits - Number(orderRef?.balanceDue ?? 0)
+    : totalMinorUnits;
   if (!orderRef || paidMinorUnits < expectedMinorUnits) {
     logger.warn('Paystack amount mismatch — underpaid, not fulfilling', {
-      tenantId, orderId, reference, paidMinorUnits, expectedMinorUnits,
+      tenantId, orderId, reference, paidMinorUnits, expectedMinorUnits, isDeposit,
     });
     await prisma.order.update({
       where: { id: Number(orderId) },
@@ -208,14 +214,16 @@ async function handleChargeSuccess(tenantId: string, data: PaystackChargeData): 
     return;
   }
 
-  // Atomic idempotency: only update if not already paid.
-  // Prevents TOCTOU race when concurrent webhooks arrive.
+  // A deposit settles to `deposited` (balance still due on delivery); a full
+  // payment settles to `paid`. Atomic idempotency: only update if not already
+  // in a settled payment state. Prevents TOCTOU race on concurrent webhooks.
+  const newPaymentStatus = isDeposit ? 'deposited' : 'paid';
   const updated = await prisma.$queryRaw<{ id: number }[]>`
     UPDATE "orders"
-    SET "payment_status" = 'paid', "status" = 'confirmed',
-        "payment_reference" = ${reference}, "updated_at" = NOW()
+    SET "payment_status" = ${newPaymentStatus}::"PaymentStatus", "status" = 'confirmed',
+        "deposit_paid" = ${paidMinorUnits}, "payment_reference" = ${reference}, "updated_at" = NOW()
     WHERE "id" = ${Number(orderId)}
-      AND "payment_status" != 'paid'
+      AND "payment_status" NOT IN ('paid', 'deposited')
     RETURNING "id"
   `;
 

@@ -235,6 +235,8 @@ model Order {
   orderType          String              @default("physical") @map("order_type")
   paymentMethod      String              @default("cod") @map("payment_method")
   paymentReference   String?             @map("payment_reference")
+  depositPaid        Int                 @default(0) @map("deposit_paid")
+  balanceDue         Int                 @default(0) @map("balance_due")
   deliveryAddress    String?             @map("delivery_address")
   deliveryState      String?             @map("delivery_state")
   deliveryArea       String?             @map("delivery_area")
@@ -657,6 +659,10 @@ model CheckoutForm {
   redirectUrl String?          @map("redirect_url")
   formType    String           @default("physical") @map("form_type")
   allowedOrigins String[]      @default([]) @map("allowed_origins")
+  codEnabled             Boolean @default(true)  @map("cod_enabled")
+  paystackDepositEnabled Boolean @default(false) @map("paystack_deposit_enabled")
+  paystackFullEnabled    Boolean @default(false) @map("paystack_full_enabled")
+  depositPercent         Int?                     @map("deposit_percent")
   product     Product          @relation(fields: [productId], references: [id])
   packages    FormPackage[]
   submissions FormSubmission[]

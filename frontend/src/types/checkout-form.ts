@@ -121,6 +121,12 @@ export interface CheckoutForm {
   pixelConfig?: PixelConfig;
   redirectUrl?: string; // Custom thank-you page; overrides the built-in success screen
   allowedOrigins?: string[]; // Embed widget Origin allowlist (empty = no host restriction)
+  // Payment-method matrix (MAN-58). At most two may be true; the public form
+  // renders one button per enabled method.
+  codEnabled?: boolean;
+  paystackDepositEnabled?: boolean;
+  paystackFullEnabled?: boolean;
+  depositPercent?: number | null; // 1–99; only meaningful when paystackDepositEnabled
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

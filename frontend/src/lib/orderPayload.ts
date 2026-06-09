@@ -16,6 +16,7 @@ export interface BuiltOrder {
       notes: null;
       customFields?: Record<string, string>;
     };
+    paymentMethod?: 'cod' | 'paystack_deposit' | 'paystack_full';
     selectedPackage: {
       id: number;
       name: string;
@@ -64,6 +65,7 @@ export function buildOrderPayload(form: PublicCheckoutForm, data: CheckoutFormDa
         notes: null,
         customFields: data.customFields,
       },
+      paymentMethod: data.paymentMethod,
       selectedPackage: {
         id: selectedPackage.id,
         name: selectedPackage.name,
