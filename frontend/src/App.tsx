@@ -46,11 +46,13 @@ const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
 const Communications = lazy(() => import('./pages/Communications'));
 const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
+const SubscriptionCallback = lazy(() => import('./pages/SubscriptionCallback').then(m => ({ default: m.SubscriptionCallback })));
 const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
 const PlatformDashboard = lazy(() => import('./pages/PlatformDashboard').then(m => ({ default: m.PlatformDashboard })));
 const PlatformTenants = lazy(() => import('./pages/PlatformTenants').then(m => ({ default: m.PlatformTenants })));
 const PlatformTenantDetail = lazy(() => import('./pages/PlatformTenantDetail').then(m => ({ default: m.PlatformTenantDetail })));
 const PlatformAnnouncements = lazy(() => import('./pages/PlatformAnnouncements').then(m => ({ default: m.PlatformAnnouncements })));
+const PlatformBilling = lazy(() => import('./pages/PlatformBilling').then(m => ({ default: m.PlatformBilling })));
 
 // Platform admin layout (sidebar + outlet for the platform subdomain tree)
 const PlatformLayout = lazy(() => import('./components/layout/PlatformLayout').then(m => ({ default: m.PlatformLayout })));
@@ -104,6 +106,15 @@ const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   }
 
   return <>{children}</>;
+};
+
+// Platform admins have no tenant store — land them on the platform tree instead of
+// the tenant dashboard. On the platform subdomain this never fires (separate router);
+// on the main domain it keeps their landing consistent with their (platform-only) menu.
+const DashboardIndex: React.FC = () => {
+  const { user } = useAuthStore();
+  if (user?.isPlatformAdmin) return <Navigate to="/platform" replace />;
+  return <DynamicDashboard />;
 };
 
 const MobileRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -161,6 +172,7 @@ function App() {
               <Route path="tenants" element={<Suspense fallback={<Loading />}><PlatformTenants /></Suspense>} />
               <Route path="tenants/:id" element={<Suspense fallback={<Loading />}><PlatformTenantDetail /></Suspense>} />
               <Route path="announcements" element={<Suspense fallback={<Loading />}><PlatformAnnouncements /></Suspense>} />
+              <Route path="billing" element={<Suspense fallback={<Loading />}><PlatformBilling /></Suspense>} />
             </Route>
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
@@ -260,7 +272,7 @@ function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<DynamicDashboard />} />
+              <Route index element={<DashboardIndex />} />
               <Route path="orders" element={
                 <Suspense fallback={<Loading />}><Orders /></Suspense>
               } />
@@ -316,6 +328,9 @@ function App() {
               <Route path="settings/billing" element={
                 <Suspense fallback={<Loading />}><Billing /></Suspense>
               } />
+              <Route path="settings/billing/callback" element={
+                <Suspense fallback={<Loading />}><SubscriptionCallback /></Suspense>
+              } />
               <Route path="checkout-forms" element={
                 <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
               } />
@@ -344,6 +359,7 @@ function App() {
               <Route path="platform/tenants" element={platformRoute(PlatformTenants)} />
               <Route path="platform/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
               <Route path="platform/announcements" element={platformRoute(PlatformAnnouncements)} />
+              <Route path="platform/billing" element={platformRoute(PlatformBilling)} />
             </Route>
           </Routes>
           {/* Onboarding Tour Components - Only visible for sales_rep role */}

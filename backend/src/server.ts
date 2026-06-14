@@ -163,7 +163,8 @@ app.use(express.json({
   // Preserve raw body buffer on webhook routes for HMAC signature verification
   verify: (req: any, _res, buf) => {
     if (req.originalUrl?.startsWith('/api/whatsapp/webhook') ||
-        req.originalUrl?.startsWith('/api/paystack/webhook')) {
+        req.originalUrl?.startsWith('/api/paystack/webhook') ||
+        req.originalUrl?.startsWith('/api/paystack/platform-webhook')) {
       req.rawBody = buf;
     }
   },

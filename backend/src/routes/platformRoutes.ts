@@ -26,7 +26,11 @@ router.get('/tenants/:id', pc.getTenant);
 router.put('/tenants/:id', pc.updateTenant);
 router.post('/tenants/:id/suspend', pc.suspendTenant);
 router.post('/tenants/:id/reactivate', pc.reactivateTenant);
+router.post('/tenants/:id/grant-free', pc.grantFreePlan);
 router.delete('/tenants/:id', pc.removeTenant);
+
+// Billing visibility (F3) — read-only platform billing-activity list.
+router.get('/billing-events', pc.listBillingEvents);
 
 // Announcements management
 router.get('/announcements', pc.listAnnouncements);

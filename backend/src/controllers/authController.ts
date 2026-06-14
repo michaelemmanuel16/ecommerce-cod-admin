@@ -7,6 +7,7 @@ import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '.
 import { AppError } from '../middleware/errorHandler';
 import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
+import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 
 export const register = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -337,6 +338,10 @@ function slugify(str: string): string {
 export const registerTenant = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { companyName, adminEmail, adminPassword, adminName } = req.body;
+    // Pricing-first registration (MAN-61): the chosen tier arrives as a plan name
+    // (growth/scale). Optional — admin-created tenants may register without one.
+    // Alias `planId` is accepted for the frontend's field name.
+    const planName: string | undefined = (req.body.planName ?? req.body.planId)?.toString() || undefined;
 
     if (!companyName || !adminEmail || !adminPassword || !adminName) {
       throw new AppError('companyName, adminEmail, adminPassword, and adminName are required', 400);
@@ -369,8 +374,20 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
         slug = `${baseSlug}-${suffix++}`;
       }
 
+      // Resolve the chosen self-serve tier (if any). The tenant lands `pending`
+      // until the first Paystack charge succeeds; hard lockout of pending tenants
+      // is sibling enforcement, so this only sets the correct status + plan.
+      let planFields: { currentPlanId?: string; subscriptionStatus?: string } = {};
+      if (planName) {
+        const plan = await tx.plan.findFirst({ where: { name: planName, isActive: true } });
+        if (!plan || !SELF_SERVE_PLAN_NAMES.includes(plan.name as any)) {
+          throw new AppError('Invalid plan selected. Choose Growth or Scale.', 400);
+        }
+        planFields = { currentPlanId: plan.id, subscriptionStatus: SUBSCRIPTION_STATUS.PENDING };
+      }
+
       const tenant = await tx.tenant.create({
-        data: { name: companyName, slug }
+        data: { name: companyName, slug, ...planFields }
       });
 
       const user = await tx.user.create({

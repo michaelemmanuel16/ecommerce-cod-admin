@@ -1,6 +1,7 @@
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { redis } from '../middleware/cache.middleware';
+import { SUBSCRIPTION_STATUS, PLAN_NAMES } from '../config/billing';
 
 // ── Metrics ──────────────────────────────────────────────
 
@@ -180,7 +181,7 @@ export async function updateTenant(id: string, data: {
   slug?: string;
   region?: string;
   currency?: string;
-  currentPlanId?: string;
+  currentPlanId?: string | null;
   rateLimitEnabled?: boolean;
   rateLimitConfig?: { requestsPer15Min: number; burstPerSec: number } | null;
 }) {
@@ -203,22 +204,51 @@ export async function updateTenant(id: string, data: {
 export async function suspendTenant(id: string) {
   const tenant = await prisma.tenant.findUnique({ where: { id } });
   if (!tenant) throw new AppError('Tenant not found', 404);
-  if (tenant.subscriptionStatus === 'suspended') throw new AppError('Tenant is already suspended', 400);
+  if (tenant.subscriptionStatus === SUBSCRIPTION_STATUS.SUSPENDED) {
+    throw new AppError('Tenant is already suspended', 400);
+  }
 
   return prisma.tenant.update({
     where: { id },
-    data: { subscriptionStatus: 'suspended' },
+    data: { subscriptionStatus: SUBSCRIPTION_STATUS.SUSPENDED },
   });
 }
 
 export async function reactivateTenant(id: string) {
   const tenant = await prisma.tenant.findUnique({ where: { id } });
   if (!tenant) throw new AppError('Tenant not found', 404);
-  if (tenant.subscriptionStatus !== 'suspended') throw new AppError('Tenant is not suspended', 400);
+  if (tenant.subscriptionStatus !== SUBSCRIPTION_STATUS.SUSPENDED) {
+    throw new AppError('Tenant is not suspended', 400);
+  }
 
   return prisma.tenant.update({
     where: { id },
-    data: { subscriptionStatus: 'active' },
+    data: { subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE },
+  });
+}
+
+/**
+ * Grant the admin-only Free plan to a tenant (comps / partners). Free is
+ * Scale-level (unlimited caps) and never billed. `freeAccessExpiresAt` sets the
+ * timeframe: a date = free until then, null/undefined = free forever. MAN-61 only
+ * stores the field; the expiry lockout itself is evaluated by the enforcement
+ * sibling, so granting Free here simply makes the tenant active + unlimited.
+ */
+export async function grantFreePlan(id: string, freeAccessExpiresAt?: Date | null) {
+  const tenant = await prisma.tenant.findUnique({ where: { id } });
+  if (!tenant) throw new AppError('Tenant not found', 404);
+
+  const freePlan = await prisma.plan.findUnique({ where: { name: PLAN_NAMES.FREE } });
+  if (!freePlan) throw new AppError('Free plan is not configured', 500);
+
+  return prisma.tenant.update({
+    where: { id },
+    data: {
+      currentPlanId: freePlan.id,
+      subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
+      freeAccessExpiresAt: freeAccessExpiresAt ?? null,
+    },
+    include: { currentPlan: true },
   });
 }
 

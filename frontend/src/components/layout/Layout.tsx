@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { cn } from '../../utils/cn';
 import { AnnouncementBanner } from '../announcements/AnnouncementBanner';
+import { PendingPlanBanner } from '../billing/PendingPlanBanner';
 import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 
 export const Layout: React.FC = () => {
@@ -23,6 +24,7 @@ export const Layout: React.FC = () => {
         <Header />
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-6">
           <AnnouncementBanner />
+          <PendingPlanBanner />
           <Outlet />
         </main>
       </div>

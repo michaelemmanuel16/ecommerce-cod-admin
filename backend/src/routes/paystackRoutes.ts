@@ -6,8 +6,15 @@ import {
   verifyPayment,
   publicVerifyPayment,
 } from '../controllers/paystackController';
+import { handlePlatformWebhook } from '../controllers/platformBillingWebhookController';
 
 const router = Router();
+
+// Platform SaaS-subscription webhook (MAN-61) — CodAdmin's OWN Paystack account,
+// distinct from the per-tenant buyer webhook below. HMAC verified with the
+// platform secret; tenant resolved from the payload. Raw body preserved via the
+// verify callback in server.ts (which matches '/api/paystack/platform-webhook').
+router.post('/platform-webhook', handlePlatformWebhook);
 
 // Legacy unscoped webhook → 410 Gone. Tenants must update their Paystack
 // dashboard to the per-tenant URL.

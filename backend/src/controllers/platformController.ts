@@ -18,7 +18,7 @@ const updateTenantSchema = z.object({
   slug: z.string().min(2).max(100).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/).optional(),
   region: z.string().max(100).optional(),
   currency: z.string().max(10).optional(),
-  currentPlanId: z.string().uuid().optional(),
+  currentPlanId: z.string().uuid().nullable().optional(),
   rateLimitEnabled: z.boolean().optional(),
   rateLimitConfig: z.object({
     requestsPer15Min: z.number().int().min(1),
@@ -106,6 +106,60 @@ export const reactivateTenant = async (req: AuthRequest, res: Response, next: Ne
   try {
     const tenant = await platformService.reactivateTenant(req.params.id);
     res.json({ message: 'Tenant reactivated', tenant });
+  } catch (err) { next(err); }
+};
+
+const grantFreeSchema = z.object({
+  // ISO date = free until then; omitted/null = free forever.
+  freeAccessExpiresAt: z.string().datetime().nullable().optional(),
+});
+
+export const grantFreePlan = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = grantFreeSchema.safeParse(req.body);
+    if (!parsed.success) throw new AppError(parsed.error.issues[0].message, 400);
+    const expiresAt = parsed.data.freeAccessExpiresAt ? new Date(parsed.data.freeAccessExpiresAt) : null;
+    const tenant = await platformService.grantFreePlan(req.params.id, expiresAt);
+    res.json({ message: 'Free plan granted', tenant });
+  } catch (err) { next(err); }
+};
+
+/**
+ * GET /api/platform/billing-events (F3) — read-only list of recent platform
+ * billing webhook events (subscribe / charge / failed / cancelled) for in-app
+ * money visibility. WebhookEvent stores no amount, so we surface the tenant's
+ * current plan price as the NGN amount. List/pagination only, no aggregation —
+ * the full renews-at / past-due / churn dashboard is the enforcement sibling.
+ */
+export const listBillingEvents = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    // Optional tenant scope: the tenant-detail page reuses this endpoint to show
+    // a single tenant's billing history. Platform-admin only, so no extra guard.
+    const tenantId = typeof req.query.tenantId === 'string' ? req.query.tenantId : undefined;
+    const events = await prisma.webhookEvent.findMany({
+      where: { provider: 'paystack-platform', ...(tenantId ? { tenantId } : {}) },
+      orderBy: { receivedAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        eventType: true,
+        reference: true,
+        receivedAt: true,
+        tenant: { select: { id: true, name: true, currentPlan: { select: { priceNGN: true } } } },
+      },
+    });
+
+    res.json({
+      events: events.map((e) => ({
+        id: e.id,
+        type: e.eventType,
+        reference: e.reference,
+        timestamp: e.receivedAt,
+        tenant: e.tenant ? { id: e.tenant.id, name: e.tenant.name } : null,
+        amountNGN: e.tenant?.currentPlan?.priceNGN ?? null,
+      })),
+    });
   } catch (err) { next(err); }
 };
 

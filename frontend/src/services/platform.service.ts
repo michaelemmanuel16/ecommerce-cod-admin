@@ -31,6 +31,7 @@ export interface TenantDetail extends TenantListItem {
   currency: string;
   adminEmail: string | null;
   adminName: string | null;
+  freeAccessExpiresAt: string | null;
   usage: {
     ordersThisMonth: number;
     revenueThisMonth: number;
@@ -99,6 +100,26 @@ export const platformService = {
 
   async reactivateTenant(id: string): Promise<void> {
     await apiClient.post(`/api/platform/tenants/${id}/reactivate`);
+  },
+
+  /** Grant the admin-only Free plan. ISO date = free until then; null = forever. */
+  async grantFreePlan(id: string, freeAccessExpiresAt: string | null): Promise<void> {
+    await apiClient.post(`/api/platform/tenants/${id}/grant-free`, { freeAccessExpiresAt });
+  },
+
+  /** Recent platform billing events. Pass `tenantId` to scope to one tenant's history. */
+  async listBillingEvents(limit = 50, tenantId?: string): Promise<{
+    events: Array<{
+      id: number;
+      type: string;
+      reference: string;
+      timestamp: string;
+      tenant: { id: string; name: string } | null;
+      amountNGN: number | string | null;
+    }>;
+  }> {
+    const res = await apiClient.get('/api/platform/billing-events', { params: { limit, tenantId } });
+    return res.data;
   },
 
   async deleteTenant(id: string, confirmSlug: string): Promise<void> {

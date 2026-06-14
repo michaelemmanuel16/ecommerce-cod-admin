@@ -1,173 +1,220 @@
 import React, { useEffect, useState } from 'react';
-import apiClient from '../services/api';
 import { useAuthStore } from '../stores/authStore';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatDate } from '../utils/format';
+import { billingService, BillingPlan, Subscription } from '../services/billing.service';
 
-interface Plan {
-  id: string;
-  name: string;
-  displayName: string;
-  maxOrders: number | null;
-  maxUsers: number | null;
-  priceGHS: number;
-  features: Record<string, boolean>;
-}
-
-interface Subscription {
-  plan: Plan | null;
-  subscriptionStatus: string;
-  trialEndsAt: string | null;
-  usage: {
-    ordersThisMonth: number;
-    maxOrders: number | null;
-  };
-}
+const PAID_TIERS = ['growth', 'scale', 'enterprise'];
 
 export function Billing() {
   const { user } = useAuthStore();
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const isAdmin = user?.role === 'super_admin';
+  const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
-  const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      apiClient.get<{ plans: Plan[] }>('/api/billing/plans'),
-      apiClient.get<Subscription>('/api/billing/subscription'),
-    ])
-      .then(([plansRes, subRes]) => {
-        setPlans(plansRes.data.plans);
-        setSubscription(subRes.data);
+    Promise.all([billingService.getPlans(), billingService.getSubscription()])
+      .then(([p, s]) => {
+        setPlans(p.filter((x) => PAID_TIERS.includes(x.name)));
+        setSubscription(s);
       })
       .catch(() => setError('Failed to load billing information'))
       .finally(() => setLoading(false));
   }, []);
 
-  const handleUpgrade = async (planName: string) => {
-    if (!user || user.role !== 'super_admin') return;
-    setUpgrading(planName);
+  const billingEnabled = subscription?.billingEnabled !== false;
+  const status = subscription?.subscriptionStatus ?? 'active';
+  const currentPlanName = subscription?.plan?.name ?? null;
+
+  const handleSubscribe = async (planName: string) => {
+    if (!isAdmin || !billingEnabled) return;
+    setBusy(planName);
     try {
-      await apiClient.post('/api/billing/upgrade', { planName });
-      const subRes = await apiClient.get<Subscription>('/api/billing/subscription');
-      setSubscription(subRes.data);
+      const { authorizationUrl } = await billingService.startSubscription(planName);
+      window.location.href = authorizationUrl; // shows "Redirecting…" until the browser leaves
     } catch {
-      setError('Failed to update plan. Please try again.');
+      setError('Could not start checkout. Please try again.');
+      setBusy(null);
+    }
+  };
+
+  const handleCancel = async () => {
+    setBusy('cancel');
+    try {
+      await billingService.cancelSubscription();
+      setSubscription(await billingService.getSubscription());
+      setConfirmCancel(false);
+    } catch {
+      setError('Could not cancel the subscription. Please try again.');
     } finally {
-      setUpgrading(null);
+      setBusy(null);
     }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">{error}</div>
-      </div>
-    );
-  }
-
-  const currentPlanName = subscription?.plan?.name ?? 'free';
   const ordersThisMonth = subscription?.usage.ordersThisMonth ?? 0;
-  const maxOrders = subscription?.usage.maxOrders;
+  const maxOrders = subscription?.usage.maxOrders ?? null;
   const usagePercent = maxOrders ? Math.min(100, Math.round((ordersThisMonth / maxOrders) * 100)) : 0;
 
-  const trialDaysLeft = subscription?.trialEndsAt
-    ? Math.max(0, Math.ceil((new Date(subscription.trialEndsAt).getTime() - Date.now()) / 86400000))
-    : null;
-
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-8">
+    <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Billing & Plans</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Billing &amp; Plans</h1>
         <p className="text-gray-500 mt-1">Manage your subscription and usage</p>
       </div>
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm">{error}</div>
+      )}
+
+      {!billingEnabled && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-gray-600 text-sm">
+          Billing is being set up. Plans are shown for reference; subscribing will be available shortly.
+        </div>
+      )}
+
+      {/* State-driven hierarchy: past_due banner dominates > pending card > active card. */}
+      {status === 'past_due' && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6">
+          <h2 className="text-lg font-semibold text-red-800">Your last payment failed</h2>
+          <p className="text-red-700 text-sm mt-1">
+            We couldn't charge your card{subscription?.paymentFailedAt ? ` on ${formatDate(subscription.paymentFailedAt)}` : ''}.
+            Re-authorize to keep your account active.
+          </p>
+          {isAdmin && billingEnabled && currentPlanName && (
+            <button
+              onClick={() => handleSubscribe(currentPlanName)}
+              disabled={busy === currentPlanName}
+              className="mt-4 min-h-[44px] px-5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-60"
+            >
+              {busy === currentPlanName ? 'Redirecting to Paystack…' : 'Update payment method'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {status === 'pending' && (
+        <div className="bg-primary-50 border border-primary-200 rounded-xl p-6">
+          <h2 className="text-lg font-semibold text-primary-900">Finish setting up your subscription</h2>
+          <p className="text-primary-800 text-sm mt-1">
+            Your account is ready — complete payment to activate
+            {subscription?.plan ? ` ${subscription.plan.displayName}` : ' your plan'}.
+          </p>
+          {isAdmin && billingEnabled && currentPlanName && (
+            <button
+              onClick={() => handleSubscribe(currentPlanName)}
+              disabled={busy === currentPlanName}
+              className="mt-4 min-h-[44px] px-5 rounded-lg bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-60"
+            >
+              {busy === currentPlanName ? 'Redirecting to Paystack…' : 'Complete payment'}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Current plan summary */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Current Plan</h2>
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-2xl font-bold text-blue-600">
-            {subscription?.plan?.displayName ?? 'Free'}
-          </span>
-          <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-            subscription?.subscriptionStatus === 'active'
-              ? 'bg-green-100 text-green-700'
-              : 'bg-yellow-100 text-yellow-700'
-          }`}>
-            {subscription?.subscriptionStatus ?? 'active'}
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-2xl font-bold text-primary-700">{subscription?.plan?.displayName ?? 'Free'}</span>
+          <span
+            className={`px-2 py-1 text-xs rounded-full font-medium ${
+              status === 'active'
+                ? 'bg-green-100 text-green-700'
+                : status === 'past_due'
+                  ? 'bg-red-100 text-red-700'
+                  : 'bg-yellow-100 text-yellow-700'
+            }`}
+          >
+            {status}
           </span>
         </div>
 
-        {trialDaysLeft !== null && trialDaysLeft > 0 && (
-          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 text-blue-700 text-sm">
-            Trial ends in <strong>{trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''}</strong>
-          </div>
+        {status === 'active' && subscription?.renewsAt && (
+          <p className="text-sm text-gray-600">
+            Renews on <strong>{formatDate(subscription.renewsAt)}</strong>
+            {subscription.nextChargeAmount != null && (
+              <> · next charge {formatCurrency(Number(subscription.nextChargeAmount), 'NGN')}</>
+            )}
+            {subscription.cardLast4 && <> · card ending {subscription.cardLast4}</>}
+          </p>
         )}
 
-        <div>
+        <div className="mt-4">
           <div className="flex justify-between text-sm text-gray-600 mb-1">
             <span>Orders this month</span>
-            <span>
-              {ordersThisMonth}{maxOrders ? ` / ${maxOrders.toLocaleString()}` : ' (unlimited)'}
-            </span>
+            <span>{ordersThisMonth}{maxOrders ? ` / ${maxOrders.toLocaleString()}` : ' (unlimited)'}</span>
           </div>
           {maxOrders && (
             <div className="w-full bg-gray-100 rounded-full h-2">
               <div
-                className={`h-2 rounded-full ${usagePercent >= 90 ? 'bg-red-500' : 'bg-blue-500'}`}
+                className={`h-2 rounded-full ${usagePercent >= 90 ? 'bg-red-500' : 'bg-primary-500'}`}
                 style={{ width: `${usagePercent}%` }}
               />
             </div>
           )}
         </div>
+
+        {isAdmin && status === 'active' && subscription?.subscriptionCode && (
+          <button
+            onClick={() => setConfirmCancel(true)}
+            className="mt-5 text-sm font-medium text-red-600 hover:text-red-700"
+          >
+            Cancel subscription
+          </button>
+        )}
       </div>
 
-      {/* Plan selection */}
+      {/* Plan options (difference-first; Free is admin-only and not listed) */}
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Available Plans</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Plans</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {plans.map((plan) => {
-            const isCurrent = plan.name === currentPlanName;
-            const isUpgrade = user?.role === 'super_admin' && !isCurrent;
+            const isCurrent = plan.name === currentPlanName && status === 'active';
+            const isEnterprise = plan.name === 'enterprise';
             return (
               <div
                 key={plan.id}
-                className={`rounded-xl border-2 p-6 flex flex-col gap-4 ${
-                  isCurrent ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
+                className={`rounded-xl border-2 p-6 flex flex-col gap-3 ${
+                  isCurrent ? 'border-primary-500 bg-primary-50' : 'border-gray-200 bg-white'
                 }`}
               >
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900">{plan.displayName}</h3>
+                  <h3 className="text-lg font-bold text-gray-900">{plan.displayName}</h3>
                   <p className="text-2xl font-bold mt-1">
-                    {plan.priceGHS === 0 ? 'Free' : `${formatCurrency(Number(plan.priceGHS), 'GHS')}/mo`}
+                    {isEnterprise || plan.priceNGN == null
+                      ? "Let's talk"
+                      : `${formatCurrency(Number(plan.priceNGN), 'NGN')}/mo`}
                   </p>
                 </div>
-                <ul className="space-y-1 text-sm text-gray-600 flex-1">
-                  <li>{plan.maxOrders ? `${plan.maxOrders.toLocaleString()} orders/mo` : 'Unlimited orders'}</li>
-                  <li>{plan.maxUsers ? `${plan.maxUsers} users` : 'Unlimited users'}</li>
-                  {Object.entries(plan.features).map(([key, enabled]) => (
-                    <li key={key} className={enabled ? 'text-gray-800' : 'text-gray-400 line-through'}>
-                      {key.replace(/_/g, ' ')}
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-sm text-gray-600 flex-1">
+                  {plan.maxOrders ? `${plan.maxOrders.toLocaleString()} orders/mo · ${plan.maxUsers} staff` : 'Unlimited — every ceiling removed'}
+                </p>
                 {isCurrent ? (
-                  <span className="text-center py-2 text-sm font-medium text-blue-600">Current Plan</span>
-                ) : isUpgrade ? (
-                  <button
-                    onClick={() => handleUpgrade(plan.name)}
-                    disabled={upgrading === plan.name}
-                    className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                  <span className="text-center py-2 text-sm font-medium text-primary-700">Current plan</span>
+                ) : isEnterprise ? (
+                  <a
+                    href="mailto:sales@codadmin.app"
+                    className="text-center min-h-[44px] py-2.5 rounded-lg border border-gray-300 font-semibold hover:bg-gray-50 flex items-center justify-center"
                   >
-                    {upgrading === plan.name ? 'Updating...' : `Switch to ${plan.displayName}`}
+                    Contact us
+                  </a>
+                ) : isAdmin && billingEnabled ? (
+                  <button
+                    onClick={() => handleSubscribe(plan.name)}
+                    disabled={busy === plan.name}
+                    className="min-h-[44px] py-2.5 rounded-lg bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-60"
+                  >
+                    {busy === plan.name ? 'Redirecting to Paystack…' : `Switch to ${plan.displayName}`}
                   </button>
                 ) : null}
               </div>
@@ -175,6 +222,34 @@ export function Billing() {
           })}
         </div>
       </div>
+
+      {/* Cancel confirmation */}
+      {confirmCancel && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full">
+            <h3 className="text-lg font-semibold text-gray-900">Cancel subscription?</h3>
+            <p className="text-sm text-gray-600 mt-2">
+              You'll keep access until the end of your current billing cycle
+              {subscription?.renewsAt ? ` (${formatDate(subscription.renewsAt)})` : ''}.
+            </p>
+            <div className="mt-5 flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmCancel(false)}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50"
+              >
+                Keep plan
+              </button>
+              <button
+                onClick={handleCancel}
+                disabled={busy === 'cancel'}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+              >
+                {busy === 'cancel' ? 'Cancelling…' : 'Cancel subscription'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

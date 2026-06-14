@@ -19,7 +19,7 @@ interface AuthState {
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
-  registerTenant: (data: { companyName: string; adminEmail: string; adminPassword: string; adminName: string }) => Promise<void>;
+  registerTenant: (data: { companyName: string; adminEmail: string; adminPassword: string; adminName: string; planName?: string }) => Promise<void>;
   logout: (showToast?: boolean) => void;
   setAccessToken: (token: string) => void;
   updatePreferences: (preferences: UserPreferences) => Promise<void>;

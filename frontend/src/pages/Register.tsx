@@ -2,12 +2,15 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import toast from 'react-hot-toast';
+
+// Only these self-serve tiers route to Paystack after signup.
+const SELF_SERVE_PLANS = ['growth', 'scale'];
 
 const registerSchema = z.object({
   companyName: z.string().min(2, 'Company name must be at least 2 characters'),
@@ -25,6 +28,8 @@ type RegisterFormData = z.infer<typeof registerSchema>;
 
 export const Register: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const selectedPlan = searchParams.get('plan')?.toLowerCase();
   const { registerTenant, isLoading } = useAuthStore();
   const {
     register,
@@ -36,7 +41,13 @@ export const Register: React.FC = () => {
 
   const onSubmit = async (data: RegisterFormData) => {
     try {
-      await registerTenant(data);
+      // Pricing-first: carry the chosen tier so the tenant lands `pending`.
+      const planName = selectedPlan && SELF_SERVE_PLANS.includes(selectedPlan) ? selectedPlan : undefined;
+      await registerTenant({ ...data, planName });
+
+      // Payment is collected at the END of onboarding (final step), so the tenant
+      // fills in their business details before being charged. They land `pending`
+      // on the chosen tier and activate from the onboarding "Done" step.
       navigate('/onboarding');
     } catch (error: any) {
       const message = error?.response?.data?.message || error?.message || 'Registration failed';
