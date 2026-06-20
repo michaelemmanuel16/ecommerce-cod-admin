@@ -204,6 +204,8 @@ jobs:
             export META_APP_SECRET="${{ secrets.META_APP_SECRET }}"
             export WHATSAPP_APP_SECRET="${{ secrets.WHATSAPP_APP_SECRET }}"
             export SENTRY_DSN="${{ secrets.BACKEND_SENTRY_DSN }}"
+            export PLATFORM_PAYSTACK_SECRET_KEY="${{ secrets.PLATFORM_PAYSTACK_SECRET_KEY_STAGING }}"
+            export PLATFORM_PAYSTACK_PUBLIC_KEY="${{ secrets.PLATFORM_PAYSTACK_PUBLIC_KEY_STAGING }}"
             echo "Running staging deployment script..."
             bash scripts/deploy-staging.sh
 
@@ -235,5 +237,7 @@ jobs:
             export META_APP_SECRET="${{ secrets.META_APP_SECRET }}"
             export WHATSAPP_APP_SECRET="${{ secrets.WHATSAPP_APP_SECRET }}"
             export SENTRY_DSN="${{ secrets.BACKEND_SENTRY_DSN }}"
+            export PLATFORM_PAYSTACK_SECRET_KEY="${{ secrets.PLATFORM_PAYSTACK_SECRET_KEY_PROD }}"
+            export PLATFORM_PAYSTACK_PUBLIC_KEY="${{ secrets.PLATFORM_PAYSTACK_PUBLIC_KEY_PROD }}"
             echo "Running deployment script..."
             bash scripts/deploy-github-actions.sh
