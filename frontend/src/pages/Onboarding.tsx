@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { authService } from '../services/auth.service';
+import { billingService, Subscription } from '../services/billing.service';
 import { useAuthStore } from '../stores/authStore';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -34,6 +35,15 @@ export const Onboarding: React.FC = () => {
   const { user, updatePreferences } = useAuthStore();
   const [step, setStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [isPaying, setIsPaying] = useState(false);
+
+  // On the final step, load the tenant's plan so a pending PAID tier can be
+  // activated with a Pay button — payment comes after business details.
+  React.useEffect(() => {
+    if (step !== 2) return;
+    billingService.getSubscription().then(setSubscription).catch(() => setSubscription(null));
+  }, [step]);
 
   const form = useForm<SetupData>({
     resolver: zodResolver(setupSchema),
@@ -102,6 +112,21 @@ export const Onboarding: React.FC = () => {
 
   const handleFinish = () => {
     navigate('/');
+  };
+
+  // Pending paid tier: charge at the end of onboarding. By now needsOnboarding()
+  // is false, so the Paystack callback won't be intercepted by the onboarding guard.
+  const handlePay = async () => {
+    const planName = subscription?.plan?.name;
+    if (!planName) return;
+    setIsPaying(true);
+    try {
+      const { authorizationUrl } = await billingService.startSubscription(planName);
+      window.location.href = authorizationUrl;
+    } catch (error: any) {
+      setIsPaying(false);
+      toast.error(error?.response?.data?.message || 'Could not start payment. You can complete it from Billing.');
+    }
   };
 
   const progressPct = ((step + 1) / steps.length) * 100;
@@ -240,18 +265,41 @@ export const Onboarding: React.FC = () => {
             </form>
           )}
 
-          {/* Step 2: Done */}
-          {step === 2 && (
-            <div className="space-y-4 text-center">
-              <h2 className="text-lg font-semibold text-gray-800">You're all set!</h2>
-              <p className="text-sm text-gray-500">
-                Your company is configured and ready. Head to the dashboard to start managing orders.
-              </p>
-              <Button type="button" variant="primary" className="w-full mt-4" onClick={handleFinish}>
-                Go to Dashboard
-              </Button>
-            </div>
-          )}
+          {/* Step 2: Done — a pending PAID tier activates by paying here */}
+          {step === 2 && (() => {
+            if (subscription === null) {
+              return <div className="py-6 text-center text-sm text-gray-500">Finalizing your setup…</div>;
+            }
+            const needsPayment =
+              subscription.subscriptionStatus === 'pending' &&
+              subscription.plan?.priceNGN != null &&
+              subscription.billingEnabled;
+            if (needsPayment) {
+              const amount = subscription.nextChargeAmount ?? subscription.plan?.priceNGN ?? 0;
+              return (
+                <div className="space-y-4 text-center">
+                  <h2 className="text-lg font-semibold text-gray-800">Activate {subscription.plan?.displayName}</h2>
+                  <p className="text-sm text-gray-500">
+                    Your business is set up. Complete your subscription to activate {subscription.plan?.displayName} and start managing orders.
+                  </p>
+                  <Button type="button" variant="primary" className="w-full mt-4" isLoading={isPaying} onClick={handlePay}>
+                    {isPaying ? 'Redirecting to Paystack…' : `Pay ₦${Number(amount).toLocaleString()} & Activate`}
+                  </Button>
+                </div>
+              );
+            }
+            return (
+              <div className="space-y-4 text-center">
+                <h2 className="text-lg font-semibold text-gray-800">You're all set!</h2>
+                <p className="text-sm text-gray-500">
+                  Your company is configured and ready. Head to the dashboard to start managing orders.
+                </p>
+                <Button type="button" variant="primary" className="w-full mt-4" onClick={handleFinish}>
+                  Go to Dashboard
+                </Button>
+              </div>
+            );
+          })()}
         </Card>
       </div>
     </div>

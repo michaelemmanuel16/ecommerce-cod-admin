@@ -52,6 +52,7 @@ export const authService = {
     adminEmail: string;
     adminPassword: string;
     adminName: string;
+    planName?: string;
   }): Promise<{ user: User; tokens: AuthTokens; tenant: { id: string; name: string; slug: string } }> {
     const response = await apiClient.post('/api/auth/register-tenant', data);
     return response.data;

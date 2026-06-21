@@ -94,7 +94,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
     try {
       await platformService.updateTenant(id, data);
       toast.success('Tenant updated');
-      get().fetchTenant(id);
+      await get().fetchTenant(id);
     } catch {
       toast.error('Failed to update tenant');
     }
@@ -104,7 +104,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
     try {
       await platformService.suspendTenant(id);
       toast.success('Tenant suspended');
-      get().fetchTenant(id);
+      await get().fetchTenant(id);
     } catch {
       toast.error('Failed to suspend tenant');
     }
@@ -114,7 +114,7 @@ export const usePlatformStore = create<PlatformState>((set, get) => ({
     try {
       await platformService.reactivateTenant(id);
       toast.success('Tenant reactivated');
-      get().fetchTenant(id);
+      await get().fetchTenant(id);
     } catch {
       toast.error('Failed to reactivate tenant');
     }
