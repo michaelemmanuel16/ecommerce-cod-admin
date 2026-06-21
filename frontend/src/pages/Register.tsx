@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -21,7 +21,8 @@ const registerSchema = z.object({
     .min(8, 'Password must be at least 8 characters')
     .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
     .regex(/[a-z]/, 'Must contain at least one lowercase letter')
-    .regex(/[0-9]/, 'Must contain at least one number'),
+    .regex(/[0-9]/, 'Must contain at least one number')
+    .regex(/[!@#$%^&*(),.?":{}|<>]/, 'Must contain at least one special character'),
 });
 
 type RegisterFormData = z.infer<typeof registerSchema>;
@@ -38,6 +39,15 @@ export const Register: React.FC = () => {
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
   });
+
+  // Pricing-first guard: registration requires a chosen self-serve tier. Anyone
+  // landing here without one (bare /register, or ?plan=enterprise) is sent to
+  // pricing to pick a plan, so no signup can bypass plan selection.
+  useEffect(() => {
+    if (!selectedPlan || !SELF_SERVE_PLANS.includes(selectedPlan)) {
+      navigate('/pricing', { replace: true });
+    }
+  }, [selectedPlan, navigate]);
 
   const onSubmit = async (data: RegisterFormData) => {
     try {
@@ -88,7 +98,7 @@ export const Register: React.FC = () => {
               type="password"
               {...register('adminPassword')}
               error={errors.adminPassword?.message}
-              placeholder="Min 8 chars, uppercase, number"
+              placeholder="Min 8 chars: upper, lower, number, special"
             />
             <Button
               type="submit"

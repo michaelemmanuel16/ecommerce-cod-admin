@@ -15,13 +15,28 @@ interface Tier {
   popular?: boolean;
   cta: string;
   ctaLink: string;
+  external?: boolean; // ctaLink is a mailto/external URL, not an in-app route
 }
 
 const TIERS: Tier[] = [
   { name: 'growth', displayName: 'Growth', price: '₦10,000', popular: true, cta: 'Start with Growth', ctaLink: '/register?plan=growth' },
   { name: 'scale', displayName: 'Scale', price: '₦20,000', cta: 'Start with Scale', ctaLink: '/register?plan=scale' },
-  { name: 'enterprise', displayName: 'Enterprise', price: "Let's talk", cta: 'Contact us', ctaLink: '/register?plan=enterprise' },
+  // Enterprise is a sales conversation, not self-serve checkout — contact, don't route to register.
+  { name: 'enterprise', displayName: 'Enterprise', price: "Let's talk", cta: 'Contact us', ctaLink: 'mailto:sales@codadmin.app', external: true },
 ];
+
+function TierCta({ tier, className = '' }: { tier: Tier; className?: string }) {
+  const cls = `block text-center min-h-[44px] py-2.5 rounded-lg font-semibold ${
+    tier.popular
+      ? 'bg-primary-600 text-white hover:bg-primary-700'
+      : tier.name === 'enterprise'
+        ? 'border border-gray-300 hover:bg-gray-50'
+        : 'bg-gray-900 text-white hover:bg-black'
+  } ${className}`;
+  return tier.external
+    ? <a href={tier.ctaLink} className={cls}>{tier.cta}</a>
+    : <Link to={tier.ctaLink} className={cls}>{tier.cta}</Link>;
+}
 
 // Rows are ONLY the things that differ between tiers, plus the "everything included" row.
 const CAP_ROWS: { label: string; values: Record<Tier['name'], string> }[] = [
@@ -47,7 +62,7 @@ export function Pricing() {
           <div className="flex items-center gap-4">
             <Link to="/login" className="text-sm font-medium text-gray-600 hover:text-gray-900">Log in</Link>
             <Link
-              to="/register"
+              to="/register?plan=growth"
               className="text-sm font-semibold bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700"
             >
               Get started
@@ -117,18 +132,7 @@ export function Pricing() {
                 <td className="p-5" />
                 {TIERS.map((t) => (
                   <td key={t.name} className="p-5">
-                    <Link
-                      to={t.ctaLink}
-                      className={`block text-center min-h-[44px] py-2.5 rounded-lg font-semibold ${
-                        t.popular
-                          ? 'bg-primary-600 text-white hover:bg-primary-700'
-                          : t.name === 'enterprise'
-                            ? 'border border-gray-300 hover:bg-gray-50'
-                            : 'bg-gray-900 text-white hover:bg-black'
-                      }`}
-                    >
-                      {t.cta}
-                    </Link>
+                    <TierCta tier={t} />
                   </td>
                 ))}
               </tr>
@@ -167,18 +171,7 @@ export function Pricing() {
                   <dd className="font-semibold text-primary-700">Included</dd>
                 </div>
               </dl>
-              <Link
-                to={t.ctaLink}
-                className={`mt-5 block text-center min-h-[44px] py-2.5 rounded-lg font-semibold ${
-                  t.popular
-                    ? 'bg-primary-600 text-white hover:bg-primary-700'
-                    : t.name === 'enterprise'
-                      ? 'border border-gray-300 hover:bg-gray-50'
-                      : 'bg-gray-900 text-white hover:bg-black'
-                }`}
-              >
-                {t.cta}
-              </Link>
+              <TierCta tier={t} className="mt-5" />
             </div>
           ))}
         </div>
