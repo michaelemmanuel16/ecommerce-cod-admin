@@ -377,7 +377,13 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
       // Resolve the chosen self-serve tier (if any). The tenant lands `pending`
       // until the first Paystack charge succeeds; hard lockout of pending tenants
       // is sibling enforcement, so this only sets the correct status + plan.
-      let planFields: { currentPlanId?: string; subscriptionStatus?: string } = {};
+      // Default to `pending` even with no plan: never inherit the schema default
+      // ('active') for an unpaid signup, or a no-plan tenant would land active and
+      // the enforcement sibling (which locks pending/past_due/cancelled) could
+      // never reach it — a permanent no-charge access hole.
+      let planFields: { currentPlanId?: string; subscriptionStatus?: string } = {
+        subscriptionStatus: SUBSCRIPTION_STATUS.PENDING,
+      };
       if (planName) {
         const plan = await tx.plan.findFirst({ where: { name: planName, isActive: true } });
         if (!plan || !SELF_SERVE_PLAN_NAMES.includes(plan.name as any)) {

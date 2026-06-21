@@ -65,7 +65,11 @@ describe('registerTenant — pricing-first plan selection (MAN-61)', () => {
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
   });
 
-  it('registering without a plan creates the tenant with no plan (back-compat)', async () => {
+  // Regression (F1, found by /qa 2026-06-21): a no-plan signup must NOT inherit the
+  // schema default ('active'). It has to land `pending` so the enforcement sibling
+  // (which locks pending/past_due/cancelled) can reach it — otherwise it would be a
+  // permanent no-charge access hole. No plan row is bound; status is still pending.
+  it('registering without a plan lands the tenant pending (never active) with no plan bound', async () => {
     const req: any = { body: { ...baseBody } };
     const res = mockRes();
     await registerTenant(req, res, next);
@@ -74,7 +78,8 @@ describe('registerTenant — pricing-first plan selection (MAN-61)', () => {
     expect(prismaMock.plan.findFirst).not.toHaveBeenCalled();
     const createArg = (prismaMock.tenant.create as any).mock.calls[0][0];
     expect(createArg.data.currentPlanId).toBeUndefined();
-    expect(createArg.data.subscriptionStatus).toBeUndefined();
+    expect(createArg.data.subscriptionStatus).toBe('pending');
+    expect(createArg.data.subscriptionStatus).not.toBe('active');
     expect(res.status).toHaveBeenCalledWith(201);
   });
 });
