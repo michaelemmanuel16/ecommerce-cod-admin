@@ -41,9 +41,11 @@ export interface SystemConfig {
   paystackProvider?: {
     publicKey?: string;
     secretKey?: string;
-    webhookSecret?: string;
+    mode?: 'test' | 'live';
     isEnabled?: boolean;
   };
+  /** Slug of the current tenant — used to render the per-tenant Paystack webhook URL. */
+  tenantSlug?: string | null;
   notificationTemplates?: {
     orderConfirmation?: { sms: string; email: string };
     outForDelivery?: { sms: string; email: string };

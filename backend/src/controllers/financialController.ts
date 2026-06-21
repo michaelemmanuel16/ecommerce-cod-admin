@@ -10,6 +10,7 @@ import { GLAccountService } from '../services/glAccountService';
 import { GL_ACCOUNTS } from '../config/glAccounts';
 import prisma from '../utils/prisma';
 import { Decimal } from '@prisma/client/runtime/library';
+import { getTenantId } from '../utils/tenantContext';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -379,13 +380,24 @@ export const refreshAgingBuckets = async (_req: AuthRequest, res: Response): Pro
  */
 export const backfillMissingCollections = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // Find all delivered orders without agent_collections
+    // SECURITY: raw SQL bypasses the Prisma tenant-isolation extension, so the
+    // tenant filter MUST be explicit here — without it this reads delivered orders
+    // from every tenant and stamps the caller's tenant onto foreign collections
+    // and balances (cross-tenant leak + ledger corruption).
+    const tenantId = getTenantId();
+    if (!tenantId) {
+      res.status(400).json({ error: 'Tenant context required' });
+      return;
+    }
+
+    // Find this tenant's delivered orders without agent_collections
     const orphanedOrders = await prisma.$queryRaw<any[]>`
       SELECT o.id, o.delivery_agent_id, o.total_amount, o.created_at
       FROM orders o
       WHERE o.status = 'delivered'
         AND o.deleted_at IS NULL
         AND o.delivery_agent_id IS NOT NULL
+        AND o.tenant_id = ${tenantId}
         AND o.id NOT IN (SELECT order_id FROM agent_collections)
       ORDER BY o.created_at ASC
     `;

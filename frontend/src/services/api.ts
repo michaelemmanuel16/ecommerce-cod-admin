@@ -30,6 +30,26 @@ function isPublicPage(): boolean {
     || path.startsWith('/form/');
 }
 
+// Once session expiry is detected, suppress further auth-error toasts until
+// the redirect to /login completes. Prevents parallel dashboard requests from
+// stacking duplicate toasts on the page being navigated away from.
+//
+// Only latched when we actually redirect: on public pages the redirect is
+// skipped (X-Frame-Options-safe for embedded checkouts), so leaving the flag
+// false there means a later SPA navigation into the admin can still surface
+// the next expiry. The full-page reload triggered by the redirect resets the
+// flag for the post-login session.
+let sessionExpiredHandled = false;
+function handleSessionExpired(message = 'Your session has expired. Please log in again.'): void {
+  if (sessionExpiredHandled) return;
+  useAuthStore.getState().logout(false);
+  if (!isPublicPage()) {
+    sessionExpiredHandled = true;
+    toast.error(message, { id: 'session-expired' });
+    window.location.href = '/login';
+  }
+}
+
 export const apiClient = axios.create({
   baseURL: API_URL,
   headers: {
@@ -128,11 +148,7 @@ apiClient.interceptors.response.use(
       // Check for outdated token format error
       const errorCode = error.response?.data?.code;
       if (errorCode === 'TOKEN_FORMAT_OUTDATED') {
-        useAuthStore.getState().logout(false);
-        toast.error('Your session is outdated. Please log in again.');
-        if (!isPublicPage()) {
-          window.location.href = '/login';
-        }
+        handleSessionExpired('Your session is outdated. Please log in again.');
         return Promise.reject(error);
       }
 
@@ -141,10 +157,7 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = useAuthStore.getState().refreshToken;
         if (!refreshToken) {
-          useAuthStore.getState().logout(false);
-          if (!isPublicPage()) {
-            window.location.href = '/login';
-          }
+          handleSessionExpired();
           return Promise.reject(error);
         }
 
@@ -164,31 +177,28 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (refreshError: any) {
         console.error('[API Interceptor] Token refresh failed:', refreshError.response?.status, refreshError.message);
-        // If the error is a 5xx error or network error, don't log out
-        // The server might be temporarily down (e.g., EADDRINUSE restart issue)
-        const isServerError = !refreshError.response || (refreshError.response.status >= 500 && refreshError.response.status <= 599);
+        const refreshStatus = refreshError.response?.status;
+        const refreshCode = refreshError.response?.data?.code;
 
-        if (isServerError && !originalRequest.url?.includes('/api/auth/refresh')) {
-          console.log('[API Interceptor] Server error during refresh, skipping auto-logout');
-          toast.error('Server connection lost. Retrying...');
+        // Refresh succeeded in reaching the server but rejected the token (401):
+        // session is genuinely expired. Redirect to login.
+        if (refreshStatus === 401) {
+          const msg = refreshCode === 'TOKEN_FORMAT_OUTDATED'
+            ? 'Your session is outdated. Please log in again.'
+            : 'Your session has expired. Please log in again.';
+          handleSessionExpired(msg);
           return Promise.reject(refreshError);
         }
 
-        // Check if refresh token is also outdated
-        if (refreshError.response?.data?.code === 'TOKEN_FORMAT_OUTDATED') {
-          useAuthStore.getState().logout(false);
-          toast.error('Your session is outdated. Please log in again.');
-          if (!isPublicPage()) {
-            window.location.href = '/login';
-          }
+        // Real server outage (5xx) or network failure — don't log the user out;
+        // they can retry once the backend is back. Dedupe via fixed id.
+        if (!refreshError.response || (refreshStatus >= 500 && refreshStatus <= 599)) {
+          toast.error('Server connection lost. Retrying...', { id: 'server-connection-lost' });
           return Promise.reject(refreshError);
         }
 
-        useAuthStore.getState().logout(false);
-        if (!isPublicPage()) {
-          toast.error('Session expired. Please login again.');
-          window.location.href = '/login';
-        }
+        // Anything else (400, 403, ...): treat as session expiry to be safe.
+        handleSessionExpired();
         return Promise.reject(refreshError);
       }
     }
@@ -197,6 +207,9 @@ apiClient.interceptors.response.use(
     if (error.response?.status !== 401) {
       const errorMessage =
         (error.response?.data as any)?.message ||
+        // express-validator 400s carry the specific rule message here (e.g. a
+        // bad Allowed Domains entry) — prefer it over the opaque axios message.
+        (error.response?.data as any)?.details?.[0]?.msg ||
         error.message ||
         'An error occurred';
       toast.error(errorMessage);

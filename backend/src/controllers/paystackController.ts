@@ -1,16 +1,32 @@
 import { Request, Response } from 'express';
+import { createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { paystackService } from '../services/paystackService';
-import { digitalDeliveryService } from '../services/digitalDeliveryService';
-import { GLAutomationService } from '../services/glAutomationService';
+import { settlePaystackPayment } from '../services/paystackSettlementService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 
 /**
  * Paystack webhook handler — called by Paystack on charge.success.
- * Uses raw body for HMAC signature verification.
+ * Uses raw body for HMAC signature verification, scoped to the URL tenant.
  */
 export async function handleWebhook(req: Request, res: Response): Promise<void> {
   try {
+    const tenantSlug = req.params.tenantSlug;
+    if (!tenantSlug) {
+      res.status(400).json({ error: 'Missing tenant slug' });
+      return;
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { slug: tenantSlug },
+      select: { id: true },
+    });
+    if (!tenant) {
+      res.status(404).json({ error: 'Tenant not found' });
+      return;
+    }
+
     const signature = req.headers['x-paystack-signature'] as string;
     if (!signature) {
       res.status(400).json({ error: 'Missing signature' });
@@ -24,19 +40,66 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
       res.status(500).json({ error: 'Server configuration error' });
       return;
     }
-    const isValid = await paystackService.validateWebhookSignature(rawBody, signature);
+    const isValid = await paystackService.validateWebhookSignature(tenant.id, rawBody, signature);
     if (!isValid) {
-      logger.warn('Invalid Paystack webhook signature');
+      logger.warn('Invalid Paystack webhook signature', { tenantId: tenant.id });
       res.status(401).json({ error: 'Invalid signature' });
       return;
     }
 
     // req.body is already parsed by express.json(); use it directly
     const event = req.body;
-    logger.info('Paystack webhook received', { event: event.event });
+    logger.info('Paystack webhook received', { tenantId: tenant.id, event: event.event });
 
-    if (event.event === 'charge.success') {
-      await handleChargeSuccess(event.data);
+    // Idempotency gate: record (tenant_id, provider, event_type, reference) before any side effect.
+    // Unique-constraint violation = replay; ack and return without re-processing.
+    // If side-effect processing throws below, the row is removed so Paystack retries succeed.
+    const reference: string | undefined = event?.data?.reference;
+    let dedupRowId: number | null = null;
+    if (reference && event?.event) {
+      const payloadHash = createHash('sha256').update(rawBody).digest('hex');
+      try {
+        const created = await prisma.webhookEvent.create({
+          data: {
+            provider: 'paystack',
+            eventType: event.event,
+            reference,
+            payloadHash,
+            tenantId: tenant.id,
+          },
+          select: { id: true },
+        });
+        dedupRowId = created.id;
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          logger.info('Paystack webhook replay ignored', { tenantId: tenant.id, eventType: event.event, reference });
+          res.status(200).json({ received: true, duplicate: true });
+          return;
+        }
+        throw err;
+      }
+    }
+
+    try {
+      if (event.event === 'charge.success') {
+        await handleChargeSuccess(tenant.id, event.data);
+      }
+    } catch (processingError: any) {
+      // Side-effect processing failed — remove the dedup row so Paystack's
+      // retries can re-enter the handler. Otherwise a transient miss (Paystack
+      // API blip, isEnabled toggled mid-flight, GL error) permanently burns
+      // the reference because we 200 the ACK regardless.
+      if (dedupRowId !== null) {
+        try {
+          await prisma.webhookEvent.delete({ where: { id: dedupRowId } });
+        } catch (cleanupError: any) {
+          logger.error('Failed to delete dedup row after processing error', {
+            dedupRowId,
+            error: cleanupError.message,
+          });
+        }
+      }
+      throw processingError;
     }
 
     // Always return 200 to acknowledge receipt
@@ -48,170 +111,45 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
   }
 }
 
-interface PaystackChargeData {
-  reference: string;
-  metadata?: { orderId?: number; order_id?: number };
-  amount: number;
-  fees: number;
-  currency: string;
-}
-
-async function handleChargeSuccess(data: PaystackChargeData): Promise<void> {
-  const { reference, metadata, amount, fees, currency } = data;
-  const orderId = metadata?.orderId || metadata?.order_id;
-
-  if (!orderId) {
-    logger.error('Paystack charge.success missing orderId in metadata', { reference });
-    return;
-  }
-
-  // Double-verify with Paystack API
-  const verification = await paystackService.verifyTransaction(reference);
-  if (verification.data.status !== 'success') {
-    logger.warn('Paystack verification failed', { orderId, reference, status: verification.data.status });
-    await prisma.order.update({
-      where: { id: Number(orderId) },
-      data: { status: 'payment_failed' },
-    });
-    return;
-  }
-
-  // Atomic idempotency: only update if not already paid.
-  // Prevents TOCTOU race when concurrent webhooks arrive.
-  const updated = await prisma.$queryRaw<{ id: number }[]>`
-    UPDATE "orders"
-    SET "payment_status" = 'paid', "status" = 'confirmed',
-        "payment_reference" = ${reference}, "updated_at" = NOW()
-    WHERE "id" = ${Number(orderId)}
-      AND "payment_status" != 'paid'
-    RETURNING "id"
-  `;
-
-  if (!updated || updated.length === 0) {
-    logger.info('Paystack payment already processed, skipping', { orderId, reference });
-    return;
-  }
-
-  // Fetch the full order for downstream processing
-  const order = await prisma.order.findUnique({
-    where: { id: Number(orderId) },
-    include: { orderItems: { include: { product: true } }, customer: true },
-  });
-
-  if (!order) {
-    logger.error('Order not found after payment update', { orderId, reference });
-    return;
-  }
-
-  // Process remaining payment records in transaction
-  await prisma.$transaction(async (tx) => {
-    // Create transaction record
-    await tx.transaction.create({
-      data: {
-        orderId: Number(orderId),
-        type: 'payment',
-        amount: amount / 100, // Convert from minor units
-        paymentMethod: 'paystack',
-        status: 'paid',
-        reference,
-        metadata: {
-          currency,
-          fees: fees / 100,
-          paystackReference: reference,
-        },
-      },
-    });
-
-    // Create order history
-    await tx.orderHistory.create({
-      data: {
-        orderId: Number(orderId),
-        status: 'confirmed',
-        notes: `Payment confirmed via Paystack (ref: ${reference})`,
-      },
-    });
-
-    // Create GL entry for digital sale
-    if (order.orderType === 'digital') {
-      try {
-        const glService = new GLAutomationService();
-        const paystackFee = (fees || 0) / 100;
-        await glService.createDigitalSaleEntry(tx as any, Number(orderId), amount / 100, paystackFee, order.customer?.id || 1);
-      } catch (glError: any) {
-        logger.warn('Failed to create GL entry for digital sale, continuing', { orderId, error: glError.message });
-      }
-    }
-  });
-
-  logger.info('Paystack payment processed successfully', { orderId, reference, amount: amount / 100 });
-
-  // For digital orders: generate download token and send links
-  if (order.orderType === 'digital') {
-    try {
-      const token = await digitalDeliveryService.generateDownloadToken(Number(orderId), order);
-      await digitalDeliveryService.sendDownloadLinks(Number(orderId), token, order);
-
-      // Update status to digital_delivered
-      await prisma.order.update({
-        where: { id: Number(orderId) },
-        data: { status: 'digital_delivered' },
-      });
-      await prisma.orderHistory.create({
-        data: {
-          orderId: Number(orderId),
-          status: 'digital_delivered',
-          notes: 'Download link sent to customer',
-        },
-      });
-    } catch (err: any) {
-      logger.error('Failed to deliver digital product — customer paid but delivery failed', {
-        orderId,
-        reference,
-        error: err.message,
-      });
-      // Flag the order so admins can see and retry manually
-      // Use 'confirmed' status (payment succeeded) with notes explaining delivery failure
-      try {
-        await prisma.order.update({
-          where: { id: Number(orderId) },
-          data: {
-            notes: `DELIVERY FAILED: Digital delivery failed after payment (ref: ${reference}): ${err.message}. Manual intervention required.`,
-          },
-        });
-        await prisma.orderHistory.create({
-          data: {
-            orderId: Number(orderId),
-            status: 'confirmed',
-            notes: `Automatic digital delivery failed: ${err.message}. Customer was charged. Manual resend required.`,
-          },
-        });
-      } catch (flagErr: any) {
-        logger.error('Failed to flag digital delivery failure on order', { orderId, error: flagErr.message });
-      }
-    }
-  }
-}
-
 /**
- * Shared verification helper. Returns verification data and order (if found).
+ * Legacy unscoped webhook — pointed at by tenants who haven't updated their
+ * Paystack dashboard yet. Returns 410 so the failure is loud.
+ *
+ * TODO(MAN-66 cleanup, sunset 2026-09-01): delete this handler + its route
+ * after Phase 6 migrations are done (all live tenants pointed at the
+ * per-tenant URL). Log volume to /api/paystack/webhook should be zero before
+ * removal; until then this stays as a visible 410 rather than a 404.
  */
-async function verifyPaymentCore(reference: string) {
-  const verification = await paystackService.verifyTransaction(reference);
-  const orderId = verification.data.metadata?.orderId || verification.data.metadata?.order_id;
-
-  let order = null;
-  if (orderId) {
-    order = await prisma.order.findUnique({
-      where: { id: Number(orderId) },
-      select: { id: true, status: true, paymentStatus: true, totalAmount: true },
-    });
-  }
-
-  return { verification, order };
+export function handleLegacyWebhook(_req: Request, res: Response): void {
+  logger.warn('Paystack webhook hit legacy unscoped URL — tenant Paystack dashboard still misconfigured');
+  res.status(410).json({
+    error: 'Webhook URL has moved.',
+    hint: 'Use the per-tenant URL from Settings → Integrations → Paystack: /api/paystack/webhook/<tenant-slug>',
+  });
 }
 
 /**
- * Verify a payment by reference (admin use, authenticated).
+ * Webhook charge.success handler. Settlement is delegated to the shared
+ * settlement service (deferred-creation model): the order is created from the
+ * pending checkout the first time a confirmed payment arrives — here or via the
+ * callback verify, whichever is first. Idempotent.
+ */
+async function handleChargeSuccess(tenantId: string, data: { reference?: string }): Promise<void> {
+  const reference = data?.reference;
+  if (!reference) {
+    logger.error('Paystack charge.success missing reference', { tenantId });
+    return;
+  }
+
+  const result = await settlePaystackPayment(reference, { webhookTenantId: tenantId });
+  if (result.status === 'not_found') {
+    logger.warn('Paystack charge.success with no matching pending checkout', { tenantId, reference });
+  }
+}
+
+/**
+ * Verify a payment by reference (admin use, authenticated). Settles the payment
+ * if it's confirmed but not yet materialized into an order.
  */
 export async function verifyPayment(req: Request, res: Response): Promise<void> {
   try {
@@ -221,15 +159,17 @@ export async function verifyPayment(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const { verification, order } = await verifyPaymentCore(reference);
+    const result = await settlePaystackPayment(reference);
+    if (result.status === 'not_found' || !result.order) {
+      res.status(404).json({ error: 'No checkout found for this Paystack reference' });
+      return;
+    }
 
     res.json({
-      success: verification.data.status === 'success',
-      paymentStatus: verification.data.status,
-      reference: verification.data.reference,
-      amount: verification.data.amount / 100,
-      currency: verification.data.currency,
-      order,
+      success: result.status === 'success',
+      paymentStatus: result.status,
+      reference,
+      order: result.order,
     });
   } catch (error: any) {
     logger.error('Payment verification failed', { error: error.message });
@@ -238,31 +178,31 @@ export async function verifyPayment(req: Request, res: Response): Promise<void> 
 }
 
 /**
- * Public endpoint to verify payment status (used by PaymentCallback page).
- * Requires orderId query param to prevent reference enumeration.
+ * Public endpoint used by the PaymentCallback page after the Paystack redirect.
+ * Settles the payment — creating the confirmed order on success — so the buyer's
+ * order is recorded even if the webhook never fires. The reference is the
+ * unguessable secret; settlement re-verifies with Paystack before doing anything.
  */
 export async function publicVerifyPayment(req: Request, res: Response): Promise<void> {
   try {
     const { reference } = req.params;
-    const expectedOrderId = req.query.orderId as string;
-
     if (!reference) {
       res.status(400).json({ error: 'Reference is required' });
       return;
     }
 
-    const { verification, order } = await verifyPaymentCore(reference);
-
-    // Require orderId correlation to prevent enumeration attacks
-    if (expectedOrderId && order && order.id !== Number(expectedOrderId)) {
+    const result = await settlePaystackPayment(reference);
+    if (result.status === 'not_found') {
       res.status(404).json({ error: 'Payment not found' });
       return;
     }
 
     res.json({
-      success: verification.data.status === 'success',
-      paymentStatus: verification.data.status,
-      order: order ? { id: order.id, status: order.status, paymentStatus: order.paymentStatus } : null,
+      success: result.status === 'success',
+      paymentStatus: result.status,
+      order: result.order
+        ? { id: result.order.id, status: result.order.status, paymentStatus: result.order.paymentStatus }
+        : null,
     });
   } catch (error: any) {
     logger.error('Public payment verification failed', { error: error.message });

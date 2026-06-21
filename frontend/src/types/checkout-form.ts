@@ -1,4 +1,17 @@
-export type FieldType = 'text' | 'phone' | 'textarea' | 'select';
+// Buyer-selectable checkout payment methods (MAN-58). Shared so the form,
+// order-summary buttons, and order payload all reference one source of truth.
+export type PaymentMethod = 'cod' | 'paystack_deposit' | 'paystack_full';
+
+export type FieldType =
+  | 'text'
+  | 'phone'
+  | 'textarea'
+  | 'select' // rendered as a "Dropdown" in the builder
+  | 'email'
+  | 'number'
+  | 'checkbox'
+  | 'multiselect'
+  | 'state'; // country-driven states dropdown (uses the form's regions list)
 
 export interface FormField {
   id: string; // UI-only ID, not from database
@@ -6,7 +19,9 @@ export interface FormField {
   type: FieldType;
   required: boolean;
   enabled: boolean;
-  options?: string[]; // For select type
+  options?: string[]; // For select / multiselect types
+  placeholder?: string;
+  widthPercent?: number; // 1-100; controls row width so fields can share a row. Defaults to 100.
 }
 
 export interface ProductPackage {
@@ -51,6 +66,40 @@ export interface CheckoutFormStyling {
   showDescription?: boolean;
 }
 
+export interface CheckoutFormDesignColors {
+  primary?: string;
+  cta?: string;
+  surface?: string;
+  text?: string;
+}
+
+export interface CheckoutFormDesignButton {
+  shape?: 'square' | 'rounded' | 'pill';
+  size?: 'sm' | 'md' | 'lg';
+  label?: string;
+}
+
+export interface CheckoutFormDesignInput {
+  style?: 'flat' | 'outlined' | 'filled';
+  labelColor?: string;
+  priceColor?: string;
+}
+
+export interface CheckoutFormDesignPage {
+  background?: string;
+  productBanner?: string;
+  hideProductDisplay?: boolean;
+  showOrderSummary?: boolean;
+  offerPosition?: 'top' | 'bottom';
+}
+
+export interface CheckoutFormDesign {
+  colors?: CheckoutFormDesignColors;
+  button?: CheckoutFormDesignButton;
+  input?: CheckoutFormDesignInput;
+  page?: CheckoutFormDesignPage;
+}
+
 export interface PixelConfig {
   facebookPixelId?: string;
   googleAnalyticsId?: string;   // G-XXXXXXXX
@@ -72,7 +121,19 @@ export interface CheckoutForm {
   currency: string; // Currency code (e.g., GHS, NGN)
   regions: string[]; // Added from database schema
   styling: CheckoutFormStyling;
+  design?: CheckoutFormDesign;
   pixelConfig?: PixelConfig;
+  redirectUrl?: string; // Custom thank-you page; overrides the built-in success screen
+  allowedOrigins?: string[]; // Embed widget Origin allowlist (empty = no host restriction)
+  // Payment-method matrix (MAN-58). At most two may be true; the public form
+  // renders one button per enabled method.
+  codEnabled?: boolean;
+  paystackDepositEnabled?: boolean;
+  paystackFullEnabled?: boolean;
+  depositPercent?: number | null; // 1–99; only meaningful when paystackDepositEnabled
+  // Meta CAPI (MAN-59). Token is write-only — reads return the mask "••••••••".
+  metaCapiAccessToken?: string | null;
+  metaCapiTestEventCode?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

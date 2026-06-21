@@ -56,11 +56,30 @@ export interface PublicCheckoutForm {
   country: string;
   currency: string;
   regions: any;
-  styling?: {
-    buttonColor: string;
-    accentColor: string;
-    showName?: boolean;
-    showDescription?: boolean;
+  design?: {
+    colors?: {
+      primary?: string;
+      cta?: string;
+      surface?: string;
+      text?: string;
+    };
+    button?: {
+      shape?: 'square' | 'rounded' | 'pill';
+      size?: 'sm' | 'md' | 'lg';
+      label?: string;
+    };
+    input?: {
+      style?: 'flat' | 'outlined' | 'filled';
+      labelColor?: string;
+      priceColor?: string;
+    };
+    page?: {
+      background?: string;
+      productBanner?: string;
+      hideProductDisplay?: boolean;
+      showOrderSummary?: boolean;
+      offerPosition?: 'top' | 'bottom';
+    };
   };
   pixelConfig?: {
     facebookPixelId?: string;
@@ -68,6 +87,12 @@ export interface PublicCheckoutForm {
     tiktokPixelId?: string;
     googleTagManagerId?: string;
   };
+  redirectUrl?: string; // Custom thank-you page; overrides the built-in success screen
+  // Payment-method matrix (MAN-58). Drives which CTA buttons the form renders.
+  codEnabled?: boolean;
+  paystackDepositEnabled?: boolean;
+  paystackFullEnabled?: boolean;
+  depositPercent?: number | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -98,9 +123,11 @@ export interface PublicOrderData {
 
 export interface PublicOrderResponse {
   success: boolean;
-  orderId: number;
   message: string;
-  order: {
+  // Present for COD orders (created immediately). Omitted for Paystack, which
+  // defers order creation until payment is confirmed and redirects instead.
+  orderId?: number;
+  order?: {
     id: number;
     totalAmount: number;
     status: string;

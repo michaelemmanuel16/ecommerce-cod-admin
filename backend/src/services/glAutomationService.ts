@@ -17,6 +17,7 @@ import { GLAccountService } from './glAccountService';
 import logger from '../utils/logger';
 import prisma from '../utils/prisma';
 import { GLUtils } from '../utils/glUtils';
+import { getTenantId } from '../utils/tenantContext';
 // import { SYSTEM_USER_ID } from '../config/constants'; // Commented out unused variable to resolve lint error
 
 // Define JournalSourceType locally if not correctly imported or use string literal
@@ -148,6 +149,7 @@ export class GLAutomationService {
         GLAutomationService.validateJournalEntryBalance(data.transactions.create);
 
         // First, update account balances and get running balances
+        const tenantId = getTenantId();
         const transactionsWithRunningBalances = [];
         for (const txn of data.transactions.create) {
           const runningBalance = await this.updateAccountBalance(
@@ -159,7 +161,8 @@ export class GLAutomationService {
 
           transactionsWithRunningBalances.push({
             ...txn,
-            runningBalance
+            runningBalance,
+            ...(tenantId ? { tenantId } : {}),
           });
         }
 

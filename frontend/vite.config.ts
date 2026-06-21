@@ -60,12 +60,15 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // VITE_PROXY_TARGET lets the dev server run inside Docker (target the
+      // `backend` service over the compose network) while defaulting to
+      // localhost:3000 for a plain host-run dev server.
       '/api': {
-        target: 'http://localhost:3000',
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:3000',
         changeOrigin: true,
       },
       '/uploads': {
-        target: 'http://localhost:3000',
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:3000',
         changeOrigin: true,
       },
     },

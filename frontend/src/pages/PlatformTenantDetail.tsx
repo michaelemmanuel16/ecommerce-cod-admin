@@ -7,14 +7,20 @@ import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { StatCard } from '../components/common/StatCard';
 import { usePlatformStore } from '../stores/platformStore';
+import { platformService } from '../services/platform.service';
 import { platformPath } from '../utils/platformDomain';
+import { BillingActivityTable, BillingEvent } from '../components/billing/BillingActivityTable';
 
 const statusBadgeVariant = (status: string): 'success' | 'danger' | 'default' | 'warning' => {
   if (status === 'active') return 'success';
-  if (status === 'suspended') return 'danger';
-  if (status === 'trial') return 'default';
+  if (status === 'suspended' || status === 'cancelled') return 'danger';
+  if (status === 'past_due' || status === 'pending') return 'warning';
   return 'default';
 };
+
+// 'past_due' → 'Past due', 'active' → 'Active'
+const formatStatus = (status: string) =>
+  status.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
 const formatGHS = (value: number) =>
   `GHS ${value.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -35,6 +41,18 @@ export const PlatformTenantDetail: React.FC = () => {
   const [burstPerSec, setBurstPerSec] = useState(30);
   const [savingRateLimit, setSavingRateLimit] = useState(false);
 
+  // Free-plan grant (MAN-61)
+  const [freeExpiry, setFreeExpiry] = useState('');
+  const [grantingFree, setGrantingFree] = useState(false);
+
+  // Per-tenant billing history (MAN-61, F3) — this tenant's subscription events.
+  const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
+  const [billingLoading, setBillingLoading] = useState(true);
+  const [billingError, setBillingError] = useState<string | null>(null);
+
+  // Suspend / reactivate in-flight (button feedback + status flips on completion)
+  const [togglingStatus, setTogglingStatus] = useState(false);
+
   // Delete confirmation
   const [showDelete, setShowDelete] = useState(false);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
@@ -44,6 +62,20 @@ export const PlatformTenantDetail: React.FC = () => {
     if (id) fetchTenant(id);
     fetchPlans();
   }, [id, fetchTenant, fetchPlans]);
+
+  // Load this tenant's billing history (scoped reuse of the platform events list).
+  useEffect(() => {
+    if (!id) return;
+    let active = true;
+    setBillingLoading(true);
+    setBillingError(null);
+    platformService
+      .listBillingEvents(50, id)
+      .then((res) => { if (active) setBillingEvents(res.events); })
+      .catch(() => { if (active) setBillingError('Failed to load billing history'); })
+      .finally(() => { if (active) setBillingLoading(false); });
+    return () => { active = false; };
+  }, [id]);
 
   // Populate state from tenant data
   useEffect(() => {
@@ -59,7 +91,8 @@ export const PlatformTenantDetail: React.FC = () => {
     if (!id) return;
     setSavingPlan(true);
     try {
-      await updateTenant(id, { currentPlanId: planId });
+      // Empty select = "No plan" → clear to null (omitting would leave it unchanged).
+      await updateTenant(id, { currentPlanId: planId || null });
     } finally {
       setSavingPlan(false);
     }
@@ -78,12 +111,32 @@ export const PlatformTenantDetail: React.FC = () => {
     }
   };
 
+  const handleGrantFree = async () => {
+    if (!id) return;
+    setGrantingFree(true);
+    try {
+      // Date → ISO at day start; blank → free forever.
+      await platformService.grantFreePlan(id, freeExpiry ? new Date(freeExpiry).toISOString() : null);
+      await fetchTenant(id);
+    } finally {
+      setGrantingFree(false);
+    }
+  };
+
   const handleSuspendReactivate = async () => {
     if (!id || !currentTenant) return;
-    if (currentTenant.subscriptionStatus === 'active') {
-      await suspendTenant(id);
-    } else {
-      await reactivateTenant(id);
+    // Reactivate only applies to an admin-suspended tenant; every other status
+    // (active / pending / past_due / cancelled) is a Suspend target. This mirrors
+    // the backend, which rejects reactivate unless the tenant is 'suspended'.
+    setTogglingStatus(true);
+    try {
+      if (currentTenant.subscriptionStatus === 'suspended') {
+        await reactivateTenant(id);
+      } else {
+        await suspendTenant(id);
+      }
+    } finally {
+      setTogglingStatus(false);
     }
   };
 
@@ -119,6 +172,15 @@ export const PlatformTenantDetail: React.FC = () => {
   }
 
   const t = currentTenant;
+  const isFree = t.currentPlan?.name === 'free';
+  const isSuspended = t.subscriptionStatus === 'suspended';
+  // The admin-only Free plan is excluded from the public `plans` list (isActive=false),
+  // so a Free tenant's current plan has no matching <option>. Surface it explicitly
+  // so the select shows the real plan instead of falling back to "No plan".
+  const planOptions =
+    t.currentPlan && !plans.some((p) => p.id === t.currentPlan!.id)
+      ? [{ id: t.currentPlan.id, name: t.currentPlan.name, displayName: t.currentPlan.displayName, priceGHS: '' }, ...plans]
+      : plans;
 
   return (
     <div className="space-y-6">
@@ -136,13 +198,20 @@ export const PlatformTenantDetail: React.FC = () => {
           <div className="space-y-1">
             <h2 className="text-2xl font-bold text-gray-900">{t.name}</h2>
             <p className="text-sm text-gray-500 font-mono">{t.slug}</p>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {t.currentPlan && (
-                <Badge variant="secondary">{t.currentPlan.displayName}</Badge>
-              )}
-              <Badge variant={statusBadgeVariant(t.subscriptionStatus)}>
-                {t.subscriptionStatus}
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <Badge variant={isFree ? 'warning' : t.currentPlan ? 'secondary' : 'default'}>
+                {t.currentPlan ? t.currentPlan.displayName : 'No plan'}
               </Badge>
+              <Badge variant={statusBadgeVariant(t.subscriptionStatus)}>
+                {formatStatus(t.subscriptionStatus)}
+              </Badge>
+              {isFree && (
+                <span className="text-xs text-gray-500">
+                  {t.freeAccessExpiresAt
+                    ? `Free until ${new Date(t.freeAccessExpiresAt).toLocaleDateString()}`
+                    : 'Free forever'}
+                </span>
+              )}
             </div>
           </div>
           <div className="text-sm text-gray-500 space-y-1 sm:text-right">
@@ -193,7 +262,7 @@ export const PlatformTenantDetail: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
               <option value="">No plan</option>
-              {plans.map((p) => (
+              {planOptions.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.displayName} ({p.name})
                 </option>
@@ -208,6 +277,45 @@ export const PlatformTenantDetail: React.FC = () => {
             {savingPlan ? 'Saving…' : 'Save Plan'}
           </button>
         </div>
+      </Card>
+
+      {/* Grant Free Plan (MAN-61) — comps/partners: unlimited caps, never billed. */}
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 mb-1">Grant Free Plan</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Moves this tenant to the admin-only Free plan (unlimited caps, never billed). Leave the date blank for free forever.
+        </p>
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Free until (optional)</label>
+            <input
+              type="date"
+              value={freeExpiry}
+              onChange={(e) => setFreeExpiry(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <button
+            onClick={handleGrantFree}
+            disabled={grantingFree}
+            className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+          >
+            {grantingFree ? 'Granting…' : freeExpiry ? 'Grant Free until date' : 'Grant Free forever'}
+          </button>
+        </div>
+      </Card>
+
+      {/* Billing History (MAN-61, F3) — this tenant's subscription events. */}
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 mb-1">Billing History</h3>
+        <p className="text-sm text-gray-500 mb-4">Subscription charges, failures, and changes for this tenant.</p>
+        <BillingActivityTable
+          events={billingEvents}
+          loading={billingLoading}
+          error={billingError}
+          showTenant={false}
+          emptyText="No billing activity for this tenant yet."
+        />
       </Card>
 
       {/* Rate Limiting */}
@@ -286,13 +394,20 @@ export const PlatformTenantDetail: React.FC = () => {
           {/* Suspend / Reactivate */}
           <button
             onClick={handleSuspendReactivate}
-            className={`px-4 py-2 text-sm font-medium rounded-lg border ${
-              t.subscriptionStatus === 'active'
-                ? 'border-orange-400 text-orange-700 hover:bg-orange-50'
-                : 'border-green-400 text-green-700 hover:bg-green-50'
+            disabled={togglingStatus}
+            className={`px-4 py-2 text-sm font-medium rounded-lg border disabled:opacity-50 ${
+              isSuspended
+                ? 'border-green-400 text-green-700 hover:bg-green-50'
+                : 'border-orange-400 text-orange-700 hover:bg-orange-50'
             }`}
           >
-            {t.subscriptionStatus === 'active' ? 'Suspend Tenant' : 'Reactivate Tenant'}
+            {togglingStatus
+              ? isSuspended
+                ? 'Reactivating…'
+                : 'Suspending…'
+              : isSuspended
+                ? 'Reactivate Tenant'
+                : 'Suspend Tenant'}
           </button>
 
           {/* Delete */}

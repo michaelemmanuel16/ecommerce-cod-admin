@@ -11,6 +11,7 @@ Each file documents one feature area. Related Linear issues are appended as work
 | Cash Flow Report | [cash-flow-report.md](cash-flow-report.md) | Complete |
 | Bulk Orders | [bulk-orders.md](bulk-orders.md) | Planning |
 | Financial Module | [financial-module-prd.md](financial-module-prd.md) | PRD |
+| Paystack Checkout & Webhook Infrastructure | [paystack-checkout.md](paystack-checkout.md) | In Progress |
 
 ## Adding a new feature doc
 

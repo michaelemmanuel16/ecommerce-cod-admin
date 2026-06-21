@@ -36,6 +36,8 @@ const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const CheckoutForms = lazy(() => import('./pages/CheckoutForms').then(m => ({ default: m.CheckoutForms })));
+const CheckoutFormEditor = lazy(() => import('./pages/CheckoutFormEditor').then(m => ({ default: m.CheckoutFormEditor })));
+const CheckoutFormPreview = lazy(() => import('./pages/CheckoutFormPreview').then(m => ({ default: m.CheckoutFormPreview })));
 const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
 const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
@@ -44,11 +46,13 @@ const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
 const Communications = lazy(() => import('./pages/Communications'));
 const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
+const SubscriptionCallback = lazy(() => import('./pages/SubscriptionCallback').then(m => ({ default: m.SubscriptionCallback })));
 const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
 const PlatformDashboard = lazy(() => import('./pages/PlatformDashboard').then(m => ({ default: m.PlatformDashboard })));
 const PlatformTenants = lazy(() => import('./pages/PlatformTenants').then(m => ({ default: m.PlatformTenants })));
 const PlatformTenantDetail = lazy(() => import('./pages/PlatformTenantDetail').then(m => ({ default: m.PlatformTenantDetail })));
 const PlatformAnnouncements = lazy(() => import('./pages/PlatformAnnouncements').then(m => ({ default: m.PlatformAnnouncements })));
+const PlatformBilling = lazy(() => import('./pages/PlatformBilling').then(m => ({ default: m.PlatformBilling })));
 
 // Platform admin layout (sidebar + outlet for the platform subdomain tree)
 const PlatformLayout = lazy(() => import('./components/layout/PlatformLayout').then(m => ({ default: m.PlatformLayout })));
@@ -102,6 +106,15 @@ const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   }
 
   return <>{children}</>;
+};
+
+// Platform admins have no tenant store — land them on the platform tree instead of
+// the tenant dashboard. On the platform subdomain this never fires (separate router);
+// on the main domain it keeps their landing consistent with their (platform-only) menu.
+const DashboardIndex: React.FC = () => {
+  const { user } = useAuthStore();
+  if (user?.isPlatformAdmin) return <Navigate to="/platform" replace />;
+  return <DynamicDashboard />;
 };
 
 const MobileRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -159,6 +172,7 @@ function App() {
               <Route path="tenants" element={<Suspense fallback={<Loading />}><PlatformTenants /></Suspense>} />
               <Route path="tenants/:id" element={<Suspense fallback={<Loading />}><PlatformTenantDetail /></Suspense>} />
               <Route path="announcements" element={<Suspense fallback={<Loading />}><PlatformAnnouncements /></Suspense>} />
+              <Route path="billing" element={<Suspense fallback={<Loading />}><PlatformBilling /></Suspense>} />
             </Route>
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
@@ -202,6 +216,14 @@ function App() {
             <Route path="/onboarding" element={
               <ProtectedRoute skipOnboardingCheck>
                 <Onboarding />
+              </ProtectedRoute>
+            } />
+            {/* Admin-only preview route — bare shell so the editor iframe
+                doesn't render the sidebar/header inside itself. Auth is
+                enforced by the backend /preview-config endpoint. */}
+            <Route path="/checkout-forms/:id/preview" element={
+              <ProtectedRoute>
+                <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
               </ProtectedRoute>
             } />
             {/* Mobile routes for delivery agents */}
@@ -250,7 +272,7 @@ function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<DynamicDashboard />} />
+              <Route index element={<DashboardIndex />} />
               <Route path="orders" element={
                 <Suspense fallback={<Loading />}><Orders /></Suspense>
               } />
@@ -306,8 +328,17 @@ function App() {
               <Route path="settings/billing" element={
                 <Suspense fallback={<Loading />}><Billing /></Suspense>
               } />
+              <Route path="settings/billing/callback" element={
+                <Suspense fallback={<Loading />}><SubscriptionCallback /></Suspense>
+              } />
               <Route path="checkout-forms" element={
                 <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
+              } />
+              <Route path="checkout-forms/new" element={
+                <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
+              } />
+              <Route path="checkout-forms/:id/edit" element={
+                <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
               } />
               <Route path="webhooks" element={
                 <RoleGuard allowedRoles={['super_admin', 'admin']}>
@@ -328,6 +359,7 @@ function App() {
               <Route path="platform/tenants" element={platformRoute(PlatformTenants)} />
               <Route path="platform/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
               <Route path="platform/announcements" element={platformRoute(PlatformAnnouncements)} />
+              <Route path="platform/billing" element={platformRoute(PlatformBilling)} />
             </Route>
           </Routes>
           {/* Onboarding Tour Components - Only visible for sales_rep role */}

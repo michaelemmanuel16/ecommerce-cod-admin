@@ -1,13 +1,16 @@
 import React, { useEffect } from 'react';
-import { Trash2, Percent, DollarSign } from 'lucide-react';
+import { Trash2, Percent, DollarSign, Link2, Check, Code2 } from 'lucide-react';
 import { ProductPackage } from '../../types/checkout-form';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
+import { useCopyToClipboard } from './CopyActions';
 
 interface PackageEditorProps {
   package: ProductPackage;
   productPrice: number; // Base product price for auto-calculation
   currency: string; // Currency code (e.g., GHS, NGN)
+  checkoutLink?: string; // Deep link that opens checkout locked to this package (undefined until saved)
+  embedSnippet?: string; // Inline widget snippet locked to this package (undefined until saved)
   onUpdate: (pkg: ProductPackage) => void;
   onDelete: () => void;
 }
@@ -16,9 +19,14 @@ export const PackageEditor: React.FC<PackageEditorProps> = ({
   package: pkg,
   productPrice,
   currency,
+  checkoutLink,
+  embedSnippet,
   onUpdate,
   onDelete,
 }) => {
+  const { copied, copy } = useCopyToClipboard();
+  const embedCopy = useCopyToClipboard();
+
   const discountType = pkg.discountType || 'none';
   const discountValue = pkg.discountValue || 0;
   const originalPrice = pkg.originalPrice || pkg.price;
@@ -231,6 +239,38 @@ export const PackageEditor: React.FC<PackageEditorProps> = ({
               disabled={!pkg.showHighlight}
               className={!pkg.showHighlight ? 'bg-gray-50 text-gray-400' : ''}
             />
+          </div>
+
+          {/* Row 4: Direct checkout link — opens checkout showing only this package */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Direct checkout link <span className="text-gray-400">(shows only this package)</span>
+            </label>
+            {checkoutLink ? (
+              <div className="flex items-center gap-2">
+                <Input value={checkoutLink} readOnly className="bg-gray-50 text-gray-600 text-xs" />
+                <button
+                  type="button"
+                  onClick={() => copy(checkoutLink)}
+                  className="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-2 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors whitespace-nowrap"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400">Save the form to get a shareable link for this package.</p>
+            )}
+            {embedSnippet && (
+              <button
+                type="button"
+                onClick={() => embedCopy.copy(embedSnippet)}
+                className="mt-2 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors whitespace-nowrap"
+              >
+                {embedCopy.copied ? <Check className="w-3.5 h-3.5" /> : <Code2 className="w-3.5 h-3.5" />}
+                {embedCopy.copied ? 'Copied' : 'Copy embed snippet (locked to this package)'}
+              </button>
+            )}
           </div>
         </div>
       </details>

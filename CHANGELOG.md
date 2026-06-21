@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Payments]**: Multi-button checkout — per-form payment matrix (`codEnabled` / `paystackDepositEnabled` / `paystackFullEnabled`, max two enabled) renders one CTA per method on the public form. Deposit orders charge a configurable percentage via per-tenant Paystack and persist the remainder on `Order.balanceDue`; settlement (webhook only) lands in `PaymentStatus.deposited` (deposit) or `paid` (full), validated against the Paystack-reported amount and idempotent on repeat delivery. Form-save is blocked with a Settings → Integrations link when a Paystack method is enabled but the tenant has no keys. (MAN-58)
+- **[Payments]**: Meta Conversions API purchase events — server-side `Purchase` events with SHA-256-hashed PII and `event_id = paymentReference || orderId` for client/server dedup, fired on COD create and Paystack settlement, exactly-once via `Order.capiEventFired`, best-effort. Access token encrypted at rest, write-only-masked in admin reads, stripped from the public form config. Custom thank-you redirect (`redirectUrl`) now also carries `reference` + `package`. (MAN-59)
+- **[Checkout Forms]**: Embeddable checkout widget — `frontend/embed/` package renders the checkout on any external page. Mode A auto-renders into `<div data-codadmin-checkout data-slug>` inside a Shadow DOM (Preact via `preact/compat`); Mode B attaches order submission to a host's own `<form data-codadmin-checkout-form>`. New `GET /api/public/forms/:slug/config` endpoint serves the public form shape plus the tenant's Paystack public key. (MAN-57)
+- **[Checkout Forms]**: Per-form embed Origin allowlist — new `allowedOrigins` field gates the `/config` endpoint at route level (403 for off-list origins); per-package "Copy direct buy link" and "Copy embed snippet" actions on the Packages tab. (MAN-57)
+- **[Checkout Forms]**: Package-lock deep links — `?package=N&lock=1` (or `data-package data-lock`) render a single-package checkout with the selector hidden; mismatched `package_id` rejected server-side. (MAN-57)
+- **[Checkout Forms]**: Single-column checkout layout on all breakpoints and a per-form "Show order summary" toggle (`design.page.showOrderSummary`, default on). (MAN-57)
+- **[Checkout Forms]**: Salesgee-style builder rewrite — full-page editor at `/checkout-forms/:id/edit` with 5 tabs (Basics / Packages / Upsells / Settings / Design) and a live-preview iframe pane synced to the editor draft over `postMessage` (debounced 150ms). New Design tab uses a 12-swatch brand palette for primary/CTA/surface/text/background, plus button shape/size, input style, banner URL, label override (60 char), and offer position. Backed by an additive `design Json?` column with a backfill that maps existing `styling.buttonColor`/`accentColor` into `design.colors`. New admin-only `/api/checkout-forms/:id/preview-config` endpoint serves drafts to the preview iframe. (MAN-67)
+- **[Checkout Forms]**: Copy URL and Copy Embed row actions on the list page + editor top bar, replacing the EmbedCodeModal. Embed snippet uses 100% width + auto-grow height with HTML/JS-escaped slug. Platform-specific embed instructions moved to `docs/embed.md`. (MAN-67)
+- **[Checkout Forms]**: Unsaved-changes guard on the editor — React Router `useBlocker` for in-app nav and `beforeunload` for tab close / hard refresh. (MAN-67)
+- **[Payments]**: Per-tenant Paystack integration — each tenant configures their own Paystack keys in Settings → Integrations; buyer funds settle directly into the tenant's Paystack account via per-tenant webhook URL `/api/paystack/webhook/:tenantSlug` with tenant-scoped HMAC and dedup (MAN-66)
+- **[Payments]**: Paystack webhook idempotency via `WebhookEvent` table — duplicate deliveries deduped at DB layer with unique `(provider, event_type, reference)` constraint (MAN-55)
 - **[Communications]**: Full communications dashboard with message history, delivery stats, bulk messaging, template manager, and opt-out management (MAN-32)
 - **[Communications]**: Auto-cleanup queue for MessageLog records with 90-day retention (MAN-32)
 - **[Communications]**: Customer opt-out enforcement in WhatsApp and SMS messaging services (MAN-32)
@@ -41,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[CI/CD]**: Sentry DSN injected into staging and production deployments (MAN-16)
 
 ### Fixed
+- **[Checkout Forms]**: The header/list "Copy embed snippet" button now copies the Mode A inline widget snippet (`data-codadmin-checkout` + `embed.js`), matching the Embed Snippet panel and Packages tab. It previously handed out the legacy iframe embed, so the two surfaces disagreed on what "embed" meant. (MAN-57)
+- **[Auth]**: Session expiry on the Admin Dashboard now shows a single deduped "Your session has expired" toast + redirect to `/login`. Previously, expired refresh tokens leaked `jwt malformed` as a 500 and parallel widget requests stacked 10+ misleading "Server connection lost" toasts (MAN-66)
 - **[Security]**: Tenant deletion now fully atomic with parameterized SQL, preventing partial corruption
 - **[Security]**: Permissions cache keyed per-tenant to prevent cross-tenant permission leakage
 - **[Security]**: Route-level `requireSuperAdmin` guard on DELETE /api/auth/delete-account

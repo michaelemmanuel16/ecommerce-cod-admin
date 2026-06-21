@@ -7,7 +7,7 @@ jest.mock('../../queues/workflowQueue', () => ({ workflowQueue: { add: jest.fn()
 // Mock tenantContext to return a tenant ID (required for billing controller)
 jest.mock('../../utils/tenantContext');
 
-import { listPlans, getSubscription, upgradePlan } from '../../controllers/billingController';
+import { listPlans, getSubscription } from '../../controllers/billingController';
 import { AppError } from '../../middleware/errorHandler';
 import * as tenantContext from '../../utils/tenantContext';
 
@@ -91,38 +91,6 @@ describe('BillingController', () => {
       (prismaMock.tenant.findUnique as any).mockResolvedValue(null);
       const next = makeNext();
       await getSubscription({} as any, makeRes(), next);
-      expect(next).toHaveBeenCalledWith(expect.any(AppError));
-    });
-  });
-
-  describe('upgradePlan', () => {
-    it('should upgrade tenant plan', async () => {
-      (prismaMock.plan.findUnique as any).mockResolvedValue(mockPlan);
-      (prismaMock.tenant.update as any).mockResolvedValue({
-        ...mockTenant,
-        plan: 'starter',
-        currentPlan: mockPlan,
-      });
-
-      const req = { body: { planName: 'starter' } } as any;
-      const res = makeRes();
-      await upgradePlan(req, res, makeNext());
-
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ message: expect.stringContaining('Starter') })
-      );
-    });
-
-    it('should throw 400 when planName missing', async () => {
-      const next = makeNext();
-      await upgradePlan({ body: {} } as any, makeRes(), next);
-      expect(next).toHaveBeenCalledWith(expect.any(AppError));
-    });
-
-    it('should throw 404 when plan not found', async () => {
-      (prismaMock.plan.findUnique as any).mockResolvedValue(null);
-      const next = makeNext();
-      await upgradePlan({ body: { planName: 'unknown' } } as any, makeRes(), next);
       expect(next).toHaveBeenCalledWith(expect.any(AppError));
     });
   });

@@ -24,7 +24,6 @@ export const PaymentCallback: React.FC = () => {
       const result = await publicOrdersService.verifyPayment(reference);
       if (result.success) {
         setStatus('success');
-        setMessage('Payment confirmed! Your download link will be sent to your email and WhatsApp shortly.');
       } else {
         setStatus('failed');
         setMessage('Payment could not be verified. Please contact support.');
@@ -41,21 +40,21 @@ export const PaymentCallback: React.FC = () => {
         {status === 'loading' && (
           <>
             <Loader2 className="w-16 h-16 text-blue-500 animate-spin mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Verifying Payment</h2>
-            <p className="text-gray-600">Please wait while we confirm your payment...</p>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Confirming your payment</h2>
+            <p className="text-gray-600">Please wait a moment...</p>
           </>
         )}
 
+        {/* One neutral thank-you for every order type — digital, deposit, full. */}
         {status === 'success' && (
           <>
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-10 h-10 text-green-500" />
             </div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Payment Successful!</h2>
-            <p className="text-gray-600 mb-6">{message}</p>
-            <p className="text-sm text-gray-500">
-              Check your email and WhatsApp for the download link.
-              The link will expire after the time period specified.
+            <h2 className="text-2xl font-semibold text-gray-900 mb-3">Order received</h2>
+            <p className="text-gray-600">
+              Thank you for your order! We've received it and we're getting it ready.
+              We'll be in touch shortly with the next steps.
             </p>
           </>
         )}

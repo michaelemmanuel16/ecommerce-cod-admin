@@ -58,6 +58,9 @@ run_check "Backend Build" "cd backend && npm run build"
 # 6. Frontend Build
 run_check "Frontend Build" "cd frontend && npm run build"
 
+# 6b. Embed Widget Build
+run_check "Embed Widget Build" "cd frontend && npm run build:embed"
+
 # 7. Validate GitHub Workflows
 if [ -f "./scripts/validate-workflows.sh" ]; then
     run_check "GitHub Workflows Validation" "./scripts/validate-workflows.sh"

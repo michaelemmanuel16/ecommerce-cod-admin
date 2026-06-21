@@ -20,6 +20,7 @@ import {
   LayoutGrid,
   Building2,
   Megaphone,
+  CreditCard,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -98,6 +99,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
           {[
             { path: '/platform', icon: LayoutGrid, label: 'Platform' },
             { path: '/platform/tenants', icon: Building2, label: 'Tenants' },
+            { path: '/platform/billing', icon: CreditCard, label: 'Billing' },
             { path: '/platform/announcements', icon: Megaphone, label: 'Announcements' },
           ].map((item) => (
             <NavLink
@@ -123,8 +125,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
         </nav>
       )}
 
-      {/* Navigation — hidden on platform admin pages */}
-      {!isOnPlatformPage && <nav className="space-y-1">
+      {/* Tenant store navigation — hidden on platform admin pages and for platform admins
+          (platform admins manage tenants, not a store; on the platform subdomain PlatformLayout
+          handles this, but on the main domain this gate keeps their menu clean too) */}
+      {!isOnPlatformPage && !user?.isPlatformAdmin && <nav className="space-y-1">
         {visibleMenuItems.map((item) => (
           <NavLink
             key={item.path}

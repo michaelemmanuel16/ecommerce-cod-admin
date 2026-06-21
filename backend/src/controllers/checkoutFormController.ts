@@ -2,6 +2,144 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
+import checkoutFormService, { clearCheckoutFormConfigCache } from '../services/checkoutFormService';
+import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
+import { paystackService } from '../services/paystackService';
+import { encryptString, SECRET_MASK } from '../utils/providerCrypto';
+
+// The Meta CAPI access token is a write-only secret: admin reads get the mask
+// sentinel (never the ciphertext), and a save that echoes the mask preserves
+// the stored value. metaCapiTestEventCode is a non-secret dev code, sent plain.
+const maskCapiToken = <T extends { metaCapiAccessToken?: string | null }>(form: T): T =>
+  ({ ...form, metaCapiAccessToken: form.metaCapiAccessToken ? SECRET_MASK : null });
+
+// Builds the Prisma patch for the two CAPI fields from a request body, encrypting
+// a freshly-entered token and skipping the field when the masked sentinel comes
+// back unchanged. Returns only the keys the client actually sent.
+const metaCapiPatch = (body: any): Record<string, unknown> => {
+  const patch: Record<string, unknown> = {};
+  if (body.metaCapiAccessToken !== undefined && body.metaCapiAccessToken !== SECRET_MASK) {
+    const raw = body.metaCapiAccessToken ? String(body.metaCapiAccessToken).trim() : '';
+    patch.metaCapiAccessToken = raw ? encryptString(raw) : null;
+  }
+  if (body.metaCapiTestEventCode !== undefined) {
+    patch.metaCapiTestEventCode = body.metaCapiTestEventCode
+      ? String(body.metaCapiTestEventCode).trim()
+      : null;
+  }
+  return patch;
+};
+
+interface PaymentToggleState {
+  codEnabled?: boolean | null;
+  paystackDepositEnabled?: boolean | null;
+  paystackFullEnabled?: boolean | null;
+  depositPercent?: number | null;
+}
+
+// True when the request touches any payment-method field, so we only validate
+// (and can fall back to schema defaults) when the client actually sends them.
+const hasPaymentFields = (body: any): boolean =>
+  body.codEnabled !== undefined ||
+  body.paystackDepositEnabled !== undefined ||
+  body.paystackFullEnabled !== undefined ||
+  body.depositPercent !== undefined;
+
+/**
+ * Validates the COD / deposit / full-pay toggle matrix on form save. Resolves
+ * each toggle from the request body, falling back to the existing row (on
+ * update) or the schema default (on create). Rules: at least one method on, at
+ * most two on (the public form renders max two buttons), a 1–99 deposit percent
+ * when deposit is on, and a tenant Paystack account configured before any
+ * Paystack method can be enabled. Returns an error response to send, or null.
+ */
+const validatePaymentConfig = async (
+  body: any,
+  existing: PaymentToggleState | null,
+  tenantId: string | null,
+): Promise<{ status: number; body: Record<string, unknown> } | null> => {
+  if (!hasPaymentFields(body)) return null;
+
+  const pick = (bodyVal: unknown, existingVal: boolean | null | undefined, def: boolean): boolean =>
+    bodyVal !== undefined ? Boolean(bodyVal) : existing ? Boolean(existingVal) : def;
+
+  const cod = pick(body.codEnabled, existing?.codEnabled, true);
+  const deposit = pick(body.paystackDepositEnabled, existing?.paystackDepositEnabled, false);
+  const full = pick(body.paystackFullEnabled, existing?.paystackFullEnabled, false);
+  const enabledCount = [cod, deposit, full].filter(Boolean).length;
+
+  // Carry both `error` (API contract) and `message` (what the frontend axios
+  // interceptor surfaces in the toast) so the admin sees the specific reason.
+  const fail = (text: string, extra: Record<string, unknown> = {}) => ({
+    status: 400,
+    body: { error: text, message: text, ...extra },
+  });
+
+  if (enabledCount < 1) return fail('At least one payment method must be enabled');
+  if (enabledCount > 2) return fail('At most two payment methods can be enabled at once');
+
+  if (deposit) {
+    const pct =
+      body.depositPercent !== undefined ? Number(body.depositPercent) : Number(existing?.depositPercent);
+    if (!Number.isInteger(pct) || pct < 1 || pct > 99) {
+      return fail('Deposit percent must be a whole number between 1 and 99');
+    }
+  }
+
+  if (deposit || full) {
+    const configured = tenantId ? await paystackService.isConfigured(tenantId) : false;
+    if (!configured) {
+      return fail('Paystack disabled until you add keys', { link: '/settings/integrations' });
+    }
+  }
+
+  return null;
+};
+
+// Maps the three toggle fields + deposit percent from a request body into a
+// Prisma data patch, including only the fields the client actually sent.
+const paymentTogglePatch = (body: any): Record<string, unknown> => {
+  const patch: Record<string, unknown> = {};
+  if (body.codEnabled !== undefined) patch.codEnabled = Boolean(body.codEnabled);
+  if (body.paystackDepositEnabled !== undefined) patch.paystackDepositEnabled = Boolean(body.paystackDepositEnabled);
+  if (body.paystackFullEnabled !== undefined) patch.paystackFullEnabled = Boolean(body.paystackFullEnabled);
+  if (body.depositPercent !== undefined) {
+    patch.depositPercent =
+      body.depositPercent === null ? null : parseInt(String(body.depositPercent), 10);
+  }
+  return patch;
+};
+
+const resolveTenantId = (req: AuthRequest): string | null =>
+  (req as any).tenantId || (req as any).user?.tenantId || null;
+
+// Normalize an allowed-origins payload into canonical Origin form
+// (scheme://host[:port], no path/trailing slash, lowercased host) so stored
+// entries compare cleanly against the browser's `Origin` header at the gate.
+// Entries that aren't parseable URLs are dropped.
+const normalizeAllowedOrigins = (raw: unknown): string[] => {
+  if (!Array.isArray(raw)) return [];
+  const origins = raw.flatMap((o) => {
+    const value = String(o).trim();
+    if (!value) return [];
+    try {
+      return [new URL(value).origin];
+    } catch {
+      return [];
+    }
+  });
+  return Array.from(new Set(origins));
+};
+
+const validateDesign = (
+  raw: unknown,
+): { ok: true; value: Prisma.InputJsonValue | undefined } | { ok: false; issues: unknown } => {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null) return { ok: true, value: Prisma.JsonNull as unknown as Prisma.InputJsonValue };
+  const parsed = checkoutFormDesignSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, issues: parsed.error.issues };
+  return { ok: true, value: parsed.data as Prisma.InputJsonValue };
+};
 
 export const getAllCheckoutForms = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -43,7 +181,7 @@ export const getAllCheckoutForms = async (req: AuthRequest, res: Response): Prom
     ]);
 
     res.json({
-      forms,
+      forms: forms.map(maskCapiToken),
       pagination: {
         total,
         page: Number(page),
@@ -87,8 +225,33 @@ export const getCheckoutForm = async (req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    res.json({ form });
+    res.json({ form: maskCapiToken(form) });
   } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Admin preview-config: returns the render-shape payload for the editor's
+ * live preview iframe. Mirrors the public response but allows draft/inactive
+ * forms. Auth + tenant scope are enforced by the route middleware.
+ */
+export const previewCheckoutForm = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const formId = parseInt(id, 10);
+    if (isNaN(formId)) {
+      res.status(400).json({ message: 'Invalid form ID' });
+      return;
+    }
+    const tenantId = (req as any).tenantId || (req as any).user?.tenantId || null;
+    const form = await checkoutFormService.getCheckoutFormForPreview(formId, tenantId);
+    res.json({ form });
+  } catch (error: any) {
+    if (error?.statusCode === 404) {
+      res.status(404).json({ message: 'Checkout form not found' });
+      return;
+    }
     throw error;
   }
 };
@@ -102,14 +265,29 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       description,
       fields,
       styling,
+      design,
       country,
       currency,
       regions,
       packages,
       upsells,
       isActive,
-      pixelConfig
+      pixelConfig,
+      redirectUrl,
+      allowedOrigins
     } = req.body;
+
+    const designValidation = validateDesign(design);
+    if (!designValidation.ok) {
+      res.status(400).json({ error: 'Invalid design payload', issues: designValidation.issues });
+      return;
+    }
+
+    const paymentError = await validatePaymentConfig(req.body, null, resolveTenantId(req));
+    if (paymentError) {
+      res.status(paymentError.status).json(paymentError.body);
+      return;
+    }
 
     // Check if slug already exists
     const existing = await prisma.checkoutForm.findUnique({
@@ -168,11 +346,16 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
             description,
             fields,
             styling,
+            design: designValidation.value,
             country: country || 'Ghana',
             currency: currency || 'GHS',
             regions,
             isActive: isActive !== undefined ? isActive : true,
             pixelConfig: pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : undefined,
+            redirectUrl: redirectUrl ? String(redirectUrl).trim() : null,
+            allowedOrigins: normalizeAllowedOrigins(allowedOrigins),
+            ...paymentTogglePatch(req.body),
+            ...metaCapiPatch(req.body),
             packages: normalizedPackages && normalizedPackages.length > 0 ? {
               create: normalizedPackages
             } : undefined,
@@ -248,14 +431,23 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       description,
       fields,
       styling,
+      design,
       country,
       currency,
       regions,
       packages,
       upsells,
       isActive,
-      pixelConfig
+      pixelConfig,
+      redirectUrl,
+      allowedOrigins
     } = req.body;
+
+    const designValidation = validateDesign(design);
+    if (!designValidation.ok) {
+      res.status(400).json({ error: 'Invalid design payload', issues: designValidation.issues });
+      return;
+    }
 
     // Check if form exists
     const existing = await prisma.checkoutForm.findUnique({
@@ -264,6 +456,12 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
 
     if (!existing) {
       res.status(404).json({ error: 'Checkout form not found' });
+      return;
+    }
+
+    const paymentError = await validatePaymentConfig(req.body, existing, resolveTenantId(req));
+    if (paymentError) {
+      res.status(paymentError.status).json(paymentError.body);
       return;
     }
 
@@ -299,11 +497,16 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     if (description !== undefined) updateData.description = description;
     if (fields !== undefined) updateData.fields = fields;
     if (styling !== undefined) updateData.styling = styling;
+    if (design !== undefined) updateData.design = designValidation.value;
     if (country !== undefined) updateData.country = country;
     if (currency !== undefined) updateData.currency = currency;
     if (regions !== undefined) updateData.regions = regions;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (pixelConfig !== undefined) updateData.pixelConfig = pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : null;
+    if (redirectUrl !== undefined) updateData.redirectUrl = redirectUrl ? String(redirectUrl).trim() : null;
+    if (allowedOrigins !== undefined) updateData.allowedOrigins = normalizeAllowedOrigins(allowedOrigins);
+    Object.assign(updateData, paymentTogglePatch(req.body));
+    Object.assign(updateData, metaCapiPatch(req.body));
 
     await prisma.checkoutForm.update({
       where: { id: formId },
@@ -355,6 +558,12 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       });
     }
 
+    // Invalidate the embed config cache only after all writes (form + packages +
+    // upsells) have committed, so a concurrent /config read can't re-cache a
+    // half-updated form. Clear both the old and (if renamed) the new slug.
+    clearCheckoutFormConfigCache(existing.slug);
+    if (slug && slug !== existing.slug) clearCheckoutFormConfigCache(slug);
+
     // Fetch updated form with all relations
     const updatedForm = await prisma.checkoutForm.findUnique({
       where: { id: formId },
@@ -369,7 +578,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       }
     });
 
-    res.json({ form: updatedForm });
+    res.json({ form: updatedForm ? maskCapiToken(updatedForm) : updatedForm });
   } catch (error) {
     console.error('Error updating checkout form:', error);
 
@@ -435,6 +644,9 @@ export const deleteCheckoutForm = async (req: AuthRequest, res: Response): Promi
     await prisma.checkoutForm.delete({
       where: { id: formId }
     });
+
+    // Drop any cached embed config so the widget stops serving a deleted form.
+    clearCheckoutFormConfigCache(form.slug);
 
     res.json({ message: 'Checkout form deleted successfully' });
   } catch (error) {

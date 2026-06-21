@@ -13,6 +13,7 @@ interface CreateWebhookData {
   name: string;
   url: string;
   secret: string;
+  requireSignature?: boolean;
   apiKey?: string;
   productId?: number;
   fieldMapping: Record<string, string>;
@@ -70,6 +71,7 @@ export class WebhookService {
         name: data.name,
         url: data.url,
         secret: data.secret,
+        requireSignature: data.requireSignature ?? false,
         apiKey: data.apiKey,
         productId: data.productId,
         fieldMapping: data.fieldMapping,
@@ -187,6 +189,32 @@ export class WebhookService {
   }
 
   /**
+   * Enforce signature verification for a webhook config that opts in
+   * (requireSignature). When enabled, a missing signature header must NOT
+   * bypass the check — that was the original fail-open bug. Default-off so
+   * integrations that authenticate by API key / unique URL (e.g. WPForms,
+   * which can't HMAC the body) keep working. Applied identically across every
+   * webhook entry path so the two can't drift back into the bug.
+   */
+  private async enforceSignature(
+    webhookLogId: number,
+    config: { requireSignature?: boolean | null; secret: string } | null,
+    signature: string | undefined,
+    body: unknown
+  ): Promise<void> {
+    if (!config?.requireSignature) return;
+    const isValid = !!signature && this.verifySignature(JSON.stringify(body), signature, config.secret);
+    if (!isValid) {
+      await this.updateWebhookLog(webhookLogId, {
+        success: false,
+        errorMessage: signature ? 'Invalid signature' : 'Missing signature',
+        statusCode: 401
+      });
+      throw new AppError('Invalid webhook signature', 401);
+    }
+  }
+
+  /**
    * Process incoming webhook
    */
   async processWebhook(data: ProcessWebhookData) {
@@ -226,18 +254,7 @@ export class WebhookService {
         });
       }
 
-      // Verify signature if provided
-      if (signature && webhookConfig) {
-        const isValid = this.verifySignature(JSON.stringify(body), signature, webhookConfig.secret);
-        if (!isValid) {
-          await this.updateWebhookLog(webhookLog.id, {
-            success: false,
-            errorMessage: 'Invalid signature',
-            statusCode: 401
-          });
-          throw new AppError('Invalid webhook signature', 401);
-        }
-      }
+      await this.enforceSignature(webhookLog.id, webhookConfig, signature, body);
 
       // Process orders within tenant context derived from webhook config
       const tenantId = webhookConfig?.tenantId as string | null;
@@ -313,18 +330,7 @@ export class WebhookService {
         data: { webhookConfigId: webhookConfig.id }
       });
 
-      // Verify signature if provided
-      if (signature) {
-        const isValid = this.verifySignature(JSON.stringify(body), signature, webhookConfig.secret);
-        if (!isValid) {
-          await this.updateWebhookLog(webhookLog.id, {
-            success: false,
-            errorMessage: 'Invalid signature',
-            statusCode: 401
-          });
-          throw new AppError('Invalid webhook signature', 401);
-        }
-      }
+      await this.enforceSignature(webhookLog.id, webhookConfig, signature, body);
 
       // Process orders within tenant context derived from webhook config
       const tenantId = webhookConfig?.tenantId as string | null;

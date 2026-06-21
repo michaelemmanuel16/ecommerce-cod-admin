@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Building2,
   Megaphone,
+  CreditCard,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -15,6 +16,7 @@ const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { path: '/tenants', icon: Building2, label: 'Tenants', end: false },
   { path: '/announcements', icon: Megaphone, label: 'Announcements', end: false },
+  { path: '/billing', icon: CreditCard, label: 'Billing', end: false },
 ];
 
 export const PlatformLayout: React.FC = () => {
