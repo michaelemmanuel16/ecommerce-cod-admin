@@ -170,6 +170,9 @@ model Customer {
   isActive       Boolean      @default(true) @map("is_active")
   smsOptOut      Boolean      @default(false) @map("sms_opt_out")
   whatsappOptOut Boolean      @default(false) @map("whatsapp_opt_out")
+  emailOptOut    Boolean      @default(false) @map("email_opt_out")
+  // Stored 32-byte random hex (not signed, not derived from id); generated lazily before marketing sends.
+  unsubscribeToken String?    @unique @map("unsubscribe_token")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
   firstName      String       @map("first_name")
@@ -1113,6 +1116,7 @@ enum JournalSourceType {
 enum MessageChannel {
   whatsapp
   sms
+  email
 }
 
 enum MessageDirection {
@@ -1126,6 +1130,7 @@ enum MessageStatus {
   delivered
   read
   failed
+  skipped
 }
 
 enum TransferType {

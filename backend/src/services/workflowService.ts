@@ -827,6 +827,9 @@ export class WorkflowService {
         productName: (fullOrder.orderItems || []).map((item: any) => item.product?.name || 'Unknown Product').join(', ')
       };
 
+      // Capture tenant context so the queue worker can restore it (mirror executeWorkflow at :206)
+      const tenantId = getTenantId();
+
       // Trigger each workflow
       for (const workflow of workflows) {
         try {
@@ -846,7 +849,8 @@ export class WorkflowService {
               workflowId: workflow.id,
               actions: workflow.actions,
               conditions: workflow.conditions,
-              input: orderContext
+              input: orderContext,
+              tenantId,
             }),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error('Workflow queue timeout')), 5000)

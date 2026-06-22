@@ -5,6 +5,7 @@ import prisma from '../utils/prisma';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { escapeHtml } from '../utils/sanitizer';
 import logger from '../utils/logger';
+import { getTenantId } from '../utils/tenantContext';
 
 // ---------- Types ----------
 
@@ -27,15 +28,31 @@ interface SendEmailOptions {
   from?: string; // override default fromEmail
 }
 
-// ---------- Config cache (same pattern as whatsappService) ----------
+/**
+ * Which sending identity to use:
+ * - 'tenant'   → the tenant's own BYO provider (DB config / env fallback). For marketing.
+ * - 'platform' → CodAdmin's own transactional provider (PLATFORM_EMAIL_* env only),
+ *                sent from a dedicated CodAdmin subdomain so bulk can't damage its
+ *                reputation. For order/status/digital-delivery/unsubscribe email.
+ */
+export interface SendEmailMeta {
+  as?: 'platform' | 'tenant';
+}
 
-let cachedConfig: { data: EmailConfig | null; fetchedAt: number } | null = null;
+// ---------- Config cache (tenant-keyed, same pattern as smsService) ----------
+
+// Keyed by tenant so one tenant's encrypted provider key/fromEmail is never
+// served to another under per-recipient/bulk cross-tenant sends (C2).
+const configCache = new Map<string, { data: EmailConfig | null; fetchedAt: number }>();
 const CACHE_TTL_MS = 60_000; // 60 seconds
 
-async function getDbEmailConfig(): Promise<EmailConfig | null> {
+// Exported for unit testing of tenant-keyed cache isolation (mirrors getDbSmsConfig).
+export async function getDbEmailConfig(): Promise<EmailConfig | null> {
+  const tenantId = getTenantId() || '__default__';
   const now = Date.now();
-  if (cachedConfig && now - cachedConfig.fetchedAt < CACHE_TTL_MS) {
-    return cachedConfig.data;
+  const cached = configCache.get(tenantId);
+  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.data;
   }
 
   try {
@@ -58,7 +75,7 @@ async function getDbEmailConfig(): Promise<EmailConfig | null> {
       };
     }
 
-    cachedConfig = { data: result, fetchedAt: now };
+    configCache.set(tenantId, { data: result, fetchedAt: now });
     return result;
   } catch (error: any) {
     logger.warn('Failed to read email config from DB, falling back to env vars', { error: error.message });
@@ -68,7 +85,7 @@ async function getDbEmailConfig(): Promise<EmailConfig | null> {
 
 /** Clear cached config (call after admin saves new settings). */
 export function clearEmailConfigCache(): void {
-  cachedConfig = null;
+  configCache.clear();
   sgApiKey = null;
   resendClient = null;
   resendApiKey = null;
@@ -108,6 +125,28 @@ async function getConfig(): Promise<EmailConfig> {
     apiKey: '',
     fromEmail: 'noreply@codadminpro.com',
     fromName: 'COD Admin',
+  };
+}
+
+/**
+ * Platform transactional config — env only, never DB/tenant-scoped (C2b).
+ * Throws if unset so transactional sends fail loudly instead of silently
+ * borrowing a tenant's provider. No caching: it's a cheap env read.
+ */
+function getPlatformConfig(): EmailConfig {
+  const provider = (process.env.PLATFORM_EMAIL_PROVIDER || 'resend') as EmailConfig['provider'];
+  const apiKey = process.env.PLATFORM_EMAIL_API_KEY || '';
+  if (!apiKey) {
+    throw new Error('PLATFORM_EMAIL_NOT_CONFIGURED: set PLATFORM_EMAIL_API_KEY to send transactional email.');
+  }
+  return {
+    provider,
+    apiKey,
+    fromEmail: process.env.PLATFORM_EMAIL_FROM || 'noreply@mail.codadminpro.com',
+    fromName: process.env.PLATFORM_EMAIL_FROM_NAME || 'COD Admin',
+    smtpHost: process.env.PLATFORM_EMAIL_SMTP_HOST,
+    smtpPort: process.env.PLATFORM_EMAIL_SMTP_PORT ? parseInt(process.env.PLATFORM_EMAIL_SMTP_PORT, 10) : undefined,
+    smtpSecure: process.env.PLATFORM_EMAIL_SMTP_SECURE === 'true',
   };
 }
 
@@ -168,15 +207,16 @@ function maskEmail(email: string): string {
 
 // ---------- Unified send function ----------
 
-export async function sendEmail(options: SendEmailOptions): Promise<void> {
-  const config = await getConfig();
+export async function sendEmail(options: SendEmailOptions, meta: SendEmailMeta = {}): Promise<void> {
+  const sendAs = meta.as ?? 'tenant';
+  const config = sendAs === 'platform' ? getPlatformConfig() : await getConfig();
 
   if (!config.apiKey) {
-    logger.warn('Email not configured — cannot send email', { to: maskEmail(options.to), subject: options.subject });
+    logger.warn('Email not configured — cannot send email', { sendAs, to: maskEmail(options.to), subject: options.subject });
     throw new Error('Email provider not configured. Please configure email settings in Settings → Integrations.');
   }
 
-  logger.info('Sending email', { provider: config.provider, to: maskEmail(options.to), subject: options.subject });
+  logger.info('Sending email', { sendAs, provider: config.provider, to: maskEmail(options.to), subject: options.subject });
 
   switch (config.provider) {
     case 'sendgrid':

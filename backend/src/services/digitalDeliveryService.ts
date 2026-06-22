@@ -150,6 +150,26 @@ export const digitalDeliveryService = {
   },
 
   /**
+   * Idempotency guard (C4): has this order's digital product already been delivered?
+   * True if a `sent` digital-delivery MessageLog exists OR a still-live (non-revoked,
+   * unexpired) DownloadToken exists for the order. Callers skip re-delivery when true,
+   * so Paystack inline delivery and the COD status_change path can't double-send.
+   */
+  async hasBeenDelivered(orderId: number): Promise<boolean> {
+    const sentLog = await prisma.messageLog.findFirst({
+      where: { orderId, templateName: 'digital_delivery', status: 'sent' },
+      select: { id: true },
+    });
+    if (sentLog) return true;
+
+    const liveToken = await prisma.downloadToken.findFirst({
+      where: { orderId, isRevoked: false, expiresAt: { gt: new Date() } },
+      select: { id: true },
+    });
+    return liveToken !== null;
+  },
+
+  /**
    * Revoke all download tokens for an order.
    */
   async revokeDownloadTokens(orderId: number): Promise<void> {
