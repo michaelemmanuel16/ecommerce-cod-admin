@@ -336,10 +336,10 @@ export async function executeAction(action: any, input: any, conditions?: any): 
       return { sent: true, messageLogId: smsResult.messageLogId };
     }
 
-    case 'send_email':
-      logger.info('Sending email', { to: action.config.to, subject: action.config.subject });
-      // Integrate with email service here
-      return { sent: true };
+    case 'send_email': {
+      const { sendWorkflowEmail } = await import('../services/emailService');
+      return sendWorkflowEmail(action.config || {}, { orderId: input.orderId });
+    }
 
     case 'send_whatsapp': {
       const { sendWhatsAppForOrder } = await import('../services/whatsappService');

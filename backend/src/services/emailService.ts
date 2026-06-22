@@ -1,11 +1,13 @@
 import sgMail from '@sendgrid/mail';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
+import { MessageChannel, MessageDirection, MessageStatus } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { escapeHtml } from '../utils/sanitizer';
 import logger from '../utils/logger';
 import { getTenantId } from '../utils/tenantContext';
+import { renderEmailTemplate } from './emailTemplateService';
 
 // ---------- Types ----------
 
@@ -267,4 +269,170 @@ export async function sendTestEmail(toEmail: string, fromName?: string): Promise
       </div>
     `,
   });
+}
+
+// ---------- Workflow send_email action (MAN-79) ----------
+
+/**
+ * Config for a workflow `send_email` action. `templateId` references a saved
+ * EmailTemplate; otherwise inline `subject`/`body` is used. `body` is the
+ * canonical inline-body field; `message` is read only as a fallback for drafts
+ * saved before the field was renamed.
+ */
+export interface WorkflowEmailConfig {
+  templateId?: number;
+  subject?: string;
+  body?: string;
+  message?: string;
+  to?: string;
+}
+
+export interface WorkflowEmailContext {
+  orderId?: number;
+}
+
+export interface WorkflowEmailResult {
+  sent: boolean;
+  skipped?: boolean;
+  messageLogId?: number;
+  reason?: string;
+}
+
+/**
+ * Send the email for a workflow `send_email` action — the one shared path used
+ * by both the live BullMQ worker (workflowQueue) and the synchronous executor
+ * (workflowService). Resolves the order's customer + tenant, renders the chosen
+ * EmailTemplate (or inline subject/body) with the six merge tags, and sends via
+ * the platform transactional provider.
+ *
+ * Writes a MessageLog(email) row (pending → sent/failed) and is idempotent: a
+ * prior `sent` log for the same (orderId, templateName) short-circuits, so a
+ * BullMQ retry re-running the action list can't re-send. Never throws on a send
+ * failure — it records `failed` and returns, so one bad recipient can't trigger
+ * a job-wide retry storm.
+ */
+export async function sendWorkflowEmail(
+  config: WorkflowEmailConfig,
+  context: WorkflowEmailContext,
+): Promise<WorkflowEmailResult> {
+  const order = context.orderId
+    ? await prisma.order.findUnique({
+        where: { id: context.orderId },
+        include: { customer: true },
+      })
+    : null;
+  const customer = order?.customer;
+
+  // Recipient: explicit override wins, else the order customer's email.
+  const to = config.to || customer?.email || null;
+  if (!to) {
+    logger.warn('send_email skipped — no recipient email', { orderId: context.orderId });
+    return { sent: false, skipped: true, reason: 'no_recipient' };
+  }
+
+  // Resolve content: a saved template, else inline subject/body.
+  let templateName = 'inline';
+  let subjectTpl = config.subject || '';
+  let bodyTpl = config.body ?? config.message ?? '';
+  if (config.templateId) {
+    const tpl = await prisma.emailTemplate.findUnique({ where: { id: config.templateId } });
+    if (!tpl) {
+      logger.warn('send_email skipped — template not found', { templateId: config.templateId });
+      return { sent: false, skipped: true, reason: 'template_not_found' };
+    }
+    templateName = tpl.name;
+    subjectTpl = tpl.subject;
+    bodyTpl = tpl.body;
+  }
+
+  // Respect opt-out (records a skipped log so the campaign/history can show it).
+  if (customer?.emailOptOut) {
+    const log = await prisma.messageLog.create({
+      data: {
+        orderId: order?.id,
+        customerId: customer.id,
+        channel: MessageChannel.email,
+        direction: MessageDirection.outbound,
+        templateName,
+        messageBody: '',
+        status: MessageStatus.skipped,
+        metadata: { to, reason: 'opted_out' },
+      },
+    });
+    logger.info('send_email skipped — customer opted out', { orderId: order?.id, customerId: customer.id });
+    return { sent: false, skipped: true, messageLogId: log.id, reason: 'opted_out' };
+  }
+
+  // Idempotency (H1): a prior successful send for this (order, template) wins,
+  // so a BullMQ retry of the action list cannot double-send.
+  if (order) {
+    const existing = await prisma.messageLog.findFirst({
+      where: {
+        orderId: order.id,
+        channel: MessageChannel.email,
+        templateName,
+        status: MessageStatus.sent,
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      logger.info('send_email skipped — already sent', { orderId: order.id, templateName });
+      return { sent: false, skipped: true, messageLogId: existing.id, reason: 'already_sent' };
+    }
+  }
+
+  // Build the merge context from order/customer/tenant.
+  const tenantId = getTenantId();
+  const [tenant, sysConfig] = await Promise.all([
+    tenantId
+      ? prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } })
+      : Promise.resolve(null),
+    prisma.systemConfig.findFirst({ select: { currency: true } }),
+  ]);
+  const currency = sysConfig?.currency || 'GHS';
+  const { subject, html } = renderEmailTemplate(
+    { subject: subjectTpl, body: bodyTpl },
+    {
+      customer_name: customer ? `${customer.firstName} ${customer.lastName}`.trim() : '',
+      customer_email: customer?.email ?? to,
+      store_name: tenant?.name ?? '',
+      order_number: order ? String(order.id) : '',
+      order_total: order
+        ? `${currency} ${Number(order.totalAmount).toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`
+        : '',
+      download_url: '',
+    },
+  );
+
+  const messageLog = await prisma.messageLog.create({
+    data: {
+      orderId: order?.id,
+      customerId: customer?.id,
+      channel: MessageChannel.email,
+      direction: MessageDirection.outbound,
+      templateName,
+      messageBody: html,
+      status: MessageStatus.pending,
+      metadata: { to, subject },
+    },
+  });
+
+  try {
+    await sendEmail({ to, subject, html }, { as: 'platform' });
+    await prisma.messageLog.update({
+      where: { id: messageLog.id },
+      data: { status: MessageStatus.sent, sentAt: new Date() },
+    });
+    return { sent: true, messageLogId: messageLog.id };
+  } catch (error: any) {
+    await prisma.messageLog.update({
+      where: { id: messageLog.id },
+      data: { status: MessageStatus.failed, errorMessage: error.message?.substring(0, 500) },
+    });
+    logger.error('send_email failed', { orderId: order?.id, to: maskEmail(to), error: error.message });
+    return { sent: false, messageLogId: messageLog.id, reason: 'send_failed' };
+  }
 }

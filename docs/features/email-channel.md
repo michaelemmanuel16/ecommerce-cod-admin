@@ -107,3 +107,55 @@ mirroring how `send_whatsapp` picks a template by key. Saving a template never s
 - A dedicated **template-builder / Email Campaign tab** (create/edit/preview UI) is intentionally
   deferred to Phase 2 §2.3; MAN-78 ships the model, CRUD, and the workflow picker only. Until then the
   3 seeded defaults are the available templates.
+
+---
+
+## MAN-79 — `send_email` workflow action (the core wire)
+
+**Date:** 2026-06-22 · **Type:** feat · **Branch:** `feature/email-channel-epic` · **Commit:** `b372da6`
+
+The workflow `send_email` action now actually sends. There were two divergent
+`send_email` code paths — the live BullMQ worker stub (logged, sent nothing) and a
+legacy synchronous `workflowService.executeSendEmail` that read the wrong field — so
+this reconciles both to **one shared helper**: one path, one config shape.
+
+### Changes
+- **Backend:**
+  - **`sendWorkflowEmail(config, context)` in `emailService.ts`** — the single send path.
+    Resolves a saved `EmailTemplate` by `config.templateId`, else inline `config.subject` +
+    `config.body` (reads `config.body ?? config.message` for back-compat with the old editor field).
+    Renders subject + body through the MAN-78 merge renderer with order/customer/tenant context
+    (`store_name = tenant.name`, `order_number = order.id`, `order_total = "{currency} {amount}"`
+    from `SystemConfig.currency`). Sends via the **platform** transactional provider
+    (`sendEmail({ as: 'platform' })`).
+  - **`MessageLog(channel=email)`** written `pending` → `sent`/`failed`. Opted-out customers are
+    logged `MessageStatus.skipped` (no send); a missing recipient skips cleanly with no log; a prior
+    `sent` log for `(orderId, channel=email, templateName)` short-circuits (idempotent — a BullMQ
+    retry can't re-send); provider failure records `failed` and does **not** rethrow (no retry storm).
+  - **`workflowQueue.ts`** — the live worker `send_email` case now delegates to `sendWorkflowEmail`.
+  - **`workflowService.ts`** — the legacy synchronous `executeSendEmail` delegates to the same helper
+    (removed the now-unused `sendEmail` import).
+- **Frontend:**
+  - `ActionConfigModal.tsx` — the inline **Email Body** field rebound from `config.message` to
+    `config.body`, fixing the editor↔executor field mismatch end-to-end (the SMS `message` field is
+    untouched).
+- **Tests:** `sendWorkflowEmail.test.ts` (new, 7 tests) — template render + send + `sent` log; inline
+  `config.body` send; legacy `config.message` fallback; opt-out → `skipped` (no send); idempotency →
+  `already_sent` (no send, no create); null recipient → `no_recipient` (no log, no send); provider
+  failure → `failed` log, no throw. `emailChannel.prereqs.test.ts` updated: the guard-passes test now
+  asserts the real helper's `no_recipient` skip shape instead of the old stub's `{ sent: true }`.
+
+### Key Files
+- `backend/src/services/emailService.ts` — `sendWorkflowEmail` helper (new export)
+- `backend/src/queues/workflowQueue.ts` — worker `send_email` case wired to the helper
+- `backend/src/services/workflowService.ts` — legacy path delegates; dead import removed
+- `frontend/src/components/workflows/ActionConfigModal.tsx` — inline body → `config.body`
+- `backend/src/__tests__/unit/sendWorkflowEmail.test.ts` (new) · `emailChannel.prereqs.test.ts` (updated)
+
+### Notes / deferred
+- No schema change — reuses `MessageChannel.email` / `MessageStatus.skipped` and the `EmailTemplate`
+  model from MAN-77/78.
+- `send_digital_product` (digital delivery on COD) is the next issue (MAN-80); the `download_url`
+  merge tag renders empty here until that action populates it.
+- Real end-to-end provider send is covered by the epic-level browser e2e (needs a configured platform
+  Resend key); the 7 unit tests mock the provider.

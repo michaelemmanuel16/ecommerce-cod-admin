@@ -139,9 +139,9 @@ export const ActionConfigModal: React.FC<ActionConfigModalProps> = ({
                         Email Body
                       </label>
                       <textarea
-                        value={config.message || ''}
+                        value={config.body || ''}
                         onChange={(e) =>
-                          setConfig({ ...config, message: e.target.value })
+                          setConfig({ ...config, body: e.target.value })
                         }
                         placeholder="Hi {{customer_name}}, your order {{order_number}} has been confirmed..."
                         rows={6}

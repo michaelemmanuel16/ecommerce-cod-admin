@@ -5,7 +5,6 @@ import logger from '../utils/logger';
 import { workflowQueue } from '../queues/workflowQueue';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
 import crypto from 'crypto';
-import { sendEmail } from './emailService';
 import { getTenantId } from '../utils/tenantContext';
 
 
@@ -387,26 +386,15 @@ export class WorkflowService {
   }
 
   /**
-   * Execute send email action
+   * Execute send email action.
+   * Delegates to the shared sendWorkflowEmail path (one config shape, one renderer,
+   * MessageLog + idempotency) so this synchronous executor and the BullMQ worker
+   * behave identically.
    */
   private async executeSendEmail(action: any, context: any): Promise<any> {
-    const to = action.email || context.email;
-    if (!to) {
-      logger.warn('No email address available for send_email action', { context });
-      return { success: false, message: 'No email address available' };
-    }
-
-    const subject = action.subject || 'Notification';
-    const body = action.body || '';
-
-    try {
-      await sendEmail({ to, subject, html: body });
-      logger.info('Email sent via workflow', { to, subject });
-      return { success: true, to };
-    } catch (error: any) {
-      logger.error('Failed to send email via workflow', { to, subject, error: error.message });
-      return { success: false, message: error.message, to };
-    }
+    const { sendWorkflowEmail } = await import('./emailService');
+    const result = await sendWorkflowEmail(action.config || {}, { orderId: context.orderId });
+    return { success: result.sent, skipped: result.skipped, messageLogId: result.messageLogId, reason: result.reason };
   }
 
   /**

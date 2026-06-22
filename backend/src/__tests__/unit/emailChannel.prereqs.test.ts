@@ -77,12 +77,15 @@ describe('Email channel prerequisites (MAN-77)', () => {
 
     it('does not throw the guard when run inside tenant context', async () => {
       await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
-        // send_email is still a stub in MAN-77; the guard must not fire here.
+        // MAN-79: send_email now runs the real helper. With no resolvable order
+        // and no explicit recipient it cleanly skips — proving the guard passed
+        // and execution proceeded (rather than throwing the no-tenant guard).
+        (prismaMock.order.findUnique as any).mockResolvedValue(null);
         const result = await executeAction(
-          { type: 'send_email', config: { to: 'x@y.com', subject: 'hi' } },
+          { type: 'send_email', config: { subject: 'hi' } },
           {}
         );
-        expect(result).toEqual({ sent: true });
+        expect(result).toMatchObject({ sent: false, skipped: true, reason: 'no_recipient' });
       });
     });
 
