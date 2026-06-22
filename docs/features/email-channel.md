@@ -58,3 +58,52 @@ MAN-79/80 wire it.
   action-type denylist — behaviour change across all action types + legacy enqueues; own ticket.
 - An `enqueueWorkflowExecution` helper that captures `tenantId` so no call site can forget.
 - Extract the now-5×-duplicated tenant TTL cache shape (sms/whatsapp/paystack/checkoutForm/email) into a util.
+
+---
+
+## MAN-78 — Reusable email templates + merge tags + workflow picker
+
+**Date:** 2026-06-22 · **Type:** feat · **Branch:** `feature/email-channel-epic` · **Commit:** `ba9495f`
+
+A reusable email object (subject + HTML body + merge tags) shared by both workflow
+`send_email` actions (MAN-79) and future bulk campaigns (Phase 2). Templates are
+authored/edited rows per tenant; the workflow action references one by `templateId`,
+mirroring how `send_whatsapp` picks a template by key. Saving a template never sends it.
+
+### Changes
+- **Backend:**
+  - **`EmailTemplate` model** — tenant-scoped (`@@unique([name, tenantId])`, `@@index([tenantId])`,
+    `@@map("email_templates")`), registered in `TENANT_SCOPED_MODELS`.
+  - **`emailTemplateService`** — the six merge tags (`customer_name`, `customer_email`,
+    `store_name`, `order_number`, `order_total`, `download_url`); precompiled tag regexes;
+    `sanitizeEmailHtml` (sanitize-html allowlist — no script/style/iframe/handlers, forces
+    `rel="noopener noreferrer"`); `renderEmailTemplate` (HTML-escapes every value at substitution,
+    no re-sanitize since stored bodies are already clean); `DEFAULT_EMAIL_TEMPLATES` (3) +
+    idempotent `seedDefaultEmailTemplates(tenantId)`.
+  - **CRUD** — `getEmailTemplates/createEmailTemplate/updateEmailTemplate/deleteEmailTemplate` in
+    `communicationService` (create/update sanitize the body), zod-validated controllers
+    (P2002→409, P2025→404), and routes (list open; mutations require super_admin/admin).
+  - **Backfill script** — `backfillEmailTemplates.ts` seeds the 3 defaults for every existing tenant.
+- **Frontend:**
+  - `emailTemplate.service.ts` — `list/create/update/remove` against `/api/communications/email-templates`.
+  - `ActionConfigModal.tsx` — Configure Email gains a template dropdown (loads the tenant's templates),
+    with the inline Subject + Email Body fallback when "Custom (write inline)" is selected; merge-tag hint
+    lists all 6 tags.
+- **Database:** additive migration `20260622184000_add_email_templates` — `CREATE TABLE email_templates`,
+  FK CASCADE to tenant, `UNIQUE(name, tenant_id)`. Applied + verified on dev and test DBs.
+- **Tests:** `emailTemplate.test.ts` — 8 tests: merge-tag substitution in subject + body, HTML-escape
+  injection block, missing/unknown tag handling, sanitize strips `<script>` + `javascript:` URLs + `onclick`,
+  `createEmailTemplate` sanitizes on save, seed is idempotent and runs in tenant context.
+
+### Key Files
+- `backend/prisma/schema.prisma` + `migrations/20260622184000_add_email_templates/migration.sql`
+- `backend/src/services/emailTemplateService.ts` (new)
+- `backend/src/services/communicationService.ts`, `controllers/communicationController.ts`, `routes/communicationRoutes.ts`
+- `backend/src/scripts/backfillEmailTemplates.ts` (new)
+- `backend/src/utils/prismaExtensions.ts` — EmailTemplate registered tenant-scoped
+- `frontend/src/services/emailTemplate.service.ts` (new) + `components/workflows/ActionConfigModal.tsx`
+
+### Notes / deferred
+- A dedicated **template-builder / Email Campaign tab** (create/edit/preview UI) is intentionally
+  deferred to Phase 2 §2.3; MAN-78 ships the model, CRUD, and the workflow picker only. Until then the
+  3 seeded defaults are the available templates.
