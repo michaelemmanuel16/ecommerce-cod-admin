@@ -3,6 +3,7 @@ import logger from '../utils/logger';
 import { MessageChannel, MessageStatus } from '@prisma/client';
 import whatsappService, { ORDER_STATUS_TEMPLATES } from './whatsappService';
 import { smsService } from './smsService';
+import { sanitizeEmailHtml } from './emailTemplateService';
 
 export const communicationService = {
   async getMessages(params: {
@@ -145,6 +146,32 @@ export const communicationService = {
 
   async deleteTemplate(id: number) {
     return prisma.smsTemplate.delete({ where: { id } });
+  },
+
+  // ---- Email templates (tenant-scoped; body sanitized on save) ----
+  async getEmailTemplates() {
+    return prisma.emailTemplate.findMany({ orderBy: { createdAt: 'desc' } });
+  },
+
+  async createEmailTemplate(data: { name: string; subject: string; body: string }) {
+    return prisma.emailTemplate.create({
+      data: { name: data.name, subject: data.subject, body: sanitizeEmailHtml(data.body) },
+    });
+  },
+
+  async updateEmailTemplate(id: number, data: { name?: string; subject?: string; body?: string }) {
+    return prisma.emailTemplate.update({
+      where: { id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.subject !== undefined ? { subject: data.subject } : {}),
+        ...(data.body !== undefined ? { body: sanitizeEmailHtml(data.body) } : {}),
+      },
+    });
+  },
+
+  async deleteEmailTemplate(id: number) {
+    return prisma.emailTemplate.delete({ where: { id } });
   },
 
   async getOptOutCustomers(page = 1, limit = 20) {

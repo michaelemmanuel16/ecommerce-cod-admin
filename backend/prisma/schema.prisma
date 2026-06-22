@@ -57,6 +57,7 @@ model Tenant {
   systemConfigs       SystemConfig[]
   mcpApiKeys          McpApiKey[]
   webhookEvents       WebhookEvent[]
+  emailTemplates      EmailTemplate[]
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
@@ -1253,6 +1254,25 @@ model SmsTemplate {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("sms_templates")
+}
+
+// Reusable email message object (subject + HTML body + merge tags). Tenant-scoped
+// so one composed template is reusable by both workflow send_email actions and bulk
+// campaigns. Body HTML is sanitized (allowlist) on save.
+model EmailTemplate {
+  id        Int      @id @default(autoincrement())
+  name      String
+  subject   String
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String? @map("tenant_id")
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([name, tenantId])
+  @@index([tenantId])
+  @@map("email_templates")
 }
 
 model McpApiKey {

@@ -25,6 +25,17 @@ const updateTemplateSchema = templateSchema.partial().refine(
   { message: 'At least one of name or body is required' },
 );
 
+const emailTemplateSchema = z.object({
+  name: z.string().min(1).max(120),
+  subject: z.string().min(1).max(255),
+  body: z.string().min(1).max(50000),
+});
+
+const updateEmailTemplateSchema = emailTemplateSchema.partial().refine(
+  (data) => data.name !== undefined || data.subject !== undefined || data.body !== undefined,
+  { message: 'At least one of name, subject or body is required' },
+);
+
 const validChannels = Object.values(MessageChannel);
 const validStatuses = Object.values(MessageStatus);
 
@@ -174,6 +185,70 @@ export const deleteTemplate = async (req: AuthRequest, res: Response): Promise<v
   } catch (error: any) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
       res.status(404).json({ error: 'Template not found' });
+      return;
+    }
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getEmailTemplates = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const templates = await communicationService.getEmailTemplates();
+    res.json(templates);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const createEmailTemplate = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const parsed = emailTemplateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((e) => e.message).join(', ') });
+      return;
+    }
+    const template = await communicationService.createEmailTemplate(parsed.data);
+    res.status(201).json(template);
+  } catch (error: any) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      res.status(409).json({ error: 'An email template with this name already exists' });
+      return;
+    }
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateEmailTemplate = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const parsed = updateEmailTemplateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((e) => e.message).join(', ') });
+      return;
+    }
+    const template = await communicationService.updateEmailTemplate(id, parsed.data);
+    res.json(template);
+  } catch (error: any) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      res.status(404).json({ error: 'Email template not found' });
+      return;
+    }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      res.status(409).json({ error: 'An email template with this name already exists' });
+      return;
+    }
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const deleteEmailTemplate = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    await communicationService.deleteEmailTemplate(id);
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      res.status(404).json({ error: 'Email template not found' });
       return;
     }
     res.status(500).json({ error: error.message });
