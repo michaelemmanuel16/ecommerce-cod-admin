@@ -159,3 +159,59 @@ this reconciles both to **one shared helper**: one path, one config shape.
   merge tag renders empty here until that action populates it.
 - Real end-to-end provider send is covered by the epic-level browser e2e (needs a configured platform
   Resend key); the 7 unit tests mock the provider.
+
+## MAN-81 — Email unsubscribe (RFC 8058 one-click)
+
+**Date:** 2026-06-23 · **Type:** feat · **Branch:** `feature/email-channel-epic` · **Commit:** `a13d7f2`
+
+Marketing-class emails now ship with a real opt-out: a visible `Unsubscribe` link
+plus RFC 8058 `List-Unsubscribe` headers so Gmail/Apple Mail render a native
+one-click unsubscribe. Opt-out is a **POST side-effect only** — mail scanners and
+link prefetchers auto-`GET` links, which would silently unsubscribe customers, so
+the GET route renders a confirm page and never mutates.
+
+### Changes
+- **Backend:**
+  - **`unsubscribeService.ts` (new):**
+    - `buildUnsubscribeUrl(token)` → `${getBackendUrl()}/api/public/unsubscribe/:token`.
+    - `applyUnsubscribe(html, token, url)` — shared helper returning `{ html, headers }`. Appends the
+      footer fallback only when the rendered body doesn't already contain the link (detects off the
+      hex **token**, which survives HTML-escaping, not the full URL whose slashes don't), and wires
+      `List-Unsubscribe: <url>` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. Empty url
+      (no customer) → body untouched, no headers. Reused by Phase 2 bulk so neither path re-implements it.
+    - `ensureUnsubscribeToken(customer)` — returns the stored token, lazily minting + persisting a fresh
+      32-byte random hex (`crypto.randomBytes(32).toString('hex')`) when absent.
+    - `findCustomerByUnsubscribeToken(token)` — **unscoped** lookup (token is globally unique + random;
+      public routes carry no tenant context). `optOutByUnsubscribeToken(token)` — idempotent opt-out,
+      POST-only; returns false for unknown/forged tokens.
+  - **`unsubscribeRoutes.ts` (new):** public router — `GET /:token` renders a confirm page (no write);
+    `POST /:token` performs the opt-out. Mounted at `/api/public/unsubscribe` **before** `/api/public`
+    in `server.ts` so the more specific prefix wins.
+  - **`emailTemplateService.ts`:** added `unsubscribe_url` to `EMAIL_MERGE_TAGS` (now 7) and
+    `appendUnsubscribeFooter(html, url)` (escapes the URL, appends an `<hr>` + muted unsubscribe `<p>`).
+  - **`emailService.ts`:** `SendEmailOptions.headers?` threaded into all three providers
+    (SendGrid/Resend/SMTP); `sendWorkflowEmail` mints the token **in parallel** with the tenant/config
+    reads (single `Promise.all`, no added latency), injects `unsubscribe_url` into the render context,
+    and runs the rendered body through `applyUnsubscribe` before send.
+  - **`utils/url.ts` (new):** `getBackendUrl()` shared helper (also de-dupes the inline URL build in
+    `digitalDeliveryService`).
+- **Frontend:** `ActionConfigModal.tsx` — `{{unsubscribe_url}}` added to the merge-tag hint.
+- **Tests:** `unsubscribe.test.ts` (new) — footer fallback append/skip detection across HTML-escaped
+  bodies, header shape, empty-url no-op; `sendWorkflowEmail.test.ts` — asserts the unsubscribe footer +
+  headers are applied on the workflow send path.
+
+### Key Files
+- `backend/src/services/unsubscribeService.ts` (new)
+- `backend/src/routes/unsubscribeRoutes.ts` (new)
+- `backend/src/utils/url.ts` (new)
+- `backend/src/services/emailTemplateService.ts` · `emailService.ts` · `digitalDeliveryService.ts` (modified)
+- `backend/src/server.ts` — mounts `/api/public/unsubscribe`
+- `frontend/src/components/workflows/ActionConfigModal.tsx` — merge-tag hint
+- `backend/src/__tests__/unit/unsubscribe.test.ts` (new) · `sendWorkflowEmail.test.ts` (updated)
+
+### Notes / deferred
+- No schema change — reuses `Customer.emailOptOut` + `unsubscribeToken` from the MAN-77 migration.
+- Unscoped public lookup is safe **only** because the token is globally unique + random; do not
+  tenant-scope it.
+- Bulk-campaign unsubscribe (Phase 2 / MAN-83) reuses `applyUnsubscribe` + `ensureUnsubscribeToken`
+  + `buildUnsubscribeUrl` — no re-implementation.
