@@ -51,7 +51,8 @@ const defaultFields: FormField[] = [
   { id: '1', label: 'Full Name', type: 'text', required: true, enabled: true },
   { id: '2', label: 'Phone', type: 'phone', required: true, enabled: true },
   { id: '3', label: 'Alt Phone', type: 'phone', required: false, enabled: true },
-  { id: '4', label: 'Street Address', type: 'textarea', required: true, enabled: true },
+  { id: '4', label: 'Email Address', type: 'email', required: false, enabled: true },
+  { id: '5', label: 'Street Address', type: 'textarea', required: true, enabled: true },
 ];
 
 export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, CheckoutFormBuilderProps>(({
