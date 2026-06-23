@@ -215,3 +215,59 @@ the GET route renders a confirm page and never mutates.
   tenant-scope it.
 - Bulk-campaign unsubscribe (Phase 2 / MAN-83) reuses `applyUnsubscribe` + `ensureUnsubscribeToken`
   + `buildUnsubscribeUrl` — no re-implementation.
+
+## MAN-82 — Email capture (grow the owned list)
+
+**Date:** 2026-06-23 · **Type:** feat · **Branch:** `feature/email-channel-epic` · **Commit:** `1ef5c20`
+
+The whole email bet (epic decision #4) depends on the funnel reliably collecting
+real customer emails going forward. This issue makes `Customer.email` a first-class
+captured asset across every order path — public checkout, admin manual order, and
+bulk import — while keeping synthesized placeholder addresses out of the marketing
+pool. Much of the backend (bulk-import `customerEmail`, the Paystack
+placeholder-is-local guard) was already present from prior work; this issue adds
+the two genuine gaps and locks the rest in with tests.
+
+### Changes
+- **Frontend — email as a standard default field:**
+  - `components/public/CheckoutForm.tsx` — added `Email Address` (type `email`) to `DEFAULT_FIELDS`
+    after `Alt Phone`, before `Region/State`. It is **not** in `DEFAULT_REQUIRED_KEYS`, so it renders
+    present-but-optional on physical COD; the existing `isDigital` derivation still force-requires it
+    for digital products. `DEFAULT_FIELDS` only renders when a form hasn't customized its fields, so
+    existing forms are unaffected.
+  - `components/forms/CheckoutFormBuilder.tsx` — mirrored `Email Address` into the builder's
+    `defaultFields` seed so newly created forms start with the field present.
+- **Backend — capture on repeat manual orders:**
+  - `services/orderService.ts` — `createOrder`'s repeat-customer (phone-match) branch now builds a
+    `Prisma.CustomerUpdateInput` that links a newly-provided `customerEmail` (when different from the
+    stored one) **and** alt phone, instead of only updating alt phone. Mirrors the public checkout
+    path so admin/manual orders also grow the owned list, including records first created without an
+    email. The create branch already set `email: data.customerEmail || null`.
+- **Already present — locked in with tests (no behavior change):**
+  - Bulk import persists `customerEmail` on customer create/update (`BulkImportOrderData`).
+  - The Paystack synthesized `<phone>@codadminpro.com` address is **local to the init call** and is
+    never persisted onto `Customer.email` — so a fake, bouncing placeholder never becomes a campaign
+    recipient (protects sender reputation, epic decision #5).
+
+### Tests
+- `__tests__/unit/orderService.test.ts` — repeat manual order with a new email updates the customer
+  (`customer.update` called with `data: { email }`); unchanged email does **not** trigger an update.
+- `__tests__/unit/publicOrderController.test.ts` — a blank-email Paystack checkout persists
+  `Customer.email = null` yet still hands the synthesized `<phone>@codadminpro.com` to Paystack init.
+- `frontend/.../CheckoutForm.test.tsx` — email field renders by default on a physical form **without**
+  a required asterisk (Full Name keeps one); a digital product forces the default email field required.
+
+### Key Files
+- `frontend/src/components/public/CheckoutForm.tsx` · `components/forms/CheckoutFormBuilder.tsx` (modified)
+- `backend/src/services/orderService.ts` (modified)
+- `backend/src/__tests__/unit/orderService.test.ts` · `publicOrderController.test.ts` (tests)
+- `frontend/src/__tests__/components/CheckoutForm.test.tsx` (tests)
+
+### Notes / deferred
+- No schema change.
+- **Bulk-eligibility filter deferred to MAN-83:** excluding `email == null` / `emailOptOut == true`
+  (and the `@codadminpro.com` domain) at campaign-recipient selection lands with `getRecipients` in the
+  Phase 2 bulk path, where it belongs.
+- The contact-update pattern now appears in three places (`orderService` create/repeat +
+  `publicOrderController`); `/simplify` flagged the duplication but it was left as a follow-up — the
+  dedup spans pre-existing call sites outside this issue's surgical scope.
