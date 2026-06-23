@@ -143,6 +143,24 @@ describe('sendWorkflowEmail (MAN-79)', () => {
     expect((prismaMock.messageLog.create as any)).not.toHaveBeenCalled();
   });
 
+  it('sets RFC 8058 List-Unsubscribe headers and appends a footer (MAN-81)', async () => {
+    (prismaMock.customer.update as any).mockResolvedValue({});
+
+    await run({ subject: 's', body: '<p>Hello {{customer_name}}</p>' }, { orderId: 42 });
+
+    const sendArg = resendSend.mock.calls[0][0] as any;
+    // One-click unsubscribe headers point at the public route.
+    expect(sendArg.headers['List-Unsubscribe']).toMatch(/^<.*\/api\/public\/unsubscribe\/.+>$/);
+    expect(sendArg.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
+    // Template didn't place the tag, so a visible footer link is appended.
+    expect(sendArg.html).toContain('Hello Ama Boateng');
+    expect(sendArg.html).toContain('Unsubscribe');
+    // Token was minted + persisted for the customer.
+    expect((prismaMock.customer.update as any).mock.calls[0][0]).toMatchObject({
+      where: { id: 7 },
+    });
+  });
+
   it('records failed (and does not throw) when the provider send fails', async () => {
     resendSend.mockRejectedValue(new Error('provider boom'));
 

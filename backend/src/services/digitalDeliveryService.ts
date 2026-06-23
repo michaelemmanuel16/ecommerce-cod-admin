@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { escapeHtml } from '../utils/sanitizer';
+import { getBackendUrl } from '../utils/url';
 import { sendEmail } from './emailService';
 import { whatsappService } from './whatsappService';
 
@@ -110,8 +111,7 @@ export const digitalDeliveryService = {
 
     if (!digitalProduct) throw new Error(`No digital product in order ${orderId}`);
 
-    const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL?.replace(':5173', ':3000') || 'http://localhost:3000';
-    const downloadUrl = `${backendUrl}/api/public/download/${token}`;
+    const downloadUrl = `${getBackendUrl()}/api/public/download/${token}`;
     const expiryHours = digitalProduct.downloadLinkExpiryHours ?? 72;
     const maxDownloads = digitalProduct.maxDownloads ?? 5;
     const productName = digitalProduct.name;

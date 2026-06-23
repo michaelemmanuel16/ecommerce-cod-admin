@@ -8,6 +8,7 @@ import { escapeHtml } from '../utils/sanitizer';
 import logger from '../utils/logger';
 import { getTenantId } from '../utils/tenantContext';
 import { renderEmailTemplate } from './emailTemplateService';
+import { ensureUnsubscribeToken, buildUnsubscribeUrl, applyUnsubscribe } from './unsubscribeService';
 
 // ---------- Types ----------
 
@@ -28,6 +29,8 @@ interface SendEmailOptions {
   subject: string;
   html: string;
   from?: string; // override default fromEmail
+  /** Extra SMTP headers (e.g. RFC 8058 List-Unsubscribe). */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -183,7 +186,13 @@ async function sendViaSendGrid(config: EmailConfig, options: SendEmailOptions): 
     sgApiKey = config.apiKey;
   }
   const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  await sgMail.send({ to: options.to, from, subject: options.subject, html: options.html });
+  await sgMail.send({
+    to: options.to,
+    from,
+    subject: options.subject,
+    html: options.html,
+    headers: options.headers,
+  });
 }
 
 async function sendViaResend(config: EmailConfig, options: SendEmailOptions): Promise<void> {
@@ -192,13 +201,25 @@ async function sendViaResend(config: EmailConfig, options: SendEmailOptions): Pr
     resendApiKey = config.apiKey;
   }
   const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  await resendClient.emails.send({ from, to: options.to, subject: options.subject, html: options.html });
+  await resendClient.emails.send({
+    from,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+    headers: options.headers,
+  });
 }
 
 async function sendViaSmtp(config: EmailConfig, options: SendEmailOptions): Promise<void> {
   const transporter = getSmtpTransporter(config);
   const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  await transporter.sendMail({ from, to: options.to, subject: options.subject, html: options.html });
+  await transporter.sendMail({
+    from,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+    headers: options.headers,
+  });
 }
 
 // ---------- Helpers ----------
@@ -381,14 +402,19 @@ export async function sendWorkflowEmail(
     }
   }
 
-  // Build the merge context from order/customer/tenant.
+  // Build the merge context from order/customer/tenant. Workflow email is
+  // marketing-class, so resolve the customer's unsubscribe token here too (MAN-81)
+  // — minting it in parallel with the tenant/config reads. No customer (e.g. an
+  // explicit `to` override) → no opt-out link, since there's nothing to opt out.
   const tenantId = getTenantId();
-  const [tenant, sysConfig] = await Promise.all([
+  const [tenant, sysConfig, unsubscribeToken] = await Promise.all([
     tenantId
       ? prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } })
       : Promise.resolve(null),
     prisma.systemConfig.findFirst({ select: { currency: true } }),
+    customer ? ensureUnsubscribeToken(customer) : Promise.resolve(''),
   ]);
+  const unsubscribeUrl = unsubscribeToken ? buildUnsubscribeUrl(unsubscribeToken) : '';
   const currency = sysConfig?.currency || 'GHS';
   const { subject, html } = renderEmailTemplate(
     { subject: subjectTpl, body: bodyTpl },
@@ -404,8 +430,12 @@ export async function sendWorkflowEmail(
           })}`
         : '',
       download_url: '',
+      unsubscribe_url: unsubscribeUrl,
     },
   );
+
+  // Footer fallback + RFC 8058 one-click headers for the marketing-class send.
+  const { html: finalHtml, headers } = applyUnsubscribe(html, unsubscribeToken, unsubscribeUrl);
 
   const messageLog = await prisma.messageLog.create({
     data: {
@@ -414,14 +444,14 @@ export async function sendWorkflowEmail(
       channel: MessageChannel.email,
       direction: MessageDirection.outbound,
       templateName,
-      messageBody: html,
+      messageBody: finalHtml,
       status: MessageStatus.pending,
       metadata: { to, subject },
     },
   });
 
   try {
-    await sendEmail({ to, subject, html }, { as: 'platform' });
+    await sendEmail({ to, subject, html: finalHtml, headers }, { as: 'platform' });
     await prisma.messageLog.update({
       where: { id: messageLog.id },
       data: { status: MessageStatus.sent, sentAt: new Date() },

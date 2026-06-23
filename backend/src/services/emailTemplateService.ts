@@ -20,6 +20,7 @@ export const EMAIL_MERGE_TAGS = [
   'order_number',
   'order_total',
   'download_url',
+  'unsubscribe_url',
 ] as const;
 
 export type EmailMergeTag = (typeof EMAIL_MERGE_TAGS)[number];
@@ -103,6 +104,23 @@ export function renderEmailTemplate(
     subject: renderMergeTags(template.subject, context),
     html: renderMergeTags(template.body, context),
   };
+}
+
+/**
+ * Append a minimal unsubscribe footer to a rendered marketing email (MAN-81).
+ * Used as the fallback when the merchant's template body doesn't already place
+ * the `{{unsubscribe_url}}` link itself, so a visible opt-out is always present.
+ * Callers skip this when the rendered body already contains the URL.
+ */
+export function appendUnsubscribeFooter(html: string, unsubscribeUrl: string): string {
+  const safeUrl = escapeHtml(unsubscribeUrl);
+  return (
+    html +
+    '\n<hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0 12px;" />' +
+    '\n<p style="color:#9ca3af;font-size:12px;text-align:center;">' +
+    "You're receiving this because you ordered from us. " +
+    `<a href="${safeUrl}" style="color:#9ca3af;">Unsubscribe</a>.</p>`
+  );
 }
 
 /**

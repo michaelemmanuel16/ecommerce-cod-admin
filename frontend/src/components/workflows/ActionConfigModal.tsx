@@ -148,7 +148,7 @@ export const ActionConfigModal: React.FC<ActionConfigModalProps> = ({
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                       />
                       <p className="text-xs text-gray-500 mt-2">
-                        Available variables: {'{{customer_name}}'}, {'{{customer_email}}'}, {'{{store_name}}'}, {'{{order_number}}'}, {'{{order_total}}'}, {'{{download_url}}'}
+                        Available variables: {'{{customer_name}}'}, {'{{customer_email}}'}, {'{{store_name}}'}, {'{{order_number}}'}, {'{{order_total}}'}, {'{{download_url}}'}, {'{{unsubscribe_url}}'}
                       </p>
                     </div>
                   </>
