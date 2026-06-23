@@ -15,6 +15,28 @@ const bulkSendWhatsAppSchema = z.object({
   customLink: z.string().url().optional(),
 });
 
+const bulkSendEmailSchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    customerIds: z.array(z.number()).max(100000).optional(),
+    filter: z
+      .object({
+        state: z.string().optional(),
+        productId: z.number().optional(),
+        hasOrdered: z.boolean().optional(),
+      })
+      .optional(),
+    templateId: z.number().optional(),
+    subject: z.string().min(1).max(255).optional(),
+    htmlBody: z.string().min(1).max(50000).optional(),
+  })
+  .refine((d) => d.templateId !== undefined || (d.subject !== undefined && d.htmlBody !== undefined), {
+    message: 'Provide either templateId or both subject and htmlBody',
+  })
+  .refine((d) => (d.customerIds && d.customerIds.length > 0) || d.filter !== undefined, {
+    message: 'Provide customerIds or a filter to select an audience',
+  });
+
 const templateSchema = z.object({
   name: z.string().min(1),
   body: z.string().min(1),
@@ -89,15 +111,15 @@ export const getStats = async (req: AuthRequest, res: Response): Promise<void> =
 export const getRecipients = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { state, productId, hasOrdered, channel } = req.query;
-    if (!channel || (channel !== 'sms' && channel !== 'whatsapp')) {
-      res.status(400).json({ error: 'channel query param is required (sms or whatsapp)' });
+    if (!channel || !['sms', 'whatsapp', 'email'].includes(channel as string)) {
+      res.status(400).json({ error: 'channel query param is required (sms, whatsapp, or email)' });
       return;
     }
     const recipients = await communicationService.getRecipients({
       state: state as string | undefined,
       productId: productId ? Number(productId) : undefined,
       hasOrdered: hasOrdered === 'true',
-      channel: channel as 'sms' | 'whatsapp',
+      channel: channel as 'sms' | 'whatsapp' | 'email',
     });
     res.json(recipients);
   } catch (error: any) {
@@ -130,6 +152,43 @@ export const bulkSendWhatsApp = async (req: AuthRequest, res: Response): Promise
     const { customerIds, templateKey, customLink } = parsed.data;
     const result = await communicationService.bulkSendWhatsApp(customerIds, templateKey, customLink);
     res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const bulkSendEmail = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const parsed = bulkSendEmailSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues.map((e) => e.message).join(', ') });
+      return;
+    }
+    const campaign = await communicationService.bulkSendEmail(parsed.data);
+    res.status(201).json(campaign);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getCampaigns = async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const campaigns = await communicationService.getCampaigns();
+    res.json(campaigns);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getCampaign = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const campaign = await communicationService.getCampaign(id);
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+    res.json(campaign);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

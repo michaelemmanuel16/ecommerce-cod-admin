@@ -1,9 +1,64 @@
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { MessageChannel, MessageStatus } from '@prisma/client';
+import { MessageChannel, MessageStatus, EmailCampaignStatus } from '@prisma/client';
 import whatsappService, { ORDER_STATUS_TEMPLATES } from './whatsappService';
 import { smsService } from './smsService';
 import { sanitizeEmailHtml } from './emailTemplateService';
+import { getTenantId } from '../utils/tenantContext';
+import { enqueueCampaignRecipient, PLACEHOLDER_EMAIL_DOMAIN } from '../queues/emailCampaignQueue';
+
+interface AudienceFilter {
+  state?: string;
+  productId?: number;
+  hasOrdered?: boolean;
+}
+
+// The customers a bulk send targets, before email eligibility. An explicit
+// customerIds selection and the filter fields compose (AND).
+function buildAudienceWhere(params: { customerIds?: number[]; filter?: AudienceFilter }): any {
+  const where: any = { isActive: true };
+  if (params.customerIds && params.customerIds.length > 0) where.id = { in: params.customerIds };
+  const f = params.filter;
+  if (f?.state) where.state = f.state;
+  if (f?.hasOrdered) where.totalOrders = { gt: 0 };
+  if (f?.productId) {
+    where.orders = { some: { orderItems: { some: { productId: f.productId } } } };
+  }
+  return where;
+}
+
+// The single definition of "email-eligible": a real address, not opted out, and
+// not a synthesized Paystack placeholder (MAN-82 — never a marketing recipient).
+// Shared by the recipient preview and the bulk-send enqueue so the rule lives once.
+const EMAIL_ELIGIBLE = {
+  email: { not: null },
+  emailOptOut: false,
+  NOT: { email: { endsWith: PLACEHOLDER_EMAIL_DOMAIN } },
+} as const;
+
+// Salesgee-style history breakdown: stored send-time denominators (audience →
+// no-email → opted-out → emailable) plus live MessageLog status aggregation.
+// `sent` counts anything that left the system (sent/delivered/read); `delivered`
+// is the post-send subset. A no-address/opt-out recipient is a neutral skip,
+// never a red Failed (D-CRIT).
+function campaignStats(
+  campaign: { audienceTotal: number; noEmailCount: number; optedOutCount: number; totalRecipients: number },
+  counts: Partial<Record<MessageStatus, number>>,
+) {
+  const sent = (counts.sent ?? 0) + (counts.delivered ?? 0) + (counts.read ?? 0);
+  const delivered = (counts.delivered ?? 0) + (counts.read ?? 0);
+  return {
+    audienceTotal: campaign.audienceTotal,
+    noEmail: campaign.noEmailCount,
+    optedOut: campaign.optedOutCount,
+    emailable: campaign.totalRecipients,
+    waiting: counts.pending ?? 0,
+    sent,
+    delivered,
+    failed: counts.failed ?? 0,
+    skipped: counts.skipped ?? 0,
+  };
+}
 
 export const communicationService = {
   async getMessages(params: {
@@ -27,25 +82,17 @@ export const communicationService = {
     state?: string;
     productId?: number;
     hasOrdered?: boolean;
-    channel: 'sms' | 'whatsapp';
+    channel: 'sms' | 'whatsapp' | 'email';
   }) {
-    const where: any = { isActive: true };
-    if (filters.state) where.state = filters.state;
-    if (filters.hasOrdered) where.totalOrders = { gt: 0 };
+    const where: any = buildAudienceWhere({
+      filter: { state: filters.state, productId: filters.productId, hasOrdered: filters.hasOrdered },
+    });
     if (filters.channel === 'sms') where.smsOptOut = false;
     if (filters.channel === 'whatsapp') where.whatsappOptOut = false;
+    if (filters.channel === 'email') Object.assign(where, EMAIL_ELIGIBLE);
 
-    // Filter by product: find customers who have ordered this product
-    if (filters.productId) {
-      where.orders = {
-        some: {
-          orderItems: {
-            some: { productId: filters.productId },
-          },
-        },
-      };
-    }
-
+    // Preview listing only — capped. The bulk send enqueues via cursor pagination
+    // (bulkSendEmail) and is not bounded by this cap.
     const customers = await prisma.customer.findMany({
       where,
       select: {
@@ -53,10 +100,12 @@ export const communicationService = {
         firstName: true,
         lastName: true,
         phoneNumber: true,
+        email: true,
         state: true,
         area: true,
         smsOptOut: true,
         whatsappOptOut: true,
+        emailOptOut: true,
       },
       orderBy: { firstName: 'asc' },
       take: 1000,
@@ -130,6 +179,129 @@ export const communicationService = {
       failed: results.filter((r) => !r.success).length,
     });
     return { total: customers.length, results };
+  },
+
+  // ---- Bulk email campaigns (queued; tenant BYO provider) ----
+
+  // Compose → audience → send. Snapshots the resolved, sanitized subject/body and
+  // the eligibility denominators onto a new EmailCampaign, then enqueues ONE job
+  // per eligible recipient (cursor-paginated, no silent cap — real max audience =
+  // all eligible). Sends only on this explicit call; saving a template never sends.
+  async bulkSendEmail(params: {
+    customerIds?: number[];
+    filter?: AudienceFilter;
+    title: string;
+    subject?: string;
+    htmlBody?: string;
+    templateId?: number;
+  }) {
+    const tenantId = getTenantId();
+    // Store name is constant for the whole campaign — resolve it once and thread
+    // it through the job data so the worker doesn't re-fetch the tenant per recipient.
+    const tenant = tenantId
+      ? await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } })
+      : null;
+    const storeName = tenant?.name ?? '';
+
+    // Content snapshot: a saved template (already sanitized on save) or inline
+    // subject/body (sanitize the body here).
+    let subject: string;
+    let body: string;
+    if (params.templateId) {
+      const tpl = await prisma.emailTemplate.findUnique({ where: { id: params.templateId } });
+      if (!tpl) throw new Error('Email template not found');
+      subject = tpl.subject;
+      body = tpl.body;
+    } else {
+      if (!params.subject || !params.htmlBody) {
+        throw new Error('subject and htmlBody are required when no templateId is given');
+      }
+      subject = params.subject;
+      body = sanitizeEmailHtml(params.htmlBody);
+    }
+
+    const base = buildAudienceWhere(params);
+    const placeholder = { email: { endsWith: PLACEHOLDER_EMAIL_DOMAIN } };
+
+    // Denominators for the eligibility breakdown (D-CRIT), snapshotted at send time.
+    const [audienceTotal, noEmailCount, optedOutCount] = await Promise.all([
+      prisma.customer.count({ where: base }),
+      prisma.customer.count({ where: { ...base, email: null } }),
+      prisma.customer.count({
+        where: { ...base, email: { not: null }, OR: [{ emailOptOut: true }, placeholder] },
+      }),
+    ]);
+
+    const campaign = await prisma.emailCampaign.create({
+      data: { title: params.title, subject, body, status: EmailCampaignStatus.queued, audienceTotal, noEmailCount, optedOutCount, totalRecipients: 0 },
+    });
+
+    // Enqueue eligible recipients via cursor pagination so a large audience never
+    // loads in one query or blocks the request.
+    const eligibleWhere = { ...base, ...EMAIL_ELIGIBLE };
+    const PAGE = 500;
+    let enqueued = 0;
+    let cursor: number | undefined;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const batch = await prisma.customer.findMany({
+        where: eligibleWhere,
+        select: { id: true },
+        orderBy: { id: 'asc' },
+        take: PAGE,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      });
+      if (batch.length === 0) break;
+      await Promise.all(
+        batch.map((c) =>
+          enqueueCampaignRecipient({ campaignId: campaign.id, customerId: c.id, tenantId, storeName }),
+        ),
+      );
+      enqueued += batch.length;
+      cursor = batch[batch.length - 1].id;
+      if (batch.length < PAGE) break;
+    }
+
+    const updated = await prisma.emailCampaign.update({
+      where: { id: campaign.id },
+      data: {
+        totalRecipients: enqueued,
+        status: enqueued > 0 ? EmailCampaignStatus.sending : EmailCampaignStatus.completed,
+      },
+    });
+
+    logger.info('Bulk email campaign queued', { campaignId: campaign.id, audienceTotal, enqueued });
+    return updated;
+  },
+
+  async getCampaigns() {
+    const campaigns = await prisma.emailCampaign.findMany({ orderBy: { createdAt: 'desc' } });
+    if (campaigns.length === 0) return [];
+
+    const grouped = await prisma.messageLog.groupBy({
+      by: ['campaignId', 'status'],
+      where: { campaignId: { in: campaigns.map((c) => c.id) } },
+      _count: { _all: true },
+    });
+    const byCampaign: Record<number, Partial<Record<MessageStatus, number>>> = {};
+    for (const g of grouped) {
+      if (g.campaignId == null) continue;
+      (byCampaign[g.campaignId] ||= {})[g.status] = g._count._all;
+    }
+    return campaigns.map((c) => ({ ...c, stats: campaignStats(c, byCampaign[c.id] || {}) }));
+  },
+
+  async getCampaign(id: number) {
+    const campaign = await prisma.emailCampaign.findUnique({ where: { id } });
+    if (!campaign) return null;
+    const grouped = await prisma.messageLog.groupBy({
+      by: ['status'],
+      where: { campaignId: id },
+      _count: { _all: true },
+    });
+    const counts: Partial<Record<MessageStatus, number>> = {};
+    for (const g of grouped) counts[g.status] = g._count._all;
+    return { ...campaign, stats: campaignStats(campaign, counts) };
   },
 
   async getTemplates() {

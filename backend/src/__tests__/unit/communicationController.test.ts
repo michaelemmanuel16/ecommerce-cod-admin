@@ -105,11 +105,11 @@ describe('Communication Controller', () => {
       await communicationController.getRecipients(mockReq as AuthRequest, mockRes as Response);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'channel query param is required (sms or whatsapp)' });
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'channel query param is required (sms, whatsapp, or email)' });
     });
 
     it('should return 400 when channel is invalid', async () => {
-      mockReq.query = { channel: 'email' };
+      mockReq.query = { channel: 'telegram' };
 
       await communicationController.getRecipients(mockReq as AuthRequest, mockRes as Response);
 

@@ -20,6 +20,9 @@ router.put('/email-templates/:id', requireRole('super_admin', 'admin'), ctrl.upd
 router.delete('/email-templates/:id', requireRole('super_admin', 'admin'), ctrl.deleteEmailTemplate);
 router.post('/bulk-sms', requireRole('super_admin', 'admin'), ctrl.bulkSendSms);
 router.post('/bulk-whatsapp', requireRole('super_admin', 'admin'), ctrl.bulkSendWhatsApp);
+router.post('/bulk-email', requireRole('super_admin', 'admin'), ctrl.bulkSendEmail);
+router.get('/campaigns', requireRole('super_admin', 'admin', 'manager'), ctrl.getCampaigns);
+router.get('/campaigns/:id', requireRole('super_admin', 'admin', 'manager'), ctrl.getCampaign);
 router.get('/opt-outs', requireRole('super_admin', 'admin', 'manager'), ctrl.getOptOutCustomers);
 router.patch('/opt-out/:customerId', requireRole('super_admin', 'admin'), ctrl.updateOptOut);
 
