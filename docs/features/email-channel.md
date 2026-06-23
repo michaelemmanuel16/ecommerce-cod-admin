@@ -271,3 +271,52 @@ the two genuine gaps and locks the rest in with tests.
 - The contact-update pattern now appears in three places (`orderService` create/repeat +
   `publicOrderController`); `/simplify` flagged the duplication but it was left as a follow-up — the
   dedup spans pre-existing call sites outside this issue's surgical scope.
+
+## MAN-83 — Queued bulk email + campaign model/history
+
+**Date:** 2026-06-23 · **Type:** feat · **Branch:** `feature/email-channel-epic` · **Commit:** `b1055a3`
+
+Phase 2.1 of the epic: the backend for Salesgee-style bulk email. A manual
+"compose → pick audience → send" enqueues one BullMQ job per recipient (volume +
+provider rate limits make the existing SMS/WhatsApp sync await-loop unsafe here),
+and a new `EmailCampaign` row groups the sends so a history table can show the
+delivered/failed/skipped breakdown. Marketing-class, so it sends on the tenant's
+**BYO** provider (decision #2) and carries the MAN-81 unsubscribe footer/headers.
+The Communications Email-channel UI that drives this is the next issue (MAN-84).
+
+### Changes
+- **Schema (additive migration `20260623140000_add_email_campaign`):**
+  - `EmailCampaign` model (tenant-scoped, registered in `TENANT_SCOPED_MODELS`) + `EmailCampaignStatus`
+    enum (`queued`/`sending`/`completed`). Snapshots the eligibility denominators at send time
+    (`audienceTotal`, `noEmailCount`, `optedOutCount`, `totalRecipients`) so the history detail can show
+    audience → emailable even after the audience changes (D-CRIT).
+  - `MessageLog.campaignId` (`Int?`, `@@index`, FK `onDelete: SetNull`) links each send to its campaign.
+  - **Partial-unique** `message_logs_campaign_customer_key` on `(campaign_id, customer_id) WHERE campaign_id IS NOT NULL` — enforces one send row per recipient per campaign (idempotency backstop) without ever constraining workflow/transactional logs. Not expressible in the Prisma schema, so it lives in the migration only.
+- **Queue — `queues/emailCampaignQueue.ts` (new):**
+  - `enqueueCampaignRecipient` — deterministic `jobId` `campaign:<id>:cust:<id>` (Bull drops a duplicate enqueue — the first idempotency layer).
+  - `processCampaignRecipient` — restores tenant context via `tenantStorage.run(data.tenantId)`; re-checks eligibility (logs `skipped` for `no_recipient`/`opted_out`/`placeholder_email` — the MAN-82 `@codadminpro.com` guard re-applied in the worker); idempotent (a prior `sent` log short-circuits, a `pending`/`failed` row is reused not duplicated); renders via the MAN-78 renderer with `store_name` threaded in the job data (no per-recipient tenant lookup), applies MAN-81 `applyUnsubscribe`, sends via `sendEmail({ as: 'tenant' })`, writes `pending` → `sent`/`failed`, never rethrows. `maybeCompleteCampaign` flips the campaign to `completed` once no recipient is pending. Worker registered only when `NODE_ENV !== 'test'`.
+- **Service — `communicationService.ts`:**
+  - `bulkSendEmail` — resolves/sanitizes content from an `EmailTemplate` (`templateId`) or inline subject/body; computes the three denominators (`Promise.all` of three counts); creates the campaign (`queued`); **cursor-paginates** the eligible audience (`PAGE=500`) and batch-enqueues (`Promise.all`) — replacing the old hard `take:1000` so 1k–5k sends aren't silently dropped (H4); updates `totalRecipients` + flips to `sending` (or `completed` if zero eligible). Manual send only.
+  - `getCampaigns` / `getCampaign(id)` — `groupBy` `MessageLog.status` → `campaignStats` breakdown (audience → no-email → opted-out → emailable → waiting/sent/delivered/failed/skipped). `getCampaign` returns `null` for an unknown id (→ 404).
+  - `getRecipients` — `email` added to the channel union; shared `EMAIL_ELIGIBLE` fragment (`email != null`, `emailOptOut == false`, `NOT endsWith @codadminpro.com`).
+- **Controller / routes:** `bulkSendEmailSchema` (zod — `templateId` **or** `subject`+`htmlBody`, `customerIds` **or** `filter`); `POST /communications/bulk-email` (201, `requireRole` super_admin/admin), `GET /communications/campaigns` + `GET /communications/campaigns/:id` (super_admin/admin/manager). Worker booted via `import './queues/emailCampaignQueue'` in `server.ts`.
+
+### Tests
+- `__tests__/unit/emailCampaignQueue.test.ts` (new, 4) — eligible send via the tenant provider + `sent` MessageLog; opt-out skip; `@codadminpro.com` placeholder skip; idempotent `already_sent`.
+- `__tests__/unit/communicationServiceEmail.test.ts` (new, 6) — denominators + one enqueue per recipient carrying `{campaignId,customerId,tenantId,storeName}`; zero-eligible completes immediately; inline-no-subject rejects; `getRecipients` email filter shape; `getCampaign` breakdown; `getCampaign` null.
+- `__tests__/unit/communicationController.test.ts` — 2 stale assertions updated now that `email` is a valid channel (missing-channel error string; invalid-channel example → `telegram`).
+
+### Key Files
+- `backend/prisma/schema.prisma` · `migrations/20260623140000_add_email_campaign/migration.sql`
+- `backend/src/queues/emailCampaignQueue.ts` (new)
+- `backend/src/services/communicationService.ts` · `controllers/communicationController.ts` · `routes/communicationRoutes.ts` · `server.ts` · `utils/prismaExtensions.ts`
+- `backend/src/__tests__/unit/emailCampaignQueue.test.ts` · `communicationServiceEmail.test.ts` (new) · `communicationController.test.ts` (updated)
+
+### Verification (GATE 4 — API + queue)
+Ran the live endpoints against the dev DB (backend from source on :3001; the docker image is stale).
+`POST /bulk-email` for the whole tenant created a campaign with `audienceTotal 52 / noEmail 17 / totalRecipients 35`; the queue drained 35/35 → 35 `MessageLog` rows / 35 distinct customers / 0 duplicate pairs / partial-unique present; campaign auto-flipped to `completed`; `GET /campaigns/:id` returned the exact breakdown, tenant-scoped. Communications page loaded clean (Email bar = 35, no console errors). Verification rows cleaned up afterward; the migration stays applied.
+
+### Notes / deferred
+- **UI is MAN-84** — eligibility-transparency banner, `EmailComposer`/`CampaignHistoryTab`/`MergeTagToolbar`, async/queued UX, provider-not-configured guard.
+- `totalRecipients` is stored (not derived) deliberately — it's the snapshot of what was actually enqueued, more accurate than re-counting a moving audience.
+- `maybeCompleteCampaign` runs a `COUNT(pending)` per job; fine for background MVP scale, revisit only if campaign volume makes it hot.
