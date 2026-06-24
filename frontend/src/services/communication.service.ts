@@ -37,11 +37,53 @@ export interface Recipient {
   firstName: string;
   lastName: string;
   phoneNumber: string;
+  email?: string | null;
   state: string;
   area: string;
   smsOptOut: boolean;
   whatsappOptOut: boolean;
+  emailOptOut?: boolean;
 }
+
+// Pre-send eligibility breakdown for the D-CRIT banner. emailable is the
+// remainder after removing customers with no address and those opted out.
+export interface EmailAudience {
+  audienceTotal: number;
+  noEmail: number;
+  optedOut: number;
+  emailable: number;
+}
+
+// Per-campaign send breakdown. no-address / opted-out are neutral skips, never
+// counted as failures.
+export interface CampaignStats {
+  audienceTotal: number;
+  noEmail: number;
+  optedOut: number;
+  emailable: number;
+  waiting: number;
+  sent: number;
+  delivered: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface EmailCampaign {
+  id: number;
+  title: string;
+  subject: string;
+  body: string;
+  status: 'queued' | 'sending' | 'completed';
+  audienceTotal: number;
+  noEmailCount: number;
+  optedOutCount: number;
+  totalRecipients: number;
+  createdAt: string;
+  updatedAt: string;
+  stats: CampaignStats;
+}
+
+export type AudienceFilter = { state?: string; productId?: number; hasOrdered?: boolean };
 
 export const communicationService = {
   async getMessages(params?: Record<string, any>): Promise<{ messages: MessageLog[]; pagination: any }> {
@@ -59,6 +101,11 @@ export const communicationService = {
     return res.data;
   },
 
+  async getEmailAudience(filters: AudienceFilter): Promise<EmailAudience> {
+    const res = await apiClient.get('/api/communications/email-audience', { params: filters });
+    return res.data;
+  },
+
   async bulkSendSms(customerIds: number[], message: string) {
     const res = await apiClient.post('/api/communications/bulk-sms', { customerIds, message });
     return res.data;
@@ -66,6 +113,29 @@ export const communicationService = {
 
   async bulkSendWhatsApp(customerIds: number[], templateKey: string, customLink?: string) {
     const res = await apiClient.post('/api/communications/bulk-whatsapp', { customerIds, templateKey, customLink });
+    return res.data;
+  },
+
+  // Queue a bulk email blast. Send by audience filter (not the capped preview
+  // list) so the backend enqueues the full eligible set via cursor pagination.
+  async bulkSendEmail(params: {
+    title: string;
+    subject: string;
+    htmlBody: string;
+    filter?: AudienceFilter;
+    customerIds?: number[];
+  }): Promise<EmailCampaign> {
+    const res = await apiClient.post('/api/communications/bulk-email', params);
+    return res.data;
+  },
+
+  async getCampaigns(): Promise<EmailCampaign[]> {
+    const res = await apiClient.get('/api/communications/campaigns');
+    return res.data;
+  },
+
+  async getCampaign(id: number): Promise<EmailCampaign> {
+    const res = await apiClient.get(`/api/communications/campaigns/${id}`);
     return res.data;
   },
 

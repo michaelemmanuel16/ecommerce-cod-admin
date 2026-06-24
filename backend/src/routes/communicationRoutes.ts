@@ -10,6 +10,7 @@ router.use(tenantRateLimiter);
 router.get('/messages', requireRole('super_admin', 'admin', 'manager'), ctrl.getMessages);
 router.get('/stats', requireRole('super_admin', 'admin', 'manager'), ctrl.getStats);
 router.get('/recipients', requireRole('super_admin', 'admin', 'manager'), ctrl.getRecipients);
+router.get('/email-audience', requireRole('super_admin', 'admin', 'manager'), ctrl.getEmailAudience);
 router.get('/sms-templates', ctrl.getTemplates);
 router.post('/sms-templates', requireRole('super_admin', 'admin'), ctrl.createTemplate);
 router.put('/sms-templates/:id', requireRole('super_admin', 'admin'), ctrl.updateTemplate);

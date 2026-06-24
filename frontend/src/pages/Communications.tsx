@@ -27,6 +27,8 @@ import {
   MessageSquare,
   Send,
   Phone,
+  Mail,
+  Check,
   AlertTriangle,
   CheckCircle,
   XCircle,
@@ -35,6 +37,8 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
+import { EmailComposer } from '../components/communications/EmailComposer';
+import { CampaignHistoryTab } from '../components/communications/CampaignHistoryTab';
 
 // ─── Overview Tab ───────────────────────────────────────────────────────────────
 
@@ -281,7 +285,7 @@ const MessageHistoryTab: React.FC = () => {
 
 const BulkSendTab: React.FC = () => {
   const { templates, fetchTemplates } = useCommunicationStore();
-  const [channelType, setChannelType] = useState<'sms' | 'whatsapp'>('sms');
+  const [channelType, setChannelType] = useState<'sms' | 'whatsapp' | 'email'>('sms');
   const [smsMessage, setSmsMessage] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [whatsappTemplate, setWhatsappTemplate] = useState('');
@@ -379,29 +383,47 @@ const BulkSendTab: React.FC = () => {
         <div className="flex gap-3">
           <button
             onClick={() => setChannelType('sms')}
+            aria-pressed={channelType === 'sms'}
             className={`flex items-center gap-2 px-6 py-4 rounded-lg border-2 transition-colors ${
               channelType === 'sms'
-                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                ? 'border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200'
                 : 'border-gray-200 hover:border-gray-300'
             }`}
           >
-            <Phone className="w-5 h-5" />
+            {channelType === 'sms' ? <Check className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
             <span className="font-medium">SMS</span>
           </button>
           <button
             onClick={() => setChannelType('whatsapp')}
+            aria-pressed={channelType === 'whatsapp'}
             className={`flex items-center gap-2 px-6 py-4 rounded-lg border-2 transition-colors ${
               channelType === 'whatsapp'
-                ? 'border-green-500 bg-green-50 text-green-700'
+                ? 'border-green-500 bg-green-50 text-green-700 ring-2 ring-green-200'
                 : 'border-gray-200 hover:border-gray-300'
             }`}
           >
-            <MessageSquare className="w-5 h-5" />
+            {channelType === 'whatsapp' ? <Check className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
             <span className="font-medium">WhatsApp</span>
+          </button>
+          <button
+            onClick={() => setChannelType('email')}
+            aria-pressed={channelType === 'email'}
+            className={`flex items-center gap-2 px-6 py-4 rounded-lg border-2 transition-colors ${
+              channelType === 'email'
+                ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-200'
+                : 'border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            {channelType === 'email' ? <Check className="w-5 h-5" /> : <Mail className="w-5 h-5" />}
+            <span className="font-medium">Email</span>
           </button>
         </div>
       </div>
 
+      {channelType === 'email' ? (
+        <EmailComposer />
+      ) : (
+      <>
       {/* Message content */}
       <Card>
         <h3 className="text-sm font-medium text-gray-700 mb-3">Message Content</h3>
@@ -565,6 +587,8 @@ const BulkSendTab: React.FC = () => {
             </span>
           </div>
         </Card>
+      )}
+      </>
       )}
     </div>
   );
@@ -818,11 +842,12 @@ const OptOutsTab: React.FC = () => {
 
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 
-const TAB_IDS = ['overview', 'history', 'bulk-send', 'templates', 'opt-outs'] as const;
+const TAB_IDS = ['overview', 'history', 'bulk-send', 'campaigns', 'templates', 'opt-outs'] as const;
 const TAB_LABELS: Record<string, string> = {
   overview: 'Overview',
   history: 'Message History',
   'bulk-send': 'Bulk Send',
+  campaigns: 'Campaigns',
   templates: 'Templates',
   'opt-outs': 'Opt-outs',
 };
@@ -832,6 +857,7 @@ function TabContent({ tabId }: { tabId: string }) {
     case 'overview': return <OverviewTab />;
     case 'history': return <MessageHistoryTab />;
     case 'bulk-send': return <BulkSendTab />;
+    case 'campaigns': return <CampaignHistoryTab />;
     case 'templates': return <TemplatesTab />;
     case 'opt-outs': return <OptOutsTab />;
     default: return <OverviewTab />;
@@ -853,7 +879,7 @@ export const Communications: React.FC = () => {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Communications</h1>
-        <p className="text-gray-500 mt-1">Manage SMS and WhatsApp messaging</p>
+        <p className="text-gray-500 mt-1">Manage SMS, WhatsApp, and email messaging</p>
       </div>
       <div>
         <div className="border-b border-gray-200">

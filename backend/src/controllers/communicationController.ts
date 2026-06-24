@@ -127,6 +127,20 @@ export const getRecipients = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
+export const getEmailAudience = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { state, productId, hasOrdered } = req.query;
+    const audience = await communicationService.getEmailAudience({
+      state: state as string | undefined,
+      productId: productId ? Number(productId) : undefined,
+      hasOrdered: hasOrdered === 'true',
+    });
+    res.json(audience);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 export const bulkSendSms = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const parsed = bulkSendSmsSchema.safeParse(req.body);

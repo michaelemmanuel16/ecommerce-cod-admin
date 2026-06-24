@@ -36,6 +36,24 @@ const EMAIL_ELIGIBLE = {
   NOT: { email: { endsWith: PLACEHOLDER_EMAIL_DOMAIN } },
 } as const;
 
+// The three eligibility denominators for an audience: total active, no-address,
+// and opted-out (real address but unsubscribed or a synthesized placeholder).
+// Shared by the pre-send banner (getEmailAudience) and the campaign snapshot
+// (bulkSendEmail) so "X of Y can be emailed" counts the same way in both. The
+// remainder (audienceTotal − noEmail − optedOut) is the emailable set, exactly
+// the EMAIL_ELIGIBLE partition.
+async function audienceDenominators(base: any) {
+  const placeholder = { email: { endsWith: PLACEHOLDER_EMAIL_DOMAIN } };
+  const [audienceTotal, noEmailCount, optedOutCount] = await Promise.all([
+    prisma.customer.count({ where: base }),
+    prisma.customer.count({ where: { ...base, email: null } }),
+    prisma.customer.count({
+      where: { ...base, email: { not: null }, OR: [{ emailOptOut: true }, placeholder] },
+    }),
+  ]);
+  return { audienceTotal, noEmailCount, optedOutCount };
+}
+
 // Salesgee-style history breakdown: stored send-time denominators (audience →
 // no-email → opted-out → emailable) plus live MessageLog status aggregation.
 // `sent` counts anything that left the system (sent/delivered/read); `delivered`
@@ -111,6 +129,21 @@ export const communicationService = {
       take: 1000,
     });
     return customers;
+  },
+
+  // Counts-only audience summary for the pre-send eligibility banner (D-CRIT).
+  // getRecipients caps at 1000 and only returns the emailable list, so it can't
+  // surface the no-address / opted-out breakdown — this can. Filter is the same
+  // shape as a campaign's audience.
+  async getEmailAudience(filter: { state?: string; productId?: number; hasOrdered?: boolean }) {
+    const base = buildAudienceWhere({ filter });
+    const { audienceTotal, noEmailCount, optedOutCount } = await audienceDenominators(base);
+    return {
+      audienceTotal,
+      noEmail: noEmailCount,
+      optedOut: optedOutCount,
+      emailable: audienceTotal - noEmailCount - optedOutCount,
+    };
   },
 
   async bulkSendSms(customerIds: number[], message: string) {
@@ -221,16 +254,9 @@ export const communicationService = {
     }
 
     const base = buildAudienceWhere(params);
-    const placeholder = { email: { endsWith: PLACEHOLDER_EMAIL_DOMAIN } };
 
     // Denominators for the eligibility breakdown (D-CRIT), snapshotted at send time.
-    const [audienceTotal, noEmailCount, optedOutCount] = await Promise.all([
-      prisma.customer.count({ where: base }),
-      prisma.customer.count({ where: { ...base, email: null } }),
-      prisma.customer.count({
-        where: { ...base, email: { not: null }, OR: [{ emailOptOut: true }, placeholder] },
-      }),
-    ]);
+    const { audienceTotal, noEmailCount, optedOutCount } = await audienceDenominators(base);
 
     const campaign = await prisma.emailCampaign.create({
       data: { title: params.title, subject, body, status: EmailCampaignStatus.queued, audienceTotal, noEmailCount, optedOutCount, totalRecipients: 0 },

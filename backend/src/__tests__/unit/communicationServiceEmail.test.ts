@@ -114,6 +114,22 @@ describe('communicationService — bulk email (MAN-83)', () => {
     });
   });
 
+  describe('getEmailAudience', () => {
+    it('returns the four eligibility denominators with emailable as the remainder', async () => {
+      // audienceTotal=20, noEmail=12, optedOut/placeholder=3 → emailable=5.
+      (prismaMock.customer.count as any)
+        .mockResolvedValueOnce(20)
+        .mockResolvedValueOnce(12)
+        .mockResolvedValueOnce(3);
+
+      const result = await withTenant(() =>
+        communicationService.getEmailAudience({ hasOrdered: true }),
+      );
+
+      expect(result).toEqual({ audienceTotal: 20, noEmail: 12, optedOut: 3, emailable: 5 });
+    });
+  });
+
   describe('getCampaign', () => {
     it('returns the eligibility breakdown from denominators + live MessageLog aggregation', async () => {
       (prismaMock.emailCampaign.findUnique as any).mockResolvedValue({
