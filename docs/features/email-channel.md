@@ -320,3 +320,60 @@ Ran the live endpoints against the dev DB (backend from source on :3001; the doc
 - **UI is MAN-84** — eligibility-transparency banner, `EmailComposer`/`CampaignHistoryTab`/`MergeTagToolbar`, async/queued UX, provider-not-configured guard.
 - `totalRecipients` is stored (not derived) deliberately — it's the snapshot of what was actually enqueued, more accurate than re-counting a moving audience.
 - `maybeCompleteCampaign` runs a `COUNT(pending)` per job; fine for background MVP scale, revisit only if campaign volume makes it hot.
+
+---
+
+## MAN-84 — Communications Email channel UI (Phase 2.3)
+
+- **Date:** 2026-06-24
+- **Type:** feat (frontend)
+- **Branch:** `feature/email-channel-epic`
+- **Commit:** `037b43e`
+
+Surfaces the MAN-83 backend as the Salesgee-style compose → pick audience → send → history flow,
+extending `Communications.tsx` rather than adding a page. Implements the Design-phase requirements
+(D-CRIT eligibility transparency, D-H1 async UX, D-H2 provider guard, D-H3 editor, D-M1 structure).
+
+### Frontend
+- **`components/communications/EmailComposer.tsx` (new)** — campaign-name + Subject + HTML body
+  textarea; three prebuilt templates (announcement / promo / re-engage); cursor-aware merge-tag
+  insert into the last-focused field (Subject **or** Body); audience filters (state / product /
+  has-ordered) → `Check Eligibility`; **eligibility banner** "X of Y can be emailed (Z no address,
+  W opted out)" (D-CRIT); **Preview** renders subject+body with sample merge values inside a
+  `sandbox=""` `<iframe srcDoc>` (no `allow-scripts` → the merchant's own draft HTML renders, no
+  script ever executes); `handleSend` validates + `window.confirm` → `bulkSendEmail` → toast
+  "Campaign queued — track it in Campaigns" → `setSearchParams({ tab: 'campaigns' })` (D-H1).
+  Provider-not-configured → `EmptyState` linking to `/settings?tab=integrations` (D-H2).
+- **`components/communications/CampaignHistoryTab.tsx` (new)** — own top-level Campaigns tab; polls
+  `getCampaigns()` every 4s while any campaign is `queued`/`sending`, timer cleared on unmount (D-H1);
+  `STATUS_VARIANT` badge map; `overflow-x-auto` table; **no-address + opted-out + skipped rendered as
+  one neutral gray "Skipped" column, Failed red only when `failed > 0`** (D-CRIT); Megaphone
+  `EmptyState` when no campaigns.
+- **`components/communications/MergeTagToolbar.tsx` + `mergeTags.ts` (new)** — `BULK_MERGE_TAGS`
+  (the 4 tags that resolve for a bulk blast — order-scoped tags deliberately omitted) +
+  `SAMPLE_MERGE_VALUES`; constants split into their own module to satisfy the react-refresh lint rule.
+- **`pages/Communications.tsx`** — Email channel button (indigo, `aria-pressed`, Check icon when
+  selected → **non-color selected state**, D-M1/a11y); `channelType` union extended with `'email'`;
+  `BulkSendTab` renders `<EmailComposer />` for email; new top-level `campaigns` tab →
+  `<CampaignHistoryTab />`; subtitle updated to mention email.
+- **`services/communication.service.ts`** — `getEmailAudience`, `bulkSendEmail`, `getCampaigns`,
+  `getCampaign` + `EmailAudience` / `CampaignStats` / `EmailCampaign` / `AudienceFilter` interfaces.
+
+### Backend (thin)
+- **`GET /api/communications/email-audience`** — `getEmailAudience` controller →
+  `communicationService.getEmailAudience(filter)`, backed by a new `audienceDenominators(base)` helper
+  (audience / no-email / opted-out / emailable) that `bulkSendEmail` is refactored to reuse.
+- **Test:** `__tests__/unit/communicationServiceEmail.test.ts` — `getEmailAudience` returns
+  `{audienceTotal:20, noEmail:12, optedOut:3, emailable:5}` from mocked counts.
+
+### Verification (GATE 4)
+Backend + frontend build / lint / test green; `validate-workflows.sh` pass. Browser (Chrome,
+`admin@codadmin.com`): Communications → Email shows the composer once a dev provider is configured,
+eligibility banner reads from the live endpoint, queued send toasts and switches to Campaigns, the
+history table renders the breakdown with no-address as a neutral skip; provider-unset shows the
+EmptyState; console clean. Screenshots captured for the Phase 5 review.
+
+### Notes
+- Merge-tag preview uses client-side `SAMPLE_MERGE_VALUES` (no backend round-trip); the real
+  per-recipient render still happens in the MAN-78 backend renderer at send time.
+- This is the final issue of the Email Channel epic (MAN-76); the consolidated PR follows.
