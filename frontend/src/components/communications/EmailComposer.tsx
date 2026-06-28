@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Mail, Send, Settings, Eye, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Card } from '../ui/Card';
@@ -43,6 +43,7 @@ function renderPreview(text: string): string {
 
 export const EmailComposer: React.FC = () => {
   const [, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { products, fetchProducts } = useProductsStore();
 
   const [providerConfigured, setProviderConfigured] = useState<boolean | null>(null);
@@ -160,7 +161,7 @@ export const EmailComposer: React.FC = () => {
         title="Email provider not configured"
         description="Connect your email provider before sending campaigns. Marketing email sends from your own domain to protect deliverability."
         action={
-          <Button onClick={() => (window.location.href = '/settings?tab=integrations')}>
+          <Button onClick={() => navigate('/settings?tab=integrations')}>
             <Settings className="w-4 h-4 mr-1" />
             Go to Settings → Email
           </Button>

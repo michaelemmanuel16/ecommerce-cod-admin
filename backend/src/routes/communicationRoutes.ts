@@ -15,7 +15,7 @@ router.get('/sms-templates', ctrl.getTemplates);
 router.post('/sms-templates', requireRole('super_admin', 'admin'), ctrl.createTemplate);
 router.put('/sms-templates/:id', requireRole('super_admin', 'admin'), ctrl.updateTemplate);
 router.delete('/sms-templates/:id', requireRole('super_admin', 'admin'), ctrl.deleteTemplate);
-router.get('/email-templates', ctrl.getEmailTemplates);
+router.get('/email-templates', requireRole('super_admin', 'admin', 'manager'), ctrl.getEmailTemplates);
 router.post('/email-templates', requireRole('super_admin', 'admin'), ctrl.createEmailTemplate);
 router.put('/email-templates/:id', requireRole('super_admin', 'admin'), ctrl.updateEmailTemplate);
 router.delete('/email-templates/:id', requireRole('super_admin', 'admin'), ctrl.deleteEmailTemplate);
