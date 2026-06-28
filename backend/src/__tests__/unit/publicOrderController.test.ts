@@ -169,6 +169,46 @@ describe('publicOrderController.createPublicOrder — deferred Paystack creation
       }),
     );
   });
+
+  // MAN-82 synthesized-address guard: Paystack needs an email, so a blank one is
+  // synthesized as `<phone>@codadminpro.com` — but that placeholder is LOCAL to the
+  // Paystack init call and must never be persisted onto Customer.email, or it would
+  // surface as a (bouncing) campaign recipient and damage sender reputation.
+  it('synthesizes a Paystack email but never persists the @codadminpro.com placeholder onto the customer (MAN-82)', async () => {
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(
+      physicalForm({ codEnabled: false, paystackFullEnabled: true }),
+    );
+    (prismaMock.customer.findFirst as any).mockResolvedValue(null); // new customer
+    (prismaMock.customer.create as any).mockResolvedValue({
+      id: 8, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber, email: null,
+    });
+    (prismaMock.formSubmission.findFirst as any).mockResolvedValue(null);
+    (prismaMock.order.findFirst as any).mockResolvedValue(null);
+    (prismaMock.pendingCheckout.create as any).mockResolvedValue({ id: 1 });
+    (mockedPaystack.initializeTransaction as any).mockResolvedValue({
+      authorization_url: 'https://paystack.co/pay/abc',
+      reference: 'ref_xyz',
+    });
+
+    // buyer has NO email field — left blank.
+    const req = buildReq({ formData: buyer, selectedPackage: { id: 10 }, paymentMethod: 'paystack_full', totalAmount: 250 });
+    await createPublicOrder(req, buildRes(), jest.fn());
+
+    // The persisted customer carries a real null email, NOT the placeholder.
+    expect(prismaMock.customer.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ email: null }) }),
+    );
+    // But Paystack still received the synthesized address so its receipt/init works.
+    expect(mockedPaystack.initializeTransaction).toHaveBeenCalledWith(
+      'tenant-1',
+      `${buyer.phoneNumber}@codadminpro.com`,
+      expect.any(Number),
+      'GHS',
+      expect.any(Object),
+      expect.any(String),
+      expect.any(Object),
+    );
+  });
 });
 
 describe('publicOrderController.createPublicOrder — email linking (issue #1)', () => {

@@ -53,6 +53,7 @@ const DEFAULT_FIELDS: FormField[] = [
   { id: 'fullName', label: 'Full Name', type: 'text', required: true, enabled: true },
   { id: 'phone', label: 'Phone', type: 'phone', required: true, enabled: true },
   { id: 'altPhone', label: 'Alt Phone', type: 'phone', required: false, enabled: true },
+  { id: 'email', label: 'Email Address', type: 'email', required: false, enabled: true },
   { id: 'region', label: 'Region/State', type: 'select', required: true, enabled: true },
   { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: true, enabled: true },
 ];

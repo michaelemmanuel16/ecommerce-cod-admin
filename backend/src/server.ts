@@ -60,6 +60,7 @@ import uploadRoutes from './routes/uploadRoutes';
 import adminRoutes from './routes/adminRoutes';
 import checkoutFormRoutes from './routes/checkoutFormRoutes';
 import publicOrderRoutes from './routes/publicOrderRoutes';
+import unsubscribeRoutes from './routes/unsubscribeRoutes';
 import callRoutes from './routes/callRoutes';
 import glRoutes from './routes/glRoutes';
 import agentReconciliationRoutes from './routes/agentReconciliationRoutes';
@@ -83,6 +84,7 @@ import cron from 'node-cron';
 
 // Initialize queue workers
 import './queues/workflowQueue';
+import './queues/emailCampaignQueue';
 
 import { setupAgingCron } from './queues/agingQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
@@ -238,7 +240,9 @@ app.use('/api/mcp-keys', apiLimiter, mcpKeyRoutes);
 // MCP Streamable HTTP transport (auth via API key in Authorization header)
 app.use('/mcp', apiLimiter, mcpHttpTransport);
 
-// Public routes (no authentication required)
+// Public routes (no authentication required).
+// Mount the more specific unsubscribe path first so it isn't shadowed.
+app.use('/api/public/unsubscribe', unsubscribeRoutes);
 app.use('/api/public', publicOrderRoutes);
 
 // Root route

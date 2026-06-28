@@ -4,7 +4,17 @@ import logger from '../utils/logger';
 import { evaluateConditions } from '../utils/conditionEvaluator';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderUpdated, emitOrderAssigned } from '../sockets/index';
-import { tenantStorage } from '../utils/tenantContext';
+import { tenantStorage, getTenantId } from '../utils/tenantContext';
+
+// Send actions read tenant-scoped provider config (SystemConfig) and write
+// tenant-scoped MessageLog rows. Running them with no tenant context would let
+// the fail-open Prisma extension read/write across tenants, so they fail closed.
+const TENANT_SCOPED_SEND_ACTIONS = new Set([
+  'send_email',
+  'send_sms',
+  'send_whatsapp',
+  'send_digital_product', // forward-looking: action lands in MAN-80; guard is in place first
+]);
 
 const redisConfig = {
   host: process.env.REDIS_HOST || 'localhost',
@@ -123,7 +133,11 @@ workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
     }
   };
 
-  // Run with tenant context if available, otherwise run without (backwards compat)
+  // Run with tenant context if available, otherwise run without (backwards compat).
+  // This fork still runs untenanted jobs fail-open; tenant-scoped send actions are
+  // guarded fail-closed in executeAction (see TENANT_SCOPED_SEND_ACTIONS). Moving
+  // enforcement down to this fork (refuse untenanted DB-touching jobs) is a separate
+  // follow-up — it changes behaviour for every action type and all legacy enqueues.
   if (tenantId) {
     return tenantStorage.run({ tenantId }, processJob);
   }
@@ -297,7 +311,13 @@ async function executeAssignUserAction(action: any, _input: any, conditions?: an
   };
 }
 
-async function executeAction(action: any, input: any, conditions?: any): Promise<any> {
+// Exported for unit testing of the fail-closed tenant guard.
+export async function executeAction(action: any, input: any, conditions?: any): Promise<any> {
+  // Fail closed: never run a tenant-scoped send without tenant context (C1).
+  if (TENANT_SCOPED_SEND_ACTIONS.has(action.type) && !getTenantId()) {
+    throw new Error(`Refusing to run "${action.type}" with no tenant context`);
+  }
+
   switch (action.type) {
     case 'send_sms': {
       const { smsService } = await import('../services/smsService');
@@ -316,10 +336,10 @@ async function executeAction(action: any, input: any, conditions?: any): Promise
       return { sent: true, messageLogId: smsResult.messageLogId };
     }
 
-    case 'send_email':
-      logger.info('Sending email', { to: action.config.to, subject: action.config.subject });
-      // Integrate with email service here
-      return { sent: true };
+    case 'send_email': {
+      const { sendWorkflowEmail } = await import('../services/emailService');
+      return sendWorkflowEmail(action.config || {}, { orderId: input.orderId });
+    }
 
     case 'send_whatsapp': {
       const { sendWhatsAppForOrder } = await import('../services/whatsappService');

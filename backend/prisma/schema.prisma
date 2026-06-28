@@ -57,6 +57,8 @@ model Tenant {
   systemConfigs       SystemConfig[]
   mcpApiKeys          McpApiKey[]
   webhookEvents       WebhookEvent[]
+  emailTemplates      EmailTemplate[]
+  emailCampaigns      EmailCampaign[]
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
@@ -170,6 +172,9 @@ model Customer {
   isActive       Boolean      @default(true) @map("is_active")
   smsOptOut      Boolean      @default(false) @map("sms_opt_out")
   whatsappOptOut Boolean      @default(false) @map("whatsapp_opt_out")
+  emailOptOut    Boolean      @default(false) @map("email_opt_out")
+  // Stored 32-byte random hex (not signed, not derived from id); generated lazily before marketing sends.
+  unsubscribeToken String?    @unique @map("unsubscribe_token")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
   firstName      String       @map("first_name")
@@ -1113,6 +1118,7 @@ enum JournalSourceType {
 enum MessageChannel {
   whatsapp
   sms
+  email
 }
 
 enum MessageDirection {
@@ -1126,6 +1132,7 @@ enum MessageStatus {
   delivered
   read
   failed
+  skipped
 }
 
 enum TransferType {
@@ -1221,22 +1228,25 @@ model MessageLog {
   providerMessageId String?          @unique @map("provider_message_id")
   errorMessage      String?          @map("error_message")
   metadata          Json?
+  campaignId        Int?             @map("campaign_id")
   sentAt            DateTime?        @map("sent_at")
   deliveredAt       DateTime?        @map("delivered_at")
   readAt            DateTime?        @map("read_at")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
 
-  order    Order?    @relation(fields: [orderId], references: [id])
-  customer Customer? @relation(fields: [customerId], references: [id])
-  tenantId String?   @map("tenant_id")
-  tenant   Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order    Order?         @relation(fields: [orderId], references: [id])
+  customer Customer?      @relation(fields: [customerId], references: [id])
+  campaign EmailCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  tenantId String?        @map("tenant_id")
+  tenant   Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([customerId])
   @@index([channel, status])
   @@index([createdAt])
   @@index([tenantId])
+  @@index([campaignId])
   @@map("message_logs")
 }
 
@@ -1248,6 +1258,60 @@ model SmsTemplate {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("sms_templates")
+}
+
+// Reusable email message object (subject + HTML body + merge tags). Tenant-scoped
+// so one composed template is reusable by both workflow send_email actions and bulk
+// campaigns. Body HTML is sanitized (allowlist) on save.
+model EmailTemplate {
+  id        Int      @id @default(autoincrement())
+  name      String
+  subject   String
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String? @map("tenant_id")
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([name, tenantId])
+  @@index([tenantId])
+  @@map("email_templates")
+}
+
+// A bulk email send (Salesgee-style "compose → audience → send → history").
+// Tenant-scoped. `subject`/`body` are the resolved, sanitized snapshot used for the
+// whole send, so the campaign is reproducible even if its source EmailTemplate later
+// changes. The denominator fields capture the eligibility breakdown at send time
+// (audience → no-email → opted-out → emailable) so the history detail is a pure read;
+// live sent/delivered/failed/skipped counts come from aggregating MessageLog by
+// campaignId. Email never sends on its own — only an explicit bulk Send enqueues jobs.
+enum EmailCampaignStatus {
+  queued
+  sending
+  completed
+}
+
+model EmailCampaign {
+  id              Int                 @id @default(autoincrement())
+  title           String
+  subject         String
+  body            String
+  status          EmailCampaignStatus @default(queued)
+  audienceTotal   Int      @default(0) @map("audience_total")
+  noEmailCount    Int      @default(0) @map("no_email_count")
+  optedOutCount   Int      @default(0) @map("opted_out_count")
+  totalRecipients Int      @default(0) @map("total_recipients")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenantId String? @map("tenant_id")
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  messageLogs MessageLog[]
+
+  @@index([tenantId])
+  @@map("email_campaigns")
 }
 
 model McpApiKey {

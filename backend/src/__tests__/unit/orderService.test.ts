@@ -153,6 +153,60 @@ describe('OrderService', () => {
       expect(order.customerId).toBe(1);
     });
 
+    // MAN-82: a manual order for a repeat customer (matched by phone) should link a
+    // newly-provided email so admin orders also grow the owned email list — mirroring
+    // the public checkout path. Previously only alternatePhone was updated.
+    const phoneOrderData = {
+      ...createOrderData,
+      customerId: undefined,
+      customerPhone: '+1234567890',
+    };
+
+    function mockOrderCreationTx() {
+      (prismaMock.product.findMany as any).mockResolvedValue([mockProduct]);
+      (prismaMock.order.count as any).mockResolvedValue(0);
+      (prismaMock.$transaction as any).mockImplementation(async (callback: any) =>
+        callback({
+          order: {
+            create: jest.fn().mockResolvedValue({ id: 1, orderNumber: '1001', customerId: 1, customer: mockCustomer, orderItems: [] }) as any,
+            count: jest.fn().mockResolvedValue(0) as any,
+          },
+          product: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }) as any,
+            update: jest.fn().mockResolvedValue(mockProduct) as any,
+          },
+          customer: { update: jest.fn().mockResolvedValue(mockCustomer) as any },
+        }),
+      );
+    }
+
+    it('updates a repeat customer email on a manual order when a new one is provided (MAN-82)', async () => {
+      const existingCustomer = { ...mockCustomer, email: 'old@example.com', alternatePhone: null };
+      (prismaMock.customer.findFirst as any).mockResolvedValue(existingCustomer);
+      (prismaMock.customer.update as any).mockResolvedValue({ ...existingCustomer, email: 'new@example.com' });
+      mockOrderCreationTx();
+
+      await orderService.createOrder({ ...phoneOrderData, customerEmail: 'new@example.com' } as any);
+
+      expect(prismaMock.customer.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: existingCustomer.id },
+          data: expect.objectContaining({ email: 'new@example.com' }),
+        }),
+      );
+    });
+
+    it('does not update a repeat customer when the email is unchanged (MAN-82)', async () => {
+      const existingCustomer = { ...mockCustomer, email: 'same@example.com', alternatePhone: null };
+      (prismaMock.customer.findFirst as any).mockResolvedValue(existingCustomer);
+      mockOrderCreationTx();
+
+      await orderService.createOrder({ ...phoneOrderData, customerEmail: 'same@example.com' } as any);
+
+      // Only the in-transaction stats update may run; the outer profile update must not.
+      expect(prismaMock.customer.update).not.toHaveBeenCalled();
+    });
+
     it('should throw error when customer not found', async () => {
       (prismaMock.customer.findUnique as any).mockResolvedValue(null);
 
