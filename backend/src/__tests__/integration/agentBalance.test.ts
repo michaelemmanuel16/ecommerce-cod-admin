@@ -5,6 +5,7 @@ import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { AccountType, NormalBalance, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GLAccountService } from '../../services/glAccountService';
+import { withGlTestTenant } from './helpers/glTestTenant';
 
 // Mock socket instance
 jest.mock('../../utils/socketInstance', () => ({
@@ -26,19 +27,22 @@ describe('Agent Balance and Deposit Integration', () => {
 
     beforeEach(async () => {
         GLAccountService.clearCache();
-        // Clean up - Order matters due to foreign keys
-        await prisma.accountTransaction.deleteMany({});
-        await (prisma as any).agentDeposit.deleteMany({});
-        await (prisma as any).agentCollection.deleteMany({});
-        await (prisma as any).agentBalance.deleteMany({});
-        await prisma.delivery.deleteMany({});
-        await prisma.orderItem.deleteMany({});
-        await prisma.order.deleteMany({});
-        await prisma.journalEntry.deleteMany({});
-        await prisma.customer.deleteMany({});
-        await prisma.account.deleteMany({});
-        await prisma.user.deleteMany({
-            where: { email: { in: ['admin@test.com', 'agent@test.com'] } }
+        // Unscoped cleanup, then seed + enter tenant context (mirrors a request).
+        await withGlTestTenant(async () => {
+            // Clean up - Order matters due to foreign keys
+            await prisma.accountTransaction.deleteMany({});
+            await (prisma as any).agentDeposit.deleteMany({});
+            await (prisma as any).agentCollection.deleteMany({});
+            await (prisma as any).agentBalance.deleteMany({});
+            await prisma.delivery.deleteMany({});
+            await prisma.orderItem.deleteMany({});
+            await prisma.order.deleteMany({});
+            await prisma.journalEntry.deleteMany({});
+            await prisma.customer.deleteMany({});
+            await prisma.account.deleteMany({});
+            await prisma.user.deleteMany({
+                where: { email: { in: ['admin@test.com', 'agent@test.com'] } }
+            });
         });
 
         // Setup GL Accounts

@@ -3,22 +3,29 @@ import prisma from '../../utils/prisma';
 import agentReconciliationService from '../../services/agentReconciliationService';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { AccountType, NormalBalance, Prisma } from '@prisma/client';
+import { withGlTestTenant } from './helpers/glTestTenant';
+import { tenantStorage } from '../../utils/tenantContext';
 
 describe('Agent Balance Concurrency Integration Test', () => {
     let testUser: any;
     let testAgent: any;
+    let testTenantId: string;
 
     beforeAll(async () => {
-        // Clean up - Order matters due to foreign keys
-        await prisma.accountTransaction.deleteMany({});
-        await (prisma as any).agentDeposit.deleteMany({});
-        await (prisma as any).agentBalance.deleteMany({});
-        await prisma.journalEntry.deleteMany({});
-        await prisma.user.deleteMany({
-            where: { email: { in: ['admin-con@test.com', 'agent-con@test.com'] } }
+        // Unscoped cleanup, then seed + enter tenant context (mirrors a request).
+        testTenantId = await withGlTestTenant(async () => {
+            // Clean up - Order matters due to foreign keys
+            await prisma.accountTransaction.deleteMany({});
+            await (prisma as any).agentDeposit.deleteMany({});
+            await (prisma as any).agentBalance.deleteMany({});
+            await prisma.journalEntry.deleteMany({});
+            await prisma.account.deleteMany({});
+            await prisma.user.deleteMany({
+                where: { email: { in: ['admin-con@test.com', 'agent-con@test.com'] } }
+            });
         });
 
-        // Setup GL Accounts needed
+        // Setup GL Accounts needed (under tenant context so they're scoped)
         const accounts: Prisma.AccountUncheckedCreateInput[] = [
             { id: parseInt(GL_ACCOUNTS.AR_AGENTS), code: GL_ACCOUNTS.AR_AGENTS, name: 'Agent AR', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
             { id: parseInt(GL_ACCOUNTS.CASH_IN_HAND), code: GL_ACCOUNTS.CASH_IN_HAND, name: 'Cash in Hand', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
@@ -67,31 +74,35 @@ describe('Agent Balance Concurrency Integration Test', () => {
     });
 
     it('should maintain correct agent balance under concurrent deposit verifications', async () => {
-        // 1. Setup initial balance of 2000
-        const initialBalance = await agentReconciliationService.getOrCreateBalance(testAgent.id);
-        await (prisma as any).agentBalance.update({
-            where: { id: initialBalance.id },
-            data: { currentBalance: 2000 }
+        // restoreMocks wipes the beforeAll getTenantId spy before this test, so run
+        // the body inside real ALS tenant context (faithful to a live request).
+        await tenantStorage.run({ tenantId: testTenantId }, async () => {
+            // 1. Setup initial balance of 2000
+            const initialBalance = await agentReconciliationService.getOrCreateBalance(testAgent.id);
+            await (prisma as any).agentBalance.update({
+                where: { id: initialBalance.id },
+                data: { currentBalance: 2000 }
+            });
+
+            // 2. Create 5 deposits of 100 each
+            const depositIds: number[] = [];
+            for (let i = 0; i < 5; i++) {
+                const d = await agentReconciliationService.createDeposit(testAgent.id, 100, 'bank_transfer', `REF-CON-${i}`);
+                depositIds.push(d.id);
+            }
+
+            // 3. Verify all deposits concurrently
+            // Note: In a real scenario, different admins might verify them at the same time.
+            const promises = depositIds.map(id =>
+                agentReconciliationService.verifyDeposit(id, testUser.id)
+            );
+
+            await Promise.all(promises);
+
+            // 4. Check final balance: 2000 - (5 * 100) = 1500
+            const finalBalance = await agentReconciliationService.getAgentBalance(testAgent.id);
+            expect(Number(finalBalance!.currentBalance)).toBe(1500);
+            expect(Number(finalBalance!.totalDeposited)).toBe(500);
         });
-
-        // 2. Create 5 deposits of 100 each
-        const depositIds: number[] = [];
-        for (let i = 0; i < 5; i++) {
-            const d = await agentReconciliationService.createDeposit(testAgent.id, 100, 'bank_transfer', `REF-CON-${i}`);
-            depositIds.push(d.id);
-        }
-
-        // 3. Verify all deposits concurrently
-        // Note: In a real scenario, different admins might verify them at the same time.
-        const promises = depositIds.map(id =>
-            agentReconciliationService.verifyDeposit(id, testUser.id)
-        );
-
-        await Promise.all(promises);
-
-        // 4. Check final balance: 2000 - (5 * 100) = 1500
-        const finalBalance = await agentReconciliationService.getAgentBalance(testAgent.id);
-        expect(Number(finalBalance!.currentBalance)).toBe(1500);
-        expect(Number(finalBalance!.totalDeposited)).toBe(500);
     }, 60000);
 });
