@@ -538,6 +538,15 @@ export const backfillCommissions = async (_req: AuthRequest, res: Response): Pro
     const commPayableAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE);
     const cashInTransitAccountId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT);
 
+    // account_transactions.tenant_id is NOT NULL — stamp every created row with
+    // the request's tenant rather than relying on the extension (which covers
+    // only the top-level create, and never nested children).
+    const tenantId = getTenantId();
+    if (!tenantId) {
+      res.status(400).json({ message: 'Cannot backfill commissions without tenant context.' });
+      return;
+    }
+
     // Find all order_delivery JEs that have NO commission transactions
     const journalEntries = await prisma.journalEntry.findMany({
       where: {
@@ -602,6 +611,7 @@ export const backfillCommissions = async (_req: AuthRequest, res: Response): Pro
               debitAmount: agentComm,
               creditAmount: new Decimal(0),
               description: `Backfill: Delivery agent commission - Order #${order.id}`,
+              tenantId,
             },
           });
           // Reduce Cash in Transit (agent keeps commission from collection)
@@ -632,6 +642,7 @@ export const backfillCommissions = async (_req: AuthRequest, res: Response): Pro
               debitAmount: repComm,
               creditAmount: new Decimal(0),
               description: `Backfill: Sales rep commission - Order #${order.id}`,
+              tenantId,
             },
           });
           await tx.accountTransaction.create({
@@ -641,6 +652,7 @@ export const backfillCommissions = async (_req: AuthRequest, res: Response): Pro
               debitAmount: new Decimal(0),
               creditAmount: repComm,
               description: `Backfill: Commissions payable - Order #${order.id}`,
+              tenantId,
             },
           });
           await tx.account.update({

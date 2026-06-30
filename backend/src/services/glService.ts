@@ -995,13 +995,20 @@ export class GLService {
         throw new AppError('Journal entry is already voided', 400);
       }
 
+      // The reversing entry inherits the tenant of the entry being reversed —
+      // both parent and children must be stamped (the extension only covers
+      // the top-level create). account_transactions.tenant_id is NOT NULL, so a
+      // legacy entry with a null tenant cannot be safely reversed.
+      const tenantId = entry.tenantId;
+      if (!tenantId) {
+        throw new AppError('Cannot void a journal entry that has no tenant.', 400);
+      }
+
       // Create reversing entry with swapped debits/credits
       const reversingEntryNumber = await this.generateEntryNumber(tx as Prisma.TransactionClient);
       const reversingEntry = await tx.journalEntry.create({
         data: {
-          // Inherit the tenant from the entry being reversed — both parent and
-          // children must be stamped (the extension only covers top-level).
-          tenantId: entry.tenantId,
+          tenantId,
           entryNumber: reversingEntryNumber,
           entryDate: new Date(),
           description: `VOID: ${entry.description}`,
@@ -1014,7 +1021,7 @@ export class GLService {
               debitAmount: t.creditAmount,  // Swapped
               creditAmount: t.debitAmount,   // Swapped
               description: `Reversal of ${entry.entryNumber}`,
-              tenantId: entry.tenantId
+              tenantId
             }))
           }
         },
