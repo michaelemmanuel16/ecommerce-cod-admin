@@ -501,8 +501,11 @@ model AccountTransaction {
   runningBalance Decimal  @default(0) @map("running_balance") @db.Decimal(19, 4)
   description    String?
   createdAt      DateTime @default(now()) @map("created_at")
-  tenantId       String?  @map("tenant_id")
-  tenant         Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Required: a NULL tenant makes the row invisible to tenant-scoped financial
+  // reporting (revenue silently vanishes). Backfilled from the parent journal
+  // entry and locked NOT NULL by migration 20260630070000.
+  tenantId       String   @map("tenant_id")
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   account      Account      @relation(fields: [accountId], references: [id])

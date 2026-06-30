@@ -49,6 +49,12 @@ interface JournalEntryCreateData {
   sourceType: JournalSourceType;
   sourceId: number;
   createdBy: number;
+  // Tenant that owns this entry. Pass explicitly (e.g. order.tenantId) so the
+  // GL write is correct regardless of execution context. Background callers
+  // (reconciliation cron, queues, setImmediate) have no AsyncLocalStorage
+  // tenant context, so relying on getTenantId() alone silently orphans the
+  // nested account_transactions with tenant_id = NULL. See createJournalEntryWithRetry.
+  tenantId?: string;
   transactions: {
     create: TransactionCreateData[];
   };
@@ -148,8 +154,23 @@ export class GLAutomationService {
         // Validate balance before writing
         GLAutomationService.validateJournalEntryBalance(data.transactions.create);
 
+        // Resolve the owning tenant explicitly. Prefer the value the caller
+        // threaded in (e.g. order.tenantId), falling back to ambient context
+        // for request-scoped callers (manual entries). The Prisma tenant
+        // extension only injects tenantId into the TOP-LEVEL create, never the
+        // nested transactions.create — so children must be stamped here.
+        // Fail loud rather than write tenant_id = NULL: a missing tenant means
+        // financial rows that silently disappear from tenant-scoped reporting.
+        const { tenantId: explicitTenantId, ...entryData } = data;
+        const tenantId = explicitTenantId ?? getTenantId();
+        if (!tenantId) {
+          throw new Error(
+            `Cannot create GL journal entry (source ${data.sourceType}#${data.sourceId}) without a tenantId. ` +
+            `Pass tenantId explicitly (e.g. order.tenantId) or run within tenant context.`
+          );
+        }
+
         // First, update account balances and get running balances
-        const tenantId = getTenantId();
         const transactionsWithRunningBalances = [];
         for (const txn of data.transactions.create) {
           const runningBalance = await this.updateAccountBalance(
@@ -162,13 +183,14 @@ export class GLAutomationService {
           transactionsWithRunningBalances.push({
             ...txn,
             runningBalance,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId,
           });
         }
 
         return await tx.journalEntry.create({
           data: {
-            ...data,
+            ...entryData,
+            tenantId,
             entryNumber,
             transactions: {
               create: transactionsWithRunningBalances
@@ -368,6 +390,9 @@ export class GLAutomationService {
       sourceType: JournalSourceType.order_delivery,
       sourceId: order.id,
       createdBy: userId,
+      // Stamp the entry with the order's tenant so the GL write is correct even
+      // when run from the reconciliation cron / setImmediate (no ALS context).
+      tenantId: (order as any).tenantId ?? undefined,
       transactions: {
         create: transactions,
       },
@@ -431,6 +456,7 @@ export class GLAutomationService {
       sourceType: JournalSourceType.failed_delivery,
       sourceId: delivery.id,
       createdBy: userId,
+      tenantId: (order as any).tenantId ?? undefined,
       transactions: {
         create: transactions,
       },
@@ -580,6 +606,7 @@ export class GLAutomationService {
       sourceType: JournalSourceType.order_return,
       sourceId: order.id,
       createdBy: userId,
+      tenantId: (order as any).tenantId ?? undefined,
       transactions: {
         create: transactions,
       },

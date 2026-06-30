@@ -10,6 +10,7 @@ import { DeliveryService } from '../../services/deliveryService';
 import { OrderService } from '../../services/orderService';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
+import { withGlTestTenant } from './helpers/glTestTenant';
 
 // Mock socket instance
 jest.mock('../../utils/socketInstance', () => ({
@@ -46,26 +47,28 @@ describe('Delivery GL Integration', () => {
   });
 
   beforeEach(async () => {
-    // Clean up test data in correct order to avoid FK issues
-    await prisma.accountTransaction.deleteMany({});
-    await (prisma as any).agentCollection.deleteMany({});
-    await prisma.delivery.deleteMany({});
-    await prisma.orderItem.deleteMany({});
-    await (prisma as any).formSubmission.deleteMany({});
-    await prisma.order.deleteMany({});
-    await prisma.journalEntry.deleteMany({});
-    await prisma.transaction.deleteMany({});
-    await (prisma as any).formUpsell.deleteMany({});
-    await (prisma as any).formPackage.deleteMany({});
-    await (prisma as any).checkoutForm.deleteMany({});
-    await (prisma as any).webhookLog.deleteMany({});
-    await (prisma as any).webhookConfig.deleteMany({});
-    await (prisma as any).product_cost_entries.deleteMany({});
-    await prisma.product.deleteMany({});
-    await prisma.customer.deleteMany({});
-    await prisma.account.deleteMany({});
-    await prisma.user.deleteMany({
-      where: { email: { in: ['testuser@example.com', 'testagent@example.com'] } },
+    // Unscoped cleanup, then seed + enter tenant context (mirrors a request).
+    await withGlTestTenant(async () => {
+      await prisma.accountTransaction.deleteMany({});
+      await (prisma as any).agentCollection.deleteMany({});
+      await prisma.delivery.deleteMany({});
+      await prisma.orderItem.deleteMany({});
+      await (prisma as any).formSubmission.deleteMany({});
+      await prisma.order.deleteMany({});
+      await prisma.journalEntry.deleteMany({});
+      await prisma.transaction.deleteMany({});
+      await (prisma as any).formUpsell.deleteMany({});
+      await (prisma as any).formPackage.deleteMany({});
+      await (prisma as any).checkoutForm.deleteMany({});
+      await (prisma as any).webhookLog.deleteMany({});
+      await (prisma as any).webhookConfig.deleteMany({});
+      await (prisma as any).product_cost_entries.deleteMany({});
+      await prisma.product.deleteMany({});
+      await prisma.customer.deleteMany({});
+      await prisma.account.deleteMany({});
+      await prisma.user.deleteMany({
+        where: { email: { in: ['testuser@example.com', 'testagent@example.com'] } },
+      });
     });
 
     // Create GL Accounts required for automation

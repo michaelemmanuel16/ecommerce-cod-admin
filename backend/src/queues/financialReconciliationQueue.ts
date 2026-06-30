@@ -3,6 +3,7 @@ import { FinancialSyncService } from '../services/financialSyncService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { SYSTEM_USER_ID } from '../config/constants';
+import { tenantStorage } from '../utils/tenantContext';
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -61,10 +62,18 @@ financialReconciliationQueue.process('reconcile-delivered-orders', async () => {
 
     for (const order of unsynced) {
         try {
-            const result = await FinancialSyncService.syncOrderFinancialData(
-                prisma as any,
-                order as any,
-                SYSTEM_USER_ID
+            // This cron runs in a Bull worker with no HTTP request, so there is
+            // no AsyncLocalStorage tenant context. Establish it from the order's
+            // own tenant before syncing — otherwise every financial row this job
+            // writes (account_transactions, Transaction, AgentCollection) is
+            // tagged tenant_id = NULL and disappears from tenant-scoped reporting.
+            const result = await tenantStorage.run(
+                { tenantId: (order as any).tenantId ?? null },
+                () => FinancialSyncService.syncOrderFinancialData(
+                    prisma as any,
+                    order as any,
+                    SYSTEM_USER_ID
+                )
             );
 
             if (result.transaction || result.journalEntry) {
