@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { getTenantId } from '../../utils/tenantContext';
 
 // Mock server module
 jest.mock('../../server', () => ({
@@ -112,6 +113,23 @@ describe('financialReconciliationQueue', () => {
       expect.stringContaining('Reconciliation failed for order 2'),
       'GL account not found'
     );
+  });
+
+  it('establishes the order tenant context before syncing (NULL-orphan guard)', async () => {
+    // The cron has no HTTP request, so it must inject the tenant itself —
+    // otherwise the GL rows it writes are tagged tenant_id = NULL.
+    const order = { ...makeOrder(1), tenantId: 'tenant-x' };
+    (prismaMock.order.findMany as any).mockResolvedValue([order]);
+
+    let seenTenant: string | null = 'NOT_CAPTURED' as any;
+    mockSyncOrderFinancialData.mockImplementation(async () => {
+      seenTenant = getTenantId();
+      return { transaction: { id: 1 }, journalEntry: { entryNumber: 'JE-001' } };
+    });
+
+    await processCallback();
+
+    expect(seenTenant).toBe('tenant-x');
   });
 
   it('throws when all orders fail for Bull retry', async () => {

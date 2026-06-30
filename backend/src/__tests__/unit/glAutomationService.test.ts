@@ -8,6 +8,7 @@ import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GLAutomationService } from '../../services/glAutomationService';
 import { GLAccountService } from '../../services/glAccountService';
+import * as tenantContext from '../../utils/tenantContext';
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
@@ -31,6 +32,9 @@ describe('GLAutomationService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (GLAccountService.getAccountIdByCode as jest.Mock).mockResolvedValue(10);
+    // Default: ambient tenant context present (mirrors a request-scoped caller).
+    // Individual tests override this to simulate context-less background callers.
+    jest.spyOn(tenantContext, 'getTenantId').mockReturnValue('tenant-a');
   });
 
   describe('calculateTotalCOGS', () => {
@@ -183,6 +187,86 @@ describe('GLAutomationService', () => {
       );
 
       expect(mockTx.journalEntry.create).toHaveBeenCalled();
+    });
+  });
+
+  // Regression coverage for the NULL-tenant orphan bug: background GL writers
+  // (reconciliation cron / setImmediate) run with no AsyncLocalStorage context,
+  // so nested account_transactions were written tenant_id = NULL and vanished
+  // from tenant-scoped financial reporting. The fix derives tenant from the
+  // order explicitly and fails loud when none is resolvable.
+  describe('tenant stamping on account_transactions (NULL-orphan regression)', () => {
+    const createMockTx = () => ({
+      journalEntry: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockImplementation((args: any) =>
+          Promise.resolve({ id: 1, entryNumber: 'JE-T', transactions: args.data.transactions?.create || [] })
+        ),
+      },
+      account: {
+        findUnique: jest.fn().mockResolvedValue({ normalBalance: 'debit', currentBalance: new Decimal(0) }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+    });
+
+    const orderWithTenant = (tenantId?: string): any => ({
+      id: 1,
+      orderNumber: 'ORD-T',
+      totalAmount: new Decimal(200),
+      shippingCost: new Decimal(0),
+      status: 'delivered',
+      revenueRecognized: false,
+      tenantId,
+      deliveryAgent: { id: 2, commissionAmount: new Decimal(30) },
+      customerRep: { id: 3, commissionAmount: new Decimal(10) },
+      orderItems: [{ product: { name: 'Widget', cogs: new Decimal(50) }, quantity: 1 }],
+    });
+
+    it('stamps every account_transaction with the order tenant even with NO ambient context (cron path)', async () => {
+      // Simulate the reconciliation cron: AsyncLocalStorage is empty.
+      jest.spyOn(tenantContext, 'getTenantId').mockReturnValue(null);
+      const mockTx: any = createMockTx();
+
+      await GLAutomationService.createRevenueRecognitionEntry(
+        mockTx,
+        orderWithTenant('tenant-from-order'),
+        new Decimal(50),
+        1
+      );
+
+      const createCall = mockTx.journalEntry.create.mock.calls[0][0];
+      // Parent entry tagged.
+      expect(createCall.data.tenantId).toBe('tenant-from-order');
+      // Every child transaction tagged — this is what used to be NULL.
+      const children = createCall.data.transactions.create;
+      expect(children.length).toBeGreaterThan(0);
+      for (const child of children) {
+        expect(child.tenantId).toBe('tenant-from-order');
+      }
+    });
+
+    it('throws rather than writing a NULL-tenant entry when no tenant is resolvable', async () => {
+      jest.spyOn(tenantContext, 'getTenantId').mockReturnValue(null);
+      const mockTx: any = createMockTx();
+
+      await expect(
+        GLAutomationService.createRevenueRecognitionEntry(mockTx, orderWithTenant(undefined), new Decimal(50), 1)
+      ).rejects.toThrow(/tenantId/i);
+      expect(mockTx.journalEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('falls back to ambient tenant context for request-scoped callers (no explicit tenant)', async () => {
+      jest.spyOn(tenantContext, 'getTenantId').mockReturnValue('tenant-ambient');
+      const mockTx: any = createMockTx();
+
+      await GLAutomationService.createRevenueRecognitionEntry(mockTx, orderWithTenant(undefined), new Decimal(50), 1);
+
+      const createCall = mockTx.journalEntry.create.mock.calls[0][0];
+      expect(createCall.data.tenantId).toBe('tenant-ambient');
+      for (const child of createCall.data.transactions.create) {
+        expect(child.tenantId).toBe('tenant-ambient');
+      }
     });
   });
 
