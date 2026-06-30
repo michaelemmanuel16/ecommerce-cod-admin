@@ -242,12 +242,23 @@ export class OrderService {
             area: data.deliveryArea,
           }
         });
-      } else if (data.alternatePhone && customer.alternatePhone !== data.alternatePhone) {
-        // Update alternate phone if provided and different
-        customer = await prisma.customer.update({
-          where: { id: customer.id },
-          data: { alternatePhone: data.alternatePhone }
-        });
+      } else {
+        // Repeat customer: link any new email / alt phone they gave on this order —
+        // including records first created without one — mirroring the public checkout
+        // path so manual orders also grow the owned email list (MAN-82).
+        const customerUpdateData: Prisma.CustomerUpdateInput = {};
+        if (data.customerEmail && data.customerEmail !== customer.email) {
+          customerUpdateData.email = data.customerEmail;
+        }
+        if (data.alternatePhone && data.alternatePhone !== customer.alternatePhone) {
+          customerUpdateData.alternatePhone = data.alternatePhone;
+        }
+        if (Object.keys(customerUpdateData).length > 0) {
+          customer = await prisma.customer.update({
+            where: { id: customer.id },
+            data: customerUpdateData,
+          });
+        }
       }
     } else {
       throw new AppError('Either customerId or customerPhone must be provided', 400);

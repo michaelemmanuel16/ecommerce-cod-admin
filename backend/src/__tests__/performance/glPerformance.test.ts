@@ -2,14 +2,23 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import prisma from '../../utils/prisma';
 import glService from '../../services/glService';
 import { AccountType, NormalBalance, JournalSourceType } from '@prisma/client';
+import { withGlTestTenant } from '../integration/helpers/glTestTenant';
+import { tenantStorage } from '../../utils/tenantContext';
 
 describe('GL Performance Test', () => {
     let perfAccount: any;
     let offsetAccount: any;
     let systemUser: any;
+    let testTenantId: string;
     const TRANSACTION_COUNT = 200; // Reduced for faster/stable CI
 
     beforeAll(async () => {
+        // Unscoped cleanup, then seed + enter tenant context (mirrors a request).
+        testTenantId = await withGlTestTenant(async () => {
+            await prisma.accountTransaction.deleteMany({});
+            await prisma.journalEntry.deleteMany({ where: { description: { startsWith: 'Seed Entry' } } });
+        });
+
         // Always create a dedicated user for this test to avoid FK issues
         // from concurrent test cleanup deleting shared users
         systemUser = await prisma.user.upsert({
@@ -99,27 +108,32 @@ describe('GL Performance Test', () => {
     });
 
     it('should fetch paginated ledger data efficiently', async () => {
-        const start = Date.now();
-        const result = await glService.getAccountLedger(perfAccount.id.toString(), {
-            page: 1,
-            limit: 50
-        });
-        const duration = Date.now() - start;
+        // restoreMocks wipes the beforeAll getTenantId spy; run reads in real ALS context.
+        await tenantStorage.run({ tenantId: testTenantId }, async () => {
+            const start = Date.now();
+            const result = await glService.getAccountLedger(perfAccount.id.toString(), {
+                page: 1,
+                limit: 50
+            });
+            const duration = Date.now() - start;
 
-        console.log(`Paginated fetch (50/1000) took ${duration}ms`);
-        expect(result.transactions.length).toBe(50);
-        expect(result.pagination.total).toBe(TRANSACTION_COUNT);
-        expect(duration).toBeLessThan(300); // Expect < 300ms (Adjusted for CI)
+            console.log(`Paginated fetch (50/1000) took ${duration}ms`);
+            expect(result.transactions.length).toBe(50);
+            expect(result.pagination.total).toBe(TRANSACTION_COUNT);
+            expect(duration).toBeLessThan(300); // Expect < 300ms (Adjusted for CI)
+        });
     });
 
     it('should export large ledger to CSV efficiently', async () => {
-        const start = Date.now();
-        const result = await glService.exportAccountLedgerToCSV(perfAccount.id.toString(), {});
-        const duration = Date.now() - start;
+        await tenantStorage.run({ tenantId: testTenantId }, async () => {
+            const start = Date.now();
+            const result = await glService.exportAccountLedgerToCSV(perfAccount.id.toString(), {});
+            const duration = Date.now() - start;
 
-        console.log(`CSV Export (${TRANSACTION_COUNT} records) took ${duration}ms`);
-        expect(result.csv).toBeDefined();
-        expect(result.csv.length).toBeGreaterThan(1000);
-        expect(duration).toBeLessThan(1000); // Expect < 1s
+            console.log(`CSV Export (${TRANSACTION_COUNT} records) took ${duration}ms`);
+            expect(result.csv).toBeDefined();
+            expect(result.csv.length).toBeGreaterThan(1000);
+            expect(duration).toBeLessThan(1000); // Expect < 1s
+        });
     });
 });

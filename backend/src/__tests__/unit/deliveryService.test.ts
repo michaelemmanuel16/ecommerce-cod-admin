@@ -5,6 +5,7 @@ import { AppError } from '../../middleware/errorHandler';
 import { OrderStatus, DeliveryProofType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GLAccountService } from '../../services/glAccountService';
+import * as tenantContext from '../../utils/tenantContext';
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
@@ -31,6 +32,9 @@ describe('DeliveryService', () => {
     jest.clearAllMocks();
     deliveryService = new DeliveryService();
     (GLAccountService.getAccountIdByCode as jest.Mock).mockResolvedValue(10);
+    // GL writes require a resolvable tenant; in production these run inside an
+    // authenticated request. Mirror that ambient context here.
+    jest.spyOn(tenantContext, 'getTenantId').mockReturnValue('tenant-a');
   });
 
   describe('createDelivery', () => {

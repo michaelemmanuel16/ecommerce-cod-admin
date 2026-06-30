@@ -1,10 +1,14 @@
 import sgMail from '@sendgrid/mail';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
+import { MessageChannel, MessageDirection, MessageStatus } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { escapeHtml } from '../utils/sanitizer';
 import logger from '../utils/logger';
+import { getTenantId } from '../utils/tenantContext';
+import { renderEmailTemplate } from './emailTemplateService';
+import { ensureUnsubscribeToken, buildUnsubscribeUrl, applyUnsubscribe } from './unsubscribeService';
 
 // ---------- Types ----------
 
@@ -25,17 +29,35 @@ interface SendEmailOptions {
   subject: string;
   html: string;
   from?: string; // override default fromEmail
+  /** Extra SMTP headers (e.g. RFC 8058 List-Unsubscribe). */
+  headers?: Record<string, string>;
 }
 
-// ---------- Config cache (same pattern as whatsappService) ----------
+/**
+ * Which sending identity to use:
+ * - 'tenant'   → the tenant's own BYO provider (DB config / env fallback). For marketing.
+ * - 'platform' → CodAdmin's own transactional provider (PLATFORM_EMAIL_* env only),
+ *                sent from a dedicated CodAdmin subdomain so bulk can't damage its
+ *                reputation. For order/status/digital-delivery/unsubscribe email.
+ */
+export interface SendEmailMeta {
+  as?: 'platform' | 'tenant';
+}
 
-let cachedConfig: { data: EmailConfig | null; fetchedAt: number } | null = null;
+// ---------- Config cache (tenant-keyed, same pattern as smsService) ----------
+
+// Keyed by tenant so one tenant's encrypted provider key/fromEmail is never
+// served to another under per-recipient/bulk cross-tenant sends (C2).
+const configCache = new Map<string, { data: EmailConfig | null; fetchedAt: number }>();
 const CACHE_TTL_MS = 60_000; // 60 seconds
 
-async function getDbEmailConfig(): Promise<EmailConfig | null> {
+// Exported for unit testing of tenant-keyed cache isolation (mirrors getDbSmsConfig).
+export async function getDbEmailConfig(): Promise<EmailConfig | null> {
+  const tenantId = getTenantId() || '__default__';
   const now = Date.now();
-  if (cachedConfig && now - cachedConfig.fetchedAt < CACHE_TTL_MS) {
-    return cachedConfig.data;
+  const cached = configCache.get(tenantId);
+  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.data;
   }
 
   try {
@@ -58,7 +80,7 @@ async function getDbEmailConfig(): Promise<EmailConfig | null> {
       };
     }
 
-    cachedConfig = { data: result, fetchedAt: now };
+    configCache.set(tenantId, { data: result, fetchedAt: now });
     return result;
   } catch (error: any) {
     logger.warn('Failed to read email config from DB, falling back to env vars', { error: error.message });
@@ -68,7 +90,7 @@ async function getDbEmailConfig(): Promise<EmailConfig | null> {
 
 /** Clear cached config (call after admin saves new settings). */
 export function clearEmailConfigCache(): void {
-  cachedConfig = null;
+  configCache.clear();
   sgApiKey = null;
   resendClient = null;
   resendApiKey = null;
@@ -111,6 +133,28 @@ async function getConfig(): Promise<EmailConfig> {
   };
 }
 
+/**
+ * Platform transactional config — env only, never DB/tenant-scoped (C2b).
+ * Throws if unset so transactional sends fail loudly instead of silently
+ * borrowing a tenant's provider. No caching: it's a cheap env read.
+ */
+function getPlatformConfig(): EmailConfig {
+  const provider = (process.env.PLATFORM_EMAIL_PROVIDER || 'resend') as EmailConfig['provider'];
+  const apiKey = process.env.PLATFORM_EMAIL_API_KEY || '';
+  if (!apiKey) {
+    throw new Error('PLATFORM_EMAIL_NOT_CONFIGURED: set PLATFORM_EMAIL_API_KEY to send transactional email.');
+  }
+  return {
+    provider,
+    apiKey,
+    fromEmail: process.env.PLATFORM_EMAIL_FROM || 'noreply@mail.codadminpro.com',
+    fromName: process.env.PLATFORM_EMAIL_FROM_NAME || 'COD Admin',
+    smtpHost: process.env.PLATFORM_EMAIL_SMTP_HOST,
+    smtpPort: process.env.PLATFORM_EMAIL_SMTP_PORT ? parseInt(process.env.PLATFORM_EMAIL_SMTP_PORT, 10) : undefined,
+    smtpSecure: process.env.PLATFORM_EMAIL_SMTP_SECURE === 'true',
+  };
+}
+
 // ---------- Provider-specific senders ----------
 
 // ---------- Provider client caches ----------
@@ -142,7 +186,13 @@ async function sendViaSendGrid(config: EmailConfig, options: SendEmailOptions): 
     sgApiKey = config.apiKey;
   }
   const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  await sgMail.send({ to: options.to, from, subject: options.subject, html: options.html });
+  await sgMail.send({
+    to: options.to,
+    from,
+    subject: options.subject,
+    html: options.html,
+    headers: options.headers,
+  });
 }
 
 async function sendViaResend(config: EmailConfig, options: SendEmailOptions): Promise<void> {
@@ -151,13 +201,25 @@ async function sendViaResend(config: EmailConfig, options: SendEmailOptions): Pr
     resendApiKey = config.apiKey;
   }
   const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  await resendClient.emails.send({ from, to: options.to, subject: options.subject, html: options.html });
+  await resendClient.emails.send({
+    from,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+    headers: options.headers,
+  });
 }
 
 async function sendViaSmtp(config: EmailConfig, options: SendEmailOptions): Promise<void> {
   const transporter = getSmtpTransporter(config);
   const from = options.from || `${config.fromName} <${config.fromEmail}>`;
-  await transporter.sendMail({ from, to: options.to, subject: options.subject, html: options.html });
+  await transporter.sendMail({
+    from,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+    headers: options.headers,
+  });
 }
 
 // ---------- Helpers ----------
@@ -168,15 +230,16 @@ function maskEmail(email: string): string {
 
 // ---------- Unified send function ----------
 
-export async function sendEmail(options: SendEmailOptions): Promise<void> {
-  const config = await getConfig();
+export async function sendEmail(options: SendEmailOptions, meta: SendEmailMeta = {}): Promise<void> {
+  const sendAs = meta.as ?? 'tenant';
+  const config = sendAs === 'platform' ? getPlatformConfig() : await getConfig();
 
   if (!config.apiKey) {
-    logger.warn('Email not configured — cannot send email', { to: maskEmail(options.to), subject: options.subject });
+    logger.warn('Email not configured — cannot send email', { sendAs, to: maskEmail(options.to), subject: options.subject });
     throw new Error('Email provider not configured. Please configure email settings in Settings → Integrations.');
   }
 
-  logger.info('Sending email', { provider: config.provider, to: maskEmail(options.to), subject: options.subject });
+  logger.info('Sending email', { sendAs, provider: config.provider, to: maskEmail(options.to), subject: options.subject });
 
   switch (config.provider) {
     case 'sendgrid':
@@ -227,4 +290,179 @@ export async function sendTestEmail(toEmail: string, fromName?: string): Promise
       </div>
     `,
   });
+}
+
+// ---------- Workflow send_email action (MAN-79) ----------
+
+/**
+ * Config for a workflow `send_email` action. `templateId` references a saved
+ * EmailTemplate; otherwise inline `subject`/`body` is used. `body` is the
+ * canonical inline-body field; `message` is read only as a fallback for drafts
+ * saved before the field was renamed.
+ */
+export interface WorkflowEmailConfig {
+  templateId?: number;
+  subject?: string;
+  body?: string;
+  message?: string;
+  to?: string;
+}
+
+export interface WorkflowEmailContext {
+  orderId?: number;
+}
+
+export interface WorkflowEmailResult {
+  sent: boolean;
+  skipped?: boolean;
+  messageLogId?: number;
+  reason?: string;
+}
+
+/**
+ * Send the email for a workflow `send_email` action — the one shared path used
+ * by both the live BullMQ worker (workflowQueue) and the synchronous executor
+ * (workflowService). Resolves the order's customer + tenant, renders the chosen
+ * EmailTemplate (or inline subject/body) with the six merge tags, and sends via
+ * the platform transactional provider.
+ *
+ * Writes a MessageLog(email) row (pending → sent/failed) and is idempotent: a
+ * prior `sent` log for the same (orderId, templateName) short-circuits, so a
+ * BullMQ retry re-running the action list can't re-send. Never throws on a send
+ * failure — it records `failed` and returns, so one bad recipient can't trigger
+ * a job-wide retry storm.
+ */
+export async function sendWorkflowEmail(
+  config: WorkflowEmailConfig,
+  context: WorkflowEmailContext,
+): Promise<WorkflowEmailResult> {
+  const order = context.orderId
+    ? await prisma.order.findUnique({
+        where: { id: context.orderId },
+        include: { customer: true },
+      })
+    : null;
+  const customer = order?.customer;
+
+  // Recipient: explicit override wins, else the order customer's email.
+  const to = config.to || customer?.email || null;
+  if (!to) {
+    logger.warn('send_email skipped — no recipient email', { orderId: context.orderId });
+    return { sent: false, skipped: true, reason: 'no_recipient' };
+  }
+
+  // Resolve content: a saved template, else inline subject/body.
+  let templateName = 'inline';
+  let subjectTpl = config.subject || '';
+  let bodyTpl = config.body ?? config.message ?? '';
+  if (config.templateId) {
+    const tpl = await prisma.emailTemplate.findUnique({ where: { id: config.templateId } });
+    if (!tpl) {
+      logger.warn('send_email skipped — template not found', { templateId: config.templateId });
+      return { sent: false, skipped: true, reason: 'template_not_found' };
+    }
+    templateName = tpl.name;
+    subjectTpl = tpl.subject;
+    bodyTpl = tpl.body;
+  }
+
+  // Respect opt-out (records a skipped log so the campaign/history can show it).
+  if (customer?.emailOptOut) {
+    const log = await prisma.messageLog.create({
+      data: {
+        orderId: order?.id,
+        customerId: customer.id,
+        channel: MessageChannel.email,
+        direction: MessageDirection.outbound,
+        templateName,
+        messageBody: '',
+        status: MessageStatus.skipped,
+        metadata: { to, reason: 'opted_out' },
+      },
+    });
+    logger.info('send_email skipped — customer opted out', { orderId: order?.id, customerId: customer.id });
+    return { sent: false, skipped: true, messageLogId: log.id, reason: 'opted_out' };
+  }
+
+  // Idempotency (H1): a prior successful send for this (order, template) wins,
+  // so a BullMQ retry of the action list cannot double-send.
+  if (order) {
+    const existing = await prisma.messageLog.findFirst({
+      where: {
+        orderId: order.id,
+        channel: MessageChannel.email,
+        templateName,
+        status: MessageStatus.sent,
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      logger.info('send_email skipped — already sent', { orderId: order.id, templateName });
+      return { sent: false, skipped: true, messageLogId: existing.id, reason: 'already_sent' };
+    }
+  }
+
+  // Build the merge context from order/customer/tenant. Workflow email is
+  // marketing-class, so resolve the customer's unsubscribe token here too (MAN-81)
+  // — minting it in parallel with the tenant/config reads. No customer (e.g. an
+  // explicit `to` override) → no opt-out link, since there's nothing to opt out.
+  const tenantId = getTenantId();
+  const [tenant, sysConfig, unsubscribeToken] = await Promise.all([
+    tenantId
+      ? prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } })
+      : Promise.resolve(null),
+    prisma.systemConfig.findFirst({ select: { currency: true } }),
+    customer ? ensureUnsubscribeToken(customer) : Promise.resolve(''),
+  ]);
+  const unsubscribeUrl = unsubscribeToken ? buildUnsubscribeUrl(unsubscribeToken) : '';
+  const currency = sysConfig?.currency || 'GHS';
+  const { subject, html } = renderEmailTemplate(
+    { subject: subjectTpl, body: bodyTpl },
+    {
+      customer_name: customer ? `${customer.firstName} ${customer.lastName}`.trim() : '',
+      customer_email: customer?.email ?? to,
+      store_name: tenant?.name ?? '',
+      order_number: order ? String(order.id) : '',
+      order_total: order
+        ? `${currency} ${Number(order.totalAmount).toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`
+        : '',
+      download_url: '',
+      unsubscribe_url: unsubscribeUrl,
+    },
+  );
+
+  // Footer fallback + RFC 8058 one-click headers for the marketing-class send.
+  const { html: finalHtml, headers } = applyUnsubscribe(html, unsubscribeToken, unsubscribeUrl);
+
+  const messageLog = await prisma.messageLog.create({
+    data: {
+      orderId: order?.id,
+      customerId: customer?.id,
+      channel: MessageChannel.email,
+      direction: MessageDirection.outbound,
+      templateName,
+      messageBody: finalHtml,
+      status: MessageStatus.pending,
+      metadata: { to, subject },
+    },
+  });
+
+  try {
+    await sendEmail({ to, subject, html: finalHtml, headers }, { as: 'platform' });
+    await prisma.messageLog.update({
+      where: { id: messageLog.id },
+      data: { status: MessageStatus.sent, sentAt: new Date() },
+    });
+    return { sent: true, messageLogId: messageLog.id };
+  } catch (error: any) {
+    await prisma.messageLog.update({
+      where: { id: messageLog.id },
+      data: { status: MessageStatus.failed, errorMessage: error.message?.substring(0, 500) },
+    });
+    logger.error('send_email failed', { orderId: order?.id, to: maskEmail(to), error: error.message });
+    return { sent: false, messageLogId: messageLog.id, reason: 'send_failed' };
+  }
 }

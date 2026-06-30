@@ -5,6 +5,7 @@ import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AccountType, NormalBalance, Prisma } from '@prisma/client';
 import { GLAccountService } from '../../services/glAccountService';
+import { withGlTestTenant } from './helpers/glTestTenant';
 
 // Mock socket instance
 jest.mock('../../utils/socketInstance', () => ({
@@ -22,8 +23,26 @@ describe('Bulk Agent Collection Reconciliation Integration', () => {
     let testOrders: any[] = [];
     let draftCollections: any[] = [];
 
-    beforeAll(async () => {
-        // Ensure necessary GL accounts exist
+    beforeEach(async () => {
+        GLAccountService.clearCache();
+        // Unscoped cleanup, then seed + enter tenant context (mirrors a request).
+        await withGlTestTenant(async () => {
+            // Clean up - Order matters due to foreign keys
+            await prisma.accountTransaction.deleteMany({});
+            await (prisma as any).agentCollection.deleteMany({});
+            await (prisma as any).agentBalance.deleteMany({});
+            await prisma.delivery.deleteMany({});
+            await prisma.orderItem.deleteMany({});
+            await prisma.order.deleteMany({});
+            await prisma.journalEntry.deleteMany({});
+            await prisma.customer.deleteMany({});
+            await prisma.account.deleteMany({});
+            await prisma.user.deleteMany({
+                where: { email: { in: ['admin-bulk@test.com', 'agent-bulk@test.com'] } }
+            });
+        });
+
+        // Ensure necessary GL accounts exist (under tenant context so they're scoped)
         const accounts: Prisma.AccountUncheckedCreateInput[] = [
             { code: '1015', name: 'Cash in Transit', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
             { code: '1020', name: 'Agent AR', accountType: AccountType.asset, normalBalance: NormalBalance.debit },
@@ -36,22 +55,6 @@ describe('Bulk Agent Collection Reconciliation Integration', () => {
                 create: a
             });
         }
-    });
-
-    beforeEach(async () => {
-        GLAccountService.clearCache();
-        // Clean up - Order matters due to foreign keys
-        await prisma.accountTransaction.deleteMany({});
-        await (prisma as any).agentCollection.deleteMany({});
-        await (prisma as any).agentBalance.deleteMany({});
-        await prisma.delivery.deleteMany({});
-        await prisma.orderItem.deleteMany({});
-        await prisma.order.deleteMany({});
-        await prisma.journalEntry.deleteMany({});
-        await prisma.customer.deleteMany({});
-        await prisma.user.deleteMany({
-            where: { email: { in: ['admin-bulk@test.com', 'agent-bulk@test.com'] } }
-        });
 
         // Create Users
         testUser = await prisma.user.create({

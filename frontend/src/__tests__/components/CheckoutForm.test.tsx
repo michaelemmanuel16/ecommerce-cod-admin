@@ -165,4 +165,34 @@ describe('CheckoutForm — render + design + CTA (R5)', () => {
     expect(submitted.email).toBe('buyer@example.com');
     expect(submitted.customFields?.['Email Address']).toBeUndefined();
   });
+
+  // MAN-82: email is now a standard default checkout field (present on every form
+  // that hasn't customized its fields) so the funnel grows the owned email list.
+  // On physical COD it is present but NOT required (phone-first market); digital
+  // products force it required via the existing isDigital path.
+  // Find a field's <label> by its leading text (the required asterisk lives in a
+  // child <span>, so match on the element, not an exact string).
+  const labelStartingWith = (text: string) =>
+    screen.getByText(
+      (_, el) => el?.tagName === 'LABEL' && new RegExp(`^${text}`).test((el.textContent || '').trim()),
+    );
+
+  it('renders an email field by default on a physical form, present but not required (MAN-82)', () => {
+    // baseForm() has fields: [] → the component falls back to DEFAULT_FIELDS.
+    render(<CheckoutForm formData={baseForm()} onSubmit={vi.fn()} />);
+
+    // The email field is present by default…
+    expect(screen.getByPlaceholderText(/enter email address/i)).toBeInTheDocument();
+
+    // …and it is optional: its label has no required asterisk, unlike Full Name.
+    expect(labelStartingWith('Email Address').querySelector('.text-red-500')).toBeNull();
+    expect(labelStartingWith('Full Name').querySelector('.text-red-500')).not.toBeNull();
+  });
+
+  it('forces the default email field required for a digital product (MAN-82)', () => {
+    const digital = baseForm({ product: { ...baseForm().product, productType: 'digital' } as any });
+    render(<CheckoutForm formData={digital} onSubmit={vi.fn()} />);
+
+    expect(labelStartingWith('Email Address').querySelector('.text-red-500')).not.toBeNull();
+  });
 });

@@ -741,6 +741,19 @@ export class GLService {
     // Validate journal entry data
     await this.validateJournalEntry(data);
 
+    // Resolve the owning tenant explicitly. The Prisma tenant extension only
+    // injects tenantId into the TOP-LEVEL create, never the nested
+    // transactions.create — so the children must be stamped here. Fail loud
+    // rather than write tenant_id = NULL: a missing tenant means financial rows
+    // that silently disappear from tenant-scoped reporting.
+    const tenantId = getTenantId();
+    if (!tenantId) {
+      throw new AppError(
+        'Cannot create journal entry without tenant context. Run within a tenant-scoped request.',
+        400
+      );
+    }
+
     return await prisma.$transaction(async (tx) => {
       // Generate entry number using the transaction client to maintain the lock
       const entryNumber = await this.generateEntryNumber(tx as Prisma.TransactionClient);
@@ -763,13 +776,15 @@ export class GLService {
           debitAmount,
           creditAmount,
           runningBalance,
-          description: txn.description
+          description: txn.description,
+          tenantId
         });
       }
 
       // Create journal entry with transactions
       const entry = await tx.journalEntry.create({
         data: {
+          tenantId,
           entryNumber,
           entryDate: new Date(data.entryDate),
           description: data.description,
@@ -980,10 +995,20 @@ export class GLService {
         throw new AppError('Journal entry is already voided', 400);
       }
 
+      // The reversing entry inherits the tenant of the entry being reversed —
+      // both parent and children must be stamped (the extension only covers
+      // the top-level create). account_transactions.tenant_id is NOT NULL, so a
+      // legacy entry with a null tenant cannot be safely reversed.
+      const tenantId = entry.tenantId;
+      if (!tenantId) {
+        throw new AppError('Cannot void a journal entry that has no tenant.', 400);
+      }
+
       // Create reversing entry with swapped debits/credits
       const reversingEntryNumber = await this.generateEntryNumber(tx as Prisma.TransactionClient);
       const reversingEntry = await tx.journalEntry.create({
         data: {
+          tenantId,
           entryNumber: reversingEntryNumber,
           entryDate: new Date(),
           description: `VOID: ${entry.description}`,
@@ -995,7 +1020,8 @@ export class GLService {
               accountId: t.accountId,
               debitAmount: t.creditAmount,  // Swapped
               creditAmount: t.debitAmount,   // Swapped
-              description: `Reversal of ${entry.entryNumber}`
+              description: `Reversal of ${entry.entryNumber}`,
+              tenantId
             }))
           }
         },

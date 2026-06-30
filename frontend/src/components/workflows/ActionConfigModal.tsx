@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { WorkflowAction } from '../../pages/WorkflowWizard';
 import { AssignUserAction } from './actions/AssignUserAction';
 import { WHATSAPP_TEMPLATE_OPTIONS } from '../../constants/workflow';
+import { emailTemplateService, EmailTemplate } from '../../services/emailTemplate.service';
 
 interface ActionConfigModalProps {
   action: WorkflowAction;
@@ -18,6 +19,29 @@ export const ActionConfigModal: React.FC<ActionConfigModalProps> = ({
   onClose,
 }) => {
   const [config, setConfig] = useState(action.config);
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
+  const [loadingEmailTemplates, setLoadingEmailTemplates] = useState(false);
+
+  // Load the tenant's reusable email templates for the send_email picker.
+  useEffect(() => {
+    if (action.type !== 'send_email') return;
+    let active = true;
+    setLoadingEmailTemplates(true);
+    emailTemplateService
+      .list()
+      .then((templates) => {
+        if (active) setEmailTemplates(templates);
+      })
+      .catch(() => {
+        if (active) setEmailTemplates([]);
+      })
+      .finally(() => {
+        if (active) setLoadingEmailTemplates(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [action.type]);
 
   const handleSave = () => {
     onSave(config);
@@ -72,32 +96,63 @@ export const ActionConfigModal: React.FC<ActionConfigModalProps> = ({
 
             {action.type === 'send_email' && (
               <div className="space-y-4">
-                <Input
-                  label="Subject"
-                  value={config.subject || ''}
-                  onChange={(e) =>
-                    setConfig({ ...config, subject: e.target.value })
-                  }
-                  placeholder="Order Confirmation"
-                  required
-                />
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email Body
+                    Email Template
                   </label>
-                  <textarea
-                    value={config.message || ''}
+                  <select
+                    value={config.templateId ?? ''}
                     onChange={(e) =>
-                      setConfig({ ...config, message: e.target.value })
+                      setConfig({
+                        ...config,
+                        templateId: e.target.value ? Number(e.target.value) : undefined,
+                      })
                     }
-                    placeholder="Hi {customerName}, your order #{orderNumber} has been confirmed..."
-                    rows={6}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  />
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">
+                      {loadingEmailTemplates ? 'Loading templates…' : 'Custom (write inline)'}
+                    </option>
+                    {emailTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
                   <p className="text-xs text-gray-500 mt-2">
-                    Available variables: {'{customerName}'}, {'{orderNumber}'}, {'{totalAmount}'}, {'{orderStatus}'}
+                    Pick a saved template, or choose “Custom” to write the subject and body inline.
                   </p>
                 </div>
+
+                {!config.templateId && (
+                  <>
+                    <Input
+                      label="Subject"
+                      value={config.subject || ''}
+                      onChange={(e) =>
+                        setConfig({ ...config, subject: e.target.value })
+                      }
+                      placeholder="Order Confirmation"
+                    />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email Body
+                      </label>
+                      <textarea
+                        value={config.body || ''}
+                        onChange={(e) =>
+                          setConfig({ ...config, body: e.target.value })
+                        }
+                        placeholder="Hi {{customer_name}}, your order {{order_number}} has been confirmed..."
+                        rows={6}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      />
+                      <p className="text-xs text-gray-500 mt-2">
+                        Available variables: {'{{customer_name}}'}, {'{{customer_email}}'}, {'{{store_name}}'}, {'{{order_number}}'}, {'{{order_total}}'}, {'{{download_url}}'}, {'{{unsubscribe_url}}'}
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

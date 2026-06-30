@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { escapeHtml } from '../utils/sanitizer';
+import { getBackendUrl } from '../utils/url';
 import { sendEmail } from './emailService';
 import { whatsappService } from './whatsappService';
 
@@ -110,8 +111,7 @@ export const digitalDeliveryService = {
 
     if (!digitalProduct) throw new Error(`No digital product in order ${orderId}`);
 
-    const backendUrl = process.env.BACKEND_URL || process.env.FRONTEND_URL?.replace(':5173', ':3000') || 'http://localhost:3000';
-    const downloadUrl = `${backendUrl}/api/public/download/${token}`;
+    const downloadUrl = `${getBackendUrl()}/api/public/download/${token}`;
     const expiryHours = digitalProduct.downloadLinkExpiryHours ?? 72;
     const maxDownloads = digitalProduct.maxDownloads ?? 5;
     const productName = digitalProduct.name;
@@ -147,6 +147,26 @@ export const digitalDeliveryService = {
     } catch (error: any) {
       logger.error('Failed to send digital product WhatsApp', { orderId, error: error.message });
     }
+  },
+
+  /**
+   * Idempotency guard (C4): has this order's digital product already been delivered?
+   * True if a `sent` digital-delivery MessageLog exists OR a still-live (non-revoked,
+   * unexpired) DownloadToken exists for the order. Callers skip re-delivery when true,
+   * so Paystack inline delivery and the COD status_change path can't double-send.
+   */
+  async hasBeenDelivered(orderId: number): Promise<boolean> {
+    const sentLog = await prisma.messageLog.findFirst({
+      where: { orderId, templateName: 'digital_delivery', status: 'sent' },
+      select: { id: true },
+    });
+    if (sentLog) return true;
+
+    const liveToken = await prisma.downloadToken.findFirst({
+      where: { orderId, isRevoked: false, expiresAt: { gt: new Date() } },
+      select: { id: true },
+    });
+    return liveToken !== null;
   },
 
   /**
