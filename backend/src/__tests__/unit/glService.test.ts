@@ -14,6 +14,7 @@ import { prismaMock } from '../mocks/prisma.mock';
 import glService from '../../services/glService';
 import { AppError } from '../../middleware/errorHandler';
 import { AccountType, NormalBalance, Prisma } from '@prisma/client';
+import { tenantStorage } from '../../utils/tenantContext';
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
@@ -758,7 +759,10 @@ describe('GLService', () => {
       (prismaMock.account.update as any).mockResolvedValue({});
       (prismaMock.auditLog.create as any).mockResolvedValue({});
 
-      const result = await glService.createJournalEntry(entryData, mockUser);
+      // createJournalEntry now requires tenant context (stamps children explicitly).
+      const result = await tenantStorage.run({ tenantId: 'test-tenant' }, async () =>
+        glService.createJournalEntry(entryData, mockUser)
+      );
 
       expect(result.id).toBe(10);
       expect(prismaMock.journalEntry.create).toHaveBeenCalled();
