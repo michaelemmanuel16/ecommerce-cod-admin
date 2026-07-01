@@ -11,6 +11,7 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/landing:/etc/nginx/landing:ro
       - nginx_cache:/var/cache/nginx
       - nginx_logs:/var/log/nginx
     depends_on:
@@ -78,6 +79,8 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET}
       FRONTEND_URL: ${FRONTEND_URL}
+      PLATFORM_URL: ${PLATFORM_URL:-https://platform.codadminpro.com}
+      LEGACY_FRONTEND_URL: ${LEGACY_FRONTEND_URL:-}
       CORS_ORIGIN: ${CORS_ORIGIN}
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
       PROVIDER_ENCRYPTION_KEY: ${PROVIDER_ENCRYPTION_KEY}
