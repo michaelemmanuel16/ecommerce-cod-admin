@@ -155,6 +155,12 @@ const platformUrl = process.env.PLATFORM_URL || derivePlatformOrigin(frontendUrl
 // Transitional: during the app.codadminpro.com cutover, keep the old apex origin
 // allowed so both the apex-served and app-served SPA work. Unset once migrated.
 const legacyFrontendUrl = process.env.LEGACY_FRONTEND_URL;
+if (legacyFrontendUrl) {
+  logger.warn(
+    `CORS: transitional LEGACY_FRONTEND_URL is active (${legacyFrontendUrl}). ` +
+      `Unset it once the app.codadminpro.com migration has settled.`
+  );
+}
 
 app.use(cors({
   origin: [
