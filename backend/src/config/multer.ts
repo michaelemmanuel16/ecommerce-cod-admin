@@ -3,40 +3,15 @@ import path from 'path';
 import fs from 'fs';
 import { AppError } from '../middleware/errorHandler';
 
-// Ensure uploads directory exists
-const uploadDir = path.join(__dirname, '../../uploads');
+// Ensure uploads directory exists (used only when R2 is not configured)
+export const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Sanitize filename - remove spaces and special characters
-const sanitizeFilename = (filename: string): string => {
-  const ext = path.extname(filename);
-  const nameWithoutExt = path.basename(filename, ext);
-
-  const sanitized = nameWithoutExt
-    .toLowerCase()
-    .replace(/\s+/g, '-')           // Replace spaces with hyphens
-    .replace(/[^a-z0-9-_]/g, '')    // Remove special characters
-    .replace(/-+/g, '-')            // Replace multiple hyphens with single hyphen
-    .replace(/^-|-$/g, '');         // Remove leading/trailing hyphens
-
-  return sanitized;
-};
-
-// Configure storage
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (_req, file, cb) => {
-    // Generate unique filename: sanitizedname-timestamp-random.ext
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
-    const ext = path.extname(file.originalname);
-    const sanitizedName = sanitizeFilename(file.originalname);
-    cb(null, `${sanitizedName}-${uniqueSuffix}${ext}`);
-  }
-});
+// Images are buffered in memory so the controller can push them to R2
+// (or write them to disk as a fallback). See uploadController.ts.
+const storage = multer.memoryStorage();
 
 // File filter - only allow images
 const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
@@ -54,7 +29,7 @@ export const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024,  // 5MB max file size
+    fileSize: 15 * 1024 * 1024, // 15MB max file size
     files: 1,                    // Only 1 file per request (prevent DoS)
     fields: 10,                  // Max 10 form fields (prevent field flooding)
     parts: 20,                   // Max 20 parts in multipart (prevent multipart DoS)
@@ -94,7 +69,7 @@ export const handleUploadErrors = (err: any, _req: any, res: any, next: any) => 
   if (err instanceof multer.MulterError) {
     // Multer-specific errors
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File too large (max 5MB)' });
+      return res.status(400).json({ error: 'File too large (max 15MB)' });
     }
     if (err.code === 'LIMIT_FILE_COUNT') {
       return res.status(400).json({ error: 'Too many files (max 1)' });
