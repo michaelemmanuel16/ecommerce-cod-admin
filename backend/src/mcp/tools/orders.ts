@@ -65,7 +65,12 @@ export function registerOrderTools(
           take: limit + 1, // Fetch one extra to check if there's a next page
           orderBy: { id: 'desc' },
           include: {
-            customer: { select: { id: true, firstName: true, lastName: true, phoneNumber: true } },
+            customer: {
+              select: {
+                id: true, firstName: true, lastName: true, phoneNumber: true,
+                alternatePhone: true, address: true, state: true,
+              },
+            },
             deliveryAgent: { select: { id: true, firstName: true, lastName: true } },
             orderItems: { include: { product: { select: { id: true, name: true } } } },
           },
@@ -80,12 +85,20 @@ export function registerOrderTools(
             id: o.id,
             status: o.status,
             totalAmount: o.totalAmount,
-            deliveryArea: o.deliveryArea,
+            // Delivery destination: prefer the order's shipping fields, fall back to the customer record.
+            deliveryAddress: o.deliveryAddress ?? o.customer?.address ?? null,
+            deliveryState: o.deliveryState ?? o.customer?.state ?? null,
             createdAt: o.createdAt,
             customer: o.customer ? `${o.customer.firstName} ${o.customer.lastName}` : null,
             customerPhone: o.customer?.phoneNumber,
+            customerAltPhone: o.customer?.alternatePhone ?? null,
             agent: o.deliveryAgent ? `${o.deliveryAgent.firstName} ${o.deliveryAgent.lastName}` : null,
-            items: o.orderItems.map((i) => ({ product: i.product?.name, qty: i.quantity, price: i.unitPrice })),
+            // Upsell rows point productId at the parent product; the real add-on name lives in metadata.upsellName.
+            items: o.orderItems.map((i) => ({
+              product: (i.metadata as any)?.upsellName ?? i.product?.name,
+              qty: i.quantity,
+              price: i.unitPrice,
+            })),
           })),
           total: results.length,
           nextCursor,
