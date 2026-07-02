@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CodAdmin Pro — COD e-commerce operations, handled</title>
+  <meta name="description" content="CodAdmin Pro is the operations dashboard for cash-on-delivery e-commerce: orders, confirmations, delivery agents, and revenue in one place." />
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --brand: #2563eb;
+      --brand-dark: #1d4ed8;
+      --line: #e2e8f0;
+      --bg: #f8fafc;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1000px 500px at 50% -10%, #eef2ff 0%, rgba(238,242,255,0) 60%),
+        var(--bg);
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 22px clamp(20px, 5vw, 56px);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.01em;
+    }
+    .mark {
+      width: 30px; height: 30px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 15px;
+      font-weight: 800;
+    }
+    .nav-login {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ink);
+      text-decoration: none;
+      padding: 9px 16px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #fff;
+      transition: border-color .15s ease;
+    }
+    .nav-login:hover { border-color: #cbd5e1; }
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px clamp(20px, 5vw, 56px) 64px;
+    }
+    .eyebrow {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--brand);
+      margin-bottom: 18px;
+    }
+    h1 {
+      font-size: clamp(32px, 6vw, 54px);
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+      max-width: 16ch;
+      margin-bottom: 20px;
+    }
+    p.lede {
+      font-size: clamp(16px, 2.4vw, 19px);
+      line-height: 1.55;
+      color: var(--muted);
+      max-width: 52ch;
+      margin-bottom: 34px;
+    }
+    .actions { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+      padding: 13px 26px;
+      border-radius: 11px;
+      transition: transform .12s ease, background .15s ease, border-color .15s ease;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: var(--brand); color: #fff; }
+    .btn-primary:hover { background: var(--brand-dark); }
+    .btn-ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    .btn-ghost:hover { border-color: #cbd5e1; }
+    footer {
+      text-align: center;
+      padding: 24px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="mark">C</span>
+      <span>CodAdmin&nbsp;Pro</span>
+    </div>
+    <a class="nav-login" href="https://app.codadminpro.com/login">Log in</a>
+  </header>
+
+  <main>
+    <div class="eyebrow">For cash-on-delivery brands</div>
+    <h1>Run your COD store without the chaos.</h1>
+    <p class="lede">
+      Orders, confirmations, delivery agents, and revenue — tracked in one dashboard
+      built for the way cash-on-delivery e-commerce actually works.
+    </p>
+    <div class="actions">
+      <a class="btn btn-primary" href="https://app.codadminpro.com/login">Log in to your dashboard</a>
+      <a class="btn btn-ghost" href="https://app.codadminpro.com/pricing">See pricing</a>
+    </div>
+  </main>
+
+  <footer>
+    &copy; CodAdmin Pro
+  </footer>
+</body>
+</html>
