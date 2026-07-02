@@ -93,7 +93,12 @@ export function registerOrderTools(
             customerPhone: o.customer?.phoneNumber,
             customerAltPhone: o.customer?.alternatePhone ?? null,
             agent: o.deliveryAgent ? `${o.deliveryAgent.firstName} ${o.deliveryAgent.lastName}` : null,
-            items: o.orderItems.map((i) => ({ product: i.product?.name, qty: i.quantity, price: i.unitPrice })),
+            // Upsell rows point productId at the parent product; the real add-on name lives in metadata.upsellName.
+            items: o.orderItems.map((i) => ({
+              product: (i.metadata as any)?.upsellName ?? i.product?.name,
+              qty: i.quantity,
+              price: i.unitPrice,
+            })),
           })),
           total: results.length,
           nextCursor,
