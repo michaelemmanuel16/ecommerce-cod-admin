@@ -176,6 +176,14 @@ export const publicOrdersService = {
     return response.data;
   },
 
+  // Server-side InitiateCheckout signal (best-effort; fired on checkout load).
+  async trackInitiateCheckout(
+    slug: string,
+    data: { eventId?: string; eventSourceUrl?: string; fbp?: string; fbc?: string },
+  ): Promise<void> {
+    await publicClient.post(`/api/public/forms/${slug}/track/initiate-checkout`, data);
+  },
+
   async verifyPayment(reference: string): Promise<{ success: boolean; paymentStatus: string; order?: any }> {
     const response = await publicClient.get(`/api/paystack/verify/${reference}`);
     return response.data;

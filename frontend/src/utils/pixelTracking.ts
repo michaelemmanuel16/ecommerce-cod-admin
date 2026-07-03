@@ -151,9 +151,51 @@ export function initPixels(config: PixelConfig): void {
     loadGTM(config.googleTagManagerId);
 }
 
-export function trackInitiateCheckout(config: PixelConfig): void {
-  if (config.facebookPixelId && window.fbq) {
-    window.fbq('track', 'InitiateCheckout');
+// Reads a browser cookie by exact name, URL-decoded. Returns undefined if absent.
+function readCookie(name: string): string | undefined {
+  const escaped = name.replace(/[.$?*|{}()[\]\\/+^]/g, '\\$&');
+  const match = document.cookie.match(new RegExp('(?:^|; )' + escaped + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+// Meta click identifiers for server-side (CAPI) matching. `_fbp` is set by
+// fbevents.js; `_fbc` is derived from the `fbclid` URL param. When fbevents.js is
+// blocked (common in the FB in-app browser) `_fbc` won't exist, so we reconstruct
+// it from `fbclid` in Meta's canonical `fb.1.<ts>.<fbclid>` form.
+export function getFbCookies(): { fbp?: string; fbc?: string } {
+  const fbp = readCookie('_fbp');
+  let fbc = readCookie('_fbc');
+  if (!fbc) {
+    const fbclid = new URLSearchParams(window.location.search).get('fbclid');
+    if (fbclid) fbc = `fb.1.${Date.now()}.${fbclid}`;
+  }
+  const result: { fbp?: string; fbc?: string } = {};
+  if (fbp) result.fbp = fbp;
+  if (fbc) result.fbc = fbc;
+  return result;
+}
+
+// Fires InitiateCheckout across all configured pixels. Returns the Facebook
+// eventID so the caller can pass it to the server-side CAPI event for dedup
+// (undefined when FB isn't configured or the event was already sent this session).
+export function trackInitiateCheckout(config: PixelConfig): string | undefined {
+  let eventId: string | undefined;
+
+  if (config.facebookPixelId && /^\d+$/.test(config.facebookPixelId)) {
+    const beaconKey = `initiatecheckout-${config.facebookPixelId}`;
+    if (!sentBeacons.has(beaconKey)) {
+      sentBeacons.add(beaconKey);
+      eventId = generateEventId();
+      if (window.fbq) {
+        window.fbq('track', 'InitiateCheckout', {}, eventId ? { eventID: eventId } : {});
+      }
+      // Beacon fallback (this is the fix): unlike PageView/Purchase, InitiateCheckout
+      // previously fired through fbq() ONLY. In the Facebook in-app browser
+      // fbevents.js is routinely blocked or the page is killed before fbq's queue
+      // flushes, so the event silently never reached Meta. The image beacon hits
+      // facebook.com/tr directly and always lands; the shared eventID dedupes them.
+      sendFbPixelBeacon(config.facebookPixelId, 'InitiateCheckout', undefined, eventId);
+    }
   }
 
   if (config.googleAnalyticsId && window.gtag) {
@@ -168,6 +210,8 @@ export function trackInitiateCheckout(config: PixelConfig): void {
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push({ event: 'begin_checkout' });
   }
+
+  return eventId;
 }
 
 export function trackPurchase(config: PixelConfig, value: number, currency: string, orderId?: number | string): void {
@@ -176,7 +220,11 @@ export function trackPurchase(config: PixelConfig, value: number, currency: stri
     const purchaseKey = orderId != null ? `purchase-${config.facebookPixelId}-${orderId}` : null;
     if (!purchaseKey || !sentBeacons.has(purchaseKey)) {
       if (purchaseKey) sentBeacons.add(purchaseKey);
-      const eventId = generateEventId();
+      // Match the server CAPI Purchase event_id, which is order.paymentReference
+      // || String(order.id). This browser Purchase only fires for COD (no payment
+      // reference), so the order id is the shared dedup key — a random UUID here
+      // would make Meta count the browser and CAPI Purchase as two conversions.
+      const eventId = orderId != null ? String(orderId) : generateEventId();
       if (window.fbq) {
         window.fbq('track', 'Purchase', { value, currency }, eventId ? { eventID: eventId } : {});
       }
