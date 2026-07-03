@@ -254,6 +254,12 @@ model Order {
   depositPaid        Int                 @default(0) @map("deposit_paid")
   balanceDue         Int                 @default(0) @map("balance_due")
   capiEventFired     Boolean             @default(false) @map("capi_event_fired")
+  // Meta click identifiers captured from the buyer's browser at checkout, forwarded
+  // to the CAPI Purchase event as un-hashed match keys (fbp = browser id cookie,
+  // fbc = click id from the _fbc cookie / fbclid). Nullable: only set for orders
+  // placed through the hosted checkout with a Facebook Pixel configured.
+  fbp                String?             @map("fbp")
+  fbc                String?             @map("fbc")
   deliveryAddress    String?             @map("delivery_address")
   deliveryState      String?             @map("delivery_state")
   deliveryArea       String?             @map("delivery_area")
@@ -797,6 +803,10 @@ model PendingCheckout {
   selectedUpsells     Json?    @map("selected_upsells")
   ipAddress           String?  @map("ip_address")
   userAgent           String?  @map("user_agent")
+  // Meta click identifiers, carried from checkout through to the Order created at
+  // settlement so the Paystack Purchase CAPI event gets the same match keys as COD.
+  fbp                 String?  @map("fbp")
+  fbc                 String?  @map("fbc")
   createdAt           DateTime @default(now()) @map("created_at")
 
   @@index([createdAt])

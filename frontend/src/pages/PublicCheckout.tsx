@@ -4,7 +4,7 @@ import { CheckoutForm, CheckoutFormData } from '../components/public/CheckoutFor
 import { OrderSuccess } from '../components/public/OrderSuccess';
 import { publicOrdersService, PublicCheckoutForm } from '../services/public-orders.service';
 import { buildOrderPayload, buildRedirectUrl } from '../lib/orderPayload';
-import { initPixels, trackInitiateCheckout } from '../utils/pixelTracking';
+import { initPixels, fireInitiateCheckoutWithCapi, getFbCookies } from '../utils/pixelTracking';
 import { PixelConfig } from '../types/checkout-form';
 import toast from 'react-hot-toast';
 
@@ -97,13 +97,16 @@ export const PublicCheckout: React.FC = () => {
     }
   }, [loading, error, orderId]);
 
-  // Fire pixel PageView events when form data is available
+  // Fire pixel PageView + InitiateCheckout when form data is available. The
+  // InitiateCheckout server-side CAPI mirror is shared with the embed widget.
   useEffect(() => {
-    if (formData?.pixelConfig) {
-      initPixels(formData.pixelConfig as PixelConfig);
-      trackInitiateCheckout(formData.pixelConfig as PixelConfig);
-    }
-  }, [formData?.pixelConfig]);
+    if (!formData?.pixelConfig || !slug) return;
+    const pixelConfig = formData.pixelConfig as PixelConfig;
+    initPixels(pixelConfig);
+    fireInitiateCheckoutWithCapi(pixelConfig, (data) =>
+      publicOrdersService.trackInitiateCheckout(slug, data),
+    );
+  }, [formData?.pixelConfig, slug]);
 
   const loadForm = async () => {
     try {
@@ -133,7 +136,8 @@ export const PublicCheckout: React.FC = () => {
       // Shared mapping — identical to what the embed widget posts.
       const { payload, totalAmount } = buildOrderPayload(formData, data);
 
-      const response = await publicOrdersService.submitOrder(slug, payload as any);
+      // Attach Meta click ids so the Purchase CAPI event can match this buyer.
+      const response = await publicOrdersService.submitOrder(slug, { ...payload, ...getFbCookies() } as any);
 
       if (response.success) {
         // Paystack methods (digital, deposit, full): redirect to Paystack. The

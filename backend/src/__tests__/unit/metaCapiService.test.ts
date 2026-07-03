@@ -104,4 +104,89 @@ describe('metaCapiService.fireCapiPurchaseEvent (MAN-59)', () => {
     await expect(metaCapiService.fireCapiPurchaseEvent(42)).resolves.toBeUndefined();
     expect(prismaMock.order.update).not.toHaveBeenCalled();
   });
+
+  it('sends fbp/fbc + client ip/ua un-hashed as match keys when present', async () => {
+    (prismaMock.order.findUnique as any).mockResolvedValue(
+      orderWith(capiForm, {
+        fbp: 'fb.1.123.abc',
+        fbc: 'fb.1.123.CLICKID',
+        formSubmissions: [{ form: capiForm, ipAddress: '10.0.0.9', userAgent: 'Mozilla/5.0 (Linux)' }],
+      }),
+    );
+
+    await metaCapiService.fireCapiPurchaseEvent(42);
+
+    const event = JSON.parse((fetchMock.mock.calls[0] as any)[1].body).data[0];
+    // Raw (not SHA-256'd) — Meta requires fbp/fbc/ip/ua un-hashed.
+    expect(event.user_data.fbp).toBe('fb.1.123.abc');
+    expect(event.user_data.fbc).toBe('fb.1.123.CLICKID');
+    expect(event.user_data.client_ip_address).toBe('10.0.0.9');
+    expect(event.user_data.client_user_agent).toBe('Mozilla/5.0 (Linux)');
+  });
+});
+
+describe('metaCapiService.fireCapiInitiateCheckoutEvent', () => {
+  let fetchMock: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fetchMock = jest.fn(async () => ({ ok: true, text: async () => '' })) as any;
+    (global as any).fetch = fetchMock;
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(capiForm);
+  });
+
+  const fire = () =>
+    metaCapiService.fireCapiInitiateCheckoutEvent({
+      slug: 'dictamni',
+      eventId: 'evt-123',
+      fbp: 'fb.1.9.p',
+      fbc: 'fb.1.9.c',
+      eventSourceUrl: 'https://shop.example/checkout/dictamni',
+      clientIpAddress: '10.0.0.9',
+      clientUserAgent: 'UA/1',
+    });
+
+  it('POSTs an InitiateCheckout event with the shared eventId and raw match keys', async () => {
+    await fire();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, opts] = fetchMock.mock.calls[0] as [string, any];
+    expect(url).toContain('/PIXEL123/events');
+    const event = JSON.parse(opts.body).data[0];
+    expect(event.event_name).toBe('InitiateCheckout');
+    expect(event.event_id).toBe('evt-123'); // shared with browser pixel for dedup
+    expect(event.event_source_url).toBe('https://shop.example/checkout/dictamni');
+    expect(event.user_data).toMatchObject({
+      fbp: 'fb.1.9.p',
+      fbc: 'fb.1.9.c',
+      client_ip_address: '10.0.0.9',
+      client_user_agent: 'UA/1',
+    });
+    // No PII / no value at initiate-checkout time.
+    expect(event.user_data.em).toBeUndefined();
+    expect(event.custom_data).toMatchObject({ currency: 'GHS', content_ids: [7], content_type: 'product' });
+    expect(JSON.parse(opts.body).test_event_code).toBe('TEST99');
+  });
+
+  it('no-ops when the form has no CAPI token configured', async () => {
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue({ ...capiForm, metaCapiAccessToken: null });
+    await fire();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the form is not found', async () => {
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(null);
+    await fire();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('skips the event when no match keys are available (would be rejected)', async () => {
+    await metaCapiService.fireCapiInitiateCheckoutEvent({ slug: 'dictamni', eventId: 'e' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('never throws — a fetch error is swallowed', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('network down'));
+    await expect(fire()).resolves.toBeUndefined();
+  });
 });

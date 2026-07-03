@@ -16,6 +16,11 @@ import { metaCapiService } from '../services/metaCapiService';
  */
 type PaymentMethod = 'cod' | 'paystack_deposit' | 'paystack_full';
 
+// Meta click ids (fbp/fbc) arrive from the browser; keep only non-empty strings
+// and cap length defensively before they touch the DB or the CAPI payload.
+const clampTracking = (v: unknown): string | null =>
+  typeof v === 'string' && v.trim() ? v.trim().slice(0, 255) : null;
+
 export const getPublicForm = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { slug } = req.params;
@@ -78,6 +83,11 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       selectedUpsells,
       totalAmount
     } = req.body;
+
+    // Meta click identifiers captured by the checkout page, forwarded to the
+    // Purchase CAPI event (COD fires now; Paystack carries them via PendingCheckout).
+    const fbp = clampTracking(req.body.fbp);
+    const fbc = clampTracking(req.body.fbc);
 
     // Get form with product — the form's tenantId determines the tenant context
     // for this unauthenticated request
@@ -407,6 +417,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           selectedUpsells: selectedUpsells ?? Prisma.JsonNull,
           ipAddress: req.ip,
           userAgent: req.get('user-agent'),
+          fbp,
+          fbc,
         },
       });
 
@@ -442,6 +454,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         deliveryArea: formData.state || null,
         notes: formData.notes || null,
         source: 'checkout_form',
+        fbp,
+        fbc,
         ...(formTenantId ? { tenantId: formTenantId } : {}),
         orderItems: {
           create: orderItemsData
@@ -505,6 +519,36 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       },
       message: 'Order created successfully'
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Server-side InitiateCheckout: POST /api/public/forms/:slug/track/initiate-checkout
+ *
+ * Fired by the checkout page on load, carrying the shared eventId (so Meta dedupes
+ * against the browser Pixel InitiateCheckout) plus the fbp/fbc cookies. Purely a
+ * tracking side-channel — responds 202 immediately and never blocks the buyer.
+ */
+export const captureInitiateCheckout = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { slug } = req.params;
+    const { eventId, fbp, fbc, eventSourceUrl } = req.body;
+
+    metaCapiService.fireCapiInitiateCheckoutEvent({
+      slug,
+      eventId: clampTracking(eventId),
+      fbp: clampTracking(fbp),
+      fbc: clampTracking(fbc),
+      eventSourceUrl: typeof eventSourceUrl === 'string' ? eventSourceUrl.slice(0, 1000) : null,
+      clientIpAddress: req.ip || null,
+      clientUserAgent: req.get('user-agent') || null,
+    }).catch((err) => {
+      console.error('Meta CAPI InitiateCheckout fire failed:', err);
+    });
+
+    res.status(202).json({ success: true });
   } catch (error) {
     next(error);
   }

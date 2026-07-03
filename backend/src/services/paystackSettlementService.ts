@@ -137,6 +137,10 @@ export async function settlePaystackPayment(
       notes: formData.notes || null,
       source: 'checkout_form',
       tenantId: pending.tenantId,
+      // Carry the Meta click ids captured at checkout so the Paystack Purchase CAPI
+      // event gets the same match keys as a COD order (see metaCapiService).
+      fbp: pending.fbp,
+      fbc: pending.fbc,
       orderItems: { create: pending.orderItems as Prisma.OrderItemCreateManyOrderInput[] },
     },
     include: { customer: true, orderItems: { include: { product: true } } },
