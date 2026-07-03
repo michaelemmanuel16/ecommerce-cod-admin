@@ -41,11 +41,9 @@ const createOrderValidation = [
 ];
 
 // Only the slug is validated; the tracking fields are best-effort and sanitized
-// in the controller, so a bad value degrades tracking rather than 400-ing.
-const initiateCheckoutValidation = [
-  param('slug').notEmpty().withMessage('Form slug is required')
-    .matches(/^[a-z0-9-]+$/).withMessage('Invalid slug format')
-];
+// in the controller, so a bad value degrades tracking rather than 400-ing. Same
+// shape as getFormValidation — reuse it rather than redeclare an identical rule.
+const initiateCheckoutValidation = getFormValidation;
 
 const trackOrderValidation = [
   body('orderId').notEmpty().withMessage('Order ID is required'),

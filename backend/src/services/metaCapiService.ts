@@ -53,6 +53,38 @@ function compact<T extends Record<string, unknown>>(obj: T): Partial<T> {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>;
 }
 
+// Shared send-path for every CAPI event type: wrap the event in Meta's envelope,
+// POST it, and log the outcome. Returns whether Meta accepted it so the caller
+// can run post-send bookkeeping (e.g. marking an order fired). Assumes the outer
+// caller's try/catch handles network errors — keeps each event fn a one-liner.
+async function postCapiEvent(
+  eventLabel: string,
+  pixelId: string,
+  accessToken: string,
+  event: Record<string, unknown>,
+  testEventCode: string | null | undefined,
+  logCtx: Record<string, unknown>,
+): Promise<boolean> {
+  const body = {
+    data: [event],
+    ...(testEventCode ? { test_event_code: testEventCode } : {}),
+  };
+
+  const res = await fetch(GRAPH_URL(pixelId, accessToken), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    logger.warn(`Meta CAPI ${eventLabel} event rejected`, { ...logCtx, status: res.status, body: text.slice(0, 500) });
+    return false;
+  }
+  logger.info(`Meta CAPI ${eventLabel} event sent`, { ...logCtx, eventId: event.event_id });
+  return true;
+}
+
 /**
  * Fire a server-side Purchase event for an order, if its checkout form has Meta
  * CAPI configured. Idempotent via Order.capiEventFired, so it's safe to call
@@ -128,41 +160,26 @@ async function fireCapiPurchaseEvent(orderId: number): Promise<void> {
       client_user_agent: raw(submission?.userAgent),
     });
 
-    const body = {
-      data: [
-        {
-          event_name: 'Purchase',
-          event_time: Math.floor(Date.now() / 1000),
-          action_source: 'website',
-          // Same id as the client Pixel Purchase → Meta dedupes browser+server.
-          event_id: order.paymentReference || String(order.id),
-          user_data: userData,
-          custom_data: {
-            value: order.totalAmount,
-            currency: form.currency || 'GHS',
-            content_ids: [form.productId],
-            content_type: 'product',
-          },
-        },
-      ],
-      ...(form.metaCapiTestEventCode ? { test_event_code: form.metaCapiTestEventCode } : {}),
+    const event = {
+      event_name: 'Purchase',
+      event_time: Math.floor(Date.now() / 1000),
+      action_source: 'website',
+      // Same id as the client Pixel Purchase → Meta dedupes browser+server.
+      event_id: order.paymentReference || String(order.id),
+      user_data: userData,
+      custom_data: {
+        value: order.totalAmount,
+        currency: form.currency || 'GHS',
+        content_ids: [form.productId],
+        content_type: 'product',
+      },
     };
 
-    const res = await fetch(GRAPH_URL(pixelId, accessToken), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      logger.warn('Meta CAPI Purchase event rejected', { orderId, status: res.status, body: text.slice(0, 500) });
-      return; // leave capiEventFired false so a later settlement site can retry
-    }
+    const ok = await postCapiEvent('Purchase', pixelId, accessToken, event, form.metaCapiTestEventCode, { orderId });
+    if (!ok) return; // leave capiEventFired false so a later settlement site can retry
 
     // Mark fired only after a successful POST so a transient failure can retry.
     await prisma.order.update({ where: { id: orderId }, data: { capiEventFired: true } });
-    logger.info('Meta CAPI Purchase event sent', { orderId, eventId: body.data[0].event_id });
   } catch (err: any) {
     // Best-effort: never propagate into the order flow.
     logger.error('Meta CAPI fire failed (non-fatal)', { orderId, error: err?.message });
@@ -217,42 +234,26 @@ async function fireCapiInitiateCheckoutEvent(params: {
     // guaranteed-rejected event (should not happen — IP/UA are always present).
     if (Object.keys(userData).length === 0) return;
 
-    const body = {
-      data: [
-        {
-          event_name: 'InitiateCheckout',
-          event_time: Math.floor(Date.now() / 1000),
-          action_source: 'website',
-          // Same id as the client Pixel InitiateCheckout → Meta dedupes browser+server.
-          ...(raw(params.eventId) ? { event_id: raw(params.eventId) } : {}),
-          ...(raw(params.eventSourceUrl) ? { event_source_url: raw(params.eventSourceUrl) } : {}),
-          user_data: userData,
-          custom_data: {
-            currency: form.currency || 'GHS',
-            content_ids: [form.productId],
-            content_type: 'product',
-          },
-        },
-      ],
-      ...(form.metaCapiTestEventCode ? { test_event_code: form.metaCapiTestEventCode } : {}),
+    const eventId = raw(params.eventId);
+    const eventSourceUrl = raw(params.eventSourceUrl);
+    const event = {
+      event_name: 'InitiateCheckout',
+      event_time: Math.floor(Date.now() / 1000),
+      action_source: 'website',
+      // Same id as the client Pixel InitiateCheckout → Meta dedupes browser+server.
+      ...(eventId ? { event_id: eventId } : {}),
+      ...(eventSourceUrl ? { event_source_url: eventSourceUrl } : {}),
+      user_data: userData,
+      custom_data: {
+        currency: form.currency || 'GHS',
+        content_ids: [form.productId],
+        content_type: 'product',
+      },
     };
 
-    const res = await fetch(GRAPH_URL(pixelId, accessToken), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    await postCapiEvent('InitiateCheckout', pixelId, accessToken, event, form.metaCapiTestEventCode, {
+      slug: params.slug,
     });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      logger.warn('Meta CAPI InitiateCheckout event rejected', {
-        slug: params.slug,
-        status: res.status,
-        body: text.slice(0, 500),
-      });
-      return;
-    }
-    logger.info('Meta CAPI InitiateCheckout event sent', { slug: params.slug, eventId: raw(params.eventId) });
   } catch (err: any) {
     // Best-effort: never propagate into the request flow.
     logger.error('Meta CAPI InitiateCheckout fire failed (non-fatal)', { slug: params.slug, error: err?.message });

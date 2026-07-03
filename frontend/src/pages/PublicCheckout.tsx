@@ -4,7 +4,7 @@ import { CheckoutForm, CheckoutFormData } from '../components/public/CheckoutFor
 import { OrderSuccess } from '../components/public/OrderSuccess';
 import { publicOrdersService, PublicCheckoutForm } from '../services/public-orders.service';
 import { buildOrderPayload, buildRedirectUrl } from '../lib/orderPayload';
-import { initPixels, trackInitiateCheckout, getFbCookies } from '../utils/pixelTracking';
+import { initPixels, fireInitiateCheckoutWithCapi, getFbCookies } from '../utils/pixelTracking';
 import { PixelConfig } from '../types/checkout-form';
 import toast from 'react-hot-toast';
 
@@ -97,22 +97,15 @@ export const PublicCheckout: React.FC = () => {
     }
   }, [loading, error, orderId]);
 
-  // Fire pixel PageView + InitiateCheckout when form data is available.
+  // Fire pixel PageView + InitiateCheckout when form data is available. The
+  // InitiateCheckout server-side CAPI mirror is shared with the embed widget.
   useEffect(() => {
-    if (!formData?.pixelConfig) return;
+    if (!formData?.pixelConfig || !slug) return;
     const pixelConfig = formData.pixelConfig as PixelConfig;
     initPixels(pixelConfig);
-    const eventId = trackInitiateCheckout(pixelConfig);
-
-    // Mirror InitiateCheckout server-side via CAPI so it still lands when the
-    // in-app browser blocks the client pixel. `eventId` is only returned on the
-    // first (non-deduped) fire, so this never double-sends; it shares the eventId
-    // with the browser event so Meta dedupes them.
-    if (slug && eventId && pixelConfig.facebookPixelId) {
-      publicOrdersService
-        .trackInitiateCheckout(slug, { eventId, eventSourceUrl: window.location.href, ...getFbCookies() })
-        .catch(() => { /* tracking is best-effort — never disrupt checkout */ });
-    }
+    fireInitiateCheckoutWithCapi(pixelConfig, (data) =>
+      publicOrdersService.trackInitiateCheckout(slug, data),
+    );
   }, [formData?.pixelConfig, slug]);
 
   const loadForm = async () => {

@@ -152,9 +152,10 @@ export function initPixels(config: PixelConfig): void {
 }
 
 // Reads a browser cookie by exact name, URL-decoded. Returns undefined if absent.
+// Only ever called with the literal names `_fbp`/`_fbc`, so `name` needs no
+// regex-escaping.
 function readCookie(name: string): string | undefined {
-  const escaped = name.replace(/[.$?*|{}()[\]\\/+^]/g, '\\$&');
-  const match = document.cookie.match(new RegExp('(?:^|; )' + escaped + '=([^;]*)'));
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
@@ -212,6 +213,23 @@ export function trackInitiateCheckout(config: PixelConfig): string | undefined {
   }
 
   return eventId;
+}
+
+// The InitiateCheckout server-side mirror, shared by every checkout surface
+// (hosted page + embed widget). Fires the client pixel, and when that produced a
+// non-deduped eventId, forwards it to CAPI through the caller-supplied transport
+// with the same eventId so Meta dedupes browser+server. Best-effort — the CAPI
+// call is fire-and-forget and never disrupts checkout. Keeping the eventId guard
+// + eventSourceUrl + fbp/fbc assembly here means the two surfaces can't drift.
+export function fireInitiateCheckoutWithCapi(
+  config: PixelConfig,
+  sendCapi: (data: { eventId: string; eventSourceUrl: string; fbp?: string; fbc?: string }) => Promise<unknown>,
+): void {
+  const eventId = trackInitiateCheckout(config);
+  if (!eventId || !config.facebookPixelId) return;
+  void sendCapi({ eventId, eventSourceUrl: window.location.href, ...getFbCookies() }).catch(() => {
+    /* tracking is best-effort — never disrupt checkout */
+  });
 }
 
 export function trackPurchase(config: PixelConfig, value: number, currency: string, orderId?: number | string): void {
