@@ -26,6 +26,7 @@ import { render } from 'react-dom';
 import { EmbedCheckout } from './EmbedCheckout';
 import { buildOrderPayload, submitOrder, fetchFormConfig } from './embedApi';
 import { buildRedirectUrl } from '../src/lib/orderPayload';
+import { getFbCookies } from '../src/utils/pixelTracking';
 import type { CheckoutFormData } from '../src/components/public/CheckoutForm';
 // Compiled Tailwind CSS, inlined as a string and injected into each Shadow root.
 import embedCss from './embed.css?inline';
@@ -174,7 +175,8 @@ function attachModeB(form: HTMLFormElement): void {
       };
 
       const { payload, totalAmount } = buildOrderPayload(config, data);
-      const res = await submitOrder(API_BASE, slug, payload);
+      // Attach Meta click ids so the Purchase CAPI event can match this buyer.
+      const res = await submitOrder(API_BASE, slug, { ...payload, ...getFbCookies() });
 
       if (res.authorization_url) {
         window.location.href = res.authorization_url;

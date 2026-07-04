@@ -35,7 +35,15 @@ const createOrderValidation = [
   body('selectedPackage.quantity').isInt({ min: 1 }).withMessage('Package quantity must be at least 1'),
   body('selectedUpsells').optional().isArray().withMessage('Upsells must be an array'),
   body('totalAmount').isFloat({ min: 0 }).withMessage('Total amount must be positive')
+  // NB: Meta click ids (fbp/fbc) are intentionally NOT validated here — they're
+  // best-effort tracking data sanitized by the controller (clampTracking). A
+  // malformed/oversized value must never block a real order.
 ];
+
+// Only the slug is validated; the tracking fields are best-effort and sanitized
+// in the controller, so a bad value degrades tracking rather than 400-ing. Same
+// shape as getFormValidation — reuse it rather than redeclare an identical rule.
+const initiateCheckoutValidation = getFormValidation;
 
 const trackOrderValidation = [
   body('orderId').notEmpty().withMessage('Order ID is required'),
@@ -67,6 +75,14 @@ router.post(
   createOrderValidation,
   validate,
   publicOrderController.createPublicOrder
+);
+
+// Server-side InitiateCheckout signal (fired on checkout-form load)
+router.post(
+  '/forms/:slug/track/initiate-checkout',
+  initiateCheckoutValidation,
+  validate,
+  publicOrderController.captureInitiateCheckout
 );
 
 // Track order by order number and phone (POST to protect PII in request body)

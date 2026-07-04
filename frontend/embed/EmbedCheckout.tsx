@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { CheckoutForm, CheckoutFormData } from '../src/components/public/CheckoutForm';
 import type { PublicCheckoutForm } from '../src/services/public-orders.service';
-import { fetchFormConfig, buildOrderPayload, submitOrder, EmbedFormConfig } from './embedApi';
+import { fetchFormConfig, buildOrderPayload, submitOrder, trackInitiateCheckout, EmbedFormConfig } from './embedApi';
 import { buildRedirectUrl } from '../src/lib/orderPayload';
+import { fireInitiateCheckoutWithCapi, getFbCookies } from '../src/utils/pixelTracking';
+import type { PixelConfig } from '../src/types/checkout-form';
 
 interface EmbedCheckoutProps {
   apiBase: string;
@@ -25,11 +27,23 @@ export const EmbedCheckout: React.FC<EmbedCheckoutProps> = ({ apiBase, slug, loc
     };
   }, [apiBase, slug]);
 
+  // Fire InitiateCheckout once the form config loads. The widget mounts inline in
+  // the host page, so the client beacon and _fbp/_fbc cookies belong to the
+  // merchant's domain. Uses the same shared helper as the hosted checkout: browser
+  // beacon + CAPI twin sharing one eventId so Meta dedupes them. Without this the
+  // embed sent no InitiateCheckout at all (only server-side Purchase reached Meta).
+  useEffect(() => {
+    const pixelConfig = form?.pixelConfig as PixelConfig | undefined;
+    if (!pixelConfig) return;
+    fireInitiateCheckoutWithCapi(pixelConfig, (data) => trackInitiateCheckout(apiBase, slug, data));
+  }, [form?.pixelConfig, apiBase, slug]);
+
   const handleSubmit = async (data: CheckoutFormData) => {
     if (!form) return;
     try {
       const { payload, totalAmount } = buildOrderPayload(form, data);
-      const res = await submitOrder(apiBase, slug, payload);
+      // Attach Meta click ids so the Purchase CAPI event can match this buyer.
+      const res = await submitOrder(apiBase, slug, { ...payload, ...getFbCookies() });
 
       // Paystack methods: hand off to Paystack (order created after payment).
       if (res.authorization_url) {

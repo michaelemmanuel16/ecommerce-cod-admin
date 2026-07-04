@@ -32,10 +32,33 @@ export interface OrderResponse {
   order?: { id: number; totalAmount: number; status: string };
 }
 
+// Best-effort server-side InitiateCheckout signal, mirrored from the hosted
+// checkout page. Fired once when the widget loads so the event still reaches
+// Meta via CAPI when the in-app browser blocks the client pixel. The eventId is
+// shared with the browser beacon so Meta dedupes them. Never throws — tracking
+// must not disrupt checkout.
+export async function trackInitiateCheckout(
+  apiBase: string,
+  slug: string,
+  data: { eventId?: string; eventSourceUrl?: string; fbp?: string; fbc?: string },
+): Promise<void> {
+  try {
+    await fetch(`${apiBase}/api/public/forms/${encodeURIComponent(slug)}/track/initiate-checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      keepalive: true,
+    });
+  } catch {
+    /* best-effort — swallow */
+  }
+}
+
 export async function submitOrder(
   apiBase: string,
   slug: string,
-  payload: ReturnType<typeof buildOrderPayload>['payload'],
+  // fbp/fbc are optional best-effort Meta click ids merged in by the caller.
+  payload: ReturnType<typeof buildOrderPayload>['payload'] & { fbp?: string; fbc?: string },
 ): Promise<OrderResponse> {
   const res = await fetch(`${apiBase}/api/public/forms/${encodeURIComponent(slug)}/orders`, {
     method: 'POST',
