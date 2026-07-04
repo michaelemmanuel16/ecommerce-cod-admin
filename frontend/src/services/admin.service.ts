@@ -118,6 +118,16 @@ export const adminService = {
     return response.data;
   },
 
+  // Same shape as getPublicConfig, but authenticated so the backend resolves the
+  // caller's tenant from the JWT and returns THEIR currency/business name. The
+  // public /config route is tenant-blind and falls back to the global USD row,
+  // which is why the dashboard showed "$" instead of the tenant's configured
+  // currency. Signed-in surfaces use this; token-less iframe/checkout keeps /config.
+  async getTenantConfig(): Promise<Pick<SystemConfig, 'businessName' | 'currency'>> {
+    const response = await apiClient.get('/api/admin/config/me');
+    return response.data;
+  },
+
   async updateSystemConfig(data: Partial<SystemConfig>): Promise<SystemConfig> {
     const response = await apiClient.put('/api/admin/settings', data);
     return response.data;
