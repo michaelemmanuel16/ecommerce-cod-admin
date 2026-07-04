@@ -10,6 +10,12 @@ router.get('/config', adminController.getPublicConfig);
 router.use(authenticate);
 router.use(tenantRateLimiter);
 
+// Authenticated tenant config — same public-safe shape as /config, but the JWT
+// gives us tenant context so the caller gets THEIR tenant's currency/business
+// name (the public /config route is tenant-blind and falls back to the global
+// USD row). Available to every authenticated role, not just super_admin.
+router.get('/config/me', adminController.getPublicConfig);
+
 // System Configuration
 router.get('/settings', requireSuperAdmin, adminController.getSystemConfig);
 router.put('/settings', requireSuperAdmin, adminController.updateSystemConfig);
