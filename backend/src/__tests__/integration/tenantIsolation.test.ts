@@ -145,6 +145,13 @@ beforeAll(async () => {
     },
   });
   checkoutFormIdA = formA.id;
+
+  // Per-tenant SystemConfig with distinct currencies — the two tenants must
+  // never see each other's (or the global) currency through the config API.
+  await Promise.all([
+    prismaBase.systemConfig.create({ data: { tenantId: tenantAId, currency: 'GHS' } }),
+    prismaBase.systemConfig.create({ data: { tenantId: tenantBId, currency: 'NGN' } }),
+  ]);
 });
 
 // ── Teardown ───────────────────────────────────────────────────────────────
@@ -345,5 +352,42 @@ describe('Scenario 7 — Prisma middleware behaviour without tenant context', ()
     const ids = allOrders.map((o) => o.tenantId);
     // Both tenants' data is visible when no tenant context is set
     expect(ids).toContain(tenantAId);
+  });
+});
+
+// ── Scenario 8: Per-tenant currency config (Financial "$" bug) ─────────────
+//
+// Regression for the bug where the admin UI rendered "$" even though the tenant
+// had saved GHS: the frontend config store read the UNauthenticated
+// /api/admin/config, which carries no tenant context and therefore returned the
+// global (USD) SystemConfig row. The authenticated /api/admin/config/me route
+// resolves the caller's tenant from the JWT, so each tenant gets its own
+// currency, while the public route must stay tenant-blind.
+
+describe('Scenario 8 — Per-tenant currency config', () => {
+  it('authenticated config route returns Tenant A currency (GHS)', async () => {
+    const res = await request(app)
+      .get('/api/admin/config/me')
+      .set('Authorization', `Bearer ${tokenA}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.currency).toBe('GHS');
+  });
+
+  it('authenticated config route returns Tenant B currency (NGN)', async () => {
+    const res = await request(app)
+      .get('/api/admin/config/me')
+      .set('Authorization', `Bearer ${tokenB}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.currency).toBe('NGN');
+  });
+
+  it('unauthenticated public config stays tenant-blind (no tenant currency leak)', async () => {
+    const res = await request(app).get('/api/admin/config');
+
+    expect(res.status).toBe(200);
+    // Falls back to the global/legacy row — never a specific tenant's currency.
+    expect(res.body.currency).not.toBe('NGN');
   });
 });

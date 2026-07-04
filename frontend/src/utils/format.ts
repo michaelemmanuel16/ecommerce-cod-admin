@@ -8,6 +8,9 @@ export const formatCurrency = (amount: number, currency?: string): string => {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: targetCurrency,
+    // narrowSymbol renders the local glyph (GH₵5,680.00) instead of the ISO
+    // code prefix (GHS 5,680.00) that 'symbol' falls back to for GHS/NGN.
+    currencyDisplay: 'narrowSymbol',
   }).format(amount);
 };
 
