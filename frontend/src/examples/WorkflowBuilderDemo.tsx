@@ -31,7 +31,7 @@ export const WorkflowBuilderDemo: React.FC = () => {
     userType: 'sales_rep',
     assignments: [],
     distributionMode: 'even',
-    onlyUnassigned: true,
+    applyToAllUnassigned: false,
   });
 
   const handleSaveWorkflow = () => {
