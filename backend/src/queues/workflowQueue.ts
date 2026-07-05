@@ -144,12 +144,16 @@ workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
   return processJob();
 });
 
-async function executeAssignUserAction(action: any, _input: any, conditions?: any): Promise<any> {
+async function executeAssignUserAction(action: any, input: any, conditions?: any): Promise<any> {
   const config = action.config || {};
   const userType = config.userType; // 'sales_rep' | 'delivery_agent'
   const distributionMode = config.distributionMode || 'even';
   const assignments = config.assignments || [];
-  const onlyUnassigned = config.onlyUnassigned !== undefined ? config.onlyUnassigned : true;
+  // Backfill is opt-in and OFF by default. When false (the default), this action is
+  // forward-only: it assigns ONLY the order that triggered the workflow. When true, it
+  // performs a one-time sweep of every order currently unassigned for this role.
+  // In BOTH modes it never overwrites an order that already has a user (no swapping).
+  const applyToAllUnassigned = config.applyToAllUnassigned === true;
 
   // Determine which field to update
   const targetField = userType === 'sales_rep' ? 'customerRepId' : 'deliveryAgentId';
@@ -158,29 +162,46 @@ async function executeAssignUserAction(action: any, _input: any, conditions?: an
     userType,
     distributionMode,
     assignmentsCount: assignments.length,
-    onlyUnassigned,
+    applyToAllUnassigned,
     hasConditions: !!conditions
   });
 
-  // Find orders that need assignment - include product data for condition evaluation
-  const whereClause: any = {};
-  if (onlyUnassigned) {
-    whereClause[targetField] = null;
+  if (assignments.length === 0) {
+    return { assigned: 0, message: 'No users configured for assignment' };
   }
 
-  const orders = await prisma.order.findMany({
-    where: whereClause,
-    include: {
-      orderItems: {
-        include: {
-          product: true
-        }
-      }
-    },
-    orderBy: { createdAt: 'asc' }
-  });
+  const orderInclude = { orderItems: { include: { product: true } } };
+  let orders: any[];
 
-  logger.info(`Found ${orders.length} unassigned orders to check`);
+  if (applyToAllUnassigned) {
+    // One-time backfill (explicit opt-in): every order currently unassigned for this role.
+    orders = await prisma.order.findMany({
+      where: { [targetField]: null } as any,
+      include: orderInclude,
+      orderBy: { createdAt: 'asc' }
+    });
+    logger.info(`assign_user backfill: found ${orders.length} unassigned orders`);
+  } else {
+    // Forward-only (default): act ONLY on the order that triggered this workflow.
+    const triggerOrderId = input?.orderId ?? input?.id;
+    if (!triggerOrderId) {
+      logger.info('assign_user forward-only: no triggering order in context, nothing to do');
+      return { assigned: 0, message: 'Forward-only assign_user: no triggering order in context' };
+    }
+    const order = await prisma.order.findUnique({
+      where: { id: triggerOrderId },
+      include: orderInclude
+    });
+    if (!order) {
+      return { assigned: 0, message: `Forward-only assign_user: order ${triggerOrderId} not found` };
+    }
+    // Never swap: leave an order that already has a user for this role untouched.
+    if ((order as any)[targetField] != null) {
+      logger.info('assign_user forward-only: order already assigned, leaving as-is', { orderId: triggerOrderId, userType });
+      return { assigned: 0, message: 'Order already has an assigned user; left unchanged' };
+    }
+    orders = [order];
+  }
 
   if (orders.length === 0) {
     return { assigned: 0, message: 'No orders found to assign' };

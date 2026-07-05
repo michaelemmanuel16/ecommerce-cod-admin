@@ -13,7 +13,7 @@ export interface AssignUserConfig {
   userType: 'sales_rep' | 'delivery_agent';
   assignments: UserAssignment[];
   distributionMode: 'even' | 'weighted';
-  onlyUnassigned: boolean;
+  applyToAllUnassigned: boolean;
 }
 
 interface AssignUserActionProps {
@@ -397,23 +397,25 @@ export const AssignUserAction: React.FC<AssignUserActionProps> = ({
         </div>
       )}
 
-      {/* Only Unassigned Option */}
+      {/* Backfill opt-in. Off (default) = forward-only: assign only new orders
+          going forward. Orders that already have a user are never overwritten
+          in either mode. */}
       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg">
         <input
           type="checkbox"
-          id="onlyUnassigned"
-          checked={config.onlyUnassigned}
+          id="applyToAllUnassigned"
+          checked={config.applyToAllUnassigned}
           onChange={(e) =>
-            onChange({ ...config, onlyUnassigned: e.target.checked })
+            onChange({ ...config, applyToAllUnassigned: e.target.checked })
           }
           className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
         />
-        <label htmlFor="onlyUnassigned" className="flex-1">
+        <label htmlFor="applyToAllUnassigned" className="flex-1">
           <div className="text-sm font-medium text-gray-900">
-            Only apply to unassigned orders
+            Apply to all unassigned orders
           </div>
           <div className="text-xs text-gray-600 mt-1">
-            Skip orders that already have an assigned user
+            One-time backfill: assign every existing unassigned order now. Leave off to only assign new orders going forward.
           </div>
         </label>
       </div>

@@ -99,7 +99,7 @@ export const WorkflowEditor: React.FC = () => {
         userType: 'sales_rep',
         assignments: [],
         distributionMode: 'even',
-        onlyUnassigned: true,
+        applyToAllUnassigned: false,
       };
     } else if (actionType === 'send_whatsapp') {
       defaultConfig = {
