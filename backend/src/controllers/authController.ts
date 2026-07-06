@@ -418,6 +418,14 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
         }
       });
 
+      // MAN-87: point the tenant at its owner. Two-step because the FK is
+      // circular (tenant.ownerUserId → user, user.tenantId → tenant); the
+      // tenant is created ownerless, then linked once the user row exists.
+      await tx.tenant.update({
+        where: { id: tenant.id },
+        data: { ownerUserId: user.id }
+      });
+
       return { tenant, user };
     });
 
@@ -517,6 +525,9 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
 
       // 4. Delete tenant — CASCADE handles remaining tenant_id FKs (orders, customers, etc.)
       //    Using raw SQL to bypass Prisma soft-delete extensions
+      // MAN-87: release the owner ref first — the RESTRICT FK on
+      // tenants.owner_user_id would otherwise block deleting the owner user.
+      await tx.$executeRaw`UPDATE tenants SET owner_user_id = NULL WHERE id = ${tenantId}`;
       await tx.$executeRaw`DELETE FROM users WHERE tenant_id = ${tenantId}`;
       await tx.$executeRaw`DELETE FROM tenants WHERE id = ${tenantId}`;
     });

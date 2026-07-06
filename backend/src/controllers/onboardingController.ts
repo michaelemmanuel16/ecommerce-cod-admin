@@ -16,8 +16,11 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
       // Legacy user with no tenant — create one automatically
       if (!tenantId && existingUser) {
         const slug = `company-${req.user.id}`;
+        // MAN-87: set the owner inline — unlike the register flow, the owning
+        // user already exists here, so the circular FK doesn't force a
+        // separate link step after create.
         const tenant = await prisma.tenant.create({
-          data: { name: `${existingUser.firstName}'s Company`, slug }
+          data: { name: `${existingUser.firstName}'s Company`, slug, ownerUserId: req.user.id }
         });
         await prisma.user.update({ where: { id: req.user.id }, data: { tenantId: tenant.id } });
         tenantId = tenant.id;

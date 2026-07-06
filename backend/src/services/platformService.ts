@@ -303,6 +303,9 @@ export async function deleteTenant(id: string, confirmSlug: string) {
     await tx.$executeRaw`DELETE FROM message_logs WHERE tenant_id = ${id}`;
 
     // 4. Delete tenant — CASCADE handles orders, customers, products, etc.
+    // MAN-87: release the owner ref first — the RESTRICT FK on
+    // tenants.owner_user_id would otherwise block deleting the owner user.
+    await tx.$executeRaw`UPDATE tenants SET owner_user_id = NULL WHERE id = ${id}`;
     await tx.$executeRaw`DELETE FROM users WHERE tenant_id = ${id}`;
     await tx.$executeRaw`DELETE FROM tenants WHERE id = ${id}`;
   });

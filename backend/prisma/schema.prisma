@@ -30,14 +30,16 @@ model Tenant {
   rateLimitConfig           Json?     @map("rate_limit_config")
   // MAN-86: denormalized single owner per store (multi-store-per-login).
   // Backfilled from (tenantId, role=super_admin) via the MAN-85 deterministic
-  // tiebreak. onDelete=SetNull here keeps the existing tenant-delete cascade
-  // working; MAN-87 upgrades it to Restrict alongside the delete-flow redesign.
+  // tiebreak. MAN-87: onDelete=Restrict — a User referenced as a store owner
+  // cannot be deleted while the tenant still points at them. Both delete paths
+  // (self-serve deleteTenantAccount, platform deleteTenant) release this ref
+  // (owner_user_id = NULL) before deleting users, so tenant deletion still works.
   ownerUserId               Int?      @map("owner_user_id")
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
 
   currentPlan Plan? @relation(fields: [currentPlanId], references: [id])
-  ownerUser   User? @relation("TenantOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  ownerUser   User? @relation("TenantOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
 
   // Reverse relations for tenant-scoped models
   users               User[]               @relation("TenantMembers")
