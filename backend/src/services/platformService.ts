@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { redis } from '../middleware/cache.middleware';
 import { SUBSCRIPTION_STATUS, PLAN_NAMES } from '../config/billing';
+import { OWNER_TIEBREAK_ORDER_BY } from '../utils/ownerResolution';
 
 // ── Metrics ──────────────────────────────────────────────
 
@@ -128,7 +129,8 @@ export async function getTenantDetail(id: string) {
     prisma.user.findFirst({
       where: { tenantId: id, role: 'super_admin', isActive: true },
       select: { email: true, firstName: true, lastName: true },
-      orderBy: { createdAt: 'asc' },
+      // MAN-85: canonical deterministic owner tiebreak (createdAt asc, then id asc)
+      orderBy: OWNER_TIEBREAK_ORDER_BY,
     }),
   ]);
 
