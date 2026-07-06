@@ -28,13 +28,20 @@ model Tenant {
   freeAccessExpiresAt       DateTime? @map("free_access_expires_at")
   rateLimitEnabled          Boolean   @default(false) @map("rate_limit_enabled")
   rateLimitConfig           Json?     @map("rate_limit_config")
+  // MAN-86: denormalized single owner per store (multi-store-per-login).
+  // Backfilled from (tenantId, role=super_admin) via the MAN-85 deterministic
+  // tiebreak. onDelete=SetNull here keeps the existing tenant-delete cascade
+  // working; MAN-87 upgrades it to Restrict alongside the delete-flow redesign.
+  ownerUserId               Int?      @map("owner_user_id")
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
 
   currentPlan Plan? @relation(fields: [currentPlanId], references: [id])
+  ownerUser   User? @relation("TenantOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
 
   // Reverse relations for tenant-scoped models
-  users               User[]
+  users               User[]               @relation("TenantMembers")
+  storeMemberships    StoreMembership[]
   customers           Customer[]
   products            Product[]
   orders              Order[]
@@ -62,6 +69,7 @@ model Tenant {
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
+  @@index([ownerUserId])
   @@map("tenants")
 }
 
@@ -148,12 +156,36 @@ model User {
   transfersCreated      InventoryTransfer[] @relation("TransferCreator")
   shipmentsCreated      InventoryShipment[] @relation("ShipmentCreator")
   tenantId              String?             @map("tenant_id")
-  tenant                Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                Tenant?             @relation("TenantMembers", fields: [tenantId], references: [id], onDelete: Cascade)
+  // MAN-86: stores this user owns, and every store this user can access.
+  ownedTenants          Tenant[]            @relation("TenantOwner")
+  storeMemberships      StoreMembership[]
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
   @@index([tenantId])
   @@map("users")
+}
+
+// MAN-86: join table enabling one owner login → many isolated stores.
+// Created here (its earliest dependant) because MAN-86's reversible backfill
+// records each owner's original tenantId on their default membership, which is
+// the rollback source when MAN-86-B nulls owners' User.tenantId at go-live.
+model StoreMembership {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  tenantId  String   @map("tenant_id")
+  role      UserRole
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+  @@map("store_memberships")
 }
 
 model Customer {

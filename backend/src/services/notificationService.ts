@@ -77,6 +77,10 @@ export async function notifyAdminsOverdueCollections(
   if (agents.length === 0) return;
 
   // Find all admin and super_admin users
+  // TODO(MAN-88 guard lane): this query is not tenant-scoped — it notifies admins
+  // across every tenant. Scope to the store owner (Tenant.ownerUserId) once the
+  // caller threads a tenantId; deferred to the isolation-guard lane because it
+  // needs a signature + caller change, not just an owner-read swap.
   const admins = await prisma.user.findMany({
     where: { role: { in: ['admin', 'super_admin'] }, isActive: true },
     select: { id: true }

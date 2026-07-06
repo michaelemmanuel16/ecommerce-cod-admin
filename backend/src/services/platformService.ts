@@ -2,7 +2,6 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { redis } from '../middleware/cache.middleware';
 import { SUBSCRIPTION_STATUS, PLAN_NAMES } from '../config/billing';
-import { OWNER_TIEBREAK_ORDER_BY } from '../utils/ownerResolution';
 
 // ── Metrics ──────────────────────────────────────────────
 
@@ -95,6 +94,10 @@ export async function listTenants(params: {
       where,
       include: {
         currentPlan: { select: { name: true, displayName: true } },
+        // TODO(MAN-86-B): this per-tenant user count excludes the owner once the
+        // owner's tenantId is nulled at go-live. Make it owner-inclusive (groupBy
+        // over members ∪ ownerUserId) when MAN-86-B is scheduled. Correct today
+        // under flag-off since owners still carry tenantId.
         _count: { select: { users: true, orders: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -112,7 +115,12 @@ export async function getTenantDetail(id: string) {
     where: { id },
     include: {
       currentPlan: true,
-      _count: { select: { users: true, orders: true } },
+      // MAN-86: owner is denormalized on Tenant.ownerUserId (backfilled via the
+      // MAN-85 tiebreak). Reading through the FK stays correct after MAN-86-B
+      // nulls the owner's User.tenantId — the legacy findFirst(tenantId=id) would
+      // then miss the owner entirely.
+      ownerUser: { select: { email: true, firstName: true, lastName: true } },
+      _count: { select: { orders: true } },
     },
   });
   if (!tenant) throw new AppError('Tenant not found', 404);
@@ -120,28 +128,31 @@ export async function getTenantDetail(id: string) {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [ordersThisMonth, revenue, adminUser] = await Promise.all([
+  // MAN-86: count store members plus the owner. Owner-inclusive so the total is
+  // stable across MAN-86-B (when the owner's tenantId is nulled). Under flag-off
+  // the owner already has tenantId=id, so the OR is de-duplicated by DISTINCT id.
+  // When the tenant has no owner (e.g. freshly created), the owner term is absent.
+  const userCountWhere = tenant.ownerUserId
+    ? { OR: [{ tenantId: id }, { id: tenant.ownerUserId }] }
+    : { tenantId: id };
+
+  const [ordersThisMonth, revenue, totalUsers] = await Promise.all([
     prisma.order.count({ where: { tenantId: id, createdAt: { gte: monthStart } } }),
     prisma.order.aggregate({
       where: { tenantId: id, createdAt: { gte: monthStart } },
       _sum: { totalAmount: true },
     }),
-    prisma.user.findFirst({
-      where: { tenantId: id, role: 'super_admin', isActive: true },
-      select: { email: true, firstName: true, lastName: true },
-      // MAN-85: canonical deterministic owner tiebreak (createdAt asc, then id asc)
-      orderBy: OWNER_TIEBREAK_ORDER_BY,
-    }),
+    prisma.user.count({ where: userCountWhere }),
   ]);
 
   return {
     ...tenant,
-    adminEmail: adminUser?.email ?? null,
-    adminName: adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : null,
+    adminEmail: tenant.ownerUser?.email ?? null,
+    adminName: tenant.ownerUser ? `${tenant.ownerUser.firstName} ${tenant.ownerUser.lastName}` : null,
     usage: {
       ordersThisMonth,
       revenueThisMonth: Number(revenue._sum.totalAmount || 0),
-      totalUsers: tenant._count.users,
+      totalUsers,
     },
   };
 }
