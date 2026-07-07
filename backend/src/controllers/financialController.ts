@@ -398,7 +398,10 @@ export const backfillMissingCollections = async (_req: AuthRequest, res: Respons
         AND o.deleted_at IS NULL
         AND o.delivery_agent_id IS NOT NULL
         AND o.tenant_id = ${tenantId}
-        AND o.id NOT IN (SELECT order_id FROM agent_collections)
+        -- MAN-99: correlate to the tenant-scoped order o (agent_collections is not
+        -- in TENANT_SCOPED_MODELS, so a bare subquery is unscoped); NOT EXISTS on
+        -- ac.order_id = o.id can only match this tenant's own collections.
+        AND NOT EXISTS (SELECT 1 FROM agent_collections ac WHERE ac.order_id = o.id)
       ORDER BY o.created_at ASC
     `;
 
