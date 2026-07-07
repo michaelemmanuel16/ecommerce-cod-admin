@@ -5,6 +5,7 @@ import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { verifyRefreshToken } from '../utils/jwt';
 import { mintTokens, mintAccessToken } from '../utils/mintTokens';
+import { getCurrentUser, updateCurrentUser } from '../utils/currentUser';
 import { AppError } from '../middleware/errorHandler';
 import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
@@ -182,10 +183,9 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
 export const logout = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (req.user) {
-      await prisma.user.update({
-        where: { id: req.user.id },
-        data: { refreshToken: null }
-      });
+      // Unscoped: a null-tenant owner's active store must not filter out their
+      // own row, or the refresh-token clear silently no-ops and logout is a lie.
+      await updateCurrentUser(req.user.id, { refreshToken: null });
     }
 
     res.json({ message: 'Logout successful' });
@@ -274,19 +274,18 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
       throw new AppError('Unauthorized', 401);
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phoneNumber: true,
-        role: true,
-        isActive: true,
-        isAvailable: true,
-        createdAt: true
-      }
+    // Unscoped identity read: a null-tenant owner must resolve to their own row
+    // regardless of which store is active.
+    const user = await getCurrentUser(req.user.id, {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      phoneNumber: true,
+      role: true,
+      isActive: true,
+      isAvailable: true,
+      createdAt: true
     });
 
     // Get user permissions from system config
