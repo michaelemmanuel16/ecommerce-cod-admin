@@ -1,4 +1,4 @@
-import prisma from '../utils/prisma';
+import prisma, { prismaBase } from '../utils/prisma';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitNotification } from '../sockets';
 
@@ -72,33 +72,41 @@ export async function notifyDeliveryScheduled(
 }
 
 export async function notifyAdminsOverdueCollections(
-  agents: { agentId: number; agentName: string; totalBalance: number; warningAmount: number; criticalAmount: number }[]
+  agents: { agentId: number; tenantId: string | null; agentName: string; totalBalance: number; warningAmount: number; criticalAmount: number }[]
 ) {
   if (agents.length === 0) return;
 
-  // Find all admin and super_admin users
-  // TODO(MAN-88 guard lane): this query is not tenant-scoped — it notifies admins
-  // across every tenant. Scope to the store owner (Tenant.ownerUserId) once the
-  // caller threads a tenantId; deferred to the isolation-guard lane because it
-  // needs a signature + caller change, not just an owner-read swap.
-  const admins = await prisma.user.findMany({
-    where: { role: { in: ['admin', 'super_admin'] }, isActive: true },
-    select: { id: true }
-  });
+  // MAN-95: this cron runs cross-tenant, so notifying every admin leaked each
+  // store's collections to every other store's admins. Group the overdue agents
+  // by their store, then page THAT store's owner resolved by direct FK
+  // (Tenant.ownerUserId) — not by a (tenantId, role) scan. prismaBase because a
+  // system cron has no tenant context and we resolve each owner explicitly.
+  const byTenant = new Map<string, typeof agents>();
+  for (const a of agents) {
+    if (!a.tenantId) continue; // orphan agent with no store — nobody to notify
+    const list = byTenant.get(a.tenantId) ?? [];
+    list.push(a);
+    byTenant.set(a.tenantId, list);
+  }
 
-  const agentSummary = agents
-    .map(a => `${a.agentName}: GHS ${a.totalBalance.toFixed(2)} (${a.criticalAmount > 0 ? '8+ days' : '4-7 days'})`)
-    .join(', ');
+  for (const [tenantId, tenantAgents] of byTenant) {
+    const tenant = await prismaBase.tenant.findUnique({
+      where: { id: tenantId },
+      select: { ownerUserId: true },
+    });
+    if (!tenant?.ownerUserId) continue; // store has no owner yet — skip
 
-  const totalOverdue = agents.reduce((sum, a) => sum + a.totalBalance, 0);
+    const agentSummary = tenantAgents
+      .map(a => `${a.agentName}: GHS ${a.totalBalance.toFixed(2)} (${a.criticalAmount > 0 ? '8+ days' : '4-7 days'})`)
+      .join(', ');
+    const totalOverdue = tenantAgents.reduce((sum, a) => sum + a.totalBalance, 0);
 
-  for (const admin of admins) {
     await createNotification(
-      admin.id.toString(),
+      tenant.ownerUserId.toString(),
       'overdue_collections',
       'Overdue Agent Collections',
-      `${agents.length} agent(s) have overdue collections totaling GHS ${totalOverdue.toFixed(2)}: ${agentSummary}`,
-      { agents, totalOverdue }
+      `${tenantAgents.length} agent(s) have overdue collections totaling GHS ${totalOverdue.toFixed(2)}: ${agentSummary}`,
+      { agents: tenantAgents, totalOverdue }
     );
   }
 }
