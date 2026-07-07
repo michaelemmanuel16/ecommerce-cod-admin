@@ -112,12 +112,23 @@ export async function handlePlatformWebhook(req: Request, res: Response): Promis
 async function resolveTenantForEvent(eventType: string, data: any): Promise<string | null> {
   switch (eventType) {
     case 'subscription.create':
+      // subscription.create is where we first LEARN the subscription code, so it
+      // can't route by it yet. customer code is the only link here, and MAN-89's
+      // per-store billing email keeps customers 1:1 with stores, so it is
+      // unambiguous.
       return resolveTenantByCustomerCode(data.customer?.customer_code);
     case 'charge.success': {
       // Only subscription charges concern us; ignore one-off charges.
       if (data.metadata?.kind !== 'saas_subscription') return null;
+      // MAN-90: route by unambiguous keys first — our own metadata.tenantId (set
+      // at init, present on the first charge) then the subscription code (the
+      // stable per-store key that holds even if a customer were ever reused).
+      // customer code is only a last resort for renewals whose payload carries
+      // neither; it is unambiguous post-MAN-89 (per-store customer) but is no
+      // longer the primary signal.
       return (
         (await resolveTenantById(data.metadata?.tenantId)) ||
+        (await resolveTenantBySubscriptionCode(data.subscription_code || data.subscription?.subscription_code)) ||
         (await resolveTenantByCustomerCode(data.customer?.customer_code))
       );
     }

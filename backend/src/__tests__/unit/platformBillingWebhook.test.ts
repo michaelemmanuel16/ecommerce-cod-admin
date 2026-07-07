@@ -103,6 +103,29 @@ describe('handlePlatformWebhook — SaaS subscription reconciliation', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('charge.success without metadata.tenantId resolves by subscription code, not customer code (MAN-90)', async () => {
+    const req = signedReq({
+      event: 'charge.success',
+      data: {
+        reference: 'ref_sub',
+        amount: 1000000,
+        metadata: { kind: 'saas_subscription' }, // no tenantId (renewal-style payload)
+        subscription_code: 'SUB_1',
+        customer: { customer_code: 'CUS_reused' },
+        next_payment_date: '2026-09-11T00:00:00.000Z',
+      },
+    });
+    const res = mockRes();
+    await handlePlatformWebhook(req, res);
+
+    const findFirstCalls = (prismaMock.tenant.findFirst as any).mock.calls;
+    // Routed by the unambiguous subscription code...
+    expect(findFirstCalls.some((c: any[]) => c[0]?.where?.paystackSubscriptionCode === 'SUB_1')).toBe(true);
+    // ...and never fell through to the customer-code lookup (it resolved first).
+    expect(findFirstCalls.some((c: any[]) => c[0]?.where?.paystackCustomerCode !== undefined)).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it('charge.success that is NOT a subscription charge is ignored (no tenant update)', async () => {
     const req = signedReq({
       event: 'charge.success',
