@@ -206,12 +206,11 @@ export const forgotPassword = async (req: AuthRequest, res: Response, next: Next
         const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
         const expires = new Date(Date.now() + 15 * 60 * 1000);
 
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            passwordResetToken: hashedToken,
-            passwordResetExpires: expires,
-          },
+        // Unscoped write (MAN-94 owner carve-out): a null-tenant owner's own row
+        // must not be filtered out by an ambient active-store scope.
+        await updateCurrentUser(user.id, {
+          passwordResetToken: hashedToken,
+          passwordResetExpires: expires,
         });
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -252,14 +251,13 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        passwordResetToken: null,
-        passwordResetExpires: null,
-        refreshToken: null,
-      },
+    // Unscoped write (MAN-94 owner carve-out): reset must succeed for a
+    // null-tenant owner, and it also invalidates their session (refreshToken).
+    await updateCurrentUser(user.id, {
+      password: hashedPassword,
+      passwordResetToken: null,
+      passwordResetExpires: null,
+      refreshToken: null,
     });
 
     res.json({ message: 'Password reset successful. Please log in with your new password.' });
