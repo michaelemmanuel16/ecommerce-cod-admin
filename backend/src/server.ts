@@ -46,6 +46,7 @@ import { derivePlatformOrigin } from './utils/corsOrigins';
 // Routes
 import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
+import storeRoutes from './routes/storeRoutes';
 import customerRoutes from './routes/customerRoutes';
 import productRoutes from './routes/productRoutes';
 import orderRoutes from './routes/orderRoutes';
@@ -215,6 +216,7 @@ app.use('/', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/users', apiLimiter, userRoutes);
+app.use('/api/stores', apiLimiter, storeRoutes);
 app.use('/api/customers', apiLimiter, customerRoutes);
 app.use('/api/products', apiLimiter, productRoutes);
 app.use('/api/orders', apiLimiter, orderRoutes);

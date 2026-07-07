@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
 // Mock dependencies BEFORE any other imports
 jest.mock('../../utils/jwt');
+// Token minting is centralized in mintTokens (covered by storeCore.test.ts);
+// auto-mock it so these controller-flow tests don't need its DB-backed resolution.
+jest.mock('../../utils/mintTokens');
 jest.mock('bcrypt');
 jest.mock('../../services/adminService', () => ({
   adminService: {
@@ -15,6 +18,7 @@ import { prismaMock } from '../mocks/prisma.mock';
 // Now import other dependencies
 import bcrypt from 'bcrypt';
 import { generateAccessToken, generateRefreshToken } from '../../utils/jwt';
+import { mintTokens, mintAccessToken } from '../../utils/mintTokens';
 import { login, register, refresh, logout } from '../../controllers/authController';
 import { adminService } from '../../services/adminService';
 
@@ -33,6 +37,11 @@ describe('Auth Controller', () => {
       json: jest.fn().mockReturnThis(),
     };
     mockNext = jest.fn();
+
+    // Centralized token mint — return fixed tokens so controller-flow tests
+    // don't exercise mintTokens' DB-backed active-store resolution.
+    (mintTokens as jest.Mock).mockResolvedValue({ accessToken: 'access_token', refreshToken: 'refresh_token', tenantId: 'tenant-1' });
+    (mintAccessToken as jest.Mock).mockResolvedValue({ accessToken: 'new_access_token', tenantId: 'tenant-1' });
 
     // Setup adminService mock
     (adminService.getRolePermissions as jest.Mock).mockResolvedValue({

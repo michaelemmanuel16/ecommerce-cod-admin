@@ -3,7 +3,8 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
+import { verifyRefreshToken } from '../utils/jwt';
+import { mintTokens, mintAccessToken } from '../utils/mintTokens';
 import { AppError } from '../middleware/errorHandler';
 import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
@@ -46,20 +47,8 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
       }
     });
 
-    // Generate tokens
-    const accessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    const refreshToken = generateRefreshToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
+    // Generate tokens (fail-closed mint — never a null-tenant token)
+    const { accessToken, refreshToken } = await mintTokens(user);
 
     // Save refresh token
     await prisma.user.update({
@@ -103,19 +92,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
       throw new AppError('Invalid credentials', 401);
     }
 
-    const accessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    const refreshToken = generateRefreshToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
+    const { accessToken, refreshToken } = await mintTokens(user);
 
     await prisma.user.update({
       where: { id: user.id },
@@ -190,12 +167,9 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
       throw new AppError('Invalid refresh token', 401);
     }
 
-    const newAccessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
+    // Preserve the active store the refresh token was minted for (decoded.tenantId)
+    // rather than re-resolving to default; still fail-closed via mintAccessToken.
+    const { accessToken: newAccessToken } = await mintAccessToken(user, decoded.tenantId);
 
     res.json({
       accessToken: newAccessToken
@@ -429,19 +403,7 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
       return { tenant, user };
     });
 
-    const accessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    const refreshToken = generateRefreshToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
+    const { accessToken, refreshToken } = await mintTokens(user);
 
     await prisma.user.update({
       where: { id: user.id },
