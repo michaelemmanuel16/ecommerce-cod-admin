@@ -125,6 +125,12 @@ model User {
   isPlatformAdmin       Boolean             @default(false) @map("is_platform_admin")
   isAvailable           Boolean             @default(true) @map("is_available")
   lastLogin             DateTime?           @map("last_login")
+  // MAN-97 — DECISION (single-active-session, v1): one refresh-token slot per
+  // user. Switching stores (POST /stores/switch) or logging in elsewhere
+  // overwrites it, invalidating the prior session. This is an accepted v1
+  // limitation, NOT true multi-store concurrency — a store owner cannot hold two
+  // stores open in two tabs at once. True concurrency needs a sessions table
+  // (deferred, not in v1 scope); do not add one without an explicit decision.
   refreshToken          String?             @map("refresh_token")
   passwordResetToken    String?             @unique @map("password_reset_token")
   passwordResetExpires  DateTime?           @map("password_reset_expires")
