@@ -34,6 +34,14 @@ model Tenant {
   // cannot be deleted while the tenant still points at them. Both delete paths
   // (self-serve deleteTenantAccount, platform deleteTenant) release this ref
   // (owner_user_id = NULL) before deleting users, so tenant deletion still works.
+  //
+  // MAN-96 — INVARIANT (zero-User-row tenant): a tenant MAY have zero User rows
+  // whose user.tenantId points at it. An owner is a User with a StoreMembership to
+  // this tenant, but their own user.tenantId is null (owners) or another store's.
+  // Therefore the owner is resolved ONLY via this ownerUserId FK — never by a
+  // (tenantId, role) scan and never by assuming a tenant-scoped owner User row.
+  // All owner-resolution paths (platformService, notificationService) honor this;
+  // do not reintroduce owner-by-tenantId lookups.
   ownerUserId               Int?      @map("owner_user_id")
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
