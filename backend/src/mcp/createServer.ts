@@ -7,6 +7,7 @@ import { mcpError } from './utils';
 
 // Import tool registrations
 import { registerOrderTools } from './tools/orders';
+import { registerOrderWriteTools } from './tools/ordersWrite';
 import { registerAnalyticsTools } from './tools/analytics';
 import { registerAgentTools } from './tools/agents';
 import { registerDeliveryTools } from './tools/deliveries';
@@ -46,6 +47,7 @@ export function createMcpServer(resolveApiKey: () => string) {
   }
 
   registerOrderTools(server, wrapHandler);
+  registerOrderWriteTools(server, wrapHandler);
   registerAnalyticsTools(server, wrapHandler);
   registerAgentTools(server, wrapHandler);
   registerDeliveryTools(server, wrapHandler);
