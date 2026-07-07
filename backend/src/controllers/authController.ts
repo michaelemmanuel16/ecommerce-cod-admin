@@ -2,7 +2,8 @@ import { Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { AuthRequest } from '../types';
-import prisma from '../utils/prisma';
+import prisma, { prismaBase } from '../utils/prisma';
+import { deleteStoreData, deleteOwnerReferences } from '../services/storeDeletionService';
 import { verifyRefreshToken } from '../utils/jwt';
 import { mintTokens, mintAccessToken } from '../utils/mintTokens';
 import { getCurrentUser, updateCurrentUser } from '../utils/currentUser';
@@ -441,54 +442,34 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
     const { password } = req.body;
     if (!password) throw new AppError('Password is required to confirm deletion', 400);
 
-    // Verify password
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    // Verify password. Unscoped (MAN-98): the owner is null-tenant, so the
+    // extended client would inject the active-store tenant and miss them (404).
+    const user = await prismaBase.user.findFirst({ where: { id: req.user.id, isActive: true } });
     if (!user) throw new AppError('User not found', 404);
 
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) throw new AppError('Incorrect password', 401);
 
-    const tenantId = req.user.tenantId;
-    if (!tenantId) throw new AppError('No tenant associated with this account', 400);
+    // MAN-98: whole-account delete = every store this user OWNS (resolved by the
+    // ownerUserId FK, never the ambiguous active-store JWT tenant), then the owner
+    // row LAST. A legacy single-store user's own tenantId is folded in too.
+    const ownedStores = await prismaBase.tenant.findMany({
+      where: { ownerUserId: req.user.id },
+      select: { id: true },
+    });
+    const storeIds = new Set(ownedStores.map((s) => s.id));
+    if (req.user.tenantId) storeIds.add(req.user.tenantId);
+    if (storeIds.size === 0) throw new AppError('No stores associated with this account', 400);
 
-    // Delete all tenant data atomically in dependency order.
-    // Uses parameterized queries (Prisma.sql) to prevent SQL injection.
-    // Tables with RESTRICT FKs to users must be cleaned before user/tenant delete.
-    await prisma.$transaction(async (tx) => {
-      // 1. Delete records that reference users via RESTRICT FKs
-      await tx.$executeRaw`DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM audit_logs WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM payouts WHERE rep_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM calls WHERE sales_rep_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_deposits WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_collections WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_aging_buckets WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_balances WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_stock WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-
-      // 2. NULL out user FK columns on tenant-scoped tables (these cascade from tenant delete,
-      //    but RESTRICT FKs on user columns would block the cascade)
-      await tx.$executeRaw`UPDATE orders SET created_by_id = NULL, customer_rep_id = NULL, delivery_agent_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE deliveries SET agent_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE inventory_shipments SET created_by_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE inventory_transfers SET from_agent_id = NULL, to_agent_id = NULL, created_by_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE journal_entries SET created_by = NULL, voided_by = NULL WHERE tenant_id = ${tenantId}`;
-
-      // 3. Delete remaining tenant-scoped data in dependency order
-      await tx.$executeRaw`DELETE FROM form_submissions WHERE form_id IN (SELECT id FROM checkout_forms WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM inventory_transfers WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM inventory_shipments WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM account_transactions WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM journal_entries WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM system_config WHERE tenant_id = ${tenantId}`;
-
-      // 4. Delete tenant — CASCADE handles remaining tenant_id FKs (orders, customers, etc.)
-      //    Using raw SQL to bypass Prisma soft-delete extensions
-      // MAN-87: release the owner ref first — the RESTRICT FK on
-      // tenants.owner_user_id would otherwise block deleting the owner user.
-      await tx.$executeRaw`UPDATE tenants SET owner_user_id = NULL WHERE id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM users WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM tenants WHERE id = ${tenantId}`;
+    // Delete all owned stores atomically, then the owner. Raw parameterized SQL
+    // in dependency order; RESTRICT FKs to users are cleaned before user delete.
+    // prismaBase: the deletes bypass extensions and the helper takes a plain tx.
+    await prismaBase.$transaction(async (tx) => {
+      for (const sid of storeIds) {
+        await deleteStoreData(tx, sid);
+      }
+      // Owner row last — deleteStoreData never removes the (null-tenant) owner.
+      await deleteOwnerReferences(tx, req.user!.id);
     });
 
     res.json({ message: 'Account and all associated data have been permanently deleted' });

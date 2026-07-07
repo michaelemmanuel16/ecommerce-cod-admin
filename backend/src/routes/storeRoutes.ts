@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
-import { getStores, switchStore } from '../controllers/storeController';
+import { getStores, switchStore, deleteStore } from '../controllers/storeController';
 
 const router = Router();
 
@@ -11,5 +11,6 @@ router.use(authenticate);
 
 router.get('/', getStores);
 router.post('/switch', switchStore);
+router.delete('/:id', deleteStore);
 
 export default router;
