@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
-import { getStores, switchStore, deleteStore } from '../controllers/storeController';
+import { getStores, createStore, switchStore, deleteStore } from '../controllers/storeController';
 
 const router = Router();
 
@@ -10,6 +10,7 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', getStores);
+router.post('/', createStore);
 router.post('/switch', switchStore);
 router.delete('/:id', deleteStore);
 

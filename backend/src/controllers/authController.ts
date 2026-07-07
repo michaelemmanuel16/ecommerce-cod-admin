@@ -7,6 +7,7 @@ import { deleteStoreData, deleteOwnerReferences } from '../services/storeDeletio
 import { verifyRefreshToken } from '../utils/jwt';
 import { mintTokens, mintAccessToken } from '../utils/mintTokens';
 import { getCurrentUser, updateCurrentUser } from '../utils/currentUser';
+import { slugify } from '../utils/slug';
 import { AppError } from '../middleware/errorHandler';
 import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
@@ -298,15 +299,6 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
 };
 
 // Slugify helper
-function slugify(str: string): string {
-  return str
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-
 export const registerTenant = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { companyName, adminEmail, adminPassword, adminName } = req.body;

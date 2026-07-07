@@ -25,6 +25,12 @@ model Tenant {
   subscriptionRenewsAt      DateTime? @map("subscription_renews_at")
   paymentFailedAt           DateTime? @map("payment_failed_at")
   paystackCardLast4         String?   @map("paystack_card_last4")
+  // MAN-89: per-store billing email (plus-addressed alias of the owner's email,
+  // e.g. owner+store-acme@x.com). Paystack keys a DISTINCT customer per store off
+  // this, so one owner's several stores never collide on one Paystack customer —
+  // which is what makes webhook routing by customer unambiguous. Null for tenants
+  // created before multi-store (they bill to the owner's plain email).
+  billingEmail              String?   @map("billing_email")
   freeAccessExpiresAt       DateTime? @map("free_access_expires_at")
   rateLimitEnabled          Boolean   @default(false) @map("rate_limit_enabled")
   rateLimitConfig           Json?     @map("rate_limit_config")
