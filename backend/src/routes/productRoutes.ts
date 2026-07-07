@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as productController from '../controllers/productController';
 import * as shipmentController from '../controllers/shipmentController';
-import { authenticate, requireResourcePermission, requireEitherPermission } from '../middleware/auth';
+import { authenticate, requireResourcePermission, requireEitherPermission, requireResolvedTenant } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { createProductValidation, paginationValidation } from '../utils/validators';
@@ -9,6 +9,7 @@ import { createProductValidation, paginationValidation } from '../utils/validato
 const router = Router();
 
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 
 // Shipment routes (must be before /:id to avoid route conflicts)

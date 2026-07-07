@@ -13,7 +13,7 @@ import {
     getProductPerformance,
     getAreaDistribution
 } from '../controllers/analyticsController';
-import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { authenticate, requireResourcePermission, requireResolvedTenant } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import cacheMiddleware from '../middleware/cache';
 import { apiLimiter } from '../middleware/rateLimiter';
@@ -24,6 +24,7 @@ const router = Router();
 
 router.use(apiLimiter); // Add rate limiting to prevent DoS on database-heavy queries
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 
 // Reusable date range validators

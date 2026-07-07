@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as financialController from '../controllers/financialController';
-import { authenticate, requireResourcePermission, requireRole } from '../middleware/auth';
+import { authenticate, requireResourcePermission, requireRole, requireResolvedTenant } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
@@ -10,6 +10,7 @@ const router = Router();
 
 router.use(apiLimiter);
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 
 // Financial summary and reports

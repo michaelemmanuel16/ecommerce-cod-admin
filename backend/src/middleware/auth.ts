@@ -2,7 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import { verifyAccessToken } from '../utils/jwt';
 import { UserRole } from '@prisma/client';
-import prisma from '../utils/prisma';
+import prisma, { prismaBase } from '../utils/prisma';
 import logger from '../utils/logger';
 import { tenantStorage, getTenantId } from '../utils/tenantContext';
 
@@ -176,6 +176,65 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   } catch (error: any) {
     logger.error('[AuthMiddleware] Unexpected internal error:', error);
     res.status(500).json({ error: 'Internal application error' });
+  }
+};
+
+/**
+ * Fail-closed active-store guard. The Prisma tenant-scoping extension FAILS
+ * OPEN on a null tenant context (no filter injected → unscoped access to every
+ * tenant's rows), so mint-time checks are not enough: this runs on every
+ * tenant-scoped data route and refuses to let a request through unless a live,
+ * paid store is resolved.
+ *
+ *   null tenant context      -> 403 TENANT_UNRESOLVED  (never fall through open)
+ *   tenant row missing       -> 403 TENANT_NOT_FOUND
+ *   subscriptionStatus!=active-> 402 SUBSCRIPTION_INACTIVE (API-level, not UI-only)
+ *
+ * Deliberately NOT applied to auth/onboarding/billing/platform/paystack/public
+ * routes — an owner with a pending or unresolved store must still reach those
+ * to recover (log in, bootstrap, or pay). The subscription lookup goes through
+ * prismaBase (Tenant is not tenant-scoped, but this also side-steps the
+ * soft-delete extension) and is intentionally uncached so a just-paid store is
+ * unblocked immediately (the pending->active return flow depends on it).
+ */
+export const requireResolvedTenant = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const tenantId = getTenantId();
+  if (!tenantId) {
+    logger.error(`[auth.null_tenant_context] authed user ${req.user.id} reached ${req.method} ${req.path} with no resolved active store`);
+    res.status(403).json({ error: 'No active store resolved', code: 'TENANT_UNRESOLVED' });
+    return;
+  }
+
+  try {
+    const tenant = await prismaBase.tenant.findUnique({
+      where: { id: tenantId },
+      select: { subscriptionStatus: true },
+    });
+
+    if (!tenant) {
+      logger.error(`[auth.null_tenant_context] active store ${tenantId} for user ${req.user.id} not found`);
+      res.status(403).json({ error: 'Active store not found', code: 'TENANT_NOT_FOUND' });
+      return;
+    }
+
+    if (tenant.subscriptionStatus !== 'active') {
+      res.status(402).json({
+        error: 'Active store subscription is not active',
+        code: 'SUBSCRIPTION_INACTIVE',
+        subscriptionStatus: tenant.subscriptionStatus,
+      });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    logger.error('[auth.requireResolvedTenant] Failed to resolve active store:', error);
+    res.status(500).json({ error: 'Failed to resolve active store' });
   }
 };
 

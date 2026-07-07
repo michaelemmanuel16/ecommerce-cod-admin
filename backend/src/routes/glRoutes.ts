@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as glController from '../controllers/glController';
-import { authenticate, requireResourcePermission, requireSuperAdmin } from '../middleware/auth';
+import { authenticate, requireResourcePermission, requireSuperAdmin, requireResolvedTenant } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import {
@@ -14,6 +14,7 @@ import {
 const router = Router();
 
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 
 // Chart of Accounts

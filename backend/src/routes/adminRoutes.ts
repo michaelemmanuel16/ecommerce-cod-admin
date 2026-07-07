@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as adminController from '../controllers/adminController';
-import { authenticate, requireSuperAdmin, requirePermission } from '../middleware/auth';
+import { authenticate, requireSuperAdmin, requirePermission, requireResolvedTenant } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 const router = Router();
 
@@ -8,6 +8,7 @@ const router = Router();
 router.get('/config', adminController.getPublicConfig);
 
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 
 // Authenticated tenant config — same public-safe shape as /config, but the JWT

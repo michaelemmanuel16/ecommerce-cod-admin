@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as notificationController from '../controllers/notificationController';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireResolvedTenant } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
@@ -8,6 +8,7 @@ import { paginationValidation } from '../utils/validators';
 const router = Router();
 
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 
 router.get('/', paginationValidation, validate, notificationController.getNotifications);

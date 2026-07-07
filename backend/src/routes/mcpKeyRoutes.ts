@@ -4,13 +4,14 @@ import path from 'path';
 import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { prismaBase } from '../utils/prisma';
-import { authenticate, requireSuperAdmin } from '../middleware/auth';
+import { authenticate, requireSuperAdmin, requireResolvedTenant } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { getTenantId } from '../utils/tenantContext';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 router.use(requireSuperAdmin);
 

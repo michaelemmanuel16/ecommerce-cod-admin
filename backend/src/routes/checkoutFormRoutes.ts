@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as checkoutFormController from '../controllers/checkoutFormController';
-import { authenticate, requirePermission } from '../middleware/auth';
+import { authenticate, requirePermission, requireResolvedTenant } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { body, query, param } from 'express-validator';
@@ -9,6 +9,7 @@ const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 
 // Canonical list of form field types. Mirrors the frontend `FieldType` union and
