@@ -153,4 +153,14 @@ describe('POST /api/stores', () => {
       .send({ planName: 'growth' });
     expect(res.status).toBe(400);
   });
+
+  it('rejects a non-super_admin caller (403) — provisioning is owner-only', async () => {
+    const staffToken = generateAccessToken({ id: ownerId, email: OWNER_EMAIL, role: 'sales_rep', tenantId: existingStoreId });
+    const res = await request(app)
+      .post('/api/stores')
+      .set('Authorization', `Bearer ${staffToken}`)
+      .send({ name: 'Sneaky Shop', planName: 'growth' });
+    expect(res.status).toBe(403);
+    expect(mockInit).not.toHaveBeenCalled();
+  });
 });
