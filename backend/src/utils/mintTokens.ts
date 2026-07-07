@@ -1,7 +1,7 @@
 import { UserRole } from '@prisma/client';
 import { generateAccessToken, generateRefreshToken } from './jwt';
 import { prismaBase } from './prisma';
-import logger from './logger';
+import { pageOnCall } from './alerting';
 import { AppError } from '../middleware/errorHandler';
 
 /** Minimal user shape needed to mint a token. */
@@ -40,10 +40,13 @@ async function resolveOrThrow(user: MintableUser, explicitTenantId?: string | nu
   if (!tenantId) {
     // The fail-open crux: a null-tenant token makes auth.ts:162 run the request
     // UNSCOPED (the Prisma extension injects no filter on null context). Refuse
-    // to mint and page on-call via this structured tripwire instead.
-    logger.error(
-      `[auth.null_tenant_context] mintTokens could not resolve an active store for user ${user.id} (${user.email}); refusing to mint a null-tenant token`,
-    );
+    // to mint and PAGE on-call (MAN-91) — this tripwire must reach a human, not
+    // just sit in the error log.
+    await pageOnCall('auth.null_tenant_context', {
+      userId: user.id,
+      email: user.email,
+      detail: 'mintTokens could not resolve an active store; refused to mint a null-tenant token',
+    });
     throw new AppError('No active store resolved', 403, 'TENANT_UNRESOLVED');
   }
   return tenantId;

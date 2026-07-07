@@ -5,6 +5,9 @@ import { prismaBase } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { mintTokens } from '../utils/mintTokens';
 import { deleteStoreData } from '../services/storeDeletionService';
+import { platformPaystackService } from '../services/platformPaystackService';
+import { slugify, perStoreBillingEmail } from '../utils/slug';
+import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 
 /**
  * GET /api/stores — list the stores the caller owns (their StoreMembership rows).
@@ -39,6 +42,94 @@ export const getStores = async (req: AuthRequest, res: Response, next: NextFunct
         isDefault: m.isDefault,
         isActive: m.tenantId === activeTenantId,
       })),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/stores — provision an ADDITIONAL store for the caller (MAN-89).
+ *
+ * Pay-before-materialize: create the Tenant as `pending` + the owner's
+ * StoreMembership + a per-store billing email, then kick off a Paystack
+ * subscription and hand back the authorization_url. The store stays `pending`
+ * (requireResolvedTenant 402s its data routes) until charge.success activates it
+ * via the platform webhook — this endpoint never marks a store active itself.
+ *
+ * The per-store billing email (owner+store-<slug>@domain) makes Paystack mint a
+ * DISTINCT customer per store, which is what makes webhook routing unambiguous.
+ *
+ * Not behind requireResolvedTenant: an owner provisions store 2 while their
+ * active store may be pending/none.
+ */
+export const createStore = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.user) throw new AppError('Unauthorized', 401);
+    const ownerEmail = req.user.email;
+    if (!ownerEmail) throw new AppError('Owner email required', 400);
+
+    const name = (req.body?.name ?? '').toString().trim();
+    if (!name) throw new AppError('name is required', 400);
+    const planName = (req.body?.planName ?? req.body?.planId)?.toString();
+    if (!planName) throw new AppError('planName is required', 400);
+
+    // Resolve + validate the plan up front (server-computed amount, never trusted
+    // from the client). Only self-serve tiers with a Paystack plan code + price.
+    const plan = await prismaBase.plan.findFirst({ where: { name: planName, isActive: true } });
+    if (!plan || !SELF_SERVE_PLAN_NAMES.includes(plan.name as any)) {
+      throw new AppError('Invalid plan selected. Choose Growth or Scale.', 400);
+    }
+    if (!plan.paystackPlanCode || plan.priceNGN == null) {
+      throw new AppError('This plan is not available for self-serve subscription', 400);
+    }
+
+    // Create the pending store + membership atomically. The owner user already
+    // exists (req.user), so ownerUserId is set inline — no two-step link.
+    const { tenantId, billingEmail } = await prismaBase.$transaction(async (tx) => {
+      const baseSlug = slugify(name) || 'store';
+      let slug = baseSlug;
+      let suffix = 1;
+      while (await tx.tenant.findUnique({ where: { slug } })) {
+        slug = `${baseSlug}-${suffix++}`;
+      }
+      const billingEmail = perStoreBillingEmail(ownerEmail, slug);
+      const tenant = await tx.tenant.create({
+        data: {
+          name,
+          slug,
+          currentPlanId: plan.id,
+          subscriptionStatus: SUBSCRIPTION_STATUS.PENDING,
+          billingEmail,
+          ownerUserId: req.user!.id,
+        },
+        select: { id: true },
+      });
+      await tx.storeMembership.create({
+        data: { userId: req.user!.id, tenantId: tenant.id, role: 'super_admin', isDefault: false },
+      });
+      return { tenantId: tenant.id, billingEmail };
+    });
+
+    // External Paystack call AFTER the store commit. If it fails, the store still
+    // exists as `pending`; the owner retries payment and its data routes stay
+    // locked until charge.success. Metadata carries tenantId so the webhook binds
+    // the correct store.
+    const amountMinor = Math.round(Number(plan.priceNGN) * 100);
+    const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/settings/billing/callback`;
+    const result = await platformPaystackService.initializeSubscriptionTransaction(
+      billingEmail,
+      plan.paystackPlanCode,
+      amountMinor,
+      { tenantId, planId: plan.id, planName: plan.name, kind: 'saas_subscription' },
+      callbackUrl,
+    );
+
+    res.status(201).json({
+      tenantId,
+      billingEmail,
+      authorizationUrl: result.authorization_url,
+      reference: result.reference,
     });
   } catch (error) {
     next(error);
