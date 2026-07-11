@@ -92,7 +92,7 @@ export async function updateOrderStatusTool(args: z.infer<typeof ordersUpdateSta
     await orderService.updateOrderStatus(parsed.orderId, {
       status: parsed.status,
       notes: parsed.notes ?? 'Status updated via MCP',
-      ...(deliveryDate ? { deliveryDate } : {}),
+      deliveryDate,
     });
 
     return mcpJson({
