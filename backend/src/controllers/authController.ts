@@ -390,6 +390,13 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
         data: { ownerUserId: user.id }
       });
 
+      // The owner's default StoreMembership for their own store — without this,
+      // GET /api/stores, POST /api/stores/switch, and POST /api/stores all fail
+      // to recognize the owner as a member of the store they just created.
+      await tx.storeMembership.create({
+        data: { userId: user.id, tenantId: tenant.id, role: 'super_admin', isDefault: true }
+      });
+
       return { tenant, user };
     });
 

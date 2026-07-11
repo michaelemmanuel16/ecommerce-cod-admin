@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { User, LoginCredentials, RegisterData, UserPreferences, Permissions } from '../types';
 import { authService } from '../services/auth.service';
 import { usersService } from '../services/users.service';
+import { storesService, Store } from '../services/stores.service';
 import { connectSocket, disconnectSocket, getSocket } from '../services/socket';
 import { useAnalyticsStore } from './analyticsStore';
 import { useDeliveryAgentsStore } from './deliveryAgentsStore';
@@ -17,6 +18,9 @@ interface AuthState {
   permissions: Permissions | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  stores: Store[];
+  fetchStores: () => Promise<void>;
+  switchStore: (tenantId: string) => Promise<void>;
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   registerTenant: (data: { companyName: string; adminEmail: string; adminPassword: string; adminName: string; planName?: string }) => Promise<void>;
@@ -38,6 +42,25 @@ export const useAuthStore = create<AuthState>()(
       permissions: null,
       isAuthenticated: false,
       isLoading: false,  // This should not be persisted
+      stores: [],
+
+      fetchStores: async () => {
+        try {
+          const stores = await storesService.getStores();
+          set({ stores });
+        } catch (error) {
+          console.error('[AuthStore] Failed to fetch stores:', error);
+        }
+      },
+
+      switchStore: async (tenantId: string) => {
+        const { accessToken, refreshToken, activeTenantId } = await storesService.switchStore(tenantId);
+        set((state) => ({
+          accessToken,
+          refreshToken,
+          stores: state.stores.map((s) => ({ ...s, isActive: s.tenantId === activeTenantId })),
+        }));
+      },
 
       login: async (credentials: LoginCredentials) => {
         set({ isLoading: true });

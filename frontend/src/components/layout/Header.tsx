@@ -3,6 +3,7 @@ import { Bell, Search, HelpCircle, BookOpen, FileText, RotateCcw } from 'lucide-
 import { useLocation } from 'react-router-dom';
 import { NotificationBell } from '../common/NotificationBell';
 import { UserMenu } from '../common/UserMenu';
+import { StoreSwitcher } from './StoreSwitcher';
 import { useOnboardingContext } from '../onboarding';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -36,6 +37,7 @@ export const Header: React.FC = () => {
           )}
         </div>
         <div className="flex items-center gap-4">
+          <StoreSwitcher />
           <NotificationBell />
 
           {/* Help Menu - Only visible for sales reps */}
