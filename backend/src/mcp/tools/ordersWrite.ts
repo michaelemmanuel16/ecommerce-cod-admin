@@ -21,6 +21,9 @@ const ordersUpdateStatusSchema = z.object({
     'failed_delivery',
   ]),
   notes: z.string().max(500).optional(),
+  // The real delivery date, for 3PL reconciliation where delivery happened days
+  // ago. Only meaningful with status "delivered". Omitted => now.
+  deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'deliveryDate must be YYYY-MM-DD').optional(),
 });
 
 /**
@@ -74,6 +77,7 @@ export async function updateOrderStatusTool(args: z.infer<typeof ordersUpdateSta
     await orderService.updateOrderStatus(parsed.orderId, {
       status: parsed.status,
       notes: parsed.notes ?? 'Status updated via MCP',
+      ...(parsed.deliveryDate ? { deliveryDate: new Date(`${parsed.deliveryDate}T00:00:00.000Z`) } : {}),
     });
 
     return mcpJson({
@@ -95,7 +99,7 @@ export function registerOrderWriteTools(
 ) {
   server.tool(
     'orders_update_status',
-    'Update an order\'s fulfillment status. Writes an order-history audit row and, via the shared order service, adjusts inventory and (on delivered/returned) payment status and accounting entries. Idempotent: makes no change if the order is already in the requested status. Valid statuses: pending_confirmation, confirmed, preparing, ready_for_pickup, out_for_delivery, delivered, cancelled, returned, failed_delivery.',
+    'Update an order\'s fulfillment status. Writes an order-history audit row and, via the shared order service, adjusts inventory and (on delivered/returned) payment status and accounting entries. Idempotent: makes no change if the order is already in the requested status. Valid statuses: pending_confirmation, confirmed, preparing, ready_for_pickup, out_for_delivery, delivered, cancelled, returned, failed_delivery. Optionally accepts deliveryDate (YYYY-MM-DD) to record when a delivery actually happened — use it when reconciling past deliveries from a 3PL, otherwise the delivery date defaults to now.',
     ordersUpdateStatusSchema.shape,
     wrapHandler(updateOrderStatusTool),
   );

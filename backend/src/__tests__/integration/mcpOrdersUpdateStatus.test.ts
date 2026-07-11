@@ -167,4 +167,31 @@ describe('orders_update_status MCP tool', () => {
     const orderB = await prismaBase.order.findUnique({ where: { id: orderBId } });
     expect(orderB?.status).toBe('confirmed');
   });
+
+  // These two cases move orderAId into the inventory-deducted zone
+  // (delivered), so they must run last, after all cases above that assume
+  // `confirmed -> preparing`.
+  it('honours an explicit deliveryDate when marking delivered', async () => {
+    const res = await asTenant(tenantAId, () =>
+      updateOrderStatusTool({
+        orderId: orderAId,
+        status: 'delivered',
+        deliveryDate: '2026-06-17',
+        notes: 'Logiswift ESD123 · shipped 2026-06-15',
+      } as any),
+    );
+
+    expect(payload(res).updated).toBe(true);
+
+    const order = await prismaBase.order.findUniqueOrThrow({ where: { id: orderAId } });
+    expect(order.deliveryDate?.toISOString().slice(0, 10)).toBe('2026-06-17');
+  });
+
+  it('rejects a malformed deliveryDate rather than silently using today', async () => {
+    const res = await asTenant(tenantAId, () =>
+      updateOrderStatusTool({ orderId: orderAId, status: 'returned', deliveryDate: '17/06/2026' } as any),
+    );
+
+    expect(res.content[0].text).toMatch(/deliveryDate/i);
+  });
 });
