@@ -35,6 +35,21 @@ export async function updateOrderStatusTool(args: z.infer<typeof ordersUpdateSta
   try {
     const parsed = ordersUpdateStatusSchema.parse(args);
 
+    // Calendar validity check, on top of the schema's digit-shape regex.
+    // JS silently rolls impossible calendar days into the next month (e.g.
+    // 2026-02-30 -> 2026-03-02, 2026-02-29 -> 2026-03-01 since 2026 isn't a
+    // leap year), which would post GL revenue into the wrong accounting
+    // period. Round-tripping through toISOString catches both an outright
+    // Invalid Date and this silent rollover in one check.
+    let deliveryDate: Date | undefined;
+    if (parsed.deliveryDate) {
+      const candidate = new Date(`${parsed.deliveryDate}T00:00:00.000Z`);
+      if (candidate.toISOString().slice(0, 10) !== parsed.deliveryDate) {
+        return mcpError(`deliveryDate "${parsed.deliveryDate}" is not a valid calendar date`);
+      }
+      deliveryDate = candidate;
+    }
+
     // Tenant-scoped lookup. findFirst passes through the tenant-isolation
     // Prisma extension, so an orderId belonging to another tenant simply
     // returns null — this tool can never mutate another store's order.
@@ -77,7 +92,7 @@ export async function updateOrderStatusTool(args: z.infer<typeof ordersUpdateSta
     await orderService.updateOrderStatus(parsed.orderId, {
       status: parsed.status,
       notes: parsed.notes ?? 'Status updated via MCP',
-      ...(parsed.deliveryDate ? { deliveryDate: new Date(`${parsed.deliveryDate}T00:00:00.000Z`) } : {}),
+      ...(deliveryDate ? { deliveryDate } : {}),
     });
 
     return mcpJson({
