@@ -86,6 +86,10 @@ interface UpdateOrderStatusData {
   status: OrderStatus;
   notes?: string;
   changedBy?: number;
+  // Explicit delivery date, for backfills from a 3PL where the real delivery
+  // happened days ago. Omitted => now. financialSyncService uses this as the
+  // GL collection date, so a wrong value posts revenue into the wrong period.
+  deliveryDate?: Date;
 }
 
 export class OrderService {
@@ -1153,7 +1157,7 @@ export class OrderService {
         where: { id: orderId },
         data: {
           status: data.status,
-          deliveryDate: data.status === 'delivered' ? new Date() : undefined,
+          deliveryDate: data.status === 'delivered' ? (data.deliveryDate ?? new Date()) : undefined,
           paymentStatus: data.status === 'delivered' ? 'collected' : order.paymentStatus,
           ...(isReturnStatus && order.revenueRecognized ? { revenueRecognized: false } : {}),
           orderHistory: {

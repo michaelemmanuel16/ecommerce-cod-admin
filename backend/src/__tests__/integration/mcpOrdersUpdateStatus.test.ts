@@ -167,4 +167,86 @@ describe('orders_update_status MCP tool', () => {
     const orderB = await prismaBase.order.findUnique({ where: { id: orderBId } });
     expect(orderB?.status).toBe('confirmed');
   });
+
+  // These two cases move orderAId into the inventory-deducted zone
+  // (delivered), so they must run last, after all cases above that assume
+  // `confirmed -> preparing`.
+  it('honours an explicit deliveryDate when marking delivered', async () => {
+    const res = await asTenant(tenantAId, () =>
+      updateOrderStatusTool({
+        orderId: orderAId,
+        status: 'delivered',
+        deliveryDate: '2026-06-17',
+        notes: 'Logiswift ESD123 · shipped 2026-06-15',
+      }),
+    );
+
+    expect(payload(res).updated).toBe(true);
+
+    const order = await prismaBase.order.findUniqueOrThrow({ where: { id: orderAId } });
+    expect(order.deliveryDate?.toISOString().slice(0, 10)).toBe('2026-06-17');
+  });
+
+  it('rejects a malformed deliveryDate rather than silently using today', async () => {
+    const res = await asTenant(tenantAId, () =>
+      updateOrderStatusTool({ orderId: orderAId, status: 'returned', deliveryDate: '17/06/2026' }),
+    );
+
+    expect(res.content[0].text).toMatch(/deliveryDate/i);
+  });
+
+  // These three cases exercise the calendar-validity guard on top of the
+  // schema's digit-shape regex. JS's Date silently rolls impossible calendar
+  // days into the next month (2026-02-30 -> 2026-03-02; 2026-02-29 ->
+  // 2026-03-01 since 2026 isn't a leap year), which would post GL revenue
+  // into the wrong accounting period if not caught. They run after the
+  // deliveryDate cases above, so orderAId is already 'delivered' with
+  // deliveryDate '2026-06-17'.
+  it('rejects a calendar-invalid deliveryDate (2026-02-30) instead of rolling it forward', async () => {
+    const res = await asTenant(tenantAId, () =>
+      updateOrderStatusTool({ orderId: orderAId, status: 'returned', deliveryDate: '2026-02-30' }),
+    );
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/deliveryDate/i);
+    expect(res.content[0].text).toMatch(/2026-02-30/);
+
+    const order = await prismaBase.order.findUniqueOrThrow({ where: { id: orderAId } });
+    expect(order.status).toBe('delivered');
+    expect(order.deliveryDate?.toISOString().slice(0, 10)).toBe('2026-06-17');
+  });
+
+  it('rejects Feb 29 in a non-leap year (2026-02-29) instead of rolling it forward', async () => {
+    const res = await asTenant(tenantAId, () =>
+      updateOrderStatusTool({ orderId: orderAId, status: 'returned', deliveryDate: '2026-02-29' }),
+    );
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/deliveryDate/i);
+    expect(res.content[0].text).toMatch(/2026-02-29/);
+
+    const order = await prismaBase.order.findUniqueOrThrow({ where: { id: orderAId } });
+    expect(order.status).toBe('delivered');
+    expect(order.deliveryDate?.toISOString().slice(0, 10)).toBe('2026-06-17');
+  });
+
+  it('still accepts a valid leap-year deliveryDate (2028-02-29)', async () => {
+    // Reset off 'delivered' first: the tool's idempotency guard would
+    // otherwise no-op a second 'delivered' call before deliveryDate is ever
+    // applied, since orderAId is already 'delivered' from the case above.
+    await asTenant(tenantAId, () =>
+      updateOrderStatusTool({ orderId: orderAId, status: 'confirmed' }),
+    );
+
+    const res = await asTenant(tenantAId, () =>
+      updateOrderStatusTool({ orderId: orderAId, status: 'delivered', deliveryDate: '2028-02-29' }),
+    );
+    const body = payload(res);
+
+    expect(res.isError).toBeUndefined();
+    expect(body.updated).toBe(true);
+
+    const order = await prismaBase.order.findUniqueOrThrow({ where: { id: orderAId } });
+    expect(order.deliveryDate?.toISOString().slice(0, 10)).toBe('2028-02-29');
+  });
 });

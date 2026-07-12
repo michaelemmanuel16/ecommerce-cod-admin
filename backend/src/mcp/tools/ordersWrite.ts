@@ -21,6 +21,9 @@ const ordersUpdateStatusSchema = z.object({
     'failed_delivery',
   ]),
   notes: z.string().max(500).optional(),
+  // The real delivery date, for 3PL reconciliation where delivery happened days
+  // ago. Only meaningful with status "delivered". Omitted => now.
+  deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'deliveryDate must be YYYY-MM-DD').optional(),
 });
 
 /**
@@ -31,6 +34,21 @@ const ordersUpdateStatusSchema = z.object({
 export async function updateOrderStatusTool(args: z.infer<typeof ordersUpdateStatusSchema>) {
   try {
     const parsed = ordersUpdateStatusSchema.parse(args);
+
+    // Calendar validity check, on top of the schema's digit-shape regex.
+    // JS silently rolls impossible calendar days into the next month (e.g.
+    // 2026-02-30 -> 2026-03-02, 2026-02-29 -> 2026-03-01 since 2026 isn't a
+    // leap year), which would post GL revenue into the wrong accounting
+    // period. Round-tripping through toISOString catches both an outright
+    // Invalid Date and this silent rollover in one check.
+    let deliveryDate: Date | undefined;
+    if (parsed.deliveryDate) {
+      const candidate = new Date(`${parsed.deliveryDate}T00:00:00.000Z`);
+      if (candidate.toISOString().slice(0, 10) !== parsed.deliveryDate) {
+        return mcpError(`deliveryDate "${parsed.deliveryDate}" is not a valid calendar date`);
+      }
+      deliveryDate = candidate;
+    }
 
     // Tenant-scoped lookup. findFirst passes through the tenant-isolation
     // Prisma extension, so an orderId belonging to another tenant simply
@@ -74,6 +92,7 @@ export async function updateOrderStatusTool(args: z.infer<typeof ordersUpdateSta
     await orderService.updateOrderStatus(parsed.orderId, {
       status: parsed.status,
       notes: parsed.notes ?? 'Status updated via MCP',
+      deliveryDate,
     });
 
     return mcpJson({
@@ -95,7 +114,7 @@ export function registerOrderWriteTools(
 ) {
   server.tool(
     'orders_update_status',
-    'Update an order\'s fulfillment status. Writes an order-history audit row and, via the shared order service, adjusts inventory and (on delivered/returned) payment status and accounting entries. Idempotent: makes no change if the order is already in the requested status. Valid statuses: pending_confirmation, confirmed, preparing, ready_for_pickup, out_for_delivery, delivered, cancelled, returned, failed_delivery.',
+    'Update an order\'s fulfillment status. Writes an order-history audit row and, via the shared order service, adjusts inventory and (on delivered/returned) payment status and accounting entries. Idempotent: makes no change if the order is already in the requested status. Valid statuses: pending_confirmation, confirmed, preparing, ready_for_pickup, out_for_delivery, delivered, cancelled, returned, failed_delivery. Optionally accepts deliveryDate (YYYY-MM-DD) to record when a delivery actually happened — use it when reconciling past deliveries from a 3PL, otherwise the delivery date defaults to now.',
     ordersUpdateStatusSchema.shape,
     wrapHandler(updateOrderStatusTool),
   );
