@@ -2,8 +2,12 @@ import { Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { AuthRequest } from '../types';
-import prisma from '../utils/prisma';
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
+import prisma, { prismaBase } from '../utils/prisma';
+import { deleteStoreData, deleteOwnerReferences } from '../services/storeDeletionService';
+import { verifyRefreshToken } from '../utils/jwt';
+import { mintTokens, mintAccessToken } from '../utils/mintTokens';
+import { getCurrentUser, updateCurrentUser } from '../utils/currentUser';
+import { slugify } from '../utils/slug';
 import { AppError } from '../middleware/errorHandler';
 import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
@@ -46,20 +50,8 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
       }
     });
 
-    // Generate tokens
-    const accessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    const refreshToken = generateRefreshToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
+    // Generate tokens (fail-closed mint — never a null-tenant token)
+    const { accessToken, refreshToken } = await mintTokens(user);
 
     // Save refresh token
     await prisma.user.update({
@@ -103,19 +95,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
       throw new AppError('Invalid credentials', 401);
     }
 
-    const accessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    const refreshToken = generateRefreshToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
+    const { accessToken, refreshToken } = await mintTokens(user);
 
     await prisma.user.update({
       where: { id: user.id },
@@ -190,12 +170,9 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
       throw new AppError('Invalid refresh token', 401);
     }
 
-    const newAccessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
+    // Preserve the active store the refresh token was minted for (decoded.tenantId)
+    // rather than re-resolving to default; still fail-closed via mintAccessToken.
+    const { accessToken: newAccessToken } = await mintAccessToken(user, decoded.tenantId);
 
     res.json({
       accessToken: newAccessToken
@@ -208,10 +185,9 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
 export const logout = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (req.user) {
-      await prisma.user.update({
-        where: { id: req.user.id },
-        data: { refreshToken: null }
-      });
+      // Unscoped: a null-tenant owner's active store must not filter out their
+      // own row, or the refresh-token clear silently no-ops and logout is a lie.
+      await updateCurrentUser(req.user.id, { refreshToken: null });
     }
 
     res.json({ message: 'Logout successful' });
@@ -232,12 +208,11 @@ export const forgotPassword = async (req: AuthRequest, res: Response, next: Next
         const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
         const expires = new Date(Date.now() + 15 * 60 * 1000);
 
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            passwordResetToken: hashedToken,
-            passwordResetExpires: expires,
-          },
+        // Unscoped write (MAN-94 owner carve-out): a null-tenant owner's own row
+        // must not be filtered out by an ambient active-store scope.
+        await updateCurrentUser(user.id, {
+          passwordResetToken: hashedToken,
+          passwordResetExpires: expires,
         });
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -278,14 +253,13 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        passwordResetToken: null,
-        passwordResetExpires: null,
-        refreshToken: null,
-      },
+    // Unscoped write (MAN-94 owner carve-out): reset must succeed for a
+    // null-tenant owner, and it also invalidates their session (refreshToken).
+    await updateCurrentUser(user.id, {
+      password: hashedPassword,
+      passwordResetToken: null,
+      passwordResetExpires: null,
+      refreshToken: null,
     });
 
     res.json({ message: 'Password reset successful. Please log in with your new password.' });
@@ -300,19 +274,18 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
       throw new AppError('Unauthorized', 401);
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phoneNumber: true,
-        role: true,
-        isActive: true,
-        isAvailable: true,
-        createdAt: true
-      }
+    // Unscoped identity read: a null-tenant owner must resolve to their own row
+    // regardless of which store is active.
+    const user = await getCurrentUser(req.user.id, {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      phoneNumber: true,
+      role: true,
+      isActive: true,
+      isAvailable: true,
+      createdAt: true
     });
 
     // Get user permissions from system config
@@ -326,15 +299,6 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
 };
 
 // Slugify helper
-function slugify(str: string): string {
-  return str
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-
 export const registerTenant = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { companyName, adminEmail, adminPassword, adminName } = req.body;
@@ -418,22 +382,25 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
         }
       });
 
+      // MAN-87: point the tenant at its owner. Two-step because the FK is
+      // circular (tenant.ownerUserId → user, user.tenantId → tenant); the
+      // tenant is created ownerless, then linked once the user row exists.
+      await tx.tenant.update({
+        where: { id: tenant.id },
+        data: { ownerUserId: user.id }
+      });
+
+      // The owner's default StoreMembership for their own store — without this,
+      // GET /api/stores, POST /api/stores/switch, and POST /api/stores all fail
+      // to recognize the owner as a member of the store they just created.
+      await tx.storeMembership.create({
+        data: { userId: user.id, tenantId: tenant.id, role: 'super_admin', isDefault: true }
+      });
+
       return { tenant, user };
     });
 
-    const accessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    const refreshToken = generateRefreshToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
+    const { accessToken, refreshToken } = await mintTokens(user);
 
     await prisma.user.update({
       where: { id: user.id },
@@ -474,51 +441,34 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
     const { password } = req.body;
     if (!password) throw new AppError('Password is required to confirm deletion', 400);
 
-    // Verify password
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    // Verify password. Unscoped (MAN-98): the owner is null-tenant, so the
+    // extended client would inject the active-store tenant and miss them (404).
+    const user = await prismaBase.user.findFirst({ where: { id: req.user.id, isActive: true } });
     if (!user) throw new AppError('User not found', 404);
 
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) throw new AppError('Incorrect password', 401);
 
-    const tenantId = req.user.tenantId;
-    if (!tenantId) throw new AppError('No tenant associated with this account', 400);
+    // MAN-98: whole-account delete = every store this user OWNS (resolved by the
+    // ownerUserId FK, never the ambiguous active-store JWT tenant), then the owner
+    // row LAST. A legacy single-store user's own tenantId is folded in too.
+    const ownedStores = await prismaBase.tenant.findMany({
+      where: { ownerUserId: req.user.id },
+      select: { id: true },
+    });
+    const storeIds = new Set(ownedStores.map((s) => s.id));
+    if (req.user.tenantId) storeIds.add(req.user.tenantId);
+    if (storeIds.size === 0) throw new AppError('No stores associated with this account', 400);
 
-    // Delete all tenant data atomically in dependency order.
-    // Uses parameterized queries (Prisma.sql) to prevent SQL injection.
-    // Tables with RESTRICT FKs to users must be cleaned before user/tenant delete.
-    await prisma.$transaction(async (tx) => {
-      // 1. Delete records that reference users via RESTRICT FKs
-      await tx.$executeRaw`DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM audit_logs WHERE user_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM payouts WHERE rep_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM calls WHERE sales_rep_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_deposits WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_collections WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_aging_buckets WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_balances WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM agent_stock WHERE agent_id IN (SELECT id FROM users WHERE tenant_id = ${tenantId})`;
-
-      // 2. NULL out user FK columns on tenant-scoped tables (these cascade from tenant delete,
-      //    but RESTRICT FKs on user columns would block the cascade)
-      await tx.$executeRaw`UPDATE orders SET created_by_id = NULL, customer_rep_id = NULL, delivery_agent_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE deliveries SET agent_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE inventory_shipments SET created_by_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE inventory_transfers SET from_agent_id = NULL, to_agent_id = NULL, created_by_id = NULL WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`UPDATE journal_entries SET created_by = NULL, voided_by = NULL WHERE tenant_id = ${tenantId}`;
-
-      // 3. Delete remaining tenant-scoped data in dependency order
-      await tx.$executeRaw`DELETE FROM form_submissions WHERE form_id IN (SELECT id FROM checkout_forms WHERE tenant_id = ${tenantId})`;
-      await tx.$executeRaw`DELETE FROM inventory_transfers WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM inventory_shipments WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM account_transactions WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM journal_entries WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM system_config WHERE tenant_id = ${tenantId}`;
-
-      // 4. Delete tenant — CASCADE handles remaining tenant_id FKs (orders, customers, etc.)
-      //    Using raw SQL to bypass Prisma soft-delete extensions
-      await tx.$executeRaw`DELETE FROM users WHERE tenant_id = ${tenantId}`;
-      await tx.$executeRaw`DELETE FROM tenants WHERE id = ${tenantId}`;
+    // Delete all owned stores atomically, then the owner. Raw parameterized SQL
+    // in dependency order; RESTRICT FKs to users are cleaned before user delete.
+    // prismaBase: the deletes bypass extensions and the helper takes a plain tx.
+    await prismaBase.$transaction(async (tx) => {
+      for (const sid of storeIds) {
+        await deleteStoreData(tx, sid);
+      }
+      // Owner row last — deleteStoreData never removes the (null-tenant) owner.
+      await deleteOwnerReferences(tx, req.user!.id);
     });
 
     res.json({ message: 'Account and all associated data have been permanently deleted' });

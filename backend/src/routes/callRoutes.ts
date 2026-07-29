@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as callController from '../controllers/callController';
-import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { authenticate, requireResourcePermission, requireResolvedTenant } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { createCallValidation, paginationValidation } from '../utils/validators';
@@ -8,6 +8,7 @@ import { createCallValidation, paginationValidation } from '../utils/validators'
 const router = Router();
 
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 
 // Create new call log (sales reps, managers, admins)

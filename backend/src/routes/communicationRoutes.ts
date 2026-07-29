@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
-import { authenticate, requireRole } from '../middleware/auth';
+import { authenticate, requireRole, requireResolvedTenant } from '../middleware/auth';
 import * as ctrl from '../controllers/communicationController';
 
 const router = Router();
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 
 router.get('/messages', requireRole('super_admin', 'admin', 'manager'), ctrl.getMessages);

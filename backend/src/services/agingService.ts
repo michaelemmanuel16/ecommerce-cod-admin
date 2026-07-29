@@ -290,7 +290,7 @@ export class AgingService {
    * Get agents with overdue collections (4-7 day or 8+ day buckets)
    * Used by the notification job to alert admins
    */
-  async getOverdueAgents(): Promise<{ agentId: number; agentName: string; totalBalance: number; warningAmount: number; criticalAmount: number }[]> {
+  async getOverdueAgents(): Promise<{ agentId: number; tenantId: string | null; agentName: string; totalBalance: number; warningAmount: number; criticalAmount: number }[]> {
     const overdueBuckets = await (prisma as any).agentAgingBucket.findMany({
       where: {
         OR: [
@@ -300,13 +300,16 @@ export class AgingService {
       },
       include: {
         agent: {
-          select: { id: true, firstName: true, lastName: true }
+          // tenantId lets the notifier group overdue agents by store and page
+          // that store's owner, not every admin across every tenant (MAN-95).
+          select: { id: true, firstName: true, lastName: true, tenantId: true }
         }
       }
     });
 
     return overdueBuckets.map((bucket: any) => ({
       agentId: bucket.agentId,
+      tenantId: bucket.agent.tenantId ?? null,
       agentName: `${bucket.agent.firstName} ${bucket.agent.lastName}`,
       totalBalance: parseFloat(bucket.totalBalance.toString()),
       warningAmount: parseFloat(bucket.bucket_4_7.toString()),

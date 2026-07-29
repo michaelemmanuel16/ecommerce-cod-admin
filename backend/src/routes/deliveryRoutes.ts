@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as deliveryController from '../controllers/deliveryController';
-import { authenticate, requireResourcePermission } from '../middleware/auth';
+import { authenticate, requireResourcePermission, requireResolvedTenant } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
@@ -8,6 +8,7 @@ import { paginationValidation } from '../utils/validators';
 const router = Router();
 
 router.use(authenticate);
+router.use(requireResolvedTenant);
 router.use(tenantRateLimiter);
 
 router.get('/', paginationValidation, validate, deliveryController.getAllDeliveries);

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAuthStore } from '../../stores/authStore';
 import { authService } from '../../services/auth.service';
+import { storesService } from '../../services/stores.service';
 
 // Mock the auth service
 vi.mock('../../services/auth.service', () => ({
@@ -10,6 +11,13 @@ vi.mock('../../services/auth.service', () => ({
     logout: vi.fn(),
     getCurrentUser: vi.fn(),
     getMe: vi.fn(),
+  },
+}));
+
+vi.mock('../../services/stores.service', () => ({
+  storesService: {
+    getStores: vi.fn(),
+    switchStore: vi.fn(),
   },
 }));
 
@@ -228,4 +236,47 @@ describe('Auth Store', () => {
   });
 
   // Note: setupPermissionListener requires socket mocking - covered in E2E tests
+
+  it('should fetch stores', async () => {
+    const mockStores = [
+      { tenantId: 't1', name: 'Store A', slug: 'store-a', subscriptionStatus: 'active', role: 'super_admin', isDefault: true, isActive: true },
+    ];
+    vi.mocked(storesService.getStores).mockResolvedValue(mockStores);
+
+    const { fetchStores } = useAuthStore.getState();
+    await fetchStores();
+
+    const state = useAuthStore.getState();
+    expect(state.stores).toEqual(mockStores);
+  });
+
+  it('should not throw when fetching stores fails', async () => {
+    vi.mocked(storesService.getStores).mockRejectedValue(new Error('network error'));
+
+    const { fetchStores } = useAuthStore.getState();
+    await expect(fetchStores()).resolves.toBeUndefined();
+  });
+
+  it('should switch stores and update tokens plus isActive flags', async () => {
+    useAuthStore.setState({
+      stores: [
+        { tenantId: 't1', name: 'Store A', slug: 'store-a', subscriptionStatus: 'active', role: 'super_admin', isDefault: true, isActive: true },
+        { tenantId: 't2', name: 'Store B', slug: 'store-b', subscriptionStatus: 'active', role: 'super_admin', isDefault: false, isActive: false },
+      ],
+    });
+    vi.mocked(storesService.switchStore).mockResolvedValue({
+      accessToken: 'new-access',
+      refreshToken: 'new-refresh',
+      activeTenantId: 't2',
+    });
+
+    const { switchStore } = useAuthStore.getState();
+    await switchStore('t2');
+
+    const state = useAuthStore.getState();
+    expect(state.accessToken).toBe('new-access');
+    expect(state.refreshToken).toBe('new-refresh');
+    expect(state.stores.find((s) => s.tenantId === 't1')?.isActive).toBe(false);
+    expect(state.stores.find((s) => s.tenantId === 't2')?.isActive).toBe(true);
+  });
 });

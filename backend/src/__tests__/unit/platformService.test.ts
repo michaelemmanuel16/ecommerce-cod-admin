@@ -149,7 +149,10 @@ describe('getTenantDetail', () => {
       slug: 'acme',
       subscriptionStatus: 'active',
       currentPlan: { id: 'plan-1', name: 'starter', priceGHS: 50 },
-      _count: { users: 4, orders: 10 },
+      // MAN-86: owner now read via Tenant.ownerUser (FK), not a findFirst by tenantId.
+      ownerUserId: 7,
+      ownerUser: { email: 'owner@acme.com', firstName: 'Ada', lastName: 'Owner' },
+      _count: { orders: 10 },
     };
 
     prismaMock.tenant.findUnique.mockResolvedValueOnce(mockTenant as any);
@@ -157,6 +160,8 @@ describe('getTenantDetail', () => {
     prismaMock.order.aggregate.mockResolvedValueOnce({
       _sum: { totalAmount: 3200 },
     } as any);
+    // MAN-86: totalUsers now comes from an owner-inclusive user.count, not _count.users.
+    prismaMock.user.count.mockResolvedValueOnce(4);
 
     const result = await getTenantDetail('tenant-1');
 
@@ -164,6 +169,8 @@ describe('getTenantDetail', () => {
     expect(result.usage.ordersThisMonth).toBe(8);
     expect(result.usage.revenueThisMonth).toBe(3200);
     expect(result.usage.totalUsers).toBe(4);
+    expect(result.adminEmail).toBe('owner@acme.com');
+    expect(result.adminName).toBe('Ada Owner');
   });
 
   it('should throw AppError 404 when tenant not found', async () => {

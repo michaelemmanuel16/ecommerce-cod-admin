@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
-import prisma from '../utils/prisma';
+import prisma, { prismaBase } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 
 export const setupOnboarding = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
@@ -13,14 +13,27 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
     if (!tenantId) {
       tenantId = existingUser?.tenantId ?? null;
 
-      // Legacy user with no tenant — create one automatically
+      // Legacy user with no tenant — create one automatically.
+      // MAN-94: a multi-store OWNER is legitimately null-tenant (they provision
+      // stores via the platform console, not onboarding) and always has at least
+      // their default StoreMembership. Only a membership-less legacy user still
+      // auto-creates here — never mint a stray "company-N" tenant for an owner.
       if (!tenantId && existingUser) {
-        const slug = `company-${req.user.id}`;
-        const tenant = await prisma.tenant.create({
-          data: { name: `${existingUser.firstName}'s Company`, slug }
+        const membership = await prismaBase.storeMembership.findFirst({
+          where: { userId: req.user.id },
+          select: { id: true },
         });
-        await prisma.user.update({ where: { id: req.user.id }, data: { tenantId: tenant.id } });
-        tenantId = tenant.id;
+        if (!membership) {
+          const slug = `company-${req.user.id}`;
+          // MAN-87: set the owner inline — unlike the register flow, the owning
+          // user already exists here, so the circular FK doesn't force a
+          // separate link step after create.
+          const tenant = await prisma.tenant.create({
+            data: { name: `${existingUser.firstName}'s Company`, slug, ownerUserId: req.user.id }
+          });
+          await prisma.user.update({ where: { id: req.user.id }, data: { tenantId: tenant.id } });
+          tenantId = tenant.id;
+        }
       }
     }
     if (!tenantId) throw new AppError('User has no tenant assigned', 400);

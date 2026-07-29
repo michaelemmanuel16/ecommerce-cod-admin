@@ -25,16 +25,39 @@ model Tenant {
   subscriptionRenewsAt      DateTime? @map("subscription_renews_at")
   paymentFailedAt           DateTime? @map("payment_failed_at")
   paystackCardLast4         String?   @map("paystack_card_last4")
+  // MAN-89: per-store billing email (plus-addressed alias of the owner's email,
+  // e.g. owner+store-acme@x.com). Paystack keys a DISTINCT customer per store off
+  // this, so one owner's several stores never collide on one Paystack customer —
+  // which is what makes webhook routing by customer unambiguous. Null for tenants
+  // created before multi-store (they bill to the owner's plain email).
+  billingEmail              String?   @map("billing_email")
   freeAccessExpiresAt       DateTime? @map("free_access_expires_at")
   rateLimitEnabled          Boolean   @default(false) @map("rate_limit_enabled")
   rateLimitConfig           Json?     @map("rate_limit_config")
+  // MAN-86: denormalized single owner per store (multi-store-per-login).
+  // Backfilled from (tenantId, role=super_admin) via the MAN-85 deterministic
+  // tiebreak. MAN-87: onDelete=Restrict — a User referenced as a store owner
+  // cannot be deleted while the tenant still points at them. Both delete paths
+  // (self-serve deleteTenantAccount, platform deleteTenant) release this ref
+  // (owner_user_id = NULL) before deleting users, so tenant deletion still works.
+  //
+  // MAN-96 — INVARIANT (zero-User-row tenant): a tenant MAY have zero User rows
+  // whose user.tenantId points at it. An owner is a User with a StoreMembership to
+  // this tenant, but their own user.tenantId is null (owners) or another store's.
+  // Therefore the owner is resolved ONLY via this ownerUserId FK — never by a
+  // (tenantId, role) scan and never by assuming a tenant-scoped owner User row.
+  // All owner-resolution paths (platformService, notificationService) honor this;
+  // do not reintroduce owner-by-tenantId lookups.
+  ownerUserId               Int?      @map("owner_user_id")
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
 
   currentPlan Plan? @relation(fields: [currentPlanId], references: [id])
+  ownerUser   User? @relation("TenantOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
 
   // Reverse relations for tenant-scoped models
-  users               User[]
+  users               User[]               @relation("TenantMembers")
+  storeMemberships    StoreMembership[]
   customers           Customer[]
   products            Product[]
   orders              Order[]
@@ -62,6 +85,7 @@ model Tenant {
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
+  @@index([ownerUserId])
   @@map("tenants")
 }
 
@@ -107,6 +131,12 @@ model User {
   isPlatformAdmin       Boolean             @default(false) @map("is_platform_admin")
   isAvailable           Boolean             @default(true) @map("is_available")
   lastLogin             DateTime?           @map("last_login")
+  // MAN-97 — DECISION (single-active-session, v1): one refresh-token slot per
+  // user. Switching stores (POST /stores/switch) or logging in elsewhere
+  // overwrites it, invalidating the prior session. This is an accepted v1
+  // limitation, NOT true multi-store concurrency — a store owner cannot hold two
+  // stores open in two tabs at once. True concurrency needs a sessions table
+  // (deferred, not in v1 scope); do not add one without an explicit decision.
   refreshToken          String?             @map("refresh_token")
   passwordResetToken    String?             @unique @map("password_reset_token")
   passwordResetExpires  DateTime?           @map("password_reset_expires")
@@ -148,12 +178,36 @@ model User {
   transfersCreated      InventoryTransfer[] @relation("TransferCreator")
   shipmentsCreated      InventoryShipment[] @relation("ShipmentCreator")
   tenantId              String?             @map("tenant_id")
-  tenant                Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                Tenant?             @relation("TenantMembers", fields: [tenantId], references: [id], onDelete: Cascade)
+  // MAN-86: stores this user owns, and every store this user can access.
+  ownedTenants          Tenant[]            @relation("TenantOwner")
+  storeMemberships      StoreMembership[]
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
   @@index([tenantId])
   @@map("users")
+}
+
+// MAN-86: join table enabling one owner login → many isolated stores.
+// Created here (its earliest dependant) because MAN-86's reversible backfill
+// records each owner's original tenantId on their default membership, which is
+// the rollback source when MAN-86-B nulls owners' User.tenantId at go-live.
+model StoreMembership {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  tenantId  String   @map("tenant_id")
+  role      UserRole
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+  @@map("store_memberships")
 }
 
 model Customer {

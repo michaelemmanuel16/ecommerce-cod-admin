@@ -169,8 +169,8 @@ describe('AgingService', () => {
     describe('getOverdueAgents', () => {
         it('should return agents with overdue buckets', async () => {
             const mockBuckets = [
-                { agentId: 1, totalBalance: new Prisma.Decimal(500), bucket_4_7: new Prisma.Decimal(500), bucket_8_plus: new Prisma.Decimal(0), agent: { id: 1, firstName: 'Agent', lastName: 'One' } },
-                { agentId: 2, totalBalance: new Prisma.Decimal(1000), bucket_4_7: new Prisma.Decimal(0), bucket_8_plus: new Prisma.Decimal(1000), agent: { id: 2, firstName: 'Agent', lastName: 'Two' } },
+                { agentId: 1, totalBalance: new Prisma.Decimal(500), bucket_4_7: new Prisma.Decimal(500), bucket_8_plus: new Prisma.Decimal(0), agent: { id: 1, firstName: 'Agent', lastName: 'One', tenantId: 'tenant-a' } },
+                { agentId: 2, totalBalance: new Prisma.Decimal(1000), bucket_4_7: new Prisma.Decimal(0), bucket_8_plus: new Prisma.Decimal(1000), agent: { id: 2, firstName: 'Agent', lastName: 'Two', tenantId: 'tenant-b' } },
             ];
 
             mockPrisma.agentAgingBucket.findMany.mockResolvedValue(mockBuckets);
@@ -178,8 +178,8 @@ describe('AgingService', () => {
             const result = await agingService.getOverdueAgents();
 
             expect(result).toHaveLength(2);
-            expect(result[0]).toEqual({ agentId: 1, agentName: 'Agent One', totalBalance: 500, warningAmount: 500, criticalAmount: 0 });
-            expect(result[1]).toEqual({ agentId: 2, agentName: 'Agent Two', totalBalance: 1000, warningAmount: 0, criticalAmount: 1000 });
+            expect(result[0]).toEqual({ agentId: 1, tenantId: 'tenant-a', agentName: 'Agent One', totalBalance: 500, warningAmount: 500, criticalAmount: 0 });
+            expect(result[1]).toEqual({ agentId: 2, tenantId: 'tenant-b', agentName: 'Agent Two', totalBalance: 1000, warningAmount: 0, criticalAmount: 1000 });
         });
     });
 });

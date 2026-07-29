@@ -20,6 +20,13 @@ interface EnvironmentConfig {
 
   // Frontend
   FRONTEND_URL: string;
+
+  // Feature flags
+  // MAN-86: gates multi-store-per-login behavior. Default false — owners stay
+  // single-store until go-live. The ownerUserId backfill + read-switch are
+  // equivalence-preserving and ship independent of this flag; the flag gates
+  // the owner tenantId nulling (MAN-86-B) and the multi-store write/UI paths.
+  MULTI_STORE_ENABLED: boolean;
 }
 
 const requiredEnvVars = [
@@ -69,7 +76,8 @@ export function validateEnvironment(): EnvironmentConfig {
     REDIS_HOST: process.env.REDIS_HOST!,
     REDIS_PORT: parseInt(process.env.REDIS_PORT!, 10),
     REDIS_PASSWORD: process.env.REDIS_PASSWORD,
-    FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173'
+    FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
+    MULTI_STORE_ENABLED: isMultiStoreEnabled()
   };
 
   logger.info('Environment validation passed');
@@ -78,4 +86,12 @@ export function validateEnvironment(): EnvironmentConfig {
 
 export function getEnvConfig(): EnvironmentConfig {
   return validateEnvironment();
+}
+
+/**
+ * MAN-86: single source of truth for the multi-store-per-login feature flag.
+ * Defaults to false so existing single-store behavior is unchanged until go-live.
+ */
+export function isMultiStoreEnabled(): boolean {
+  return process.env.MULTI_STORE_ENABLED === 'true';
 }

@@ -5,12 +5,14 @@ interface DropdownProps {
   trigger: React.ReactNode;
   children: React.ReactNode;
   align?: 'left' | 'right';
+  panelClassName?: string;
 }
 
 export const Dropdown: React.FC<DropdownProps> = ({
   trigger,
   children,
   align = 'left',
+  panelClassName,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -36,7 +38,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
         <div
           className={cn(
             'absolute mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50',
-            align === 'right' ? 'right-0' : 'left-0'
+            align === 'right' ? 'right-0' : 'left-0',
+            panelClassName
           )}
         >
           {children}
