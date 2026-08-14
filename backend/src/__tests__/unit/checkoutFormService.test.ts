@@ -72,6 +72,19 @@ describe('CheckoutFormService', () => {
       await expect(checkoutFormService.createCheckoutForm(makeCreateData())).rejects.toThrow(AppError);
     });
 
+    // An archived form keeps its slug in the unique index, so the duplicate check
+    // has to see it. The message names the archive so the merchant knows to
+    // restore it rather than wondering why a slug they can't see is taken.
+    it('names the archive when an archived form holds the slug', async () => {
+      (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(
+        makeForm({ isActive: false }) as any
+      );
+
+      await expect(checkoutFormService.createCheckoutForm(makeCreateData())).rejects.toThrow(
+        /archived checkout form already uses this slug/i
+      );
+    });
+
     it('throws 404 when product not found', async () => {
       (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(null);
       (prismaMock.product.findUnique as any).mockResolvedValue(null);
@@ -240,6 +253,20 @@ describe('CheckoutFormService', () => {
 
       const result = await checkoutFormService.updateCheckoutForm('1', { name: 'Updated' });
       expect(result).toBeDefined();
+    });
+
+    // Same archived-slug case as create, on the rename path.
+    it('names the archive when renaming onto a slug an archived form holds', async () => {
+      (prismaMock.checkoutForm.findUnique as any).mockResolvedValue(
+        makeForm({ slug: 'original', packages: [], upsells: [] }) as any
+      );
+      (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(
+        makeForm({ slug: 'taken', isActive: false }) as any
+      );
+
+      await expect(
+        checkoutFormService.updateCheckoutForm('1', { slug: 'taken' })
+      ).rejects.toThrow(/archived checkout form already uses this slug/i);
     });
   });
 
