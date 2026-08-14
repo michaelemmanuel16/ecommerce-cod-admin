@@ -47,12 +47,17 @@ interface CheckoutFormBuilderProps {
   onDraftChange?: (draft: Record<string, any>) => void;
 }
 
+// Destinations are pinned via standardKey so relabeling any of these (e.g.
+// "Street Address" → "Delivery Address") keeps the value flowing to the order.
+// The region field is part of the default set because a physical order without
+// one is rejected by the order API.
 const defaultFields: FormField[] = [
-  { id: '1', label: 'Full Name', type: 'text', required: true, enabled: true },
-  { id: '2', label: 'Phone', type: 'phone', required: true, enabled: true },
-  { id: '3', label: 'Alt Phone', type: 'phone', required: false, enabled: true },
-  { id: '4', label: 'Email Address', type: 'email', required: false, enabled: true },
-  { id: '5', label: 'Street Address', type: 'textarea', required: true, enabled: true },
+  { id: '1', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
+  { id: '2', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
+  { id: '3', label: 'Alt Phone', type: 'phone', required: false, enabled: true, standardKey: 'alternativePhone' },
+  { id: '4', label: 'Email Address', type: 'email', required: false, enabled: true, standardKey: 'email' },
+  { id: '5', label: 'Street Address', type: 'textarea', required: true, enabled: true, standardKey: 'streetAddress' },
+  { id: '6', label: 'Region/State', type: 'state', required: true, enabled: true, standardKey: 'region' },
 ];
 
 export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, CheckoutFormBuilderProps>(({

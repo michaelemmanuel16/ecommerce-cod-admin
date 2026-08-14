@@ -7,6 +7,7 @@ import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 import { tenantStorage } from '../utils/tenantContext';
+import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 
 
 interface CreateWebhookData {
@@ -625,9 +626,7 @@ export class WebhookService {
     }
 
 
-    let customer = await prisma.customer.findFirst({
-      where: { phoneNumber: customerPhone }
-    });
+    let customer = await findAndReactivateCustomerByPhone(prisma, customerPhone, 'webhook intake');
 
     if (!customer) {
       customer = await prisma.customer.create({

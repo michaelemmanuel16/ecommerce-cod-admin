@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useForm, RegisterOptions, FieldError } from 'react-hook-form';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
-import { FieldType, FormField, PaymentMethod } from '../../types/checkout-form';
+import { FormField, PaymentMethod } from '../../types/checkout-form';
+import { MappedField, mapFields } from '../../lib/standardFields';
 import { PackageSelector } from './PackageSelector';
 import { AddOnSelector } from './AddOnSelector';
 import { OrderSummary, PaymentMethodOption } from './OrderSummary';
@@ -33,50 +34,20 @@ export interface CheckoutFormData {
   paymentMethod?: PaymentMethod;
 }
 
-interface StandardFieldConfig {
-  key: keyof CheckoutFormData;
-  aliases: string[];
-}
-
-const STANDARD_FIELDS: StandardFieldConfig[] = [
-  { key: 'fullName', aliases: ['name', 'full name'] },
-  { key: 'phone', aliases: ['phone', 'phone number'] },
-  { key: 'alternativePhone', aliases: ['alt phone', 'alternative phone', 'alt. phone'] },
-  { key: 'email', aliases: ['email', 'e-mail'] },
-  { key: 'region', aliases: ['region', 'region/state', 'state'] },
-  { key: 'streetAddress', aliases: ['street address', 'address'] },
-];
-
+// Which slots default to required when the field itself doesn't say. Not the same
+// thing as `REQUIRED_PHYSICAL` in lib/standardFields (which is what the server
+// rejects a submission without) — this one also applies to digital forms, where
+// address and region are still asked for but the server doesn't demand them.
 const DEFAULT_REQUIRED_KEYS: ReadonlySet<string> = new Set(['fullName', 'phone', 'region', 'streetAddress']);
 
 const DEFAULT_FIELDS: FormField[] = [
-  { id: 'fullName', label: 'Full Name', type: 'text', required: true, enabled: true },
-  { id: 'phone', label: 'Phone', type: 'phone', required: true, enabled: true },
-  { id: 'altPhone', label: 'Alt Phone', type: 'phone', required: false, enabled: true },
-  { id: 'email', label: 'Email Address', type: 'email', required: false, enabled: true },
-  { id: 'region', label: 'Region/State', type: 'select', required: true, enabled: true },
-  { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: true, enabled: true },
+  { id: 'fullName', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
+  { id: 'phone', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
+  { id: 'altPhone', label: 'Alt Phone', type: 'phone', required: false, enabled: true, standardKey: 'alternativePhone' },
+  { id: 'email', label: 'Email Address', type: 'email', required: false, enabled: true, standardKey: 'email' },
+  { id: 'region', label: 'Region/State', type: 'select', required: true, enabled: true, standardKey: 'region' },
+  { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: true, enabled: true, standardKey: 'streetAddress' },
 ];
-
-// Field types the builder emits 1:1 onto a standard key, used to map a field
-// whose label doesn't match an alias (e.g. the builder's default "Email Address"
-// label). Only the unambiguous types are listed: `phone` is excluded because it
-// covers both phone and altPhone, and `text`/`textarea` can be any custom field.
-const TYPE_TO_STANDARD_KEY: Partial<Record<FieldType, keyof CheckoutFormData>> = {
-  email: 'email',
-  state: 'region',
-};
-
-function getStandardField(field: FormField): StandardFieldConfig | null {
-  const normalized = field.label.toLowerCase().trim();
-  const byAlias = STANDARD_FIELDS.find(config => config.aliases.includes(normalized));
-  if (byAlias) return byAlias;
-  // Fall back to the field's explicit type so a relabeled standard field (most
-  // commonly an email field labeled "Email Address") still registers under its
-  // standard key instead of leaking into customFields and being dropped.
-  const typeKey = TYPE_TO_STANDARD_KEY[field.type];
-  return typeKey ? STANDARD_FIELDS.find(config => config.key === typeKey) ?? null : null;
-}
 
 interface FieldWrapperProps {
   fieldKey: string;
@@ -137,11 +108,11 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
 
   const selectedPackage = formData.packages.find((p) => p.id === selectedPackageId) || null;
 
-  function getFieldsToRender(): FormField[] {
-    if (!formData.fields?.length) {
-      return DEFAULT_FIELDS;
-    }
-    return formData.fields.filter((f: FormField) => f.enabled !== false);
+  function getFieldsToRender(): MappedField[] {
+    const fields = formData.fields?.length
+      ? formData.fields.filter((f: FormField) => f.enabled !== false)
+      : DEFAULT_FIELDS;
+    return mapFields(fields);
   }
 
   function getFieldError(formKey: string): FieldError | undefined {
@@ -193,12 +164,10 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   // name/options don't line up with the static CheckoutFormData type — cast once here.
   const reg = (key: string, opts?: RegisterOptions) => register(key as any, opts as any);
 
-  function renderField(field: FormField): React.JSX.Element {
-    const standard = getStandardField(field);
-    const formKey = standard ? standard.key : `customFields.${field.label}`;
-    let isRequired = field.required ?? (standard ? DEFAULT_REQUIRED_KEYS.has(standard.key) : false);
+  function renderField({ field, standardKey, formKey }: MappedField): React.JSX.Element {
+    let isRequired = field.required ?? (standardKey ? DEFAULT_REQUIRED_KEYS.has(standardKey) : false);
     // For digital products: email is always required
-    if (isDigital && (standard?.key === 'email' || field.type === 'email')) isRequired = true;
+    if (isDigital && (standardKey === 'email' || field.type === 'email')) isRequired = true;
     const error = getFieldError(formKey);
     const hasError = !!error;
     const validation: RegisterOptions | undefined = isRequired ? requiredRule(field.label) : undefined;
@@ -210,7 +179,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
     let control: React.JSX.Element;
 
     // Country-driven states dropdown (region standard key or the explicit "state" type).
-    if (standard?.key === 'region' || field.type === 'state') {
+    if (standardKey === 'region' || field.type === 'state') {
       control = (
         <select {...reg(formKey, validation)} className={selectClassName(hasError)} style={fieldStyle}>
           <option value="">Select {field.label.toLowerCase()}</option>
@@ -219,7 +188,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
           ))}
         </select>
       );
-    } else if (standard?.key === 'streetAddress' || (!standard && field.type === 'textarea')) {
+    } else if (standardKey === 'streetAddress' || (!standardKey && field.type === 'textarea')) {
       control = (
         <textarea
           {...reg(formKey, validation)}
@@ -229,7 +198,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
           style={fieldStyle}
         />
       );
-    } else if (!standard && (field.type === 'select' || field.type === 'multiselect')) {
+    } else if (!standardKey && (field.type === 'select' || field.type === 'multiselect')) {
       const isMulti = field.type === 'multiselect';
       control = (
         <select
@@ -244,7 +213,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
           ))}
         </select>
       );
-    } else if (!standard && field.type === 'checkbox') {
+    } else if (!standardKey && field.type === 'checkbox') {
       const checkboxOptions = field.options || [];
       control = (
         <div className="space-y-2">
@@ -265,7 +234,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
           )}
         </div>
       );
-    } else if (standard?.key === 'phone' || standard?.key === 'alternativePhone' || (!standard && field.type === 'phone')) {
+    } else if (standardKey === 'phone' || standardKey === 'alternativePhone' || (!standardKey && field.type === 'phone')) {
       const phoneValidation: RegisterOptions = {
         ...(isRequired ? { required: `${field.label} is required` } : {}),
         pattern: {
@@ -276,7 +245,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
       control = (
         <input {...reg(formKey, phoneValidation)} type="tel" placeholder={placeholder} className={inputClassName(hasError)} style={fieldStyle} />
       );
-    } else if (standard?.key === 'email' || field.type === 'email') {
+    } else if (standardKey === 'email' || field.type === 'email') {
       const emailValidation: RegisterOptions = {
         ...(isRequired ? { required: `${field.label} is required` } : {}),
         pattern: {
@@ -288,7 +257,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
         <input {...reg(formKey, emailValidation)} type="email" placeholder={placeholder} className={inputClassName(hasError)} style={fieldStyle} />
       );
     } else {
-      const inputType = !standard && field.type === 'number' ? 'number' : 'text';
+      const inputType = !standardKey && field.type === 'number' ? 'number' : 'text';
       control = (
         <input {...reg(formKey, validation)} type={inputType} placeholder={placeholder} className={inputClassName(hasError)} style={fieldStyle} />
       );

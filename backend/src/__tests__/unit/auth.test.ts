@@ -159,6 +159,25 @@ describe('Auth Controller', () => {
         expect.objectContaining({ message: 'User already exists' })
       );
     });
+
+    // A deactivated user still owns their email in the unique index. Before the
+    // lookup opted out of the soft-delete filter it returned null here, the
+    // create ran, and Postgres rejected it — surfacing as a 500 on a public route.
+    it('rejects a deactivated account with the same 400, never reaching create', async () => {
+      mockReq.body = {
+        email: 'deactivated@example.com',
+        password: 'password123',
+      };
+
+      prismaMock.user.findUnique.mockResolvedValue({ id: '123', isActive: false } as any);
+
+      await register(mockReq, mockRes, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'User already exists' })
+      );
+      expect(prismaMock.user.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('refresh', () => {

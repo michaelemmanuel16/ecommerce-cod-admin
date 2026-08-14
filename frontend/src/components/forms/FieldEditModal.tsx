@@ -4,8 +4,9 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
-import { FieldType, FormField } from '../../types/checkout-form';
+import { FieldType, FormField, StandardFieldKey } from '../../types/checkout-form';
 import { FIELD_TYPES, getFieldTypeMeta } from './builder/fieldTypes';
+import { STANDARD_FIELDS, getStandardFieldMeta, resolveStandardKey } from '../../lib/standardFields';
 
 interface FieldEditModalProps {
   field: FormField;
@@ -15,12 +16,25 @@ interface FieldEditModalProps {
 
 const typeOptions = FIELD_TYPES.map((t) => ({ value: t.type, label: t.label }));
 
+// '' = infer from the label (the behaviour for every field built before this
+// picker existed). Anything else pins the destination so the label can be
+// reworded freely without the value silently stopping at customFields.
+const destinationOptions = [
+  { value: '', label: 'Auto — detect from label' },
+  ...STANDARD_FIELDS.map((f) => ({ value: f.key, label: f.label })),
+  { value: 'custom', label: 'Custom field (kept with the order, not delivered on)' },
+];
+
 export const FieldEditModal: React.FC<FieldEditModalProps> = ({ field, onClose, onSave }) => {
   const [draft, setDraft] = useState<FormField>(field);
   const typeMeta = getFieldTypeMeta(draft.type);
   const showOptions = typeMeta.hasOptions;
   const labelEmpty = !draft.label.trim();
   const options = draft.options ?? [];
+  // Where this field's value will actually land, under the current label and
+  // destination setting — shown live so a mis-mapped field is visible here
+  // rather than discovered as a rejected order.
+  const resolvedKey = resolveStandardKey(draft);
 
   const update = (patch: Partial<FormField>) => setDraft((prev) => ({ ...prev, ...patch }));
 
@@ -73,6 +87,23 @@ export const FieldEditModal: React.FC<FieldEditModalProps> = ({ field, onClose, 
             placeholder="e.g., Full Name"
           />
           {labelEmpty && <p className="text-xs text-red-500 mt-1">Label is required</p>}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Sends To</label>
+          <Select
+            options={destinationOptions}
+            value={draft.standardKey ?? ''}
+            onChange={(e) => {
+              const v = e.target.value;
+              update({ standardKey: v === '' ? undefined : (v as StandardFieldKey | 'custom') });
+            }}
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            {resolvedKey
+              ? `This field's value is delivered as the order's ${getStandardFieldMeta(resolvedKey)?.label.toLowerCase()}.`
+              : 'This value is saved with the order but is not used as the name, phone, address or region.'}
+          </p>
         </div>
 
         <div>
