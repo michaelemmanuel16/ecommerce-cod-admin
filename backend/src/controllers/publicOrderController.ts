@@ -5,6 +5,8 @@ import checkoutFormService from '../services/checkoutFormService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 import prisma from '../utils/prisma';
+import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
+import logger from '../utils/logger';
 import { paystackService } from '../services/paystackService';
 import { metaCapiService } from '../services/metaCapiService';
 
@@ -89,6 +91,29 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     const fbp = clampTracking(req.body.fbp);
     const fbc = clampTracking(req.body.fbc);
 
+    // Rejects this submission with a 400 and logs why.
+    //
+    // Every rejection here is a buyer who tried to order and got nothing, so each
+    // one needs a trace. Without it an entire tenant can sit at zero orders with no
+    // signal anywhere — which is what happened when a form labelled its address
+    // field something the checkout didn't recognise: the value never reached
+    // `address`, the submission was dropped, and nothing was written down.
+    // `presentKeys` / `customFieldKeys` name what the form actually sent (keys
+    // only, no buyer data), so a field-mapping fault is diagnosable from the log
+    // line alone.
+    const reject = (reason: string): void => {
+      const data = formData as Record<string, unknown> | undefined;
+      logger.warn('Public checkout submission rejected', {
+        slug,
+        reason,
+        presentKeys: data
+          ? Object.keys(data).filter((k) => data[k] !== undefined && data[k] !== null && data[k] !== '')
+          : [],
+        customFieldKeys: Object.keys((data?.customFields as Record<string, unknown>) || {}),
+      });
+      res.status(400).json({ error: reason });
+    };
+
     // Get form with product — the form's tenantId determines the tenant context
     // for this unauthenticated request
     const form = await prisma.checkoutForm.findFirst({
@@ -111,7 +136,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     }
 
     if (!form.product.isActive) {
-      res.status(400).json({ error: 'Product is no longer available' });
+      reject('Product is no longer available');
       return;
     }
 
@@ -137,7 +162,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         paystack_full: form.paystackFullEnabled,
       };
       if (!enabledFor[paymentMethod]) {
-        res.status(400).json({ error: 'Selected payment method is not available for this form' });
+        reject('Selected payment method is not available for this form');
         return;
       }
     }
@@ -149,7 +174,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       : ['name', 'phoneNumber', 'address', 'state'];
     for (const field of requiredFields) {
       if (!formData[field]) {
-        res.status(400).json({ error: `Missing required field: ${field}` });
+        reject(`Missing required field: ${field}`);
         return;
       }
     }
@@ -157,21 +182,22 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // Paystack orders settle into the form's tenant Paystack account; without
     // a tenant we'd create an orphaned unpaid order. Fail fast before any DB write.
     if (isPaystack && !formTenantId) {
-      res.status(400).json({
-        error: 'This checkout form is not attached to a tenant; Paystack cannot be initialized.',
-      });
+      reject('This checkout form is not attached to a tenant; Paystack cannot be initialized.');
       return;
     }
 
     if (isDigital && !formData.email) {
-      res.status(400).json({ error: 'Email is required for digital products' });
+      reject('Email is required for digital products');
       return;
     }
 
-    // Check if customer exists or create new one (scoped to tenant)
-    let customer = await prisma.customer.findFirst({
-      where: { phoneNumber: formData.phoneNumber, ...(formTenantId ? { tenantId: formTenantId } : {}) }
-    });
+    // Check if customer exists or create new one (scoped to tenant).
+    let customer = await findAndReactivateCustomerByPhone(
+      prisma,
+      formData.phoneNumber,
+      'public checkout',
+      formTenantId
+    );
 
     if (!customer) {
       const nameParts = formData.name.split(' ');

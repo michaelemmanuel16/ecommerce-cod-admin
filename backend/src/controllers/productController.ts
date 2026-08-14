@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
+import { withSoftDeleted } from '../utils/prismaExtensions';
 import { AppError } from '../middleware/errorHandler';
 
 
@@ -52,14 +53,24 @@ export const createProduct = async (req: AuthRequest, res: Response): Promise<vo
 
     const productData = req.body;
 
-    const existingProduct = await prisma.product.findFirst({
-      where: {
-        sku: productData.sku
-      }
-    });
+    // Archived products keep their SKU in the unique index, so this check has to
+    // see past the soft-delete filter — otherwise the create below fails on the
+    // constraint with a 500 instead of returning this 400.
+    const existingProduct = await withSoftDeleted(() =>
+      prisma.product.findFirst({
+        where: {
+          sku: productData.sku
+        }
+      })
+    );
 
     if (existingProduct) {
-      throw new AppError('Product with this SKU already exists', 400);
+      throw new AppError(
+        existingProduct.isActive === false
+          ? 'An archived product already uses this SKU. Restore that product instead.'
+          : 'Product with this SKU already exists',
+        400
+      );
     }
 
     const product = await prisma.product.create({

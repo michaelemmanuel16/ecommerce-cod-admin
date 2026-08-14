@@ -24,9 +24,19 @@ jest.mock('../../services/metaCapiService', () => ({
 jest.mock('../../sockets', () => ({ emitOrderCreated: jest.fn() }));
 jest.mock('../../utils/socketInstance', () => ({ getSocketInstance: jest.fn() }));
 
+jest.mock('../../utils/logger', () => ({
+  __esModule: true,
+  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
 import { prismaMock } from '../mocks/prisma.mock';
 import * as paystackServiceModule from '../../services/paystackService';
 import { createPublicOrder } from '../../controllers/publicOrderController';
+import logger from '../../utils/logger';
+import workflowService from '../../services/workflowService';
+import { metaCapiService } from '../../services/metaCapiService';
+
+const mockedLogger = logger as jest.Mocked<typeof logger>;
 
 const mockedPaystack = paystackServiceModule.paystackService as jest.Mocked<
   typeof paystackServiceModule.paystackService
@@ -243,6 +253,122 @@ describe('publicOrderController.createPublicOrder — email linking (issue #1)',
       expect.objectContaining({
         where: { id: 7 },
         data: expect.objectContaining({ email: 'new@x.com' }),
+      }),
+    );
+  });
+});
+
+// Archiving a customer only flips `isActive` to false; the row keeps the phone
+// number's slot in the @@unique([phoneNumber, tenantId]) index. The soft-delete
+// extension hides it from reads, so the old find-then-create path found nothing,
+// tried to create a duplicate, and returned a 500 — every repeat buyer whose
+// record had ever been archived was permanently locked out of the checkout.
+describe('publicOrderController.createPublicOrder — archived customers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function codOrderMocks() {
+    // The completed-order path calls .catch() on both of these, and
+    // clearAllMocks() strips the module-level implementations — so they have to
+    // be re-armed here or the controller throws after the order is created.
+    (workflowService.triggerOrderCreatedWorkflows as any).mockResolvedValue(undefined);
+    (metaCapiService.fireCapiPurchaseEvent as any).mockResolvedValue(undefined);
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(physicalForm());
+    (prismaMock.formSubmission.findFirst as any).mockResolvedValue(null);
+    (prismaMock.order.findFirst as any).mockResolvedValue(null);
+    (prismaMock.order.create as any).mockResolvedValue({
+      id: 55, totalAmount: 250, status: 'pending_confirmation', orderType: 'physical',
+    });
+    (prismaMock.formSubmission.create as any).mockResolvedValue({ id: 1 });
+  }
+
+  it('reactivates an archived customer instead of creating a duplicate', async () => {
+    codOrderMocks();
+    const archived = {
+      id: 7, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber,
+      email: null, alternatePhone: null, isActive: false,
+    };
+    (prismaMock.customer.findFirst as any).mockResolvedValue(archived);
+    (prismaMock.customer.update as any).mockResolvedValue({ ...archived, isActive: true });
+
+    const res = buildRes();
+    await createPublicOrder(
+      buildReq({ formData: buyer, selectedPackage: { id: 10 }, paymentMethod: 'cod', totalAmount: 250 }),
+      res,
+      jest.fn(),
+    );
+
+    // The archived record is restored, not duplicated — a create here would hit
+    // the unique constraint and 500.
+    expect(prismaMock.customer.update).toHaveBeenCalledWith({
+      where: { id: 7 },
+      data: { isActive: true },
+    });
+    expect(prismaMock.customer.create).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it('leaves an active customer untouched', async () => {
+    codOrderMocks();
+    (prismaMock.customer.findFirst as any).mockResolvedValue({
+      id: 7, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber,
+      email: null, alternatePhone: null, isActive: true,
+    });
+
+    await createPublicOrder(
+      buildReq({ formData: buyer, selectedPackage: { id: 10 }, paymentMethod: 'cod', totalAmount: 250 }),
+      buildRes(),
+      jest.fn(),
+    );
+
+    // The order still increments the customer's totals; what must NOT happen is
+    // a reactivation write against a customer who was never archived.
+    expect(prismaMock.customer.update).not.toHaveBeenCalledWith({
+      where: { id: 7 },
+      data: { isActive: true },
+    });
+    expect(prismaMock.customer.create).not.toHaveBeenCalled();
+  });
+});
+
+// A rejected submission is a buyer who tried to order and got nothing. These
+// used to return silently, which let a tenant sit at zero orders for days with
+// no signal — the log line is the fix for that, so it's asserted like behaviour.
+describe('publicOrderController.createPublicOrder — rejection logging', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('logs a missing required field with the keys the form did send', async () => {
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(physicalForm());
+    const res = buildRes();
+
+    await createPublicOrder(
+      buildReq({
+        // What a form whose address field doesn't map produces: the buyer typed
+        // an address, but it arrived as a custom field and `address` is empty.
+        formData: {
+          name: 'Ama Mensah',
+          phoneNumber: '0241234567',
+          state: 'Greater Accra',
+          customFields: { 'Delivery Address': '12 Test Street' },
+        },
+        selectedPackage: { id: 10 },
+        paymentMethod: 'cod',
+        totalAmount: 250,
+      }),
+      res,
+      jest.fn(),
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockedLogger.warn).toHaveBeenCalledWith(
+      'Public checkout submission rejected',
+      expect.objectContaining({
+        slug: 'form-1',
+        reason: 'Missing required field: address',
+        customFieldKeys: ['Delivery Address'],
       }),
     );
   });

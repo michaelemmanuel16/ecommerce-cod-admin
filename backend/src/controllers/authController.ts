@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
+import { withSoftDeleted } from '../utils/prismaExtensions';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError } from '../middleware/errorHandler';
 import { adminService } from '../services/adminService';
@@ -17,7 +18,12 @@ export const register = async (req: AuthRequest, res: Response, next: NextFuncti
       throw new AppError('Password is required and must be 72 characters or fewer', 400);
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    // Deactivated users still hold their email in the unique index, and the
+    // soft-delete extension hides them from this check — so without the opt-out
+    // the create below dies on a constraint violation (500) instead of the 400.
+    // The message is deliberately identical for active and deactivated accounts:
+    // this route is public, so it must not disclose an account's state.
+    const existingUser = await withSoftDeleted(() => prisma.user.findUnique({ where: { email } }));
     if (existingUser) {
       throw new AppError('User already exists', 400);
     }
@@ -360,8 +366,11 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
 
     // All uniqueness checks + creation inside a single transaction to prevent TOCTOU races
     const { tenant, user } = await prisma.$transaction(async (tx) => {
-      // Check email uniqueness inside transaction
-      const existing = await tx.user.findUnique({ where: { email: adminEmail } });
+      // Check email uniqueness inside transaction. Deactivated users still hold
+      // the email in the unique index, so this opts out of the soft-delete filter
+      // — the P2002 catch below would otherwise turn a deactivated account into a
+      // rolled-back transaction rather than this clean 400.
+      const existing = await withSoftDeleted(() => tx.user.findUnique({ where: { email: adminEmail } }));
       if (existing) {
         throw new AppError('An account with this email already exists', 400);
       }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pencil, Trash2, GripVertical } from 'lucide-react';
+import { Pencil, Trash2, GripVertical, AlertTriangle } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -13,19 +13,25 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { FormField } from '../../../types/checkout-form';
+import { FormField, StandardFieldKey } from '../../../types/checkout-form';
 import { FIELD_TYPES, getFieldTypeMeta } from './fieldTypes';
 import { FieldEditModal } from '../FieldEditModal';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
+import {
+  findMissingRequiredKeys,
+  getStandardFieldMeta,
+  mapFields,
+} from '../../../lib/standardFields';
 
 interface FieldRowProps {
   field: FormField;
+  standardKey: StandardFieldKey | null;
   onEdit: () => void;
   onToggleRequired: () => void;
   onDelete: () => void;
 }
 
-const FieldRow: React.FC<FieldRowProps> = ({ field, onEdit, onToggleRequired, onDelete }) => {
+const FieldRow: React.FC<FieldRowProps> = ({ field, standardKey, onEdit, onToggleRequired, onDelete }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: field.id,
   });
@@ -36,6 +42,10 @@ const FieldRow: React.FC<FieldRowProps> = ({ field, onEdit, onToggleRequired, on
   };
   const meta = getFieldTypeMeta(field.type);
   const Icon = meta.icon;
+  // Where this field's value lands. "Custom" is legitimate for extra questions,
+  // but it's also what a mislabelled address field silently becomes, so it's
+  // shown on every row rather than only on the standard ones.
+  const destination = getStandardFieldMeta(standardKey)?.label ?? 'Custom';
 
   return (
     <div
@@ -55,7 +65,9 @@ const FieldRow: React.FC<FieldRowProps> = ({ field, onEdit, onToggleRequired, on
 
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-gray-900 truncate">{field.label}</p>
-        <p className="text-xs text-gray-500">{meta.label}</p>
+        <p className="text-xs text-gray-500">
+          {meta.label} <span className="text-gray-400">·</span> sends to {destination}
+        </p>
       </div>
 
       {field.required && (
@@ -104,8 +116,42 @@ export const FieldsTab: React.FC = () => {
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const editingField = ctx.fields.find((f) => f.id === editingFieldId) || null;
 
+  // A required destination with no field feeding it means the order API rejects
+  // every submission this form makes — surface it here, where it's fixable,
+  // instead of letting the form go live and take zero orders.
+  const productId = ctx.watch('productId');
+  const isDigital =
+    ctx.products.find((p) => p.id === productId)?.productType === 'digital';
+  const missingKeys = findMissingRequiredKeys(ctx.fields, { isDigital });
+
+  // Rows show the destination each field actually WINS, not the one its label
+  // resolves to: when two fields resolve to the same slot only the first claims
+  // it, and a row that claimed nothing must read "Custom" so the disagreement is
+  // visible here. Mapped over the enabled fields only, matching the banner above.
+  const claimedKeyByFieldId = new Map(
+    mapFields(ctx.fields.filter((f) => f.enabled !== false)).map((m) => [m.field.id, m.standardKey])
+  );
+
   return (
     <div className="space-y-6">
+      {missingKeys.length > 0 && (
+        <div className="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <AlertTriangle className="h-5 w-5 flex-shrink-0 text-amber-600" />
+          <div className="text-sm">
+            <p className="font-semibold text-amber-900">
+              This form can’t take orders yet
+            </p>
+            <p className="mt-1 text-amber-800">
+              Nothing is sending the customer’s{' '}
+              <strong>
+                {missingKeys.map((k) => getStandardFieldMeta(k)?.label.toLowerCase()).join(', ')}
+              </strong>
+              . Add a field for it, or open an existing field and set “Sends To”.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Add Form Fields */}
       <div className="border-2 border-dashed border-gray-300 rounded-xl p-5">
         <h3 className="text-base font-semibold text-gray-900 mb-4">Add Form Fields</h3>
@@ -152,6 +198,7 @@ export const FieldsTab: React.FC = () => {
                   <FieldRow
                     key={field.id}
                     field={field}
+                    standardKey={claimedKeyByFieldId.get(field.id) ?? null}
                     onEdit={() => setEditingFieldId(field.id)}
                     onToggleRequired={() =>
                       ctx.updateField(field.id, { ...field, required: !field.required })

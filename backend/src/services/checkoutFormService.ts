@@ -1,4 +1,5 @@
 import prisma from '../utils/prisma';
+import { withSoftDeleted } from '../utils/prismaExtensions';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
@@ -154,13 +155,22 @@ export class CheckoutFormService {
    */
   async createCheckoutForm(data: CreateCheckoutFormData) {
 
-    // Check if slug already exists
-    const existingForm = await prisma.checkoutForm.findFirst({
-      where: { slug: data.slug }
-    });
+    // Check if slug already exists. Archived forms still hold their slug in the
+    // unique index and are hidden by the soft-delete filter, so this lookup opts
+    // out — otherwise the create below dies on the constraint with a 500.
+    const existingForm = await withSoftDeleted(() =>
+      prisma.checkoutForm.findFirst({
+        where: { slug: data.slug }
+      })
+    );
 
     if (existingForm) {
-      throw new AppError('Checkout form with this slug already exists', 400);
+      throw new AppError(
+        existingForm.isActive === false
+          ? 'An archived checkout form already uses this slug. Restore it or pick another slug.'
+          : 'Checkout form with this slug already exists',
+        400
+      );
     }
 
     // Validate product exists
@@ -474,12 +484,20 @@ export class CheckoutFormService {
 
     // If updating slug, check for duplicates
     if (data.slug && data.slug !== existingForm.slug) {
-      const slugExists = await prisma.checkoutForm.findFirst({
-        where: { slug: data.slug }
-      });
+      // Archived forms included — see createCheckoutForm.
+      const slugExists = await withSoftDeleted(() =>
+        prisma.checkoutForm.findFirst({
+          where: { slug: data.slug }
+        })
+      );
 
       if (slugExists) {
-        throw new AppError('Slug already in use', 400);
+        throw new AppError(
+          slugExists.isActive === false
+            ? 'An archived checkout form already uses this slug. Restore it or pick another slug.'
+            : 'Slug already in use',
+          400
+        );
       }
     }
 
