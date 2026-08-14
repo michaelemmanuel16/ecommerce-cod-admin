@@ -223,15 +223,8 @@ export class OrderService {
         throw new AppError('Customer not found', 404);
       }
     } else if (data.customerPhone) {
-      // Find customer by phone or create new one. Archived customers count as
-      // found (and are reactivated) — they still own the phone number in the
-      // unique index, so creating past one would fail.
-      customer = await findAndReactivateCustomerByPhone(
-        prisma,
-        data.customerPhone,
-        undefined,
-        'manual order'
-      );
+      // Find customer by phone or create new one.
+      customer = await findAndReactivateCustomerByPhone(prisma, data.customerPhone, 'manual order');
 
       if (!customer) {
         // Parse customer name
@@ -531,11 +524,9 @@ export class OrderService {
 
           const createdOrder = await prisma.$transaction(async (tx) => {
             // 3. Find or create customer by phone (tenant-scoped via Prisma extension).
-            // Archived customers are found and reactivated rather than duplicated.
             let customer = await findAndReactivateCustomerByPhone(
               tx,
               orderData.customerPhone,
-              undefined,
               'bulk import'
             );
             if (customer) {

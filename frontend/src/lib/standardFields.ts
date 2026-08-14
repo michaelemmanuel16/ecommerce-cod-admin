@@ -73,7 +73,7 @@ export const STANDARD_FIELDS: readonly StandardFieldMeta[] = [
       'full address',
     ],
   },
-] as const;
+];
 
 // Field types the builder emits 1:1 onto a standard key, used as the last
 // inference step for a field whose label matches no alias. Only unambiguous

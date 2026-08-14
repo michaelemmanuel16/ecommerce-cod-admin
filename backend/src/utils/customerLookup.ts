@@ -1,4 +1,5 @@
-import { Customer, Prisma } from '@prisma/client';
+import { Customer } from '@prisma/client';
+import type { TransactionClient } from './prisma';
 import { withSoftDeleted } from './prismaExtensions';
 import logger from './logger';
 
@@ -17,28 +18,17 @@ import logger from './logger';
  */
 
 /**
- * Structural client type: satisfied by both the extended `prisma` singleton and
- * a `$transaction` client, so callers inside a transaction stay in it.
- */
-export interface CustomerCapableClient {
-  customer: {
-    findFirst(args: { where: Prisma.CustomerWhereInput }): Promise<Customer | null>;
-    update(args: {
-      where: Prisma.CustomerWhereUniqueInput;
-      data: Prisma.CustomerUpdateInput;
-    }): Promise<Customer>;
-  };
-}
-
-/**
  * Finds a customer by phone number, archived records included.
+ *
+ * `db` accepts the extended `prisma` singleton or a `$transaction` client, so
+ * callers already inside a transaction stay in it.
  *
  * `tenantId` is only needed on public/unauthenticated paths, where there is no
  * tenant context for the isolation extension to inject; authenticated callers
  * omit it and let the extension scope the query.
  */
 export async function findCustomerByPhoneIncludingArchived(
-  db: CustomerCapableClient,
+  db: TransactionClient,
   phoneNumber: string,
   tenantId?: string | null
 ): Promise<Customer | null> {
@@ -55,12 +45,14 @@ export async function findCustomerByPhoneIncludingArchived(
  * Used by the order-intake paths: a new order against an archived phone number
  * means that person is a customer again, so the record is restored rather than
  * left invisible. Returns null when no record exists at all (caller creates one).
+ *
+ * `context` names the intake path in the reactivation log line.
  */
 export async function findAndReactivateCustomerByPhone(
-  db: CustomerCapableClient,
+  db: TransactionClient,
   phoneNumber: string,
-  tenantId?: string | null,
-  context?: string
+  context: string,
+  tenantId?: string | null
 ): Promise<Customer | null> {
   const customer = await findCustomerByPhoneIncludingArchived(db, phoneNumber, tenantId);
   // Only an explicit false is archived — never write on an absent/unknown flag.
@@ -69,7 +61,7 @@ export async function findAndReactivateCustomerByPhone(
   logger.info('Reactivating archived customer for new order', {
     customerId: customer.id,
     phoneNumber: customer.phoneNumber,
-    context: context || 'unknown',
+    context,
   });
 
   return db.customer.update({

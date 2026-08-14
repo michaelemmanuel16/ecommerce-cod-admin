@@ -13,24 +13,25 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { FormField } from '../../../types/checkout-form';
+import { FormField, StandardFieldKey } from '../../../types/checkout-form';
 import { FIELD_TYPES, getFieldTypeMeta } from './fieldTypes';
 import { FieldEditModal } from '../FieldEditModal';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
 import {
   findMissingRequiredKeys,
   getStandardFieldMeta,
-  resolveStandardKey,
+  mapFields,
 } from '../../../lib/standardFields';
 
 interface FieldRowProps {
   field: FormField;
+  standardKey: StandardFieldKey | null;
   onEdit: () => void;
   onToggleRequired: () => void;
   onDelete: () => void;
 }
 
-const FieldRow: React.FC<FieldRowProps> = ({ field, onEdit, onToggleRequired, onDelete }) => {
+const FieldRow: React.FC<FieldRowProps> = ({ field, standardKey, onEdit, onToggleRequired, onDelete }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: field.id,
   });
@@ -44,7 +45,7 @@ const FieldRow: React.FC<FieldRowProps> = ({ field, onEdit, onToggleRequired, on
   // Where this field's value lands. "Custom" is legitimate for extra questions,
   // but it's also what a mislabelled address field silently becomes, so it's
   // shown on every row rather than only on the standard ones.
-  const destination = getStandardFieldMeta(resolveStandardKey(field))?.label ?? 'Custom';
+  const destination = getStandardFieldMeta(standardKey)?.label ?? 'Custom';
 
   return (
     <div
@@ -123,6 +124,14 @@ export const FieldsTab: React.FC = () => {
     ctx.products.find((p) => p.id === productId)?.productType === 'digital';
   const missingKeys = findMissingRequiredKeys(ctx.fields, { isDigital });
 
+  // Rows show the destination each field actually WINS, not the one its label
+  // resolves to: when two fields resolve to the same slot only the first claims
+  // it, and a row that claimed nothing must read "Custom" so the disagreement is
+  // visible here. Mapped over the enabled fields only, matching the banner above.
+  const claimedKeyByFieldId = new Map(
+    mapFields(ctx.fields.filter((f) => f.enabled !== false)).map((m) => [m.field.id, m.standardKey])
+  );
+
   return (
     <div className="space-y-6">
       {missingKeys.length > 0 && (
@@ -189,6 +198,7 @@ export const FieldsTab: React.FC = () => {
                   <FieldRow
                     key={field.id}
                     field={field}
+                    standardKey={claimedKeyByFieldId.get(field.id) ?? null}
                     onEdit={() => setEditingFieldId(field.id)}
                     onToggleRequired={() =>
                       ctx.updateField(field.id, { ...field, required: !field.required })

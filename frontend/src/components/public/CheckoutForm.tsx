@@ -34,6 +34,10 @@ export interface CheckoutFormData {
   paymentMethod?: PaymentMethod;
 }
 
+// Which slots default to required when the field itself doesn't say. Not the same
+// thing as `REQUIRED_PHYSICAL` in lib/standardFields (which is what the server
+// rejects a submission without) — this one also applies to digital forms, where
+// address and region are still asked for but the server doesn't demand them.
 const DEFAULT_REQUIRED_KEYS: ReadonlySet<string> = new Set(['fullName', 'phone', 'region', 'streetAddress']);
 
 const DEFAULT_FIELDS: FormField[] = [

@@ -626,14 +626,7 @@ export class WebhookService {
     }
 
 
-    // Archived customers are found and reactivated — they still hold the phone
-    // number's slot in the unique index, so creating past one would fail.
-    let customer = await findAndReactivateCustomerByPhone(
-      prisma,
-      customerPhone,
-      undefined,
-      'webhook intake'
-    );
+    let customer = await findAndReactivateCustomerByPhone(prisma, customerPhone, 'webhook intake');
 
     if (!customer) {
       customer = await prisma.customer.create({
