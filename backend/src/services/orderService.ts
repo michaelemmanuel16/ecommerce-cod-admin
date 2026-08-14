@@ -19,6 +19,7 @@ import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
+import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 
 
 
@@ -222,10 +223,15 @@ export class OrderService {
         throw new AppError('Customer not found', 404);
       }
     } else if (data.customerPhone) {
-      // Find customer by phone or create new one
-      customer = await prisma.customer.findFirst({
-        where: { phoneNumber: data.customerPhone }
-      });
+      // Find customer by phone or create new one. Archived customers count as
+      // found (and are reactivated) — they still own the phone number in the
+      // unique index, so creating past one would fail.
+      customer = await findAndReactivateCustomerByPhone(
+        prisma,
+        data.customerPhone,
+        undefined,
+        'manual order'
+      );
 
       if (!customer) {
         // Parse customer name
@@ -524,10 +530,14 @@ export class OrderService {
           }
 
           const createdOrder = await prisma.$transaction(async (tx) => {
-            // 3. Find or create customer by phone (tenant-scoped via Prisma extension)
-            let customer = await tx.customer.findFirst({
-              where: { phoneNumber: orderData.customerPhone },
-            });
+            // 3. Find or create customer by phone (tenant-scoped via Prisma extension).
+            // Archived customers are found and reactivated rather than duplicated.
+            let customer = await findAndReactivateCustomerByPhone(
+              tx,
+              orderData.customerPhone,
+              undefined,
+              'bulk import'
+            );
             if (customer) {
               customer = await tx.customer.update({
                 where: { id: customer.id },

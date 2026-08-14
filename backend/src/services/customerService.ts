@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
 import { getTenantId } from '../utils/tenantContext';
+import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
 
 interface CreateCustomerData {
   firstName: string;
@@ -193,13 +194,18 @@ export class CustomerService {
    * Create new customer
    */
   async createCustomer(data: CreateCustomerData) {
-    // Check if customer with phone number already exists
-    const existingCustomer = await prisma.customer.findFirst({
-      where: { phoneNumber: data.phoneNumber }
-    });
+    // Check if customer with phone number already exists. Archived customers
+    // count: they still hold the number in the unique index, so missing one here
+    // turns a clean 400 into a constraint-violation 500.
+    const existingCustomer = await findCustomerByPhoneIncludingArchived(prisma, data.phoneNumber);
 
     if (existingCustomer) {
-      throw new AppError('Customer with this phone number already exists', 400);
+      throw new AppError(
+        existingCustomer.isActive === false
+          ? 'An archived customer already uses this phone number. Restore that customer instead.'
+          : 'Customer with this phone number already exists',
+        400
+      );
     }
 
     const customer = await prisma.customer.create({
@@ -356,12 +362,19 @@ export class CustomerService {
 
     // If updating phone number, check for duplicates
     if (updateData.phoneNumber && updateData.phoneNumber !== customer.phoneNumber) {
-      const existingCustomer = await prisma.customer.findFirst({
-        where: { phoneNumber: updateData.phoneNumber }
-      });
+      // Archived customers included — see createCustomer.
+      const existingCustomer = await findCustomerByPhoneIncludingArchived(
+        prisma,
+        updateData.phoneNumber
+      );
 
       if (existingCustomer) {
-        throw new AppError('Phone number already in use', 400);
+        throw new AppError(
+          existingCustomer.isActive === false
+            ? 'Phone number already in use by an archived customer'
+            : 'Phone number already in use',
+          400
+        );
       }
     }
 

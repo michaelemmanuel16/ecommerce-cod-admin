@@ -13,6 +13,16 @@ export type FieldType =
   | 'multiselect'
   | 'state'; // country-driven states dropdown (uses the form's regions list)
 
+// The checkout payload slots a field can feed. Anything not mapped to one of
+// these is sent as a custom field and never reaches the order's own columns.
+export type StandardFieldKey =
+  | 'fullName'
+  | 'phone'
+  | 'alternativePhone'
+  | 'email'
+  | 'region'
+  | 'streetAddress';
+
 export interface FormField {
   id: string; // UI-only ID, not from database
   label: string;
@@ -22,6 +32,11 @@ export interface FormField {
   options?: string[]; // For select / multiselect types
   placeholder?: string;
   widthPercent?: number; // 1-100; controls row width so fields can share a row. Defaults to 100.
+  // Which checkout payload slot this field feeds. Set explicitly in the builder
+  // so the label is free text that can be reworded without breaking the mapping.
+  // 'custom' pins the field to customFields. Absent on forms built before this
+  // existed — those fall back to label/type inference (see lib/standardFields).
+  standardKey?: StandardFieldKey | 'custom';
 }
 
 export interface ProductPackage {
