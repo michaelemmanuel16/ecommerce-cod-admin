@@ -74,7 +74,7 @@ model Plan {
   priceGHS         Decimal  @map("price_ghs") @db.Decimal(10, 2)
   priceNGN         Decimal? @map("price_ngn") @db.Decimal(10, 2)
   paystackPlanCode String?  @map("paystack_plan_code")
-  features         Json
+  features         Json @default("{}")
   isActive         Boolean  @default(true) @map("is_active")
   createdAt        DateTime @default(now()) @map("created_at")
 
@@ -148,7 +148,7 @@ model User {
   transfersCreated      InventoryTransfer[] @relation("TransferCreator")
   shipmentsCreated      InventoryShipment[] @relation("ShipmentCreator")
   tenantId              String?             @map("tenant_id")
-  tenant                Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([role, isActive])
   @@index([role, isActive, isAvailable])
@@ -183,9 +183,9 @@ model Customer {
   orders         Order[]
   messageLogs    MessageLog[]
   tenantId       String?      @map("tenant_id")
-  tenant         Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([phoneNumber, tenantId])
+  @@unique([phoneNumber, tenantId], map: "customers_phone_number_tenant_key")
   @@index([isActive])
   @@index([email])
   @@index([area])
@@ -224,7 +224,7 @@ model Product {
   inventoryTransfers      InventoryTransfer[]
   inventoryShipments      InventoryShipment[]
   tenantId                String?                @map("tenant_id")
-  tenant                  Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                  Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([isActive])
   @@index([category, isActive])
@@ -296,7 +296,7 @@ model Order {
   messageLogs        MessageLog[]
   downloadTokens     DownloadToken[]
   tenantId           String?             @map("tenant_id")
-  tenant             Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant             Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   // Settlement resolves an order by its Paystack reference; scope uniqueness to the
   // tenant so a cross-account reference collision can never map to another tenant's
@@ -380,7 +380,7 @@ model Delivery {
   agent              User?              @relation(fields: [agentId], references: [id])
   order              Order              @relation(fields: [orderId], references: [id])
   tenantId           String?            @map("tenant_id")
-  tenant             Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant             Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([agentId])
   @@index([scheduledTime])
@@ -404,7 +404,7 @@ model Transaction {
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
   tenantId      String?       @map("tenant_id")
-  tenant        Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   order         Order?        @relation(fields: [orderId], references: [id])
 
   @@index([type])
@@ -427,7 +427,7 @@ model Expense {
   expenseDate DateTime @map("expense_date")
   createdAt   DateTime @default(now()) @map("created_at")
   tenantId    String?  @map("tenant_id")
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   user        User?    @relation(fields: [recordedBy], references: [id])
 
   @@index([category])
@@ -453,7 +453,7 @@ model Account {
   children       Account[]            @relation("AccountHierarchy")
   transactions   AccountTransaction[]
   tenantId       String?              @map("tenant_id")
-  tenant         Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([accountType])
   @@index([isActive])
@@ -487,7 +487,7 @@ model JournalEntry {
   orders       Order[]
   shipments    InventoryShipment[]
   tenantId     String?              @map("tenant_id")
-  tenant       Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant       Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([sourceType, sourceId])
   @@index([entryDate])
@@ -511,7 +511,7 @@ model AccountTransaction {
   // reporting (revenue silently vanishes). Backfilled from the parent journal
   // entry and locked NOT NULL by migration 20260630070000.
   tenantId       String   @map("tenant_id")
-  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   account      Account      @relation(fields: [accountId], references: [id])
@@ -536,7 +536,7 @@ model Workflow {
   updatedAt   DateTime            @updatedAt @map("updated_at")
   executions  WorkflowExecution[]
   tenantId    String?             @map("tenant_id")
-  tenant      Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([isActive])
   @@index([triggerType])
@@ -557,7 +557,7 @@ model WorkflowExecution {
   completedAt DateTime? @map("completed_at")
   workflow    Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
   tenantId    String?   @map("tenant_id")
-  tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([workflowId])
   @@index([status])
@@ -583,7 +583,7 @@ model WebhookConfig {
   product          Product?     @relation(fields: [productId], references: [id])
   logs             WebhookLog[]
   tenantId         String?      @map("tenant_id")
-  tenant           Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant           Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([productId])
   @@index([tenantId])
@@ -625,6 +625,7 @@ model WebhookEvent {
   // tenants can legitimately share a Paystack reference.
   @@unique([tenantId, provider, eventType, reference], name: "tenant_provider_event_reference")
   @@index([receivedAt])
+  @@index([tenantId])
   @@map("webhook_events")
 }
 
@@ -639,7 +640,7 @@ model Notification {
   createdAt DateTime @default(now()) @map("created_at")
   user      User     @relation(fields: [userId], references: [id])
   tenantId  String?  @map("tenant_id")
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([userId])
   @@index([isRead])
@@ -666,8 +667,9 @@ model SystemConfig {
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
   tenantId              String?  @unique @map("tenant_id")
-  tenant                Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@map("system_config")
 }
 
@@ -701,7 +703,7 @@ model CheckoutForm {
   submissions            FormSubmission[]
   upsells                FormUpsell[]
   tenantId               String?          @map("tenant_id")
-  tenant                 Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                 Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([slug])
   @@index([isActive])
@@ -892,7 +894,7 @@ model InventoryShipment {
   createdBy      User          @relation("ShipmentCreator", fields: [createdById], references: [id])
   glJournalEntry JournalEntry? @relation(fields: [glJournalEntryId], references: [id])
   tenantId       String?       @map("tenant_id")
-  tenant         Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([productId])
   @@index([status])
@@ -960,7 +962,7 @@ model AgentBalance {
 
   agent     User    @relation(fields: [agentId], references: [id])
   blockedBy User?   @relation("BlockedBy", fields: [blockedById], references: [id])
-  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([tenantId])
   @@map("agent_balances")
@@ -1174,7 +1176,7 @@ model InventoryTransfer {
   toAgent   User?   @relation("TransferTo", fields: [toAgentId], references: [id])
   order     Order?  @relation(fields: [orderId], references: [id])
   createdBy User    @relation("TransferCreator", fields: [createdById], references: [id])
-  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([productId])
   @@index([fromAgentId])
@@ -1203,7 +1205,7 @@ model AgentStock {
   agent    User    @relation("AgentStockHoldings", fields: [agentId], references: [id])
   product  Product @relation(fields: [productId], references: [id])
   tenantId String? @map("tenant_id")
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([agentId, productId])
   @@index([agentId])
@@ -1252,7 +1254,7 @@ model MessageLog {
   customer Customer?      @relation(fields: [customerId], references: [id])
   campaign EmailCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   tenantId String?        @map("tenant_id")
-  tenant   Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([orderId])
   @@index([customerId])
