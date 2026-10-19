@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deliveries · CodAdmin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+.ontarget{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-weight:700;font-size:13px;margin-top:6px}
+.ontarget svg.lucide{width:16px;height:16px;color:var(--mint);flex:none}
+.headtools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.rolebar{padding:0;border:0}
+.psel{font:600 13.5px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.psel:focus-visible,.tab:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.rolepanel[hidden]{display:none}
+.podium .role .tag{margin-left:4px;vertical-align:1px}
+.pct{display:flex;align-items:center;gap:10px}
+.pct .prog{margin-top:0;flex:1;min-width:60px}
+.pct b{min-width:38px;text-align:right}
+.who .tag{margin-left:4px;vertical-align:1px}
+.dist{padding:4px 20px 16px;border-top:1px solid var(--line)}
+.dist h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin:12px 0 6px}
+.dist .row{display:flex;align-items:center;gap:10px;padding:8px 0}
+.dist .row .a{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:11.5px}
+.dist .row b{display:block;font-size:13.5px}
+.dist .row small{display:block;color:var(--ink-3);font-size:12.5px}
+.dist .row .tag{margin-left:auto;flex:none}
+.medal b{font-size:13px;line-height:1.3;display:block}
+.lb2{align-items:start;grid-template-columns:1.9fr 1fr}
+.lb2 .who>div{white-space:nowrap}
+@media (max-width:1100px){.lb2{grid-template-columns:1fr}}
+.lb2 th{white-space:nowrap}
+.who .tag{white-space:nowrap}
+tbody tr.grp:hover{background:transparent}
+.grp td{background:var(--hover);padding:14px 20px;border-bottom:1px solid var(--line)}
+.grp .gwrap{display:grid;grid-template-columns:1fr 1fr;gap:8px 28px;align-items:center}
+.grp small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.grp .feeds{grid-column:1/-1;display:flex;align-items:center;gap:6px;color:var(--ink-2);font-size:12.5px}
+.grp .feeds svg.lucide{width:15px;height:15px;color:var(--pine);flex:none}
+@media (max-width:760px){.grp .gwrap{grid-template-columns:1fr}.podium .p{width:100%}}
+</style>
+
+<style>
+.kpis.k5{grid-template-columns:repeat(5,1fr)}
+@media (max-width:1100px){.kpis.k5{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.kpis.k5{grid-template-columns:1fr}}
+.fnote{padding:2px 20px 16px;color:var(--ink-3);font-size:12.5px}
+.fnote b{color:var(--ink-2)}
+select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px 8px;max-width:100%}
+select:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.tag svg.lucide{width:13px;height:13px;stroke-width:2.4}
+.dt{font-size:13px}
+.dt th,.dt td{padding:12px 10px}
+.dt th:first-child,.dt td:first-child{padding-left:20px}
+.dt th:last-child,.dt td:last-child{padding-right:20px}
+.dt small{color:var(--ink-3);font-size:12px}
+.dt .num{white-space:nowrap}
+.tablewrap{overflow-x:auto}
+.rate{min-width:112px}
+.rate .prog{margin-top:6px}
+.bars{padding:14px 20px 18px;display:flex;flex-direction:column;gap:14px}
+.bar-row{display:grid;grid-template-columns:130px 1fr 92px;gap:14px;align-items:center}
+.bar-row .track{height:10px;border-radius:99px;background:var(--hover);overflow:hidden}
+.bar-row .track i{display:block;height:100%;border-radius:99px}
+.bar-row .val{text-align:right;font-weight:700}
+.bar-row .val small{color:var(--ink-3);font-weight:500}
+.note{padding:0 20px 18px;color:var(--ink-2);font-size:13px}
+.kpi .tag{white-space:nowrap}
+.two{align-items:start}
+.hd-actions{display:flex;gap:8px;flex-wrap:wrap}
+@media (max-width:760px){.bar-row{grid-template-columns:100px 1fr 76px;gap:10px}}
+
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav on" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+
+<section>
+  <div class="head">
+    <div><h1>Deliveries</h1><p>Delivery agents and 3PL companies do the same job, so they share one list.</p></div>
+    <div class="hd-actions"><button class="btn" id="csvBtn"><i data-lucide="upload"></i>Upload CSV</button><button class="btn pri" id="addP"><i data-lucide="plus"></i>Add delivery partner</button></div>
+  </div>
+
+  <div class="grid kpis k5" style="margin-top:0">
+    <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="truck"></i></div><div class="v num">148</div><div class="l">Out for delivery now</div><div class="s"><span>Across 5 partners</span><span class="tag n">Live</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="clock"></i></div><div class="v num">100</div><div class="l">Waiting to dispatch</div><div class="s"><span>Oldest 3 days</span><span class="tag warn">Dispatch</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="package-check"></i></div><div class="v num">376</div><div class="l">Delivered this month</div><div class="s"><span>GH₵92k revenue</span><span class="tag warn">Behind pace</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="gauge"></i></div><div class="v num">48%</div><div class="l">Delivery success</div><div class="s"><span>Target 60%</span><span class="tag bad">&#9660; 12 pts</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="hourglass"></i></div><div class="v num">GH₵23.4k</div><div class="l">Cash still with agents and 3PLs</div><div class="s"><span>38 orders over 8 days</span><span class="tag warn">Chase</span></div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3>Delivery partners</h3><span>October · 1 to 17 Oct</span></div>
+    <div class="tabs" id="ptabs" style="border-bottom:0;padding-bottom:6px"><button class="tab on" data-k="all">All partners <span>5</span></button><button class="tab" data-k="agent">Agents <span>3</span></button><button class="tab" data-k="3pl">3PLs <span>2</span></button></div>
+    <div class="tablewrap"><table class="dt">
+      <thead><tr><th>Partner</th><th>Cities</th><th class="r">Assigned</th><th class="r">Delivered</th><th class="r">Failed or returned</th><th class="r">Out now</th><th>Delivery success <small>(target 60%)</small></th><th class="r">Confirmed to dispatched</th><th class="r">Dispatched to delivered</th><th class="r">Cash held</th><th>Oldest unpaid</th><th>Delivery fee rule <small>(delivered · failed · returned)</small></th><th>Data source</th></tr></thead>
+      <tbody>
+          <tr>
+            <td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">LS</div><div><b>Logiswift</b> <span class="tag v">3PL</span></div></div></td>
+            <td>Accra, Tema</td>
+            <td class="r num">590</td><td class="r num">220</td><td class="r num">270</td><td class="r num">100</td>
+            <td class="rate"><b class="num">45%</b><div class="prog"><i style="width:45%;background:var(--coral)"></i><span class="pace" style="left:60%"></span></div></td>
+            <td class="r num">1.4 days</td><td class="r num">3.8 days</td>
+            <td class="r num"><b>GH₵17,300</b></td>
+            <td><span class="tag bad">18 days</span></td>
+            <td style="min-width:200px">GH₵35 · GH₵0 · GH₵0</td>
+            <td><span class="tag n">Logiswift dashboard</span></td>
+          </tr>
+          <tr>
+            <td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">KA</div><div><b>Kofi Appiah</b> <span class="tag n">Agent</span></div></div></td>
+            <td>Kumasi</td>
+            <td class="r num">172</td><td class="r num">82</td><td class="r num">70</td><td class="r num">20</td>
+            <td class="rate"><b class="num">54%</b><div class="prog"><i style="width:54%;background:var(--gold)"></i><span class="pace" style="left:60%"></span></div></td>
+            <td class="r num">0.6 days</td><td class="r num">1.2 days</td>
+            <td class="r num"><b>GH₵2,900</b></td>
+            <td><span class="tag n">3 days</span></td>
+            <td style="min-width:200px">GH₵25 · GH₵5 · GH₵0</td>
+            <td><span class="tag n">CSV upload</span></td>
+          </tr>
+          <tr>
+            <td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">EB</div><div><b>Esi Badu</b> <span class="tag n">Agent</span></div></div></td>
+            <td>Accra</td>
+            <td class="r num">102</td><td class="r num">48</td><td class="r num">40</td><td class="r num">14</td>
+            <td class="rate"><b class="num">55%</b><div class="prog"><i style="width:55%;background:var(--gold)"></i><span class="pace" style="left:60%"></span></div></td>
+            <td class="r num">0.7 days</td><td class="r num">1.5 days</td>
+            <td class="r num"><b>GH₵2,100</b></td>
+            <td><span class="tag n">4 days</span></td>
+            <td style="min-width:200px">GH₵25 · GH₵0 · GH₵0</td>
+            <td><span class="tag n">CSV upload</span></td>
+          </tr>
+          <tr>
+            <td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">KW</div><div><b>Kwesi Amoah</b> <span class="tag n">Agent</span></div></div></td>
+            <td>Takoradi</td>
+            <td class="r num">54</td><td class="r num">26</td><td class="r num">22</td><td class="r num">6</td>
+            <td class="rate"><b class="num">54%</b><div class="prog"><i style="width:54%;background:var(--gold)"></i><span class="pace" style="left:60%"></span></div></td>
+            <td class="r num">0.9 days</td><td class="r num">1.9 days</td>
+            <td class="r num"><b>GH₵1,100</b></td>
+            <td><span class="tag n">5 days</span></td>
+            <td style="min-width:200px">GH₵30 · GH₵5 · GH₵0</td>
+            <td><span class="tag n">CSV upload</span></td>
+          </tr>
+          <tr>
+            <td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">KE</div><div><b>Kasapa Express</b> <span class="tag v">3PL</span></div></div></td>
+            <td>Cape Coast</td>
+            <td class="r num">8</td><td class="r num">0</td><td class="r num">0</td><td class="r num">8</td>
+            <td class="rate"><span class="tag n">No closed orders yet</span></td>
+            <td class="r num">1.0 days</td><td class="r num">—</td>
+            <td class="r num"><b>GH₵0</b></td>
+            <td><span class="tag n">None</span></td>
+            <td style="min-width:200px">GH₵30 · GH₵0 · GH₵0</td>
+            <td><span class="tag n">CSV upload</span></td>
+          </tr>
+          <tr>
+            <td style="padding-left:20px"><b>All partners</b></td><td></td>
+            <td class="r num"><b>926</b></td><td class="r num"><b>376</b></td><td class="r num"><b>402</b></td><td class="r num"><b>148</b></td>
+            <td class="rate"><b class="num">48%</b><div class="prog"><i style="width:48%;background:var(--coral)"></i><span class="pace" style="left:60%"></span></div></td>
+            <td></td><td></td><td class="r num"><b>GH₵23,400</b></td><td></td><td></td><td></td>
+          </tr>
+      </tbody></table></div>
+    <p class="fnote"><b>Delivery fee</b> is what we pay whoever delivers the order. Each partner has one fee rule. The partner keeps the fee from the cash it collects and hands in the rest, so expected cash = cash collected &minus; fees. Cash held is that net amount. Delivery success counts closed orders only: delivered ÷ (delivered + failed + returned).</p>
+  </div>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="ct"><h3>Failed and returned by reason</h3><span>402 closed unsuccessfully in October</span></div>
+      <div class="bars">
+        <div class="bar-row"><span>Not reachable</span><div class="track"><i style="width:100%;background:var(--coral)"></i></div><span class="val num">41% <small>165</small></span></div>
+        <div class="bar-row"><span>Refused</span><div class="track"><i style="width:59%;background:var(--gold)"></i></div><span class="val num">24% <small>96</small></span></div>
+        <div class="bar-row"><span>Wrong address</span><div class="track"><i style="width:51%;background:var(--violet)"></i></div><span class="val num">21% <small>84</small></span></div>
+        <div class="bar-row"><span>Rescheduled</span><div class="track"><i style="width:34%;background:var(--ink-3)"></i></div><span class="val num">14% <small>57</small></span></div>
+      </div>
+      <p class="note">Not reachable is the biggest cause. Calling the customer before dispatch is the cheapest fix.</p>
+      <p class="note" style="margin-top:6px"><b>Returns:</b> Logiswift sent back 41 units. We received 36. 5 are missing.</p>
+    </div>
+    <div class="card">
+      <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 3 things</h3><span>Updated 06:42</span></div>
+      <div class="ins">
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="shuffle"></i></div><div><b>Logiswift delivery success is 45%, below the 60% target</b><p>270 failed or returned against 220 delivered. Esi Badu has capacity in Accra and delivers 55%.</p></div></div><div class="act"><button class="mini pri" data-confirm="Move 40 Accra orders to Esi Badu?||These 40 orders are with Logiswift and not yet out for delivery. Esi Badu has capacity in Accra. Nothing changes until you confirm.||Move 40 orders||Moved 40 orders to Esi Badu. Sample only.">Move 40 Accra orders to Esi Badu</button><button class="mini">Dismiss</button></div></div>
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="clock"></i></div><div><b>100 confirmed orders are waiting to dispatch</b><p>The oldest has waited 3 days. 41% of failed orders say not reachable, so a call before dispatch is the cheapest fix.</p></div></div><div class="act"><button class="mini pri" data-link="index.html#orders">Show the 100 orders</button><button class="mini">Dismiss</button></div></div>
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="banknote"></i></div><div><b>Logiswift holds GH₵17.3k, 38 orders over 8 days</b><p>Their oldest unpaid order is 18 days old. They pay in 9.2 days on average. They also owe us 5 returned units.</p></div></div><div class="act"><button class="mini pri" data-link="messages.html">Send payout reminder</button><button class="mini">Dismiss</button></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+</div>
+
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<input type="file" id="csvFile" accept=".csv" hidden>
+<div class="veil" id="pveil" style="align-items:center;padding-top:0"><div class="cmdk" role="dialog" aria-label="Add delivery partner" style="padding:22px;width:480px">
+  <h3 style="font-size:18px">Add delivery partner</h3><p style="padding:6px 0 12px;color:var(--ink-3);font-size:13px;font-weight:400">A 3PL company or a person with a bike or car. The partner keeps its fee from the cash it collects.</p>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div style="grid-column:1/-1"><label for="pn" style="font-weight:600;font-size:13px">Partner name</label><input id="pn" style="width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit;margin-top:6px"></div>
+    <div><label for="pt" style="font-weight:600;font-size:13px">Type</label><select id="pt" style="width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit;margin-top:6px"><option>3PL company</option><option>Delivery agent</option></select></div>
+    <div><label for="pc" style="font-weight:600;font-size:13px">Cities</label><input id="pc" placeholder="Kumasi" style="width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit;margin-top:6px"></div>
+    <div><label for="pf1" style="font-weight:600;font-size:13px">Fee per delivered (GH₵)</label><input id="pf1" inputmode="numeric" placeholder="30" style="width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit;margin-top:6px"></div>
+    <div><label for="pf2" style="font-weight:600;font-size:13px">Fee per failed (GH₵)</label><input id="pf2" inputmode="numeric" placeholder="5" style="width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit;margin-top:6px"></div>
+    <div><label for="pf3" style="font-weight:600;font-size:13px">Fee per returned (GH₵)</label><input id="pf3" inputmode="numeric" placeholder="0" style="width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit;margin-top:6px"></div>
+    <div><label for="pd" style="font-weight:600;font-size:13px">Days to pay</label><input id="pd" inputmode="numeric" value="7" style="width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit;margin-top:6px"></div>
+  </div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button class="btn" data-x>Cancel</button><button class="btn pri" id="psave">Add partner</button></div>
+</div></div>
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.href = 'index.html#' + b.dataset.go; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+document.querySelectorAll('#ptabs .tab').forEach(t => t.onclick = () => {
+  t.parentNode.querySelectorAll('.tab').forEach(x => x.classList.remove('on')); t.classList.add('on');
+  document.querySelectorAll('.dt tbody tr').forEach(r => { const tg = r.querySelector('.who .tag'); const k = tg ? (tg.textContent.trim() === 'Agent' ? 'agent' : '3pl') : 'total'; r.hidden = t.dataset.k !== 'all' && k !== t.dataset.k && k !== 'total'; });
+});
+document.getElementById('csvBtn').onclick = () => document.getElementById('csvFile').click();
+document.getElementById('csvFile').onchange = e => { if (e.target.files[0]) shellSay('Read ' + e.target.files[0].name + '. Sample only, nothing was imported.'); };
+const pv = document.getElementById('pveil');
+document.getElementById('addP').onclick = () => { pv.classList.add('on'); document.getElementById('pn').focus(); };
+pv.onclick = e => { if (e.target === pv || e.target.hasAttribute('data-x')) pv.classList.remove('on'); };
+document.getElementById('psave').onclick = () => { const n = document.getElementById('pn').value.trim(); if (!n) { document.getElementById('pn').focus(); return; } pv.classList.remove('on'); shellSay(n + ' added as a delivery partner. Sample only.'); };
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

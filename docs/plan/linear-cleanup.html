@@ -1,0 +1,165 @@
+<title>CodAdmin Linear Cleanup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Plus+Jakarta+Sans:wght@400;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column, max 1000px; one table per outcome; palette follows the rebuild plan page (docs/mockups/v2/app.css). */
+:root{
+  --bg:#F4F7F6; --card:#FFFFFF; --ink:#14211F; --ink-2:#4A5A57; --line:#E4EAE8; --hover:#EDF2F1;
+  --pine:#0F5C55; --pine-soft:#E3F1EE; --gold-soft:#FFF1D9; --gold-ink:#8A5A00; --coral-soft:#FDE6E3; --coral-ink:#B3332A;
+  --violet-soft:#ECEAFE; --violet-ink:#5A49D6;
+  --font-display:"Bricolage Grotesque",system-ui,sans-serif; --font-body:"Plus Jakarta Sans",system-ui,sans-serif; --font-mono:"Geist Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0B1413; --card:#111D1B; --ink:#E8F0EE; --ink-2:#A9B8B4; --line:#1F2F2C; --hover:#162623;
+  --pine:#3FC1A8; --pine-soft:#12322E; --gold-soft:#3A2C12; --gold-ink:#F5B84A; --coral-soft:#3B1C1A; --coral-ink:#FF7468;
+  --violet-soft:#25214A; --violet-ink:#9D91FF; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0B1413; --card:#111D1B; --ink:#E8F0EE; --ink-2:#A9B8B4; --line:#1F2F2C; --hover:#162623;
+  --pine:#3FC1A8; --pine-soft:#12322E; --gold-soft:#3A2C12; --gold-ink:#F5B84A; --coral-soft:#3B1C1A; --coral-ink:#FF7468;
+  --violet-soft:#25214A; --violet-ink:#9D91FF; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.6;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 64px}
+.wrap{max-width:1000px;margin:0 auto;display:grid;gap:36px}
+h1,h2,h3{font-family:var(--font-display);letter-spacing:-.02em;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,5vw,38px);font-weight:800}
+h2{font-size:22px;font-weight:800;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+p{margin:0;max-width:70ch}
+.lede{color:var(--ink-2);font-size:16px}
+section{display:grid;gap:12px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden}
+.stats div{padding:14px 18px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);margin:0 -1px -1px 0}
+.stats b{display:block;font-family:var(--font-display);font-size:28px;font-variant-numeric:tabular-nums}
+.stats span{font-size:13px;color:var(--ink-2)}
+.tag{display:inline-block;font-family:var(--font-body);font-size:12px;font-weight:700;padding:2px 10px;border-radius:99px;white-space:nowrap;letter-spacing:0}
+.close{background:var(--coral-soft);color:var(--coral-ink)}
+.later{background:var(--violet-soft);color:var(--violet-ink)}
+.ask{background:var(--gold-soft);color:var(--gold-ink)}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:640px}
+th,td{text-align:left;vertical-align:top;padding:9px 14px;border-bottom:1px solid var(--line)}
+th{font-size:12px;font-weight:700;color:var(--ink-2);letter-spacing:.03em;background:var(--hover);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.id{font-family:var(--font-mono);font-size:13px;color:var(--pine);white-space:nowrap}
+td.ms{font-family:var(--font-mono);font-size:13px;white-space:nowrap}
+.q{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:8px}
+.q h3{font-size:17px}
+.q ol{margin:0;padding-left:20px;display:grid;gap:4px}
+.rec{color:var(--pine);font-weight:700}
+.muted{color:var(--ink-2);font-size:13px}
+code{font-family:var(--font-mono);font-size:.86em;background:var(--hover);padding:1px 5px;border-radius:4px}
+</style>
+
+<main class="wrap">
+<header style="display:grid;gap:10px">
+<h1>CodAdmin Linear cleanup</h1>
+<p class="lede">The rebuild plan is approved. This page sorts the 36 open CodAdmin issues in Linear before the new rebuild project is made. Nothing changes in Linear until you approve this list.</p>
+</header>
+
+<div class="stats">
+<div><b>19</b><span>close, covered by the rebuild</span></div>
+<div><b>14</b><span>move to a "SaaS later" project</span></div>
+<div><b>3</b><span>need your choice</span></div>
+<div><b>5</b><span>old projects to close</span></div>
+</div>
+
+<section>
+<h2>Close: the rebuild covers these <span class="tag close">19 issues</span></h2>
+<p class="muted">Each issue gets a closing comment that names the milestone that replaces it. State: Canceled, reason "Superseded by CodAdmin rebuild".</p>
+<div class="scroll"><table>
+<thead><tr><th>Issue</th><th>Title</th><th>Covered by</th></tr></thead>
+<tbody>
+<tr><td class="id">MAN-49</td><td>Database schema and GL config for Meta Ads</td><td class="ms">M8</td></tr>
+<tr><td class="id">MAN-50</td><td>Meta Ads API service, controller and routes</td><td class="ms">M8</td></tr>
+<tr><td class="id">MAN-51</td><td>Marketing sync queue and scheduled job</td><td class="ms">M8</td></tr>
+<tr><td class="id">MAN-52</td><td>Frontend: Marketing connections and OAuth</td><td class="ms">M8</td></tr>
+<tr><td class="id">MAN-53</td><td>Frontend: Marketing dashboard and profitability</td><td class="ms">M8</td></tr>
+<tr><td class="id">MAN-65</td><td>Order activity feed (OrderHistory)</td><td class="ms">M3-T47</td></tr>
+<tr><td class="id">MAN-64</td><td>Checkout templates and skins</td><td class="ms">Skins cancelled; M3b</td></tr>
+<tr><td class="id">MAN-54</td><td>Product-level pixel config and CAPI events</td><td class="ms">M3b (pixel per form)</td></tr>
+<tr><td class="id">MAN-20</td><td>Multi-format report exports</td><td class="ms">M3 (G8: CSV, Excel)</td></tr>
+<tr><td class="id">MAN-42</td><td>Advanced reporting</td><td class="ms">M3 (G8)</td></tr>
+<tr><td class="id">MAN-19</td><td>Automated finance notifications</td><td class="ms">M9 Inbox</td></tr>
+<tr><td class="id">MAN-33</td><td>AI Operations Assistant</td><td class="ms">M11, M12</td></tr>
+<tr><td class="id">MAN-34</td><td>AI Admin Copilot</td><td class="ms">M11, M12</td></tr>
+<tr><td class="id">MAN-35</td><td>Agent inventory: automated reconciliation</td><td class="ms">M4, M5</td></tr>
+<tr><td class="id">MAN-36</td><td>Agent inventory: analytics</td><td class="ms">M4</td></tr>
+<tr><td class="id">MAN-39</td><td>Multi-currency support</td><td class="ms">M1 (O3, O5, O6)</td></tr>
+<tr><td class="id">MAN-41</td><td>Audit trail and activity logging</td><td class="ms">M2</td></tr>
+<tr><td class="id">MAN-38</td><td>Advanced workflow actions</td><td class="ms">M9</td></tr>
+<tr><td class="id">MAN-40</td><td>Multi-language (English and French)</td><td class="ms">Dropped: English only (O3)</td></tr>
+</tbody></table></div>
+</section>
+
+<section>
+<h2>Move to "CodAdmin SaaS later" <span class="tag later">14 issues</span></h2>
+<p class="muted">The rebuild is owner-first. Selling CodAdmin to other sellers comes after it (decision D7). These issues stay open in one new backlog project, so nothing is lost.</p>
+<div class="scroll"><table>
+<thead><tr><th>Issue</th><th>Title</th><th>Group</th></tr></thead>
+<tbody>
+<tr><td class="id">MAN-68</td><td>Billing v2 / subscription enforcement (epic)</td><td>Billing</td></tr>
+<tr><td class="id">MAN-69</td><td>Numeric-cap enforcement</td><td>Billing</td></tr>
+<tr><td class="id">MAN-70</td><td>Unpaid and Free-expiry access lockout</td><td>Billing</td></tr>
+<tr><td class="id">MAN-71</td><td>Dunning emails</td><td>Billing</td></tr>
+<tr><td class="id">MAN-72</td><td>Admin billing dashboard</td><td>Billing</td></tr>
+<tr><td class="id">MAN-73</td><td>Annual and bi-annual billing</td><td>Billing</td></tr>
+<tr><td class="id">MAN-74</td><td>Demo app for prospects</td><td>Sales</td></tr>
+<tr><td class="id">MAN-37</td><td>Customer self-service portal</td><td>Product</td></tr>
+<tr><td class="id">MAN-102</td><td>Create Tenant modal (D3)</td><td>Multi-store</td></tr>
+<tr><td class="id">MAN-103</td><td>Pending-return poll and auto-swap (D4)</td><td>Multi-store</td></tr>
+<tr><td class="id">MAN-104</td><td>Three failure states (D5)</td><td>Multi-store</td></tr>
+<tr><td class="id">MAN-105</td><td>Mobile store switcher (D6)</td><td>Multi-store</td></tr>
+<tr><td class="id">MAN-106</td><td>Switcher accessibility (D7)</td><td>Multi-store</td></tr>
+<tr><td class="id">MAN-107</td><td>blue-* to primary-* tokens (deferred)</td><td>Multi-store</td></tr>
+</tbody></table></div>
+<p class="muted">Multi-store code sits on unmerged branches that are 3 months old. The rebuild changes the same files, so those branches will need a rebase or a rewrite when SaaS work starts. Each moved issue gets a comment that says so.</p>
+</section>
+
+<section>
+<h2>Your choice <span class="tag ask">3 issues</span></h2>
+<div class="q">
+<h3>MAN-62: Magic Groove dogfood on CodAdmin checkout</h3>
+<p>An operations task, no code. It waits for a deploy and an admin step.</p>
+<p class="rec">Recommendation: keep it open and move it to the SaaS-later project. Do it after M3b ships the new checkout.</p>
+</div>
+<div class="q">
+<h3>MAN-63: Move Pile Combo, ManShield and Harmony Boost to CodAdmin checkout</h3>
+<p>Pile Combo stopped on 13 August. So part of this issue is out of date.</p>
+<p class="rec">Recommendation: rename it to "Move ManShield and Harmony Boost to CodAdmin checkout" and handle it like MAN-62.</p>
+</div>
+<div class="q">
+<h3>MAN-75: Move product image uploads to Cloudflare R2</h3>
+<p>The rebuild plan sends profile photos to R2 (M3-T22), but it says nothing about product images. Your Cloudflare account already has a <code>codadmin-uploads</code> bucket, so this may be partly done.</p>
+<p class="rec">Recommendation: I check the code. If it is done, close it. If not, add it as one task in M4, with the product drawer.</p>
+</div>
+</section>
+
+<section>
+<h2>Old projects</h2>
+<p>After the moves, these five projects have no open issues left. Each one gets status Completed, with a last update that points to the new rebuild project.</p>
+<div class="scroll"><table>
+<thead><tr><th>Project</th><th>Open now</th><th>After</th></tr></thead>
+<tbody>
+<tr><td>CodAdmin Embed Widget + Paystack Everywhere</td><td>9</td><td>0, set to Completed</td></tr>
+<tr><td>Multi-Store Per Login</td><td>6</td><td>0, set to Completed</td></tr>
+<tr><td>Platform Launch</td><td>8</td><td>0, set to Completed</td></tr>
+<tr><td>Financial Management Module</td><td>2</td><td>0, set to Completed</td></tr>
+<tr><td>Future Backlog</td><td>11</td><td>0, set to Completed</td></tr>
+</tbody></table></div>
+</section>
+
+<section>
+<h2>The new rebuild project</h2>
+<p>One project, "CodAdmin Rebuild", with 14 milestones (M0 to M12, plus M3b). The open question is how big each issue is.</p>
+<div class="q">
+<h3>How many Linear issues?</h3>
+<ol>
+<li><span class="rec">Feature-sized issues, about 6 to 10 per milestone (about 100 in total).</span> Each issue lists its plan tasks (for example M4-T09 to M4-T10) and links to the M-file. This matches AdMarrow, where P2-META has 6 issues.</li>
+<li>One issue per plan task: 458 issues. This gives fine tracking, but it is a lot to manage in Linear.</li>
+</ol>
+<p class="muted">Recommendation: option 1. The task-level detail stays in <code>docs/plan/M*.md</code>.</p>
+</div>
+</section>
+
+<p class="muted">Source: docs/research/linear-audit.md (17 October 2026, 36 open issues) checked against docs/plan/M0.md to M12.md and docs/prd/decisions.md.</p>
+</main>

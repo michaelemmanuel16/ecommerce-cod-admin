@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodAdmin Inventory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+.locs{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.loc{padding:18px}
+.loc .top2{display:flex;align-items:center;gap:12px}
+.loc .top2 .ic{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center}
+.loc .top2 b{display:block;font-size:15px}
+.loc .top2 small{color:var(--ink-3);font-size:12.5px}
+.loc .top2 .tag{margin-left:auto}
+.loc .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.loc .stats .drv{padding:10px 12px}
+.loc .stats .drv b{font-size:20px}
+.loc .note{margin-top:12px;font-size:12.5px;color:var(--ink-3);display:flex;align-items:center;gap:6px}
+.loc.empty{border:2px dashed var(--line);box-shadow:none;background:transparent;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start}
+.loc.empty p{color:var(--ink-2);margin:10px 0 14px;max-width:34ch}
+.loc.gap{border-color:var(--coral);box-shadow:0 0 0 3px var(--coral-soft)}
+.st td,.st th{padding-left:14px;padding-right:14px;white-space:nowrap}
+.st td:first-child,.st th:first-child{padding-left:20px}
+.st td:last-child,.st th:last-child{padding-right:20px}
+.st tr.diff{background:var(--coral-soft)}
+.st tr.diff:hover{background:var(--coral-soft)}
+.move{display:inline-flex;align-items:center;gap:8px}
+.move svg.lucide{width:15px;height:15px;color:var(--ink-3)}
+.tt td{white-space:nowrap}
+@media (max-width:1100px){.locs{grid-template-columns:1fr}}
+.grid.two>.card,.locs>.card{min-width:0}
+/* r2 layers: sheets, modals, menus, forms (tokens only) */
+select:focus-visible,textarea:focus-visible,.sheet button:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.scrim{position:fixed;inset:0;background:rgba(8,18,16,.4);backdrop-filter:blur(2px);z-index:54;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;top:0;right:0;height:100vh;width:560px;max-width:100%;background:var(--card);border-left:1px solid var(--line);box-shadow:-20px 0 50px -20px rgba(0,0,0,.25);transform:translateX(105%);transition:transform .28s cubic-bezier(.2,.8,.2,1);z-index:55;display:flex;flex-direction:column;visibility:hidden}
+.sheet.on{transform:none;visibility:visible}
+.sheet .sh{display:flex;align-items:flex-start;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.sheet .sh h2{font-size:21px;font-weight:800;line-height:1.2}
+.sheet .sh p{color:var(--ink-3);font-size:13px;margin-top:2px}
+.sheet .sh .ibtn{margin-left:auto;flex:none}
+.sheet .sb{flex:1;overflow:auto;padding:18px 20px 24px;display:flex;flex-direction:column;gap:20px}
+.sheet .sf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.sec>h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fg .full{grid-column:1/-1}
+.fl label{display:block;font-weight:600;font-size:13px;margin-bottom:5px}
+.fl .opt{font-weight:500;color:var(--ink-3)}
+.fl input:not([type=checkbox]):not([type=file]),.fl select,.fl textarea{width:100%;font:500 14px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+.fl textarea{resize:vertical;min-height:70px}
+.fl .hint,.hint{font-size:12.5px;color:var(--ink-3);margin-top:5px}
+.chk{display:flex;align-items:center;gap:8px;font-weight:600}
+.chk input{width:16px;height:16px;accent-color:var(--pine)}
+.mveil{position:fixed;inset:0;background:rgba(8,18,16,.45);backdrop-filter:blur(3px);z-index:65;display:none;align-items:center;justify-content:center;padding:20px}
+.mveil.on{display:flex}
+.dlg{width:520px;max-width:100%;max-height:90vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.dlg.wide{width:1120px}
+.dlg .tablewrap{overflow-x:auto}
+.dlg .mh{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--line)}
+.dlg .mh h3{font-size:19px;font-weight:800}
+.dlg .mh p{color:var(--ink-3);font-size:13px;margin-top:2px}
+.dlg .mh .ibtn{margin-left:auto;flex:none}
+.dlg .mb{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.dlg .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+.dlg table th,.dlg table td{padding:10px 10px;white-space:nowrap}
+.dlg table th:first-child,.dlg table td:first-child{padding-left:20px}
+.dlg table td:last-child{white-space:normal;min-width:160px}
+.mwrap{position:relative;display:inline-block}
+.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);min-width:210px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 40px -16px rgba(0,0,0,.35);padding:6px;z-index:58;text-align:left}
+.menu.up{top:auto;bottom:calc(100% + 6px)}
+.menu.fixed{position:fixed;right:auto}
+.menu.on{display:block}
+.menu p{font-size:12px;color:var(--ink-3);font-weight:600;padding:6px 10px 2px}
+.menu button{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border-radius:8px;text-align:left;font-weight:500}
+.menu button:hover{background:var(--hover)}
+.menu button svg.lucide{width:15px;height:15px;color:var(--ink-3)}
+.menu button .cur{margin-left:auto;color:var(--pine)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:5px 0}
+.ibtn.sm{width:30px;height:30px;border-radius:9px}
+.ibtn.sm svg.lucide{width:16px;height:16px}
+.toast{position:fixed;left:50%;bottom:64px;transform:translateX(-50%) translateY(10px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:13px;z-index:80;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;display:flex;gap:8px;align-items:center;max-width:92vw}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.toast svg.lucide{width:16px;height:16px;color:var(--mint)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid var(--line);color:var(--ink-2);background:var(--card);white-space:nowrap}
+.chip svg.lucide{width:13px;height:13px}
+.chip.v{color:var(--violet);border-color:var(--violet-soft);background:var(--violet-soft)}
+.drop{border:2px dashed var(--line);border-radius:14px;padding:22px;text-align:center;color:var(--ink-2)}
+.drop svg.lucide{width:26px;height:26px;color:var(--ink-3)}
+.drop b{display:block;margin-top:6px}
+.filebar{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.filebar .ic{flex:none;width:36px;height:36px;border-radius:10px;display:grid;place-items:center}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:8px 12px}
+.kv dt{color:var(--ink-3);font-size:13px}
+.kv dd{font-weight:500}
+.hl{border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.hl+.hl{margin-top:8px}
+.srch{display:inline-flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink-3);min-width:260px}
+.srch input{border:0;background:transparent;color:var(--ink);font:500 14px "Plus Jakarta Sans",system-ui,sans-serif;padding:9px 0;width:100%;outline:0}
+.srch:focus-within{outline:2px solid var(--pine);outline-offset:2px}
+.pfoot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px}
+.tbtns{display:flex;gap:6px;justify-content:flex-end}
+@media (max-width:760px){.fg{grid-template-columns:1fr}.kv{grid-template-columns:1fr}.sheet{width:100%}}
+
+a.btn{color:var(--ink);text-decoration:none}
+.st td,.st th{padding-left:10px;padding-right:10px}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav on" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+<section class="view on" id="inventory">
+  <div class="head">
+    <div><h1>Inventory &amp; stock</h1><p>Where every unit sits, and where our records and the Logiswift count disagree.</p></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-open="m-hist"><i data-lucide="history"></i>Transfer history</button><div class="mwrap"><button class="btn" data-menu="mv-menu" aria-haspopup="menu"><i data-lucide="arrow-left-right"></i>Move stock<i data-lucide="chevron-down" style="width:15px;height:15px"></i></button><div class="menu" id="mv-menu" role="menu"><button data-open="m-alloc"><i data-lucide="package-plus"></i>Allocate to an agent</button><button data-open="m-transfer"><i data-lucide="arrow-left-right"></i>Transfer between agents</button><button data-open="m-return"><i data-lucide="undo-2"></i>Return to warehouse</button><hr><button data-open="m-adjust"><i data-lucide="sliders-horizontal"></i>Adjust a quantity</button></div></div><button class="btn pri" data-open="m-count"><i data-lucide="clipboard-check"></i>Start stock count</button></div>
+  </div>
+
+  <div class="locs">
+    <div class="card loc gap">
+      <div class="top2"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="warehouse"></i></div><div><b>Logiswift warehouse</b><small>3PL · Tema</small></div><span class="tag bad">12 units off</span></div>
+      <div class="stats"><div class="drv"><small>On hand</small><b class="num">342</b></div><div class="drv"><small>Reserved</small><b class="num">59</b></div><div class="drv"><small>Products</small><b class="num">3</b></div></div>
+      <div class="note"><i data-lucide="clock" style="width:14px;height:14px"></i>Logiswift count, 15 Oct</div><div class="tbtns" style="justify-content:flex-start;margin-top:12px"><button class="mini" data-open="m-alloc">Allocate stock</button><button class="mini" data-open="m-adjust" data-fill='{"agent":"Logiswift warehouse"}'>Adjust quantity</button></div>
+    </div>
+    <div class="card loc">
+      <div class="top2"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="user"></i></div><div><b>Kofi Appiah</b><small>Delivery agent · Kumasi</small></div><span class="tag ok">Matches</span></div>
+      <div class="stats"><div class="drv"><small>On hand</small><b class="num">99</b></div><div class="drv"><small>Reserved</small><b class="num">18</b></div><div class="drv"><small>Coming</small><b class="num">20</b></div></div>
+      <div class="note"><i data-lucide="clock" style="width:14px;height:14px"></i>Kofi counted on 15 Oct</div><div class="tbtns" style="justify-content:flex-start;margin-top:12px"><button class="mini" data-open="m-return" data-fill='{"agent":"Kofi Appiah"}'>Return</button><button class="mini" data-open="m-transfer" data-fill='{"agent":"Kofi Appiah"}'>Transfer</button><button class="mini" data-open="m-adjust" data-fill='{"agent":"Kofi Appiah"}'>Adjust quantity</button></div>
+    </div>
+    <div class="card loc"><div class="top2"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="user"></i></div><div><b>Esi Badu</b><small>Delivery agent · Accra</small></div><span class="tag ok">Matches</span></div><div class="stats"><div class="drv"><small>On hand</small><b class="num">12</b></div><div class="drv"><small>Reserved</small><b class="num">3</b></div><div class="drv"><small>Products</small><b class="num">1</b></div></div><div class="note"><i data-lucide="clock" style="width:14px;height:14px"></i>Esi counted on 15 Oct</div><div class="tbtns" style="justify-content:flex-start;margin-top:12px"><button class="mini" data-open="m-return" data-fill='{"agent":"Esi Badu"}'>Return</button><button class="mini" data-open="m-transfer" data-fill='{"agent":"Esi Badu"}'>Transfer</button><button class="mini" data-open="m-adjust" data-fill='{"agent":"Esi Badu"}'>Adjust quantity</button></div></div>
+<div class="card loc"><div class="top2"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="user"></i></div><div><b>Kwesi Amoah</b><small>Delivery agent · Takoradi</small></div><span class="tag ok">Matches</span></div><div class="stats"><div class="drv"><small>On hand</small><b class="num">10</b></div><div class="drv"><small>Reserved</small><b class="num">2</b></div><div class="drv"><small>Products</small><b class="num">1</b></div></div><div class="note"><i data-lucide="clock" style="width:14px;height:14px"></i>Kwesi counted on 15 Oct</div><div class="tbtns" style="justify-content:flex-start;margin-top:12px"><button class="mini" data-open="m-return" data-fill='{"agent":"Kwesi Amoah"}'>Return</button><button class="mini" data-open="m-transfer" data-fill='{"agent":"Kwesi Amoah"}'>Transfer</button><button class="mini" data-open="m-adjust" data-fill='{"agent":"Kwesi Amoah"}'>Adjust quantity</button></div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3>Stock by location</h3><span>Reserved means stock held for open orders</span></div>
+    <div class="tablewrap"><table class="st" style="margin-top:8px">
+      <thead><tr><th>Product</th><th>Location</th><th class="r">On hand</th><th class="r">Reserved</th><th class="r">In transit</th><th class="r">Our records vs Logiswift count</th><th class="r">Difference</th><th class="r">Actions</th></tr></thead>
+      <tbody>
+        <tr class="diff"><td><b>Magic Groove copybook set</b><small style="display:block;color:var(--ink-3);font-size:12px">MG-CB-SET</small></td><td>Logiswift warehouse<small style="display:block;color:var(--ink-3);font-size:12px">3PL · Tema</small></td><td class="r num"><b>100</b></td><td class="r num">34</td><td class="r"><span style="color:var(--ink-3)">0</span></td><td class="r num">100 <span style="color:var(--ink-3)">vs</span> 88</td><td class="r"><span class="tag bad"><i data-lucide="alert-triangle" style="width:13px;height:13px"></i>−12 units</span></td><td><div class="tbtns"><button class="ibtn sm" data-open="m-alloc" data-fill='{"product":"Magic Groove copybook set"}' title="Allocate to an agent" aria-label="Allocate to an agent"><i data-lucide="package-plus"></i></button><button class="ibtn sm" data-open="m-adjust" data-fill='{"agent":"Logiswift warehouse","product":"Magic Groove copybook set"}' title="Adjust quantity" aria-label="Adjust quantity"><i data-lucide="sliders-horizontal"></i></button></div></td></tr>
+        <tr><td><b>Magic Groove copybook set</b><small style="display:block;color:var(--ink-3);font-size:12px">MG-CB-SET</small></td><td>Kofi Appiah<small style="display:block;color:var(--ink-3);font-size:12px">Agent · Kumasi</small></td><td class="r num"><b>36</b></td><td class="r num">11</td><td class="r"><span class="num">20</span><span class="tag warn" style="margin-left:6px">Awaiting agent</span></td><td class="r num">36 <span style="color:var(--ink-3)">vs</span> 36</td><td class="r"><span class="tag ok">Matches</span></td><td><div class="tbtns"><button class="ibtn sm" data-open="m-return" data-fill='{"agent":"Kofi Appiah","product":"Magic Groove copybook set"}' title="Return to warehouse" aria-label="Return to warehouse"><i data-lucide="undo-2"></i></button><button class="ibtn sm" data-open="m-transfer" data-fill='{"agent":"Kofi Appiah","product":"Magic Groove copybook set"}' title="Transfer to another agent" aria-label="Transfer to another agent"><i data-lucide="arrow-left-right"></i></button><button class="ibtn sm" data-open="m-adjust" data-fill='{"agent":"Kofi Appiah","product":"Magic Groove copybook set"}' title="Adjust quantity" aria-label="Adjust quantity"><i data-lucide="sliders-horizontal"></i></button></div></td></tr>
+<tr><td><b>Magic Groove copybook set</b><small style="display:block;color:var(--ink-3);font-size:12px">MG-CB-SET</small></td><td>Esi Badu<small style="display:block;color:var(--ink-3);font-size:12px">Agent · Accra</small></td><td class="r num"><b>12</b></td><td class="r num">3</td><td class="r"><span style="color:var(--ink-3)">0</span></td><td class="r num">12 <span style="color:var(--ink-3)">vs</span> 12</td><td class="r"><span class="tag ok">Matches</span></td><td><div class="tbtns"><button class="ibtn sm" data-open="m-return" data-fill='{"agent":"Esi Badu","product":"Magic Groove copybook set"}' title="Return to warehouse" aria-label="Return to warehouse"><i data-lucide="undo-2"></i></button><button class="ibtn sm" data-open="m-transfer" data-fill='{"agent":"Esi Badu","product":"Magic Groove copybook set"}' title="Transfer to another agent" aria-label="Transfer to another agent"><i data-lucide="arrow-left-right"></i></button><button class="ibtn sm" data-open="m-adjust" data-fill='{"agent":"Esi Badu","product":"Magic Groove copybook set"}' title="Adjust quantity" aria-label="Adjust quantity"><i data-lucide="sliders-horizontal"></i></button></div></td></tr>
+<tr><td><b>Magic Groove copybook set</b><small style="display:block;color:var(--ink-3);font-size:12px">MG-CB-SET</small></td><td>Kwesi Amoah<small style="display:block;color:var(--ink-3);font-size:12px">Agent · Takoradi</small></td><td class="r num"><b>10</b></td><td class="r num">2</td><td class="r"><span style="color:var(--ink-3)">0</span></td><td class="r num">10 <span style="color:var(--ink-3)">vs</span> 10</td><td class="r"><span class="tag ok">Matches</span></td><td><div class="tbtns"><button class="ibtn sm" data-open="m-return" data-fill='{"agent":"Kwesi Amoah","product":"Magic Groove copybook set"}' title="Return to warehouse" aria-label="Return to warehouse"><i data-lucide="undo-2"></i></button><button class="ibtn sm" data-open="m-transfer" data-fill='{"agent":"Kwesi Amoah","product":"Magic Groove copybook set"}' title="Transfer to another agent" aria-label="Transfer to another agent"><i data-lucide="arrow-left-right"></i></button><button class="ibtn sm" data-open="m-adjust" data-fill='{"agent":"Kwesi Amoah","product":"Magic Groove copybook set"}' title="Adjust quantity" aria-label="Adjust quantity"><i data-lucide="sliders-horizontal"></i></button></div></td></tr>
+        <tr><td><b>Magic Groove refill pens</b><small style="display:block;color:var(--ink-3);font-size:12px">MG-PEN-REF</small></td><td>Logiswift warehouse<small style="display:block;color:var(--ink-3);font-size:12px">3PL · Tema</small></td><td class="r num"><b>62</b></td><td class="r num">11</td><td class="r"><span style="color:var(--ink-3)">0</span></td><td class="r num">62 <span style="color:var(--ink-3)">vs</span> 62</td><td class="r"><span class="tag ok">Matches</span></td><td><div class="tbtns"><button class="ibtn sm" data-open="m-alloc" data-fill='{"product":"Magic Groove refill pens"}' title="Allocate to an agent" aria-label="Allocate to an agent"><i data-lucide="package-plus"></i></button><button class="ibtn sm" data-open="m-adjust" data-fill='{"agent":"Logiswift warehouse","product":"Magic Groove refill pens"}' title="Adjust quantity" aria-label="Adjust quantity"><i data-lucide="sliders-horizontal"></i></button></div></td></tr>
+        <tr><td><b>Magic Groove refill pens</b><small style="display:block;color:var(--ink-3);font-size:12px">MG-PEN-REF</small></td><td>Kofi Appiah<small style="display:block;color:var(--ink-3);font-size:12px">Agent · Kumasi</small></td><td class="r num"><b>18</b></td><td class="r num">4</td><td class="r"><span style="color:var(--ink-3)">0</span></td><td class="r num">18 <span style="color:var(--ink-3)">vs</span> 18</td><td class="r"><span class="tag ok">Matches</span></td><td><div class="tbtns"><button class="ibtn sm" data-open="m-return" data-fill='{"agent":"Kofi Appiah","product":"Magic Groove refill pens"}' title="Return to warehouse" aria-label="Return to warehouse"><i data-lucide="undo-2"></i></button><button class="ibtn sm" data-open="m-transfer" data-fill='{"agent":"Kofi Appiah","product":"Magic Groove refill pens"}' title="Transfer to another agent" aria-label="Transfer to another agent"><i data-lucide="arrow-left-right"></i></button><button class="ibtn sm" data-open="m-adjust" data-fill='{"agent":"Kofi Appiah","product":"Magic Groove refill pens"}' title="Adjust quantity" aria-label="Adjust quantity"><i data-lucide="sliders-horizontal"></i></button></div></td></tr>
+        <tr><td><b>Pencil grip trainer</b><small style="display:block;color:var(--ink-3);font-size:12px">MG-GRIP-01</small></td><td>Logiswift warehouse<small style="display:block;color:var(--ink-3);font-size:12px">3PL · Tema</small></td><td class="r num"><b>180</b></td><td class="r num">14</td><td class="r"><span style="color:var(--ink-3)">0</span></td><td class="r num">180 <span style="color:var(--ink-3)">vs</span> 180</td><td class="r"><span class="tag ok">Matches</span></td><td><div class="tbtns"><button class="ibtn sm" data-open="m-alloc" data-fill='{"product":"Pencil grip trainer"}' title="Allocate to an agent" aria-label="Allocate to an agent"><i data-lucide="package-plus"></i></button><button class="ibtn sm" data-open="m-adjust" data-fill='{"agent":"Logiswift warehouse","product":"Pencil grip trainer"}' title="Adjust quantity" aria-label="Adjust quantity"><i data-lucide="sliders-horizontal"></i></button></div></td></tr>
+        <tr><td><b>Pencil grip trainer</b><small style="display:block;color:var(--ink-3);font-size:12px">MG-GRIP-01</small></td><td>Kofi Appiah<small style="display:block;color:var(--ink-3);font-size:12px">Agent · Kumasi</small></td><td class="r num"><b>45</b></td><td class="r num">3</td><td class="r"><span style="color:var(--ink-3)">0</span></td><td class="r num">45 <span style="color:var(--ink-3)">vs</span> 45</td><td class="r"><span class="tag ok">Matches</span></td><td><div class="tbtns"><button class="ibtn sm" data-open="m-return" data-fill='{"agent":"Kofi Appiah","product":"Pencil grip trainer"}' title="Return to warehouse" aria-label="Return to warehouse"><i data-lucide="undo-2"></i></button><button class="ibtn sm" data-open="m-transfer" data-fill='{"agent":"Kofi Appiah","product":"Pencil grip trainer"}' title="Transfer to another agent" aria-label="Transfer to another agent"><i data-lucide="arrow-left-right"></i></button><button class="ibtn sm" data-open="m-adjust" data-fill='{"agent":"Kofi Appiah","product":"Pencil grip trainer"}' title="Adjust quantity" aria-label="Adjust quantity"><i data-lucide="sliders-horizontal"></i></button></div></td></tr>
+      </tbody></table></div>
+  </div>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="ct"><h3>Recent transfers</h3><button class="mini" data-open="m-hist">View all with filters</button></div>
+      <div class="tablewrap"><table class="tt" style="margin-top:8px">
+        <thead><tr><th>Date</th><th>Move</th><th>Items</th><th>Status</th></tr></thead>
+        <tbody>
+        <tr><td>17 Oct</td><td><span class="move">Logiswift<i data-lucide="arrow-right"></i>Kofi Appiah</span></td><td>Copybook set × 20</td><td><span class="tag v">In transit</span><small style="display:block;color:var(--ink-3);font-size:12px">Arrives 18 Oct</small></td></tr>
+        <tr><td>18 Oct</td><td><span class="move">Kofi Appiah<i data-lucide="arrow-right"></i>Logiswift</span></td><td>Returns × 9</td><td><span class="tag n">Pickup planned</span><small style="display:block;color:var(--ink-3);font-size:12px">From failed deliveries</small></td></tr>
+        <tr><td>15 Oct</td><td><span class="move">Logiswift<i data-lucide="arrow-right"></i>Kofi Appiah</span></td><td>Refill pens × 30</td><td><span class="tag ok">Received</span><small style="display:block;color:var(--ink-3);font-size:12px">Counted 30 of 30</small></td></tr>
+        <tr><td>9 Oct</td><td><span class="move">Supplier, Accra<i data-lucide="arrow-right"></i>Logiswift</span></td><td>Copybook set × 300</td><td><span class="tag bad">Received, 12 short</span><small style="display:block;color:var(--ink-3);font-size:12px">Logiswift booked 288</small></td></tr>
+        <tr><td>13 Oct</td><td><span class="move">Logiswift<i data-lucide="arrow-right"></i>Kwesi Amoah</span></td><td>Copybook set × 10</td><td><span class="tag bad">Received, 2 short</span><small style="display:block;color:var(--ink-3);font-size:12px">Kwesi counted 8 · Short in package</small></td></tr>
+        <tr><td>3 Oct</td><td><span class="move">Logiswift<i data-lucide="arrow-right"></i>Kofi Appiah</span></td><td>Grip trainer × 25</td><td><span class="tag ok">Received</span><small style="display:block;color:var(--ink-3);font-size:12px">Counted 25 of 25</small></td></tr>
+        </tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 2 things</h3><span>Updated 06:42</span></div>
+      <div class="ins">
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="package-x"></i></div><div><b>Magic Groove stock is 12 units short at Logiswift</b><p>Our records say 100. Logiswift counts 88. The gap started with the 9 Oct delivery: you sent 300, they booked 288.</p></div></div><div class="act"><button class="mini pri" data-open="m-count">Start a stock count</button><button class="mini">Dismiss</button></div></div>
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="truck"></i></div><div><b>20 copybooks reach Kofi tomorrow</b><p>Kofi has 36 left and 11 are reserved. At 4 a day he runs out on 24 Oct without them.</p></div></div><div class="act"><button class="mini pri" data-say="Reminder sent to Kofi on WhatsApp. Sample only.">Remind Kofi</button><button class="mini">Dismiss</button></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+</div>
+<div class="scrim" id="scrim"></div>
+<div class="toast" id="toast" role="status"><i data-lucide="check-circle-2"></i><span></span></div>
+<!-- ===== Stock modals (allocate, transfer, return, adjust, history) ===== -->
+<div class="mveil" id="m-alloc" role="dialog" aria-modal="true" aria-labelledby="t-alloc">
+  <div class="dlg">
+    <div class="mh"><div><h3 id="t-alloc">Allocate stock to agent</h3><p>Move units from the warehouse to a delivery agent or 3PL.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="fl"><label for="al-p">Product</label><select id="al-p" name="product" data-stock="alloc"><option>Magic Groove copybook set</option><option>Magic Groove refill pens</option><option>Pencil grip trainer</option></select></div>
+      <div class="fg">
+        <div class="fl"><label for="al-f">From</label><select id="al-f" name="from" disabled><option>Logiswift warehouse</option></select><div class="hint" id="al-h">100 available</div></div>
+        <div class="fl"><label for="al-t">To</label><select id="al-t" name="to"><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Kasapa Express (trial)</option></select></div>
+      </div>
+      <div class="fg">
+        <div class="fl"><label for="al-q">Quantity</label><input id="al-q" name="qty" type="number" min="1" value="20"></div>
+        <div class="fl"><label for="al-d">Hand over on</label><input id="al-d" type="text" value="18 Oct" aria-label="Date"></div>
+      </div>
+      <div class="hint" style="margin-top:-4px">Units show as in transit until the agent confirms them.</div>
+      <div class="fl"><label for="al-n">Note <span class="opt">(optional)</span></label><textarea id="al-n" placeholder="For example: Kumasi restock before the weekend"></textarea></div>
+    </div>
+    <div class="mf"><button class="btn" data-close>Cancel</button><button class="btn pri" data-stock-go="alloc"><i data-lucide="package-plus"></i>Allocate stock</button></div>
+  </div>
+</div>
+
+<div class="mveil" id="m-transfer" role="dialog" aria-modal="true" aria-labelledby="t-transfer">
+  <div class="dlg">
+    <div class="mh"><div><h3 id="t-transfer">Transfer to another agent</h3><p>Stock moves straight from one agent to another. The warehouse is not involved.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="fl"><label for="tr-p">Product</label><select id="tr-p" name="product" data-stock="transfer"><option>Magic Groove copybook set</option><option>Magic Groove refill pens</option><option>Pencil grip trainer</option></select></div>
+      <div class="fg">
+        <div class="fl"><label for="tr-f">From agent</label><select id="tr-f" name="agent" data-stock="transfer"><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Kasapa Express (trial)</option></select><div class="hint" id="tr-h">36 on hand</div></div>
+        <div class="fl"><label for="tr-t">To agent</label><select id="tr-t" name="to"><option>Esi Badu</option><option>Kwesi Amoah</option><option>Kofi Appiah</option><option>Kasapa Express (trial)</option></select></div>
+      </div>
+      <div class="fl"><label for="tr-q">Quantity</label><input id="tr-q" name="qty" type="number" min="1" value="10"></div>
+      <div class="fl"><label for="tr-n">Note <span class="opt">(optional)</span></label><textarea id="tr-n" placeholder="Why are you moving it?"></textarea></div>
+    </div>
+    <div class="mf"><button class="btn" data-close>Cancel</button><button class="btn pri" data-stock-go="transfer"><i data-lucide="arrow-left-right"></i>Transfer stock</button></div>
+  </div>
+</div>
+
+<div class="mveil" id="m-return" role="dialog" aria-modal="true" aria-labelledby="t-return">
+  <div class="dlg">
+    <div class="mh"><div><h3 id="t-return">Return to warehouse</h3><p>Use this for failed deliveries and stock an agent no longer needs.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="fl"><label for="rt-p">Product</label><select id="rt-p" name="product" data-stock="return"><option>Magic Groove copybook set</option><option>Magic Groove refill pens</option><option>Pencil grip trainer</option></select></div>
+      <div class="fg">
+        <div class="fl"><label for="rt-f">From agent</label><select id="rt-f" name="agent" data-stock="return"><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Kasapa Express (trial)</option></select><div class="hint" id="rt-h">36 on hand</div></div>
+        <div class="fl"><label for="rt-q">Quantity</label><input id="rt-q" name="qty" type="number" min="1" value="9"></div>
+      </div>
+      <div class="fl"><label for="rt-r">Reason</label><select id="rt-r"><option>Failed deliveries</option><option>Customer refused</option><option>Damaged</option><option>Agent stopped delivering</option><option>Other</option></select></div>
+      <div class="fl"><label for="rt-n">Note <span class="opt">(optional)</span></label><textarea id="rt-n" placeholder="Pickup time, order numbers, condition"></textarea></div>
+    </div>
+    <div class="mf"><button class="btn" data-close>Cancel</button><button class="btn pri" data-stock-go="return"><i data-lucide="undo-2"></i>Return stock</button></div>
+  </div>
+</div>
+
+<div class="mveil" id="m-adjust" role="dialog" aria-modal="true" aria-labelledby="t-adjust">
+  <div class="dlg">
+    <div class="mh"><div><h3 id="t-adjust">Adjust quantity</h3><p>Fix the count after a stock check. Every change needs a reason and is logged.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="fg">
+        <div class="fl"><label for="ad-a">Holder</label><select id="ad-a" name="agent" data-stock="adjust"><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Kasapa Express (trial)</option><option>Logiswift warehouse</option></select></div>
+        <div class="fl"><label for="ad-p">Product</label><select id="ad-p" name="product" data-stock="adjust"><option>Magic Groove copybook set</option><option>Magic Groove refill pens</option><option>Pencil grip trainer</option></select></div>
+      </div>
+      <div class="fg">
+        <div class="fl"><label for="ad-q">New quantity</label><input id="ad-q" name="qty" type="number" min="0" value="36"><div class="hint" id="ad-h">Now 36. No change.</div></div>
+        <div class="fl"><label for="ad-r">Reason</label><select id="ad-r" name="reason"><option>Physical count correction</option><option>Damaged goods</option><option>Lost or stolen</option><option>Found extra stock</option><option>Other</option></select></div>
+      </div>
+      <div class="fl"><label for="ad-n">Note <span class="opt">(optional)</span></label><textarea id="ad-n" placeholder="For example: Kofi counted on 15 Oct"></textarea></div>
+    </div>
+    <div class="mf"><button class="btn" data-close>Cancel</button><button class="btn pri" data-stock-go="adjust"><i data-lucide="check"></i>Save adjustment</button></div>
+  </div>
+</div>
+
+<div class="mveil" id="m-count" role="dialog" aria-modal="true" aria-labelledby="t-count">
+  <div class="dlg">
+    <div class="mh"><div><h3 id="t-count">Start a stock count</h3><p>Count what is on the shelf. Differences are logged and open a finding.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="fl"><label for="ct-h">Location</label><select id="ct-h"><option>Logiswift warehouse</option><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option></select></div>
+      <div class="tablewrap"><table class="st" style="margin-top:12px"><thead><tr><th>Product</th><th class="r">Our records</th><th class="r" style="width:120px">Counted</th><th class="r">Difference</th></tr></thead><tbody id="ct-rows"></tbody></table></div>
+    </div>
+    <div class="mf"><button class="btn" data-close>Cancel</button><button class="btn pri" id="ct-go"><i data-lucide="check"></i>Save count</button></div>
+  </div>
+</div>
+
+<div class="mveil" id="m-hist" role="dialog" aria-modal="true" aria-labelledby="t-hist">
+  <div class="dlg wide">
+    <div class="mh"><div><h3 id="t-hist">Transfer history</h3><p>Every allocation, sale, transfer, return and adjustment.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="tabs" id="h-types" style="padding:12px 20px">
+      <button class="tab on" data-t="all">All <span>6</span></button><button class="tab" data-t="Allocation">Allocation <span>2</span></button><button class="tab" data-t="Order fulfilled">Order fulfilled <span>1</span></button><button class="tab" data-t="Agent transfer">Agent transfer <span>1</span></button><button class="tab" data-t="Return">Return <span>1</span></button><button class="tab" data-t="Adjustment">Adjustment <span>1</span></button>
+    </div>
+    <div class="filters" style="align-items:center"><div class="fl"><select id="h-who" aria-label="Filter by holder" style="min-width:200px"><option value="">All holders</option><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Logiswift</option></select></div><div class="fl"><select id="h-prod" aria-label="Filter by product" style="min-width:220px"><option value="">All products</option><option>copybook</option><option>pens</option><option>grip</option></select></div></div>
+    <div class="tablewrap"><table id="h-table">
+      <thead><tr><th>Date</th><th>Type</th><th>From</th><th>To</th><th>Product</th><th class="r">Qty</th><th>Order</th><th>By</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr data-ty="Allocation"><td>17 Oct, 11:20</td><td><span class="tag v">Allocation</span></td><td>Logiswift warehouse</td><td>Kofi Appiah</td><td>Copybook set</td><td class="r num">20</td><td>—</td><td>Manny</td><td>In transit, arrives 18 Oct</td></tr>
+        <tr data-ty="Order fulfilled"><td>17 Oct, 14:02</td><td><span class="tag ok">Order fulfilled</span></td><td>Kofi Appiah</td><td>Customer</td><td>Copybook set</td><td class="r num">1</td><td>#24117</td><td>Kofi Appiah</td><td>Delivered, cash collected</td></tr>
+        <tr data-ty="Agent transfer"><td>16 Oct, 17:40</td><td><span class="tag n">Agent transfer</span></td><td>Esi Badu</td><td>Kwesi Amoah</td><td>Refill pens</td><td class="r num">10</td><td>—</td><td>Manny</td><td>Esi had extra pens</td></tr>
+        <tr data-ty="Allocation"><td>15 Oct, 10:05</td><td><span class="tag v">Allocation</span></td><td>Logiswift warehouse</td><td>Kofi Appiah</td><td>Refill pens</td><td class="r num">30</td><td>—</td><td>Manny</td><td>Counted 30 of 30</td></tr>
+        <tr data-ty="Adjustment"><td>14 Oct, 16:30</td><td><span class="tag n">Adjustment</span></td><td>Kwesi Amoah</td><td>—</td><td>Pencil grip trainer</td><td class="r num">−2</td><td>—</td><td>Manny</td><td>Damaged goods</td></tr>
+        <tr data-ty="Return"><td>12 Oct, 15:10</td><td><span class="tag warn">Return</span></td><td>Kofi Appiah</td><td>Logiswift warehouse</td><td>Copybook set</td><td class="r num">6</td><td>—</td><td>Manny</td><td>Customer not reachable</td></tr>
+      </tbody></table></div>
+    <div class="pfoot"><span id="h-count">Showing 6 moves</span><span>Last 30 days</span></div>
+  </div>
+</div>
+
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+<script>
+// r2 layers: open/close for sheets and modals, menus, toast
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const scrim = document.getElementById('scrim');
+const toastEl = document.getElementById('toast');
+let toastT;
+function toast(msg){ toastEl.querySelector('span').textContent = msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), 2600); }
+function closeMenus(){ $$('.menu.on').forEach(m => m.classList.remove('on')); }
+function closeLayers(){ $$('.sheet.on,.mveil.on').forEach(l => l.classList.remove('on')); scrim.classList.remove('on'); closeMenus(); }
+function openLayer(id){
+  const el = document.getElementById(id); if(!el) return;
+  if(el.classList.contains('sheet')){ $$('.sheet.on').forEach(l => l.classList.remove('on')); scrim.classList.add('on'); }
+  el.classList.add('on'); closeMenus();
+  (el.querySelector('input:not([type=checkbox]),select,textarea') || el).focus?.({preventScroll:true});
+}
+function closeLayer(el){ el.classList.remove('on'); if(!$$('.sheet.on').length) scrim.classList.remove('on'); }
+document.addEventListener('click', e => {
+  const o = e.target.closest('[data-open]');
+  if(o){ if(o.dataset.fill) fillForm(o.dataset.open, JSON.parse(o.dataset.fill)); openLayer(o.dataset.open); if(window.onOpenLayer) window.onOpenLayer(o); return; }
+  const c = e.target.closest('[data-close]');
+  if(c){ closeLayer(c.closest('.sheet,.mveil')); return; }
+  if(e.target.classList && e.target.classList.contains('mveil')){ closeLayer(e.target); return; }
+  const m = e.target.closest('[data-menu]');
+  if(m){ const menu = document.getElementById(m.dataset.menu); const was = menu.classList.contains('on'); closeMenus(); if(!was){ menu.classList.add('on'); } return; }
+  if(!e.target.closest('.menu')) closeMenus();
+});
+scrim.onclick = closeLayers;
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeLayers(); });
+function fillForm(id, vals){ const el = document.getElementById(id); Object.entries(vals).forEach(([k,v]) => { const f = el.querySelector('[name="'+k+'"]'); if(f){ f.value = v; f.dispatchEvent(new Event('change',{bubbles:true})); } }); }
+const money = n => 'GH₵' + n.toLocaleString('en-GB', {minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2});
+
+lucide.createIcons();
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.href = 'index.html#' + b.dataset.go; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+
+// ---- stock modals ----
+const STOCK = {
+  'Magic Groove copybook set': {'Logiswift warehouse':100,'Kofi Appiah':36,'Esi Badu':12,'Kwesi Amoah':10,'Kasapa Express (trial)':0},
+  'Magic Groove refill pens': {'Logiswift warehouse':62,'Kofi Appiah':18,'Esi Badu':0,'Kwesi Amoah':0,'Kasapa Express (trial)':0},
+  'Pencil grip trainer': {'Logiswift warehouse':180,'Kofi Appiah':45,'Esi Badu':0,'Kwesi Amoah':0,'Kasapa Express (trial)':0}
+};
+const stockOf = (p, h) => (STOCK[p] && STOCK[p][h]) || 0;
+function stockHints(){
+  const al = $('#m-alloc'), n = stockOf(al.querySelector('[name=product]').value, 'Logiswift warehouse');
+  $('#al-h').textContent = n + ' available';
+  [['transfer','tr-h'],['return','rt-h']].forEach(([k,h]) => {
+    const m = $('#m-'+k); $('#'+h).textContent = stockOf(m.querySelector('[name=product]').value, m.querySelector('[name=agent]').value) + ' on hand';
+  });
+  const ad = $('#m-adjust'), cur = stockOf(ad.querySelector('[name=product]').value, ad.querySelector('[name=agent]').value), nq = +ad.querySelector('[name=qty]').value;
+  $('#ad-h').textContent = nq === cur ? 'Now ' + cur + '. No change.' : 'Now ' + cur + '. Change of ' + (nq - cur > 0 ? '+' : '−') + Math.abs(nq - cur) + '.';
+}
+$$('[data-stock]').forEach(s => s.addEventListener('change', () => {
+  if(s.name === 'agent' || s.name === 'product'){ const m = s.closest('.mveil'); if(m.id === 'm-adjust'){ m.querySelector('[name=qty]').value = stockOf(m.querySelector('[name=product]').value, m.querySelector('[name=agent]').value); } }
+  stockHints();
+}));
+$('#m-adjust [name=qty]').addEventListener('input', stockHints);
+$$('[data-stock-go]').forEach(b => b.onclick = () => {
+  const k = b.dataset.stockGo, m = b.closest('.mveil'), q = m.querySelector('[name=qty]').value, p = m.querySelector('[name=product]').value;
+  const msgs = {alloc:'Allocated ' + q + ' units of ' + p + ' to ' + m.querySelector('[name=to]').value + '. In transit until they confirm.', transfer:'Moved ' + q + ' units from ' + m.querySelector('[name=agent]').value + ' to ' + m.querySelector('[name=to]').value, return:q + ' units returned to the warehouse from ' + m.querySelector('[name=agent]').value, adjust:'Count for ' + m.querySelector('[name=agent]').value + ' set to ' + q + '. Reason logged.'};
+  closeLayer(m); toast(msgs[k]);
+});
+function filterHist(){
+  const t = $('#h-types .tab.on').dataset.t, w = $('#h-who').value.toLowerCase(), p = $('#h-prod').value.toLowerCase();
+  let n = 0;
+  $$('#h-table tbody tr').forEach(r => {
+    const txt = r.textContent.toLowerCase();
+    const show = (t === 'all' || r.dataset.ty === t) && (!w || txt.includes(w)) && (!p || txt.includes(p));
+    r.style.display = show ? '' : 'none'; if(show) n++;
+  });
+  $('#h-count').textContent = 'Showing ' + n + ' move' + (n === 1 ? '' : 's');
+}
+$$('#h-types .tab').forEach(t => t.onclick = () => { $$('#h-types .tab').forEach(x => x.classList.toggle('on', x === t)); filterHist(); });
+$('#h-who').onchange = filterHist; $('#h-prod').onchange = filterHist;
+stockHints();
+
+lucide.createIcons();
+
+/* ---- stock count ---- */
+const CPRODS = ['Magic Groove copybook set','Magic Groove refill pens','Pencil grip trainer'];
+const THEIR = {'Logiswift warehouse':{'Magic Groove copybook set':88}};
+function drawCount(){
+  const h = $('#ct-h').value;
+  $('#ct-rows').innerHTML = CPRODS.map((p,i) => { const rec = stockOf(p, h), cnt = (THEIR[h] && THEIR[h][p] != null) ? THEIR[h][p] : rec; return '<tr><td>' + p + '</td><td class="r num">' + rec + '</td><td class="r"><input type="number" min="0" value="' + cnt + '" data-i="' + i + '" data-rec="' + rec + '" style="width:90px;text-align:right" aria-label="Counted ' + p + '"></td><td class="r num" id="ct-d' + i + '"></td></tr>'; }).join('');
+  $$('#ct-rows input').forEach(x => { x.oninput = () => diffCount(); }); diffCount();
+}
+function diffCount(){ $$('#ct-rows input').forEach(x => { const d = (+x.value || 0) - (+x.dataset.rec), c = $('#ct-d' + x.dataset.i); c.textContent = d ? (d > 0 ? '+' : '\u2212') + Math.abs(d) : 'Matches'; c.style.color = d ? 'var(--coral)' : 'var(--ink-3)'; }); }
+$('#ct-h').onchange = drawCount;
+$('#ct-go').onclick = () => { let off = 0; $$('#ct-rows input').forEach(x => off += Math.abs((+x.value || 0) - (+x.dataset.rec))); closeLayer($('#m-count')); toast(off ? 'Count saved. ' + off + ' units differ. A finding is open.' : 'Count saved. Everything matches.'); };
+drawCount();
+if (location.hash === '#count') openLayer('m-count');
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

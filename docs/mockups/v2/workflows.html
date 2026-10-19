@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodAdmin Workflows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+.sw{position:relative;display:inline-block;width:38px;height:22px;flex:none}
+.sw input{position:absolute;inset:0;opacity:0;cursor:pointer;margin:0;z-index:1}
+.sw i{position:absolute;inset:0;border-radius:99px;background:var(--line);transition:background .15s}
+.sw i::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.sw input:checked+i{background:var(--pine)}
+.sw input:checked+i::after{transform:translateX(16px)}
+.sw input:focus-visible+i{outline:2px solid var(--pine);outline-offset:2px}
+.in,.sel,.ta{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink);font:500 14px "Plus Jakarta Sans",sans-serif}
+.in:focus-visible,.sel:focus-visible,.ta:focus-visible{outline:2px solid var(--pine);outline-offset:1px;border-color:var(--pine)}
+.ta{resize:vertical;min-height:70px}
+.fl{display:block;font-weight:600;margin-bottom:6px}
+.hint{color:var(--ink-3);font-size:12.5px;margin-top:5px}
+.stack{display:grid;gap:16px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.icn{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none}
+.icn svg.lucide{width:17px;height:17px}
+.iconbtn{width:32px;height:32px;border-radius:9px;display:inline-grid;place-items:center;color:var(--ink-2);border:1px solid transparent}
+.iconbtn:hover{background:var(--hover);border-color:var(--line);color:var(--ink)}
+.iconbtn.dng:hover{color:var(--coral);background:var(--coral-soft)}
+.iconbtn svg.lucide{width:16px;height:16px}
+.iconbtn:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+.insrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;padding:14px 20px 18px}
+.foot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px;gap:12px;flex-wrap:wrap}
+.toolbar{display:flex;gap:10px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.toolbar .srch{flex:1;min-width:200px;max-width:340px;display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink-3)}
+.toolbar .srch input{border:0;background:transparent;color:var(--ink);font:500 14px "Plus Jakarta Sans";outline:0;width:100%}
+.toast{position:fixed;left:50%;bottom:60px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:12px;font-weight:600;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:70}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.mut{color:var(--ink-3)}
+.tablewrap td,.tablewrap th{white-space:nowrap}
+.gal{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:14px 20px 20px}
+.tpl{border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px;text-align:left}
+.tpl:hover{border-color:var(--pine);background:var(--hover)}
+.tpl b{font-size:14px}.tpl p{color:var(--ink-2);font-size:13px;flex:1}
+.tpl .meta{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-3)}
+.wfname{display:flex;gap:12px;align-items:center}
+.wfname small{display:block;color:var(--ink-3);font-size:12px}
+.ask2{display:flex;gap:8px;margin-top:10px;padding-left:40px}
+.ask2 input{flex:1;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink);font:500 13px "Plus Jakarta Sans"}
+.bbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.bbar h1{font-size:24px;font-weight:800}
+.bbar .sp{flex:1}
+.wiz{grid-template-columns:230px 1fr}
+.step{cursor:pointer;text-align:left;width:100%;align-items:center}
+.step .t{font-size:14px}
+.step:focus-visible{outline:2px solid var(--pine);outline-offset:2px;border-radius:10px}
+.pane{display:none}.pane.on{display:block}
+.wbody{min-width:0}
+.trg{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.trg button{border:1px solid var(--line);border-radius:14px;padding:13px;text-align:left;display:flex;gap:11px;align-items:flex-start}
+.trg button:hover{background:var(--hover)}
+.trg button.on{border-color:var(--pine);box-shadow:0 0 0 3px var(--pine-soft);background:var(--pine-soft)}
+.trg b{display:block;font-size:14px}.trg small{color:var(--ink-2);font-size:12.5px}
+.cfg{margin-top:18px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--hover)}
+.crow{display:grid;grid-template-columns:90px 1.2fr 1fr 1.4fr 34px;gap:8px;align-items:center}
+.crow .and{font-size:12.5px;font-weight:700;color:var(--ink-3);text-align:center}
+.seq{display:grid;gap:0}
+.actn{border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.actn .ah{display:flex;gap:12px;align-items:center;padding:12px 14px}
+.actn .ah b{display:block}.actn .ah small{color:var(--ink-2);font-size:12.5px}
+.actn .ah .num2{width:24px;height:24px;border-radius:50%;background:var(--ink);color:var(--bg);display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+.actn .ab{padding:2px 14px 16px 50px;display:none}
+.actn.open .ab{display:block}
+.lnk{width:2px;height:16px;background:var(--line);margin:0 0 0 26px}
+.addact{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.addact button{border:1px dashed var(--line);border-radius:12px;padding:9px;display:flex;gap:8px;align-items:center;font-weight:600;color:var(--ink-2);font-size:13px}
+.addact button:hover{border-color:var(--pine);color:var(--pine);background:var(--pine-soft)}
+.addact svg.lucide{width:16px;height:16px}
+.reg{width:100%;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.reg .rr{display:grid;grid-template-columns:1.1fr 24px 1.4fr 70px;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line)}
+.reg .rr:last-child{border:0}
+.reg .rr.h{background:var(--hover);font-size:12.5px;font-weight:600;color:var(--ink-3)}
+.reg .rr .ar{color:var(--ink-3)}
+.sum{display:grid;gap:10px}
+.sumrow{display:grid;grid-template-columns:110px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.sumrow:last-child{border:0}
+.sumrow>span{color:var(--ink-3);font-weight:600;font-size:13px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.test{border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:16px}
+.tstep{display:flex;gap:10px;align-items:center;padding:6px 0;font-size:13.5px}
+.tstep svg.lucide{width:16px;height:16px}
+.two2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:1100px){.gal{grid-template-columns:repeat(2,1fr)}.trg{grid-template-columns:repeat(2,1fr)}.two2{grid-template-columns:1fr}.addact{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.gal,.trg,.row2{grid-template-columns:1fr}.crow{grid-template-columns:1fr 1fr}.crow .and{text-align:left}.wiz{grid-template-columns:1fr}.wbody{padding:20px 16px}.reg .rr{grid-template-columns:1fr 20px 1fr}.reg .rr span:last-child{display:none}.actn .ab{padding-left:14px}.ask2{padding-left:0}.insight .act{padding-left:0}}
+.wfname small{white-space:normal;max-width:300px}
+#wt td,#wt th{padding-left:14px;padding-right:14px}
+#wt td:first-child,#wt th:first-child{padding-left:20px}
+#wt td:last-child,#wt th:last-child{padding-right:20px}
+.pane>h2{font-size:26px;font-weight:800}.pane>h2+p{color:var(--ink-2);margin:4px 0 22px;max-width:620px}
+.agl{display:flex;flex-wrap:wrap;gap:8px}
+.agc{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:12px;padding:6px 8px 6px 10px;background:var(--card)}
+.agc input{width:54px;border:1px solid var(--line);border-radius:8px;padding:3px 6px;background:var(--bg);color:var(--ink);font:inherit;text-align:right}
+.agc button{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav on" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+<!-- LIST VIEW -->
+<section class="view on" id="list">
+  <div class="head">
+    <div><h1>Workflows</h1><p>Rules that run on your orders for you. 5 are on and ran 1,084 times this week.</p></div>
+    <div style="display:flex;gap:8px"><a class="btn" href="#templates" style="text-decoration:none"><i data-lucide="layout-template"></i>Browse templates</a><button class="btn pri" data-open="new"><i data-lucide="plus"></i>New workflow</button></div>
+  </div>
+
+  <div class="grid kpis" style="margin-top:0">
+    <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="play-circle"></i></div><div class="v num" id="cActive">5</div><div class="l">Active</div><div class="s"><span>Running on new orders</span><span class="tag ok">On</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--hover);color:var(--ink-2)"><i data-lucide="pause-circle"></i></div><div class="v num" id="cInactive">2</div><div class="l">Inactive</div><div class="s"><span>Switched off</span><span class="tag n">Off</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="repeat"></i></div><div class="v num">1,084</div><div class="l">Runs this week</div><div class="s"><span>Last 7 days</span><span class="tag ok">98% passed</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="alert-triangle"></i></div><div class="v num">23</div><div class="l">Failed runs this week</div><div class="s"><span>16 from SMS, 7 from HTTP</span><span class="tag bad">Check</span></div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 2 things</h3><span>Updated 06:42</span></div>
+    <div class="insrow">
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="wand-2"></i></div><div><b>Describe a workflow and I&rsquo;ll build it</b><p>Say what should happen in plain words. I fill in the trigger, conditions and actions. You review before it goes live.</p></div></div>
+        <div class="ask2"><input id="describe" aria-label="Describe a workflow" value="When an order is confirmed and the region is Greater Accra, split it between Esi Badu and Logiswift and send them a WhatsApp"><button class="mini pri" id="build">Build it</button></div></div>
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="phone-missed"></i></div><div><b>Failed delivery follow-up is off</b><p>354 deliveries failed this month. Nobody messaged those customers. A follow-up could win back about 1 in 5.</p></div></div><div class="act"><button class="mini pri" id="turnOn">Turn it on</button><button class="mini" data-open="fail">Review first</button></div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="toolbar">
+      <div class="srch"><i data-lucide="search"></i><input id="q" placeholder="Search workflows" aria-label="Search workflows"></div>
+      <div class="tabs" style="padding:0;border:0"><button class="tab on" data-f="all">All <span id="nAll">7</span></button><button class="tab" data-f="on">Active <span id="nOn">5</span></button><button class="tab" data-f="off">Inactive <span id="nOff">2</span></button></div>
+    </div>
+    <div class="tablewrap"><table id="wt">
+      <thead><tr><th>Workflow</th><th>Trigger</th><th class="r">Actions</th><th>Last run</th><th class="r">Runs this week</th><th>Active</th><th></th></tr></thead>
+      <tbody>
+        <tr data-st="on"><td><div class="wfname"><div class="icn" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="map-pin"></i></div><div><b>Assign Ashanti orders</b><small>Region is Ashanti. Sends each confirmed order to Kofi Appiah</small></div></div></td><td><span class="tag n">Status changes to Confirmed</span></td><td class="r num">2</td><td><span class="mut">4 min ago</span> <span class="tag ok">Passed</span></td><td class="r num"><b>240</b></td><td><label class="sw"><input type="checkbox" checked aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-open="edit" aria-label="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+        <tr data-st="on"><td><div class="wfname"><div class="icn" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="message-square"></i></div><div><b>Send confirmation SMS</b><small>Texts the customer when the rep confirms</small></div></div></td><td><span class="tag n">Status changes to Confirmed</span></td><td class="r num">1</td><td><span class="mut">11 min ago</span> <span class="tag ok">Passed</span></td><td class="r num"><b>388</b></td><td><label class="sw"><input type="checkbox" checked aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-open="edit" aria-label="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+        <tr data-st="on"><td><div class="wfname"><div class="icn" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="bell-ring"></i></div><div><b>High-value order alert</b><small>Tells you about orders over GH₵600</small></div></div></td><td><span class="tag n">Order created</span></td><td class="r num">2</td><td><span class="mut">Yesterday, 16:20</span> <span class="tag ok">Passed</span></td><td class="r num"><b>14</b></td><td><label class="sw"><input type="checkbox" checked aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-open="edit" aria-label="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+        <tr data-st="on"><td><div class="wfname"><div class="icn" style="background:var(--mint-soft);color:#14975f"><i data-lucide="clock"></i></div><div><b>Daily delivery reminder</b><small>WhatsApp to every agent with open orders</small></div></div></td><td><span class="tag n">Every day at 09:00</span></td><td class="r num">1</td><td><span class="mut">Today, 09:00</span> <span class="tag bad">1 failed</span></td><td class="r num"><b>7</b></td><td><label class="sw"><input type="checkbox" checked aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-open="edit" aria-label="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+        <tr data-st="on"><td><div class="wfname"><div class="icn" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="map-pin"></i></div><div><b>Assign Greater Accra orders</b><small>Region is Greater Accra. Splits them evenly between Esi Badu and Logiswift</small></div></div></td><td><span class="tag n">Status changes to Confirmed</span></td><td class="r num">2</td><td><span class="mut">9 min ago</span> <span class="tag ok">Passed</span></td><td class="r num"><b>372</b></td><td><label class="sw"><input type="checkbox" checked aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-open="edit" aria-label="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+        <tr data-st="off"><td><div class="wfname"><div class="icn" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="phone-missed"></i></div><div><b>Failed delivery follow-up</b><small>Messages the customer and reopens the order</small></div></div></td><td><span class="tag n">Status changes to Failed</span></td><td class="r num">3</td><td><span class="mut">Never run</span></td><td class="r num"><b>0</b></td><td><label class="sw"><input type="checkbox" aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-open="fail" aria-label="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+        <tr data-st="off"><td><div class="wfname"><div class="icn" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="crown"></i></div><div><b>VIP customer priority</b><small>Flags repeat buyers and puts them first</small></div></div></td><td><span class="tag n">Order created</span></td><td class="r num">2</td><td><span class="mut">3 Oct</span> <span class="tag ok">Passed</span></td><td class="r num"><b>0</b></td><td><label class="sw"><input type="checkbox" aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-open="edit" aria-label="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+      </tbody></table></div>
+    <div class="foot"><span id="none" style="display:none">No workflows match.</span><span>Switch a workflow off to stop it without deleting it.</span><span>Times are Ghana time</span></div>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="templates">
+    <div class="ct"><h3>Start from a template</h3><span>7 templates</span></div>
+    <div class="gal">
+      <button class="tpl" data-open="new"><div class="icn" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="message-square"></i></div><b>Send confirmation SMS</b><p>Text the customer as soon as an order is confirmed.</p><div class="meta"><span>Customer service</span><span class="tag n">Status change</span></div></button>
+      <button class="tpl" data-open="new"><div class="icn" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="package"></i></div><b>Assign orders by product</b><p>Send each product to the agent who stocks it.</p><div class="meta"><span>Operations</span><span class="tag n">Status change</span></div></button>
+      <button class="tpl" data-open="new"><div class="icn" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="bell-ring"></i></div><b>High-value order alert</b><p>Get a WhatsApp when a big order is confirmed.</p><div class="meta"><span>Alerts</span><span class="tag n">Status change</span></div></button>
+      <button class="tpl" data-open="new"><div class="icn" style="background:var(--mint-soft);color:#14975f"><i data-lucide="map"></i></div><b>Assign by region</b><p>Region is X: assign the order to one or more delivery agents, evenly or by weight.</p><div class="meta"><span>Operations</span><span class="tag n">Status change</span></div></button>
+      <button class="tpl" data-open="new"><div class="icn" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="crown"></i></div><b>VIP customer priority</b><p>Flag repeat buyers and put their orders first.</p><div class="meta"><span>Customer service</span><span class="tag n">Order created</span></div></button>
+      <button class="tpl" data-open="new"><div class="icn" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="clock"></i></div><b>Daily delivery reminder</b><p>Remind agents about open orders every morning.</p><div class="meta"><span>Operations</span><span class="tag n">Schedule</span></div></button>
+            <button class="tpl" data-open="new"><div class="icn" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="phone-missed"></i></div><b>Failed delivery follow-up</b><p>Message the customer and reopen the order.</p><div class="meta"><span>Customer service</span><span class="tag n">Status change</span></div></button>
+    </div>
+  </div>
+</section>
+
+<!-- BUILDER VIEW -->
+<section class="view" id="builder">
+  <div class="bbar">
+    <button class="btn" id="back"><i data-lucide="arrow-left"></i>Workflows</button>
+    <h1 id="bTitle">Assign Ashanti orders</h1><span class="tag ok" id="bState">Active</span>
+    <div class="sp"></div>
+    <button class="btn" id="goReview"><i data-lucide="flask-conical"></i>Test run</button>
+    <button class="btn pri" id="save"><i data-lucide="check"></i>Save workflow</button>
+  </div>
+  <div class="card wiz">
+    <div class="steps" role="tablist">
+      <button class="step on" data-s="0" role="tab"><span class="n">1</span><span class="t">Basic info</span></button>
+      <button class="step" data-s="1" role="tab"><span class="n">2</span><span class="t">Trigger</span></button>
+      <button class="step" data-s="2" role="tab"><span class="n">3</span><span class="t">Conditions</span></button>
+      <button class="step" data-s="3" role="tab"><span class="n">4</span><span class="t">Actions</span></button>
+      <button class="step" data-s="4" role="tab"><span class="n">5</span><span class="t">Review</span></button>
+    </div>
+    <div class="wbody">
+      <!-- 1 -->
+      <div class="pane on" data-p="0">
+        <h2>Basic info</h2><p>Name the workflow so your team knows what it does.</p>
+        <div class="stack" style="max-width:620px">
+          <div><label class="fl" for="wn">Name</label><input class="in" id="wn" value="Assign Ashanti orders"></div>
+          <div><label class="fl" for="wd">Description</label><textarea class="ta" id="wd">Send each confirmed order from this region to its delivery agents. If no workflow matches an order, it stays unassigned for the fulfilment lead.</textarea></div>
+          <div style="display:flex;align-items:center;gap:12px"><label class="sw"><input type="checkbox" id="wa" checked><i></i></label><div><b>Active</b><div class="hint" style="margin:0">Runs on every new match as soon as you save.</div></div></div>
+        </div>
+      </div>
+      <!-- 2 -->
+      <div class="pane" data-p="1">
+        <h2>Trigger</h2><p>Pick the event that starts this workflow.</p>
+        <div class="trg" id="trg">
+          <button data-t="created"><div class="icn" style="background:var(--mint-soft);color:#14975f"><i data-lucide="plus-circle"></i></div><div><b>Order created</b><small>A new order arrives</small></div></button>
+          <button data-t="status" class="on"><div class="icn" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="git-branch"></i></div><div><b>Status change</b><small>An order moves to a status</small></div></button>
+          <button data-t="payment"><div class="icn" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="banknote"></i></div><div><b>Payment received</b><small>Paystack or manual payment</small></div></button>
+          <button data-t="schedule"><div class="icn" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="clock"></i></div><div><b>Schedule</b><small>Time based, daily or weekly</small></div></button>
+          <button data-t="manual"><div class="icn" style="background:var(--hover);color:var(--ink-2)"><i data-lucide="mouse-pointer-click"></i></div><div><b>Manual</b><small>You run it from an order</small></div></button>
+          <button data-t="webhook"><div class="icn" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="webhook"></i></div><div><b>Webhook</b><small>Another app calls CodAdmin</small></div></button>
+        </div>
+        <div class="cfg" id="tcfg"></div>
+      </div>
+      <!-- 3 -->
+      <div class="pane" data-p="2">
+        <h2>Conditions</h2><p>Only run when the order matches. Leave empty to run on every order.</p>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap"><span class="fl" style="margin:0">Run when</span><div class="seg" style="margin:0"><button class="on">All match</button><button>Any match</button></div></div>
+        <div class="stack" id="conds" style="gap:8px"></div>
+        <button class="btn" id="addCond" style="margin-top:12px"><i data-lucide="plus"></i>Add condition</button>
+        <div class="hint" style="margin-top:12px">Available fields: order total, product, customer type, status, payment method, region, country, item count. Regions come from your store's country.</div>
+      </div>
+      <!-- 4 -->
+      <div class="pane" data-p="3">
+        <h2>Actions</h2><p>These run in order, top to bottom.</p>
+        <div class="seq" id="seq">
+          <div class="actn open">
+            <div class="ah"><span class="num2">1</span><div class="icn" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="user-check"></i></div><div style="flex:1"><b>Assign user</b><small>Delivery agent, by region</small></div><button class="iconbtn tg" aria-label="Open or close"><i data-lucide="chevron-down"></i></button><button class="iconbtn dng rm" aria-label="Remove"><i data-lucide="trash-2"></i></button></div>
+            <div class="ab">
+              <div class="row2" style="margin-bottom:14px">
+                <div><label class="fl">Assign to role</label><div class="seg" style="margin:0"><button>Call rep</button><button class="on">Delivery agent</button></div></div>
+                <div><label class="fl">How to share orders</label><div class="seg" id="share" style="margin:0"><button class="on" data-m="even">Evenly</button><button data-m="weight">Weighted %</button></div></div>
+              </div>
+              <label class="fl">Delivery agents or partners <span class="hint" style="display:inline;margin:0">Many can serve one region</span></label>
+              <div id="agl" class="agl"></div>
+              <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><select class="sel" id="addAg" aria-label="Add an agent" style="width:auto;min-width:200px"><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Logiswift</option><option>Kasapa Express</option></select><button class="btn" id="addAgBtn"><i data-lucide="plus"></i>Add</button></div>
+              <div class="hint" id="shareHint" style="margin-top:10px"></div>
+              <div class="hint" style="margin-top:10px">If no workflow matches an order, it stays unassigned for the fulfilment lead.</div>
+              <label style="display:flex;gap:10px;align-items:center;margin-top:14px"><span class="sw"><input type="checkbox"><i></i></span><span><b>Also assign orders that have no one yet</b><span class="hint" style="display:block;margin:0">38 unassigned orders would be assigned now.</span></span></label>
+            </div>
+          </div>
+          <div class="lnk"></div>
+          <div class="actn">
+            <div class="ah"><span class="num2">2</span><div class="icn" style="background:var(--mint-soft);color:#14975f"><i data-lucide="message-circle"></i></div><div style="flex:1"><b>Send WhatsApp</b><small>To the assigned agent: &ldquo;New order {{orderNumber}} for {{customerName}}, {{customerAddress}}&rdquo;</small></div><button class="iconbtn tg" aria-label="Open or close"><i data-lucide="chevron-down"></i></button><button class="iconbtn dng rm" aria-label="Remove"><i data-lucide="trash-2"></i></button></div>
+            <div class="ab"><label class="fl">Send to</label><select class="sel" style="margin-bottom:12px"><option>The assigned agent</option><option>The customer</option><option>A fixed number</option></select><label class="fl">Message</label><textarea class="ta">New order {{orderNumber}} for {{customerName}}, {{customerAddress}}. Collect GH₵{{total}} on delivery.</textarea><div class="hint">Placeholders: {{orderNumber}} {{customerName}} {{customerAddress}} {{total}}</div></div>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:16px;margin-bottom:6px;font-weight:600">Add an action</div>
+        <div class="addact" id="adds">
+          <button data-a="user-check|Assign user"><i data-lucide="user-check"></i>Assign user</button>
+          <button data-a="message-square|Send SMS"><i data-lucide="message-square"></i>Send SMS</button>
+          <button data-a="message-circle|Send WhatsApp"><i data-lucide="message-circle"></i>Send WhatsApp</button>
+          <button data-a="mail|Send email"><i data-lucide="mail"></i>Send email</button>
+          <button data-a="refresh-cw|Change status"><i data-lucide="refresh-cw"></i>Change status</button>
+          <button data-a="timer|Wait"><i data-lucide="timer"></i>Wait</button>
+          <button data-a="globe|HTTP request"><i data-lucide="globe"></i>HTTP request</button>
+        </div>
+      </div>
+      <!-- 5 -->
+      <div class="pane" data-p="4">
+        <h2>Review</h2><p>Check the whole workflow, try it on a real order, then save.</p>
+        <div class="two2">
+          <div>
+            <div class="sum">
+              <div class="sumrow"><span>Name</span><b id="sumName">Assign Ashanti orders</b></div>
+              <div class="sumrow"><span>Trigger</span><div>Order status changes to <b>Confirmed</b></div></div>
+              <div class="sumrow"><span>Conditions</span><div class="chips" id="sumConds"></div></div>
+              <div class="sumrow"><span>Actions</span><div id="sumActs"></div></div>
+              <div class="sumrow"><span>Status</span><div><span class="tag ok">Will be active</span></div></div>
+            </div>
+            <div class="test">
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Test run</b><select class="sel" style="width:auto;flex:1;min-width:200px" id="tord"><option value="Ashanti">Order #24117, Abena Owusu, Ashanti</option><option value="Greater Accra">Order #24115, Efua Asante, Greater Accra</option><option value="Northern">Order #24105, Mercy Agyeman, Northern</option></select><button class="btn pri" id="run"><i data-lucide="play"></i>Run test</button></div>
+              <div class="hint">Test runs change nothing. No messages are sent.</div>
+              <div id="tres" style="margin-top:8px"></div>
+            </div>
+          </div>
+          <div class="card" style="box-shadow:none">
+            <div class="ct"><h3>Run history</h3><span>Last 24 hours</span></div>
+            <div class="tablewrap"><table>
+              <thead><tr><th>Order</th><th>Result</th><th class="r">When</th></tr></thead>
+              <tbody>
+                <tr><td><b>#24101</b><small class="mut" style="display:block">Kumasi, to Kofi Appiah</small></td><td><span class="tag ok">Success</span></td><td class="r mut">4 min ago</td></tr>
+                <tr><td><b>#24104</b><small class="mut" style="display:block">Kumasi, to Kofi Appiah</small></td><td><span class="tag bad">Failed</span><small class="mut" style="display:block">WhatsApp number not valid</small></td><td class="r mut">26 min ago</td></tr>
+                <tr><td><b>#24099</b><small class="mut" style="display:block">Kumasi, to Kofi Appiah</small></td><td><span class="tag ok">Success</span></td><td class="r mut">41 min ago</td></tr>
+                <tr><td><b>#24097</b><small class="mut" style="display:block">Kumasi, to Kofi Appiah</small></td><td><span class="tag ok">Success</span></td><td class="r mut">1 hour ago</td></tr>
+                <tr><td><b>#24096</b><small class="mut" style="display:block">Kumasi, to Kofi Appiah</small></td><td><span class="tag ok">Success</span></td><td class="r mut">2 hours ago</td></tr>
+              </tbody></table></div>
+          </div>
+        </div>
+      </div>
+      <div class="wfoot"><button class="btn" id="prev"><i data-lucide="arrow-left"></i>Back</button><button class="btn pri" id="next">Continue<i data-lucide="arrow-right"></i></button></div>
+    </div>
+  </div>
+</section>
+<div class="toast" id="toast"></div>
+
+    </main>
+  </div>
+</div>
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.href = 'index.html#' + b.dataset.go; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('on'),2200)};
+const show=v=>{$$('.view').forEach(x=>x.classList.toggle('on',x.id===v));window.scrollTo(0,0)};
+/* list */
+const count=()=>{const rs=$$('#wt tbody tr');const on=rs.filter(r=>r.querySelector('.sw input').checked).length;
+  rs.forEach(r=>r.dataset.st=r.querySelector('.sw input').checked?'on':'off');
+  $('#cActive').textContent=$('#nOn').textContent=on;$('#cInactive').textContent=$('#nOff').textContent=rs.length-on;$('#nAll').textContent=rs.length;filter()};
+let ff='all';
+const filter=()=>{const q=$('#q').value.toLowerCase();let n=0;$$('#wt tbody tr').forEach(r=>{const ok=(ff==='all'||r.dataset.st===ff)&&r.textContent.toLowerCase().includes(q);r.style.display=ok?'':'none';if(ok)n++});$('#none').style.display=n?'none':''};
+$$('.tab[data-f]').forEach(t=>t.onclick=()=>{ff=t.dataset.f;$$('.tab[data-f]').forEach(x=>x.classList.toggle('on',x===t));filter()});
+$('#q').oninput=filter;
+$$('#wt .sw input').forEach(i=>i.onchange=count);
+$$('[data-del]').forEach(b=>b.onclick=()=>{const r=b.closest('tr');shellConfirm('Delete 1 workflow?','"'+r.querySelector('b').textContent+'" will be deleted. Its run history is kept for 30 days.','Delete 1 workflow',()=>{r.remove();count();toast('Workflow deleted')})});
+$$('[data-open]').forEach(b=>b.onclick=()=>{const k=b.dataset.open,nm=b.closest('tr')?b.closest('tr').querySelector('b').textContent:'';const t=k==='fail'?'Failed delivery follow-up':k==='new'?'New workflow':nm;$('#bTitle').textContent=t;$('#wn').value=t;if(/Greater Accra/.test(nm))loadAssign('Greater Accra',[['Esi Badu','Person'],['Logiswift','3PL']]);else if(k!=='fail')loadAssign('Ashanti',[['Kofi Appiah','Person']]);go(0);show('builder')});
+$('#turnOn').onclick=()=>{const r=$$('#wt tbody tr')[5];r.querySelector('.sw input').checked=true;count();toast('Failed delivery follow-up is on')};
+$('#build').onclick=()=>{$('#bTitle').textContent='Assign Greater Accra orders';$('#wn').value='Assign Greater Accra orders';loadAssign('Greater Accra',[['Esi Badu','Person'],['Logiswift','3PL']]);go(3);show('builder');toast('Draft built. Review before saving')};
+/* builder */
+let cur=0;
+function go(i){cur=Math.max(0,Math.min(4,i));$$('.pane').forEach(p=>p.classList.toggle('on',+p.dataset.p===cur));
+  $$('.step').forEach(s=>{const k=+s.dataset.s;s.classList.toggle('on',k===cur);s.classList.toggle('done',k<cur);s.querySelector('.n').innerHTML=k<cur?'<i data-lucide="check" style="width:14px;height:14px"></i>':k+1});
+  if(cur===4&&window.summary)summary();$('#next').style.visibility=cur===4?'hidden':'';$('#prev').style.visibility=cur===0?'hidden':'';lucide.createIcons()}
+$$('.step').forEach(s=>s.onclick=()=>go(+s.dataset.s));
+$('#next').onclick=()=>go(cur+1);$('#prev').onclick=()=>go(cur-1);$('#goReview').onclick=()=>go(4);
+$('#back').onclick=()=>show('list');$('#save').onclick=()=>{toast('Workflow saved');setTimeout(()=>show('list'),700)};
+$('#wn').oninput=e=>$('#bTitle').textContent=e.target.value||'Untitled workflow';
+$('#wa').onchange=e=>{$('#bState').className='tag '+(e.target.checked?'ok':'n');$('#bState').textContent=e.target.checked?'Active':'Inactive'};
+const T={created:['Runs when any new order arrives, from forms, imports or by hand.',''],
+ status:['','<div class="row2"><div><label class="fl">From status</label><select class="sel"><option>Any status</option><option>Pending</option></select></div><div><label class="fl">To status</label><select class="sel"><option>Confirmed</option><option>Out for delivery</option><option>Delivered</option><option>Failed</option></select></div></div>'],
+ payment:['Runs when a Paystack payment lands or you mark an order paid.',''],
+ schedule:['','<div class="row2"><div><label class="fl">Repeat</label><select class="sel"><option>Every day</option><option>Every week</option></select></div><div><label class="fl">Time (Ghana)</label><input class="in" value="09:00"></div></div>'],
+ manual:['You start this workflow from an order with the Run workflow button.',''],
+ webhook:['','<label class="fl">Your webhook URL</label><input class="in" readonly value="https://app.codadmin.com/hooks/wf_8f3k2a91"><div class="hint">Send a POST with the order as JSON. Copy this into the other app.</div>']};
+function trig(t){$$('#trg button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));const [p,h]=T[t];$('#tcfg').innerHTML=(p?'<span class="mut">'+p+'</span>':'')+h;}
+$$('#trg button').forEach(b=>b.onclick=()=>trig(b.dataset.t));trig('status');
+const FIELDS=['Order total','Product','Customer type','Status','Payment method','Region','Country','Item count'];
+const OPS=['is','is not','is greater than','is less than','contains'];
+const opt=(a,s)=>a.map(x=>'<option'+(x===s?' selected':'')+'>'+x+'</option>').join('');
+function addCond(f,o,v){const d=document.createElement('div');d.className='crow';
+ d.innerHTML='<span class="and">'+($$('#conds .crow').length?'And':'When')+'</span><select class="sel" aria-label="Field">'+opt(FIELDS,f)+'</select><select class="sel" aria-label="Operator">'+opt(OPS,o)+'</select><input class="in" aria-label="Value" value="'+v+'"><button class="iconbtn dng" aria-label="Remove"><i data-lucide="x"></i></button>';
+ d.querySelector('button').onclick=()=>{d.remove()};$('#conds').appendChild(d);lucide.createIcons()}
+
+$('#addCond').onclick=()=>addCond('Order total','is greater than','600');
+/* assign: Region is X, then Assign to one or more agents, evenly or weighted */
+let AG=[],mode='even';
+function renderAg(){const w=mode==='weight';$('#agl').innerHTML=AG.map((a,i)=>'<span class="agc"><b>'+a[0]+'</b><span class="tag '+(a[1]==='3PL'?'v':'n')+'">'+a[1]+'</span>'+(w?'<input aria-label="Weight for '+a[0]+'" data-i="'+i+'" value="'+(a[2]!=null?a[2]:Math.round(100/AG.length))+'">%':'')+'<button aria-label="Remove '+a[0]+'" data-rm="'+i+'">&times;</button></span>').join('')||'<span class="mut">Nobody yet. The order stays unassigned.</span>';
+ $$('#agl [data-rm]').forEach(b=>b.onclick=()=>{AG.splice(+b.dataset.rm,1);renderAg()});$$('#agl input').forEach(i=>i.oninput=()=>{AG[+i.dataset.i][2]=+i.value||0;renderAg2()});renderAg2()}
+function renderAg2(){const w=mode==='weight',t=AG.reduce((s,a)=>s+(a[2]!=null?a[2]:Math.round(100/AG.length)),0);$('#shareHint').textContent=!AG.length?'':w?(t===100?'Weights add up to 100%.':'Weights add up to '+t+'%. They must make 100%.'):(AG.length===1?'Every order from this region goes to '+AG[0][0]+'.':'Each of the '+AG.length+' gets an equal share, in turn.');$('#shareHint').style.color=w&&t!==100?'var(--coral)':'';lucide.createIcons()}
+function loadAssign(region,ag){AG=ag.map(a=>a.slice());mode='even';$$('#share button').forEach(b=>b.classList.toggle('on',b.dataset.m==='even'));$('#conds').innerHTML='';addCond('Region','is',region);renderAg()}
+$$('#share button').forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.m;AG.forEach(a=>a[2]=null);renderAg()}));
+$('#addAgBtn').onclick=()=>{const n=$('#addAg').value;if(AG.some(a=>a[0]===n))return;AG.push([n,/Logiswift|Kasapa/.test(n)?'3PL':'Person']);renderAg()};
+loadAssign('Ashanti',[['Kofi Appiah','Person']]);
+function wire(a){a.querySelector('.tg').onclick=()=>a.classList.toggle('open');a.querySelector('.rm').onclick=()=>{const l=a.previousElementSibling&&a.previousElementSibling.classList.contains('lnk')?a.previousElementSibling:a.nextElementSibling;if(l&&l.classList.contains('lnk'))l.remove();a.remove();num()}}
+const num=()=>$$('#seq .actn').forEach((a,i)=>a.querySelector('.num2').textContent=i+1);
+$$('#seq .actn').forEach(wire);
+$$('#adds button').forEach(b=>b.onclick=()=>{const [ic,nm]=b.dataset.a.split('|');const seq=$('#seq');
+ const l=document.createElement('div');l.className='lnk';const a=document.createElement('div');a.className='actn open';
+ const body={'Wait':'<label class="fl">Wait for</label><div class="row2"><input class="in" value="2"><select class="sel"><option>hours</option><option>minutes</option><option>days</option></select></div>','HTTP request':'<label class="fl">URL</label><input class="in" value="https://hooks.example.com/orders"><div class="row2" style="margin-top:10px"><select class="sel"><option>POST</option><option>GET</option></select><input class="in" placeholder="Header, e.g. Authorization"></div>','Change status':'<label class="fl">Change status to</label><select class="sel"><option>Out for delivery</option><option>Delivered</option><option>Failed</option></select>','Send email':'<label class="fl">Subject</label><input class="in" value="Your order {{orderNumber}}"><label class="fl" style="margin-top:10px">Body</label><textarea class="ta">Hello {{customerName}}, your order is on its way.</textarea>','Assign user':'<label class="fl">Assign to role</label><div class="seg" style="margin:0"><button class="on">Call rep</button><button>Delivery agent</button></div>'}[nm]||'<label class="fl">Message</label><textarea class="ta">Hello {{customerName}}, your order {{orderNumber}} is confirmed.</textarea>';
+ a.innerHTML='<div class="ah"><span class="num2"></span><div class="icn" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="'+ic+'"></i></div><div style="flex:1"><b>'+nm+'</b><small>New action, set it up below</small></div><button class="iconbtn tg" aria-label="Open or close"><i data-lucide="chevron-down"></i></button><button class="iconbtn dng rm" aria-label="Remove"><i data-lucide="trash-2"></i></button></div><div class="ab">'+body+'</div>';
+ seq.appendChild(l);seq.appendChild(a);wire(a);num();lucide.createIcons()});
+function summary(){$('#sumName').textContent=$('#wn').value||'Untitled workflow';$('#sumConds').innerHTML=$$('#conds .crow').map(r=>{const v=r.querySelectorAll('select'),i=r.querySelector('input');return '<span class="tag n">'+v[0].value+' '+v[1].value+' '+i.value+'</span>'}).join('')||'<span class="mut">Every order</span>';
+ $('#sumActs').innerHTML='1. Assign '+(AG.length?AG.map(a=>a[0]).join(' and '):'nobody')+(AG.length>1?(mode==='even'?', evenly':', by weight'):'')+'<br>2. Send WhatsApp to the assigned agent'}
+$('#run').onclick=()=>{const reg=$('#tord').value,want=($('#conds .crow input')||{}).value;
+ const ok='<i data-lucide="check-circle-2" style="color:var(--mint)"></i>',no='<i data-lucide="x-circle" style="color:var(--coral)"></i>';
+ if(reg!==want){$('#tres').innerHTML='<div class="tstep">'+ok+'Trigger matched: status is Confirmed</div><div class="tstep">'+no+'Conditions failed: region is '+reg+', not '+want+'</div><div class="tstep">'+ok+'No workflow matches here, so the order stays unassigned for the fulfilment lead</div>';lucide.createIcons();return}
+ const a=AG.length?AG[0][0]:'nobody';
+ $('#tres').innerHTML='<div class="tstep">'+ok+'Trigger matched: status is Confirmed</div><div class="tstep">'+ok+'Conditions passed: region is '+want+'</div><div class="tstep">'+ok+'Would assign to <b>'+a+'</b>'+(AG.length>1?' (next in the '+(mode==='even'?'even':'weighted')+' split)':'')+'</div><div class="tstep">'+ok+'Would send WhatsApp to '+a+'</div>';lucide.createIcons()};
+go(0);
+{const m=location.hash.match(/^#builder(?:-(\d))?$/);if(m){go(+(m[1]||0));show('builder');if(m[1]==='4')$('#run').click()}}
+
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

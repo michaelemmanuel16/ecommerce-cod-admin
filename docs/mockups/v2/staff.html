@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Staff & roles - CodAdmin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+
+.sw{flex:none;width:36px;height:20px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink-3);transition:transform .15s,background .15s}
+.sw[aria-checked="true"]{background:var(--pine)}
+.sw[aria-checked="true"]::after{transform:translateX(16px);background:var(--card)}
+.sw[aria-disabled="true"]{opacity:.55;cursor:not-allowed}
+.ins.row2{display:grid;grid-template-columns:1fr 1fr}
+.mdl{grid-template-columns:1.1fr 1fr;align-items:start}
+.sechead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.sechead h3{font-size:16px;font-weight:700}
+.legend .tag{margin-right:2px}
+.roles{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.rolecard{padding:16px;display:flex;flex-direction:column;gap:14px;text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.rolecard:hover{background:var(--hover)}
+.rolecard:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.rolecard.on{border-color:var(--pine);box-shadow:0 0 0 3px var(--pine-soft)}
+.rc-top{display:flex;align-items:center;gap:10px}
+.rc-top .tag{margin-left:auto}
+.rc-top b{display:block;font-family:"Bricolage Grotesque";font-size:16px}
+.rc-top small{color:var(--ink-3);font-size:12px}
+.rc-ic{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--pine-soft);color:var(--pine);flex:none}
+.holders{display:flex;flex-direction:column;gap:8px}
+.holders .who{gap:9px}
+.holders .who .a{width:28px;height:28px;font-size:11px;flex:none}
+.holders .who .nm{min-width:0;font-weight:500;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.holders .tag{margin-left:auto;font-size:11.5px;padding:1px 7px}
+.a.co{border-radius:9px}
+.vacant{border:1.5px dashed var(--line);border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;color:var(--ink-2);font-size:13px}
+.vacant svg.lucide{color:var(--gold);flex:none}
+.rc-tgt small{color:var(--ink-3);font-size:12px}
+.rc-tgt b{display:block;font-size:13.5px;margin-top:1px}
+.rc-tgt .prog{margin-top:9px}
+.rc-foot{display:flex;align-items:center;gap:7px;color:var(--ink-2);font-size:12.5px;padding-top:12px;border-top:1px solid var(--line);margin-top:auto}
+.rc-foot svg.lucide{width:15px;height:15px;color:var(--ink-3)}
+.detail .sub{padding:4px 20px 0;color:var(--ink-2);font-size:13px}
+.dsec{padding:16px 20px 0}
+.dsec>h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin-bottom:8px;display:flex;justify-content:space-between}
+.dbox{border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.dbox .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.dbox b{font-size:14px}
+.dbox small{color:var(--ink-3);font-size:12.5px}
+.tier{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.tier:last-of-type{border-bottom:0}
+.tier b{margin-left:auto;color:var(--gold)}
+.tgroup{margin-bottom:14px}
+.tgroup>p{font-size:12.5px;font-weight:600;color:var(--ink-2);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.tgroup>p svg.lucide{width:15px;height:15px;color:var(--ink-3)}
+.tlist{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.trow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:11px;font-size:13px}
+.trow span{min-width:0}
+.dfootnote{margin:4px 20px 20px;padding:10px 12px;border-radius:12px;background:var(--hover);color:var(--ink-2);font-size:12.5px;display:flex;gap:8px}
+.dfootnote svg.lucide{flex:none;width:15px;height:15px;margin-top:2px}
+.amenu{position:relative}
+.menu{position:absolute;right:0;top:calc(100% + 6px);width:290px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 50px -18px rgba(0,0,0,.4);z-index:15;padding:6px}
+.menu[hidden]{display:none}
+.menu button{display:flex;gap:11px;align-items:flex-start;width:100%;text-align:left;padding:9px 10px;border-radius:10px}
+.menu button:hover,.menu button:focus-visible{background:var(--hover)}
+.menu button .mi{flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center}
+.menu button b{display:block;font-size:13.5px}
+.menu button small{color:var(--ink-3);font-size:12px;line-height:1.35;display:block}
+.assignbox{margin:14px 20px 0;padding:14px;border:1px solid var(--pine);border-radius:14px;background:var(--pine-soft)}
+.assignbox p{font-size:13px;color:var(--ink);margin-bottom:10px}
+.assignbox .line{display:flex;gap:8px;flex-wrap:wrap}
+.in{flex:1;min-width:160px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit}
+.keyrow{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;padding:9px 12px;border-radius:11px;background:var(--card);border:1px solid var(--line);flex:1;min-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.done-note{margin-top:10px;font-size:12.5px;color:var(--pine);font-weight:600;display:flex;gap:6px;align-items:center}
+.rolechips{display:flex;gap:4px;flex-wrap:wrap}
+@media (max-width:1100px){.mdl,.ins.row2{grid-template-columns:1fr}}
+@media (max-width:760px){.roles,.tlist{grid-template-columns:1fr}.menu{width:min(290px,80vw)}}
+a.btn{text-decoration:none;color:var(--ink)}
+a.btn.pri{color:#fff}
+[data-theme="dark"] a.btn.pri{color:#04211d}
+a.btn:hover{background:var(--hover)}
+
+
+.insrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;padding:14px 20px 18px}
+.lnk{display:inline-flex;gap:6px;align-items:center;font-size:12.5px;font-weight:600;color:var(--pine);text-decoration:none;padding-top:10px;border-top:1px solid var(--line)}
+.lnk svg.lucide{width:14px;height:14px}
+.rolecard .lnk{margin-top:-4px}
+.fi{width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit}
+select.fi{appearance:auto}
+.tt2 td,.tt2 th,.pay td,.pay th,.hist td,.hist th{padding-left:14px;padding-right:14px;white-space:nowrap}
+.tt2 td:first-child,.tt2 th:first-child,.pay td:first-child,.pay th:first-child,.hist td:first-child,.hist th:first-child{padding-left:20px}
+.tt2 td:last-child,.tt2 th:last-child,.pay td:last-child,.pay th:last-child,.hist td:last-child,.hist th:last-child{padding-right:20px}
+.tt2 tr.off{opacity:.55}
+.kb{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:var(--ink-2)}
+.kb:hover{background:var(--hover)}
+.rmenu{position:fixed;z-index:65;width:210px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 50px -18px rgba(0,0,0,.4);padding:6px}
+.rmenu[hidden]{display:none}
+.rmenu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;border-radius:10px;font-weight:500;font-size:13.5px}
+.rmenu button:hover,.rmenu button:focus-visible{background:var(--hover)}
+.rmenu button.dng{color:var(--coral)}
+.rmenu button svg.lucide{width:16px;height:16px}
+.sub2{color:var(--ink-3);font-size:12px;display:block}
+.owed{font-weight:700}
+.owed.z{color:var(--ink-3);font-weight:500}
+.dim{color:var(--ink-3)}
+.pnote{display:flex;gap:10px;align-items:flex-start;margin:0;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-2);font-size:12.5px}
+.pnote svg.lucide{flex:none;width:15px;height:15px;margin-top:2px}
+.toast{position:fixed;left:50%;bottom:58px;transform:translateX(-50%);background:var(--pine);color:#fff;padding:9px 16px;border-radius:12px;font-weight:600;font-size:13px;z-index:70;box-shadow:var(--shadow);display:none}
+[data-theme="dark"] .toast{color:#04211d}
+.toast.on{display:block}
+.veil2{position:fixed;inset:0;background:rgba(8,18,16,.45);backdrop-filter:blur(3px);z-index:60;display:none;align-items:flex-start;justify-content:center;padding-top:7vh;overflow:auto}
+.veil2.on{display:flex}
+.modal{width:560px;max-width:92vw;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5);overflow:hidden;margin-bottom:40px}
+.modal .mh{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line)}
+.modal .mh h3{font-size:17px}
+.modal .mb{padding:18px 20px 6px}
+.modal .mf{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--line)}
+.fld{margin-bottom:14px}
+.fld>label,.fld>.lab{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.fld .hint{color:var(--ink-3);font-size:12px;margin-top:5px}
+.fld .seg{margin-top:0;flex-wrap:wrap}
+.two2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pamt{display:flex;align-items:center;gap:8px;border:2px solid var(--pine);border-radius:14px;padding:8px 14px}
+.pamt span{font:600 18px "Bricolage Grotesque";color:var(--ink-3)}
+.pamt input{border:0;background:transparent;color:var(--ink);font:800 26px "Bricolage Grotesque";width:100%;outline:0}
+.prev{border:1px solid var(--line);border-radius:12px;padding:4px 12px;margin-bottom:14px}
+.prev div{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+.prev div:last-child{border:0}
+.prev span:first-child{color:var(--ink-3)}
+.chip2{display:inline-flex;gap:5px;align-items:center;font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--hover);color:var(--ink-2)}
+[hidden]{display:none!important}
+@media (max-width:760px){.two2{grid-template-columns:1fr}}
+
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav on" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+
+
+<section>
+  <div class="head">
+    <div><h1>Staff &amp; roles</h1><p>A role is a job with its own tools and target. A person, an AI agent or a company can fill it.</p></div>
+    <div style="display:flex;gap:8px"><button class="btn" id="roleBtn"><i data-lucide="plus"></i>New role</button><button class="btn pri" id="invBtn"><i data-lucide="user-plus"></i>Invite person</button></div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 3 things</h3><span>Updated 06:42</span></div>
+    <div class="insrow">
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="package-x"></i></div><div><b>Stock keeper role is vacant. The 12-unit gap has no owner</b><p>Logiswift counts 88 Magic Groove units. Our records say 100. Nobody is set to count or fix it.</p></div></div><div class="act"><button class="mini pri" data-act="stock-ai">Assign an AI agent</button><button class="mini" data-act="stock-me">Take it myself</button></div></div>
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="banknote"></i></div><div><b>You hold 3 roles, and 38 orders are unpaid over 8 days</b><p>Finance clerk is yours today. An agent with payout tools can chase Logiswift each morning.</p></div></div><div class="act"><button class="mini pri" data-act="fin-ai">Hand Finance clerk to an agent</button><button class="mini">Dismiss</button></div></div>
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--mint-soft);color:#14975f"><i data-lucide="hand-coins"></i></div><div><b>Adwoa Darko is owed GH₵2,034</b><p>253 delivered orders at GH₵8, plus GH₵610 upsell reward, less GH₵600 paid on 9 Oct. Nana Kyei is owed GH₵134.</p></div></div><div class="act"><button class="mini pri" data-pay="adwoa">Pay Adwoa</button><button class="mini" data-act="paytab">See balances</button></div></div>
+    </div>
+  </div>
+
+  <div class="grid mdl">
+    <div>
+      <div class="sechead"><h3>Roles</h3><div class="legend"><span><span class="tag n">Human</span></span><span><span class="tag v">AI agent</span></span><span><span class="tag warn">Company</span></span></div></div>
+      <div class="roles" id="roles"></div>
+    </div>
+    <div class="card detail" id="detail" style="padding-bottom:4px"></div>
+  </div>
+
+
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3>People, agents and companies</h3><span id="teamcount">10 on the team · 1 invited · 1 deactivated</span></div>
+    <div class="tabs" id="stab" style="border-bottom:0;padding-bottom:6px">
+      <button class="tab on" data-f="all">All <span id="n-all">12</span></button><button class="tab" data-f="active">Active <span id="n-active">10</span></button><button class="tab" data-f="invited">Invited <span id="n-invited">1</span></button><button class="tab" data-f="off">Deactivated <span id="n-off">1</span></button>
+    </div>
+    <div class="tablewrap"><table class="tt2">
+      <thead><tr><th>Name</th><th>Roles</th><th>Type</th><th>Pay</th><th>Last active</th><th>Status</th><th></th></tr></thead>
+      <tbody id="team"></tbody>
+    </table></div>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="paycard">
+    <div class="ct"><h3>Pay</h3><span>October · people only. Delivery fees are kept from cash, not paid out.</span></div>
+    <div class="tabs" id="ptab" style="border-bottom:1px solid var(--line);margin-top:8px"><button class="tab on" data-p="reps">Call reps</button><button class="tab" data-p="agents">Delivery agents</button><button class="tab" data-p="hist">Payout history <span id="hn">5</span></button></div>
+    <div id="p-reps"><div class="tablewrap"><table class="pay"><thead><tr><th>Call rep</th><th class="r">Delivered orders</th><th class="r">Commission</th><th class="r">Upsell reward</th><th class="r">Earned</th><th class="r">Paid</th><th class="r">Owed</th><th></th></tr></thead><tbody id="repbody"></tbody></table></div>
+      <div class="pnote"><i data-lucide="info"></i><span>Commission is GH₵8 for each confirmed order that is delivered, plus an upsell reward of 10% of the extra value the rep adds at confirmation, paid on delivery. Target bonuses are separate, see Rewards in <a class="lnk" style="border:0;padding:0" href="settings.html#rewards">Settings</a>.</span></div></div>
+    <div id="p-agents" hidden><div class="tablewrap"><table class="pay"><thead><tr><th>Delivery agent</th><th>Vehicle</th><th>Location</th><th>Fee rule</th><th class="r">Delivered</th><th class="r">Failed</th><th class="r">Fees kept</th><th class="r">Cash held</th></tr></thead><tbody id="agbody"></tbody></table></div>
+      <div class="pnote"><i data-lucide="info"></i><span>The delivery fee is what we pay whoever delivers the order. The agent keeps it from the cash they collect and hands in the rest, so there is no fee payout. Cash held is collected minus fees minus deposits. The fee rule is set per partner on <a class="lnk" style="border:0;padding:0" href="deliveries.html">Deliveries</a>. Target rewards are in <a class="lnk" style="border:0;padding:0" href="settings.html#rewards">Settings, Rewards</a>. Deposits are in <a class="lnk" style="border:0;padding:0" href="finance.html">Finance</a>.</span></div></div>
+    <div id="p-hist" hidden><div class="tablewrap"><table class="hist"><thead><tr><th>Date</th><th>Person</th><th class="r">Amount</th><th>Method</th><th>Notes</th><th>Recorded by</th></tr></thead><tbody id="hbody"></tbody></table></div></div>
+  </div>
+</section>
+
+<div class="rmenu" id="rmenu" hidden></div>
+
+<div class="veil2" id="uveil"><div class="modal" role="dialog" aria-label="Person">
+  <div class="mh"><h3 id="umt">Invite a person</h3><button class="ibtn" data-close="uveil" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="mb">
+    <div class="two2"><div class="fld"><label for="un">Full name</label><input class="fi" id="un" placeholder="e.g. Akua Serwaa"></div><div class="fld"><label for="ue">Email</label><input class="fi" id="ue" placeholder="name@example.com"></div></div>
+    <div class="two2"><div class="fld"><label for="up">Phone</label><input class="fi" id="up" placeholder="024 555 0100"></div><div class="fld"><label for="ur">Role</label><select class="fi" id="ur"><option>Call rep</option><option>Delivery</option><option>Finance clerk</option><option>Marketing</option><option>Stock keeper</option></select></div></div>
+    <div class="fld"><span class="lab">How are they paid?</span><div class="seg" id="upay"><button data-v="comm" class="on">GH₵8 per delivered confirmed order + upsell reward</button><button data-v="none">No pay through the app</button></div><div class="hint" id="ufee" hidden>Delivery agents have no pay. They keep a delivery fee from the cash they collect. Set the fee rule per partner in Deliveries.</div></div>
+    <div class="fld" id="uamt"><label for="ua">Commission per delivered confirmed order</label><div class="pamt"><span>GH₵</span><input id="ua" value="8" inputmode="decimal"></div><div class="hint" id="uah">Paid for each order the rep confirmed that is then delivered.</div></div>
+    <div id="uveh" hidden><div class="two2"><div class="fld"><label for="uv">Vehicle</label><select class="fi" id="uv"><option>Motorbike</option><option>Car</option><option>Tricycle</option><option>Bicycle</option><option>On foot</option></select></div><div class="fld"><label for="uid">Vehicle number</label><input class="fi" id="uid" placeholder="e.g. GR 4821-23"></div></div>
+    <div class="fld"><label for="ul">Location</label><input class="fi" id="ul" placeholder="City, e.g. Kumasi"><div class="hint">Orders in this city can be assigned to them.</div></div></div>
+  </div>
+  <div class="mf"><button class="btn" data-close="uveil">Cancel</button><button class="btn pri" id="usave">Send invite</button></div>
+</div></div>
+
+<div class="veil2" id="rveil"><div class="modal" role="dialog" aria-label="New role">
+  <div class="mh"><h3>New role</h3><button class="ibtn" data-close="rveil" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="mb">
+    <div class="fld"><label for="rn">Role name</label><input class="fi" id="rn" placeholder="e.g. Customer support"></div>
+    <div class="fld"><label for="rd">What the role does</label><input class="fi" id="rd" placeholder="One line"></div>
+    <div class="fld"><label for="rc">Start with the tools of</label><select class="fi" id="rc"><option value="none">No tools</option><option value="call">Call rep</option><option value="delivery">Delivery</option><option value="finance">Finance clerk</option><option value="marketing">Marketing</option><option value="stock">Stock keeper</option></select><div class="hint">You can switch each tool on or off after the role is created.</div></div>
+  </div>
+  <div class="mf"><button class="btn" data-close="rveil">Cancel</button><button class="btn pri" id="rsave">Create role</button></div>
+</div></div>
+<div class="toast" id="toast" role="status"></div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-href="index.html#orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-href="index.html#board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-href="index.html#targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-href]').forEach(b => b.onclick = () => { location.href = b.dataset.href; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+</script>
+<script>
+
+const READ = [['orders','View orders'],['customers','View customers'],['stock','View stock'],['payouts','View payouts'],['reports','View reports'],['targets','View targets'],['export','Export data']];
+const WRITE = [['status','Update order status'],['assign','Assign orders'],['call','Call customers'],['msg','Message customers'],['products','Edit products'],['adjust','Adjust stock'],['payout','Record payout'],['edittargets','Edit targets'],['admin','Manage team']];
+const ALL = [...READ, ...WRITE].map(t => t[0]);
+const TYPE = { human:['Human','n'], ai:['AI agent','v'], co:['Company','warn'] };
+const COL = { pine:['var(--pine-soft)','var(--pine)'], coral:['var(--coral-soft)','var(--coral)'], gold:['var(--gold-soft)','var(--gold)'], mint:['var(--mint-soft)','#14975f'], violet:['var(--violet-soft)','var(--violet)'] };
+const BAR = { ok:'', warn:'background:var(--gold)', bad:'background:var(--coral)' };
+const CALL_TIERS = [['100%','GH₵300 bonus'],['120%','GH₵500 + paid day off']];
+const R = [
+ { id:'owner', name:'Owner', ic:'crown', desc:'Runs the business and owns the North Star. Always has every tool.',
+   holders:[{n:'Manny',i:'MA',t:'human',c:'coral'}], target:'GH₵180k delivered in October', now:'GH₵92k of GH₵180k', pct:51, pace:55, st:['bad','Off track'], tools:ALL, tiers:[], note:'The owner has no reward rule. Profit is the reward.' },
+ { id:'call', name:'Call rep', ic:'phone-call', desc:'Calls new orders and confirms them before dispatch.',
+   holders:[{n:'Adwoa Darko',i:'AD',t:'human',c:'pine'},{n:'Nana Kyei',i:'NK',t:'human',c:'coral'},{n:'Confirm agent',i:'AI',t:'ai',c:'violet',sub:'Night shift'}],
+   target:'723 confirmed orders that get delivered', now:'376 of 723, counted at month close', pct:52, pace:55, st:['warn','Behind'], tools:['orders','customers','targets','status','call','msg'], tiers:CALL_TIERS, note:'Confirmed and delivered: Adwoa 253 of 423, Confirm agent 110 of 250, Nana 13 of 50. AI agents get no payout. Upsell reward is separate: 10% of the extra value added, paid when the order is delivered.' },
+ { id:'delivery', name:'Delivery', ic:'truck', desc:'Takes confirmed orders to the customer, collects cash and pays it back.',
+   holders:[{n:'Logiswift',i:'LS',t:'co',c:'gold'},{n:'Kofi Appiah',i:'KA',t:'human',c:'gold'},{n:'Esi Badu',i:'EB',t:'human',c:'mint'},{n:'Kwesi Amoah',i:'KW',t:'human',c:'coral'},{n:'Kasapa Express',i:'KE',t:'co',c:'gold'}],
+   target:'60% delivery success', now:'48% now', pct:80, pace:100, st:['warn','Behind'], tools:['orders','stock','targets','status'], tiers:[['100%','GH₵250 bonus'],['120%','GH₵400 + paid day off']], note:'Companies get no bonus. A 3PL below 80% goes to contract review.' },
+ { id:'finance', name:'Finance clerk', ic:'wallet', desc:'Matches 3PL payouts to delivered orders and chases unpaid cash.',
+   holders:[{n:'Manny',i:'MA',t:'human',c:'coral'}], target:'Under 10 orders unpaid over 8 days', now:'38 now', pct:26, pace:null, st:['bad','Off track'], tools:['orders','payouts','reports','export','payout'], tiers:[], note:'No reward rule while the owner holds this role.' },
+ { id:'marketing', name:'Marketing', ic:'megaphone', desc:'Runs Meta ads and keeps the cost of each order under the max CPA.',
+   holders:[{n:'Manny',i:'MA',t:'human',c:'coral'}], target:'CPA under the max CPA of ₦7,040', now:'₦5,903 now', pct:84, pace:null, st:['ok','On track'], tools:['orders','reports','targets','export','products'], tiers:[], note:'No reward rule while the owner holds this role.' },
+ { id:'stock', name:'Stock keeper', ic:'boxes', desc:'Counts stock at the 3PL and fixes gaps between their numbers and ours.',
+   holders:[], target:'Stock gap under 2 units', now:'12 units short now', pct:0, pace:null, st:['warn','Vacant'], tools:['orders','stock','adjust','products'], tiers:[], note:'Set a reward when you fill this role.' }
+];
+let sel = 'call';
+const byId = id => R.find(r => r.id === id);
+const av = h => `<div class="a${h.t==='co'?' co':''}" style="background:${COL[h.c][0]};color:${COL[h.c][1]}">${h.i}</div>`;
+
+function renderCards() {
+  document.getElementById('roles').innerHTML = R.map(r => {
+    const holders = r.holders.length
+      ? `<div class="holders">${r.holders.map(h => `<div class="who">${av(h)}<span class="nm">${h.n}</span><span class="tag ${TYPE[h.t][1]}">${TYPE[h.t][0]}</span></div>`).join('')}</div>`
+      : `<div class="vacant"><i data-lucide="user-x"></i><span>Nobody holds this role. The stock gap has no owner.</span></div>`;
+    const prog = r.holders.length
+      ? `<div class="prog"><i style="width:${r.pct}%;${BAR[r.st[0]]}"></i>${r.pace!=null?`<span class="pace" style="left:${r.pace}%"></span>`:''}</div>` : '';
+    return `<div class="card rolecard${r.id===sel?' on':''}" role="button" tabindex="0" data-id="${r.id}" aria-pressed="${r.id===sel}">
+      <div class="rc-top"><div class="rc-ic"><i data-lucide="${r.ic}"></i></div><div><b>${r.name}</b><small>${r.holders.length ? r.holders.length + (r.holders.length>1?' holders':' holder') : 'No holder'}</small></div><span class="tag ${r.st[0]}">${r.st[1]}</span></div>
+      ${holders}
+      <div class="rc-tgt"><small>October target</small><b>${r.target}</b>${prog}<small style="display:block;margin-top:6px">${r.now}</small></div>
+      <div class="rc-foot"><i data-lucide="wrench"></i><span>${r.tools.length} of ${ALL.length} tools allowed</span></div>${r.id==='delivery'?'<a class="lnk" href="agent.html"><i data-lucide="smartphone"></i>Open delivery agent phone view</a>':''}${r.id==='call'?'<a class="lnk" href="rep.html"><i data-lucide="phone-call"></i>Open call-rep view</a>':''}
+    </div>`;
+  }).join('');
+  document.querySelectorAll('.rolecard').forEach(c => {
+    c.onclick = () => select(c.dataset.id);
+    c.querySelectorAll('a').forEach(a => a.onclick = e => e.stopPropagation());
+    c.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(c.dataset.id); } };
+  });
+}
+
+function toolGroup(r, label, icon, list) {
+  const owner = r.id === 'owner';
+  return `<div class="tgroup"><p><i data-lucide="${icon}"></i>${label}</p><div class="tlist">${list.map(([k, n]) =>
+    `<div class="trow"><span>${n}</span><button class="sw" role="switch" aria-label="${n}" aria-checked="${r.tools.includes(k)}" ${owner?'aria-disabled="true"':''} data-tool="${k}"></button></div>`).join('')}</div></div>`;
+}
+
+function renderDetail(openMenu) {
+  const r = byId(sel);
+  const n = r.tools.length;
+  const tiers = r.tiers.length
+    ? r.tiers.map(t => `<div class="tier"><span class="tag ok">${t[0]}</span><span>of target</span><b>${t[1]}</b></div>`).join('')
+    : '';
+  document.getElementById('detail').innerHTML = `
+    <div class="ct"><h3>${r.name}</h3>
+      <div class="amenu"><button class="btn pri" id="assignBtn" aria-haspopup="true" aria-expanded="false"><i data-lucide="user-plus"></i>Assign<i data-lucide="chevron-down"></i></button>
+        <div class="menu" id="menu" hidden>
+          <button data-opt="person"><span class="mi" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="mail"></i></span><span><b>Invite a person</b><small>Send an invite by email or phone</small></span></button>
+          <button data-opt="ai"><span class="mi" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="bot"></i></span><span><b>Connect an AI agent</b><small>It gets an MCP key limited to this role's ${n} tools</small></span></button>
+          <button data-opt="co"><span class="mi" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="building-2"></i></span><span><b>Add a company</b><small>A 3PL or agency, with its own login or CSV</small></span></button>
+        </div></div></div>
+    <p class="sub">${r.desc}</p>
+    <div id="assignHost"></div>
+    <div class="dsec"><h4>Monthly target</h4>
+      <div class="dbox"><div class="row"><b>${r.target}</b><span class="tag ${r.st[0]}">${r.st[1]}</span></div>
+        ${r.holders.length ? `<div class="prog"><i style="width:${r.pct}%;${BAR[r.st[0]]}"></i>${r.pace!=null?`<span class="pace" style="left:${r.pace}%"></span>`:''}</div>` : ''}
+        <small style="display:block;margin-top:8px">${r.now}</small></div></div>
+    ${r.id==='delivery'?'<div class="dsec"><h4>Phone view</h4><div class="dbox"><div class="row"><span><b>What riders see on their phone</b><small style="display:block">Today\'s orders, cash to collect and a one-tap status update.</small></span><a class="btn" href="agent.html" style="padding:6px 11px;font-size:13px"><i data-lucide="smartphone"></i>Open delivery agent phone view</a></div></div></div>':''}
+    ${r.id==='call'?'<div class="dsec"><h4>Call-rep view</h4><div class="dbox"><div class="row"><span><b>What call reps see</b><small style="display:block">Their call queue, order details and the upsell options to offer.</small></span><a class="btn" href="rep.html" style="padding:6px 11px;font-size:13px"><i data-lucide="phone-call"></i>Open call-rep view</a></div></div></div>':''}
+    <div class="dsec"><h4>Reward rule<a class="mini" href="settings.html#rewards" style="margin:-4px 0;text-decoration:none;color:inherit">Edit in Rewards</a></h4>
+      <div class="dbox" style="padding-top:4px;padding-bottom:4px">${tiers}<small style="display:block;padding:9px 0">${r.note}${r.tiers.length?' Tiers are read from Settings, Rewards.':''}</small></div></div>
+    <div class="dsec"><h4><span>Allowed tools</span><span id="tcount">${n} of ${ALL.length} on</span></h4>
+      ${toolGroup(r, 'Read', 'eye', READ)}${toolGroup(r, 'Write', 'pencil', WRITE)}</div>
+    <div class="dfootnote"><i data-lucide="key-round"></i><span>${r.id==='owner' ? 'The owner always has every tool. These switches are locked.' : 'An AI agent in this role gets an MCP key limited to the tools switched on here.'}</span></div>`;
+  lucide.createIcons();
+  wireDetail(openMenu);
+}
+
+function wireDetail(openMenu) {
+  const btn = document.getElementById('assignBtn'), menu = document.getElementById('menu');
+  const setMenu = o => { menu.hidden = !o; btn.setAttribute('aria-expanded', o); };
+  btn.onclick = e => { e.stopPropagation(); setMenu(menu.hidden); };
+  menu.querySelectorAll('[data-opt]').forEach(b => b.onclick = e => { e.stopPropagation(); setMenu(false); showAssign(b.dataset.opt); });
+  document.querySelectorAll('.sw').forEach(s => s.onclick = () => {
+    if (s.getAttribute('aria-disabled') === 'true') return;
+    const r = byId(sel), k = s.dataset.tool, on = s.getAttribute('aria-checked') !== 'true';
+    r.tools = on ? [...r.tools, k] : r.tools.filter(x => x !== k);
+    s.setAttribute('aria-checked', on);
+    document.getElementById('tcount').textContent = r.tools.length + ' of ' + ALL.length + ' on';
+    renderCards();
+    lucide.createIcons();
+  });
+  if (openMenu) setMenu(true);
+}
+
+function showAssign(opt) {
+  const r = byId(sel), host = document.getElementById('assignHost');
+  const box = {
+    person: `<p><b>Invite a person to ${r.name}</b></p><div class="line"><input class="in" aria-label="Email or phone" placeholder="Email or phone, e.g. 024 555 0100"><button class="btn pri" data-done="Invite sent. Sample only, nothing was sent.">Send invite</button></div>`,
+    ai: `<p><b>Connect an AI agent to ${r.name}</b><br>The key can only use the ${r.tools.length} tools switched on below.</p><div class="line"><input class="in" aria-label="Agent name" placeholder="Agent name, e.g. Stock-count agent"><button class="btn pri" data-done="Key created and tied to ${r.name}. Sample key: cod_mcp_••••••••7d2a">Create MCP key</button></div>`,
+    co: `<p><b>Add a company to ${r.name}</b></p><div class="line"><input class="in" aria-label="Company name" placeholder="Company name, e.g. a 3PL or agency"><button class="btn pri" data-done="Company added. They can log in or send a CSV. Sample only.">Add company</button></div>`
+  }[opt];
+  host.innerHTML = `<div class="assignbox">${box}<div class="done-note" hidden></div></div>`;
+  const b = host.querySelector('[data-done]');
+  b.onclick = () => { const d = host.querySelector('.done-note'); d.hidden = false; d.innerHTML = '<i data-lucide="check-circle-2"></i>' + b.dataset.done; lucide.createIcons(); };
+  host.querySelector('.in').focus();
+}
+
+function select(id, menuOpt) {
+  sel = id;
+  renderCards();
+  renderDetail(false);
+  lucide.createIcons();
+  if (menuOpt) showAssign(menuOpt);
+}
+document.addEventListener('click', () => { const m = document.getElementById('menu'); if (m && !m.hidden) { m.hidden = true; document.getElementById('assignBtn').setAttribute('aria-expanded', 'false'); } });
+document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => {
+  const a = b.dataset.act;
+  if (a === 'stock-ai') select('stock', 'ai');
+  if (a === 'stock-me') select('stock', 'person');
+  if (a === 'fin-ai') select('finance', 'ai');
+  document.getElementById('detail').scrollIntoView({ behavior:'smooth', block:'nearest' });
+});
+renderCards();
+renderDetail(false);
+
+
+/* ---------- team table, pay, modals ---------- */
+const E = id => document.getElementById(id);
+let toastT;
+function toast(t){ const e=E('toast'); e.textContent=t; e.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>e.classList.remove('on'),2600); }
+const money = n => 'GH₵' + Math.round(n).toLocaleString();
+const TEAM = [
+ {n:'Manny',sub:'manny@mannydynamics.com',i:'MA',c:'coral',roles:['Owner','Finance clerk','Marketing'],t:'human',pay:'Owner, no pay here',last:'Now',st:'active',lab:['ok','Active'],owner:true},
+ {n:'Adwoa Darko',sub:'024 555 0111',i:'AD',c:'pine',roles:['Call rep'],t:'human',pay:'GH₵8 per delivered order + upsell',pt:'comm',amt:8,last:'12 min ago',st:'active',lab:['ok','Active'],payid:'adwoa'},
+ {n:'Nana Kyei',sub:'050 555 0138',i:'NK',c:'coral',roles:['Call rep'],t:'human',pay:'GH₵8 per delivered order + upsell',pt:'comm',amt:8,last:'2 hours ago',st:'active',lab:['ok','Active'],payid:'nana'},
+ {n:'Confirm agent',sub:'Night shift · MCP key ends k3f9',i:'AI',c:'violet',roles:['Call rep'],t:'ai',pay:'No pay. AI agent',last:'4 min ago',st:'active',lab:['ok','Working']},
+ {n:"Manny's Claude",sub:'Marketing · MCP key ends 8b21',i:'AI',c:'violet',roles:['Marketing'],t:'ai',pay:'No pay. AI agent',last:'Yesterday',st:'active',lab:['ok','Active']},
+ {n:'Kofi Appiah',sub:'Kumasi · 020 555 0127',i:'KA',c:'gold',roles:['Delivery'],t:'human',pay:'Fee GH₵25 per delivery, kept from cash',last:'38 min ago',st:'active',lab:['ok','Active']},
+ {n:'Esi Badu',sub:'Accra · 055 555 0190',i:'EB',c:'mint',roles:['Delivery'],t:'human',pay:'Fee GH₵25 per delivery, kept from cash',last:'Yesterday, 18:20',st:'active',lab:['warn','Idle 1 day']},
+ {n:'Kwesi Amoah',sub:'Takoradi · 024 555 0164',i:'KW',c:'coral',roles:['Delivery'],t:'human',pay:'Fee GH₵30 per delivery, kept from cash',last:'1 hour ago',st:'active',lab:['ok','Active']},
+ {n:'Kasapa Express',sub:'3PL · trial · Cape Coast',i:'KE',c:'gold',roles:['Delivery'],t:'co',pay:'Fee kept from cash',last:'Today, 09:40',st:'active',lab:['v','On trial']},
+ {n:'Logiswift',sub:'3PL · ops@logiswift.example',i:'LS',c:'gold',roles:['Delivery'],t:'co',pay:'Fee kept from cash',last:'Today, 08:15',st:'active',lab:['warn','Payout short GH₵840']},
+ {n:'Akua Serwaa',sub:'akua.serwaa@example.com',i:'AS',c:'mint',roles:['Call rep'],t:'human',pay:'GH₵8 per delivered order + upsell',pt:'comm',amt:8,last:'Invite sent 15 Oct',st:'invited',lab:['n','Invited']},
+ {n:'Yaa Pokua',sub:'Former call rep · left 2 Oct',i:'YP',c:'coral',roles:['Call rep'],t:'human',pay:'Paid in full',last:'2 Oct',st:'off',lab:['n','Deactivated']}
+];
+const typeTag = t => `<span class="tag ${TYPE[t][1]}">${TYPE[t][0]}</span>`;
+let tf='all';
+function renderTeam(){
+  const cnt = k => TEAM.filter(p => p.st===k).length;
+  E('n-all').textContent = TEAM.length; E('n-active').textContent = cnt('active'); E('n-invited').textContent = cnt('invited'); E('n-off').textContent = cnt('off');
+  E('teamcount').textContent = `${cnt('active')} on the team · ${cnt('invited')} invited · ${cnt('off')} deactivated`;
+  const rows = TEAM.map((p,i)=>({p,i})).filter(x => tf==='all' || x.p.st===tf);
+  E('team').innerHTML = rows.length ? rows.map(({p,i}) => `<tr class="${p.st==='off'?'off':''}"><td><div class="who"><div class="a${p.t==='co'?' co':''}" style="background:${COL[p.c][0]};color:${COL[p.c][1]}">${p.i}</div><div>${p.n}<small>${p.sub}</small></div></div></td>
+   <td><div class="rolechips">${p.roles.map(r=>`<span class="tag n">${r}</span>`).join('')}</div></td><td>${typeTag(p.t)}</td><td>${p.pay}</td><td>${p.last}</td><td><span class="tag ${p.lab[0]}">${p.lab[1]}</span></td>
+   <td class="r"><button class="kb" data-k="${i}" aria-label="Actions for ${p.n}" aria-haspopup="true"><i data-lucide="more-horizontal"></i></button></td></tr>`).join('') : '<tr><td colspan="7" style="color:var(--ink-3)">Nobody here.</td></tr>';
+  E('team').querySelectorAll('.kb').forEach(b => b.onclick = e => { e.stopPropagation(); openRowMenu(+b.dataset.k, b); });
+  lucide.createIcons();
+}
+document.querySelectorAll('#stab .tab').forEach(t => t.onclick = () => { tf=t.dataset.f; document.querySelectorAll('#stab .tab').forEach(x=>x.classList.toggle('on',x===t)); renderTeam(); });
+
+function openRowMenu(i, btn){
+  const p = TEAM[i], m = E('rmenu');
+  const it = (ic, lab, k, cls) => `<button data-a="${k}" class="${cls||''}"><i data-lucide="${ic}"></i>${lab}</button>`;
+  m.innerHTML = it('pencil','Edit','edit')
+   + (p.payid ? it('banknote','Record payout','pay') : '')
+   + (p.t==='ai' ? it('key-round','Manage key','key') : it('key-round','Reset password','reset'))
+   + (p.owner ? '' : it(p.st==='off'?'user-check':'user-x', p.st==='off'?'Reactivate':'Deactivate','toggle'))
+   + (p.owner ? '' : it('trash-2','Delete','del','dng'));
+  const r = btn.getBoundingClientRect();
+  m.hidden = false;
+  m.style.top = Math.min(r.bottom + 6, window.innerHeight - m.offsetHeight - 10) + 'px';
+  m.style.left = Math.max(10, r.right - 210) + 'px';
+  lucide.createIcons();
+  m.querySelectorAll('button').forEach(b => b.onclick = () => {
+    m.hidden = true;
+    const a = b.dataset.a;
+    if (a==='edit') openPerson(i);
+    if (a==='pay') openPay(p.payid);
+    if (a==='key') location.href = 'connections.html';
+    if (a==='reset') toast('Reset link sent to ' + p.n + '. Sample only.');
+    if (a==='toggle') { if (p.st==='off') { p.st='active'; p.lab=['ok','Active']; p.last='Just now'; toast(p.n+' is active again.'); } else { p.st='off'; p.lab=['n','Deactivated']; toast(p.n+' is deactivated. They cannot sign in.'); } renderTeam(); }
+    if (a==='del') shellConfirm('Delete 1 person?', p.n + ' will be removed from the team. Their orders and history stay. This cannot be undone.', 'Delete 1 person', () => { TEAM.splice(TEAM.indexOf(p),1); renderTeam(); toast(p.n+' was deleted. Sample only.'); });
+  });
+}
+document.addEventListener('click', () => { E('rmenu').hidden = true; });
+window.addEventListener('scroll', () => { E('rmenu').hidden = true; }, true);
+
+/* person modal */
+let editing = -1;
+function setPayUI(v){
+  const del = E('ur').value==='Delivery';
+  document.querySelectorAll('#upay button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  E('upay').hidden = del; E('ufee').hidden = !del;
+  E('uamt').hidden = v==='none' || del;
+  E('uah').textContent = 'Paid for each order the rep confirmed by call that is then delivered, plus 10% of the upsell value the rep adds.';
+}
+function updUI(){ E('uveh').hidden = E('ur').value!=='Delivery'; }
+document.querySelectorAll('#upay button').forEach(b => b.addEventListener('click', () => setPayUI(b.dataset.v)));
+E('ur').onchange = () => { updUI(); setPayUI(E('ur').value==='Call rep'?'comm':'none'); };
+function openPerson(i){
+  editing = i;
+  const p = TEAM[i];
+  E('umt').textContent = p ? 'Edit ' + p.n : 'Invite a person';
+  E('usave').textContent = p ? 'Save changes' : 'Send invite';
+  E('un').value = p ? p.n : ''; E('ue').value = p && p.sub.includes('@') ? p.sub : ''; E('up').value = p && /^\d{3} /.test(p.sub) ? p.sub : '';
+  E('ur').value = p ? p.roles[p.roles.length>1?1:0].replace('Owner','Finance clerk') : 'Call rep';
+  if (p && p.roles[0]==='Owner') E('ur').value='Finance clerk';
+  updUI(); setPayUI(p ? (p.pt||'none') : 'comm');
+  E('ua').value = p && p.amt ? p.amt : 8;
+  E('ul').value = p && p.roles[0]==='Delivery' ? p.sub.split(' · ')[0] : '';
+  E('uveil').classList.add('on'); E('un').focus();
+}
+E('invBtn').onclick = () => openPerson(-1);
+E('usave').onclick = () => {
+  const name = E('un').value.trim() || 'New person';
+  const v = document.querySelector('#upay .on').dataset.v;
+  const amt = E('ua').value || '0';
+  const isDel = E('ur').value==='Delivery';
+  const pay = isDel ? 'Fee kept from cash' : v==='none' ? 'No pay through the app' : `GH₵${amt} per delivered confirmed order + upsell reward`;
+  if (editing >= 0) { Object.assign(TEAM[editing], {n:name, pay, pt:v==='none'||isDel?undefined:v, amt:+amt, roles:[E('ur').value]}); toast('Saved ' + name + '. Sample only.'); }
+  else { TEAM.push({n:name,sub:E('ue').value||E('up').value||'Invite pending',i:name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(),c:'mint',roles:[E('ur').value],t:'human',pay,pt:v==='none'||isDel?undefined:v,amt:+amt,last:'Invite sent just now',st:'invited',lab:['n','Invited']}); toast('Invite sent to ' + name + '. Sample only.'); }
+  E('uveil').classList.remove('on'); renderTeam();
+};
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => E(b.dataset.close).classList.remove('on'));
+['uveil','rveil'].forEach(id => E(id).onclick = e => { if (e.target===E(id)) E(id).classList.remove('on'); });
+document.addEventListener('keydown', e => { if (e.key==='Escape') ['uveil','rveil'].forEach(id => E(id).classList.remove('on')); });
+
+/* pay */
+const REPS = [
+ {id:'adwoa',n:'Adwoa Darko',d:253,r:8,up:610,paid:600},
+ {id:'nana',n:'Nana Kyei',d:13,r:8,up:30,paid:0}
+];
+const AGENTS = [
+ {id:'kofi',n:'Kofi Appiah',veh:'Motorbike · GT 2210-22',loc:'Kumasi',fee:'GH₵25 delivered · GH₵5 failed',d:82,f:70,fees:2400,cash:2900},
+ {id:'esi',n:'Esi Badu',veh:'Motorbike · GR 7745-23',loc:'Accra',fee:'GH₵25 delivered · GH₵0 failed',d:48,f:40,fees:1200,cash:2100},
+ {id:'kwesi',n:'Kwesi Amoah',veh:'Car · WR 5120-21',loc:'Takoradi',fee:'GH₵30 delivered · GH₵5 failed',d:26,f:22,fees:890,cash:1100}
+];
+const HIST = [
+ ['9 Oct','Adwoa Darko',600,'MoMo','October commission','Manny'],
+ ['1 Oct','Adwoa Darko',840,'Bank','September balance','Manny']
+];
+const all = () => REPS;
+const earned = p => p.d*p.r + (p.up||0);
+const owed = p => earned(p) - p.paid;
+function renderPay(){
+  E('repbody').innerHTML = REPS.map(p => `<tr><td><div class="who"><div class="a" style="background:${COL.pine[0]};color:${COL.pine[1]}">${p.n.split(' ').map(w=>w[0]).join('')}</div><div>${p.n}<small>Call rep</small></div></div></td><td class="r num">${p.d}</td><td class="r num">${money(p.d*p.r)}<small class="sub2">GH₵${p.r} each</small></td><td class="r num">${money(p.up)}</td><td class="r num">${money(earned(p))}</td><td class="r num">${money(p.paid)}</td><td class="r num"><span class="owed ${owed(p)?'':'z'}">${money(owed(p))}</span></td><td class="r"><button class="mini ${owed(p)?'pri':''}" data-pay="${p.id}">Record payout in Finance</button></td></tr>`).join('')
+   + `<tr style="opacity:.7"><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">AI</div><div>Confirm agent<small>AI agent</small></div></div></td><td class="r num">110</td><td class="r dim">No payout</td><td class="r dim">—</td><td class="r dim">—</td><td class="r dim">—</td><td class="r dim">—</td><td></td></tr>`;
+  E('agbody').innerHTML = AGENTS.map(p => `<tr><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">${p.id==='kwesi'?'KW':p.n.split(' ').map(w=>w[0]).join('')}</div><div>${p.n}<small>Delivery</small></div></div></td><td>${p.veh.split(' · ')[0]}<span class="sub2">${p.veh.split(' · ')[1]}</span></td><td>${p.loc}</td><td>${p.fee}</td><td class="r num">${p.d}</td><td class="r num">${p.f}</td><td class="r num">${money(p.fees)}</td><td class="r num"><b>${money(p.cash)}</b></td></tr>`).join('');
+  E('hbody').innerHTML = HIST.map(h => `<tr><td>${h[0]}</td><td><b>${h[1]}</b></td><td class="r num">${money(h[2])}</td><td><span class="tag n">${h[3]}</span></td><td style="white-space:normal;min-width:220px;color:var(--ink-2)">${h[4]}</td><td>${h[5]}</td></tr>`).join('');
+  E('hn').textContent = HIST.length;
+  document.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => openPay(b.dataset.pay));
+}
+/* one payout form: it lives in Finance, Rep commissions. Staff opens it there. */
+function openPay(id){ location.href = 'finance.html#pay-' + id; }
+document.querySelectorAll('#ptab .tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('#ptab .tab').forEach(x => x.classList.toggle('on', x===t));
+  ['reps','agents','hist'].forEach(k => E('p-'+k).hidden = k!==t.dataset.p);
+});
+function payTab(k){ document.querySelector(`#ptab .tab[data-p="${k}"]`).click(); }
+document.querySelectorAll('[data-act="paytab"]').forEach(b => b.onclick = () => { E('paycard').scrollIntoView({behavior:'smooth',block:'start'}); });
+renderTeam(); renderPay();
+if (location.hash==='#pay') { E('paycard').scrollIntoView(); }
+if (location.hash==='#invite') openPerson(-1);
+
+if (location.hash==='#agents') { payTab('agents'); }
+
+/* new role */
+E('roleBtn').onclick = () => { E('rn').value=''; E('rd').value=''; E('rveil').classList.add('on'); E('rn').focus(); };
+E('rsave').onclick = () => {
+  const name = E('rn').value.trim(); if (!name) { E('rn').focus(); return; }
+  const from = byId(E('rc').value);
+  const id = 'r' + Date.now();
+  R.push({ id, name, ic:'briefcase', desc:E('rd').value.trim() || 'A new role.', holders:[], target:'No target yet', now:'Set one in Targets', pct:0, pace:null, st:['warn','Vacant'], tools:E('rc').value==='none'?[]:from.tools.slice(), tiers:[], note:'Set a reward when you fill this role.' });
+  E('rveil').classList.remove('on'); sel = id; renderCards(); renderDetail(false); lucide.createIcons(); toast('Role ' + name + ' created. Sample only.');
+};
+E('rveil').onclick = e => { if (e.target===E('rveil')) E('rveil').classList.remove('on'); };
+
+lucide.createIcons();
+
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

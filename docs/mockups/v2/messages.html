@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Messages - CodAdmin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+.insrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;padding:14px 20px 18px}
+a.btn{text-decoration:none;color:var(--ink)}
+a.btn.pri{color:#fff}
+[data-theme="dark"] a.btn.pri{color:#04211d}
+a.btn:hover{background:var(--hover)}
+.sw{flex:none;width:36px;height:20px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink-3);transition:transform .15s,background .15s}
+.sw[aria-checked="true"]{background:var(--pine)}
+.sw[aria-checked="true"]::after{transform:translateX(16px);background:var(--card)}
+.in{width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit}
+textarea.in{resize:vertical;min-height:110px;line-height:1.5}
+select.in{appearance:auto}
+.panel{display:none}.panel.on{display:block}
+.tabs{padding-bottom:12px}
+.tab{cursor:pointer}
+
+/* inbox */
+.inbox{display:grid;grid-template-columns:340px minmax(0,1fr) 260px;height:660px}
+.pane{min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--line)}
+.pane:last-child{border-right:0}
+.lhead{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:9px}
+.lhead .seg{margin-top:0;flex-wrap:wrap}
+.lhead .seg button{padding:5px 8px;font-size:12.5px}
+.lhead .seg button span{margin-left:3px;color:var(--ink-3);font-weight:700}
+.lhead .seg button.on span{color:inherit}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:12px;font-weight:600;padding:3px 9px;border-radius:99px;border:1px solid var(--line);color:var(--ink-2)}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.threads{overflow:auto;flex:1}
+.th{display:flex;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);width:100%;text-align:left;align-items:flex-start}
+.th:hover{background:var(--hover)}
+.th.on{background:var(--pine-soft)}
+.th .a{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px}
+.th .tx{min-width:0;flex:1}
+.th .r1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.th .r1 b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.th .r1 small{color:var(--ink-3);font-size:11.5px;white-space:nowrap}
+.th p{font-size:12.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.th .r3{display:flex;gap:6px;align-items:center;margin-top:3px;font-size:11.5px;color:var(--ink-3)}
+.th .r3 svg.lucide{width:13px;height:13px}
+.th.un .r1 b::after{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--coral);margin-left:6px;vertical-align:1px}
+.th .tag{font-size:11px;padding:0 7px}
+.empty{padding:30px 20px;color:var(--ink-3);text-align:center}
+
+.thhead{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.thhead .a{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px}
+.thhead small{display:block;color:var(--ink-3);font-size:12.5px}
+.thhead .rt{margin-left:auto;display:flex;gap:6px;position:relative;flex-wrap:wrap}
+.thhead .btn{padding:6px 11px;font-size:13px}
+.msgs{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:12px;background:var(--bg)}
+.daysep{align-self:center;font-size:11.5px;color:var(--ink-3);font-weight:600}
+.b{max-width:78%;display:flex;flex-direction:column;gap:3px}
+.b .bub{padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.45}
+.b.out{align-self:flex-end;align-items:flex-end}
+.b.out .bub{background:var(--pine);color:#fff;border-radius:14px 14px 4px 14px}
+[data-theme="dark"] .b.out .bub{color:#04211d}
+.b.in .bub{background:var(--card);border:1px solid var(--line);border-radius:14px 14px 14px 4px}
+.b.sys{align-self:center;max-width:92%;align-items:center}
+.b.sys .bub{background:var(--violet-soft);color:var(--violet);font-size:12.5px;font-weight:600;border-radius:99px;padding:5px 12px}
+.mst{display:flex;gap:5px;align-items:center;font-size:11.5px;color:var(--ink-3);font-weight:600}
+.mst svg.lucide{width:13px;height:13px}
+.mst.read{color:#14975f}[data-theme="dark"] .mst.read{color:var(--mint)}
+.mst.failed{color:var(--coral)}
+.mst.replied{color:var(--violet)}
+.failnote{font-size:12px;color:var(--coral);display:flex;gap:6px;align-items:center}
+.failnote button{font-weight:700;text-decoration:underline;color:var(--coral)}
+.compose{border-top:1px solid var(--line);padding:12px 16px;display:flex;flex-direction:column;gap:8px;background:var(--card)}
+.compose .row{display:flex;gap:8px;align-items:center}
+.compose .in{flex:1}
+.compose .seg{margin-top:0}
+.compose .seg button{padding:4px 10px;font-size:12.5px}
+.send{width:38px;height:38px;border-radius:11px;background:var(--pine);color:#fff;display:grid;place-items:center;flex:none}
+[data-theme="dark"] .send{color:#04211d}
+
+.side2{overflow:auto}
+.sbox{padding:14px 16px;border-bottom:1px solid var(--line)}
+.sbox:last-child{border-bottom:0}
+.sbox h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.ord{border:1px solid var(--line);border-radius:13px;padding:11px 12px}
+.ord b{font-family:"Bricolage Grotesque";font-size:15px}
+.ord .l{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--ink-2);margin-top:5px}
+.ord .btn{margin-top:10px;padding:5px 10px;font-size:12.5px;width:100%;justify-content:center}
+.kvs{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:12.5px}
+.kvs dt{color:var(--ink-3)}.kvs dd{text-align:right;font-weight:500}
+.assign{display:flex;flex-direction:column;gap:6px}
+.assign .opt{display:flex;align-items:center;gap:9px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;font-size:13px;font-weight:500;width:100%;text-align:left}
+.assign .opt:hover{background:var(--hover)}
+.assign .opt.on{border-color:var(--pine);background:var(--pine-soft)}
+.assign .opt .a{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:700}
+.rchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--gold-soft);color:#b77612}
+[data-theme="dark"] .rchip{color:var(--gold)}
+.rchip svg.lucide{width:13px;height:13px}
+.lnk{display:inline-flex;gap:6px;align-items:center;font-size:12.5px;font-weight:600;color:var(--pine);text-decoration:none}
+.lnk svg.lucide{width:14px;height:14px}
+
+.pop{position:absolute;right:0;top:calc(100% + 8px);width:300px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 50px -18px rgba(0,0,0,.4);z-index:15;padding:14px;display:flex;flex-direction:column;gap:10px;text-align:left}
+.pop[hidden]{display:none}
+.pop label{font-size:12.5px;font-weight:600;display:block;margin-bottom:4px}
+.pop .btn{padding:6px 11px;font-size:13px}
+
+/* scheduled */
+.sched td,.sched th{padding-left:14px;padding-right:14px}
+.sched td:first-child,.sched th:first-child{padding-left:20px}
+.sched td:last-child,.sched th:last-child{padding-right:20px}
+.sched .pv td{background:var(--hover);padding-top:10px;padding-bottom:12px;font-size:13px;color:var(--ink-2)}
+.sched tr.paused{opacity:.55}
+.note{display:flex;gap:10px;align-items:flex-start;margin:14px 20px;padding:10px 12px;border-radius:12px;background:var(--hover);color:var(--ink-2);font-size:12.5px}
+.note svg.lucide{flex:none;width:15px;height:15px;margin-top:2px}
+
+/* bulk */
+.bulk{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;padding:20px;align-items:start}
+.fld{margin-bottom:16px}
+.fld>label,.fld>.lab{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.fld .hint{color:var(--ink-3);font-size:12px;margin-top:5px}
+.fld .seg{margin-top:0}
+.two2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.tags button{font:600 12px "Plus Jakarta Sans";padding:3px 9px;border-radius:99px;background:var(--violet-soft);color:var(--violet)}
+.sum{position:sticky;top:84px;display:flex;flex-direction:column;gap:14px}
+.sum .big{font-family:"Bricolage Grotesque";font-size:38px;font-weight:800;line-height:1}
+.sum .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.phone{border:1px solid var(--line);border-radius:18px;padding:12px;background:var(--bg)}
+.phone .bub{background:var(--card);border:1px solid var(--line);border-radius:14px 14px 14px 4px;padding:10px 12px;font-size:13px;white-space:pre-wrap;min-height:56px}
+.phone small{display:block;color:var(--ink-3);font-size:11.5px;margin-bottom:6px}
+.lines{font-size:13px;display:flex;flex-direction:column;gap:6px}
+.lines div{display:flex;justify-content:space-between;gap:10px}
+.lines div span:first-child{color:var(--ink-3)}
+.sendrow{display:flex;gap:8px;flex-wrap:wrap}
+
+/* tables */
+.ctab td,.ctab th,.otab td,.otab th{padding-left:14px;padding-right:14px;white-space:nowrap}
+.ctab td:first-child,.ctab th:first-child,.otab td:first-child,.otab th:first-child{padding-left:20px}
+.ctab td:last-child,.ctab th:last-child,.otab td:last-child,.otab th:last-child{padding-right:20px}
+.pct{display:block;color:var(--ink-3);font-size:11.5px}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;padding:16px 20px 20px}
+.tpl{border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:9px}
+.tpl .tt{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.tpl b{font-size:14px}
+.tpl p{color:var(--ink-2);font-size:13px;background:var(--hover);padding:9px 11px;border-radius:11px;flex:1}
+.tpl .use{font-size:12px;color:var(--ink-3);display:flex;gap:6px;align-items:center}
+.tpl .use svg.lucide{width:13px;height:13px}
+.tpl .acts{display:flex;gap:6px}
+.bar2{display:flex;gap:8px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}
+.bar2 .in{width:auto;min-width:150px;padding:6px 10px;font-size:13px}
+.bar2 .grow{flex:1;min-width:180px}
+.foot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px}
+.toast{position:fixed;left:50%;bottom:58px;transform:translateX(-50%);background:var(--pine);color:#fff;padding:9px 16px;border-radius:12px;font-weight:600;font-size:13px;z-index:70;box-shadow:var(--shadow);display:none}
+[data-theme="dark"] .toast{color:#04211d}
+.toast.on{display:block}
+.veil2{position:fixed;inset:0;background:rgba(8,18,16,.45);backdrop-filter:blur(3px);z-index:60;display:none;align-items:flex-start;justify-content:center;padding-top:10vh}
+.veil2.on{display:flex}
+.modal{width:520px;max-width:92vw;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5);overflow:hidden}
+.modal .mh{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line)}
+.modal .mh h3{font-size:17px}
+.modal .mb{padding:18px 20px 4px}
+.modal .mf{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--line)}
+
+@media (max-width:1100px){
+  .inbox{grid-template-columns:280px minmax(0,1fr)}
+  .inbox .side2{display:none}
+  .bulk{grid-template-columns:1fr}.sum{position:static}
+}
+@media (max-width:760px){
+  .inbox{grid-template-columns:1fr;height:auto}
+  .inbox .pane{border-right:0}
+  .inbox .threads{max-height:320px}
+  .inbox .msgs{min-height:340px}
+  .two2{grid-template-columns:1fr}
+  .tabwrap{overflow-x:auto}
+}
+
+[hidden]{display:none!important}
+
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav on" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+<section id="messages">
+  <div class="head">
+    <div><h1>Messages</h1><p>Every message you send customers, and what they send back.</p></div>
+    <div style="display:flex;gap:8px"><a class="btn" href="workflows.html"><i data-lucide="workflow"></i>Workflows</a><button class="btn pri" data-goto="bulk"><i data-lucide="send"></i>New bulk send</button></div>
+  </div>
+
+  <div class="grid kpis" style="margin-top:0">
+    <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="send"></i></div><div class="v num">6,000</div><div class="l">Messages sent in October</div><div class="s"><span>2,850 WA · 3,150 SMS</span><span class="tag n">GH₵312</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="check-check"></i></div><div class="v num">94%</div><div class="l">Delivered</div><div class="s"><span>63% of WhatsApp were read</span><span class="tag ok">Healthy</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="corner-up-left"></i></div><div class="v num">312</div><div class="l">Customer replies</div><div class="s"><span>Reply rate 11%</span><span class="tag bad">14 not answered</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="message-circle-warning"></i></div><div class="v num" id="k-fail">9</div><div class="l">Failed today</div><div class="s"><span>6 no WhatsApp · 3 network</span><span class="tag warn">Resend</span></div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 3 things</h3><span>Updated 06:42</span></div>
+    <div class="insrow">
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="message-circle-question"></i></div><div><b>14 customers replied and nobody answered</b><p>The oldest has waited 2 days. 5 asked when the rider will come. These are orders you could lose.</p></div></div><div class="act"><button class="mini pri" data-act="unreplied">Show the 14</button><button class="mini" data-act="assign-adwoa">Give them to Adwoa</button></div></div>
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="smartphone"></i></div><div><b>6 WhatsApp messages went to numbers without WhatsApp</b><p>They failed today. The same customers all have SMS. Sending as SMS costs about GH₵0.36 in total.</p></div></div><div class="act"><button class="mini pri" data-act="failed">Resend 6 as SMS</button><button class="mini">Dismiss</button></div></div>
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--mint-soft);color:#14975f"><i data-lucide="calendar-clock"></i></div><div><b>41 "Delivery tomorrow" reminders go out at 17:00</b><p>2 of those orders have an address with no landmark. A rider call after the reminder will cost you fewer failed deliveries.</p></div></div><div class="act"><button class="mini pri" data-act="scheduled">See what goes out</button><button class="mini">Dismiss</button></div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="tabwrap"><div class="tabs" id="ptabs">
+      <button class="tab on" data-p="conv">Conversations <span id="n-conv">26</span></button>
+      <button class="tab" data-p="bulk">Bulk send</button>
+      <button class="tab" data-p="camp">Campaigns <span>6</span></button>
+      <button class="tab" data-p="tpl">Templates <span>8</span></button>
+      <button class="tab" data-p="opt">Opt-outs <span>27</span></button>
+    </div></div>
+
+    <!-- CONVERSATIONS -->
+    <div class="panel on" id="p-conv">
+      <div class="inbox" id="inbox">
+        <div class="pane">
+          <div class="lhead">
+            <div class="seg" id="fstat">
+              <button class="on" data-f="all">All</button>
+              <button data-f="un">Unreplied<span id="c-un"></span></button>
+              <button data-f="fail">Failed<span id="c-fail"></span></button>
+              <button data-f="sched">Scheduled<span>41</span></button>
+            </div>
+            <div class="chips" id="fch"><button class="chip on" data-c="all">All channels</button><button class="chip" data-c="wa">WhatsApp</button><button class="chip" data-c="sms">SMS</button></div>
+          </div>
+          <div class="threads" id="threads"></div>
+        </div>
+        <div class="pane" id="thread"></div>
+        <div class="pane side2" id="side"></div>
+      </div>
+
+      <div id="sched" hidden>
+        <div class="lhead" style="flex-direction:row;align-items:center;justify-content:space-between;padding:14px 20px;flex-wrap:wrap">
+          <div class="seg" id="fstat2"><button data-f="all">All</button><button data-f="un">Unreplied</button><button data-f="fail">Failed</button><button class="on" data-f="sched">Scheduled<span>41</span></button></div>
+          <span style="color:var(--ink-3);font-size:13px">Reminders your workflows will send. Pause one to hold it back.</span>
+        </div>
+        <div class="tablewrap"><table class="sched" id="stab">
+          <thead><tr><th>Goes out</th><th>Workflow</th><th>Template</th><th>Channel</th><th class="r">Customers</th><th>Status</th><th class="r">Actions</th></tr></thead>
+          <tbody id="sbody"></tbody>
+        </table></div>
+        <div class="note"><i data-lucide="info"></i><span>Customers who opted out are removed before sending. Edit when and to whom in <a class="lnk" href="workflows.html">Workflows</a>.</span></div>
+      </div>
+    </div>
+
+    <!-- BULK SEND -->
+    <div class="panel" id="p-bulk">
+      <div class="bulk">
+        <div>
+          <div class="fld"><span class="lab">Channel</span>
+            <div class="seg" id="bch"><button data-v="sms" class="on"><i data-lucide="smartphone" style="width:14px;height:14px;vertical-align:-2px"></i> SMS</button><button data-v="wa">WhatsApp</button><button data-v="email">Email</button></div>
+            <div class="hint" id="bchint">Sent through Arkesel from sender ID MagicGroove.</div></div>
+          <div class="fld"><span class="lab">Message</span>
+            <div class="seg" id="bsrc" style="margin-bottom:8px"><button data-v="tpl" class="on">Use a template</button><button data-v="custom">Write my own</button></div>
+            <div id="tplrow"><select class="in" id="btpl" aria-label="Template"></select></div>
+          </div>
+          <div class="fld" id="subjrow" hidden><label for="bsubj">Email subject</label><input class="in" id="bsubj" value="Your Magic Groove refill pens are back"></div>
+          <div class="fld"><label for="bmsg">Text</label><textarea class="in" id="bmsg"></textarea>
+            <div class="tags" id="btags"><span style="font-size:12px;color:var(--ink-3);align-self:center">Insert</span><button data-tag="customer_name">Customer name</button><button data-tag="store_name">Store name</button><button data-tag="customer_email">Customer email</button><button data-tag="unsubscribe_url">Unsubscribe link</button></div>
+            <div class="hint" id="bcount"></div></div>
+          <div class="fld" id="linkrow" hidden><label for="blink">Custom link (optional)</label><input class="in" id="blink" placeholder="https://magicgroove.shop/pens"></div>
+
+          <div class="fld"><span class="lab">Who gets it</span>
+            <div class="two2">
+              <div><label for="breg" style="font-size:12.5px;color:var(--ink-3);font-weight:500">Region <small>(from your country)</small></label><select class="in" id="breg"><option value="1">All regions</option><option value="1740">Greater Accra</option><option value="1120">Ashanti</option><option value="460">Western</option><option value="380">Central</option><option value="160">Eastern</option><option value="120">Volta</option><option value="190">Northern</option></select></div>
+              <div><label for="bprod" style="font-size:12.5px;color:var(--ink-3);font-weight:500">Bought</label><select class="in" id="bprod"><option value="1">Any product</option><option value="0.9">Copybook set</option><option value="0.27">Refill pens</option><option value="0.12">Pencil grip trainer</option><option value="0.15">Home Study Guide</option></select></div>
+            </div>
+            <div style="margin-top:12px"><span style="font-size:12.5px;color:var(--ink-3)">Has ordered before</span>
+              <div class="seg" id="bhist" style="margin-top:4px"><button data-v="1" class="on">Anyone</button><button data-v="0.18">Yes, bought again</button><button data-v="0.82">No, one order only</button></div>
+              <div class="hint">Yes means they have had at least two delivered orders.</div></div>
+          </div>
+          <div class="sendrow"><button class="btn pri" id="bsend"><i data-lucide="send"></i>Send now</button><button class="btn" id="bsched"><i data-lucide="calendar-clock"></i>Schedule</button><button class="btn" id="btest">Send a test to me</button></div>
+        </div>
+        <div class="card sum" style="padding:18px;box-shadow:none">
+          <div><small style="color:var(--ink-3);font-weight:600">Will be sent to</small><div class="big num" id="bn">0</div><small style="color:var(--ink-3)" id="bnsub"></small></div>
+          <div class="lines" id="blines"></div>
+          <div class="pair"><div class="drv"><small>Cost estimate</small><b id="bcost">GH₵0</b><em id="bcostsub"></em></div><div class="drv"><small>Expected orders</small><b id="bord">0</b><em>At your 1.1% average</em></div></div>
+          <div class="phone"><small id="bprevlab">Preview as Ama Mensah</small><div class="bub" id="bprev"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAMPAIGNS -->
+    <div class="panel" id="p-camp">
+      <div class="bar2">
+        <select class="in" aria-label="Channel" id="cch"><option value="">All channels</option><option value="wa">WhatsApp</option><option value="sms">SMS</option><option value="email">Email</option></select>
+        <select class="in" aria-label="Status"><option>All statuses</option><option>Sent</option><option>Scheduled</option><option>Draft</option></select>
+        <select class="in" aria-label="Date"><option>October</option><option>September</option><option>Last 90 days</option></select>
+        <span class="grow"></span><span style="color:var(--ink-3);font-size:13px">Orders after = orders from the same customers within 3 days</span>
+      </div>
+      <div class="tablewrap"><table class="ctab" id="ctab">
+        <thead><tr><th>Campaign</th><th>Channel</th><th>Date</th><th class="r">Sent</th><th class="r">Delivered</th><th class="r">Read</th><th class="r">Replied</th><th class="r">Failed</th><th class="r">Orders after</th></tr></thead>
+        <tbody id="cbody"></tbody>
+      </table></div>
+      <div class="foot"><span>SMS has no read receipts. Email read means opened.</span><span>Showing 6 campaigns</span></div>
+    </div>
+
+    <!-- TEMPLATES -->
+    <div class="panel" id="p-tpl">
+      <div class="bar2"><span class="grow" style="color:var(--ink-2)">Saved messages you reuse in bulk sends and workflows.</span><button class="btn pri" id="newtpl"><i data-lucide="plus"></i>New template</button></div>
+      <div class="tgrid" id="tgrid"></div>
+    </div>
+
+    <!-- OPT-OUTS -->
+    <div class="panel" id="p-opt">
+      <div class="bar2"><input class="in grow" id="oq" aria-label="Search opt-outs" placeholder="Search by name or phone"><span style="color:var(--ink-3);font-size:13px">27 customers opted out. We never send to them on that channel.</span></div>
+      <div class="tablewrap"><table class="otab">
+        <thead><tr><th>Customer</th><th>City</th><th>Opted out</th><th>Reason</th><th class="r">SMS off</th><th class="r">WhatsApp off</th></tr></thead>
+        <tbody id="obody"></tbody>
+      </table></div>
+      <div class="foot"><span>Customers can opt out by replying STOP or from the unsubscribe link.</span><span>Showing 8 of 27</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="veil2" id="tveil"><div class="modal" role="dialog" aria-label="Template">
+  <div class="mh"><h3 id="tmt">New template</h3><button class="ibtn" id="tclose" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="mb">
+    <div class="fld"><label for="tn">Template name</label><input class="in" id="tn" placeholder="e.g. Order confirmation"></div>
+    <div class="fld"><span class="lab">Channel</span><div class="seg" id="tch"><button data-v="wa" class="on">WhatsApp</button><button data-v="sms">SMS</button><button data-v="email">Email</button></div></div>
+    <div class="fld"><label for="tb">Message body</label><textarea class="in" id="tb" placeholder="Hello {{customer_name}}, ..."></textarea>
+      <div class="tags" id="ttags"><span style="font-size:12px;color:var(--ink-3);align-self:center">Insert</span><button data-tag="customer_name">Customer name</button><button data-tag="order_number">Order number</button><button data-tag="order_total">Order total</button><button data-tag="store_name">Store name</button></div></div>
+  </div>
+  <div class="mf"><button class="btn" id="tcancel">Cancel</button><button class="btn pri" id="tsave">Save template</button></div>
+</div></div>
+<div class="toast" id="toast" role="status"></div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-href="index.html#orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-href="index.html#board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-href="index.html#targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-href]').forEach(b => b.onclick = () => { location.href = b.dataset.href; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+</script>
+<script>
+const $ = id => document.getElementById(id);
+const COLS = [['var(--pine-soft)','var(--pine)'],['var(--coral-soft)','var(--coral)'],['var(--gold-soft)','var(--gold)'],['var(--mint-soft)','#14975f'],['var(--violet-soft)','var(--violet)']];
+const initials = n => n.split(' ').map(w => w[0]).slice(0,2).join('');
+const av = (n, i) => `<div class="a" style="background:${COLS[i%5][0]};color:${COLS[i%5][1]}">${initials(n)}</div>`;
+let toastT;
+function toast(t){ const e=$('toast'); e.textContent=t; e.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>e.classList.remove('on'),2600); }
+
+/* ---------- threads ---------- */
+const UN = [
+ ['Kobby Asare','Takoradi','wa','Please call me after 5pm, I was at work','12 min',24039,'Confirmed','Kwesi Amoah'],
+ ['Akosua Frimpong','Kumasi','wa','How much is delivery to my house at Ahodwo?','25 min',24029,'New','Kofi Appiah'],
+ ['Kojo Tetteh','Accra','sms','Wrong address. I live at Spintex, not Tema','1 h',24032,'Confirmed','Esi Badu'],
+ ['Mawuli Agbeko','Tema','wa','I will pay on delivery. Bring change for 300','2 h',24025,'Out for delivery','Logiswift'],
+ ['Efua Quansah','Cape Coast','wa','Is the refill pen set included?','3 h',24018,'New','Kasapa Express'],
+ ['Abena Osei','Kumasi','wa','Rider has not called me since morning','4 h',24101,'Out for delivery','Kofi Appiah'],
+ ['Nii Armah Tettey','Accra','sms','Come on Saturday please','5 h',24093,'Confirmed','Esi Badu'],
+ ['Selorm Amegashie','Tema','wa','Who is this?','6 h',24037,'New','Logiswift'],
+ ['Adjoa Sarpong','Kumasi','wa','Can I get a second set for my niece?','Yesterday',24087,'Delivered','Kofi Appiah'],
+ ['Kwabena Asante','Kumasi','sms','Send me the guide link again','Yesterday',24080,'Delivered','Kofi Appiah'],
+ ['Ekua Mensima','Takoradi','wa','I have changed my mind about the order','Yesterday',24076,'Confirmed','Kwesi Amoah'],
+ ['Fiifi Acquah','Cape Coast','wa','Still waiting since Tuesday','2 days',24061,'Out for delivery','Kasapa Express'],
+ ['Dzifa Gbeku','Tema','sms','What time tomorrow?','2 days',24064,'Confirmed','Logiswift'],
+ ['Ohene Danquah','Accra','wa','OK thanks','2 days',24059,'Confirmed','Esi Badu']
+];
+const FAIL = [
+ ['Papa Kwesi Ntim','Tamale','wa','Number not on WhatsApp','8 min',24036,'New','Logiswift'],
+ ['Naa Dedei Lamptey','Accra','wa','Number not on WhatsApp','40 min',24035,'New','Esi Badu'],
+ ['Kofi Ampofo','Kumasi','wa','Number not on WhatsApp','1 h',24033,'Confirmed','Kofi Appiah'],
+ ['Araba Wilson','Cape Coast','wa','Number not on WhatsApp','3 h',24110,'Confirmed','Kasapa Express'],
+ ['Edem Kpodo','Tema','wa','Number not on WhatsApp','3 h',24108,'New','Logiswift'],
+ ['Yaa Asantewaa Boakye','Kumasi','wa','Number not on WhatsApp','5 h',24104,'New','Kofi Appiah'],
+ ['Kojo Essuman','Takoradi','sms','Network error, not delivered','2 h',24031,'Confirmed','Kwesi Amoah'],
+ ['Gifty Nkrumah','Accra','sms','Network error, not delivered','4 h',24027,'New','Esi Badu'],
+ ['Seth Dogbe','Tema','sms','Network error, not delivered','6 h',24103,'Confirmed','Logiswift']
+];
+const OK = [
+ ['Comfort Aidoo','Accra','wa','Thank you, received it today','Yesterday',24052,'Delivered','Esi Badu'],
+ ['Kwame Opoku','Kumasi','wa','Team: Sent the guide link on WhatsApp','Yesterday',24049,'Delivered','Kofi Appiah'],
+ ['Rebecca Ofori','Takoradi','sms','Team: Rider will come before 3pm','2 days',24044,'Out for delivery','Kwesi Amoah']
+];
+const REM = {24039:'18 Oct, 09:00', 24101:'17 Oct, 16:00', 24061:'18 Oct, 10:30'};
+const ASSIGN = {24039:'Adwoa Darko', 24032:'Nana Kyei'};
+const NOTES = {24039:2, 24061:3};
+const phones = ['024','055','020','050','054','027'];
+let seed = 7;
+const phone = () => { seed = (seed*37+11)%9973; return phones[seed%6]+' 555 '+String(100+seed%900).padStart(4,'0').slice(-4); };
+const T = [];
+const firstName = n => n.split(' ')[0];
+function mk(row, kind, i){
+  const [name, city, ch, last, time, order, ost, rider] = row;
+  const ch2 = ch==='wa'?'WhatsApp':'SMS';
+  const out1 = `Hello ${firstName(name)}, this is Magic Groove. Your order #${order} (Copybook set, GH₵249) is ${ost==='New'?'received. A rep will call you shortly.':'confirmed. Pay cash when it arrives.'}`;
+  const m = [];
+  if(kind==='un'){
+    m.push({d:'out',text:out1,time:'Yesterday, 10:02',st: ch==='wa'?'read':'delivered'});
+    m.push({d:'out',text: ost==='Out for delivery'?'Your order is out for delivery today. '+rider+' will call you.':'We could not reach you by phone. When is a good time to call?',time:'Yesterday, 15:40',st:'replied'});
+    m.push({d:'in',text:last,time:(time==='Yesterday'?time:time+' ago')});
+  } else if(kind==='fail'){
+    m.push({d:'out',text:out1,time:'Today, 08:15',st:'failed',err:last});
+  } else {
+    m.push({d:'out',text:out1,time:'2 days ago, 10:02',st:'read'});
+    m.push({d:'in',text:last.startsWith('Team: ')?'When will the rider come?':last,time:'Yesterday, 09:10'});
+    if(last.startsWith('Team: ')) m.push({d:'out',text:last.slice(6),time:'Yesterday, 09:32',st:'delivered',team:'Adwoa Darko'});
+  }
+  return {id:i, name, city, ch, phone:phone(), kind, last: kind==='fail'?'Failed: '+last:last, time, order:{no:order,st:ost,rider}, msgs:m, uc:i%5};
+}
+UN.forEach((r,i)=>T.push(mk(r,'un',T.length)));
+FAIL.forEach((r,i)=>T.push(mk(r,'fail',T.length)));
+OK.forEach((r,i)=>T.push(mk(r,'ok',T.length)));
+// show newest first, mixed
+T.sort((a,b)=>{const w=t=>/min/.test(t)?parseInt(t):/ h/.test(t)?parseInt(t)*60:/Yesterday/.test(t)?1440:2880;return w(a.time)-w(b.time)});
+T.forEach((t,i)=>t.id=i);
+$('c-un').textContent = T.filter(t=>t.kind==='un').length;
+$('c-fail').textContent = T.filter(t=>t.kind==='fail').length;
+$('n-conv').textContent = T.length; $('k-fail').textContent = T.filter(t=>t.kind==='fail').length;
+
+let fs='all', fc='all', cur=(T.find(t=>t.order.no===24039)||T[0]).id;
+const stIcon = {sent:['check','Sent'],delivered:['check-check','Delivered'],read:['check-check','Read'],failed:['alert-circle','Failed'],replied:['corner-up-left','Replied']};
+const ordTag = s => ({New:'warn',Confirmed:'n','Out for delivery':'v',Delivered:'ok'}[s]||'n');
+
+function list(){
+  const vis = T.filter(t => (fs==='all'||t.kind===fs) && (fc==='all'||t.ch===fc));
+  if(vis.length && !vis.find(t=>t.id===cur)) cur = vis[0].id;
+  $('threads').innerHTML = vis.length ? vis.map(t => `<button class="th${t.id===cur?' on':''}${t.kind==='un'?' un':''}" data-id="${t.id}">
+    ${av(t.name,t.uc)}<div class="tx"><div class="r1"><b>${t.name}</b><small>${t.time}</small></div><p>${t.last}</p>
+    <div class="r3"><i data-lucide="${t.ch==='wa'?'message-circle':'smartphone'}"></i>${t.ch==='wa'?'WhatsApp':'SMS'}<span>·</span>#${t.order.no}${t.kind==='fail'?'<span class="tag bad">Failed</span>':t.kind==='un'?'<span class="tag v">Replied</span>':''}${REM[t.order.no]?'<i data-lucide="alarm-clock" style="color:var(--gold)"></i>':''}</div></div></button>`).join('') : '<div class="empty">No conversations match.</div>';
+  $('threads').querySelectorAll('.th').forEach(b => b.onclick = () => { cur=+b.dataset.id; list(); thread(); });
+  lucide.createIcons();
+  if(!vis.length){ $('thread').innerHTML=''; $('side').innerHTML=''; } else thread();
+}
+
+function bubble(m){
+  const [ic,lab] = stIcon[m.st] || [];
+  const st = m.d==='out' ? `<div class="mst ${m.st}"><i data-lucide="${ic}"></i>${lab}${m.team?` · by ${m.team}`:''}<span style="font-weight:500">· ${m.time}</span></div>${m.st==='failed'?`<div class="failnote"><i data-lucide="alert-triangle" style="width:13px;height:13px"></i>${m.err}.${m.err.includes('WhatsApp')?' <button data-resend>Resend as SMS</button>':' <button data-resend>Try again</button>'}</div>`:''}` : `<div class="mst">${m.time}</div>`;
+  return `<div class="b ${m.d}"><div class="bub">${m.text}</div>${st}</div>`;
+}
+
+function thread(){
+  const t = T.find(x=>x.id===cur); if(!t) return;
+  const asg = ASSIGN[t.order.no], rem = REM[t.order.no], notes = NOTES[t.order.no];
+  $('thread').innerHTML = `
+    <div class="thhead">${av(t.name,t.uc)}<div><b>${t.name}</b><small>${t.phone} · ${t.city} · ${t.ch==='wa'?'WhatsApp':'SMS'}</small></div>
+      <div class="rt">${rem?`<span class="rchip"><i data-lucide="alarm-clock"></i>Reminder ${rem}</span>`:''}
+        <button class="btn" id="remBtn"><i data-lucide="alarm-clock-plus"></i>Set reminder</button>
+        <div class="pop" id="remPop" hidden>
+          <div><label for="rw">What</label><input class="in" id="rw" value="Call ${firstName(t.name)} about order #${t.order.no}"></div>
+          <div><label for="rwh">When</label><select class="in" id="rwh"><option>Today, 17:00</option><option>Tomorrow, 09:00</option><option>18 Oct, 09:00</option><option>Pick a time…</option></select></div>
+          <div><label>Who</label><div class="seg" id="rwho" style="margin-top:0"><button class="on" data-v="me">Me</button><button data-v="mate">A teammate</button></div><select class="in" id="rmate" style="margin-top:6px" hidden><option>Adwoa Darko</option><option>Nana Kyei</option><option>Kofi Appiah</option></select></div>
+          <div style="display:flex;justify-content:flex-end;gap:6px"><button class="btn" id="remX">Cancel</button><button class="btn pri" id="remOk">Set reminder</button></div>
+        </div></div></div>
+    <div class="msgs" id="msgs"><div class="daysep">Order #${t.order.no}</div>${t.msgs.map(bubble).join('')}${t.kind==='un'?'<div class="b sys"><div class="bub">Waiting for your reply · '+(t.time==='Yesterday'?'since yesterday':t.time+' so far')+'</div></div>':''}</div>
+    <div class="compose">
+      <div class="row"><div class="seg" id="cch2"><button class="${t.ch==='wa'?'on':''}">WhatsApp</button><button class="${t.ch==='sms'?'on':''}">SMS</button></div><button class="mini" data-instpl>Insert template</button><span style="margin-left:auto;font-size:12px;color:var(--ink-3)">Replies go to ${t.phone}</span></div>
+      <div class="row"><input class="in" id="cin" aria-label="Reply" placeholder="Write a reply…"><button class="send" id="csend" aria-label="Send"><i data-lucide="arrow-up"></i></button></div>
+    </div>`;
+  $('side').innerHTML = `
+    <div class="sbox"><h4>Linked order</h4><div class="ord"><div style="display:flex;justify-content:space-between;align-items:center"><b>#${t.order.no}</b><span class="tag ${ordTag(t.order.st)}">${t.order.st}</span></div>
+      <div class="l"><span>Copybook set</span><b class="num">GH₵249</b></div><div class="l"><span>Delivery</span><span>${t.order.rider}</span></div>
+      <a class="btn" href="index.html#orders"><i data-lucide="external-link"></i>Open order</a></div></div>
+    <div class="sbox"><h4>Assigned to</h4><div class="assign" id="assign">
+      ${['Adwoa Darko','Nana Kyei','Manny'].map((n,i)=>`<button class="opt${asg===n?' on':''}" data-n="${n}">${av(n,[0,1,3][i]).replace('class="a"','class="a"')}${n}${asg===n?'<i data-lucide="check" style="margin-left:auto;width:15px;height:15px"></i>':''}</button>`).join('')}
+      </div><div style="font-size:12px;color:var(--ink-3);margin-top:7px" id="asgnote">${asg?'Assigned to '+asg+'.':'Nobody owns this thread yet.'}</div></div>
+    <div class="sbox"><h4>Customer</h4><dl class="kvs"><dt>Phone</dt><dd>${t.phone}</dd><dt>City</dt><dd>${t.city}</dd><dt>Orders</dt><dd>${t.uc===2?'2':'1'}</dd><dt>Messages</dt><dd>${t.ch==='wa'?'WhatsApp on':'SMS on'}</dd></dl></div>
+    <div class="sbox"><h4>Team notes</h4>${notes?`<a class="lnk" href="inbox.html"><i data-lucide="messages-square"></i>${notes} replies on this order</a>`:'<span style="font-size:12.5px;color:var(--ink-3)">No notes yet.</span> <a class="lnk" href="inbox.html">Add a note</a>'}</div>`;
+  lucide.createIcons();
+  const m=$('msgs'); m.scrollTop = m.scrollHeight;
+  const pop=$('remPop');
+  $('remBtn').onclick = e => { e.stopPropagation(); pop.hidden=!pop.hidden; };
+  pop.onclick = e => e.stopPropagation();
+  $('remX').onclick = () => pop.hidden=true;
+  $('remOk').onclick = () => { REM[t.order.no] = $('rwh').value.replace('Today, ','Today ').replace('Pick a time…','19 Oct, 09:00'); pop.hidden=true; list(); toast('Reminder set for '+REM[t.order.no]+'. Sample only.'); };
+  $('rwho').querySelectorAll('button').forEach(b => b.addEventListener('click',()=>{ $('rmate').hidden = b.dataset.v!=='mate'; }));
+  document.querySelectorAll('[data-resend]').forEach(b => b.onclick = () => { toast('Queued to resend as SMS. Sample only.'); });
+  $('assign').querySelectorAll('.opt').forEach(b => b.onclick = () => { ASSIGN[t.order.no]=b.dataset.n; thread(); toast('Thread assigned to '+b.dataset.n+'.'); });
+  const send = () => { const v=$('cin').value.trim(); if(!v) return; t.msgs.push({d:'out',text:v,time:'Just now',st:'sent'}); if(t.kind==='un'){t.kind='ok';$('c-un').textContent=T.filter(x=>x.kind==='un').length;} $('cin').value=''; thread(); };
+  $('csend').onclick = send; $('cin').onkeydown = e => { if(e.key==='Enter') send(); };
+}
+document.addEventListener('click', () => { const p=$('remPop'); if(p) p.hidden=true; });
+
+function setFilter(f){
+  const isS = f==='sched';
+  $('inbox').hidden = isS; $('sched').hidden = !isS;
+  if(!isS){ fs=f; document.querySelectorAll('#fstat button').forEach(b=>b.classList.toggle('on',b.dataset.f===f)); list(); }
+}
+document.querySelectorAll('#fstat button,#fstat2 button').forEach(b => b.onclick = () => setFilter(b.dataset.f));
+document.querySelectorAll('#fch .chip').forEach(c => c.onclick = () => { fc=c.dataset.c; document.querySelectorAll('#fch .chip').forEach(x=>x.classList.toggle('on',x===c)); list(); });
+
+/* ---------- scheduled ---------- */
+const S = [
+ ['Today, 17:00','Delivery tomorrow','Delivery tomorrow','wa',41,'Hello {name}, your Magic Groove order #{order} arrives tomorrow. Keep GH₵249 ready and your phone on.','Ama Mensah, Kojo Tetteh, Abena Osei and 38 more'],
+ ['Today, 18:30','Missed call follow-up','Missed call','sms',17,'Hello {name}, we tried calling about your Magic Groove order. Reply with a good time or call 024 555 0100.','Kobby Asare, Efua Quansah and 15 more'],
+ ['Tomorrow, 09:00','Out for delivery','Out for delivery','sms',22,'Your order is with {rider} today. They will call you before arriving.','Mawuli Agbeko, Fiifi Acquah and 20 more'],
+ ['Tomorrow, 10:00','Review request','Review request','wa',63,'Hi {name}, how is the Magic Groove set working for your child? Reply with a photo and we send a free pen.','Comfort Aidoo, Kwame Opoku and 61 more'],
+ ['Sat 19 Oct, 08:00','Reorder pens','Reorder pens','sms',118,'Running low on refill pens? Reorder now at GH₵40 and pay on delivery.','Adjoa Sarpong, Kwabena Asante and 116 more']
+];
+function sched(){
+  $('sbody').innerHTML = S.map((s,i)=>`<tr data-i="${i}"><td><b>${s[0]}</b></td><td><a class="lnk" href="workflows.html">${s[1]}</a></td><td>${s[2]}</td><td><span class="tag n">${s[3]==='wa'?'WhatsApp':'SMS'}</span></td><td class="r num">${s[4]}</td><td><span class="tag ${s[7]?'warn':'v'}">${s[7]?'Paused':'Scheduled'}</span></td><td class="r"><button class="mini" data-pv="${i}">Preview</button> <button class="mini" data-pz="${i}">${s[7]?'Resume':'Pause'}</button></td></tr>
+  <tr class="pv" id="pv${i}" hidden><td colspan="7"><b style="color:var(--ink)">Message</b><br>${s[5]}<br><span style="color:var(--ink-3)">To: ${s[6]}</span></td></tr>`).join('');
+  $('sbody').querySelectorAll('[data-pv]').forEach(b=>b.onclick=()=>{const r=$('pv'+b.dataset.pv);r.hidden=!r.hidden;});
+  $('sbody').querySelectorAll('[data-pz]').forEach(b=>b.onclick=()=>{const s=S[b.dataset.pz];s[7]=!s[7];sched();toast(s[7]?'Paused. Nothing will go out for this reminder.':'Resumed.');});
+}
+sched();
+
+/* ---------- tabs ---------- */
+function panel(p){
+  document.querySelectorAll('#ptabs .tab').forEach(t=>t.classList.toggle('on',t.dataset.p===p));
+  document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('on',x.id==='p-'+p));
+}
+document.querySelectorAll('#ptabs .tab').forEach(t=>t.onclick=()=>panel(t.dataset.p));
+document.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>panel(b.dataset.goto));
+document.addEventListener('click',e=>{const b=e.target.closest('[data-instpl]');if(!b)return;const t=T.find(x=>x.id===cur);const i=$('cin');i.value='Hello '+firstName(t.name)+', your Magic Groove order #'+t.order.no+' is on its way. Please keep your phone on and the cash ready.';i.focus();});
+document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{
+  const a=b.dataset.act;
+  if(a==='unreplied'){panel('conv');setFilter('un');}
+  if(a==='failed'){panel('conv');setFilter('fail');toast('Showing the 9 failed. Resend sample only.');}
+  if(a==='scheduled'){panel('conv');setFilter('sched');}
+  if(a==='assign-adwoa'){shellConfirm('Give 14 threads to Adwoa Darko?','Adwoa answers customer replies. Nothing changes until you confirm.','Assign 14 threads',()=>toast('14 threads assigned to Adwoa Darko. Sample only.'));return}
+  document.getElementById('messages').scrollIntoView({behavior:'smooth',block:'start'});
+});
+
+/* ---------- templates ---------- */
+const TPL = [
+ ['Order confirmation','wa','Hello {{customer_name}}, your Magic Groove order #{{order_number}} (GH₵249) is confirmed. Pay cash when it arrives.','Workflow: New order confirmed'],
+ ['Delivery tomorrow','wa','Hello {{customer_name}}, your order arrives tomorrow. Keep {{order_total}} ready and your phone on.','Workflow: Delivery tomorrow'],
+ ['Out for delivery','sms','Your order #{{order_number}} is out for delivery. The rider will call you before arriving.','Workflow: Rider marks out for delivery'],
+ ['Missed call','sms','Hello {{customer_name}}, we tried calling about order #{{order_number}}. Reply with a good time.','Workflow: Customer not reachable'],
+ ['Review request','wa','Hi {{customer_name}}, how is the set working for your child? Reply with a photo and get a free pen.','Workflow: 2 days after delivery'],
+ ['Reorder pens','sms','Running low on refill pens, {{customer_name}}? Reorder at GH₵40 and pay on delivery.','Bulk sends only'],
+ ['Guide delivery','wa','Hello {{customer_name}}, here is your Smart Parent\'s Home Study Guide: {{download_url}}','Workflow: Digital order paid'],
+ ['Delay apology','wa','Sorry {{customer_name}}, your order is a day late. {{store_name}} will deliver it tomorrow.','Used in Kumasi campaign']
+];
+function tpls(){
+  $('tgrid').innerHTML = TPL.map((t,i)=>`<div class="tpl"><div class="tt"><b>${t[0]}</b><span class="tag ${t[1]==='wa'?'ok':t[1]==='sms'?'n':'v'}">${t[1]==='wa'?'WhatsApp':t[1]==='sms'?'SMS':'Email'}</span></div><p>${t[2]}</p><div class="use"><i data-lucide="workflow"></i>${t[3]}</div><div class="acts"><button class="mini" data-te="${i}">Edit</button><button class="mini" data-tu="${i}">Use in bulk send</button></div></div>`).join('');
+  $('btpl').innerHTML = TPL.map((t,i)=>`<option value="${i}">${t[0]} (${t[1]==='wa'?'WhatsApp':'SMS'})</option>`).join('');
+  $('tgrid').querySelectorAll('[data-te]').forEach(b=>b.onclick=()=>openT(+b.dataset.te));
+  $('tgrid').querySelectorAll('[data-tu]').forEach(b=>b.onclick=()=>{ $('btpl').value=b.dataset.tu; loadT(); panel('bulk'); });
+  lucide.createIcons();
+}
+function openT(i){
+  const t = TPL[i];
+  $('tmt').textContent = t ? 'Edit template' : 'New template';
+  $('tn').value = t?t[0]:''; $('tb').value = t?t[2]:'';
+  $('tch').querySelectorAll('button').forEach(b=>b.classList.toggle('on', t? b.dataset.v===t[1] : b.dataset.v==='wa'));
+  $('tveil').classList.add('on'); $('tn').focus();
+}
+$('newtpl').onclick = () => openT(-1);
+const closeT = () => $('tveil').classList.remove('on');
+$('tclose').onclick = closeT; $('tcancel').onclick = closeT;
+$('tveil').onclick = e => { if(e.target===$('tveil')) closeT(); };
+$('tsave').onclick = () => { closeT(); toast('Template saved. Sample only.'); };
+function insertTag(area, tag){ const s=area.selectionStart??area.value.length; area.value = area.value.slice(0,s)+'{{'+tag+'}}'+area.value.slice(area.selectionEnd??s); area.focus(); area.dispatchEvent(new Event('input')); }
+document.querySelectorAll('#ttags [data-tag]').forEach(b=>b.onclick=()=>insertTag($('tb'),b.dataset.tag));
+document.querySelectorAll('#btags [data-tag]').forEach(b=>b.onclick=()=>insertTag($('bmsg'),b.dataset.tag));
+tpls();
+
+/* ---------- bulk send ---------- */
+const state = {ch:'sms', hist:1};
+const SAMPLE = {customer_name:'Ama Mensah', customer_email:'ama.mensah@example.com', store_name:'Magic Groove', unsubscribe_url:'mgr.shop/stop', order_number:'24037', order_total:'GH₵249', download_url:'mgr.shop/guide'};
+const RATE = {sms:0.06, wa:0.15, email:0};
+function loadT(){ const t=TPL[+$('btpl').value]; if($('bsrc').querySelector('.on').dataset.v==='tpl'){ $('bmsg').value=t[2]; } calc(); }
+function calc(){
+  const n = Math.round(4300*0+ (+$('breg').value===1?4300:+$('breg').value) * +$('bprod').value * state.hist);
+  const optout = Math.round(n*0.006), send = n-optout;
+  const msg = $('bmsg').value + (state.ch==='sms'&&$('bmsg').value.includes('unsubscribe')?'':'');
+  const filled = msg.replace(/\{\{(\w+)\}\}/g,(m,k)=>SAMPLE[k]||m) + ($('blink').value && state.ch==='wa' ? '\n'+$('blink').value : '');
+  const seg = state.ch==='sms' ? Math.max(1,Math.ceil(filled.length/160)) : 1;
+  const cost = send*RATE[state.ch]*seg;
+  $('bn').textContent = send.toLocaleString();
+  $('bnsub').textContent = 'customers on '+({sms:'SMS',wa:'WhatsApp',email:'email'}[state.ch]);
+  $('blines').innerHTML = `<div><span>Match your filters</span><b class="num">${n.toLocaleString()}</b></div><div><span>Removed: opted out</span><b class="num">−${optout}</b></div>` + (state.ch==='sms'?`<div><span>Parts per message</span><b class="num">${seg}</b></div>`:'');
+  $('bcost').textContent = 'GH₵'+(cost<10?cost.toFixed(2):Math.round(cost).toLocaleString());
+  $('bcostsub').textContent = state.ch==='email' ? 'Email is free on your plan' : `GH₵${RATE[state.ch].toFixed(2)} per ${state.ch==='sms'?'part':'message'}`;
+  $('bord').textContent = Math.round(send*0.011).toLocaleString();
+  $('bprev').textContent = filled || 'Type a message to see it here.';
+  $('bcount').textContent = state.ch==='sms' ? `${filled.length} characters · ${seg} ${seg>1?'parts':'part'} per message` : state.ch==='wa' ? 'WhatsApp needs an approved template to message customers who have not written to you in 24 hours.' : 'Email includes an unsubscribe link automatically.';
+}
+$('bch').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+  state.ch=b.dataset.v;
+  $('linkrow').hidden = state.ch!=='wa'; $('subjrow').hidden = state.ch!=='email';
+  $('bchint').textContent = {sms:'Sent through Arkesel from sender ID MagicGroove.',wa:'Sent from +233 24 555 0100 on WhatsApp Business.',email:'Sent from hello@magicgroove.shop through SendGrid.'}[state.ch];
+  calc();
+}));
+$('bsrc').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ $('tplrow').hidden = b.dataset.v!=='tpl'; if(b.dataset.v==='tpl') loadT(); else { $('bmsg').value=''; calc(); } }));
+$('bhist').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ state.hist=+b.dataset.v; calc(); }));
+['breg','bprod','blink','bmsg'].forEach(id=>$(id).addEventListener('input',calc));
+$('btpl').onchange = loadT;
+$('bsend').onclick = () => toast('Sample only. Nothing was sent to '+$('bn').textContent+' customers.');
+$('bsched').onclick = () => toast('Sample only. Pick a time in the real app.');
+$('btest').onclick = () => toast('Test sent to Manny, 024 555 0100. Sample only.');
+$('bmsg').value = TPL[5][2]; $('btpl').value = 5; calc();
+
+/* ---------- campaigns ---------- */
+const C = [
+ ['Reorder pens, 15 Oct','wa','15 Oct',1240,1181,802,96,59,38],
+ ['Back to school copybook offer','sms','12 Oct',2100,2044,null,41,56,52],
+ ['Kumasi delay apology','wa','10 Oct',310,301,244,38,9,11],
+ ['Guide giveaway','email','7 Oct',1860,1790,742,58,70,21],
+ ['Missed-call win-back, Accra','sms','4 Oct',420,409,null,27,11,16],
+ ['Weekend flash sale (draft)','sms','Not sent',0,0,null,0,0,0]
+];
+const pc = (a,b)=> b? Math.round(a/b*100)+'%':'';
+$('cbody').innerHTML = C.map(c=>`<tr data-ch="${c[1]}"><td><b>${c[0]}</b></td><td><span class="tag ${c[1]==='wa'?'ok':c[1]==='sms'?'n':'v'}">${c[1]==='wa'?'WhatsApp':c[1]==='sms'?'SMS':'Email'}</span></td><td>${c[2]}</td>
+ ${c[3]?`<td class="r num">${c[3].toLocaleString()}</td><td class="r num">${c[4].toLocaleString()}<span class="pct">${pc(c[4],c[3])}</span></td><td class="r num">${c[5]!=null?c[5].toLocaleString()+`<span class="pct">${pc(c[5],c[4])}</span>`:'<span style="color:var(--ink-3)">n/a</span>'}</td><td class="r num">${c[6]}<span class="pct">${pc(c[6],c[4])}</span></td><td class="r num ${c[7]>50?'low':''}" ${c[7]>50?'style="color:var(--coral)"':''}>${c[7]}<span class="pct">${pc(c[7],c[3])}</span></td><td class="r num"><b>${c[8]}</b><span class="pct">GH₵${(c[8]*249).toLocaleString()}</span></td>`:'<td colspan="6" style="color:var(--ink-3)">Draft. <button class="lnk" data-goto="bulk">Finish and send</button></td>'}</tr>`).join('');
+document.querySelectorAll('#cbody [data-goto]').forEach(b=>b.onclick=()=>panel('bulk'));
+$('cch').onchange = () => document.querySelectorAll('#cbody tr').forEach(r=>r.style.display=(!$('cch').value||r.dataset.ch===$('cch').value)?'':'none');
+
+/* ---------- opt-outs ---------- */
+const O = [
+ ['Esther Nyarko','Accra','12 Oct','Replied STOP',true,false],
+ ['Kojo Bonsu','Kumasi','11 Oct','Replied STOP',true,true],
+ ['Mercy Tawiah','Tema','9 Oct','Unsubscribe link',false,true],
+ ['Nana Yaw Agyei','Kumasi','8 Oct','Asked on a call',true,true],
+ ['Dela Fiawoo','Tema','6 Oct','Replied STOP',true,false],
+ ['Priscilla Odoi','Accra','4 Oct','Replied STOP',true,false],
+ ['Baba Iddrisu','Tamale','2 Oct','Asked on a call',false,true],
+ ['Gloria Larbi','Takoradi','29 Sep','Unsubscribe link',true,true]
+];
+function opts(){
+  const q = $('oq').value.toLowerCase();
+  $('obody').innerHTML = O.filter(o=>o[0].toLowerCase().includes(q)).map(o=>`<tr><td><div class="who"><div class="a" style="background:var(--hover);color:var(--ink-2)">${initials(o[0])}</div><div>${o[0]}<small>${phone()}</small></div></div></td><td>${o[1]}</td><td>${o[2]}</td><td>${o[3]}</td><td class="r"><button class="sw" role="switch" aria-label="SMS off for ${o[0]}" aria-checked="${o[4]}"></button></td><td class="r"><button class="sw" role="switch" aria-label="WhatsApp off for ${o[0]}" aria-checked="${o[5]}"></button></td></tr>`).join('');
+  $('obody').querySelectorAll('.sw').forEach(s=>s.onclick=()=>s.setAttribute('aria-checked',s.getAttribute('aria-checked')!=='true'));
+}
+$('oq').oninput = opts; opts();
+
+const hash = location.hash.slice(1);
+if(['bulk','camp','tpl','opt'].includes(hash)) panel(hash);
+if(hash==='sched'){ setFilter('sched'); }
+else list();
+lucide.createIcons();
+
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

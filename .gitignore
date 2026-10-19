@@ -145,3 +145,8 @@ backend/test_output.txt
 # Local per-developer docker-compose overrides (machine-specific connection
 # details / local credentials — never commit)
 docker-compose.*.override.yml
+
+# Competitor research raw captures (kept local, too large for git)
+docs/research/competitors/*/screens/
+docs/research/competitors/*/evidence/
+docs/research/competitors/*/raw/

@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodAdmin Inbox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+.inbox{display:grid;grid-template-columns:220px 1fr;gap:18px;align-items:start}
+.rail{padding:10px;position:sticky;top:84px}
+.rail button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:10px;color:var(--ink-2);font-weight:600;text-align:left}
+.rail button:hover{background:var(--hover);color:var(--ink)}
+.rail button.on{background:var(--pine-soft);color:var(--pine);font-weight:700}
+.rail .cnt{margin-left:auto;font-size:11.5px;font-weight:700;padding:1px 7px;border-radius:99px;background:var(--hover);color:var(--ink-2)}
+.rail .cnt.hot{background:var(--coral-soft);color:var(--coral)}
+.rail hr{border:0;border-top:1px solid var(--line);margin:8px 6px}
+.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+.sub{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.sub h3{font-size:15px}
+.grp{padding:10px 20px 6px;font-size:12px;font-weight:700;color:var(--ink-3);background:var(--hover)}
+.nrow{display:flex;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);align-items:flex-start;position:relative}
+.nrow:last-child{border-bottom:0}
+.nrow:hover{background:var(--hover)}
+.nrow.unread{background:color-mix(in srgb,var(--pine-soft) 45%,transparent)}
+.nrow.unread:hover{background:var(--pine-soft)}
+.nrow .ud{position:absolute;left:7px;top:26px;width:7px;height:7px;border-radius:50%;background:var(--coral)}
+.nrow:not(.unread) .ud{display:none}
+.nic{flex:none;width:38px;height:38px;border-radius:11px;display:grid;place-items:center}
+.nbody{flex:1;min-width:0}
+.nbody b{display:block;font-size:14px;font-weight:600}
+.nrow:not(.unread) .nbody b{font-weight:500}
+.nbody .meta{color:var(--ink-3);font-size:12.5px;margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.lnk{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--pine);text-decoration:none;margin-top:5px;padding:2px 8px;border-radius:8px;background:var(--pine-soft)}
+.lnk svg.lucide{width:13px;height:13px}
+.qa{display:flex;gap:4px;flex:none}
+.qa button,.qa a{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:var(--ink-3);border:1px solid transparent}
+.qa button:hover,.qa a:hover{background:var(--card);border-color:var(--line);color:var(--ink)}
+.qa svg.lucide{width:16px;height:16px}
+.sn{position:absolute;right:20px;top:48px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;z-index:5;display:none;min-width:180px}
+.sn.on{display:block}
+.sn button{display:block;width:100%;text-align:left;padding:7px 10px;border-radius:8px;font-weight:500}
+.sn button:hover{background:var(--hover)}
+.empty{padding:40px 20px;text-align:center;color:var(--ink-3)}
+.sm{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;font-size:9.5px;font-weight:700}
+
+/* reminders */
+.rem2{display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start}
+.rrow{display:flex;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line);align-items:flex-start}
+.rrow:last-child{border-bottom:0}
+.ck2{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;color:transparent;margin-top:1px}
+.ck2:hover{border-color:var(--mint);color:var(--mint)}
+.rrow.done .ck2{background:var(--mint);border-color:var(--mint);color:#fff}
+.rrow.done .rt{text-decoration:line-through;color:var(--ink-3)}
+.ck2 svg.lucide{width:13px;height:13px;stroke-width:3}
+.rt{font-weight:600}
+.rsub{color:var(--ink-3);font-size:12.5px;margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.rsub svg.lucide{width:13px;height:13px}
+.rwhen{margin-left:auto;text-align:right;white-space:nowrap;font-size:12.5px;color:var(--ink-2);font-weight:600}
+.rwhen small{display:block;color:var(--ink-3);font-weight:500}
+.fld{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.fld label,.fld .lb{font-weight:600;font-size:13px}
+.fld input,.fld select,.fld textarea{font:500 14px "Plus Jakarta Sans",sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px;width:100%}
+.fld input:focus-visible,.fld select:focus-visible,.fld textarea:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+[data-theme="dark"] input,[data-theme="dark"] select{color-scheme:dark}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:99px;border:1px solid var(--line);font-weight:600;font-size:13px;color:var(--ink-2)}
+.chip svg.lucide{width:14px;height:14px}
+.chip.on{background:var(--pine-soft);border-color:var(--pine);color:var(--pine)}
+.formc{padding:18px 20px;position:sticky;top:84px}
+.formc h3{font-size:16px;margin-bottom:14px}
+
+/* threads */
+.thr{display:grid;grid-template-columns:300px 1fr;overflow:hidden;min-height:640px}
+.tlist{border-right:1px solid var(--line)}
+.trow{display:flex;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);width:100%;text-align:left;align-items:flex-start}
+.trow:hover{background:var(--hover)}
+.trow.on{background:var(--pine-soft)}
+.trow b{display:block;font-size:13.5px;line-height:1.35}
+.trow small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.trow .u{margin-left:auto;flex:none;min-width:20px;height:20px;border-radius:99px;background:var(--coral);color:#fff;font-size:11.5px;font-weight:700;display:grid;place-items:center;padding:0 6px}
+.tpane{display:flex;flex-direction:column;min-width:0}
+.thead{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.thead h3{font-size:16px}
+.thead .ppl{margin-left:auto;display:flex}
+.thead .ppl .sm{width:28px;height:28px;font-size:11px;border:2px solid var(--card);margin-left:-6px}
+.tctx{display:flex;gap:10px;align-items:center;padding:10px 20px;background:var(--hover);border-bottom:1px solid var(--line);font-size:13px;flex-wrap:wrap}
+.tmsgs{flex:1;padding:18px 20px;display:flex;flex-direction:column;gap:16px;overflow:auto}
+.m{display:flex;gap:10px}
+.m .a{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px}
+.m .bub{min-width:0;flex:1}
+.m .nm{font-weight:700;font-size:13.5px}
+.m .nm small{color:var(--ink-3);font-weight:500;margin-left:6px}
+.m .tx{margin-top:2px}
+.m.re{margin-left:44px;padding-left:12px;border-left:2px solid var(--line)}
+.at{display:flex;gap:10px;align-items:center;margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;max-width:320px}
+.at .ph{width:52px;height:52px;border-radius:9px;background:linear-gradient(135deg,var(--gold-soft),var(--pine-soft));display:grid;place-items:center;color:var(--ink-3);flex:none}
+.at small{display:block;color:var(--ink-3);font-size:12px}
+.rx{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.rx button{display:inline-flex;gap:5px;align-items:center;font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--ink-2)}
+.rx button svg.lucide{width:12px;height:12px}
+.rx .rp{border:0;color:var(--ink-3)}
+.mn{color:var(--violet);font-weight:700;background:var(--violet-soft);border-radius:6px;padding:0 4px}
+.seen{font-size:12px;color:var(--ink-3);display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.seen svg.lucide{width:13px;height:13px;color:var(--mint)}
+.comp{border-top:1px solid var(--line);padding:12px 20px 16px;position:relative}
+.comp textarea{width:100%;min-height:62px;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:500 14px "Plus Jakarta Sans",sans-serif;background:var(--card);color:var(--ink)}
+.comp textarea:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+.crow{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
+.crow .sp{flex:1}
+.mnl{position:absolute;left:30px;bottom:96px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;display:none;min-width:220px;z-index:5}
+.mnl.on{display:block}
+.mnl button{display:flex;gap:10px;align-items:center;width:100%;padding:7px 10px;border-radius:8px;text-align:left}
+.mnl button:hover,.mnl button.sel{background:var(--hover)}
+.mnl small{color:var(--ink-3);margin-left:auto}
+
+/* settings */
+.sw{width:38px;height:22px;border-radius:99px;background:var(--line);position:relative;transition:background .2s;flex:none;display:inline-block}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.sw[aria-checked="true"]{background:var(--pine)}
+.sw[aria-checked="true"]::after{transform:translateX(16px)}
+.mx th,.mx td{text-align:center;padding:11px 12px}
+.mx th:first-child,.mx td:first-child{text-align:left;padding-left:20px}
+.mx td:first-child small{display:block;color:var(--ink-3);font-size:12px}
+.set2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.setp{padding:18px 20px}
+.setp h3{font-size:16px;margin-bottom:4px}
+.setp>p{color:var(--ink-2);font-size:13px;margin-bottom:14px}
+.line2{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.line2 .t{display:flex;align-items:center;gap:8px}
+.line2 input,.line2 select{font:500 14px "Plus Jakarta Sans",sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px}
+.toast{position:fixed;left:50%;bottom:62px;transform:translateX(-50%);background:var(--pine);color:#fff;padding:9px 16px;border-radius:12px;font-weight:600;z-index:70;display:none;box-shadow:var(--shadow)}
+[data-theme="dark"] .toast{color:#04211d}
+.toast.on{display:block}
+
+@media (max-width:1100px){
+  .inbox{grid-template-columns:minmax(0,1fr)}
+  .rail{position:static;display:flex;gap:4px;overflow-x:auto}
+  .rail button{width:auto;white-space:nowrap}
+  .rail hr{display:none}
+  .rem2,.set2{grid-template-columns:minmax(0,1fr)}
+  .formc{position:static}
+}
+@media (max-width:760px){
+  .thr{grid-template-columns:minmax(0,1fr)}
+  .tlist{border-right:0;border-bottom:1px solid var(--line)}
+  .nrow{flex-wrap:wrap}.qa{margin-left:50px}
+  .m.re{margin-left:20px}
+  .f2{grid-template-columns:1fr}
+}
+
+.rwhen .mini{display:block;margin:6px 0 0 auto;font-weight:600}
+td .tag,td b{white-space:nowrap}
+.tablewrap td:last-child{white-space:nowrap}
+
+.inbox>*,.tpane,.tmsgs,.m .bub{min-width:0}
+.tmsgs{overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav on" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+      <div class="head">
+        <div><h1>Inbox</h1><p>Everything that needs you: alerts, reminders, replies and team threads.</p></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="markAll"><i data-lucide="check-check"></i>Mark all read</button>
+          <button class="btn" id="newRem"><i data-lucide="bell-ring"></i>New reminder</button>
+          <button class="btn" id="gear" aria-label="Notification settings"><i data-lucide="settings-2"></i>Notification settings</button>
+        </div>
+      </div>
+
+      <div class="inbox">
+        <nav class="card rail" id="rail" aria-label="Inbox views">
+          <button data-v="all" class="on"><i data-lucide="inbox"></i>All<span class="cnt hot" id="c-all">5</span></button>
+          <button data-v="mentions"><i data-lucide="at-sign"></i>Mentions<span class="cnt" id="c-mentions"></span></button>
+          <button data-v="assigned"><i data-lucide="user-check"></i>Assigned to me<span class="cnt" id="c-assigned"></span></button>
+          <button data-v="reminders"><i data-lucide="alarm-clock"></i>Reminders<span class="cnt hot" id="c-reminders"></span></button>
+          <button data-v="threads"><i data-lucide="messages-square"></i>Team threads<span class="cnt" id="c-threads"></span></button>
+          <button data-v="alerts"><i data-lucide="siren"></i>Alerts<span class="cnt" id="c-alerts"></span></button>
+          <hr>
+          <button data-v="done"><i data-lucide="check-circle-2"></i>Done<span class="cnt" id="c-done"></span></button>
+        </nav>
+
+        <div class="stack">
+          <!-- FEED: All, Mentions, Alerts, Done -->
+          <section class="view on" id="v-feed">
+            <div class="card ins" id="feedAgent" style="margin-bottom:16px">
+              <div class="insight">
+                <div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="sparkles"></i></div>
+                  <div><b>The GH₵840 Logiswift shortfall has no owner</b><p>It is the oldest unread alert. Last month's payout gap was settled after one reminder call, so a reminder for Monday 09:00 should be enough.</p></div></div>
+                <div class="act"><button class="mini pri" id="agRemind">Remind me Monday 09:00</button><button class="mini" id="agThread">Start a team thread</button></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="sub"><h3 id="feedTitle">All</h3><span class="tag n" id="feedCount"></span></div>
+              <div id="feed"></div>
+            </div>
+          </section>
+
+          <!-- REMINDERS -->
+          <section class="view" id="v-reminders">
+            <div class="card ins" style="margin-bottom:16px">
+              <div class="insight">
+                <div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="sparkles"></i></div>
+                  <div><b>3 reminders are overdue; 2 are Kofi's</b><p>Kofi still holds the GH₵249 cash from Abena Owusu and has not returned the refused set from #24114 to Logiswift. He is in Kumasi today and last opened the app yesterday at 18:10.</p></div></div>
+                <div class="act"><button class="mini pri" id="agNudge">Nudge Kofi on WhatsApp</button><button class="mini" data-confirm="Reschedule 3 overdue reminders to tomorrow?||Kofi has 2 and you have 1. Their due time stays the same. Nothing changes until you confirm.||Reschedule 3||Rescheduled 3 reminders to tomorrow. Sample only.">Reschedule all to tomorrow</button></div>
+              </div>
+            </div>
+            <div class="rem2">
+              <div class="stack" id="remLists"></div>
+              <div class="card formc" id="remForm">
+                <h3>New reminder</h3>
+                <div class="fld"><label for="rWhat">What</label><input id="rWhat" placeholder="Collect GH₵249 cash from Abena Owusu"></div>
+                <div class="fld"><label for="rLink">Linked item</label>
+                  <select id="rLink">
+                    <option>None</option>
+                    <option>Order #24114 · Yaw Boateng, Kumasi</option>
+                    <option>Order #24117 · Abena Owusu, Kumasi</option>
+                    <option>Customer · Efua Mensah, Accra</option>
+                    <option>Payout · Logiswift 1–15 Oct</option>
+                    <option>Product · Magic Groove copybook set</option>
+                  </select></div>
+                <div class="f2">
+                  <div class="fld"><label for="rDate">Due date</label><input id="rDate" type="date" value="2026-10-18"></div>
+                  <div class="fld"><label for="rTime">Time</label><input id="rTime" type="time" value="09:00"></div>
+                </div>
+                <div class="fld"><label for="rRep">Repeat</label>
+                  <select id="rRep"><option>Does not repeat</option><option>Every day</option><option>Every week</option><option>Every month</option></select></div>
+                <div class="fld"><span class="lb">For</span>
+                  <div class="seg" id="rFor" style="margin-top:0;align-self:flex-start"><button class="on" data-w="me">Me</button><button data-w="team">A teammate</button></div>
+                  <select id="rWho" style="display:none"><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Adwoa Darko</option><option>Nana Kyei</option></select></div>
+                <div class="fld"><span class="lb">Notify by</span>
+                  <div class="chips" id="rCh">
+                    <button class="chip on" data-c="In-app"><i data-lucide="bell"></i>In-app</button>
+                    <button class="chip" data-c="WhatsApp"><i data-lucide="message-circle"></i>WhatsApp</button>
+                    <button class="chip" data-c="Email"><i data-lucide="mail"></i>Email</button>
+                    <button class="chip" data-c="SMS"><i data-lucide="smartphone"></i>SMS</button>
+                  </div></div>
+                <button class="btn pri" id="rSave" style="width:100%;justify-content:center"><i data-lucide="plus"></i>Create reminder</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- TEAM THREADS -->
+          <section class="view" id="v-threads">
+            <div class="card thr">
+              <div class="tlist">
+                <div class="sub"><h3>Team threads</h3><button class="mini" id="newThr"><i data-lucide="plus" style="width:13px;height:13px;vertical-align:-2px"></i> New</button></div>
+                <div id="tlist"></div>
+              </div>
+              <div class="tpane">
+                <div class="thead" id="thead"></div>
+                <div class="tctx" id="tctx"></div>
+                <div class="tmsgs" id="tmsgs"></div>
+                <div class="comp">
+                  <div class="mnl" id="mnl"></div>
+                  <textarea id="cmsg" placeholder="Write a message. Type @ to mention a teammate." aria-label="Message"></textarea>
+                  <div class="crow">
+                    <button class="mini" id="attBtn" aria-label="Attach a file"><i data-lucide="paperclip" style="width:13px;height:13px;vertical-align:-2px"></i> Attach</button><input type="file" id="attF" hidden>
+                    <button class="mini" id="atBtn" aria-label="Mention"><i data-lucide="at-sign" style="width:13px;height:13px;vertical-align:-2px"></i> Mention</button>
+                    <button class="mini" id="cRem"><i data-lucide="alarm-clock-plus" style="width:13px;height:13px;vertical-align:-2px"></i> Set reminder from this message</button>
+                    <span class="sp"></span>
+                    <button class="btn pri" id="csend"><i data-lucide="send"></i>Send</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ASSIGNED -->
+          <section class="view" id="v-assigned">
+            <div class="card">
+              <div class="sub"><h3>Assigned to me</h3><span class="tag n">4 open</span></div>
+              <div class="tablewrap"><table>
+                <thead><tr><th>Item</th><th>Assigned by</th><th>Due</th><th>Status</th><th class="r">Action</th></tr></thead>
+                <tbody>
+                  <tr><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="shopping-bag" style="width:15px;height:15px"></i></div><div><b>Approve GH₵30 discount</b><small>Order #24111 · Akosua Frimpong, Cape Coast</small></div></div></td><td>Kofi Appiah</td><td><b>Today, 12:00</b></td><td><span class="tag warn">Due soon</span></td><td class="r"><button class="mini pri" data-link="index.html#orders">Open order</button> <button class="mini" data-rowdone>Done</button></td></tr>
+                  <tr><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="shopping-bag" style="width:15px;height:15px"></i></div><div><b>Call customer about a wrong address</b><small>Order #24115 · Efua Asante, Osu, Accra</small></div></div></td><td>Nana Kyei</td><td><b>Sun 18 Oct</b></td><td><span class="tag n">Open</span></td><td class="r"><button class="mini pri" data-link="index.html#orders">Open order</button> <button class="mini" data-rowdone>Done</button></td></tr>
+                  <tr><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="wallet" style="width:15px;height:15px"></i></div><div><b>Pay Adwoa's GH₵2,034 commission balance</b><small>Commission and upsell reward · Call rep</small></div></div></td><td>CodAdmin agent</td><td><b>Sun 18 Oct</b></td><td><span class="tag n">Open</span></td><td class="r"><button class="mini pri" data-link="finance.html#pay-adwoa">Open payout</button> <button class="mini" data-rowdone>Done</button></td></tr>
+                  <tr><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="banknote" style="width:15px;height:15px"></i></div><div><b>Record Kasapa Express trial payout</b><small>Payout · Cape Coast, 5 orders</small></div></div></td><td>Esi Badu</td><td><b>Fri 16 Oct</b></td><td><span class="tag bad">Overdue</span></td><td class="r"><button class="mini pri" data-link="finance.html#payout">Open payout</button> <button class="mini" data-rowdone>Done</button></td></tr>
+                </tbody></table></div>
+            </div>
+          </section>
+
+          <!-- SETTINGS -->
+          <section class="view" id="v-settings">
+            <div class="card ins" style="margin-bottom:16px">
+              <div class="insight">
+                <div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="sparkles"></i></div>
+                  <div><b>Kwesi gets no alert when a payout is short</b><p>His role default has the payout alert off, and Takoradi carries GH₵1.1k of cash. Turn it on for the Delivery role.</p></div></div>
+                <div class="act"><button class="mini pri" data-confirm="Turn on the payout alert for the Delivery role?||Kofi, Esi and Kwesi get a WhatsApp alert when a payout is short or late. Nothing changes until you confirm.||Turn on||Payout alert is on for the Delivery role. Sample only.">Turn on for Delivery</button><button class="mini">Ignore</button></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="sub"><h3>Notification settings</h3>
+                <div class="seg" id="setSeg" style="margin-top:0"><button class="on" data-s="mine">My alerts</button><button data-s="roles">Role defaults</button></div></div>
+              <div class="tablewrap" id="s-mine"><table class="mx">
+                <thead><tr><th>Event</th><th>In-app</th><th>WhatsApp</th><th>Email</th><th>SMS</th></tr></thead>
+                <tbody id="mxBody"></tbody></table></div>
+              <div class="tablewrap" id="s-roles" style="display:none">
+                <p style="padding:14px 20px 0;color:var(--ink-2)">The owner sets these. New staff start with their role's channels and can change their own.</p>
+                <table class="mx" style="margin-top:6px">
+                <thead><tr><th>Role</th><th>In-app</th><th>WhatsApp</th><th>Email</th><th>SMS</th></tr></thead>
+                <tbody id="roleBody"></tbody></table>
+                <div style="padding:14px 20px"><button class="btn pri" data-confirm="Apply role defaults to the team?||The defaults are copied to 5 people who have not changed their own settings: Adwoa, Nana, Kofi, Esi and Kwesi.||Apply to 5 people||Defaults applied to 5 people. Sample only.">Apply to team</button></div></div>
+            </div>
+            <div class="set2" style="margin-top:16px">
+              <div class="card setp">
+                <h3>Quiet hours</h3><p>No WhatsApp or SMS in this window. In-app alerts still arrive.</p>
+                <div class="line2"><span class="t"><i data-lucide="moon"></i>Turn on quiet hours</span><button class="sw" role="switch" aria-checked="true" aria-label="Quiet hours"></button></div>
+                <div class="line2"><span>From</span><input type="time" value="21:00" aria-label="From"></div>
+                <div class="line2"><span>To</span><input type="time" value="07:00" aria-label="To"></div>
+                <div class="line2"><span>Still send short payouts and failed deliveries</span><button class="sw" role="switch" aria-checked="false" aria-label="Allow urgent"></button></div>
+              </div>
+              <div class="card setp">
+                <h3>Digest and nudges</h3><p>One summary instead of many pings.</p>
+                <div class="line2"><span class="t"><i data-lucide="mail"></i>Daily digest</span><button class="sw" role="switch" aria-checked="true" aria-label="Daily digest"></button></div>
+                <div class="line2"><span>Send at</span><input type="time" value="08:00" aria-label="Digest time"></div>
+                <div class="line2"><span>Send by</span><select aria-label="Digest channel"><option>WhatsApp</option><option>Email</option></select></div>
+                <div class="line2"><span>Remind me if not done after</span><select aria-label="Nudge after"><option>4 hours</option><option>1 day</option><option>2 days</option><option>Never</option></select></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.href = 'index.html#' + b.dataset.go; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+const $ = s => document.querySelector(s);
+const toast = msg => { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 2200); };
+const P = { Manny:['var(--pine-soft)','var(--pine)','MA'], Kofi:['var(--gold-soft)','var(--gold)','KA'], Esi:['var(--violet-soft)','var(--violet)','EB'], Adwoa:['var(--coral-soft)','var(--coral)','AD'], Kwesi:['var(--mint-soft)','var(--mint)','KW'], Nana:['var(--hover)','var(--ink-2)','NK'] };
+const av = (n, c) => `<span class="sm" style="background:${P[n][0]};color:${P[n][1]}">${P[n][2]}</span>`;
+
+/* ---------- notifications ---------- */
+const IC = { order:['truck','coral'], money:['banknote','gold'], stock:['boxes','gold'], target:['trophy','mint'], reply:['message-circle','pine'], agent:['sparkles','violet'], mention:['at-sign','violet'], assign:['user-check','pine'] };
+const N = [
+ {id:1,g:'Today',cat:'money',alert:1,u:1,t:'Logiswift payout is short GH₵840',l:['Payout · Logiswift 1–15 Oct','finance.html'],who:'CodAdmin agent',time:'09:12'},
+ {id:4,g:'Today',cat:'mention',u:1,t:'Kofi mentioned you: "I can go back on Tuesday 20 Oct."',l:['Team thread · Order #24114','#thread'],who:'Kofi Appiah',time:'08:52'},
+ {id:2,g:'Today',cat:'order',alert:1,u:1,t:'Delivery failed: the customer\'s brother refused at the gate',l:['Order #24114 · Yaw Boateng, Kumasi','index.html#orders'],who:'Kofi Appiah',time:'08:40'},
+ {id:3,g:'Today',cat:'assign',u:1,t:'Order assigned to you: approve a GH₵30 discount',l:['Order #24111 · Akosua Frimpong, Cape Coast','index.html#orders'],who:'Kofi Appiah',time:'08:15'},
+ 
+ {id:5,g:'Today',cat:'reply',u:1,t:'Abena Owusu replied: "I will be home after 5pm. Please bring change for 500."',l:['Conversation · Abena Owusu','messages.html'],who:'Customer reply',time:'07:30'},
+ {id:6,g:'Today',cat:'stock',alert:1,t:'Magic Groove is 12 units short at Logiswift (they count 88 of 100)',l:['MG-CB-SET · Logiswift stock','inventory.html'],who:'CodAdmin agent',time:'07:05'},
+ {id:7,g:'Today',cat:'target',t:'Adwoa Darko is at 60% of the call rep target (253 of 423 confirmed and delivered). 170 more reach the GH₵300 tier',l:['Targets · Call rep','index.html#targets'],who:'Targets',time:'06:00'},
+ {id:8,g:'Yesterday',cat:'money',alert:1,t:'38 orders have been unpaid for more than 8 days (GH₵23.4k with agents and 3PLs)',l:['Finance · Cash with agents','finance.html'],who:'CodAdmin agent',time:'16:00'},
+ {id:9,g:'Yesterday',cat:'agent',t:'Finding: Logiswift delivery success is 45%, the lowest partner. 41% of fails say "not reachable"',l:['Deliveries · Logiswift','deliveries.html'],who:"Manny's Claude",time:'14:20'},
+ {id:10,g:'Yesterday',cat:'reply',t:'Efua Mensah replied: "Yes, I confirm the order."',l:['Conversation · Efua Mensah','messages.html'],who:'Customer reply',time:'11:45'},
+ {id:11,g:'Earlier',cat:'order',t:'Order #24071 delivered and GH₵348 collected',l:['Order #24071 · Kojo Osei, Accra','index.html#orders'],who:'Logiswift',time:'14 Oct'},
+ {id:12,g:'Earlier',cat:'order',t:'Kasapa Express accepted 5 trial orders in Cape Coast',l:['Deliveries · Kasapa Express','deliveries.html'],who:'Esi Badu',time:'12 Oct'},
+ {id:13,g:'Earlier',cat:'stock',done:1,t:'Re-count copybooks at Kofi: 36 units matched',l:['MG-CB-SET · Kofi Appiah','inventory.html'],who:'Kofi Appiah',time:'11 Oct'},
+ {id:14,g:'Earlier',cat:'money',done:1,t:'September Logiswift payout matched to the cent',l:['Payout · Logiswift Sep','finance.html'],who:'CodAdmin agent',time:'5 Oct'}
+];
+let view = 'all';
+const titles = {all:'All',mentions:'Mentions',alerts:'Alerts',done:'Done'};
+function feedItems(){
+  return N.filter(n => view==='done' ? n.done : !n.done && (view==='all' || (view==='mentions' && n.cat==='mention') || (view==='alerts' && n.alert)));
+}
+function renderFeed(){
+  const items = feedItems();
+  const box = $('#feed'); let html = '';
+  if(!items.length) html = '<div class="empty"><i data-lucide="inbox"></i><p>Nothing here. You are caught up.</p></div>';
+  ['Today','Yesterday','Earlier'].forEach(g => {
+    const rows = items.filter(n => n.g===g); if(!rows.length) return;
+    html += `<div class="grp">${g}</div>` + rows.map(n => {
+      const [ic,c] = IC[n.cat];
+      return `<div class="nrow ${n.u?'unread':''}" data-id="${n.id}">
+        <span class="ud"></span>
+        <div class="nic" style="background:var(--${c}-soft);color:var(--${c})"><i data-lucide="${ic}"></i></div>
+        <div class="nbody"><b>${n.t}</b><a class="lnk" href="${n.l[1]}" ${n.l[1]==='#thread'?'data-thread="1"':''}><i data-lucide="link-2"></i>${n.l[0]}</a>
+          <div class="meta"><span>${n.who}</span><span>·</span><span>${n.time}</span>${n.alert?'<span class="tag bad" style="margin-left:4px">Alert</span>':''}</div></div>
+        <div class="qa">
+          <a href="${n.l[1]}" ${n.l[1]==='#thread'?'data-thread="1"':''} title="Open" aria-label="Open"><i data-lucide="arrow-up-right"></i></a>
+          <button data-a="done" title="${n.done?'Move back':'Mark done'}" aria-label="Mark done"><i data-lucide="${n.done?'undo-2':'check'}"></i></button>
+          <button data-a="snooze" title="Snooze" aria-label="Snooze"><i data-lucide="clock"></i></button>
+          <button data-a="remind" title="Set reminder" aria-label="Set reminder"><i data-lucide="bell-ring"></i></button>
+        </div>
+        <div class="sn"><button data-s="1 hour">1 hour</button><button data-s="this evening, 17:00">This evening, 17:00</button><button data-s="tomorrow, 09:00">Tomorrow, 09:00</button><button data-s="Monday, 09:00">Monday, 09:00</button></div>
+      </div>`;
+    }).join('');
+  });
+  box.innerHTML = html;
+  $('#feedTitle').textContent = titles[view];
+  $('#feedCount').textContent = items.length + (view==='done' ? ' done' : ' items');
+  lucide.createIcons(); counts();
+}
+function counts(){
+  const un = f => N.filter(n => !n.done && n.u && f(n)).length;
+  $('#c-all').textContent = un(()=>1);
+  const set = (id,v,hide) => { const e = $(id); e.textContent = v; e.style.display = v ? '' : 'none'; };
+  set('#c-mentions', un(n=>n.cat==='mention'));
+  set('#c-alerts', un(n=>n.alert));
+  set('#c-assigned', 4);
+  set('#c-reminders', R.filter(r=>!r.done && r.due==='o').length);
+  set('#c-threads', T.filter(t=>t.unread).length);
+  set('#c-done', 0);
+  $('#c-done').style.display = 'none';
+}
+$('#feed').addEventListener('click', e => {
+  const th = e.target.closest('[data-thread]'); if(th){ e.preventDefault(); show('threads'); return; }
+  const row = e.target.closest('.nrow'); if(!row) return;
+  const n = N.find(x => x.id == row.dataset.id);
+  const sn = e.target.closest('[data-s]');
+  if(sn){ n.u = 0; row.style.opacity = .4; setTimeout(()=>{ n.done = 1; renderFeed(); }, 250); toast('Snoozed until ' + sn.dataset.s); return; }
+  const b = e.target.closest('[data-a]');
+  if(!b){ if(!e.target.closest('a')){ n.u = 0; renderFeed(); } return; }
+  const a = b.dataset.a;
+  if(a==='done'){ n.done = n.done ? 0 : 1; n.u = 0; renderFeed(); toast(n.done ? 'Marked done' : 'Moved back to inbox'); }
+  if(a==='snooze'){ const s = row.querySelector('.sn'); const was = s.classList.contains('on'); document.querySelectorAll('.sn.on').forEach(x=>x.classList.remove('on')); s.classList.toggle('on', !was); }
+  if(a==='remind'){ show('reminders'); $('#rWhat').value = 'Follow up: ' + n.t.replace(/"/g,'').slice(0,60); selectLink(n.l[0]); $('#rWhat').focus(); }
+});
+function selectLink(txt){ const s = $('#rLink'); const o = [...s.options].find(o => txt.startsWith(o.text.split(' · ')[0]) && txt.includes(o.text.split(' · ')[1]||'')); s.value = o ? o.value : 'None'; }
+$('#markAll').onclick = () => { N.forEach(n => n.u = 0); renderFeed(); toast('All marked read'); };
+
+/* ---------- reminders ---------- */
+const R = [
+ {id:1,due:'o',t:'Collect GH₵249 cash from Abena Owusu',by:'Manny',to:'Kofi',link:'Order #24117 · Abena Owusu, Kumasi',when:'Fri 16 Oct',time:'17:00',ch:['bell','message-circle'],ago:'Overdue by 1 day'},
+ {id:2,due:'o',t:'Return 1 refused set from order #24114 to Logiswift',by:'Manny',to:'Kofi',link:'Order #24114 · Yaw Boateng, Kumasi',when:'Thu 15 Oct',time:'12:00',ch:['bell','message-circle'],ago:'Overdue by 2 days'},
+ {id:3,due:'o',t:'Chase Logiswift on the GH₵840 short payout',by:'Manny',to:'Manny',link:'Payout · Logiswift 1–15 Oct',when:'Fri 16 Oct',time:'10:00',ch:['bell'],ago:'Overdue by 1 day'},
+ {id:4,due:'t',t:'Confirm delivery window with Efua Mensah',by:'Manny',to:'Esi',link:'Customer · Efua Mensah, Accra',when:'Today',time:'14:00',ch:['bell','smartphone']},
+ {id:5,due:'t',t:'Approve the Kasapa Express trial payout',by:'Manny',to:'Manny',link:'Payout · Kasapa Express',when:'Today',time:'16:00',ch:['bell','mail']},
+ {id:6,due:'u',t:'Pay Adwoa her GH₵2,034 commission balance',by:'Manny',to:'Manny',link:'Payout · Adwoa Darko',when:'Sun 18 Oct',time:'09:00',ch:['bell'],rep:'Once'},
+ {id:7,due:'u',t:'Count stock at Logiswift (88 vs 100)',by:'Manny',to:'Kwesi',link:'Product · Magic Groove copybook set',when:'Mon 19 Oct',time:'09:00',ch:['bell','message-circle'],rep:'Every week'},
+ {id:8,due:'u',t:'Re-deliver 1 copybook set to Yaw Boateng',by:'Manny',to:'Kofi',link:'Order #24114 · Yaw Boateng, Kumasi',when:'Tue 20 Oct',time:'16:00',ch:['bell'],rep:'Once'},
+ {id:9,due:'d',done:1,t:'Send the September payout report to Manny',by:'Manny',to:'Manny',link:'Payout · Logiswift Sep',when:'Mon 5 Oct',time:'09:00',ch:['bell']},
+ {id:10,due:'d',done:1,t:'Call Akua Serwaa to confirm address',by:'Nana',to:'Nana',link:'Customer · Akua Serwaa, Cape Coast',when:'Wed 14 Oct',time:'11:00',ch:['smartphone']}
+];
+const GR = [['o','Overdue','bad'],['t','Today','warn'],['u','Upcoming','n'],['d','Done','ok']];
+const who = (r) => r.by===r.to ? `${r.by} set for self` : `${r.by} set for ${r.to}`;
+function renderRem(){
+  $('#remLists').innerHTML = GR.map(([k,name,tag]) => {
+    const rows = R.filter(r => (r.done ? 'd' : r.due)===k);
+    return `<div class="card"><div class="sub"><h3>${name}</h3><span class="tag ${tag}">${rows.length}</span></div>` +
+    (rows.length ? rows.map(r => `<div class="rrow ${r.done?'done':''}" data-id="${r.id}">
+      <button class="ck2" data-a="ck" aria-label="${r.done?'Reopen':'Complete'}"><i data-lucide="check"></i></button>
+      <div style="min-width:0"><div class="rt">${r.t}</div>
+        <div class="rsub"><span>${r.by==='Manny'&&r.to!=='Manny'?`<b>Manny</b> set for <b>${r.to}</b>`:r.by===r.to?`Set by <b>${r.by}</b>`:`<b>${r.by}</b> set for <b>${r.to}</b>`}</span><span>·</span><a class="lnk" style="margin:0" href="#"><i data-lucide="link-2"></i>${r.link}</a></div>
+        <div class="rsub">${r.ch.map(c=>`<i data-lucide="${c}"></i>`).join('')}${r.rep&&r.rep!=='Once'?`<span class="tag v"><i data-lucide="repeat" style="width:11px;height:11px"></i>${r.rep}</span>`:''}</div></div>
+      <div class="rwhen">${r.when}, ${r.time}${r.ago?`<small style="color:var(--coral)">${r.ago}</small>`:''}${!r.done?`<button class="mini" data-a="snz" style="margin-top:6px">Snooze</button>`:''}</div>
+    </div>`).join('') : '<div class="empty">None</div>') + '</div>';
+  }).join('');
+  lucide.createIcons(); counts();
+}
+$('#remLists').addEventListener('click', e => {
+  const row = e.target.closest('.rrow'); if(!row) return;
+  const r = R.find(x => x.id == row.dataset.id);
+  const b = e.target.closest('[data-a]'); if(!b) return;
+  if(b.dataset.a==='ck'){ r.done = r.done ? 0 : 1; renderRem(); toast(r.done ? 'Reminder completed' : 'Reminder reopened'); }
+  if(b.dataset.a==='snz'){ r.due = 'u'; r.ago = ''; r.when = 'Sun 18 Oct'; r.time = '09:00'; renderRem(); toast('Snoozed to tomorrow, 09:00'); }
+});
+$('#rFor').onclick = e => { const b = e.target.closest('button'); if(!b) return; $('#rWho').style.display = b.dataset.w==='team' ? '' : 'none'; };
+$('#rCh').onclick = e => { const b = e.target.closest('.chip'); if(b) b.classList.toggle('on'); };
+$('#rSave').onclick = () => {
+  const t = $('#rWhat').value.trim() || 'Untitled reminder';
+  const team = $('#rFor .on').dataset.w==='team';
+  const cmap = {'In-app':'bell','WhatsApp':'message-circle','Email':'mail','SMS':'smartphone'};
+  const ch = [...document.querySelectorAll('#rCh .chip.on')].map(c => cmap[c.dataset.c]);
+  R.push({id:R.length+1,due:'u',t,by:'Manny',to:team?$('#rWho').value.split(' ')[0]:'Manny',link:$('#rLink').value==='None'?'No linked item':$('#rLink').value,when:'Sun 18 Oct',time:$('#rTime').value||'09:00',ch:ch.length?ch:['bell'],rep:$('#rRep').value==='Does not repeat'?'Once':$('#rRep').value});
+  $('#rWhat').value = ''; renderRem(); toast('Reminder created');
+};
+$('#agNudge').onclick = () => toast('WhatsApp nudge sent to Kofi');
+$('#agRemind').onclick = () => { show('reminders'); $('#rWhat').value = 'Chase Logiswift on the GH₵840 short payout'; $('#rLink').value = 'Payout · Logiswift 1–15 Oct'; $('#rDate').value = '2026-10-19'; };
+$('#agThread').onclick = () => show('threads');
+$('#newRem').onclick = () => { show('reminders'); $('#rWhat').focus(); };
+
+/* ---------- threads ---------- */
+const T = [
+ {id:1,title:'Order #24114 · Yaw Boateng, Kumasi',kind:'order',unread:2,last:'Manny: Good. Reminder set for Kofi.',ppl:['Manny','Kofi','Adwoa'],ctx:['truck','Delivery failed · refused','GH₵249 · 1 copybook set','Re-delivery Tue 20 Oct'],
+  msgs:[
+   {n:'Kofi',time:'Today 08:41',tx:'Yaw\'s brother refused the parcel at the gate in Asokwa. Yaw is travelling and back on Monday. Slip attached.',att:['refused-slip-24114.jpg','Photo · 214 KB'],rx:[['thumbs-up',1]]},
+   {n:'Kofi',time:'08:52',tx:'<span class="mn">@Manny</span> I can go back on Tuesday 20 Oct. Re-delivery then?'},
+   {n:'Manny',time:'09:05',re:1,tx:'Yes, 20 Oct works. <span class="mn">@Adwoa</span> please call Yaw and confirm.'},
+   {n:'Adwoa',time:'09:20',re:1,tx:'Called him. He agrees to 20 Oct after 4pm and will pay GH₵249 on delivery.',rx:[['check',2]]},
+   {n:'Manny',time:'09:24',tx:'Good. I set a reminder for Kofi on Tuesday at 16:00 so the parcel is in his bag.',seen:'Seen by Kofi and Adwoa'}
+  ]},
+ {id:2,title:'Delivery team',kind:'general',unread:1,last:'Kwesi: Takoradi roads flooded.',ppl:['Manny','Kofi','Esi','Kwesi'],ctx:['users','General thread','4 members'],
+  msgs:[
+   {n:'Kwesi',time:'Today 07:10',tx:'Heavy rain in Takoradi. I will deliver the 9 orders after 1pm.'},
+   {n:'Manny',time:'07:30',re:1,tx:'Fine. Tell customers by WhatsApp before you leave. <span class="mn">@Kwesi</span>',seen:'Seen by Kwesi and Kofi'}
+  ]},
+ {id:3,title:'Payout · Logiswift 1–15 Oct',kind:'payout',unread:0,last:'Manny: Asked for the line items.',ppl:['Manny','Nana'],ctx:['banknote','Short GH₵840','Expected GH₵10,720'],
+  msgs:[{n:'Manny',time:'Yesterday 16:20',tx:'Logiswift paid GH₵840 less than the manifest. I asked them for the line items.',seen:'Seen by Nana'}]},
+ {id:4,title:'Product · Magic Groove copybook set',kind:'product',unread:0,last:'Esi: Count is 88, not 100.',ppl:['Manny','Esi'],ctx:['package','MG-CB-SET','12 units short at Logiswift'],
+  msgs:[{n:'Esi',time:'Fri 16:00',tx:'I checked the Tema shelf. Logiswift count is 88, not 100. I photographed the shelf.'},{n:'Manny',time:'Fri 16:30',re:1,tx:'Thanks. I will raise the 12 units with them.'}]}
+];
+let cur = 1;
+function renderThreads(){
+  $('#tlist').innerHTML = T.map(t => `<button class="trow ${t.id===cur?'on':''}" data-id="${t.id}"><div class="nic" style="width:32px;height:32px;background:var(--hover);color:var(--ink-2)"><i data-lucide="${t.kind==='general'?'users':t.kind==='order'?'shopping-bag':t.kind==='payout'?'banknote':'package'}" style="width:15px;height:15px"></i></div><div style="min-width:0"><b>${t.title}</b><small>${t.last}</small></div>${t.unread?`<span class="u">${t.unread}</span>`:''}</button>`).join('');
+  const t = T.find(x => x.id===cur);
+  $('#thead').innerHTML = `<div><h3>${t.title}</h3></div><div class="ppl">${t.ppl.map(p=>av(p)).join('')}</div><button class="mini" id="openItem">Open ${t.kind==='general'?'members':'item'}</button>`;
+  $('#tctx').innerHTML = t.ctx.map((c,i) => i===0 ? `<i data-lucide="${c}" style="color:var(--ink-3)"></i>` : i===1 && t.kind==='order' ? `<span class="tag bad">${c}</span>` : `<span>${c}</span>`).join('<span style="color:var(--ink-3)">·</span>').replace('</i><span style="color:var(--ink-3)">·</span>','</i>');
+  $('#tmsgs').innerHTML = t.msgs.map(m => `<div class="m ${m.re?'re':''}"><div class="a" style="background:${P[m.n][0]};color:${P[m.n][1]}">${P[m.n][2]}</div>
+    <div class="bub"><div class="nm">${m.n}<small>${m.time}</small></div><div class="tx">${m.tx}</div>
+    ${m.att?`<div class="at"><div class="ph"><i data-lucide="image"></i></div><div><b style="font-size:13px">${m.att[0]}</b><small>${m.att[1]}</small></div></div>`:''}
+    <div class="rx">${(m.rx||[]).map(r=>`<button><i data-lucide="${r[0]}"></i>${r[1]}</button>`).join('')}<button class="rp" data-reply="${m.n}"><i data-lucide="corner-down-right"></i>Reply</button></div>
+    ${m.seen?`<div class="seen"><i data-lucide="check-check"></i>${m.seen}</div>`:''}</div></div>`).join('');
+  lucide.createIcons();
+}
+$('#tlist').addEventListener('click', e => { const b = e.target.closest('.trow'); if(!b) return; cur = +b.dataset.id; T.find(x=>x.id===cur).unread = 0; renderThreads(); counts(); });
+$('#tmsgs').addEventListener('click', e => {
+  const r = e.target.closest('[data-reply]'); if(r){ $('#cmsg').value = '@' + r.dataset.reply + ' '; $('#cmsg').focus(); return; }
+  const x = e.target.closest('.rx button:not(.rp)'); if(x){ const on = x.classList.toggle('mine'); const n = parseInt(x.textContent, 10) || 0; x.lastChild.textContent = String(n + (on ? 1 : -1)); }
+});
+$('#newThr').onclick = () => { const id = Date.now(); T.unshift({id, title:'New thread', kind:'general', unread:0, last:'No messages yet', ppl:['Manny'], ctx:['users','General thread','1 member'], msgs:[]}); cur = id; renderThreads(); $('#cmsg').focus(); };
+$('#thead').addEventListener('click', e => { if(!e.target.closest('#openItem')) return; const t = T.find(x => x.id===cur); const to = {order:'index.html#orders', payout:'finance.html', product:'products.html'}[t.kind]; if(to) location.href = to; else shellSay('Members: ' + t.ppl.join(', ')); });
+$('#attBtn').onclick = () => $('#attF').click();
+$('#attF').onchange = e => { const f = e.target.files[0]; if(f){ $('#cmsg').value = ($('#cmsg').value + ' [' + f.name + ']').trim(); toast('Attached ' + f.name + '. Sample only.'); } };
+document.addEventListener('click', e => { const d = e.target.closest('[data-rowdone]'); if(d){ const tr = d.closest('tr'); tr.remove(); const n = document.querySelectorAll('#v-assigned tbody tr').length; document.querySelector('#v-assigned .sub .tag').textContent = n + ' open'; toast('Marked done'); } });
+const mnl = $('#mnl');
+const people = [['Kofi','Delivery · Kumasi'],['Esi','Delivery · Accra'],['Kwesi','Delivery · Takoradi'],['Adwoa','Call rep'],['Nana','Call rep']];
+function showMentions(q){
+  const l = people.filter(p => p[0].toLowerCase().startsWith(q.toLowerCase()));
+  if(!l.length){ mnl.classList.remove('on'); return; }
+  mnl.innerHTML = l.map((p,i) => `<button class="${i===0?'sel':''}" data-p="${p[0]}">${av(p[0])}${p[0]}<small>${p[1]}</small></button>`).join(''); mnl.classList.add('on'); lucide.createIcons();
+}
+$('#cmsg').addEventListener('input', e => { const m = e.target.value.match(/@(\w*)$/); m ? showMentions(m[1]) : mnl.classList.remove('on'); });
+mnl.addEventListener('click', e => { const b = e.target.closest('[data-p]'); if(!b) return; const c = $('#cmsg'); c.value = c.value.replace(/@(\w*)$/, '@' + b.dataset.p + ' '); mnl.classList.remove('on'); c.focus(); });
+$('#atBtn').onclick = () => { const c = $('#cmsg'); c.value += '@'; c.focus(); showMentions(''); };
+$('#cRem').onclick = () => { const t = T.find(x => x.id===cur); const last = t.msgs[t.msgs.length-1];
+  show('reminders'); $('#rWhat').value = ($('#cmsg').value.trim() || last.tx.replace(/<[^>]+>/g,'')).slice(0,80); selectLink(t.title); };
+$('#csend').onclick = () => { const c = $('#cmsg'); const v = c.value.trim(); if(!v) return;
+  T.find(x=>x.id===cur).msgs.push({n:'Manny',time:'Just now',tx:v.replace(/@(\w+)/g,'<span class="mn">@$1</span>')}); c.value = ''; mnl.classList.remove('on'); renderThreads(); const m = $('#tmsgs'); m.scrollTop = m.scrollHeight; };
+
+/* ---------- settings ---------- */
+const EV = [['Order assigned to me','A call or delivery task lands on you',[1,1,0,0]],['Delivery failed','A customer refuses or cannot be reached',[1,1,0,1]],['Customer replied','A reply arrives in Messages',[1,1,0,0]],['Mentioned in a thread','Someone writes @Manny',[1,1,0,0]],['Reminder due','A reminder reaches its time',[1,1,0,1]],['Payout short or late','A 3PL or agent pays less or later',[1,1,1,0]],['Stock gap','A count differs from the system',[1,0,1,0]],['Target milestone','100% or 120% reached',[1,0,0,0]],['Agent finding','The agent finds a problem',[1,0,1,0]]];
+const sw = on => `<button class="sw" role="switch" aria-checked="${on?'true':'false'}" aria-label="Toggle"></button>`;
+$('#mxBody').innerHTML = EV.map(e => `<tr><td><b>${e[0]}</b><small>${e[1]}</small></td>${e[2].map(v=>`<td>${sw(v)}</td>`).join('')}</tr>`).join('');
+const RL = [['Call rep',[1,1,0,0]],['Delivery',[1,1,0,1]],['Finance clerk',[1,0,1,0]],['Marketing',[1,0,1,0]]];
+$('#roleBody').innerHTML = RL.map(r => `<tr><td><b>${r[0]}</b></td>${r[1].map(v=>`<td>${sw(v)}</td>`).join('')}</tr>`).join('');
+document.addEventListener('click', e => { const s = e.target.closest('.sw'); if(s) s.setAttribute('aria-checked', s.getAttribute('aria-checked')==='true' ? 'false' : 'true'); });
+$('#setSeg').onclick = e => { const b = e.target.closest('button'); if(!b) return; $('#s-mine').style.display = b.dataset.s==='mine' ? '' : 'none'; $('#s-roles').style.display = b.dataset.s==='roles' ? '' : 'none'; };
+
+/* ---------- view switching ---------- */
+function show(v){
+  view = v;
+  document.querySelectorAll('#rail button').forEach(b => b.classList.toggle('on', b.dataset.v===v));
+  const map = {all:'feed',mentions:'feed',alerts:'feed',done:'feed',reminders:'reminders',threads:'threads',assigned:'assigned',settings:'settings'};
+  document.querySelectorAll('.stack>.view').forEach(s => s.classList.toggle('on', s.id==='v-'+map[v]));
+  $('#feedAgent').style.display = v==='all' ? '' : 'none';
+  if(map[v]==='feed') renderFeed();
+  if(v==='threads') renderThreads();
+  history.replaceState(null,'','#'+v);
+}
+$('#rail').onclick = e => { const b = e.target.closest('button'); if(b) show(b.dataset.v); };
+$('#gear').onclick = () => show('settings');
+document.addEventListener('click', e => { if(!e.target.closest('.sn') && !e.target.closest('[data-a="snooze"]')) document.querySelectorAll('.sn.on').forEach(x=>x.classList.remove('on')); });
+renderRem(); renderThreads();
+show((location.hash||'#all').slice(1) in {all:1,mentions:1,alerts:1,done:1,reminders:1,threads:1,assigned:1,settings:1} ? location.hash.slice(1) : 'all');
+</script>
+<script src="shell.js"></script>
+</body>
+</html>
