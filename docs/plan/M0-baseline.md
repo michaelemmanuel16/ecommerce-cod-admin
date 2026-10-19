@@ -71,3 +71,11 @@ Frontend vitest thresholds: lines 30, statements 30, functions 30, branches 15. 
 These match the plan. Test A pins them. Test B asserts -3 / -2 with `it.failing` and the text "fixed in M4-T08".
 
 Note: `npm run test:integration -- stockDoubleDecrement --forceExit` runs all integration suites, because the script's `--testPathPattern=integration` is OR-ed with the extra pattern. The new suite is in that run and passes. To run only it: `npx jest --runInBand --forceExit stockDoubleDecrement`.
+
+## Migration parity (M0-T06, M0-T31)
+
+- Fresh empty DB: `prisma migrate deploy` applies all 89 migrations, then `prisma migrate diff --from-url <fresh> --to-schema-datamodel prisma/schema.prisma --exit-code` exits 0.
+- Restored production dump: `migrate deploy` applies only the new index migration. The diff exits 2 with only the 3 accepted `webhook_configs` leftovers.
+- The diff found 21 tenant foreign keys that needed `onUpdate: NoAction` (the T05 doc said 19).
+- CI job `migration-parity` was added to `backend-ci.yml`. It cannot run without a push. Local proof of the failure mode: adding `parityProbe String?` to `model Plan` with no migration made the diff exit 2; reverting made it exit 0.
+- M0-T32: `scripts/tests/deploy-guard.sh` runs `deploy-staging.sh`, `deploy-github-actions.sh` and `deploy.sh` with a fake failing `docker-compose`. It exits 0 only when each script exits non-zero after the fake migrate failure. With the old staging and GitHub Actions scripts it fails for both (they exit 0). `run-migrations.sh` already has `set -e` and no fallback.
