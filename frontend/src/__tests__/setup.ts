@@ -46,3 +46,26 @@ global.ResizeObserver = class ResizeObserver {
 
 // Mock scrollTo
 window.scrollTo = vi.fn();
+
+// Node 25+ ships an experimental global `localStorage` that shadows jsdom's and is
+// unusable without --localstorage-file (getItem/setItem are undefined). Zustand's
+// persist middleware then fails. Install an in-memory Storage when the global is broken.
+if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage.setItem !== 'function') {
+  const store = new Map<string, string>();
+  const memoryStorage: Storage = {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key) => (store.has(key) ? store.get(key)! : null),
+    key: (index) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key) => {
+      store.delete(key);
+    },
+    setItem: (key, value) => {
+      store.set(key, String(value));
+    },
+  };
+  Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage, configurable: true, writable: true });
+  Object.defineProperty(window, 'localStorage', { value: memoryStorage, configurable: true, writable: true });
+}
