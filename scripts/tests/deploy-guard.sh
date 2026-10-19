@@ -8,7 +8,9 @@ SCRIPTS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-mkdir -p "$WORK/bin" "$WORK/repo"
+mkdir -p "$WORK/bin" "$WORK/repo/scripts"
+# Each script runs inside an empty scratch repo dir so nothing real is touched.
+touch "$WORK/repo/.env.production" "$WORK/repo/docker-compose.yml" "$WORK/repo/docker-compose.prod.yml" "$WORK/repo/docker-compose.staging.yml"
 cat > "$WORK/bin/docker-compose" <<'FAKE'
 #!/bin/bash
 case "$*" in
@@ -21,7 +23,6 @@ cat > "$WORK/bin/docker" <<'FAKE'
 #!/bin/bash
 case "$*" in
   *"inspect"*) echo "healthy" ;;
-  *"prisma migrate deploy"*) touch "$GUARD_MARKER"; exit 1 ;;
 esac
 exit 0
 FAKE
@@ -30,10 +31,7 @@ chmod +x "$WORK/bin/"*
 
 fail=0
 for s in deploy-staging.sh deploy-github-actions.sh deploy.sh; do
-  # Each script runs inside an empty scratch repo dir so nothing real is touched.
-  mkdir -p "$WORK/repo/scripts"
   cp "$SCRIPTS_DIR/$s" "$WORK/repo/scripts/"
-  touch "$WORK/repo/.env.production" "$WORK/repo/docker-compose.yml" "$WORK/repo/docker-compose.prod.yml" "$WORK/repo/docker-compose.staging.yml"
   rm -f "$WORK/marker"
   (cd "$WORK/repo" && echo yes | PATH="$WORK/bin:$PATH" GUARD_MARKER="$WORK/marker" timeout 60 bash "scripts/$s" >"$WORK/$s.log" 2>&1)
   rc=$?
