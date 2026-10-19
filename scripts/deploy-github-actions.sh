@@ -125,7 +125,8 @@ if [ -z "$POSTGRES_EXISTS" ]; then
         if docker-compose -p production -f "$COMPOSE_FILE" exec -T backend npx prisma migrate deploy; then
             echo -e "${GREEN}✓ Migrations completed${NC}"
         else
-            echo -e "${YELLOW}Warning: Migration may have failed${NC}"
+            echo -e "${RED}Error: prisma migrate deploy failed. Stopping the deployment.${NC}"
+            exit 1
         fi
     else
         echo -e "${RED}Error: Failed to start full stack${NC}"
