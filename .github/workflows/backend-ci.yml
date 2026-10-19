@@ -130,10 +130,53 @@ jobs:
           flags: backend
           name: backend-coverage
 
+  migration-parity:
+    name: Migration parity
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: parity
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Apply all migrations to an empty database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/parity
+        run: npx prisma migrate deploy
+
+      - name: Fail if schema.prisma differs from the migrated database
+        working-directory: backend
+        run: npx prisma migrate diff --from-url "postgresql://postgres:postgres@localhost:5432/parity" --to-schema-datamodel prisma/schema.prisma --exit-code
+
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, test, migration-parity]
     if: github.event_name == 'push'
     permissions:
       contents: read
