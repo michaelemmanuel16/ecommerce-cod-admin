@@ -5,7 +5,8 @@
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import prisma, { prismaBase } from '../../utils/prisma';
-import { tenantStorage, withoutTenant } from '../../utils/tenantContext';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { runInTenant, withoutTenant } from '../../utils/tenantContext';
 import agingService from '../../services/agingService';
 import { notifyAdminsOverdueCollections } from '../../services/notificationService';
 import * as Money from '../../utils/money';
@@ -30,9 +31,6 @@ let adminAId: number;
 let adminBId: number;
 let platformAdminId: number;
 
-const asTenant = <T>(tenantId: string, fn: () => PromiseLike<T>): Promise<T> =>
-  tenantStorage.run({ tenantId }, async () => fn());
-
 const makeUser = (tenantId: string | null, label: string, role: string, extra: any = {}) =>
   prismaBase.user.create({
     data: {
@@ -51,8 +49,8 @@ const bucketRows = (tenantId: string) =>
 
 beforeAll(async () => {
   const [a, b] = await Promise.all([
-    prismaBase.tenant.create({ data: { name: `Aging A ${SUFFIX}`, slug: `aging-a-${SUFFIX}` } }),
-    prismaBase.tenant.create({ data: { name: `Aging B ${SUFFIX}`, slug: `aging-b-${SUFFIX}` } }),
+    createTenant('Aging A'),
+    createTenant('Aging B'),
   ]);
   tenantAId = a.id;
   tenantBId = b.id;
@@ -73,7 +71,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await prismaBase.notification.deleteMany({ where: { userId: { in: [adminAId, adminBId, platformAdminId] } } });
   await prismaBase.user.deleteMany({ where: { id: platformAdminId } });
-  await prismaBase.tenant.deleteMany({ where: { id: { in: [tenantAId, tenantBId] } } });
+  await deleteTenantRows([tenantAId, tenantBId]);
   await prismaBase.$disconnect();
 });
 
@@ -85,7 +83,7 @@ describe('aging refresh is per tenant', () => {
   });
 
   it('refreshing tenant B (no outstanding collections) deletes B buckets only', async () => {
-    await asTenant(tenantBId, () => agingService.refreshAll());
+    await runInTenant(tenantBId, () => agingService.refreshAll());
 
     expect(await bucketRows(tenantBId)).toHaveLength(0);
     const a = await bucketRows(tenantAId);
@@ -97,7 +95,7 @@ describe('aging refresh is per tenant', () => {
 
 describe('overdue notifications are per tenant', () => {
   it('notifies only the admins of the current tenant, never the platform admin', async () => {
-    await asTenant(tenantAId, () =>
+    await runInTenant(tenantAId, () =>
       notifyAdminsOverdueCollections([
         { agentId: agentAId, agentName: 'Agent A', totalBalance: Money.parse(500), warningAmount: Money.ZERO, criticalAmount: Money.parse(500) },
       ])

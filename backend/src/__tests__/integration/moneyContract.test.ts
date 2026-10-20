@@ -7,6 +7,7 @@ import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { generateAccessToken } from '../../utils/jwt';
 import { tenantStorage } from '../../utils/tenantContext';
 import { registerOrderTools } from '../../mcp/tools/orders';
@@ -28,7 +29,7 @@ let tenantId: string;
 let admin: { id: number; email: string; role: any; tenantId: string | null };
 
 beforeAll(async () => {
-  const tenant = await prismaBase.tenant.create({ data: { name: `Money ${SUFFIX}`, slug: `money-${SUFFIX}` } });
+  const tenant = await createTenant('Money');
   tenantId = tenant.id;
   admin = await prismaBase.user.create({
     data: { email: `money-admin-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'Money', lastName: 'Admin', role: 'admin', tenantId },
@@ -48,11 +49,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prismaBase.transaction.deleteMany({ where: { tenantId } });
-  await prismaBase.order.deleteMany({ where: { tenantId } });
-  await prismaBase.customer.deleteMany({ where: { tenantId } });
-  await prismaBase.user.deleteMany({ where: { tenantId } });
-  await prismaBase.tenant.deleteMany({ where: { id: tenantId } });
+  await deleteTenantRows([tenantId]);
   await prismaBase.$disconnect();
 });
 

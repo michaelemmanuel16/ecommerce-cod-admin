@@ -1,9 +1,9 @@
 import prisma from './prisma';
 import logger from './logger';
-import { tenantStorage, withoutTenant } from './tenantContext';
+import { runInTenant, withoutTenant } from './tenantContext';
 
 /**
- * Run `fn` once per tenant, each inside tenantStorage.run(tenantId).
+ * Run `fn` once per tenant, each inside runInTenant(tenantId).
  * The tenant list is read inside withoutTenant('tenant-loop'). One tenant failing
  * does not stop the others; after the loop an aggregate error is thrown so the
  * job is marked failed.
@@ -19,7 +19,7 @@ export async function forEachTenant(
   const failed: string[] = [];
   for (const { id } of tenants) {
     try {
-      await tenantStorage.run({ tenantId: id }, () => fn(id));
+      await runInTenant(id, () => fn(id));
     } catch (error: any) {
       failed.push(id);
       logger.error(`${jobName} failed for tenant ${id}:`, error?.message ?? error);

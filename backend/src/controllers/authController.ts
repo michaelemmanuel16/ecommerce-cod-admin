@@ -1,10 +1,11 @@
 import { Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { safeEqual } from '../utils/crypto';
 import bcrypt from 'bcrypt';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
-import { runInTenantOf, tenantStorage, withoutTenant } from '../utils/tenantContext';
+import { runInTenant, runInTenantOf, withoutTenant } from '../utils/tenantContext';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError } from '../middleware/errorHandler';
 import { adminService } from '../services/adminService';
@@ -117,8 +118,7 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
 
     // SECURITY: Use timing-safe comparison to prevent timing attacks on refresh tokens
     const isValidToken = user && user.refreshToken && refreshToken &&
-      user.refreshToken.length === refreshToken.length &&
-      crypto.timingSafeEqual(Buffer.from(user.refreshToken), Buffer.from(refreshToken));
+      safeEqual(user.refreshToken, refreshToken);
     if (!user || !isValidToken) {
       throw new AppError('Invalid refresh token', 401);
     }
@@ -337,7 +337,7 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
       });
 
       // The new tenant's first user is created inside that tenant
-      const user = await tenantStorage.run({ tenantId: tenant.id }, async () => tx.user.create({
+      const user = await runInTenant(tenant.id, async () => tx.user.create({
         data: {
           email: adminEmail,
           password: hashedPassword,

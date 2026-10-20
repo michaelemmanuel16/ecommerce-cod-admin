@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import crypto from 'crypto';
+import { safeEqual } from '../utils/crypto';
 import { parsePackageField } from '../utils/packageParser';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
@@ -182,8 +183,7 @@ export class WebhookService {
       const hmac = crypto.createHmac('sha256', secret);
       const digest = hmac.update(payload).digest('hex');
       const sig = signature.replace(/^sha256=/, '');
-      if (sig.length !== digest.length) return false;
-      return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(digest, 'hex'));
+      return safeEqual(sig, digest);
     } catch (error) {
       logger.error('Signature verification failed', { error });
       return false;

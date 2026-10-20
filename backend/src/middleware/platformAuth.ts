@@ -15,7 +15,7 @@ export const requirePlatformAdmin = async (req: AuthRequest, res: Response, next
     return;
   }
 
-  if (!(await isPlatformAdmin(req.user.id))) {
+  if (!(req.isPlatformAdmin ?? await isPlatformAdmin(req.user.id))) {
     res.status(403).json({ error: 'Forbidden: Platform admin access required' });
     return;
   }

@@ -11,8 +11,8 @@ import '../mocks/socketInstance.mock';
 import request from 'supertest';
 import app from '../../server';
 import prisma, { prismaBase } from '../../utils/prisma';
-import { TenantContextMissing, withoutTenant } from '../../utils/tenantContext';
-import { createTwoTenants, asTenant, TwoTenants } from './helpers/twoTenants';
+import { TenantContextMissing, runInTenant, withoutTenant } from '../../utils/tenantContext';
+import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 
 let pair: TwoTenants;
 let a: TwoTenants['a'];
@@ -81,7 +81,7 @@ describe('Scenario 6 — Cross-tenant ID exploit', () => {
 
 describe('Scenario 7 — Prisma middleware behaviour without tenant context', () => {
   it("raw Prisma query with explicit tenantId context returns only that tenant's data", async () => {
-    const orders = await asTenant(a, () => prisma.order.findMany({}));
+    const orders = await runInTenant(a.id, () => prisma.order.findMany({}));
 
     expect(orders.filter((o) => o.tenantId === b.id)).toHaveLength(0);
     expect(orders.filter((o) => o.tenantId === a.id).length).toBeGreaterThanOrEqual(1);

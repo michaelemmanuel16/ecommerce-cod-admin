@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { safeEqual } from '../utils/crypto';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 
@@ -169,11 +170,6 @@ export const platformPaystackService = {
 
     const hash = crypto.createHmac('sha512', secret).update(rawBody).digest('hex');
 
-    try {
-      return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(signature, 'hex'));
-    } catch {
-      // Length mismatch throws — treat as invalid signature
-      return false;
-    }
+    return safeEqual(hash, signature);
   },
 };

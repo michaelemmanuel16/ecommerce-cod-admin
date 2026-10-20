@@ -7,6 +7,7 @@ import bcrypt from 'bcrypt';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { generateAccessToken } from '../../utils/jwt';
 
 jest.mock('../../utils/socketInstance', () => ({
@@ -41,7 +42,7 @@ const mkUser = async (label: string, extra: Record<string, unknown>) =>
   });
 
 beforeAll(async () => {
-  const tenant = await prismaBase.tenant.create({ data: { name: `Auth ${SUFFIX}`, slug: `auth-${SUFFIX}` } });
+  const tenant = await createTenant('Auth');
   tenantId = tenant.id;
   tenantUser = await mkUser('tenant', { tenantId });
   platformUser = await mkUser('platform', { tenantId: null, isPlatformAdmin: true });
@@ -50,7 +51,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prismaBase.user.deleteMany({ where: { id: { in: [tenantUser.id, platformUser.id, strayUser.id] } } });
-  await prismaBase.tenant.deleteMany({ where: { id: { in: [tenantId, ...(registeredTenantId ? [registeredTenantId] : [])] } } });
+  await deleteTenantRows([tenantId, ...(registeredTenantId ? [registeredTenantId] : [])]);
   await prismaBase.$disconnect();
 });
 

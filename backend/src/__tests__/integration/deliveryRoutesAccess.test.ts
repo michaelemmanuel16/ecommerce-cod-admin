@@ -7,6 +7,7 @@ import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { generateAccessToken } from '../../utils/jwt';
 import { GLAutomationService } from '../../services/glAutomationService';
 
@@ -51,8 +52,8 @@ const mkDelivery = async (label: string, tenantId: string, agentId: number) => {
 };
 
 beforeAll(async () => {
-  const a = await prismaBase.tenant.create({ data: { name: `Dlv A ${SUFFIX}`, slug: `dlv-a-${SUFFIX}` } });
-  const b = await prismaBase.tenant.create({ data: { name: `Dlv B ${SUFFIX}`, slug: `dlv-b-${SUFFIX}` } });
+  const a = await createTenant('Dlv A');
+  const b = await createTenant('Dlv B');
   tenantIds.push(a.id, b.id);
   T.admin = await mkUser('admin', 'admin', a.id);
   T.manager = await mkUser('manager', 'manager', a.id);
@@ -68,12 +69,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prismaBase.auditLog.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.delivery.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.order.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.customer.deleteMany({ where: { tenantId: { in: tenantIds } } });
+  await deleteTenantRows(tenantIds);
   await prismaBase.user.deleteMany({ where: { id: { in: userIds } } });
-  await prismaBase.tenant.deleteMany({ where: { id: { in: tenantIds } } });
   await prismaBase.$disconnect();
 });
 

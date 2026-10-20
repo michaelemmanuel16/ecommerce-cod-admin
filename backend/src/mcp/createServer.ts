@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { tenantStorage } from '../utils/tenantContext';
+import { runInTenant } from '../utils/tenantContext';
 import { validateKey } from './auth';
 import { rateLimiter } from './rateLimiter';
 import { MCP_CONFIG } from './config';
@@ -42,7 +42,7 @@ export function createMcpServer(resolveApiKey: () => string) {
         return mcpError((err as Error).message);
       }
 
-      return tenantStorage.run({ tenantId: resolvedTenantId }, () => handler(args));
+      return runInTenant(resolvedTenantId, () => handler(args));
     };
   }
 

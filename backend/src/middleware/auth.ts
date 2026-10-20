@@ -4,7 +4,7 @@ import { verifyAccessToken } from '../utils/jwt';
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { tenantStorage, getTenantId, withoutTenant } from '../utils/tenantContext';
+import { enterTenant, getTenantId, withoutTenant } from '../utils/tenantContext';
 import { isPlatformAdmin } from '../utils/platformAdmin';
 
 // Per-tenant cache for role permissions to avoid database hits on every request.
@@ -161,7 +161,7 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
       req.user = decoded;
       if (decoded.tenantId) {
         // Propagate tenantId into AsyncLocalStorage so Prisma extension can scope queries
-        tenantStorage.run({ tenantId: decoded.tenantId }, next);
+        enterTenant(decoded.tenantId, next);
         return;
       }
       // No tenant in the JWT: only a platform admin may continue (no tenant, on purpose).
@@ -171,6 +171,7 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
           res.status(403).json({ error: 'Forbidden: account has no tenant' });
           return;
         }
+        req.isPlatformAdmin = true;
         withoutTenant('platform-admin', () => next());
       }).catch((err) => {
         logger.error('[AuthMiddleware] Tenant-less user check failed:', err);

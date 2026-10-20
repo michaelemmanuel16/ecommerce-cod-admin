@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import prisma from '../../../utils/prisma';
 import * as tenantContext from '../../../utils/tenantContext';
+import { stubTenantStore } from '../../mocks/tenant.mock';
 
 /**
  * GL writes now require a resolvable tenant (account_transactions.tenant_id is
@@ -15,7 +16,7 @@ import * as tenantContext from '../../../utils/tenantContext';
  */
 export async function withGlTestTenant(cleanup: () => Promise<void>): Promise<string> {
   jest.spyOn(tenantContext, 'getTenantId').mockReturnValue(null);
-  jest.spyOn(tenantContext.tenantStorage, 'getStore').mockReturnValue({ tenantId: null, unscoped: true });
+  stubTenantStore({ tenantId: null, unscoped: true });
   await cleanup();
 
   const tenant = await prisma.tenant.upsert({
@@ -25,6 +26,6 @@ export async function withGlTestTenant(cleanup: () => Promise<void>): Promise<st
   });
   jest.spyOn(tenantContext, 'getTenantId').mockReturnValue(tenant.id);
   // resolveTenantId and the GL account lookup read the store directly, not the spied getTenantId.
-  jest.spyOn(tenantContext.tenantStorage, 'getStore').mockReturnValue({ tenantId: tenant.id });
+  stubTenantStore({ tenantId: tenant.id });
   return tenant.id;
 }

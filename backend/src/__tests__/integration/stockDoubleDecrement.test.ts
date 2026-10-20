@@ -16,6 +16,7 @@
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { prismaBase } from '../../utils/prisma';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { runInTenant } from '../../utils/tenantContext';
 import orderService from '../../services/orderService';
 import publicOrderService from '../../services/publicOrderService';
@@ -85,9 +86,7 @@ async function runPublicOrderToDelivered(packageId: number) {
 }
 
 beforeAll(async () => {
-  const tenant = await prismaBase.tenant.create({
-    data: { name: `DDec Tenant ${SUFFIX}`, slug: `ddec-${SUFFIX}` },
-  });
+  const tenant = await createTenant('DDec Tenant');
   tenantId = tenant.id;
 
   const product = await prismaBase.product.create({
@@ -135,7 +134,7 @@ afterAll(async () => {
   await prismaBase.formPackage.deleteMany({ where: { formId } });
   await prismaBase.checkoutForm.delete({ where: { id: formId } });
   await prismaBase.product.delete({ where: { id: productId } });
-  await prismaBase.tenant.delete({ where: { id: tenantId } });
+  await deleteTenantRows([tenantId]);
   await prismaBase.$disconnect();
 });
 

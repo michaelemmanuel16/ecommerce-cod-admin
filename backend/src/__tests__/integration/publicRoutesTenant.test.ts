@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import request from 'supertest';
 import app from '../../server';
 import prisma, { prismaBase } from '../../utils/prisma';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { runInTenant, withoutTenant } from '../../utils/tenantContext';
 
 jest.mock('../../utils/socketInstance', () => ({
@@ -55,7 +56,7 @@ const waitFor = async (check: () => Promise<boolean>, ms = 3000) => {
 
 beforeAll(async () => {
   for (const side of sides) {
-    const t = await prismaBase.tenant.create({ data: { name: `Public ${side} ${SUFFIX}`, slug: `public-${side.toLowerCase()}-${SUFFIX}` } });
+    const t = await createTenant(`Public ${side}`);
     const tenantId = t.id;
     const product = await prismaBase.product.create({
       data: {
@@ -113,19 +114,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const tenantIds = [ids.A.tenantId, ids.B.tenantId];
-  await prismaBase.webhookEvent.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.pendingCheckout.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.webhookLog.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.webhookConfig.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.messageLog.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.downloadToken.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await (prismaBase as any).checkoutForm.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.orderItem.deleteMany({ where: { order: { tenantId: { in: tenantIds } } } });
-  await prismaBase.order.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.customer.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.product.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.systemConfig.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.tenant.deleteMany({ where: { id: { in: tenantIds } } });
+  await deleteTenantRows(tenantIds);
   await prismaBase.$disconnect();
 });
 

@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import crypto from 'crypto';
+import { safeEqual } from '../utils/crypto';
 import { AuthRequest } from '../types';
 import whatsappService, {
   TEMPLATE_BY_NAME,
@@ -47,12 +48,7 @@ function verifyWebhookSignature(rawBody: Buffer, signature: string | undefined, 
     ? signature.substring(7)
     : signature;
 
-  if (expectedHash.length !== receivedHash.length) return false;
-
-  return crypto.timingSafeEqual(
-    Buffer.from(expectedHash, 'hex'),
-    Buffer.from(receivedHash, 'hex'),
-  );
+  return safeEqual(expectedHash, receivedHash);
 }
 
 /**

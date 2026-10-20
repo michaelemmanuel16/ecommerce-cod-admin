@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import prisma from '../../utils/prisma';
 import { withSoftDeleted } from '../../utils/prismaExtensions';
 import { runInTenant } from '../../utils/tenantContext';
+import { createTenant, deleteTenantRows } from '../integration/helpers/twoTenants';
 
 describe('softDeleteExtension', () => {
   const asTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
@@ -13,9 +14,7 @@ describe('softDeleteExtension', () => {
   let tenantId: string;
 
   beforeAll(async () => {
-    const tenant = await prisma.tenant.create({
-      data: { name: `Test ${Date.now()}`, slug: `t-soft-${Date.now()}` } as any,
-    } as any);
+    const tenant = await createTenant('Test soft');
     tenantId = tenant.id;
     const pwd = await bcrypt.hash('test', 10);
     const stamp = Date.now();
@@ -39,7 +38,7 @@ describe('softDeleteExtension', () => {
 
   afterAll(async () => {
     await asTenant(() => prisma.user.deleteMany({ where: { id: { in: [activeId, inactiveId] } } } as any));
-    await prisma.tenant.delete({ where: { id: tenantId } } as any);
+    await deleteTenantRows([tenantId]);
   });
 
   itT('hides inactive users from findUnique by default', async () => {

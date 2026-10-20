@@ -14,7 +14,7 @@ import {
   SENSITIVE_FIELDS,
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
-import { tenantIdForFormSlug } from '../middleware/publicTenant';
+import { tenantIdForFormSlug } from './tenantLookupService';
 import { clearCurrencyCache } from '../utils/currency';
 
 export const adminService = {

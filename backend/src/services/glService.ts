@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
+import { BALANCE_TOLERANCE } from '../config/glAccounts';
 
 
 interface AccountFilters {
@@ -263,7 +264,7 @@ export class GLService {
 
     // Check balance with 0.01 tolerance for floating-point precision
     const difference = totalDebits.minus(totalCredits).abs();
-    if (difference.greaterThan(new Decimal(0.01))) {
+    if (difference.greaterThan(BALANCE_TOLERANCE)) {
       throw new AppError(
         `Journal entry not balanced. Debits: ${totalDebits.toString()}, Credits: ${totalCredits.toString()}`,
         400,

@@ -7,6 +7,7 @@ import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
+import { createTenant as createTestTenant, deleteTenantRows } from './helpers/twoTenants';
 import prisma from '../../utils/prisma';
 import { tenantStorage } from '../../utils/tenantContext';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
@@ -30,7 +31,7 @@ const SUFFIX = Date.now();
 const tenantIds: string[] = [];
 
 const mkTenant = async (label: string) => {
-  const t = await prismaBase.tenant.create({ data: { name: `Defaults ${label} ${SUFFIX}`, slug: `defaults-${label}-${SUFFIX}` } });
+  const t = await createTestTenant(`Defaults ${label}`);
   tenantIds.push(t.id);
   return t.id;
 };
@@ -41,12 +42,7 @@ const counts = async (tenantId: string) => ({
 });
 
 afterAll(async () => {
-  // Own rows only. Order items block the product delete that the tenant cascade runs.
-  const inTenants = { tenantId: { in: tenantIds } };
-  await prismaBase.orderItem.deleteMany({ where: { order: inTenants } });
-  await prismaBase.delivery.deleteMany({ where: { order: inTenants } });
-  await prismaBase.order.deleteMany({ where: inTenants });
-  await prismaBase.tenant.deleteMany({ where: { id: { in: tenantIds } } });
+  await deleteTenantRows(tenantIds);
   await prismaBase.$disconnect();
 });
 

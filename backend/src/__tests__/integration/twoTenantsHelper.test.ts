@@ -5,9 +5,9 @@
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import prisma, { prismaBase } from '../../utils/prisma';
-import { TenantContextMissing } from '../../utils/tenantContext';
+import { TenantContextMissing, runInTenant } from '../../utils/tenantContext';
 import { verifyAccessToken } from '../../utils/jwt';
-import { createTwoTenants, asTenant, TwoTenants } from './helpers/twoTenants';
+import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 
 let pair: TwoTenants;
 let cleanedUp = false;
@@ -63,10 +63,10 @@ describe('createTwoTenants', () => {
     await stamped(pair.b);
   });
 
-  it('asTenant scopes queries to one tenant and nothing runs without a context', async () => {
-    const seenByA = await asTenant(pair.a, () => prisma.order.findMany({}));
+  it('runInTenant scopes queries to one tenant and nothing runs without a context', async () => {
+    const seenByA = await runInTenant(pair.a.id, () => prisma.order.findMany({}));
     expect(seenByA.map((o) => o.id)).toEqual([pair.a.ids.order]);
-    const seenByB = await asTenant(pair.b, () => prisma.order.findMany({}));
+    const seenByB = await runInTenant(pair.b.id, () => prisma.order.findMany({}));
     expect(seenByB.map((o) => o.id)).toEqual([pair.b.ids.order]);
     await expect(prisma.order.findMany({})).rejects.toThrow(TenantContextMissing);
   });

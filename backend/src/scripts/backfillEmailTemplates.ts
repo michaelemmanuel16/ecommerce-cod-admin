@@ -7,18 +7,19 @@
  * Run: npx ts-node src/scripts/backfillEmailTemplates.ts
  */
 import prisma from '../utils/prisma';
+import { forEachTenant } from '../utils/tenantLoop';
 import { seedDefaultEmailTemplates } from '../services/emailTemplateService';
 
 async function main() {
-  const tenants = await prisma.tenant.findMany({ select: { id: true, name: true } });
-  console.log(`Seeding default email templates for ${tenants.length} tenant(s)...`);
+  console.log('Seeding default email templates for every tenant...');
 
   let inserted = 0;
-  for (const tenant of tenants) {
-    const count = await seedDefaultEmailTemplates(tenant.id);
+  // forEachTenant reads the tenant list unscoped (withoutTenant) and runs each seed inside its tenant
+  await forEachTenant('Email template backfill', async (tenantId) => {
+    const count = await seedDefaultEmailTemplates(tenantId);
     inserted += count;
-    console.log(`  ${tenant.name} (${tenant.id}): +${count}`);
-  }
+    console.log(`  ${tenantId}: +${count}`);
+  });
 
   console.log(`Done. Inserted ${inserted} row(s) total.`);
 }

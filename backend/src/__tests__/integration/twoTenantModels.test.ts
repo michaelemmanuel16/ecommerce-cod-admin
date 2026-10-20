@@ -8,7 +8,8 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import prisma, { prismaBase } from '../../utils/prisma';
 import { TENANT_SCOPED_MODELS } from '../../utils/prismaExtensions';
-import { createTwoTenants, asTenant, TwoTenants } from './helpers/twoTenants';
+import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
+import { runInTenant } from '../../utils/tenantContext';
 
 let pair: TwoTenants;
 
@@ -68,26 +69,26 @@ describe('tenant B data never shows for tenant A', () => {
     expect(await base.count({ where: { id: bId, tenantId: b.id } })).toBe(1);
 
     // list
-    const listed = await asTenant(a, () => db.findMany({}));
+    const listed = await runInTenant(a.id, () => db.findMany({}));
     const listedIds = listed.map((r: any) => r.id);
     expect(listedIds).toContain(aId);
     expect(listedIds).not.toContain(bId);
     expect(listed.every((r: any) => r.tenantId === a.id)).toBe(true);
     // asking for B's tenant by name still only returns A's rows
-    const forged = await asTenant(a, () => db.findMany({ where: { tenantId: b.id } }));
+    const forged = await runInTenant(a.id, () => db.findMany({ where: { tenantId: b.id } }));
     expect(forged.every((r: any) => r.tenantId === a.id)).toBe(true);
-    expect(await asTenant(a, () => db.findMany({ where: { id: bId } }))).toEqual([]);
+    expect(await runInTenant(a.id, () => db.findMany({ where: { id: bId } }))).toEqual([]);
 
     // get
-    expect(await asTenant(a, () => db.findFirst({ where: { id: bId } }))).toBeNull();
-    expect(await asTenant(a, () => db.findUnique({ where: { id: bId } }))).toBeNull();
-    const own = await asTenant(a, () => db.findUnique({ where: { id: aId } }));
+    expect(await runInTenant(a.id, () => db.findFirst({ where: { id: bId } }))).toBeNull();
+    expect(await runInTenant(a.id, () => db.findUnique({ where: { id: bId } }))).toBeNull();
+    const own = await runInTenant(a.id, () => db.findUnique({ where: { id: aId } }));
     expect(own?.id).toBe(aId);
 
     // count: exactly A's rows, with and without a filter on B's id
     const aTotal = await base.count({ where: { tenantId: a.id } });
-    expect(await asTenant(a, () => db.count({}))).toBe(aTotal);
-    expect(await asTenant(a, () => db.count({ where: { id: bId } }))).toBe(0);
+    expect(await runInTenant(a.id, () => db.count({}))).toBe(aTotal);
+    expect(await runInTenant(a.id, () => db.count({ where: { id: bId } }))).toBe(0);
   });
 
   it('every model the plan names is in the table', () => {

@@ -6,6 +6,7 @@ import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { generateAccessToken } from '../../utils/jwt';
 
 jest.mock('../../utils/socketInstance', () => ({
@@ -30,7 +31,7 @@ beforeAll(async () => {
   originalToken = process.env.METRICS_TOKEN;
   process.env.METRICS_TOKEN = TOKEN;
   for (const [side, currency] of [['A', 'GHS'], ['B', 'NGN']] as const) {
-    const tenant = await prismaBase.tenant.create({ data: { name: `Config ${side} ${SUFFIX}`, slug: `cfg-${side.toLowerCase()}-${SUFFIX}`, currency } });
+    const tenant = await createTenant(`Config ${side}`, { currency });
     tenantIds.push(tenant.id);
     await prismaBase.systemConfig.create({ data: { tenantId: tenant.id, businessName: `Biz ${side} ${SUFFIX}`, currency } });
     const product = await prismaBase.product.create({
@@ -39,7 +40,7 @@ beforeAll(async () => {
     await (prismaBase as any).checkoutForm.create({
       data: { name: `Form ${side}`, slug: `cfg-form-${side.toLowerCase()}-${SUFFIX}`, productId: product.id, fields: [], styling: {}, regions: [], tenantId: tenant.id },
     });
-    T[side] = { tenantId: tenant.id, currency };
+    T[side] = { tenantId: tenant.id, slug: tenant.slug, currency };
   }
   const user = await prismaBase.user.create({
     data: { email: `cfg-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'C', lastName: 'T', role: 'admin', tenantId: T.B.tenantId },
@@ -51,17 +52,14 @@ afterAll(async () => {
   if (originalToken === undefined) delete process.env.METRICS_TOKEN;
   else process.env.METRICS_TOKEN = originalToken;
   await prismaBase.user.deleteMany({ where: { id: userId } });
-  await (prismaBase as any).checkoutForm.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.product.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.systemConfig.deleteMany({ where: { tenantId: { in: tenantIds } } });
-  await prismaBase.tenant.deleteMany({ where: { id: { in: tenantIds } } });
+  await deleteTenantRows(tenantIds);
   await prismaBase.$disconnect();
 });
 
 describe('GET /api/admin/config (public)', () => {
   it('each tenant slug returns its own name and currency, and nothing else', async () => {
     for (const side of ['A', 'B'] as const) {
-      const res = await request(app).get(`/api/admin/config?tenant=cfg-${side.toLowerCase()}-${SUFFIX}`);
+      const res = await request(app).get(`/api/admin/config?tenant=${T[side].slug}`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ businessName: `Biz ${side} ${SUFFIX}`, currency: T[side].currency });
     }

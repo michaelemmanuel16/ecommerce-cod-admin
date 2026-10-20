@@ -45,9 +45,14 @@ export interface TwoTenants {
   cleanup: () => Promise<void>;
 }
 
-/** Run `fn` inside this tenant's context, the way authenticate does for a request. */
-export function asTenant<T>(tenant: Pick<TestTenant, 'id'>, fn: () => T | Promise<T>): Promise<T> {
-  return runInTenant(tenant.id, fn);
+let tenantSeq = 0;
+
+/** One bare tenant for a suite that seeds its own rows. Slug and name are unique per call. Pair with deleteTenantRows. */
+export function createTenant(label: string, extra: { currency?: string } = {}) {
+  const suffix = `${Date.now()}-${tenantSeq++}`;
+  return prismaBase.tenant.create({
+    data: { name: `${label} ${suffix}`, slug: `${label.toLowerCase().replace(/\s+/g, '-')}-${suffix}`, ...extra },
+  });
 }
 
 /** Run one wave of independent creates. Waits for all of them, so a failure never leaves a write in flight behind the cleanup. */
@@ -237,7 +242,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
 }
 
 /** Delete every row of these tenants, one dependency level at a time (children first), then the tenants. */
-async function deleteTenants(tenantIds: string[]): Promise<void> {
+export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
   const t = { tenantId: { in: tenantIds } };
   const db = prismaBase;
   // Each level only depends on the ones above it.
@@ -256,6 +261,7 @@ async function deleteTenants(tenantIds: string[]): Promise<void> {
     db.agentAgingBucket.deleteMany({ where: t }),
     db.agentBalance.deleteMany({ where: t }),
     db.accountTransaction.deleteMany({ where: t }),
+    db.transaction.deleteMany({ where: t }),
     db.product_cost_entries.deleteMany({ where: t }),
     db.webhookLog.deleteMany({ where: t }),
     db.webhookEvent.deleteMany({ where: t }),
@@ -291,9 +297,9 @@ export async function createTwoTenants(label: string): Promise<TwoTenants> {
   // A half-built pair must not leave rows behind: find the tenants by slug and wipe them.
   if (!a || !b) {
     const half = await prismaBase.tenant.findMany({ where: { slug: { in: [`two-${label}-a-${suffix}`, `two-${label}-b-${suffix}`].map((s) => s.toLowerCase()) } } });
-    await deleteTenants(half.map((x) => x.id));
+    await deleteTenantRows(half.map((x) => x.id));
     const failed = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
     throw failed.reason;
   }
-  return { a, b, cleanup: () => deleteTenants([a.id, b.id]) };
+  return { a, b, cleanup: () => deleteTenantRows([a.id, b.id]) };
 }

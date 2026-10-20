@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import crypto from 'crypto';
+import { safeEqual } from '../utils/crypto';
 
 /**
  * Guard for internal endpoints: the request must carry the shared secret held in
@@ -10,9 +10,7 @@ export const requireSharedSecret = (envVar: string, header: string) =>
     const expected = process.env[envVar];
     const given = req.headers[header];
     if (expected && typeof given === 'string') {
-      const a = crypto.createHash('sha256').update(given).digest();
-      const b = crypto.createHash('sha256').update(expected).digest();
-      if (crypto.timingSafeEqual(a, b)) {
+      if (safeEqual(given, expected)) {
         next();
         return;
       }

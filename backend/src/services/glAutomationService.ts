@@ -12,7 +12,7 @@
 
 import { Prisma, Order, OrderItem, Product, Delivery, Customer, User, JournalEntry, AccountTransaction, JournalSourceType, AgentDeposit, InventoryShipment } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { GL_ACCOUNTS, GL_DEFAULTS } from '../config/glAccounts';
+import { BALANCE_TOLERANCE, GL_ACCOUNTS, GL_DEFAULTS } from '../config/glAccounts';
 import { GLAccountService } from './glAccountService';
 import logger from '../utils/logger';
 import { GLUtils } from '../utils/glUtils';
@@ -134,7 +134,7 @@ export class GLAutomationService {
     const totalDebits = Money.sum(transactions.map((t) => t.debitAmount));
     const totalCredits = Money.sum(transactions.map((t) => t.creditAmount));
     const imbalance = totalDebits.minus(totalCredits).abs();
-    if (imbalance.greaterThan(new Decimal('0.01'))) {
+    if (imbalance.greaterThan(BALANCE_TOLERANCE)) {
       throw new Error(`Journal entry is unbalanced: debits=${totalDebits.toFixed(4)}, credits=${totalCredits.toFixed(4)}, difference=${imbalance.toFixed(4)}`);
     }
   }

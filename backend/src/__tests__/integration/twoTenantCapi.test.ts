@@ -7,7 +7,8 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from '@jest/glob
 import '../mocks/logger.mock';
 import { prismaBase } from '../../utils/prisma';
 import { metaCapiService } from '../../services/metaCapiService';
-import { createTwoTenants, asTenant, TwoTenants } from './helpers/twoTenants';
+import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
+import { runInTenant } from '../../utils/tenantContext';
 
 let pair: TwoTenants;
 const realFetch = global.fetch;
@@ -41,8 +42,8 @@ describe('metaCapiService with two tenants', () => {
   it('Purchase for each tenant order goes to that tenant pixel with that tenant token', async () => {
     mockFetch();
     const { a, b } = pair;
-    await asTenant(a, () => metaCapiService.fireCapiPurchaseEvent(a.ids.order));
-    await asTenant(b, () => metaCapiService.fireCapiPurchaseEvent(b.ids.order));
+    await runInTenant(a.id, () => metaCapiService.fireCapiPurchaseEvent(a.ids.order));
+    await runInTenant(b.id, () => metaCapiService.fireCapiPurchaseEvent(b.ids.order));
 
     expect(calls).toHaveLength(2);
     for (const [i, own, other] of [[0, a, b], [1, b, a]] as const) {
@@ -62,7 +63,7 @@ describe('metaCapiService with two tenants', () => {
     const { a, b } = pair;
     await prismaBase.order.update({ where: { id: b.ids.order }, data: { capiEventFired: false } });
     mockFetch();
-    await asTenant(a, () => metaCapiService.fireCapiPurchaseEvent(b.ids.order));
+    await runInTenant(a.id, () => metaCapiService.fireCapiPurchaseEvent(b.ids.order));
 
     expect(calls).toHaveLength(0);
     const row = await prismaBase.order.findUniqueOrThrow({ where: { id: b.ids.order } });
@@ -72,8 +73,8 @@ describe('metaCapiService with two tenants', () => {
   it('InitiateCheckout by form slug uses the pixel and token of the tenant that owns the form', async () => {
     const { a, b } = pair;
     mockFetch();
-    await asTenant(a, () => metaCapiService.fireCapiInitiateCheckoutEvent({ slug: a.formSlug, eventId: 'e-a', ...base }));
-    await asTenant(b, () => metaCapiService.fireCapiInitiateCheckoutEvent({ slug: b.formSlug, eventId: 'e-b', ...base }));
+    await runInTenant(a.id, () => metaCapiService.fireCapiInitiateCheckoutEvent({ slug: a.formSlug, eventId: 'e-a', ...base }));
+    await runInTenant(b.id, () => metaCapiService.fireCapiInitiateCheckoutEvent({ slug: b.formSlug, eventId: 'e-b', ...base }));
 
     expect(calls).toHaveLength(2);
     for (const [i, own] of [[0, a], [1, b]] as const) {
@@ -86,7 +87,7 @@ describe('metaCapiService with two tenants', () => {
   it("InitiateCheckout in tenant A context with B's form slug sends nothing", async () => {
     const { a, b } = pair;
     mockFetch();
-    await asTenant(a, () =>
+    await runInTenant(a.id, () =>
       metaCapiService.fireCapiInitiateCheckoutEvent({ slug: b.formSlug, eventId: 'e-x', ...base })
     );
     expect(calls).toHaveLength(0);

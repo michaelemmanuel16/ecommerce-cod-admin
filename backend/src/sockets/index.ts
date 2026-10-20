@@ -11,14 +11,21 @@ import { roomNames } from './rooms';
 import * as Money from '../utils/money';
 
 /**
- * Helper to safely emit to a room. Handles cases where io.to() returns undefined (e.g., in tests).
- * Money in the payload goes out as "x.xx" strings, like the REST API (Money.jsonReplacer).
+ * Helper to safely emit to one or more rooms. Handles cases where io.to() returns undefined (e.g., in tests).
+ * Several rooms are chained (io.to(a).to(b)), so one emit reaches the union of their sockets.
+ * Money in the payload goes out as "x.xx" strings, like the REST API (Money.jsonReplacer);
+ * the payload is serialised once per call, not once per room.
  */
-function safeEmit(io: SocketServer | undefined, room: string, event: string, data: any): void {
-  if (!io || typeof io.to !== 'function') return;
-  const roomObj = io.to(room);
-  if (roomObj && typeof roomObj.emit === 'function') {
-    roomObj.emit(event, data === undefined ? data : JSON.parse(JSON.stringify(data, Money.jsonReplacer)));
+function safeEmit(io: SocketServer | undefined, rooms: string | string[], event: string, data: any): void {
+  const list = Array.isArray(rooms) ? rooms : [rooms];
+  if (!io || list.length === 0) return;
+  let target: any = io;
+  for (const room of list) {
+    if (!target || typeof target.to !== 'function') return;
+    target = target.to(room);
+  }
+  if (target && typeof target.emit === 'function') {
+    target.emit(event, data === undefined ? data : JSON.parse(JSON.stringify(data, Money.jsonReplacer)));
   }
 }
 
@@ -51,9 +58,9 @@ const FINANCE_ROLES = ['admin', 'manager', 'accountant'];
 /** Roles that oversee the team. */
 const MANAGEMENT_ROLES = ['admin', 'manager'];
 
-/** Emit to one role room per role, inside one tenant. */
+/** Emit to the role rooms of one tenant in a single emit. */
 export function emitToRoles(io: SocketServer, tenantId: string, roles: string[], event: string, data: any) {
-  roles.forEach((role) => safeEmit(io, roomNames.role(tenantId, role), event, data));
+  safeEmit(io, roles.map((role) => roomNames.role(tenantId, role)), event, data);
 }
 
 /** Can this user see the order? Same tenant scope and ownership rule as GET /orders/:id. */

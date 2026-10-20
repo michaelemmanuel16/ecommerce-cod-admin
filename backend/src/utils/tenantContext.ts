@@ -43,6 +43,11 @@ export function runInTenant<T>(tenantId: string, fn: () => T | Promise<T>): Prom
   return tenantStorage.run({ tenantId }, async () => fn());
 }
 
+/** Enter a tenant's context for the rest of an Express request: `next` runs inside it. */
+export function enterTenant(tenantId: string, next: () => void): void {
+  tenantStorage.run({ tenantId }, next);
+}
+
 /**
  * Run a queue job inside its tenant. Fails closed: a job without a tenant must not
  * touch the database.

@@ -4,7 +4,8 @@
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import prisma, { prismaBase } from '../../utils/prisma';
-import { tenantStorage } from '../../utils/tenantContext';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { runInTenant } from '../../utils/tenantContext';
 import glService from '../../services/glService';
 import { GLAccountService } from '../../services/glAccountService';
 
@@ -17,14 +18,10 @@ const SUFFIX = Date.now();
 let tenantAId: string;
 let tenantBId: string;
 
-// The async wrapper matters: Prisma queries are lazy and must start inside the store.
-const asTenant = <T>(tenantId: string, fn: () => PromiseLike<T>): Promise<T> =>
-  tenantStorage.run({ tenantId }, async () => fn());
-
 beforeAll(async () => {
   const [a, b] = await Promise.all([
-    prismaBase.tenant.create({ data: { name: `Unique A ${SUFFIX}`, slug: `unique-a-${SUFFIX}` } }),
-    prismaBase.tenant.create({ data: { name: `Unique B ${SUFFIX}`, slug: `unique-b-${SUFFIX}` } }),
+    createTenant('Unique A'),
+    createTenant('Unique B'),
   ]);
   tenantAId = a.id;
   tenantBId = b.id;
@@ -32,14 +29,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   GLAccountService.clearCache();
-  await prismaBase.tenant.deleteMany({ where: { id: { in: [tenantAId, tenantBId] } } });
+  await deleteTenantRows([tenantAId, tenantBId]);
   await prismaBase.$disconnect();
 });
 
 describe('per-tenant uniques', () => {
   it('lets two tenants both create account 1010', async () => {
     for (const tenantId of [tenantAId, tenantBId]) {
-      await asTenant(tenantId, () =>
+      await runInTenant(tenantId, () =>
         prisma.account.create({
           data: { code: '1010', name: 'Cash in Hand', accountType: 'asset', normalBalance: 'debit' } as any,
         })
@@ -51,7 +48,7 @@ describe('per-tenant uniques', () => {
 
   it('still rejects a second account 1010 inside one tenant', async () => {
     await expect(
-      asTenant(tenantAId, () =>
+      runInTenant(tenantAId, () =>
         prisma.account.create({
           data: { code: '1010', name: 'Duplicate', accountType: 'asset', normalBalance: 'debit' } as any,
         })
@@ -61,7 +58,7 @@ describe('per-tenant uniques', () => {
 
   it('lets two tenants both create product SKU MG-1', async () => {
     for (const tenantId of [tenantAId, tenantBId]) {
-      await asTenant(tenantId, () =>
+      await runInTenant(tenantId, () =>
         prisma.product.create({
           data: { name: 'Magic Groove', sku: 'MG-1', price: 10, stockQuantity: 5, category: 'Education' } as any,
         })
@@ -73,7 +70,7 @@ describe('per-tenant uniques', () => {
 
   it('lets two tenants both create SMS template "welcome"', async () => {
     for (const tenantId of [tenantAId, tenantBId]) {
-      await asTenant(tenantId, () =>
+      await runInTenant(tenantId, () =>
         prisma.smsTemplate.create({ data: { name: 'welcome', body: 'Hello', tenantId } })
       );
     }
@@ -92,7 +89,7 @@ describe('per-tenant uniques', () => {
           role: 'accountant', tenantId,
         },
       });
-      const entry = await asTenant(tenantId, async () => {
+      const entry = await runInTenant(tenantId, async () => {
         const cash = await prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: '1010' } } });
         const revenue = await prisma.account.create({
           data: { code: '4010', name: 'Revenue', accountType: 'revenue', normalBalance: 'credit' } as any,
@@ -115,8 +112,8 @@ describe('per-tenant uniques', () => {
 
   it('keeps the GL account id cache apart per tenant', async () => {
     GLAccountService.clearCache();
-    const idA = await asTenant(tenantAId, () => GLAccountService.getAccountIdByCode('1010'));
-    const idB = await asTenant(tenantBId, () => GLAccountService.getAccountIdByCode('1010'));
+    const idA = await runInTenant(tenantAId, () => GLAccountService.getAccountIdByCode('1010'));
+    const idB = await runInTenant(tenantBId, () => GLAccountService.getAccountIdByCode('1010'));
     expect(idA).not.toBe(idB);
     const rowA = await prismaBase.account.findUnique({ where: { id: idA } });
     expect(rowA?.tenantId).toBe(tenantAId);

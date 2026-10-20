@@ -34,6 +34,7 @@ export const MONEY_COLUMNS: Record<string, string[]> = {
   product_cost_entries: ['amount'],
 };
 
+// Intentionally tighter than the GL BALANCE_TOLERANCE (0.01): this checks a lossless migration.
 const TOLERANCE = new Prisma.Decimal('0.0001');
 
 interface ColumnStat {

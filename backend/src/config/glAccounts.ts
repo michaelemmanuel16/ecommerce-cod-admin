@@ -12,6 +12,8 @@
  * - Expenses: 5000-5999
  */
 
+import { Prisma } from '@prisma/client';
+
 export const GL_ACCOUNTS = {
   // Asset Accounts (1000-1999)
   CASH_IN_TRANSIT: '1015',           // Cash from delivered orders (with delivery agents)
@@ -58,6 +60,9 @@ export const GL_DEFAULTS = {
    */
   DEFAULT_RETURN_PROCESSING_FEE: 0,
 } as const;
+
+/** Largest debit/credit imbalance a journal entry may carry (rounding noise). */
+export const BALANCE_TOLERANCE = new Prisma.Decimal('0.01');
 
 /**
  * Validate that all GL account codes are configured

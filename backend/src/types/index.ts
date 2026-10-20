@@ -8,6 +8,8 @@ export interface AuthRequest extends Request {
     role: UserRole;
     tenantId?: string | null;
   };
+  /** Set by authenticate() once it has verified the platform-admin flag (saves a second lookup). */
+  isPlatformAdmin?: boolean;
 }
 
 export interface JWTPayload {
