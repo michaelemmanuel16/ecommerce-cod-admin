@@ -1,35 +1,17 @@
 import { PrismaClient } from '@prisma/client';
-import { GL_ACCOUNTS } from '../src/config/glAccounts';
+import { DEFAULT_GL_ACCOUNTS } from '../src/config/glAccounts';
+import { requireTenantIdEnv } from './lib/requireTenantIdEnv';
 
 const prisma = new PrismaClient();
 
-// Account codes and SKUs are unique per tenant: say which tenant to work on.
-const TENANT_ID = process.env.TENANT_ID;
-if (!TENANT_ID) {
-  console.error('Set TENANT_ID to the tenant id, for example: TENANT_ID=<uuid> ...');
-  process.exit(1);
-}
+const TENANT_ID = requireTenantIdEnv();
 
 async function main() {
     console.log('Seeding required GL accounts...');
 
-    const accounts = [
-        { code: GL_ACCOUNTS.CASH_IN_HAND, name: 'Cash in Hand', accountType: 'asset', normalBalance: 'debit' },
-        { code: GL_ACCOUNTS.CASH_IN_TRANSIT, name: 'Cash in Transit', accountType: 'asset', normalBalance: 'debit' },
-        { code: GL_ACCOUNTS.AR_AGENTS, name: 'Accounts Receivable - Agents', accountType: 'asset', normalBalance: 'debit' },
-        { code: GL_ACCOUNTS.INVENTORY, name: 'Inventory', accountType: 'asset', normalBalance: 'debit' },
-        { code: GL_ACCOUNTS.PRODUCT_REVENUE, name: 'Product Sales Revenue', accountType: 'revenue', normalBalance: 'credit' },
-        { code: GL_ACCOUNTS.COGS, name: 'Cost of Goods Sold', accountType: 'expense', normalBalance: 'debit' },
-        { code: GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE, name: 'Failed Delivery Expense', accountType: 'expense', normalBalance: 'debit' },
-        { code: GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE, name: 'Return Processing Expense', accountType: 'expense', normalBalance: 'debit' },
-        { code: GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, name: 'Delivery Agent Commission', accountType: 'expense', normalBalance: 'debit' },
-        { code: GL_ACCOUNTS.SALES_REP_COMMISSION, name: 'Sales Rep Commission', accountType: 'expense', normalBalance: 'debit' },
-        { code: GL_ACCOUNTS.REFUND_LIABILITY, name: 'Refund Liability', accountType: 'liability', normalBalance: 'credit' },
-    ] as const;
-
-    for (const account of accounts) {
+    for (const account of DEFAULT_GL_ACCOUNTS) {
         const existing = await prisma.account.findUnique({
-            where: { tenantId_code: { tenantId: TENANT_ID!, code: account.code } },
+            where: { tenantId_code: { tenantId: TENANT_ID, code: account.code } },
         });
 
         if (!existing) {

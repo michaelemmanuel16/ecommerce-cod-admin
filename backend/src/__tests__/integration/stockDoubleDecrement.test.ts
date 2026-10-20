@@ -16,7 +16,7 @@
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { prismaBase } from '../../utils/prisma';
-import { tenantStorage } from '../../utils/tenantContext';
+import { runInTenant } from '../../utils/tenantContext';
 import orderService from '../../services/orderService';
 import publicOrderService from '../../services/publicOrderService';
 
@@ -46,7 +46,7 @@ let twoUnitPackageId: number;
 const orderIds: number[] = [];
 let phoneCounter = 0;
 
-const inTenant = <T>(fn: () => Promise<T>) => tenantStorage.run({ tenantId }, fn);
+const inTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
 
 const getStock = async () =>
   (await prismaBase.product.findUniqueOrThrow({ where: { id: productId } })).stockQuantity;

@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { getTenantId, resolveTenantId, tenantStorage, withoutTenant } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { paystackService } from './paystackService';
@@ -55,7 +55,7 @@ export async function settlePaystackPayment(
       return { status: 'not_found' };
     }
   }
-  return tenantStorage.run({ tenantId }, async () => settleInTenant(reference, opts));
+  return runInTenant(tenantId, () => settleInTenant(reference, opts));
 }
 
 async function settleInTenant(

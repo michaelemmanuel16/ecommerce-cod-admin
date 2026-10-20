@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { getBackendUrl } from '../utils/url';
-import { tenantStorage, withoutTenant } from '../utils/tenantContext';
+import { runInTenantOf, withoutTenant } from '../utils/tenantContext';
 import { appendUnsubscribeFooter } from './emailTemplateService';
 
 /**
@@ -97,9 +97,7 @@ export async function optOutByUnsubscribeToken(token: string): Promise<boolean> 
         data: { emailOptOut: true },
       });
     // A legacy NULL-tenant customer must still be able to unsubscribe
-    await (customer.tenantId
-      ? tenantStorage.run({ tenantId: customer.tenantId }, async () => optOut())
-      : withoutTenant('unsubscribe-null-tenant', optOut));
+    await runInTenantOf(customer.tenantId, 'unsubscribe', optOut);
     logger.info('Customer unsubscribed from email', { customerId: customer.id });
   }
   return true;

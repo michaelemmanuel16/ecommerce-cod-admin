@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import { withoutTenant } from '../utils/tenantContext';
-import prisma from '../utils/prisma';
+import { isPlatformAdmin } from '../utils/platformAdmin';
 
 /**
  * Requires isPlatformAdmin flag on the user and runs the request with withoutTenant
@@ -15,12 +15,7 @@ export const requirePlatformAdmin = async (req: AuthRequest, res: Response, next
     return;
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: req.user.id },
-    select: { isPlatformAdmin: true },
-  });
-
-  if (!user?.isPlatformAdmin) {
+  if (!(await isPlatformAdmin(req.user.id))) {
     res.status(403).json({ error: 'Forbidden: Platform admin access required' });
     return;
   }

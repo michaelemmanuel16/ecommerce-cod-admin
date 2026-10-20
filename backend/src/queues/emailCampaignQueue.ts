@@ -1,7 +1,7 @@
 import Bull from 'bull';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { tenantStorage } from '../utils/tenantContext';
+import { runJobInTenant } from '../utils/tenantContext';
 import { MessageChannel, MessageDirection, MessageStatus, EmailCampaignStatus } from '@prisma/client';
 import { sendEmail } from '../services/emailService';
 import { renderEmailTemplate } from '../services/emailTemplateService';
@@ -187,11 +187,7 @@ export async function processCampaignRecipient(
     }
   };
 
-  // Fail closed: a job without a tenant must not touch the database
-  if (!data.tenantId) {
-    throw new Error(`Campaign email job (campaign ${data.campaignId}, customer ${data.customerId}) has no tenantId; refusing to run`);
-  }
-  return tenantStorage.run({ tenantId: data.tenantId }, run);
+  return runJobInTenant(`Campaign email job (campaign ${data.campaignId}, customer ${data.customerId})`, data.tenantId, run);
 }
 
 // Flip the campaign to `completed` once no recipient row is still pending. Cheap

@@ -1,11 +1,11 @@
 import { Request, Response } from 'express';
 import { createHash } from 'crypto';
-import { Prisma } from '@prisma/client';
 import { paystackService } from '../services/paystackService';
 import { settlePaystackPayment } from '../services/paystackSettlementService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { tenantStorage } from '../utils/tenantContext';
+import { runInTenant } from '../utils/tenantContext';
+import { withWebhookDedup } from '../utils/webhookDedup';
 
 /**
  * Paystack webhook handler — called by Paystack on charge.success.
@@ -29,7 +29,7 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
     }
 
     // Everything below runs inside the URL tenant's context
-    await tenantStorage.run({ tenantId: tenant.id }, async () => processTenantWebhook(req, res, tenant.id));
+    await runInTenant(tenant.id, () => processTenantWebhook(req, res, tenant.id));
   } catch (error: any) {
     logger.error('Paystack webhook error', { error: error.message });
     // Still return 200 to prevent retries for processing errors
@@ -38,7 +38,6 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
 }
 
 async function processTenantWebhook(req: Request, res: Response, tenantId: string): Promise<void> {
-  const tenant = { id: tenantId };
   const signature = req.headers['x-paystack-signature'] as string;
   if (!signature) {
     res.status(400).json({ error: 'Missing signature' });
@@ -52,70 +51,34 @@ async function processTenantWebhook(req: Request, res: Response, tenantId: strin
     res.status(500).json({ error: 'Server configuration error' });
     return;
   }
-  const isValid = await paystackService.validateWebhookSignature(tenant.id, rawBody, signature);
+  const isValid = await paystackService.validateWebhookSignature(tenantId, rawBody, signature);
   if (!isValid) {
-    logger.warn('Invalid Paystack webhook signature', { tenantId: tenant.id });
+    logger.warn('Invalid Paystack webhook signature', { tenantId });
     res.status(401).json({ error: 'Invalid signature' });
     return;
   }
 
   // req.body is already parsed by express.json(); use it directly
   const event = req.body;
-  logger.info('Paystack webhook received', { tenantId: tenant.id, event: event.event });
+  logger.info('Paystack webhook received', { tenantId: tenantId, event: event.event });
 
-  // Idempotency gate: record (tenant_id, provider, event_type, reference) before any side effect.
-  // Unique-constraint violation = replay; ack and return without re-processing.
-  // If side-effect processing throws below, the row is removed so Paystack retries succeed.
   const reference: string | undefined = event?.data?.reference;
-  let dedupRowId: number | null = null;
-  if (reference && event?.event) {
-    const payloadHash = createHash('sha256').update(rawBody).digest('hex');
-    try {
-      const created = await prisma.webhookEvent.create({
-        data: {
-          provider: 'paystack',
-          eventType: event.event,
-          reference,
-          payloadHash,
-          tenantId: tenant.id,
-        },
-        select: { id: true },
-      });
-      dedupRowId = created.id;
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        logger.info('Paystack webhook replay ignored', { tenantId: tenant.id, eventType: event.event, reference });
-        res.status(200).json({ received: true, duplicate: true });
-        return;
-      }
-      throw err;
-    }
-  }
-
-  try {
-    if (event.event === 'charge.success') {
-      await handleChargeSuccess(tenant.id, event.data);
-    }
-  } catch (processingError: any) {
-    // Side-effect processing failed — remove the dedup row so Paystack's
-    // retries can re-enter the handler. Otherwise a transient miss (Paystack
-    // API blip, isEnabled toggled mid-flight, GL error) permanently burns
-    // the reference because we 200 the ACK regardless.
-    if (dedupRowId !== null) {
-      try {
-        await prisma.webhookEvent.delete({ where: { id: dedupRowId } });
-      } catch (cleanupError: any) {
-        logger.error('Failed to delete dedup row after processing error', {
-          dedupRowId,
-          error: cleanupError.message,
-        });
+  await withWebhookDedup(
+    res,
+    {
+      provider: 'paystack',
+      eventType: event.event,
+      reference: event?.event ? reference : undefined,
+      payloadHash: createHash('sha256').update(rawBody).digest('hex'),
+      tenantId,
+    },
+    'Paystack',
+    async () => {
+      if (event.event === 'charge.success') {
+        await handleChargeSuccess(tenantId, event.data);
       }
     }
-    throw processingError;
-  }
-
-  // Always return 200 to acknowledge receipt
-  res.status(200).json({ received: true });
+  );
 }
 
 /**

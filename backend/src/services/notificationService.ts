@@ -1,7 +1,7 @@
 import prisma from '../utils/prisma';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitNotification } from '../sockets';
-import { resolveTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 
 
 export async function createNotification(
@@ -11,14 +11,14 @@ export async function createNotification(
   message: string,
   data?: any
 ) {
-  const user = await prisma.user.findUnique({
-    where: { id: parseInt(userId, 10) },
-    select: { tenantId: true },
-  });
+  const id = parseInt(userId, 10);
+  // The request/job tenant first; only a context-less caller (unscoped run) looks the user up
+  const tenantId = getTenantId()
+    ?? (await prisma.user.findUnique({ where: { id }, select: { tenantId: true } }))?.tenantId;
   const notification = await prisma.notification.create({
     data: {
-      tenantId: resolveTenantId(user?.tenantId),
-      userId: parseInt(userId, 10),
+      tenantId: resolveTenantId(tenantId),
+      userId: id,
       type,
       title,
       message,
@@ -83,9 +83,9 @@ export async function notifyAdminsOverdueCollections(
   if (agents.length === 0) return;
 
   // Admins of the current tenant only (the scoped query adds tenantId).
-  // Callers run this once per tenant; users with no tenant are skipped.
+  // Callers run this once per tenant.
   const admins = await prisma.user.findMany({
-    where: { role: { in: ['admin', 'super_admin'] }, isActive: true, tenantId: { not: null } },
+    where: { role: { in: ['admin', 'super_admin'] }, isActive: true },
     select: { id: true }
   });
 

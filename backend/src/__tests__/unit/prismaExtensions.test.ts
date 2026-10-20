@@ -2,10 +2,10 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import bcrypt from 'bcrypt';
 import prisma from '../../utils/prisma';
 import { withSoftDeleted } from '../../utils/prismaExtensions';
-import { tenantStorage } from '../../utils/tenantContext';
+import { runInTenant } from '../../utils/tenantContext';
 
 describe('softDeleteExtension', () => {
-  const asTenant = <T>(fn: () => Promise<T>) => tenantStorage.run({ tenantId }, async () => fn());
+  const asTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
   const itT = (name: string, fn: () => Promise<void>) => it(name, () => asTenant(fn));
 
   let activeId: number;

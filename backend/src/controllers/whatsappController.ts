@@ -7,7 +7,7 @@ import whatsappService, {
   resolveWhatsappTenantFromPayload,
   findWhatsappConfigByVerifyToken,
 } from '../services/whatsappService';
-import { tenantStorage } from '../utils/tenantContext';
+import { runInTenant } from '../utils/tenantContext';
 import logger from '../utils/logger';
 import { MessageChannel, MessageStatus } from '@prisma/client';
 
@@ -62,66 +62,38 @@ export const handleWebhook = async (req: AuthRequest, res: Response): Promise<vo
   // Resolve the tenant from the payload (phone_number_id / WABA id matched to a
   // tenant's stored WhatsApp config) BEFORE verifying: the signature is checked
   // with THAT tenant's app secret.
-  const match = await resolveWhatsappTenantFromPayload(req.body);
-  if (!match) {
+  const candidates = await resolveWhatsappTenantFromPayload(req.body);
+  if (candidates.length === 0) {
     // 200 so Meta does not retry; nothing to process
     logger.warn('WhatsApp webhook: no tenant matches the payload, ignored');
     res.status(200).send('EVENT_RECEIVED');
     return;
   }
-  // Several tenant configs share this phone / WABA id: the signature decides. Exactly one
-  // candidate's app secret must verify. Otherwise nothing is processed (200 so Meta does not retry).
-  let resolved: { tenantId: string; config: any };
-  let preVerified = false;
-  if ('candidates' in match) {
-    const signature = req.headers['x-hub-signature-256'] as string | undefined;
-    const rawBody: Buffer | undefined = (req as any).rawBody;
-    const verified = rawBody
-      ? match.candidates.filter((c) => {
-        const secret = c.config?.appSecret || process.env.WHATSAPP_APP_SECRET;
-        return !!secret && verifyWebhookSignature(rawBody, signature, secret);
-      })
-      : [];
-    if (verified.length !== 1) {
-      logger.error('WhatsApp webhook: several tenant configs match and the signature does not pick exactly one, ignored', {
-        candidateTenantIds: match.candidates.map((c) => c.tenantId),
-        verifiedCount: verified.length,
-      });
-      res.status(200).send('EVENT_RECEIVED');
-      return;
-    }
-    resolved = verified[0];
-    preVerified = true;
-  } else {
-    resolved = match;
-  }
-  const { tenantId, config: dbConfig } = resolved;
-  const appSecret = dbConfig?.appSecret || process.env.WHATSAPP_APP_SECRET;
-
-  // If app secret is configured, verify signature using the raw body buffer
-  // captured by the express.json verify callback in server.ts
-  if (preVerified) {
-    // signature already verified against this tenant's secret
-  } else if (appSecret) {
-    const signature = req.headers['x-hub-signature-256'] as string | undefined;
-    const rawBody: Buffer = (req as any).rawBody;
-
-    if (!rawBody) {
-      logger.warn('WhatsApp webhook: raw body not available for signature verification');
-      res.status(500).send('Internal Server Error');
-      return;
-    }
-
-    if (!verifyWebhookSignature(rawBody, signature, appSecret)) {
-      logger.warn('WhatsApp webhook signature verification failed', { tenantId });
+  // The signature decides: exactly one candidate's app secret must verify.
+  const signature = req.headers['x-hub-signature-256'] as string | undefined;
+  const rawBody: Buffer | undefined = (req as any).rawBody;
+  const verified = rawBody
+    ? candidates.filter((c) => {
+      const secret = c.config?.appSecret || process.env.WHATSAPP_APP_SECRET;
+      return !!secret && verifyWebhookSignature(rawBody, signature, secret);
+    })
+    : [];
+  if (verified.length !== 1) {
+    if (candidates.length === 1) {
+      logger.warn('WhatsApp webhook signature verification failed', { tenantId: candidates[0].tenantId });
       res.status(401).send('Unauthorized');
       return;
     }
-  } else {
-    logger.error('WhatsApp app secret not configured for tenant — rejecting unsigned webhook', { tenantId });
-    res.status(403).send('Webhook signature verification not configured');
+    // Several tenants share the phone / WABA id and the signature does not pick one:
+    // process nothing (200 so Meta does not retry)
+    logger.error('WhatsApp webhook: several tenant configs match and the signature does not pick exactly one, ignored', {
+      candidateTenantIds: candidates.map((c) => c.tenantId),
+      verifiedCount: verified.length,
+    });
+    res.status(200).send('EVENT_RECEIVED');
     return;
   }
+  const { tenantId, config: dbConfig } = verified[0];
 
   // Respond 200 quickly to prevent WhatsApp retries
   res.status(200).send('EVENT_RECEIVED');
@@ -132,7 +104,7 @@ export const handleWebhook = async (req: AuthRequest, res: Response): Promise<vo
     if (!body?.entry) return;
 
     // Everything below runs inside the verified tenant's context
-    await tenantStorage.run({ tenantId }, async () => {
+    await runInTenant(tenantId, async () => {
       for (const entry of body.entry) {
         for (const change of entry.changes || []) {
           if (change.field !== 'messages') continue;

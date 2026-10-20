@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 import { evaluateConditions } from '../utils/conditionEvaluator';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderUpdated, emitOrderAssigned, emitToTenant } from '../sockets/index';
-import { tenantStorage, getTenantId } from '../utils/tenantContext';
+import { runJobInTenant, getTenantId } from '../utils/tenantContext';
 
 // Send actions read tenant-scoped provider config (SystemConfig) and write
 // tenant-scoped MessageLog rows. They refuse to run with no tenant context.
@@ -44,11 +44,6 @@ export const workflowQueue = process.env.NODE_ENV === 'test'
 export const processExecuteWorkflow = async (job: Bull.Job) => {
   const { executionId, workflowId, actions, conditions, input, tenantId } = job.data;
 
-  // Fail closed: a job without a tenant must not touch the database
-  if (!tenantId) {
-    throw new Error(`Workflow job ${job.id} (execution ${executionId}) has no tenantId; refusing to run`);
-  }
-
   // Restore tenant context so all Prisma queries (MessageLog, SystemConfig, etc.)
   // are scoped to the correct tenant
   const processJob = async () => {
@@ -56,7 +51,7 @@ export const processExecuteWorkflow = async (job: Bull.Job) => {
 
     const io = getSocketInstance();
     if (io) {
-      emitToTenant(io, 'workflow:execution_started', { workflowId, executionId }, tenantId);
+      emitToTenant(io, 'workflow:execution_started', { workflowId, executionId });
     }
 
     try {
@@ -110,7 +105,7 @@ export const processExecuteWorkflow = async (job: Bull.Job) => {
           executionId,
           status: 'completed',
           completedAt: new Date()
-        }, tenantId);
+        });
       }
     } catch (error: any) {
       logger.error('Workflow execution failed', { executionId, error: error.message });
@@ -121,7 +116,7 @@ export const processExecuteWorkflow = async (job: Bull.Job) => {
           executionId,
           status: 'failed',
           error: error.message
-        }, tenantId);
+        });
       }
 
       await prisma.workflowExecution.update({
@@ -137,7 +132,7 @@ export const processExecuteWorkflow = async (job: Bull.Job) => {
     }
   };
 
-  return tenantStorage.run({ tenantId }, processJob);
+  return runJobInTenant(`Workflow job ${job.id} (execution ${executionId})`, tenantId, processJob);
 };
 workflowQueue.process('execute-workflow', processExecuteWorkflow);
 

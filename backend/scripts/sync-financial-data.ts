@@ -1,14 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import { GL_ACCOUNTS } from '../src/config/glAccounts';
+import { requireTenantIdEnv } from './lib/requireTenantIdEnv';
 
 const prisma = new PrismaClient();
 
-// Account codes and SKUs are unique per tenant: say which tenant to work on.
-const TENANT_ID = process.env.TENANT_ID;
-if (!TENANT_ID) {
-  console.error('Set TENANT_ID to the tenant id, for example: TENANT_ID=<uuid> ...');
-  process.exit(1);
-}
+const TENANT_ID = requireTenantIdEnv();
 
 /**
  * Synchronize financial data for imported/existing orders
@@ -46,10 +42,10 @@ async function syncFinancialData() {
     // Step 2: Fetch GL accounts
     console.log('📊 Step 2: Fetching General Ledger accounts...');
     const [revenueAccount, cogsAccount, cashAccount, inventoryAccount] = await Promise.all([
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID!, code: GL_ACCOUNTS.PRODUCT_REVENUE } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID!, code: GL_ACCOUNTS.COGS } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID!, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID!, code: GL_ACCOUNTS.INVENTORY } } })
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID, code: GL_ACCOUNTS.PRODUCT_REVENUE } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID, code: GL_ACCOUNTS.COGS } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID, code: GL_ACCOUNTS.INVENTORY } } })
     ]);
 
     if (!revenueAccount || !cogsAccount || !cashAccount) {
@@ -262,9 +258,9 @@ async function syncFinancialData() {
       prisma.transaction.count({ where: { type: 'cod_collection' } }),
       prisma.journalEntry.count(),
       prisma.accountTransaction.count(),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID!, code: GL_ACCOUNTS.PRODUCT_REVENUE } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID!, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
-      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID!, code: GL_ACCOUNTS.COGS } } })
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID, code: GL_ACCOUNTS.PRODUCT_REVENUE } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID, code: GL_ACCOUNTS.COGS } } })
     ]);
 
     console.log(`   📊 Total COD Transactions in DB:    ${totalTransactions}`);

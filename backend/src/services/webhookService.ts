@@ -6,7 +6,7 @@ import { parsePackageField } from '../utils/packageParser';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
-import { resolveTenantId, runInTenantOf, withoutTenant } from '../utils/tenantContext';
+import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 
 
@@ -198,7 +198,7 @@ export class WebhookService {
    * webhook entry path so the two can't drift back into the bug.
    */
   private async enforceSignature(
-    webhookLogId: number | null,
+    webhookLogId: number,
     config: { requireSignature?: boolean | null; secret: string } | null,
     signature: string | undefined,
     body: unknown
@@ -239,7 +239,7 @@ export class WebhookService {
       throw new AppError('Invalid API key', 401);
     }
 
-    return this.processForConfig(webhookConfig, { signature, body, headers, endpoint, method });
+    return this.processForConfig(webhookConfig, webhookConfig.tenantId, { signature, body, headers, endpoint, method });
   }
 
   /**
@@ -267,28 +267,29 @@ export class WebhookService {
       throw new AppError('Webhook not found', 404);
     }
 
-    return this.processForConfig(webhookConfig, { signature, body, headers, endpoint, method });
+    return this.processForConfig(webhookConfig, webhookConfig.tenantId, { signature, body, headers, endpoint, method });
   }
 
   /**
    * Shared tail of both webhook entry paths. The config was found by an unscoped
-   * lookup (API key / unique URL); from here everything runs inside its tenant.
+   * lookup (API key / unique URL) and has a tenant; from here everything runs inside it.
    */
   private async processForConfig(
     webhookConfig: any,
+    tenantId: string,
     data: { signature: string | undefined; body: any; headers: unknown; endpoint: string; method: string }
   ) {
     const { signature, body, headers, endpoint, method } = data;
-    return runInTenantOf(webhookConfig?.tenantId as string | null, 'webhook-import', async () => {
-      const webhookLog = await this.createWebhookLog(webhookConfig, { endpoint, method, headers, body });
+    return runInTenant(tenantId, async () => {
+      const webhookLog = await this.createWebhookLog(webhookConfig, tenantId, { endpoint, method, headers, body });
 
       try {
-        await this.enforceSignature(webhookLog?.id ?? null, webhookConfig, signature, body);
+        await this.enforceSignature(webhookLog.id, webhookConfig, signature, body);
 
         const results = await this.processOrdersFromWebhook(body, webhookConfig);
 
         // Update webhook log as successful
-        await this.updateWebhookLog(webhookLog?.id ?? null, {
+        await this.updateWebhookLog(webhookLog.id, {
           success: true,
           response: results,
           statusCode: 200
@@ -301,10 +302,10 @@ export class WebhookService {
       } catch (error: any) {
         logger.error('Webhook processing error', {
           error: error.message,
-          webhookLogId: webhookLog?.id
+          webhookLogId: webhookLog.id
         });
 
-        await this.updateWebhookLog(webhookLog?.id ?? null, {
+        await this.updateWebhookLog(webhookLog.id, {
           success: false,
           errorMessage: error.message,
           statusCode: error.statusCode || 500
@@ -602,23 +603,16 @@ export class WebhookService {
   }
 
   /**
-   * Update webhook log
-   */
-  /**
-   * Create the log row. It needs the tenant of the webhook config. A request that
-   * matched no config has no tenant, so it is written to the app log only.
+   * Create the log row, in the tenant of the webhook config.
    */
   private async createWebhookLog(
-    webhookConfig: { id: number; tenantId?: string | null } | null,
+    webhookConfig: { id: number },
+    tenantId: string,
     data: { endpoint: string; method: string; headers: unknown; body: unknown }
-  ): Promise<{ id: number } | null> {
-    if (!webhookConfig?.tenantId) {
-      logger.warn('Webhook request has no tenant, not written to webhook_logs', { endpoint: data.endpoint });
-      return null;
-    }
+  ): Promise<{ id: number }> {
     return prisma.webhookLog.create({
       data: {
-        tenantId: webhookConfig.tenantId,
+        tenantId,
         webhookConfigId: webhookConfig.id,
         endpoint: data.endpoint,
         method: data.method,
@@ -630,7 +624,7 @@ export class WebhookService {
   }
 
   private async updateWebhookLog(
-    logId: number | null,
+    logId: number,
     data: {
       success: boolean;
       response?: any;
@@ -638,7 +632,6 @@ export class WebhookService {
       statusCode?: number;
     }
   ) {
-    if (logId === null) return null;
     return prisma.webhookLog.update({
       where: { id: logId },
       data: {

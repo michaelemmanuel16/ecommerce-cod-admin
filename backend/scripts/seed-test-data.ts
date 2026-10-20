@@ -1,14 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import { requireTenantIdEnv } from './lib/requireTenantIdEnv';
 
 const prisma = new PrismaClient();
 
-// Account codes and SKUs are unique per tenant: say which tenant to work on.
-const TENANT_ID = process.env.TENANT_ID;
-if (!TENANT_ID) {
-  console.error('Set TENANT_ID to the tenant id, for example: TENANT_ID=<uuid> ...');
-  process.exit(1);
-}
+const TENANT_ID = requireTenantIdEnv();
 
 async function seedTestData() {
     try {
@@ -71,7 +67,7 @@ async function seedTestData() {
         // 3. Create Product (Magic Copybook)
         console.log('📦 Creating Product...');
         const product = await prisma.product.upsert({
-            where: { tenantId_sku: { tenantId: TENANT_ID!, sku: 'MCB-001' } },
+            where: { tenantId_sku: { tenantId: TENANT_ID, sku: 'MCB-001' } },
             update: {},
             create: {
                 tenantId: TENANT_ID,

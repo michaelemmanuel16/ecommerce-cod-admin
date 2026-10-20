@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { createHash } from 'crypto';
-import { Prisma } from '@prisma/client';
 import { platformPaystackService } from '../services/platformPaystackService';
 import {
   bindSubscription,
@@ -11,7 +10,8 @@ import {
 import { SUBSCRIPTION_STATUS } from '../config/billing';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { tenantStorage } from '../utils/tenantContext';
+import { runInTenant } from '../utils/tenantContext';
+import { withWebhookDedup } from '../utils/webhookDedup';
 
 const PROVIDER = 'paystack-platform';
 
@@ -59,7 +59,7 @@ export async function handlePlatformWebhook(req: Request, res: Response): Promis
     }
 
     // WebhookEvent is tenant-scoped: everything below runs inside the resolved tenant
-    await tenantStorage.run({ tenantId }, async () => processPlatformEvent(res, rawBody, event, data, tenantId));
+    await runInTenant(tenantId, () => processPlatformEvent(res, rawBody, event, data, tenantId));
   } catch (error: any) {
     logger.error('Platform webhook error', { error: error.message });
     // 200 so transient processing errors don't trigger a retry storm; the dedup
@@ -71,48 +71,20 @@ export async function handlePlatformWebhook(req: Request, res: Response): Promis
 async function processPlatformEvent(res: Response, rawBody: Buffer, event: any, data: any, tenantId: string): Promise<void> {
   // Idempotency gate (tenant-scoped). reference falls back through the codes a
   // given event carries, then the payload hash, so every event type dedupes.
+  const payloadHash = createHash('sha256').update(rawBody).digest('hex');
   const reference: string =
     data.reference ||
     data.subscription_code ||
     data.subscription?.subscription_code ||
     data.invoice_code ||
-    createHash('sha256').update(rawBody).digest('hex');
-  const payloadHash = createHash('sha256').update(rawBody).digest('hex');
+    payloadHash;
 
-  let dedupRowId: number | null = null;
-  try {
-    const created = await prisma.webhookEvent.create({
-      data: { provider: PROVIDER, eventType: event.event, reference, payloadHash, tenantId },
-      select: { id: true },
-    });
-    dedupRowId = created.id;
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      logger.info('Platform webhook replay ignored', { tenantId, eventType: event.event, reference });
-      res.status(200).json({ received: true, duplicate: true });
-      return;
-    }
-    throw err;
-  }
-
-  try {
-    await dispatchEvent(event.event, data, tenantId);
-  } catch (processingError) {
-    // Remove the dedup row so Paystack's retries can re-enter the handler.
-    if (dedupRowId !== null) {
-      try {
-        await prisma.webhookEvent.delete({ where: { id: dedupRowId } });
-      } catch (cleanupError: any) {
-        logger.error('Failed to delete platform dedup row after processing error', {
-          dedupRowId,
-          error: cleanupError.message,
-        });
-      }
-    }
-    throw processingError;
-  }
-
-  res.status(200).json({ received: true });
+  await withWebhookDedup(
+    res,
+    { provider: PROVIDER, eventType: event.event, reference, payloadHash, tenantId },
+    'Platform',
+    () => dispatchEvent(event.event, data, tenantId)
+  );
 }
 
 async function resolveTenantForEvent(eventType: string, data: any): Promise<string | null> {

@@ -1,5 +1,5 @@
 import { Response, Request, NextFunction } from 'express';
-import { resolveTenantId, tenantStorage, withoutTenant } from '../utils/tenantContext';
+import { resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { OrderStatus, Prisma } from '@prisma/client';
 import workflowService from '../services/workflowService';
 import checkoutFormService from '../services/checkoutFormService';
@@ -591,48 +591,41 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    // The order id is global: find its tenant with a minimal lookup (unscoped on
-    // purpose), then run the full query scoped to that tenant.
-    const orderWhere = {
-      id: parseInt(orderId as string),
-      customer: {
-        phoneNumber: phoneNumber as string
-      }
-    };
-    const found = await withoutTenant('public-tracking', () =>
-      prisma.order.findFirst({ where: orderWhere, select: { tenantId: true } })
-    );
-    if (!found) {
-      res.status(404).json({ error: 'Order not found' });
-      return;
-    }
-
-    const order = await tenantStorage.run({ tenantId: found.tenantId }, async () => prisma.order.findFirst({
-      where: orderWhere,
-      include: {
-        customer: {
-          select: {
-            firstName: true,
-            lastName: true,
-            phoneNumber: true
+    // The order id is global and the public route has no tenant context: one unscoped
+    // lookup on purpose. The relations are read through this order's own foreign keys.
+    const order = await withoutTenant('public-tracking', () =>
+      prisma.order.findFirst({
+        where: {
+          id: parseInt(orderId as string),
+          customer: {
+            phoneNumber: phoneNumber as string
           }
         },
-        orderItems: {
-          include: {
-            product: {
-              select: {
-                name: true,
-                imageUrl: true
+        include: {
+          customer: {
+            select: {
+              firstName: true,
+              lastName: true,
+              phoneNumber: true
+            }
+          },
+          orderItems: {
+            include: {
+              product: {
+                select: {
+                  name: true,
+                  imageUrl: true
+                }
               }
             }
+          },
+          orderHistory: {
+            orderBy: { createdAt: 'desc' },
+            take: 10
           }
-        },
-        orderHistory: {
-          orderBy: { createdAt: 'desc' },
-          take: 10
         }
-      }
-    }));
+      })
+    );
 
     if (!order) {
       res.status(404).json({ error: 'Order not found' });

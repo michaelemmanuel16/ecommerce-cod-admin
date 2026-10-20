@@ -1,6 +1,6 @@
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { tenantStorage } from '../utils/tenantContext';
+import { runInTenant } from '../utils/tenantContext';
 import { DEFAULT_GL_ACCOUNTS } from '../config/glAccounts';
 import { seedDefaultEmailTemplates } from './emailTemplateService';
 
@@ -13,21 +13,20 @@ import { seedDefaultEmailTemplates } from './emailTemplateService';
  * SMS templates are not seeded: no default SMS content exists in the code.
  */
 export async function seedTenantDefaults(tenantId: string): Promise<{ accounts: number; emailTemplates: number }> {
-  const accounts = await tenantStorage.run({ tenantId }, async () => {
-    const result = await prisma.account.createMany({
-      data: DEFAULT_GL_ACCOUNTS.map((a) => ({
-        code: a.code,
-        name: a.name,
-        accountType: a.accountType,
-        normalBalance: a.normalBalance,
-        description: `Default account: ${a.name}`,
-        isActive: true,
-      })),
-      skipDuplicates: true,
-    });
-    return result.count;
-  });
-  const emailTemplates = await seedDefaultEmailTemplates(tenantId);
+  const [accounts, emailTemplates] = await Promise.all([
+    runInTenant(tenantId, async () => {
+      const result = await prisma.account.createMany({
+        data: DEFAULT_GL_ACCOUNTS.map((a) => ({
+          ...a,
+          description: `Default account: ${a.name}`,
+          isActive: true,
+        })),
+        skipDuplicates: true,
+      });
+      return result.count;
+    }),
+    seedDefaultEmailTemplates(tenantId),
+  ]);
   if (accounts > 0 || emailTemplates > 0) {
     logger.info(`Seeded tenant defaults for ${tenantId}: ${accounts} accounts, ${emailTemplates} email templates`);
   }

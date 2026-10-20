@@ -358,8 +358,7 @@ if (process.env.NODE_ENV !== 'test') {
     // One tenant failing is logged; the others still run and the server stays up.
     try {
       await forEachTenant('startup seed', async (tenantId) => {
-        const seeded = await seedTenantDefaults(tenantId);
-        logger.info(`Startup seed for tenant ${tenantId}: ${seeded.accounts} accounts, ${seeded.emailTemplates} email templates created`);
+        await seedTenantDefaults(tenantId);
       });
     } catch (error: any) {
       logger.error('Startup seed finished with failures:', error?.message ?? error);

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { resolveTenantId, tenantStorage, withoutTenant } from '../utils/tenantContext';
+import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { escapeHtml } from '../utils/sanitizer';
@@ -54,9 +54,7 @@ export const digitalDeliveryService = {
       logger.warn('Download token not found', { token: token.substring(0, 8) + '...' });
       return null;
     }
-    return tenantStorage.run({ tenantId: tokenRow.tenantId }, async () =>
-      this.consumeDownloadToken(token, tokenRow.tenantId)
-    );
+    return runInTenant(tokenRow.tenantId, () => this.consumeDownloadToken(token, tokenRow.tenantId));
   },
 
   async consumeDownloadToken(token: string, tenantId: string): Promise<{ fileUrl: string; productName: string } | null> {

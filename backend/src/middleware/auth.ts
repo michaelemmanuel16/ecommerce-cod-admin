@@ -5,6 +5,7 @@ import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { tenantStorage, getTenantId, withoutTenant } from '../utils/tenantContext';
+import { isPlatformAdmin } from '../utils/platformAdmin';
 
 // Per-tenant cache for role permissions to avoid database hits on every request.
 // Keyed by tenantId to prevent cross-tenant permission leakage.
@@ -165,11 +166,8 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
       }
       // No tenant in the JWT: only a platform admin may continue (no tenant, on purpose).
       // Everyone else gets 403 instead of an unscoped context.
-      withoutTenant('auth-null-tenant-check', () => prisma.user.findUnique({
-        where: { id: decoded.id },
-        select: { isPlatformAdmin: true },
-      })).then((u) => {
-        if (!u?.isPlatformAdmin) {
+      isPlatformAdmin(decoded.id).then((isAdmin) => {
+        if (!isAdmin) {
           res.status(403).json({ error: 'Forbidden: account has no tenant' });
           return;
         }

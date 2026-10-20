@@ -71,13 +71,13 @@ async function listTenantWhatsappConfigs(): Promise<Array<{ tenantId: string; co
 /**
  * Find the tenant that owns an inbound Meta webhook payload: phone_number_id first,
  * then the WABA id (entry.id), matched against each tenant's stored WhatsApp config.
- * Returns null when no tenant matches, and { ambiguous: true } when more than one
- * tenant config matches: the caller gets every candidate and must tell them apart
- * (the controller checks the payload signature against each candidate's app secret).
+ * Returns every matching tenant config (empty when none match). More than one can
+ * match: the caller must tell them apart (the controller checks the payload signature
+ * against each candidate's app secret).
  */
 export async function resolveWhatsappTenantFromPayload(
   body: any,
-): Promise<{ tenantId: string; config: any } | { candidates: Array<{ tenantId: string; config: any }> } | null> {
+): Promise<Array<{ tenantId: string; config: any }>> {
   const phoneIds = new Set<string>();
   const wabaIds = new Set<string>();
   for (const entry of body?.entry || []) {
@@ -87,15 +87,12 @@ export async function resolveWhatsappTenantFromPayload(
       if (phoneId) phoneIds.add(String(phoneId));
     }
   }
-  if (phoneIds.size === 0 && wabaIds.size === 0) return null;
+  if (phoneIds.size === 0 && wabaIds.size === 0) return [];
 
   const configs = await listTenantWhatsappConfigs();
   const byPhone = configs.filter((c) => c.config?.phoneNumberId && phoneIds.has(String(c.config.phoneNumberId)));
-  if (byPhone.length > 1) return { candidates: byPhone };
-  if (byPhone.length === 1) return byPhone[0];
-  const byWaba = configs.filter((c) => c.config?.wabaId && wabaIds.has(String(c.config.wabaId)));
-  if (byWaba.length > 1) return { candidates: byWaba };
-  return byWaba[0] ?? null;
+  if (byPhone.length > 0) return byPhone;
+  return configs.filter((c) => c.config?.wabaId && wabaIds.has(String(c.config.wabaId)));
 }
 
 /** Find the tenant whose stored webhook verify token matches (Meta's GET handshake). */

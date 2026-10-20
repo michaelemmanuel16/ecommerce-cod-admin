@@ -40,7 +40,7 @@ describe('WhatsApp webhook tenant match', () => {
       row('t2', { phoneNumberId: 'p2', wabaId: 'w2' }),
     ]);
     const result = await resolveWhatsappTenantFromPayload(payload('p2'));
-    expect(result).toMatchObject({ tenantId: 't2' });
+    expect(result).toMatchObject([{ tenantId: 't2' }]);
   });
 
   it('returns every candidate when two tenants share the phone_number_id', async () => {
@@ -48,7 +48,7 @@ describe('WhatsApp webhook tenant match', () => {
       row('t1', { phoneNumberId: 'p1' }),
       row('t2', { phoneNumberId: 'p1' }),
     ]);
-    expect(await resolveWhatsappTenantFromPayload(payload('p1'))).toMatchObject({ candidates: expect.any(Array) });
+    expect(await resolveWhatsappTenantFromPayload(payload('p1'))).toHaveLength(2);
   });
 
   it('returns every candidate when two tenants share the WABA id and no phone matches', async () => {
@@ -56,7 +56,7 @@ describe('WhatsApp webhook tenant match', () => {
       row('t1', { phoneNumberId: 'p1', wabaId: 'w1' }),
       row('t2', { phoneNumberId: 'p2', wabaId: 'w1' }),
     ]);
-    expect(await resolveWhatsappTenantFromPayload(payload('p-unknown', 'w1'))).toMatchObject({ candidates: expect.any(Array) });
+    expect(await resolveWhatsappTenantFromPayload(payload('p-unknown', 'w1'))).toHaveLength(2);
   });
 
   const sign = (raw: Buffer, secret: string) => 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');

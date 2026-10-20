@@ -17,15 +17,11 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { requireTenantIdEnv } from './lib/requireTenantIdEnv';
 
 const prisma = new PrismaClient();
 
-// Account codes and SKUs are unique per tenant: say which tenant to work on.
-const TENANT_ID = process.env.TENANT_ID;
-if (!TENANT_ID) {
-  console.error('Set TENANT_ID to the tenant id, for example: TENANT_ID=<uuid> ...');
-  process.exit(1);
-}
+const TENANT_ID = requireTenantIdEnv();
 
 interface ProductMapping {
   sku: string;
