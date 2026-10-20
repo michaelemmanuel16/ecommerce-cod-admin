@@ -8,14 +8,14 @@ import * as tenantContext from '../../../utils/tenantContext';
  * fixtures predate multi-tenancy, so they must establish tenant context exactly
  * like a real authenticated request does.
  *
- * This runs the suite's cleanup with NO context (so deleteMany is unscoped and
+ * This runs the suite's cleanup unscoped (withoutTenant, so deleteMany is unscoped and
  * wipes legacy NULL-tenant rows from older runs), then seeds a stable tenant and
  * puts it in context so the Prisma extension auto-tags every subsequent fixture
  * and GL row. Returns the tenant id.
  */
 export async function withGlTestTenant(cleanup: () => Promise<void>): Promise<string> {
   jest.spyOn(tenantContext, 'getTenantId').mockReturnValue(null);
-  jest.spyOn(tenantContext.tenantStorage, 'getStore').mockReturnValue(undefined);
+  jest.spyOn(tenantContext.tenantStorage, 'getStore').mockReturnValue({ tenantId: null, unscoped: true });
   await cleanup();
 
   const tenant = await prisma.tenant.upsert({

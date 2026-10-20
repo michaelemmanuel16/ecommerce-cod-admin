@@ -1,10 +1,10 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
-import { tenantStorage } from '../utils/tenantContext';
+import { withoutTenant } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 
 /**
- * Requires isPlatformAdmin flag on the user and nullifies tenant context
+ * Requires isPlatformAdmin flag on the user and runs the request with withoutTenant
  * so Prisma queries return cross-tenant data.
  * This is separate from the tenant-level super_admin role.
  * Verifies isPlatformAdmin via DB lookup (not in JWT payload).
@@ -25,6 +25,6 @@ export const requirePlatformAdmin = async (req: AuthRequest, res: Response, next
     return;
   }
 
-  // Run with null tenantId so queries are cross-tenant
-  tenantStorage.run({ tenantId: null }, next);
+  // Explicitly unscoped so queries are cross-tenant
+  withoutTenant('platform', () => next());
 };

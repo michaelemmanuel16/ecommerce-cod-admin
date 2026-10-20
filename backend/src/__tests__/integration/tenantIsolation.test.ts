@@ -10,7 +10,7 @@ import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { generateAccessToken } from '../../utils/jwt';
-import { tenantStorage } from '../../utils/tenantContext';
+import { tenantStorage, TenantContextMissing, withoutTenant } from '../../utils/tenantContext';
 import prisma from '../../utils/prisma';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
@@ -342,15 +342,15 @@ describe('Scenario 7 — Prisma middleware behaviour without tenant context', ()
     expect(tenantAOrders.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('raw Prisma query with no tenant context is unfiltered (system/seed access)', async () => {
-    // Without tenantStorage.run(), getTenantId() returns null and the extension
-    // passes through. This is intentional for seeding and admin operations.
-    const allOrders = await prismaBase.order.findMany({
-      where: { tenantId: { in: [tenantAId, tenantBId] } },
-    });
+  it('Prisma query with no tenant context throws TenantContextMissing (fail-closed)', async () => {
+    await expect(prisma.order.findMany({})).rejects.toThrow(TenantContextMissing);
+  });
 
+  it('inside withoutTenant the same query runs unscoped and sees both tenants', async () => {
+    const allOrders = await withoutTenant('test', () =>
+      prisma.order.findMany({ where: { tenantId: { in: [tenantAId, tenantBId] } } })
+    );
     const ids = allOrders.map((o) => o.tenantId);
-    // Both tenants' data is visible when no tenant context is set
     expect(ids).toContain(tenantAId);
   });
 });
