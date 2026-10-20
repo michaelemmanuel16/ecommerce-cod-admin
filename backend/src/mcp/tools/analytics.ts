@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { getTenantId } from '../../utils/tenantContext';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
@@ -34,6 +35,7 @@ export function registerAnalyticsTools(
         end.setHours(23, 59, 59, 999);
 
         const dateFilter = { createdAt: { gte: start, lte: end } };
+        const tenantId = getTenantId();
 
         const [orders, glRevenue, deliveredCount, statusCounts, topProducts] = await Promise.all([
           prisma.order.count({ where: { ...dateFilter, deletedAt: null } }),
@@ -63,7 +65,8 @@ export function registerAnalyticsTools(
           }),
           prisma.orderItem.groupBy({
             by: ['productId'],
-            where: { order: { ...dateFilter, deletedAt: null } },
+            // OrderItem has no tenantId: scope it through the parent order.
+            where: { order: { ...dateFilter, deletedAt: null, ...(tenantId ? { tenantId } : {}) } },
             _sum: { quantity: true },
             orderBy: { _sum: { quantity: 'desc' } },
             take: 5,

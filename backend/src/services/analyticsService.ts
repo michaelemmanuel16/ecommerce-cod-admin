@@ -1,4 +1,5 @@
 import prisma from '../utils/prisma';
+import { getTenantId } from '../utils/tenantContext';
 import { Prisma } from '@prisma/client';
 import { GL_ACCOUNTS } from '../config/glAccounts';
 
@@ -641,16 +642,20 @@ export class AnalyticsService {
    */
   async getProductPerformance(filters?: DateFilters) {
     const where: Prisma.OrderItemWhereInput = {};
+    // OrderItem has no tenantId: scope it through the parent order.
+    const tenantId = getTenantId();
+    const tenantFilter = tenantId ? { tenantId } : {};
 
     if (filters?.startDate || filters?.endDate) {
       where.order = {
         createdAt: {},
-        deletedAt: null
+        deletedAt: null,
+        ...tenantFilter
       } as any;
       if (filters.startDate) (where.order as any).createdAt.gte = filters.startDate;
       if (filters.endDate) (where.order as any).createdAt.lte = filters.endDate;
     } else {
-      where.order = { deletedAt: null } as any;
+      where.order = { deletedAt: null, ...tenantFilter } as any;
     }
 
     const productSales = await prisma.orderItem.groupBy({

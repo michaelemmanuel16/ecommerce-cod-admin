@@ -4,13 +4,16 @@ import { getTenantId } from './tenantContext';
 
 // Models that carry a tenantId column and need automatic scoping
 // Must match EXACTLY the PascalCase model names in prisma/schema.prisma
-const TENANT_SCOPED_MODELS = new Set([
+export const TENANT_SCOPED_MODELS = new Set([
   'User', 'Customer', 'Product', 'Order', 'Delivery',
   'Transaction', 'Expense', 'Account', 'JournalEntry', 'AccountTransaction',
   'Workflow', 'WorkflowExecution', 'WebhookConfig', 'Notification',
   'CheckoutForm', 'InventoryShipment', 'InventoryTransfer',
   'AgentBalance', 'AgentStock', 'MessageLog', 'SystemConfig',
   'McpApiKey', 'EmailTemplate', 'EmailCampaign',
+  'AgentCollection', 'AgentDeposit', 'AgentAgingBucket', 'Payout', 'Call',
+  'OrderHistory', 'AuditLog', 'WebhookLog', 'SmsTemplate', 'DownloadToken',
+  'FormSubmission', 'product_cost_entries', 'PendingCheckout', 'WebhookEvent',
 ]);
 
 /**

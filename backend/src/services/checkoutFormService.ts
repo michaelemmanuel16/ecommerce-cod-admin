@@ -532,8 +532,9 @@ export class CheckoutFormService {
         for (const pkg of data.packages) {
           if (pkg.id) {
             // Update existing package
+            // formId ties the child to existingForm, which the tenant-scoped lookup above verified
             await tx.formPackage.update({
-              where: { id: pkg.id },
+              where: { id: pkg.id, formId: formIdNum },
               data: {
                 name: pkg.name,
                 description: pkg.description,
@@ -579,7 +580,7 @@ export class CheckoutFormService {
           if (upsell.id) {
             // Update existing upsell
             await tx.formUpsell.update({
-              where: { id: upsell.id },
+              where: { id: upsell.id, formId: formIdNum },
               data: {
                 name: upsell.name,
                 description: upsell.description,

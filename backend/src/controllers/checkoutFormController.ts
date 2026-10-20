@@ -513,7 +513,8 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       data: updateData
     });
 
-    // Update packages if provided
+    // Update packages if provided. `existing` above was read through the tenant-scoped
+    // client, so formId is a form of this tenant.
     if (packages) {
       await prisma.formPackage.deleteMany({
         where: { formId: formId }
