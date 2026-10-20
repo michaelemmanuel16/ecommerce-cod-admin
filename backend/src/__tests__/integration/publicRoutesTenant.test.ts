@@ -148,13 +148,13 @@ describe('public forms by slug', () => {
 });
 
 describe('order tracking', () => {
-  it('finds the order in its own tenant and returns the same fields as before', async () => {
+  it('finds the order in its own tenant and returns the public fields', async () => {
     const res = await request(app).post('/api/public/orders/track').send({ orderId: ids.A.orderId, phoneNumber: phone('A') });
     expect(res.status).toBe(200);
     expect(res.body.order.id).toBe(ids.A.orderId);
     expect(res.body.order.items[0].name).toBe('Digital A');
     expect(Object.keys(res.body.order).sort()).toEqual(
-      ['createdAt', 'customer', 'estimatedDelivery', 'history', 'id', 'items', 'status', 'totalAmount']
+      ['createdAt', 'customer', 'estimatedDelivery', 'history', 'id', 'items', 'partnerName', 'status', 'totalAmount']
     );
   });
 

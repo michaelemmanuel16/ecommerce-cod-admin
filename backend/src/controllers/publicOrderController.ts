@@ -614,8 +614,14 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
           customer: {
             select: {
               firstName: true,
-              lastName: true,
-              phoneNumber: true
+              lastName: true
+            }
+          },
+          // Delivery partner: name only, no contact details
+          deliveryAgent: {
+            select: {
+              firstName: true,
+              lastName: true
             }
           },
           orderItems: {
@@ -649,6 +655,7 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
         createdAt: order.createdAt,
         estimatedDelivery: order.estimatedDelivery,
         customer: order.customer,
+        partnerName: order.deliveryAgent ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}` : null,
         items: order.orderItems.map(item => ({
           name: item.product.name,
           quantity: item.quantity,
