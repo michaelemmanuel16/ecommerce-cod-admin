@@ -10,11 +10,6 @@ on:
       - '.github/workflows/backend-ci.yml'
   pull_request:
     branches: [main, develop]
-    paths:
-      - 'backend/**'
-      - 'scripts/deploy*.sh'
-      - 'scripts/tests/**'
-      - '.github/workflows/backend-ci.yml'
 
 env:
   NODE_VERSION: '20.x'
