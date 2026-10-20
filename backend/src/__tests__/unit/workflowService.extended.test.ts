@@ -25,6 +25,7 @@ jest.mock('../../utils/logger', () => ({
 
 const makeWorkflow = (overrides: any = {}) => ({
   id: 1,
+  tenantId: 'tenant-1',
   name: 'Test Workflow',
   description: 'Test',
   triggerType: 'status_change' as WorkflowTriggerType,

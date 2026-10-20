@@ -93,6 +93,7 @@ describe('WorkflowService', () => {
 
   describe('executeWorkflow', () => {
     const mockWorkflow = {
+      tenantId: 'tenant-1',
       id: 'workflow-1',
       name: 'Test Workflow',
       isActive: true,
@@ -450,6 +451,7 @@ describe('WorkflowService', () => {
       const mockWorkflows = [
         {
           id: 'workflow-1',
+          tenantId: 'tenant-1',
           name: 'Order Confirmed Workflow',
           isActive: true,
           triggerType: 'status_change',

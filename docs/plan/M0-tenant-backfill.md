@@ -96,3 +96,21 @@ Migration time: 0.10 seconds. Parity check: same result as T09 (only the `webhoo
 A unique index treats NULL tenants as different. Account rows with NULL `tenant_id` are not blocked by it. There are none today. T13 moves any that appear.
 
 Journal entry numbers have 5 digits: `JE-YYYYMMDD-00001`. The next number was already counted per tenant. The old global unique made the second tenant collide. Now both tenants get `-00001` on the same day (integration test `perTenantUniques`).
+
+## Orphan rows: evidence
+
+On the prod copy, the 6 orphan `webhook_logs` are `/import` calls from 2026-04-08 and 2026-04-09. That is before any other tenant existed (the next tenant was created 2026-05-15). They are for the owner's own products. The orphan `notifications` are "Overdue Agent Collections" alerts to the platform super admin, who is the owner. So giving all of them to company-1 is correct.
+
+# M0: workflow_executions tenant backfill
+
+Migration `20261020140000_workflow_executions_tenant_not_null`. It fills `workflow_executions.tenant_id` from `workflows.tenant_id`. A row that still has no tenant goes to the owner tenant (oldest `createdAt`) and is written to `m0_tenant_backfill_orphans`. Then the column is set to NOT NULL. `schema.prisma` now has `tenantId` required on `WorkflowExecution`.
+
+Code: both places that create a `WorkflowExecution` in `workflowService.ts` set `tenantId: resolveTenantId(workflow.tenantId)`.
+
+Rehearsal on `m0_rehearsal2` (restored from `prod_readonly_20261020_0027.dump`): 35,562 rows, 7,915 with NULL `tenant_id` before. `prisma migrate deploy` took 2.4 seconds wall clock for the three pending migrations, including Prisma start-up. After: **0 NULL rows**. Orphans from this migration: none (every row had a parent workflow with a tenant). Parity: only the accepted `webhook_configs.tenant_id` drift shows on the prod copy; "No difference detected" on a fresh database.
+
+Applied to `ecommerce_cod` and `ecommerce_cod_test`.
+
+## Other scoped models that still have a nullable `tenantId`
+
+NULL counts on `ecommerce_cod` (not changed): `users` 1 of 20 (the platform super admin), `system_config` 1 of 4 (the platform row). All other nullable ones have 0 NULL rows: customers, products, orders, deliveries, transactions, expenses, accounts, journal_entries, workflows, webhook_configs, checkout_forms, inventory_shipments, inventory_transfers, agent_balances, agent_stock, message_logs, email_templates, email_campaigns.
