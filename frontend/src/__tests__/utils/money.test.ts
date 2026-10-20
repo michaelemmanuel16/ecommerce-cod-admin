@@ -33,14 +33,14 @@ describe('normalizeMoney', () => {
   it('converts money keys deep, leaves phones, codes and ids alone', () => {
     const data = {
       orders: [{ id: '7', totalAmount: '249.00', phoneNumber: '0244123456', customer: { totalSpent: '10.00' } }],
-      summary: { profit: '0.00', totalRevenue: 12, code: '1000', bucket_0_1: '5.00' },
+      summary: { profit: '0.00', totalRevenue: 12, code: '1000', bucket_0_1: '5.00', depositPaid: '20.00', codPending: '3.50', customerId: '9' },
     };
     normalizeMoney(data);
     expect(data.orders[0].totalAmount).toBe(249);
     expect(data.orders[0].customer.totalSpent).toBe(10);
     expect(data.orders[0].phoneNumber).toBe('0244123456');
     expect(data.orders[0].id).toBe('7');
-    expect(data.summary).toEqual({ profit: 0, totalRevenue: 12, code: '1000', bucket_0_1: 5 });
+    expect(data.summary).toEqual({ profit: 0, totalRevenue: 12, code: '1000', bucket_0_1: 5, depositPaid: 20, codPending: 3.5, customerId: '9' });
   });
   it('tolerates null and primitives', () => {
     expect(normalizeMoney(null)).toBeNull();
