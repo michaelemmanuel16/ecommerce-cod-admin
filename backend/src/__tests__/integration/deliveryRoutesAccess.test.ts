@@ -8,7 +8,7 @@ import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { generateAccessToken } from '../../utils/jwt';
-import deliveryService from '../../services/deliveryService';
+import { GLAutomationService } from '../../services/glAutomationService';
 
 jest.mock('../../utils/socketInstance', () => ({
   setSocketInstance: jest.fn(),
@@ -134,8 +134,8 @@ describe('delivery route access', () => {
 
   it('admin completing for the agent writes an audit row; the agent completing does not', async () => {
     // The GL posting inside completeDelivery needs a chart of accounts and has its own tests;
-    // this test is about who may call it and the audit row.
-    const complete = jest.spyOn(deliveryService, 'completeDelivery').mockResolvedValue({ message: 'ok', glEntry: null });
+    // this test is about who may call it and the audit row, so skip the posting.
+    const skipGL = jest.spyOn(GLAutomationService, 'isRevenueAlreadyRecognized').mockReturnValue(true);
     const body = { proofType: 'signature', proofData: 'sig', recipientName: 'Recipient', codAmount: 10 };
     const res = await request(app).patch(`/api/deliveries/${T.dA.id}/complete`).set(auth(T.admin)).send(body);
     expect(res.status).toBe(200);
@@ -148,6 +148,6 @@ describe('delivery route access', () => {
     const own = await request(app).patch(`/api/deliveries/${T.dB.id}/complete`).set(auth(T.agentB)).send(body);
     expect(own.status).toBe(200);
     expect(await prismaBase.auditLog.count({ where: { resource: 'delivery', resourceId: String(T.dB.id) } })).toBe(0);
-    complete.mockRestore();
+    skipGL.mockRestore();
   });
 });

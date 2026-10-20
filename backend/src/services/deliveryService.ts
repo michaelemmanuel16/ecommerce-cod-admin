@@ -3,6 +3,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
+import { Requester } from '../utils/authUtils';
 import logger from '../utils/logger';
 import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService } from './glAutomationService';
@@ -41,6 +42,13 @@ interface UpdateProofData {
   recipientName?: string;
   recipientPhone?: string;
 }
+
+/** A delivery agent may only touch their own deliveries (cross-tenant rows are already a 404). */
+const assertAgentOwnsDelivery = (delivery: { agentId: number | null }, requester?: Requester) => {
+  if (requester?.role === 'delivery_agent' && delivery.agentId !== requester.id) {
+    throw new AppError('Forbidden: this delivery is assigned to another agent', 403);
+  }
+};
 
 export class DeliveryService {
   /**
@@ -101,7 +109,7 @@ export class DeliveryService {
   /**
    * Get single delivery by ID
    */
-  async getDeliveryById(deliveryId: string) {
+  async getDeliveryById(deliveryId: string, requester?: Requester) {
 
     const delivery = await prisma.delivery.findUnique({
       where: { id: parseInt(deliveryId, 10) },
@@ -124,6 +132,7 @@ export class DeliveryService {
       throw new AppError('Delivery not found', 404);
     }
 
+    assertAgentOwnsDelivery(delivery, requester);
     return delivery;
   }
 
@@ -243,7 +252,7 @@ export class DeliveryService {
   /**
    * Upload proof of delivery
    */
-  async uploadProofOfDelivery(deliveryId: string, data: UpdateProofData) {
+  async uploadProofOfDelivery(deliveryId: string, data: UpdateProofData, requester?: Requester) {
 
     const deliveryIdNum = parseInt(deliveryId, 10);
     const delivery = await prisma.delivery.findUnique({
@@ -254,6 +263,8 @@ export class DeliveryService {
     if (!delivery) {
       throw new AppError('Delivery not found', 404);
     }
+
+    assertAgentOwnsDelivery(delivery, requester);
 
     const updated = await prisma.delivery.update({
       where: { id: deliveryIdNum },
@@ -277,7 +288,7 @@ export class DeliveryService {
   /**
    * Complete delivery
    */
-  async completeDelivery(deliveryId: string, data: CompleteDeliveryData, userId?: string) {
+  async completeDelivery(deliveryId: string, data: CompleteDeliveryData, userId?: string, requester?: Requester) {
 
     const delivery = await prisma.delivery.findUnique({
       where: { id: parseInt(deliveryId, 10) },
@@ -287,6 +298,8 @@ export class DeliveryService {
     if (!delivery) {
       throw new AppError('Delivery not found', 404);
     }
+
+    assertAgentOwnsDelivery(delivery, requester);
 
     if (delivery.actualDeliveryTime) {
       throw new AppError('Delivery already completed', 400);
@@ -310,6 +323,20 @@ export class DeliveryService {
           recipientPhone: data.recipientPhone
         }
       });
+
+      // an admin completing for the assigned agent leaves a trace
+      if ((requester?.role === 'admin' || requester?.role === 'super_admin') && delivery.agentId !== requester.id) {
+        await tx.auditLog.create({
+          data: {
+            tenantId: resolveTenantId(delivery.tenantId),
+            userId: requester.id,
+            action: 'complete_delivery_for_agent',
+            resource: 'delivery',
+            resourceId: deliveryId,
+            metadata: { agentId: delivery.agentId }
+          }
+        });
+      }
 
       // Update order status
       await tx.order.update({

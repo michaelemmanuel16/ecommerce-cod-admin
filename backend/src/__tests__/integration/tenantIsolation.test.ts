@@ -362,7 +362,7 @@ describe('Scenario 7 — Prisma middleware behaviour without tenant context', ()
 // /api/admin/config, which carries no tenant context and therefore returned the
 // global (USD) SystemConfig row. The authenticated /api/admin/config/me route
 // resolves the caller's tenant from the JWT, so each tenant gets its own
-// currency, while the public route must stay tenant-blind.
+// currency. The public route now needs a tenant or form slug and is 404 without one.
 
 describe('Scenario 8 — Per-tenant currency config', () => {
   it('authenticated config route returns Tenant A currency (GHS)', async () => {

@@ -27,6 +27,7 @@ export const getPublicConfigBySlug = async (req: AuthRequest, res: Response, nex
   try {
     const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
     const config = await adminService.getPublicConfigBySlug({ tenant: str(req.query.tenant), form: str(req.query.form) });
+    res.set('Cache-Control', 'public, max-age=60');
     res.json(config);
   } catch (error) {
     next(error);

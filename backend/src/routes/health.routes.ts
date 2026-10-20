@@ -1,27 +1,15 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import crypto from 'crypto';
+import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
 import { healthLimiter } from '../middleware/rateLimiter';
 import logger from '../utils/logger';
+import { requireSharedSecret } from '../middleware/requireSharedSecret';
 
 const router = Router();
 
 // /metrics and /health/detailed expose internals: they need the shared secret in the
 // x-metrics-token header. With METRICS_TOKEN unset they always answer 401.
-const requireMetricsToken = (req: Request, res: Response, next: NextFunction): void => {
-  const expected = process.env.METRICS_TOKEN;
-  const given = req.headers['x-metrics-token'];
-  if (expected && typeof given === 'string') {
-    const a = crypto.createHash('sha256').update(given).digest();
-    const b = crypto.createHash('sha256').update(expected).digest();
-    if (crypto.timingSafeEqual(a, b)) {
-      next();
-      return;
-    }
-  }
-  res.status(401).json({ error: 'Unauthorized' });
-};
+const requireMetricsToken = requireSharedSecret('METRICS_TOKEN', 'x-metrics-token');
 const prisma = new PrismaClient();
 
 // Lazy Redis client with proper cleanup

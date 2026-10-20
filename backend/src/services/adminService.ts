@@ -13,7 +13,8 @@ import {
   preserveMaskedSecrets,
   SENSITIVE_FIELDS,
 } from '../utils/providerCrypto';
-import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
+import { tenantIdForFormSlug } from '../middleware/publicTenant';
 
 export const adminService = {
   /**
@@ -155,29 +156,23 @@ export const adminService = {
    * tenant slug or form slug. Read-only (never seeds a row). 404 for no slug or an unknown slug.
    */
   async getPublicConfigBySlug(slugs: { tenant?: string; form?: string }) {
-    const tenantId = await withoutTenant('public-config-slug', async () => {
-      if (slugs.tenant) {
-        const tenant = await prisma.tenant.findUnique({ where: { slug: slugs.tenant }, select: { id: true } });
-        return tenant?.id ?? null;
-      }
-      if (slugs.form) {
-        const form = await prisma.checkoutForm.findUnique({ where: { slug: slugs.form, isActive: true }, select: { tenantId: true } });
-        return form?.tenantId ?? null;
-      }
-      return null;
+    const select = {
+      name: true,
+      currency: true,
+      systemConfigs: { select: { businessName: true, currency: true }, take: 1 },
+    } as const;
+    const tenant = await withoutTenant('public-config-slug', async () => {
+      if (slugs.tenant) return prisma.tenant.findUnique({ where: { slug: slugs.tenant }, select });
+      const tenantId = slugs.form ? await tenantIdForFormSlug(slugs.form) : null;
+      return tenantId ? prisma.tenant.findUnique({ where: { id: tenantId }, select }) : null;
     });
-    if (!tenantId) throw new AppError('Not found', 404);
+    if (!tenant) throw new AppError('Not found', 404);
 
-    return runInTenant(tenantId, async () => {
-      const [config, tenant] = await Promise.all([
-        prisma.systemConfig.findUnique({ where: { tenantId }, select: { businessName: true, currency: true } }),
-        prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, currency: true } }),
-      ]);
-      return {
-        businessName: config?.businessName ?? tenant?.name ?? null,
-        currency: config?.currency ?? tenant?.currency ?? 'USD',
-      };
-    });
+    const config = tenant.systemConfigs[0];
+    return {
+      businessName: config?.businessName ?? tenant.name ?? null,
+      currency: config?.currency ?? tenant.currency ?? 'USD',
+    };
   },
 
   async updateSystemConfig(requester: Requester, data: {

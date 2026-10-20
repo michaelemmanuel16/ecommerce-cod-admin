@@ -6,7 +6,7 @@ interface ConfigState {
     businessName: string;
     currency: string;
     isLoading: boolean;
-    fetchConfig: () => Promise<void>;
+    fetchConfig: (formSlug?: string) => Promise<void>;
 }
 
 export const useConfigStore = create<ConfigState>((set) => ({
@@ -14,22 +14,20 @@ export const useConfigStore = create<ConfigState>((set) => ({
     currency: 'USD',
     isLoading: false,
 
-    fetchConfig: async () => {
+    fetchConfig: async (formSlug) => {
         set({ isLoading: true });
         try {
-            // When signed in, fetch the tenant-scoped config so the dashboard shows
-            // THIS tenant's currency. The public /config route needs a slug: the
-            // public form page (/form/<slug>) passes its form slug. Other token-less
-            // pages have no tenant, so they keep the defaults.
+            // Signed in: the tenant-scoped config, so the dashboard shows THIS tenant's
+            // currency. Signed out: the public form page passes its form slug. Other
+            // token-less pages have no tenant and keep the defaults.
             const isAuthenticated = Boolean(useAuthStore.getState().accessToken);
-            const formSlug = window.location.pathname.match(/^\/form\/([^/]+)/)?.[1];
-            if (!isAuthenticated && !formSlug) {
+            let config;
+            if (isAuthenticated) config = await adminService.getTenantConfig();
+            else if (formSlug) config = await adminService.getPublicConfig(formSlug);
+            else {
                 set({ isLoading: false });
                 return;
             }
-            const config = isAuthenticated
-                ? await adminService.getTenantConfig()
-                : await adminService.getPublicConfig(formSlug!);
             set({
                 businessName: config.businessName || 'COD Admin',
                 currency: config.currency || 'USD',
