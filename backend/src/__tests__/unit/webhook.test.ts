@@ -67,6 +67,7 @@ describe('Webhook Controller', () => {
 
       const mockWebhookConfig = {
         id: 'webhook-1',
+        tenantId: 'tenant-1',
         apiKey: 'valid-api-key',
         isActive: true,
         fieldMapping: {},
@@ -162,6 +163,7 @@ describe('Webhook Controller', () => {
       prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
       prismaMock.webhookConfig.findFirst.mockResolvedValue({
         id: 'webhook-1',
+        tenantId: 'tenant-1',
         isActive: true,
         fieldMapping: {},
       } as any);
@@ -190,7 +192,7 @@ describe('Webhook Controller', () => {
   });
 
   describe('deduplication', () => {
-    const webhookConfig = { id: 'webhook-1', isActive: true, fieldMapping: {} };
+    const webhookConfig = { id: 'webhook-1', tenantId: 'tenant-1', isActive: true, fieldMapping: {} };
     const customer = { id: 'c1', phoneNumber: '+1234567890' };
 
     beforeEach(() => {

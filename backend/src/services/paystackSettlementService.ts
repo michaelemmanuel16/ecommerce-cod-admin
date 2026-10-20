@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { resolveTenantId } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { paystackService } from './paystackService';
@@ -150,6 +151,7 @@ export async function settlePaystackPayment(
   // COD path writes at creation, written here now that payment is confirmed.
   await prisma.formSubmission.create({
     data: {
+      tenantId: resolveTenantId(pending.tenantId),
       formId: pending.formId,
       orderId: order.id,
       formData: pending.formData ?? Prisma.JsonNull,
@@ -188,6 +190,7 @@ export async function settlePaystackPayment(
 
     await tx.orderHistory.create({
       data: {
+        tenantId: resolveTenantId(order.tenantId),
         orderId: order.id,
         status: 'confirmed',
         notes: `Payment confirmed via Paystack (ref: ${reference})`,
@@ -250,6 +253,7 @@ export async function settlePaystackPayment(
       order.status = 'digital_delivered';
       await prisma.orderHistory.create({
         data: {
+          tenantId: resolveTenantId(order.tenantId),
           orderId: order.id,
           status: 'digital_delivered',
           notes: 'Download link sent to customer',
@@ -270,6 +274,7 @@ export async function settlePaystackPayment(
         });
         await prisma.orderHistory.create({
           data: {
+            tenantId: resolveTenantId(order.tenantId),
             orderId: order.id,
             status: 'confirmed',
             notes: `Automatic digital delivery failed: ${err.message}. Customer was charged. Manual resend required.`,

@@ -43,6 +43,7 @@ import { prismaMock } from '../mocks/prisma.mock';
 import orderService from '../../services/orderService';
 import { AppError } from '../../middleware/errorHandler';
 import { OrderStatus } from '@prisma/client';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 const adminRequester = { id: 1, role: 'admin', tenantId: 'tenant-1' };
 const salesRepRequester = { id: 10, role: 'sales_rep', tenantId: 'tenant-1' };
@@ -50,6 +51,7 @@ const agentRequester = { id: 20, role: 'delivery_agent', tenantId: 'tenant-1' };
 const managerRequester = { id: 2, role: 'manager', tenantId: 'tenant-1' };
 
 describe('OrderService (extended branch coverage)', () => {
+  useTestTenant();
   beforeEach(() => {
     jest.clearAllMocks();
   });

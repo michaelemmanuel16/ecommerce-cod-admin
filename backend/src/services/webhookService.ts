@@ -6,7 +6,7 @@ import { parsePackageField } from '../utils/packageParser';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
-import { tenantStorage } from '../utils/tenantContext';
+import { tenantStorage, resolveTenantId } from '../utils/tenantContext';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 
 
@@ -198,7 +198,7 @@ export class WebhookService {
    * webhook entry path so the two can't drift back into the bug.
    */
   private async enforceSignature(
-    webhookLogId: number,
+    webhookLogId: number | null,
     config: { requireSignature?: boolean | null; secret: string } | null,
     signature: string | undefined,
     body: unknown
@@ -221,41 +221,23 @@ export class WebhookService {
   async processWebhook(data: ProcessWebhookData) {
     const { signature, apiKey, body, headers, endpoint, method } = data;
 
-    // Create webhook log (WebhookLog has no tenantId column)
-    const webhookLog = await prisma.webhookLog.create({
-      data: {
-        endpoint,
-        method,
-        headers: headers as any,
-        body: body as any,
-        success: false,
+    // Find the config first: the log row needs its tenant
+    let webhookConfig = null;
+    if (apiKey) {
+      webhookConfig = await prisma.webhookConfig.findFirst({
+        where: { apiKey, isActive: true }
+      });
+
+      if (!webhookConfig) {
+        logger.warn('Webhook rejected: invalid API key', { endpoint });
+        throw new AppError('Invalid API key', 401);
       }
-    });
+    }
+
+    const webhookLog = await this.createWebhookLog(webhookConfig, { endpoint, method, headers, body });
 
     try {
-      // Find webhook config by API key
-      let webhookConfig = null;
-      if (apiKey) {
-        webhookConfig = await prisma.webhookConfig.findFirst({
-          where: { apiKey, isActive: true }
-        });
-
-        if (!webhookConfig) {
-          await this.updateWebhookLog(webhookLog.id, {
-            success: false,
-            errorMessage: 'Invalid API key',
-            statusCode: 401
-          });
-          throw new AppError('Invalid API key', 401);
-        }
-
-        await prisma.webhookLog.update({
-          where: { id: webhookLog.id },
-          data: { webhookConfigId: webhookConfig.id }
-        });
-      }
-
-      await this.enforceSignature(webhookLog.id, webhookConfig, signature, body);
+      await this.enforceSignature(webhookLog?.id ?? null, webhookConfig, signature, body);
 
       // Process orders within tenant context derived from webhook config
       const tenantId = webhookConfig?.tenantId as string | null;
@@ -264,7 +246,7 @@ export class WebhookService {
         : await this.processOrdersFromWebhook(body, webhookConfig);
 
       // Update webhook log as successful
-      await this.updateWebhookLog(webhookLog.id, {
+      await this.updateWebhookLog(webhookLog?.id ?? null, {
         success: true,
         response: results,
         statusCode: 200
@@ -277,10 +259,10 @@ export class WebhookService {
     } catch (error: any) {
       logger.error('Webhook processing error', {
         error: error.message,
-        webhookLogId: webhookLog.id
+        webhookLogId: webhookLog?.id
       });
 
-      await this.updateWebhookLog(webhookLog.id, {
+      await this.updateWebhookLog(webhookLog?.id ?? null, {
         success: false,
         errorMessage: error.message,
         statusCode: error.statusCode || 500
@@ -296,42 +278,23 @@ export class WebhookService {
   async processWebhookByUniqueUrl(data: ProcessWebhookByUniqueUrlData) {
     const { uniqueUrl, signature, body, headers, endpoint, method } = data;
 
-    // Create webhook log (WebhookLog has no tenantId column)
-    const webhookLog = await prisma.webhookLog.create({
-      data: {
-        endpoint,
-        method,
-        headers: headers as any,
-        body: body as any,
-        success: false,
+    // Find webhook config by unique URL (include product relation). The log row needs its tenant.
+    const webhookConfig = await prisma.webhookConfig.findUnique({
+      where: { uniqueUrl, isActive: true },
+      include: {
+        product: true
       }
     });
 
+    if (!webhookConfig) {
+      logger.warn('Webhook rejected: invalid webhook URL', { endpoint });
+      throw new AppError('Webhook not found', 404);
+    }
+
+    const webhookLog = await this.createWebhookLog(webhookConfig, { endpoint, method, headers, body });
+
     try {
-      // Find webhook config by unique URL (include product relation)
-      const webhookConfig = await prisma.webhookConfig.findUnique({
-        where: { uniqueUrl, isActive: true },
-        include: {
-          product: true
-        }
-      });
-
-      if (!webhookConfig) {
-        await this.updateWebhookLog(webhookLog.id, {
-          success: false,
-          errorMessage: 'Invalid webhook URL',
-          statusCode: 404
-        });
-        throw new AppError('Webhook not found', 404);
-      }
-
-      // Link webhook log to config
-      await prisma.webhookLog.update({
-        where: { id: webhookLog.id },
-        data: { webhookConfigId: webhookConfig.id }
-      });
-
-      await this.enforceSignature(webhookLog.id, webhookConfig, signature, body);
+      await this.enforceSignature(webhookLog?.id ?? null, webhookConfig, signature, body);
 
       // Process orders within tenant context derived from webhook config
       const tenantId = webhookConfig?.tenantId as string | null;
@@ -340,7 +303,7 @@ export class WebhookService {
         : await this.processOrdersFromWebhook(body, webhookConfig);
 
       // Update webhook log as successful
-      await this.updateWebhookLog(webhookLog.id, {
+      await this.updateWebhookLog(webhookLog?.id ?? null, {
         success: true,
         response: results,
         statusCode: 200
@@ -353,10 +316,10 @@ export class WebhookService {
     } catch (error: any) {
       logger.error('Webhook processing error', {
         error: error.message,
-        webhookLogId: webhookLog.id
+        webhookLogId: webhookLog?.id
       });
 
-      await this.updateWebhookLog(webhookLog.id, {
+      await this.updateWebhookLog(webhookLog?.id ?? null, {
         success: false,
         errorMessage: error.message,
         statusCode: error.statusCode || 500
@@ -524,6 +487,7 @@ export class WebhookService {
               } : undefined,
               orderHistory: {
                 create: {
+                  tenantId: resolveTenantId(webhookConfig?.tenantId),
                   status: 'pending_confirmation',
                   notes: 'Order imported via webhook'
                 }
@@ -654,8 +618,33 @@ export class WebhookService {
   /**
    * Update webhook log
    */
+  /**
+   * Create the log row. It needs the tenant of the webhook config. A request that
+   * matched no config has no tenant, so it is written to the app log only.
+   */
+  private async createWebhookLog(
+    webhookConfig: { id: number; tenantId?: string | null } | null,
+    data: { endpoint: string; method: string; headers: unknown; body: unknown }
+  ): Promise<{ id: number } | null> {
+    if (!webhookConfig?.tenantId) {
+      logger.warn('Webhook request has no tenant, not written to webhook_logs', { endpoint: data.endpoint });
+      return null;
+    }
+    return prisma.webhookLog.create({
+      data: {
+        tenantId: webhookConfig.tenantId,
+        webhookConfigId: webhookConfig.id,
+        endpoint: data.endpoint,
+        method: data.method,
+        headers: data.headers as any,
+        body: data.body as any,
+        success: false,
+      }
+    });
+  }
+
   private async updateWebhookLog(
-    logId: number,
+    logId: number | null,
     data: {
       success: boolean;
       response?: any;
@@ -663,6 +652,7 @@ export class WebhookService {
       statusCode?: number;
     }
   ) {
+    if (logId === null) return null;
     return prisma.webhookLog.update({
       where: { id: logId },
       data: {

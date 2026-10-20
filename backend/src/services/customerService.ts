@@ -3,7 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
 
 interface CreateCustomerData {
@@ -386,6 +386,7 @@ export class CustomerService {
     if (requester) {
       await prisma.auditLog.create({
         data: {
+          tenantId: resolveTenantId(updated.tenantId),
           userId: requester.id,
           action: 'update',
           resource: 'customer',
@@ -429,6 +430,7 @@ export class CustomerService {
     if (requester) {
       await prisma.auditLog.create({
         data: {
+          tenantId: resolveTenantId(customer.tenantId),
           userId: requester.id,
           action: 'deactivate',
           resource: 'customer',
@@ -847,6 +849,7 @@ export class CustomerService {
     if (requester) {
       await prisma.auditLog.create({
         data: {
+          tenantId: resolveTenantId(primaryCustomer.tenantId),
           userId: requester.id,
           action: 'merge',
           resource: 'customer',

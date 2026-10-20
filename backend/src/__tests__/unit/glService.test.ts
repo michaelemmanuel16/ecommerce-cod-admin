@@ -15,6 +15,7 @@ import glService from '../../services/glService';
 import { AppError } from '../../middleware/errorHandler';
 import { AccountType, NormalBalance, Prisma } from '@prisma/client';
 import { tenantStorage } from '../../utils/tenantContext';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
@@ -27,6 +28,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 describe('GLService', () => {
+  useTestTenant();
   const mockUser = {
     id: 1,
     email: 'admin@test.com',

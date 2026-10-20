@@ -46,8 +46,10 @@ import { prismaMock } from '../mocks/prisma.mock';
 import { communicationService } from '../../services/communicationService';
 import whatsappService from '../../services/whatsappService';
 import { smsService } from '../../services/smsService';
+import { useTestTenant, TEST_TENANT_ID } from '../mocks/tenant.mock';
 
 describe('CommunicationService', () => {
+  useTestTenant();
   describe('getMessages', () => {
     it('should delegate to whatsappService.getMessages with params', async () => {
       const mockResult = {
@@ -308,7 +310,7 @@ describe('CommunicationService', () => {
 
         const result = await communicationService.createTemplate(templateData);
 
-        expect(prismaMock.smsTemplate.create).toHaveBeenCalledWith({ data: templateData });
+        expect(prismaMock.smsTemplate.create).toHaveBeenCalledWith({ data: { ...templateData, tenantId: TEST_TENANT_ID } });
         expect(result).toEqual(mockCreated);
       });
     });

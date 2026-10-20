@@ -3,7 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma, AccountType, NormalBalance, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 
 
 interface AccountFilters {
@@ -533,6 +533,7 @@ export class GLService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(account.tenantId),
         userId: requester?.id,
         action: 'create_account',
         resource: 'account',
@@ -620,6 +621,7 @@ export class GLService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(updated.tenantId),
         userId: requester?.id,
         action: 'update_account',
         resource: 'account',
@@ -684,6 +686,7 @@ export class GLService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(account.tenantId),
         userId: requester?.id,
         action: 'delete_account',
         resource: 'account',
@@ -723,6 +726,7 @@ export class GLService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(updated.tenantId),
         userId: requester?.id,
         action: 'toggle_account_status',
         resource: 'account',
@@ -828,6 +832,7 @@ export class GLService {
       // Create audit log
       await tx.auditLog.create({
         data: {
+          tenantId: resolveTenantId(entry.tenantId),
           userId: requester?.id,
           action: 'create_journal_entry',
           resource: 'journal_entry',
@@ -1082,6 +1087,7 @@ export class GLService {
       // Create audit log
       await tx.auditLog.create({
         data: {
+          tenantId: resolveTenantId(entry.tenantId),
           userId: requester?.id,
           action: 'void_journal_entry',
           resource: 'journal_entry',

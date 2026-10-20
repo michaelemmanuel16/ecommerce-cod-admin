@@ -1,4 +1,5 @@
 import prisma from '../utils/prisma';
+import { resolveTenantId } from '../utils/tenantContext';
 import { OrderStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GLAutomationService } from './glAutomationService';
@@ -90,8 +91,10 @@ class PayoutService {
 
         return prisma.$transaction(async (tx) => {
             // 1. Create the Payout record
+            const rep = await tx.user.findUnique({ where: { id: repId }, select: { tenantId: true } });
             const payout = await tx.payout.create({
                 data: {
+                    tenantId: resolveTenantId(rep?.tenantId),
                     repId,
                     amount,
                     method,

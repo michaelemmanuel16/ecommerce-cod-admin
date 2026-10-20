@@ -1,4 +1,5 @@
 import prisma, { prismaBase } from '../utils/prisma';
+import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
@@ -320,6 +321,7 @@ export class OrderService {
           },
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(customer.tenantId),
               status: 'pending_confirmation',
               notes: 'Order created',
               changedBy: data.createdById
@@ -444,7 +446,7 @@ export class OrderService {
               },
               totalAmount: orderData.totalAmount
             },
-            select: { id: true, deliveryAddress: true, deletedAt: true, status: true },
+            select: { id: true, deliveryAddress: true, deletedAt: true, status: true, tenantId: true },
             orderBy: { createdAt: 'desc' },
             take: 20
           });
@@ -484,6 +486,7 @@ export class OrderService {
                 });
                 await tx.orderHistory.create({
                   data: {
+                    tenantId: resolveTenantId(matchingExisting.tenantId),
                     orderId: matchingExisting.id,
                     status: newStatus,
                     notes: 'Status updated via bulk CSV re-import',
@@ -599,6 +602,7 @@ export class OrderService {
                 orderItems: orderItemsData.length > 0 ? { create: orderItemsData } : undefined,
                 orderHistory: {
                   create: {
+                    tenantId: resolveTenantId(),
                     status: orderData.status || 'pending_confirmation',
                     notes: 'Order imported via bulk CSV',
                     changedBy: createdById
@@ -1163,6 +1167,7 @@ export class OrderService {
           ...(isReturnStatus && order.revenueRecognized ? { revenueRecognized: false } : {}),
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(order.tenantId),
               status: data.status,
               notes: data.notes || `Status changed to ${data.status} `,
               changedBy: data.changedBy
@@ -1343,6 +1348,7 @@ export class OrderService {
           status: 'cancelled',
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(order.tenantId),
               status: 'cancelled',
               notes: notes || 'Order cancelled',
               changedBy
@@ -1433,6 +1439,7 @@ export class OrderService {
       // Create audit trail
       await tx.orderHistory.create({
         data: {
+          tenantId: resolveTenantId(order.tenantId),
           orderId: order.id,
           status: order.status,
           notes: `Order deleted by user ${userId || 'system'} `,
@@ -1521,6 +1528,7 @@ export class OrderService {
 
       // Prepare history data
       historyData.push({
+        tenantId: resolveTenantId(order.tenantId),
         orderId: order.id,
         status: order.status,
         notes: `Order deleted in bulk by user ${userId || 'system'} `,
@@ -1647,6 +1655,7 @@ export class OrderService {
         customerRepId: customerRepId,
         orderHistory: {
           create: {
+            tenantId: resolveTenantId(order.tenantId),
             status: order.status,
             notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName} `,
             changedBy: requester.id,
@@ -1674,6 +1683,7 @@ export class OrderService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(order.tenantId),
         userId: requester.id,
         action: 'assign_rep',
         resource: 'order',
@@ -1726,6 +1736,7 @@ export class OrderService {
         deliveryAgentId: deliveryAgentId,
         orderHistory: {
           create: {
+            tenantId: resolveTenantId(order.tenantId),
             status: order.status,
             notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName} `,
             changedBy: requester.id,
@@ -1753,6 +1764,7 @@ export class OrderService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(order.tenantId),
         userId: requester.id,
         action: 'assign_agent',
         resource: 'order',

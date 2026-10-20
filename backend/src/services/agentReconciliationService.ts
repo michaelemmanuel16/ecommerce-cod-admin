@@ -4,7 +4,7 @@ import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import appEvents, { AppEvent } from '../utils/appEvents';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 
 export class AgentReconciliationService {
     /**
@@ -18,8 +18,10 @@ export class AgentReconciliationService {
         amount: number,
         collectionDate: Date
     ) {
+        const order = await tx.order.findUnique({ where: { id: orderId }, select: { tenantId: true } });
         const collection = await (tx as any).agentCollection.create({
             data: {
+                tenantId: resolveTenantId(order?.tenantId),
                 orderId,
                 agentId,
                 amount,
@@ -179,8 +181,10 @@ export class AgentReconciliationService {
                 throw new AppError('Deposit amount cannot exceed your current outstanding balance', 400);
             }
 
+            const agent = await extTx.user.findUnique({ where: { id: agentId }, select: { tenantId: true } });
             const deposit = await extTx.agentDeposit.create({
                 data: {
+                    tenantId: resolveTenantId(agent?.tenantId),
                     agentId,
                     amount,
                     depositMethod,

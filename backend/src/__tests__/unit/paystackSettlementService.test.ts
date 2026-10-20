@@ -69,7 +69,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
       data: { status: 'success', reference: 'ref_ok', amount: 25000, currency: 'GHS', fees: 375 },
     });
     (prismaMock.pendingCheckout.delete as any).mockResolvedValue(pending);
-    const createdOrder = { id: 55, orderType: 'physical', status: 'confirmed', paymentStatus: 'paid', customer: { id: 7 } };
+    const createdOrder = { id: 55, tenantId: 'tenant-1', orderType: 'physical', status: 'confirmed', paymentStatus: 'paid', customer: { id: 7 } };
     (prismaMock.order.create as any).mockResolvedValue(createdOrder);
     (prismaMock.order.findUnique as any).mockResolvedValue({ ...createdOrder });
 
@@ -150,7 +150,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
       data: { status: 'success', reference: 'ref_ok', amount: 10000, currency: 'GHS', fees: 150 },
     });
     (prismaMock.pendingCheckout.delete as any).mockResolvedValue(depositPending);
-    const createdOrder = { id: 56, orderType: 'physical', status: 'confirmed', paymentStatus: 'deposited', customer: { id: 7 } };
+    const createdOrder = { id: 56, tenantId: 'tenant-1', orderType: 'physical', status: 'confirmed', paymentStatus: 'deposited', customer: { id: 7 } };
     (prismaMock.order.create as any).mockResolvedValue(createdOrder);
     (prismaMock.order.findUnique as any).mockResolvedValue({ ...createdOrder });
 

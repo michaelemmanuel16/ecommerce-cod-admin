@@ -33,8 +33,10 @@ jest.mock('../../utils/appEvents', () => ({
   },
 }));
 import appEvents, { AppEvent } from '../../utils/appEvents';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 describe('OrderService', () => {
+  useTestTenant();
   let serviceInstance: typeof orderService; // Renamed to avoid conflict with imported instance
 
   beforeEach(() => {

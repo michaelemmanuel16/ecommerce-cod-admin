@@ -1,4 +1,5 @@
 import prisma from '../utils/prisma';
+import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 
@@ -221,6 +222,7 @@ export class PublicOrderService {
           },
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(form.tenantId),
               status: 'pending_confirmation',
               notes: `Order created from checkout form: ${form.name}`,
               metadata: {
@@ -244,6 +246,7 @@ export class PublicOrderService {
       // Create form submission record
       await tx.formSubmission.create({
         data: {
+          tenantId: resolveTenantId(form.tenantId),
           formId: form.id,
           orderId: order.id,
           formData: {

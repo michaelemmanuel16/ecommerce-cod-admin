@@ -20,13 +20,14 @@ jest.mock('../../utils/socketInstance', () => ({
 describe('Bulk Agent Collection Reconciliation Integration', () => {
     let testUser: any;
     let testAgent: any;
+    let testTenantId: string;
     let testOrders: any[] = [];
     let draftCollections: any[] = [];
 
     beforeEach(async () => {
         GLAccountService.clearCache();
         // Unscoped cleanup, then seed + enter tenant context (mirrors a request).
-        await withGlTestTenant(async () => {
+        testTenantId = await withGlTestTenant(async () => {
             // Clean up - Order matters due to foreign keys
             await prisma.accountTransaction.deleteMany({});
             await (prisma as any).agentCollection.deleteMany({});
@@ -115,6 +116,7 @@ describe('Bulk Agent Collection Reconciliation Integration', () => {
 
             const collection = await (prisma as any).agentCollection.create({
                 data: {
+                    tenantId: testTenantId,
                     orderId: order.id,
                     agentId: testAgent.id,
                     amount: new Decimal(1000 * (i + 1)),

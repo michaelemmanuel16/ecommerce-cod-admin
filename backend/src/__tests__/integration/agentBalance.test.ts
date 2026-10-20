@@ -20,6 +20,7 @@ jest.mock('../../utils/socketInstance', () => ({
 describe('Agent Balance and Deposit Integration', () => {
     let testUser: any;
     let testAgent: any;
+    let testTenantId: string;
 
     beforeAll(async () => {
         // Setup GL accounts and users
@@ -28,7 +29,7 @@ describe('Agent Balance and Deposit Integration', () => {
     beforeEach(async () => {
         GLAccountService.clearCache();
         // Unscoped cleanup, then seed + enter tenant context (mirrors a request).
-        await withGlTestTenant(async () => {
+        testTenantId = await withGlTestTenant(async () => {
             // Clean up - Order matters due to foreign keys
             await prisma.accountTransaction.deleteMany({});
             await (prisma as any).agentDeposit.deleteMany({});
@@ -129,6 +130,7 @@ describe('Agent Balance and Deposit Integration', () => {
 
         const collection = await (prisma as any).agentCollection.create({
             data: {
+                tenantId: testTenantId,
                 agentId: testAgent.id,
                 amount: 1000,
                 status: 'draft',

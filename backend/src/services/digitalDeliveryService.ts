@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { resolveTenantId } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { escapeHtml } from '../utils/sanitizer';
@@ -29,6 +30,7 @@ export const digitalDeliveryService = {
 
     await prisma.downloadToken.create({
       data: {
+        tenantId: resolveTenantId(order.tenantId),
         orderId,
         token,
         expiresAt,

@@ -14,7 +14,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { GLAutomationService, OrderWithItems } from './glAutomationService';
 import logger from '../utils/logger';
 import { SYSTEM_USER_ID } from '../config/constants';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 
 interface OrderForSync extends Order {
   orderItems: (OrderItem & { product: Product })[];
@@ -137,6 +137,7 @@ export class FinancialSyncService {
         if (!existingCollection) {
           await (tx as any).agentCollection.create({
             data: {
+              tenantId: resolveTenantId(order.tenantId),
               orderId: order.id,
               agentId: order.deliveryAgentId,
               amount: netAmount, // Record net amount

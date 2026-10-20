@@ -12,6 +12,7 @@ jest.mock('../../utils/logger', () => ({
 import { prismaMock } from '../mocks/prisma.mock';
 import { CustomerService } from '../../services/customerService';
 import { AppError } from '../../middleware/errorHandler';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 const adminRequester = { id: 1, role: 'admin', tenantId: 'tenant-1' };
 const salesRepRequester = { id: 10, role: 'sales_rep', tenantId: 'tenant-1' };
@@ -42,6 +43,7 @@ const makeCustomer = (overrides: any = {}) => ({
 });
 
 describe('CustomerService (extended branch coverage)', () => {
+  useTestTenant();
   let customerService: CustomerService;
 
   beforeEach(() => {

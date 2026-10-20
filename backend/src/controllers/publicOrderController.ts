@@ -1,4 +1,5 @@
 import { Response, Request, NextFunction } from 'express';
+import { resolveTenantId } from '../utils/tenantContext';
 import { OrderStatus, Prisma } from '@prisma/client';
 import workflowService from '../services/workflowService';
 import checkoutFormService from '../services/checkoutFormService';
@@ -500,6 +501,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // Create form submission
     await prisma.formSubmission.create({
       data: {
+        tenantId: resolveTenantId(formTenantId),
         formId: form.id,
         orderId: order.id,
         formData,

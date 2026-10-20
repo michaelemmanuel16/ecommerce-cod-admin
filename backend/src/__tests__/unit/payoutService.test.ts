@@ -3,6 +3,7 @@ import { prismaMock } from '../mocks/prisma.mock';
 import payoutService from '../../services/payoutService';
 import { OrderStatus } from '@prisma/client';
 import { GLAutomationService } from '../../services/glAutomationService';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 jest.mock('../../services/glAutomationService', () => ({
     GLAutomationService: {
@@ -11,6 +12,7 @@ jest.mock('../../services/glAutomationService', () => ({
 }));
 
 describe('PayoutService', () => {
+  useTestTenant();
     const repId = 1001;
 
     describe('getPendingPayments', () => {

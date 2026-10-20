@@ -427,6 +427,7 @@ export const backfillMissingCollections = async (_req: AuthRequest, res: Respons
         for (const order of orders) {
           await extTx.agentCollection.create({
             data: {
+              tenantId,
               orderId: order.id,
               agentId,
               amount: parseFloat(order.total_amount),

@@ -1,4 +1,5 @@
 import { Prisma, DeliveryProofType, OrderStatus } from '@prisma/client';
+import { resolveTenantId } from '../utils/tenantContext';
 import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
@@ -194,6 +195,7 @@ export class DeliveryService {
         status: order.status === 'ready_for_pickup' ? 'out_for_delivery' : order.status,
         orderHistory: {
           create: {
+            tenantId: resolveTenantId(order.tenantId),
             status: order.status === 'ready_for_pickup' ? 'out_for_delivery' : order.status,
             notes: 'Delivery assigned',
             metadata: { deliveryId: delivery.id, agentId: data.agentId }
@@ -318,6 +320,7 @@ export class DeliveryService {
           paymentStatus: 'collected',
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(delivery.tenantId),
               status: 'delivered',
               notes: 'Order delivered successfully',
               changedBy: userId ? parseInt(userId, 10) : null
@@ -488,6 +491,7 @@ export class DeliveryService {
           status: newStatus,
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(delivery.tenantId),
               status: newStatus,
               notes: `Delivery failed: ${reason}`,
               changedBy: userId ? parseInt(userId, 10) : null,

@@ -95,6 +95,7 @@ export class AgingService {
             bucket_8_plus: new Prisma.Decimal(0),
             totalBalance: new Prisma.Decimal(0),
             oldestCollectionDate: col.collectionDate,
+            tenantId: col.tenantId,
           });
         }
 
@@ -145,6 +146,7 @@ export class AgingService {
               oldestCollectionDate: data.oldestCollectionDate,
             },
             create: {
+              tenantId: data.tenantId,
               agentId,
               bucket_0_1: data.bucket_0_1,
               bucket_2_3: data.bucket_2_3,

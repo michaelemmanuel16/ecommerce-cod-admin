@@ -19,6 +19,7 @@ import { prismaMock } from '../mocks/prisma.mock';
 import glService from '../../services/glService';
 import { AppError } from '../../middleware/errorHandler';
 import { AccountType, NormalBalance } from '@prisma/client';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 const mockEntry = {
   id: 1,
@@ -51,6 +52,7 @@ const mockAccount = {
 };
 
 describe('GLService (extended branch coverage)', () => {
+  useTestTenant();
   beforeEach(() => {
     jest.clearAllMocks();
   });

@@ -17,6 +17,7 @@ jest.mock('../../utils/appEvents', () => ({
     },
 }));
 import appEvents, { AppEvent } from '../../utils/appEvents';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 // Mock prisma and dependecies
 jest.mock('../../utils/prisma', () => ({
@@ -58,6 +59,7 @@ jest.mock('../../utils/prisma', () => ({
         order: {
             update: jest.fn(),
             count: jest.fn(),
+            findUnique: jest.fn(),
         },
         $queryRaw: (jest.fn() as any).mockResolvedValue([]),
     },
@@ -107,18 +109,20 @@ describe('AgentReconciliationService', () => {
     });
 
     describe('createDraftCollection', () => {
-        it('should create a draft collection', async () => {
+        it('should create a draft collection with the order tenant', async () => {
             const orderId = 123;
             const agentId = 456;
             const amount = 1000;
             const date = new Date();
 
+            mockTx.order.findUnique.mockResolvedValue({ tenantId: 'tenant-1' });
             mockTx.agentCollection.create.mockResolvedValue({ id: 1, orderId, agentId, amount, status: 'draft' });
 
             const result = await agentReconciliationService.createDraftCollection(mockTx as any, orderId, agentId, amount, date);
 
             expect(mockTx.agentCollection.create).toHaveBeenCalledWith({
                 data: {
+                    tenantId: 'tenant-1',
                     orderId,
                     agentId,
                     amount,
@@ -227,6 +231,8 @@ describe('AgentReconciliationService', () => {
     });
 
     describe('createDeposit', () => {
+        useTestTenant();
+
         it('should create a pending deposit when amount is valid and within balance', async () => {
             const agentId = 456;
             const amount = 500;

@@ -59,6 +59,18 @@ model Tenant {
   webhookEvents       WebhookEvent[]
   emailTemplates      EmailTemplate[]
   emailCampaigns      EmailCampaign[]
+  agentCollections    AgentCollection[]
+  agentDeposits       AgentDeposit[]
+  agentAgingBuckets   AgentAgingBucket[]
+  payouts             Payout[]
+  calls               Call[]
+  orderHistories      OrderHistory[]
+  auditLogs           AuditLog[]
+  webhookLogs         WebhookLog[]
+  smsTemplates        SmsTemplate[]
+  downloadTokens      DownloadToken[]
+  formSubmissions     FormSubmission[]
+  productCostEntries  product_cost_entries[]
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
@@ -355,7 +367,10 @@ model OrderHistory {
   createdAt DateTime    @default(now()) @map("created_at")
   changedBy Int?        @map("changed_by")
   order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  tenantId  String      @map("tenant_id")
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@index([orderId])
   @@index([createdAt])
   @@map("order_history")
@@ -603,7 +618,10 @@ model WebhookLog {
   errorMessage    String?        @map("error_message")
   processedAt     DateTime       @default(now()) @map("processed_at")
   webhookConfig   WebhookConfig? @relation(fields: [webhookConfigId], references: [id])
+  tenantId        String         @map("tenant_id")
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@index([webhookConfigId])
   @@index([processedAt])
   @@map("webhook_logs")
@@ -639,8 +657,8 @@ model Notification {
   isRead    Boolean  @default(false) @map("is_read")
   createdAt DateTime @default(now()) @map("created_at")
   user      User     @relation(fields: [userId], references: [id])
-  tenantId  String?  @map("tenant_id")
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([userId])
   @@index([isRead])
@@ -769,7 +787,10 @@ model FormSubmission {
   createdAt       DateTime     @default(now()) @map("created_at")
   form            CheckoutForm @relation(fields: [formId], references: [id])
   order           Order?       @relation(fields: [orderId], references: [id])
+  tenantId        String       @map("tenant_id")
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@index([formId])
   @@index([orderId])
   @@index([createdAt])
@@ -827,7 +848,10 @@ model Call {
   customer   Customer    @relation(fields: [customerId], references: [id])
   order      Order?      @relation(fields: [orderId], references: [id])
   salesRep   User        @relation("CallSalesRep", fields: [salesRepId], references: [id])
+  tenantId   String      @map("tenant_id")
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@index([salesRepId])
   @@index([customerId])
   @@index([orderId])
@@ -849,7 +873,10 @@ model Payout {
   updatedAt  DateTime @updatedAt @map("updated_at")
   orders     Order[]
   rep        User     @relation(fields: [repId], references: [id])
+  tenantId   String   @map("tenant_id")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@index([repId])
   @@index([payoutDate])
   @@map("payouts")
@@ -867,7 +894,10 @@ model product_cost_entries {
   referenceNumber String?
   supplier        String?
   products        Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  tenantId        String   @map("tenant_id")
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@index([product_id])
 }
 
@@ -919,7 +949,10 @@ model AuditLog {
   userAgent  String?  @map("user_agent")
   createdAt  DateTime @default(now()) @map("created_at")
   user       User?    @relation(fields: [userId], references: [id])
+  tenantId   String   @map("tenant_id")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@index([userId])
   @@index([action])
   @@index([resource])
@@ -940,8 +973,11 @@ model AgentAgingBucket {
   oldestCollectionDate DateTime? @map("oldest_collection_date")
   updatedAt            DateTime  @updatedAt @map("updated_at")
 
-  agent User @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  agent    User   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@map("agent_aging_buckets")
 }
 
@@ -984,11 +1020,14 @@ model AgentCollection {
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  order    Order @relation(fields: [orderId], references: [id])
-  agent    User  @relation("AgentCollections", fields: [agentId], references: [id])
-  verifier User? @relation("VerifiedCollections", fields: [verifiedById], references: [id])
-  approver User? @relation("ApprovedCollections", fields: [approvedById], references: [id])
+  order    Order  @relation(fields: [orderId], references: [id])
+  agent    User   @relation("AgentCollections", fields: [agentId], references: [id])
+  verifier User?  @relation("VerifiedCollections", fields: [verifiedById], references: [id])
+  approver User?  @relation("ApprovedCollections", fields: [approvedById], references: [id])
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@index([agentId])
   @@index([status])
   @@index([collectionDate])
@@ -1012,9 +1051,12 @@ model AgentDeposit {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  agent    User  @relation("AgentDeposits", fields: [agentId], references: [id])
-  verifier User? @relation("VerifiedDeposits", fields: [verifiedById], references: [id])
+  agent    User   @relation("AgentDeposits", fields: [agentId], references: [id])
+  verifier User?  @relation("VerifiedDeposits", fields: [verifiedById], references: [id])
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@index([agentId])
   @@index([depositDate])
   @@index([agentId, depositDate])
@@ -1224,7 +1266,10 @@ model DownloadToken {
   isRevoked     Boolean  @default(false) @map("is_revoked")
   createdAt     DateTime @default(now()) @map("created_at")
   order         Order    @relation(fields: [orderId], references: [id])
+  tenantId      String   @map("tenant_id")
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@index([token])
   @@index([orderId])
   @@index([expiresAt])
@@ -1271,7 +1316,10 @@ model SmsTemplate {
   body      String
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([tenantId])
   @@map("sms_templates")
 }
 
@@ -1313,12 +1361,12 @@ model EmailCampaign {
   subject         String
   body            String
   status          EmailCampaignStatus @default(queued)
-  audienceTotal   Int      @default(0) @map("audience_total")
-  noEmailCount    Int      @default(0) @map("no_email_count")
-  optedOutCount   Int      @default(0) @map("opted_out_count")
-  totalRecipients Int      @default(0) @map("total_recipients")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  audienceTotal   Int                 @default(0) @map("audience_total")
+  noEmailCount    Int                 @default(0) @map("no_email_count")
+  optedOutCount   Int                 @default(0) @map("opted_out_count")
+  totalRecipients Int                 @default(0) @map("total_recipients")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
 
   tenantId String? @map("tenant_id")
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1343,4 +1391,16 @@ model McpApiKey {
 
   @@index([tenantId])
   @@map("mcp_api_keys")
+}
+
+// M0-T09: rows the tenant backfill could not place by parent. They were given to the owner tenant.
+model M0TenantBackfillOrphan {
+  id               Int      @id @default(autoincrement())
+  tableName        String   @map("table_name")
+  rowId            String   @map("row_id")
+  assignedTenantId String   @map("assigned_tenant_id")
+  reason           String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("m0_tenant_backfill_orphans")
 }

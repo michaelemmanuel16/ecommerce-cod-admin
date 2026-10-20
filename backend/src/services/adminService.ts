@@ -13,7 +13,7 @@ import {
   preserveMaskedSecrets,
   SENSITIVE_FIELDS,
 } from '../utils/providerCrypto';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 
 export const adminService = {
   /**
@@ -56,6 +56,7 @@ export const adminService = {
     try {
       await prisma.auditLog.create({
         data: {
+          tenantId: resolveTenantId(),
           userId: requester.id,
           action,
           resource,

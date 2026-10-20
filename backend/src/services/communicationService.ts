@@ -4,7 +4,7 @@ import { MessageChannel, MessageStatus, EmailCampaignStatus } from '@prisma/clie
 import whatsappService, { ORDER_STATUS_TEMPLATES } from './whatsappService';
 import { smsService } from './smsService';
 import { sanitizeEmailHtml } from './emailTemplateService';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { enqueueCampaignRecipient, PLACEHOLDER_EMAIL_DOMAIN } from '../queues/emailCampaignQueue';
 
 interface AudienceFilter {
@@ -335,7 +335,7 @@ export const communicationService = {
   },
 
   async createTemplate(data: { name: string; body: string }) {
-    return prisma.smsTemplate.create({ data });
+    return prisma.smsTemplate.create({ data: { ...data, tenantId: resolveTenantId() } });
   },
 
   async updateTemplate(id: number, data: { name?: string; body?: string }) {
