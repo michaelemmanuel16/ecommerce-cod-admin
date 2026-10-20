@@ -10,7 +10,7 @@
  * All methods are designed to be called from within Prisma transactions to ensure atomicity.
  */
 
-import { Prisma, Order, OrderItem, Product, Delivery, Customer, User, JournalEntry, AccountTransaction, JournalSourceType, AgentDeposit, InventoryShipment } from '@prisma/client';
+import { Prisma, Order, OrderItem, Product, Customer, User, JournalEntry, AccountTransaction, JournalSourceType, AgentDeposit, InventoryShipment } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { BALANCE_TOLERANCE, GL_ACCOUNTS, GL_DEFAULTS } from '../config/glAccounts';
 import { GLAccountService } from './glAccountService';
@@ -70,6 +70,14 @@ export type JournalEntryWithTransactions = JournalEntry & {
     };
   })[];
 };
+
+/** The order shape GL posting and the financial sync read: full customer, agent, rep, items with products. */
+export const ORDER_GL_INCLUDE = {
+  customer: true,
+  deliveryAgent: true,
+  customerRep: true,
+  orderItems: { include: { product: true } },
+} as const;
 
 /**
  * GL Automation Service
@@ -256,6 +264,18 @@ export class GLAutomationService {
   }
 
   /**
+   * The order's active revenue entry: not voided and not reversed (D7), so a returned order has none
+   * and may be delivered again. Include is what `createReturnReversalEntry` needs.
+   */
+  static async findActiveRevenueEntry(tx: Prisma.TransactionClient, orderId: number) {
+    return tx.journalEntry.findFirst({
+      where: { sourceType: JournalSourceType.order_delivery, sourceId: orderId, isVoided: false, reversingEntryId: null },
+      include: { transactions: { include: { account: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
    * Create revenue recognition GL entry when order is delivered
    *
    * Creates journal entry with:
@@ -279,20 +299,7 @@ export class GLAutomationService {
     userId: number
   ): Promise<JournalEntryWithTransactions> {
     // Idempotency guard — prevent duplicate GL entries for the same order
-    const existingEntry = await tx.journalEntry.findFirst({
-      where: {
-        sourceType: JournalSourceType.order_delivery,
-        sourceId: order.id,
-        isVoided: false
-      },
-      include: {
-        transactions: {
-          include: {
-            account: true
-          }
-        }
-      }
-    });
+    const existingEntry = await this.findActiveRevenueEntry(tx, order.id);
     if (existingEntry) {
       logger.warn(`Skipping duplicate GL entry for order ${order.id}: ${existingEntry.entryNumber} already exists`);
       return existingEntry as JournalEntryWithTransactions;
@@ -387,65 +394,62 @@ export class GLAutomationService {
   }
 
   /**
-   * Create failed delivery expense GL entry
-   *
-   * Records operational cost of failed delivery:
-   * - Debit: Failed Delivery Expense
-   * - Credit: Cash in Hand
-   *
-   * @param tx - Prisma transaction client
-   * @param delivery - Delivery record
-   * @param order - Associated order
-   * @param userId - ID of user creating the entry
-   * @returns Created journal entry
+   * Failed-attempt fee entry, one per `failed_delivery` move (D6, F-935). The fee is the FeeRule of the
+   * order's delivery agent with outcome `failed`; no agent or no rule means 0 and nothing is posted.
+   * Keyed on the OrderHistory row of the move, so a repeat of the same move posts nothing and two
+   * attempts post two entries. Accounts: 5020 / cash in hand.
    */
-  static async createFailedDeliveryEntry(
+  static async createFailedAttemptEntry(
     tx: Prisma.TransactionClient,
-    delivery: Delivery,
-    order: Order,
-    userId: number
-  ): Promise<JournalEntryWithTransactions> {
-    // Idempotency guard — prevent duplicate GL entries for the same delivery
+    order: { id: number; tenantId?: string | null; deliveryAgentId?: number | null },
+    historyId: number,
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions | null> {
+    const rule = order.deliveryAgentId
+      ? await tx.feeRule.findFirst({
+          where: {
+            partnerUserId: order.deliveryAgentId,
+            outcome: 'failed',
+            ...(order.tenantId ? { tenantId: order.tenantId } : {}),
+          },
+        })
+      : null;
+    const fee = rule ? Money.parse(rule.amount) : Money.ZERO;
+    if (!fee.greaterThan(0)) return null;
+
     const existingEntry = await tx.journalEntry.findFirst({
-      where: {
-        sourceType: JournalSourceType.failed_delivery,
-        sourceId: delivery.id,
-        isVoided: false
-      },
+      where: { sourceType: JournalSourceType.order_failed_delivery, sourceId: historyId, isVoided: false },
       include: { transactions: { include: { account: true } } }
     });
-    if (existingEntry) {
-      logger.warn(`Skipping duplicate GL entry for failed delivery ${delivery.id}: ${existingEntry.entryNumber} already exists`);
-      return existingEntry as JournalEntryWithTransactions;
-    }
+    if (existingEntry) return existingEntry as JournalEntryWithTransactions;
 
-    // Use default failed delivery fee as operational cost
-    const expenseAmount = new Decimal(GL_DEFAULTS.FAILED_DELIVERY_FEE);
-
-    const transactions: TransactionCreateData[] = [
-      {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE),
-        debitAmount: expenseAmount,
-        creditAmount: Money.ZERO,
-        description: `Failed delivery - Order #${order.id}`,
-      },
-      {
-        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
-        debitAmount: Money.ZERO,
-        creditAmount: expenseAmount,
-        description: 'Cash impact of failed delivery',
-      },
-    ];
-
+    const [expenseAccountId, cashAccountId] = await Promise.all([
+      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE),
+      GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
+    ]);
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate,
       description: `Failed delivery expense - Order #${order.id}`,
-      sourceType: JournalSourceType.failed_delivery,
-      sourceId: delivery.id,
+      sourceType: JournalSourceType.order_failed_delivery,
+      sourceId: historyId,
       createdBy: userId,
-      tenantId: (order as any).tenantId ?? undefined,
+      tenantId: order.tenantId ?? undefined,
       transactions: {
-        create: transactions,
+        create: [
+          {
+            accountId: expenseAccountId,
+            debitAmount: fee,
+            creditAmount: Money.ZERO,
+            description: `Failed delivery - Order #${order.id}`,
+          },
+          {
+            accountId: cashAccountId,
+            debitAmount: Money.ZERO,
+            creditAmount: fee,
+            description: 'Cash impact of failed delivery',
+          },
+        ],
       },
     });
   }
@@ -475,22 +479,9 @@ export class GLAutomationService {
     order: OrderWithItems,
     originalEntry: JournalEntryWithTransactions,
     userId: number,
-    returnProcessingFee?: Money.MoneyInput
+    returnProcessingFee?: Money.MoneyInput,
+    entryDate?: Date
   ): Promise<JournalEntryWithTransactions> {
-    // Idempotency guard — prevent duplicate return reversal GL entries for the same order
-    const existingEntry = await tx.journalEntry.findFirst({
-      where: {
-        sourceType: JournalSourceType.order_return,
-        sourceId: order.id,
-        isVoided: false
-      },
-      include: { transactions: { include: { account: true } } }
-    });
-    if (existingEntry) {
-      logger.warn(`Skipping duplicate return reversal GL entry for order ${order.id}: ${existingEntry.entryNumber} already exists`);
-      return existingEntry as JournalEntryWithTransactions;
-    }
-
     const orderAmount = Money.parse(order.totalAmount);
 
     const deliveryAgent = order.deliveryAgent;
@@ -583,8 +574,8 @@ export class GLAutomationService {
       );
     }
 
-    return await this.createJournalEntryWithRetry(tx, {
-      entryDate: order.updatedAt || new Date(),
+    const reversal = await this.createJournalEntryWithRetry(tx, {
+      entryDate: entryDate ?? order.updatedAt ?? new Date(),
       description: `Return reversal - Order #${order.id} (Original JE: ${originalEntry?.entryNumber || 'N/A'})`,
       sourceType: JournalSourceType.order_return,
       sourceId: order.id,
@@ -594,6 +585,14 @@ export class GLAutomationService {
         create: transactions,
       },
     });
+
+    if (originalEntry?.id) {
+      await tx.journalEntry.update({
+        where: { id: originalEntry.id },
+        data: { reversingEntryId: reversal.id },
+      });
+    }
+    return reversal;
   }
 
   /**
@@ -620,17 +619,6 @@ export class GLAutomationService {
 
       logger.info(`Restored inventory for product ${item.product.name}: +${item.quantity} units`);
     }
-  }
-
-  /**
-   * Check if order revenue has already been recognized
-   * Prevents duplicate GL entries
-   *
-   * @param order - Order to check
-   * @returns True if revenue already recognized
-   */
-  static isRevenueAlreadyRecognized(order: Order): boolean {
-    return (order as any).revenueRecognized === true;
   }
 
   /**

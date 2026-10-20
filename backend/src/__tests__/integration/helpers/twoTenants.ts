@@ -5,6 +5,7 @@ import { generateAccessToken } from '../../../utils/jwt';
 import { hashApiKey } from '../../../mcp/auth';
 import { seedTenantDefaults } from '../../../services/tenantDefaultsService';
 import glService from '../../../services/glService';
+import { SYSTEM_USER_ID } from '../../../config/constants';
 
 /**
  * Two-tenant test harness (M0-T27). `createTwoTenants(label)` builds tenants A and B
@@ -322,4 +323,19 @@ export async function createTwoTenants(label: string): Promise<TwoTenants> {
     throw failed.reason;
   }
   return { a, b, cleanup: () => deleteTenantRows([a.id, b.id]) };
+}
+
+/**
+ * A status move by an `integration` or `system` actor has no user id, so the GL entries it posts are
+ * created by SYSTEM_USER_ID (journal_entries.created_by has a foreign key). The test DB has no such
+ * user: this adds one under `tenantId`, so `deleteTenantRows([tenantId])` removes it. No-op if it exists.
+ */
+export async function ensureSystemUser(tenantId: string): Promise<void> {
+  if (await prismaBase.user.findUnique({ where: { id: SYSTEM_USER_ID } })) return;
+  await prismaBase.user.create({
+    data: {
+      id: SYSTEM_USER_ID, email: `system-user-${Date.now()}@codadmin.test`, password: 'x',
+      firstName: 'System', lastName: 'User', role: 'admin', tenantId,
+    },
+  });
 }

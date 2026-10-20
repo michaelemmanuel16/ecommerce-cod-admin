@@ -309,7 +309,7 @@ export const adminService = {
     return {
       super_admin: {
         users: ['create', 'view', 'update', 'delete'],
-        orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign'],
+        orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status'],
         customers: ['create', 'view', 'update', 'delete'],
         products: ['create', 'view', 'update', 'delete', 'update_stock'],
         financial: ['view', 'create', 'update', 'delete'],
@@ -349,7 +349,7 @@ export const adminService = {
       },
       inventory_manager: {
         users: [],
-        orders: ['view'],
+        orders: ['view', 'update_status'],
         customers: ['view'],
         products: ['create', 'view', 'update', 'delete', 'update_stock'],
         financial: [],

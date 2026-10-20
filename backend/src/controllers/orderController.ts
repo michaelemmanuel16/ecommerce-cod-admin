@@ -179,12 +179,17 @@ export const bulkDeleteOrders = async (req: AuthRequest, res: Response): Promise
 export const updateOrderStatus = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { status, notes } = req.body;
+    const { status, note, force, reason, declineReason, failureReason, nextAttemptDate } = req.body;
 
     const order = await orderService.updateOrderStatus(Number(id), {
       status: status as OrderStatus,
-      notes,
-      changedBy: req.user?.id
+      notes: note,
+      changedBy: req.user?.id,
+      force,
+      reason,
+      declineReason,
+      failureReason,
+      nextAttemptDate: nextAttemptDate ? new Date(nextAttemptDate) : undefined
     }, req.user);
 
     // Invalidate analytics cache as status change affects metrics
@@ -194,6 +199,11 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
   } catch (error) {
     throw error;
   }
+};
+
+export const getOrderTransitions = async (req: AuthRequest, res: Response): Promise<void> => {
+  const transitions = await orderService.getTransitions(Number(req.params.id), req.user!);
+  res.json(transitions);
 };
 // ... rest of file (assignCustomerRep, etc)
 

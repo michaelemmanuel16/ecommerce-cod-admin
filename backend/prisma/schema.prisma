@@ -1269,6 +1269,7 @@ enum JournalSourceType {
   manual
   reversal
   order_return
+  order_failed_delivery
   agent_collection
   inventory_purchase
   period_close

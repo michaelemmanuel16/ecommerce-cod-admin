@@ -44,11 +44,6 @@ export const GL_ACCOUNTS = {
 
 export const GL_DEFAULTS = {
   /**
-   * Default fee for failed deliveries when delivery.deliveryFee is not set
-   */
-  FAILED_DELIVERY_FEE: 50.00,
-
-  /**
    * Minimum COGS threshold to record in GL entries
    * If totalCOGS < this value, COGS/Inventory entries will be skipped
    */

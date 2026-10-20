@@ -26,6 +26,14 @@ jest.mock('../../services/glAccountService', () => ({
   },
 }));
 
+// The state machine has its own tests; here deliveryService is checked to hand each move to it.
+jest.mock('../../services/orderStateMachine', () => ({
+  ...(jest.requireActual('../../services/orderStateMachine') as object),
+  transitionOrder: jest.fn(),
+}));
+import { transitionOrder } from '../../services/orderStateMachine';
+const mockedTransition = transitionOrder as unknown as jest.MockedFunction<(...args: any[]) => Promise<any>>;
+
 describe('DeliveryService', () => {
   useTestTenant();
   let deliveryService: DeliveryService;
@@ -37,6 +45,10 @@ describe('DeliveryService', () => {
     // GL writes require a resolvable tenant; in production these run inside an
     // authenticated request. Mirror that ambient context here.
     jest.spyOn(tenantContext, 'getTenantId').mockReturnValue('tenant-a');
+    mockedTransition.mockReset();
+    mockedTransition.mockResolvedValue({
+      changed: true, gl: { revenue: { id: 1, entryNumber: 'JE-001' }, revenueOrder: { id: 1, orderItems: [], deliveryAgentId: null, codAmount: 0 } }, afterCommit: jest.fn(),
+    });
   });
 
   describe('createDelivery', () => {
@@ -78,11 +90,15 @@ describe('DeliveryService', () => {
 
       (prismaMock.delivery.create as any).mockResolvedValue(mockDelivery);
       (prismaMock.order.update as any).mockResolvedValue(mockOrder);
+      (prismaMock.$transaction as any).mockImplementation((callback: any) => callback(prismaMock));
 
       const delivery = await deliveryService.createDelivery(createDeliveryData);
 
       expect(delivery).toBeDefined();
       expect(delivery.orderId).toBe(1);
+      // ready_for_pickup moves to out_for_delivery through the machine; this writer does no stock work (D8)
+      expect(mockedTransition).toHaveBeenCalledWith(1, 'out_for_delivery', { kind: 'system' },
+        expect.objectContaining({ skipLegacyStock: true }));
     });
   });
 
@@ -175,6 +191,9 @@ describe('DeliveryService', () => {
       );
 
       expect(result.message).toBe('Delivery completed successfully');
+      expect(result.glEntry).toEqual({ id: 1, entryNumber: 'JE-001' });
+      expect(mockedTransition).toHaveBeenCalledWith(1, 'delivered', expect.objectContaining({ kind: 'system' }),
+        expect.objectContaining({ skipLegacyStock: true, postRevenueAlways: true, paymentStatus: 'collected' }));
     });
   });
 
@@ -217,6 +236,9 @@ describe('DeliveryService', () => {
       );
 
       expect(result.message).toBe('Delivery marked as failed');
+      // D3: a reschedule is a failed attempt with failureReason rescheduled; the machine sets the next attempt date
+      expect(mockedTransition).toHaveBeenCalledWith(1, 'failed_delivery', expect.objectContaining({ kind: 'system' }),
+        expect.objectContaining({ failureReason: 'rescheduled', skipLegacyStock: true }));
     });
 
     it('should update order status to failed_delivery when not rescheduling', async () => {
@@ -256,6 +278,8 @@ describe('DeliveryService', () => {
       );
 
       expect(result.message).toBe('Delivery marked as failed');
+      expect(mockedTransition).toHaveBeenCalledWith(1, 'failed_delivery', expect.objectContaining({ kind: 'system' }),
+        expect.objectContaining({ failureReason: 'other' }));
     });
   });
 });

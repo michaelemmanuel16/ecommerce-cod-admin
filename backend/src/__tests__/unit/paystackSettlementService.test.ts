@@ -16,6 +16,7 @@ jest.mock('../../services/workflowService', () => ({
   __esModule: true,
   default: { triggerOrderCreatedWorkflows: jest.fn(() => Promise.resolve()) },
 }));
+jest.mock('../../services/orderStateMachine', () => ({ transitionOrder: jest.fn(() => Promise.resolve({ changed: true })) }));
 jest.mock('../../sockets', () => ({ emitOrderCreated: jest.fn() }));
 jest.mock('../../utils/socketInstance', () => ({ getSocketInstance: jest.fn() }));
 
@@ -25,6 +26,7 @@ import workflowService from '../../services/workflowService';
 import { metaCapiService } from '../../services/metaCapiService';
 import { digitalDeliveryService } from '../../services/digitalDeliveryService';
 import { settlePaystackPayment } from '../../services/paystackSettlementService';
+import { transitionOrder } from '../../services/orderStateMachine';
 import { tenantStorage, getTenantId } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
 
@@ -257,9 +259,9 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
 
       await settlePaystackPayment('ref_ok');
 
-      const call = (prismaMock.order.update as any).mock.calls.find((c: any) => c[0].data.status === 'digital_delivered');
-      expect(call).toBeDefined();
-      expect(call[0].data.deliveryDate).toEqual(settleTime);
+      // M1-T11: the move goes through the state machine as the system actor, dated the settle time
+      expect(transitionOrder).toHaveBeenCalledWith(57, 'digital_delivered', { kind: 'system' },
+        expect.objectContaining({ deliveryDate: settleTime }));
     } finally {
       jest.useRealTimers();
     }

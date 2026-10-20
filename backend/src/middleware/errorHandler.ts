@@ -5,6 +5,8 @@ export class AppError extends Error {
   statusCode: number;
   isOperational: boolean;
   errorCode?: string;
+  /** Extra fields merged into the error body (e.g. from/to/allowed of a status transition error). */
+  details?: Record<string, unknown>;
 
   constructor(message: string, statusCode: number, errorCode?: string) {
     super(message);
@@ -43,7 +45,9 @@ export const errorHandler = (
   }
 
   if (err instanceof AppError) {
+    // Details first: they can add fields but never override the base ones.
     res.status(err.statusCode).json({
+      ...err.details,
       message: err.message,
       error: err.message,
       // Frontend api.ts reads `data.code`; older callers may read `errorCode`.

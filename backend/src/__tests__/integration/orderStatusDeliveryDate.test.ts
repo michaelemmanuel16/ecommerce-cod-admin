@@ -6,7 +6,7 @@
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { prismaBase } from '../../utils/prisma';
-import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { createTenant, deleteTenantRows, ensureSystemUser } from './helpers/twoTenants';
 import { tenantStorage } from '../../utils/tenantContext';
 import orderService from '../../services/orderService';
 
@@ -31,6 +31,7 @@ let orderIds: number[] = [];
 beforeAll(async () => {
   const tenant = await createTenant('DD Tenant');
   tenantId = tenant.id;
+  await ensureSystemUser(tenantId); // an integration actor has no user id; its GL entries use the system user
 
   const customer = await prismaBase.customer.create({
     data: {
@@ -68,6 +69,8 @@ describe('updateOrderStatus deliveryDate', () => {
         status: 'delivered',
         deliveryDate: backdated,
         notes: 'Logiswift ESD123 · shipped 2026-06-15',
+        // confirmed -> delivered is an integration jump (3PL feed), as the MCP tool does it
+        actor: { kind: 'integration' },
       }),
     );
 
@@ -80,7 +83,7 @@ describe('updateOrderStatus deliveryDate', () => {
     const before = Date.now();
 
     await tenantStorage.run({ tenantId }, () =>
-      orderService.updateOrderStatus(orderIds[1], { status: 'delivered' }),
+      orderService.updateOrderStatus(orderIds[1], { status: 'delivered', actor: { kind: 'integration' } }),
     );
 
     const order = await prismaBase.order.findUniqueOrThrow({ where: { id: orderIds[1] } });

@@ -428,6 +428,7 @@ export class WorkflowService {
     if (action.notes) updateData.notes = action.notes;
     if (action.priority !== undefined) updateData.priority = action.priority;
 
+    // Dead duplicate of the workflowQueue action; can write status outside the state machine. // removed in M2-T15
     await prisma.order.update({
       where: { id: orderId },
       data: updateData

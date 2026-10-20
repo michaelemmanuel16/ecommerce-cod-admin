@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import { paystackService } from './paystackService';
 import { digitalDeliveryService } from './digitalDeliveryService';
 import { GLAutomationService } from './glAutomationService';
+import { transitionOrder } from './orderStateMachine';
 import { metaCapiService } from './metaCapiService';
 import workflowService from './workflowService';
 import { emitOrderCreated } from '../sockets';
@@ -269,20 +270,12 @@ async function settleInTenant(
     try {
       const token = await digitalDeliveryService.generateDownloadToken(order.id, order);
       await digitalDeliveryService.sendDownloadLinks(order.id, token, order);
-      await prisma.order.update({
-        where: { id: order.id },
-        // deliveryDate is the revenue date (F-901): the settle time. M1-T11 later routes this through transitionOrder.
-        data: { status: 'digital_delivered', deliveryDate: new Date() },
+      // deliveryDate is the revenue date (F-901): the settle time (COD-9).
+      await transitionOrder(order.id, 'digital_delivered', { kind: 'system' }, {
+        note: 'Download link sent to customer',
+        deliveryDate: new Date(),
       });
       order.status = 'digital_delivered';
-      await prisma.orderHistory.create({
-        data: {
-          tenantId: resolveTenantId(order.tenantId),
-          orderId: order.id,
-          status: 'digital_delivered',
-          notes: 'Download link sent to customer',
-        },
-      });
     } catch (err: any) {
       logger.error('Digital delivery failed after payment — manual resend required', {
         orderId: order.id,

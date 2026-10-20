@@ -1,4 +1,5 @@
 import { body, param, query, ValidationChain } from 'express-validator';
+import { DeclineReason, FailureReason, OrderStatus } from '@prisma/client';
 
 /**
  * Password validation utility
@@ -86,19 +87,17 @@ export const createOrderValidation: ValidationChain[] = [
   body('deliveryArea').notEmpty()
 ];
 
+export const ORDER_STATUS_VALUES: string[] = Object.values(OrderStatus);
+
 export const updateOrderStatusValidation: ValidationChain[] = [
   param('id').notEmpty(),
-  body('status').isIn([
-    'pending_confirmation',
-    'confirmed',
-    'preparing',
-    'ready_for_pickup',
-    'out_for_delivery',
-    'delivered',
-    'cancelled',
-    'returned',
-    'failed_delivery'
-  ])
+  body('status').isIn(ORDER_STATUS_VALUES),
+  body('note').optional().isString().isLength({ max: 500 }),
+  body('force').optional().isBoolean().toBoolean(),
+  body('reason').optional().isString().isLength({ max: 500 }),
+  body('declineReason').optional().isIn(Object.values(DeclineReason)),
+  body('failureReason').optional().isIn(Object.values(FailureReason)),
+  body('nextAttemptDate').optional({ nullable: true }).isISO8601()
 ];
 
 export const paginationValidation: ValidationChain[] = [
@@ -136,7 +135,9 @@ export const createCallValidation: ValidationChain[] = [
   body('orderId').optional().isInt(),
   body('outcome').isIn(['confirmed', 'rescheduled', 'no_answer', 'cancelled', 'other']).withMessage('Invalid call outcome'),
   body('duration').optional().isInt({ min: 0 }).withMessage('Duration must be a positive number'),
-  body('notes').optional().isString().isLength({ max: 500 }).withMessage('Notes must be 500 characters or less')
+  body('notes').optional().isString().isLength({ max: 500 }).withMessage('Notes must be 500 characters or less'),
+  body('startedAt').optional().isISO8601().withMessage('startedAt must be an ISO date'),
+  body('source').optional().isIn(['manual', 'auto_confirm', 'tap_to_call']).withMessage('Invalid call source')
 ];
 
 export const createAccountValidation: ValidationChain[] = [

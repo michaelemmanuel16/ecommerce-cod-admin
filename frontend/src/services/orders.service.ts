@@ -1,5 +1,14 @@
 import apiClient from './api';
-import { Order, OrderStatus, FilterOptions, PaginationMeta } from '../types';
+import { Order, OrderStatus, FilterOptions, PaginationMeta, FailureReason, DeclineReason } from '../types';
+
+/** Reasons the order state machine can ask for with a status move (PATCH /api/orders/:id/status). */
+export interface StatusMoveExtras {
+  failureReason?: FailureReason;
+  declineReason?: DeclineReason;
+  nextAttemptDate?: string;
+  force?: boolean;
+  reason?: string;
+}
 
 const transformOrder = (order: any): Order => {
   try {
@@ -98,8 +107,8 @@ export const ordersService = {
     }
   },
 
-  async updateOrderStatus(id: number, status: OrderStatus, notes?: string): Promise<Order> {
-    const response = await apiClient.patch(`/api/orders/${id}/status`, { status, ...(notes && { notes }) });
+  async updateOrderStatus(id: number, status: OrderStatus, notes?: string, extra: StatusMoveExtras = {}): Promise<Order> {
+    const response = await apiClient.patch(`/api/orders/${id}/status`, { status, ...(notes && { note: notes }), ...extra });
     return transformOrder(response.data.order || response.data);
   },
 

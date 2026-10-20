@@ -9,7 +9,7 @@ import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { generateAccessToken } from '../../utils/jwt';
-import { GLAutomationService } from '../../services/glAutomationService';
+import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 
 jest.mock('../../utils/socketInstance', () => ({
   setSocketInstance: jest.fn(),
@@ -46,6 +46,7 @@ const mkDelivery = async (label: string, tenantId: string, agentId: number) => {
     data: {
       customerId: customer.id, subtotal: 10, shippingCost: 0, totalAmount: 10, codAmount: 10, deliveryAddress: '1 St',
       deliveryState: 'Greater Accra', deliveryArea: 'Accra', tenantId, status: 'out_for_delivery',
+      deliveryAgentId: agentId, // the state machine checks the order's agent, not only the delivery row
     } as any,
   });
   return prismaBase.delivery.create({ data: { orderId: order.id, agentId, scheduledTime: new Date(), tenantId } });
@@ -55,6 +56,7 @@ beforeAll(async () => {
   const a = await createTenant('Dlv A');
   const b = await createTenant('Dlv B');
   tenantIds.push(a.id, b.id);
+  await seedTenantDefaults(a.id);
   T.admin = await mkUser('admin', 'admin', a.id);
   T.manager = await mkUser('manager', 'manager', a.id);
   T.accountant = await mkUser('acct', 'accountant', a.id);
@@ -130,9 +132,7 @@ describe('delivery route access', () => {
   });
 
   it('admin completing for the agent writes an audit row; the agent completing does not', async () => {
-    // The GL posting inside completeDelivery needs a chart of accounts and has its own tests;
-    // this test is about who may call it and the audit row, so skip the posting.
-    const skipGL = jest.spyOn(GLAutomationService, 'isRevenueAlreadyRecognized').mockReturnValue(true);
+    // completeDelivery posts revenue through the state machine: the tenant needs a chart of accounts.
     const body = { proofType: 'signature', proofData: 'sig', recipientName: 'Recipient', codAmount: 10 };
     const res = await request(app).patch(`/api/deliveries/${T.dA.id}/complete`).set(auth(T.admin)).send(body);
     expect(res.status).toBe(200);
@@ -145,6 +145,5 @@ describe('delivery route access', () => {
     const own = await request(app).patch(`/api/deliveries/${T.dB.id}/complete`).set(auth(T.agentB)).send(body);
     expect(own.status).toBe(200);
     expect(await prismaBase.auditLog.count({ where: { resource: 'delivery', resourceId: String(T.dB.id) } })).toBe(0);
-    skipGL.mockRestore();
   });
 });

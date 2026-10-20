@@ -270,38 +270,13 @@ describe('GLAutomationService', () => {
     });
   });
 
-  describe('createFailedDeliveryEntry', () => {
-    it('should create entry with default fee', async () => {
-      const mockTx: any = {
-        journalEntry: {
-          findFirst: jest.fn().mockResolvedValue(null),
-          create: jest.fn().mockResolvedValue({ id: 1, transactions: [] }),
-        },
-        account: {
-          findUnique: jest.fn().mockResolvedValue({
-            normalBalance: 'debit',
-            currentBalance: new Decimal(0)
-          }),
-          update: jest.fn().mockResolvedValue({})
-        },
-        $queryRaw: jest.fn().mockResolvedValue([]),
-      };
-
-      const delivery: any = { id: 1, orderId: 1 };
-      const order: any = { id: 1, orderNumber: 'ORD-001' };
-
-      await GLAutomationService.createFailedDeliveryEntry(mockTx, delivery, order, 1);
-
-      expect(mockTx.journalEntry.create).toHaveBeenCalled();
-    });
-  });
-
   describe('createReturnReversalEntry', () => {
     it('should create reversal entry', async () => {
       const mockTx: any = {
         journalEntry: {
           findFirst: jest.fn().mockResolvedValue(null),
           create: jest.fn().mockResolvedValue({ id: 2, transactions: [] }),
+          update: jest.fn().mockResolvedValue({}),
         },
         account: {
           findUnique: jest.fn().mockResolvedValue({
@@ -441,21 +416,6 @@ describe('GLAutomationService', () => {
       const mockTx: any = createMockTx();
 
       await GLAutomationService.createDepositGLEntry(mockTx, 1000, 1, 1);
-
-      expect(mockTx.journalEntry.create).toHaveBeenCalled();
-      const createCall = mockTx.journalEntry.create.mock.calls[0][0];
-      const transactions = createCall.data.transactions.create;
-      const { totalDebits, totalCredits } = sumTransactions(transactions);
-      expect(totalDebits.toString()).toBe(totalCredits.toString());
-    });
-
-    it('should create balanced failed delivery entry (DR=CR)', async () => {
-      const mockTx: any = createMockTx();
-
-      const delivery: any = { id: 1, orderId: 1 };
-      const order: any = { id: 1, orderNumber: 'ORD-FAIL-001' };
-
-      await GLAutomationService.createFailedDeliveryEntry(mockTx, delivery, order, 1);
 
       expect(mockTx.journalEntry.create).toHaveBeenCalled();
       const createCall = mockTx.journalEntry.create.mock.calls[0][0];

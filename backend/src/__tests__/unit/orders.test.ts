@@ -198,7 +198,7 @@ describe('Orders Controller', () => {
       };
 
       mockReq.params = { id: '123' };
-      mockReq.body = { status: 'confirmed', notes: 'Order confirmed' };
+      mockReq.body = { status: 'confirmed', note: 'Order confirmed' };
 
       (orderService.updateOrderStatus as jest.Mock).mockResolvedValue(mockOrder);
 

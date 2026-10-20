@@ -5,7 +5,7 @@ import callService from '../services/callService';
 
 export const createCall = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { customerId, orderId, outcome, duration, notes } = req.body;
+    const { customerId, orderId, outcome, duration, notes, startedAt, source } = req.body;
 
     const call = await callService.createCall({
       customerId,
@@ -13,6 +13,8 @@ export const createCall = async (req: AuthRequest, res: Response): Promise<void>
       outcome: outcome as CallOutcome,
       duration,
       notes,
+      startedAt: startedAt ? new Date(startedAt) : undefined,
+      source,
       salesRepId: req.user!.id
     });
 

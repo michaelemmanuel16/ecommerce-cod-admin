@@ -65,6 +65,37 @@ describe('CallService', () => {
       order: mockOrder
     };
 
+    it('sets firstContactAt on the first call and not on the second (race-safe updateMany)', async () => {
+      prismaMock.user.findUnique.mockResolvedValue(mockSalesRep as any);
+      prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);
+      prismaMock.order.findUnique.mockResolvedValue(mockOrder as any);
+      prismaMock.call.create.mockResolvedValue(mockCreatedCall as any);
+      const first = new Date('2026-10-20T08:00:00Z');
+      const second = new Date('2026-10-20T09:00:00Z');
+      // Stateful stand-in for the DB: only a null firstContactAt matches the where clause.
+      let stored: Date | null = null;
+      prismaMock.order.updateMany.mockImplementation((async (args: any) => {
+        if (args.where.firstContactAt === null && stored === null) {
+          stored = args.data.firstContactAt;
+          return { count: 1 };
+        }
+        return { count: 0 };
+      }) as any);
+
+      await callService.createCall({ ...validCallData, startedAt: first });
+      expect(stored).toEqual(first);
+      await callService.createCall({ ...validCallData, startedAt: second });
+      expect(stored).toEqual(first);
+
+      expect(prismaMock.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 100, firstContactAt: null },
+        data: { firstContactAt: first }
+      });
+      const createData = (prismaMock.call.create.mock.calls[0][0] as any).data;
+      expect(createData.startedAt).toEqual(first);
+      expect(createData.source).toBe('manual');
+    });
+
     it('should create a call successfully with valid data', async () => {
       prismaMock.user.findUnique.mockResolvedValue(mockSalesRep as any);
       prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);

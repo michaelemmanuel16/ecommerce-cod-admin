@@ -48,6 +48,11 @@ export type OrderStatus =
   | 'failed_delivery'
   | 'payment_failed';
 
+export type FailureReason = 'not_reachable' | 'refused' | 'wrong_address' | 'rescheduled' | 'other';
+
+export type DeclineReason =
+  | 'price_too_high' | 'prank_or_mistake' | 'changed_mind' | 'bought_elsewhere' | 'wrong_number' | 'other';
+
 export type OrderPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export type PaymentStatus = 'pending' | 'collected' | 'reconciled';

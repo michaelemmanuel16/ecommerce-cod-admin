@@ -18,8 +18,16 @@ jest.mock('../../queues/workflowQueue', () => ({
   },
 }));
 
+// The state machine has its own tests (orderStateMachine.test.ts, integration/orderStateMachine.test.ts):
+// here orderService is checked to hand the move to it with the right actor and options.
+jest.mock('../../services/orderStateMachine', () => ({
+  ...(jest.requireActual('../../services/orderStateMachine') as object),
+  transitionOrder: jest.fn(),
+}));
+
 import { prismaMock } from '../mocks/prisma.mock';
 import orderService from '../../services/orderService';
+import { transitionOrder } from '../../services/orderStateMachine';
 import { AppError } from '../../middleware/errorHandler';
 import { OrderStatus } from '@prisma/client';
 // Mock appEvents
@@ -276,15 +284,14 @@ describe('OrderService', () => {
       orderItems: []
     };
 
-    it('should update order status with valid transition', async () => {
-      const updatedOrder = {
-        ...mockOrder,
-        status: 'confirmed' as OrderStatus
-      };
+    const mockedTransition = transitionOrder as unknown as jest.MockedFunction<(...args: any[]) => Promise<any>>;
+    beforeEach(() => mockedTransition.mockReset());
 
-      (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder as any);
-      (prismaMock.$transaction as any).mockImplementation((callback: any) => callback(prismaMock));
-      (prismaMock.order.update as any).mockResolvedValue(updatedOrder as any);
+    it('should hand the move to the state machine and return the updated order', async () => {
+      const updatedOrder = { ...mockOrder, status: 'confirmed' as OrderStatus };
+      mockedTransition.mockResolvedValue({ changed: true, from: 'pending_confirmation' });
+      // the caller reads the order once after the commit
+      (prismaMock.order.findFirst as any).mockResolvedValue(updatedOrder);
 
       const updated = await orderService.updateOrderStatus(1, {
         status: 'confirmed' as OrderStatus,
@@ -293,31 +300,31 @@ describe('OrderService', () => {
       });
 
       expect(updated.status).toBe('confirmed');
-      expect(prismaMock.order.update).toHaveBeenCalled();
+      // no requester: the system actor, with the changedBy user id kept for the history row
+      expect(mockedTransition).toHaveBeenCalledWith(1, 'confirmed', { kind: 'system', userId: 1 },
+        expect.objectContaining({ note: 'Order confirmed' }));
     });
 
-    it('should allow any status transition for admin flexibility', async () => {
-      const updatedOrder = {
-        ...mockOrder,
-        status: 'delivered' as OrderStatus,
-        orderItems: []
-      };
+    it('should use the requester as a user actor', async () => {
+      mockedTransition.mockResolvedValue({ changed: true, order: mockOrder, from: 'pending_confirmation', to: 'confirmed' });
 
-      (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder as any);
-      (prismaMock.$transaction as any).mockImplementation((callback: any) => callback(prismaMock));
-      (prismaMock.order.update as any).mockResolvedValue(updatedOrder as any);
+      await orderService.updateOrderStatus(1, { status: 'confirmed' as OrderStatus }, { id: 7, role: 'manager' } as any);
 
-      // Status validation is disabled to allow admin flexibility
-      const updated = await orderService.updateOrderStatus(1, {
-        status: 'delivered' as OrderStatus
-      });
+      expect(mockedTransition).toHaveBeenCalledWith(1, 'confirmed', { kind: 'user', userId: 7, role: 'manager' },
+        expect.any(Object));
+    });
 
-      expect(updated.status).toBe('delivered');
-      expect(prismaMock.order.update).toHaveBeenCalled();
+    it('should set paymentStatus collected when the status is delivered', async () => {
+      mockedTransition.mockResolvedValue({ changed: true, order: { ...mockOrder, status: 'delivered' }, from: 'out_for_delivery', to: 'delivered' });
+
+      await orderService.updateOrderStatus(1, { status: 'delivered' as OrderStatus, actor: { kind: 'integration' } });
+
+      expect(mockedTransition).toHaveBeenCalledWith(1, 'delivered', { kind: 'integration' },
+        expect.objectContaining({ paymentStatus: 'collected' }));
     });
 
     it('should throw error when order not found', async () => {
-      (prismaMock.order.findUnique as any).mockResolvedValue(null);
+      mockedTransition.mockRejectedValue(new AppError('Order not found', 404));
 
       await expect(
         orderService.updateOrderStatus(999, {
@@ -345,7 +352,9 @@ describe('OrderService', () => {
       ]
     };
 
-    it('should cancel order and restock products', async () => {
+    it('should cancel order through the state machine and update customer stats', async () => {
+      const afterCommit = jest.fn();
+      (transitionOrder as any).mockResolvedValue({ changed: true, order: {}, from: 'confirmed', to: 'cancelled', afterCommit });
       (prismaMock.order.findUnique as any).mockResolvedValue(mockOrder as any);
       (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
@@ -367,6 +376,9 @@ describe('OrderService', () => {
       const result = await orderService.cancelOrder(1, 1, 'Customer request');
 
       expect(result.message).toBe('Order cancelled successfully');
+      expect(transitionOrder).toHaveBeenCalledWith(1, 'cancelled', { kind: 'system', userId: 1 },
+        expect.objectContaining({ note: 'Customer request' }));
+      expect(afterCommit).toHaveBeenCalled();
     });
 
     it('should throw error when cancelling delivered order', async () => {
