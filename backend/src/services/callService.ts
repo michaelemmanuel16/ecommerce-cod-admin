@@ -1,4 +1,5 @@
 import prisma from '../utils/prisma';
+import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { CallOutcome, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
@@ -79,6 +80,7 @@ export class CallService {
     // Create call log
     const call = await prisma.call.create({
       data: {
+        tenantId: resolveTenantId(customer.tenantId),
         customerId: data.customerId,
         orderId: data.orderId,
         salesRepId: data.salesRepId,

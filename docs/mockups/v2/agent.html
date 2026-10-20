@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodAdmin Delivery Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;gap:40px;padding:32px 16px;flex-wrap:wrap}
+.cap{width:230px;color:var(--ink-2)}
+.cap h1{font-size:22px;font-weight:800;color:var(--ink);margin-bottom:6px}
+.cap a{display:inline-flex;gap:6px;align-items:center;color:var(--pine);font-weight:600;text-decoration:none;margin-top:14px}
+.cap .btn{margin-top:14px}
+.phone{position:relative;width:390px;height:844px;flex:none;border-radius:46px;background:var(--bg);border:9px solid var(--ink);box-shadow:var(--shadow),0 40px 80px -30px rgba(0,0,0,.4);overflow:hidden;display:flex;flex-direction:column}
+.sbar{flex:none;display:flex;justify-content:space-between;align-items:center;padding:12px 26px 4px;font-size:12px;font-weight:700}
+.sbar i{width:70px;height:6px;border-radius:9px;background:var(--ink);opacity:.9}
+.body{flex:1;min-height:0;position:relative;overflow:hidden}
+.scr{position:absolute;inset:0;overflow:auto;padding:8px 16px 24px;display:none;scrollbar-width:none}
+.scr.on{display:block}
+.scr::-webkit-scrollbar{display:none}
+.ph{display:flex;align-items:center;gap:10px;margin:6px 0 14px}
+.ph h2{font-size:24px;font-weight:800;line-height:1.1}
+.ph small{display:block;color:var(--ink-2);font-size:13px}
+.ph .ibtn{margin-left:auto;flex:none}
+.ph .back{margin-left:0}
+.stack{display:flex;flex-direction:column;gap:12px}
+.pad{padding:16px}
+.row{display:flex;align-items:center;gap:10px}
+.sp{margin-left:auto}
+.muted{color:var(--ink-3);font-size:12.5px}
+.sub{color:var(--ink-2);font-size:13px}
+.hero{padding:18px;background:radial-gradient(120% 120% at 0% 0%,var(--pine-2),var(--pine));color:#fff;border-radius:20px}
+[data-theme="dark"] .hero{color:#04211d}
+.hero small{opacity:.85;font-weight:600}
+.hero .big{font-size:38px;font-weight:800;line-height:1;margin:6px 0 2px}
+.hero .bar{height:8px}
+.hero .chip{display:inline-flex;align-items:center;gap:6px;margin-top:12px;padding:5px 10px;border-radius:99px;background:rgba(255,255,255,.2);font-size:12px;font-weight:600}
+.tier{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
+.tier div{border:1px solid var(--line);border-radius:12px;padding:8px 6px;text-align:center;font-size:11.5px;color:var(--ink-3)}
+.tier div b{display:block;font-family:"Bricolage Grotesque";font-size:15px;color:var(--ink)}
+.tier .got{background:var(--mint-soft);border-color:transparent}
+.tier .next{border-color:var(--pine);box-shadow:0 0 0 3px var(--pine-soft)}
+.pt{display:flex;align-items:center;justify-content:space-between;margin:6px 2px 0}
+.pt h3{font-size:16px;font-weight:700}
+.pt a,.pt button{color:var(--pine);font-weight:600;font-size:13px}
+.o{display:flex;gap:12px;align-items:center;padding:13px 14px;width:100%;text-align:left}
+.o .a{flex:none;width:38px;height:38px;border-radius:12px;display:grid;place-items:center}
+.o b{display:block;font-size:14.5px}
+.o small{color:var(--ink-3);font-size:12.5px;display:block}
+.o .amt{margin-left:auto;text-align:right;flex:none}
+.o .amt b{font-family:"Bricolage Grotesque";font-size:16px}
+.ptabs{display:flex;gap:6px;overflow:auto;margin:0 -16px 12px;padding:0 16px;scrollbar-width:none}
+.ptabs::-webkit-scrollbar{display:none}
+.ptabs .tab{flex:none;padding:7px 12px;border:1px solid var(--line);background:var(--card)}
+.ptabs .tab.on{border-color:var(--ink);background:var(--ink);color:var(--bg)}
+.find{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink-3);margin-bottom:12px}
+.find input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:500 14px "Plus Jakarta Sans";outline:0}
+.msgrow{display:flex;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.msgrow:last-child{border:0}
+.msgrow .a{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px}
+.msgrow b{font-size:13.5px}
+.msgrow p{color:var(--ink-2);font-size:13px}
+.ntabs{position:relative;flex:none;display:grid;grid-template-columns:repeat(5,1fr);padding:8px 6px 22px;background:var(--card);border-top:1px solid var(--line)}
+.ntabs button{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11.5px;font-weight:600;color:var(--ink-3);padding:4px 0;border-radius:10px;position:relative}
+.ntabs button.on{color:var(--pine)}
+.ntabs button.on svg{stroke-width:2.4}
+.ntabs .dot{position:absolute;top:0;left:55%;min-width:16px;height:16px;border-radius:9px;background:var(--coral);color:#fff;font-size:10px;display:grid;place-items:center;padding:0 4px}
+.step3{display:flex;align-items:flex-start;margin:4px 0 2px}
+.s3{flex:1;text-align:center;position:relative;font-size:12px;font-weight:600;color:var(--ink-3)}
+.s3 i{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;margin:0 auto 6px;border:2px solid var(--line);background:var(--card);position:relative;z-index:1}
+.s3:not(:first-child)::before{content:"";position:absolute;top:14px;right:50%;width:100%;height:2px;background:var(--line)}
+.s3.done{color:var(--ink-2)}.s3.done i{background:var(--mint);border-color:var(--mint);color:#fff}
+.s3.done::before,.s3.cur::before{background:var(--mint)}
+.s3.cur{color:var(--ink)}.s3.cur i{border-color:var(--pine);color:var(--pine)}
+.s3 svg.lucide{width:15px;height:15px}
+.acts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.acts a,.acts button{display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 4px;border:1px solid var(--line);border-radius:14px;background:var(--card);font-size:12.5px;font-weight:600;text-decoration:none;color:var(--ink)}
+.cta{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cta .btn{justify-content:center;padding:13px 6px;font-size:13.5px;white-space:nowrap;gap:6px}
+.btn.bad{color:var(--coral);border-color:var(--coral-soft);background:var(--coral-soft)}
+.li{display:flex;justify-content:space-between;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line);font-size:14px}
+.li:last-child{border:0}
+.mv{display:flex;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+.mv:last-child{border:0}
+.mv .a{flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center}
+.mv b{font-size:13.5px;display:block}
+.mv small{color:var(--ink-3);font-size:12px}
+.mv .q2{margin-left:auto;font-family:"Bricolage Grotesque";font-weight:700}
+.stk{padding:14px 16px;display:flex;align-items:center;gap:12px}
+.stk .pimg{flex:none;width:42px;height:42px;border-radius:12px;display:grid;place-items:center}
+.stk .n2{margin-left:auto;font-family:"Bricolage Grotesque";font-size:26px;font-weight:800}
+.mrow{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line);width:100%;text-align:left;font-weight:600}
+.mrow:last-child{border:0}
+.mrow .a{flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--hover);color:var(--ink-2)}
+.sw{width:42px;height:24px;border-radius:99px;background:var(--line);position:relative;flex:none;margin-left:auto;transition:background .2s}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .2s}
+.sw.on{background:var(--mint)}.sw.on::after{transform:translateX(18px)}
+/* sheets */
+.veil2{position:absolute;inset:0;background:rgba(8,18,16,.5);opacity:0;pointer-events:none;transition:opacity .25s;z-index:30}
+.veil2.on{opacity:1;pointer-events:auto}
+.sheet{position:absolute;left:0;right:0;bottom:0;max-height:88%;overflow:auto;background:var(--card);border-radius:26px 26px 0 0;padding:10px 18px 28px;transform:translateY(105%);transition:transform .3s cubic-bezier(.2,.8,.2,1);z-index:31;box-shadow:0 -20px 40px -20px rgba(0,0,0,.35);scrollbar-width:none}
+.sheet.on{transform:none}
+.sheet .grab{width:40px;height:4px;border-radius:9px;background:var(--line);margin:0 auto 12px}
+.sheet h3{font-size:20px;font-weight:800}
+.sheet .sub{margin:2px 0 14px}
+.fld{margin-bottom:14px}
+.fld label{display:block;font-weight:600;margin-bottom:6px;font-size:13.5px}
+.fld input,.fld textarea{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);font:500 15px "Plus Jakarta Sans";padding:12px 14px;outline:0;resize:none}
+.fld input:focus,.fld textarea:focus{border-color:var(--pine)}
+.fld .amt{font:800 28px "Bricolage Grotesque";letter-spacing:-.02em}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{padding:9px 14px;border:1px solid var(--line);border-radius:99px;font-weight:600;color:var(--ink-2);background:var(--bg)}
+.chips button.on{background:var(--pine-soft);border-color:var(--pine);color:var(--pine)}
+.photo{display:flex;align-items:center;justify-content:center;gap:10px;border:2px dashed var(--line);border-radius:14px;padding:18px;color:var(--ink-2);font-weight:600;width:100%}
+.photo.got{border-style:solid;border-color:var(--mint);background:var(--mint-soft);color:var(--ink)}
+.sheet .btn.pri{width:100%;justify-content:center;padding:14px}
+.toast{position:absolute;left:16px;right:16px;bottom:96px;background:var(--ink);color:var(--bg);padding:11px 14px;border-radius:14px;font-weight:600;font-size:13.5px;z-index:40;transform:translateY(20px);opacity:0;pointer-events:none;transition:.25s;display:flex;gap:8px;align-items:center}
+.toast.on{transform:none;opacity:1}
+.inc{padding:14px 16px;border-bottom:1px solid var(--line)}
+.inc:last-child{border:0}
+.inc .stk{padding:0}
+.inc .btn{width:100%;justify-content:center;margin-top:12px}
+.ibr{display:flex;gap:12px;padding:13px 16px 13px 20px;border-bottom:1px solid var(--line);position:relative;width:100%;text-align:left;cursor:pointer;align-items:flex-start}
+.ibr:last-child{border:0}
+.ibr.unread{background:color-mix(in srgb,var(--pine-soft) 45%,transparent)}
+.ibr .ud{position:absolute;left:7px;top:24px;width:7px;height:7px;border-radius:50%;background:var(--coral)}
+.ibr:not(.unread) .ud{display:none}
+.ibr .a{flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center}
+.ibr .bd{min-width:0;flex:1}
+.ibr b{display:block;font-size:14px;font-weight:600}
+.ibr:not(.unread) b{font-weight:500}
+.ibr p{color:var(--ink-2);font-size:13px;margin-top:2px;overflow-wrap:anywhere}
+.ibr .meta{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;font-size:12px;color:var(--ink-3)}
+.ibr .meta .mini{padding:3px 9px}
+#ib-list .card{overflow:hidden}
+.shortnote{color:var(--coral);font-weight:600;font-size:13px;margin-top:8px}
+.sheet .btn.pri:disabled{opacity:.45;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.sheet,.veil2,.toast,.sw,.sw::after{transition:none!important}}
+@media (max-width:480px){.phone{width:100%;max-width:390px;height:780px}.cap{width:100%}}
+</style>
+</head>
+<body>
+<div class="cap">
+  <h1>Delivery agent app</h1>
+  <p>Delivery agent phone view · sample data</p>
+  <p class="muted" style="margin-top:8px">Tap tabs, orders, and the buttons inside orders to try the sheets.</p>
+  <button class="btn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i> Dark mode</button><br>
+  <a href="index.html"><i data-lucide="arrow-left"></i> Back to CodAdmin</a>
+</div>
+
+<div class="phone" id="phone">
+  <div class="sbar"><span>09:41</span><i></i><span>4G</span></div>
+  <div class="body">
+
+    <!-- HOME -->
+    <section class="scr on" id="s-home">
+      <div class="ph">
+        <div><h2>Hi, Kofi</h2><small>Kumasi · Fri 17 Oct</small></div>
+        <button class="ibtn" id="bell" aria-label="Inbox" data-go="inbox"><i data-lucide="bell"></i><span class="dot" id="bdot"></span></button>
+      </div>
+      <div class="stack">
+        <div class="card pad">
+          <div class="row"><b style="font-size:16px">Today</b><span class="tag warn sp" id="h-left">4 left</span></div>
+          <div class="row" style="margin-top:6px"><span class="num" style="font-size:34px;font-weight:800" id="h-done">4</span><span class="sub" id="h-of">of 9 delivered</span></div>
+          <div class="prog"><i id="h-bar" style="width:44%"></i></div>
+          <button class="btn pri" style="width:100%;justify-content:center;margin-top:14px" data-go="deliveries"><i data-lucide="truck"></i> Go to deliveries</button>
+        </div>
+
+        <div class="hero">
+          <div class="row"><small>Your October target</small><span class="chip sp" style="margin:0"><i data-lucide="award" style="width:14px;height:14px"></i> 90% of target</span></div>
+          <div class="big num">54%</div>
+          <div style="opacity:.9">delivery success · target 60%</div>
+          <div class="bar"><i style="width:90%"></i></div>
+          <div class="chip"><i data-lucide="gift" style="width:14px;height:14px"></i> Rewards are paid at month close</div>
+        </div>
+
+        <div class="card pad">
+          <div class="row"><b>Next reward</b><span class="tag ok sp">23 deliveries away</span></div>
+          <p class="sub" style="margin-top:6px">Deliver your next 23 orders to reach 100% and earn GH₵250.</p>
+          <div class="tier">
+            <div class="next"><b>100%</b>GH₵250</div>
+            <div><b>120%</b>GH₵400 + day off</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row pad" style="padding-bottom:0"><div><small class="muted">Cash you hold</small><div class="num" style="font-size:28px;font-weight:800">GH₵2,900</div></div>
+            <button class="btn pri sp" data-go="cash"><i data-lucide="banknote"></i> Deposit</button></div>
+          <p class="muted" style="padding:6px 16px 14px">12 orders collected. Oldest is 4 days old.</p>
+        </div>
+
+        <div class="pt"><h3>From the team</h3><span class="muted">3 new</span></div>
+        <div class="card">
+          <div class="msgrow"><div class="a" style="background:var(--pine-soft);color:var(--pine)">M</div><div><b>Manny</b> <span class="muted">· 08:40</span><p>Please collect from Abena today.</p></div></div>
+          <div class="msgrow"><div class="a" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="alarm-clock" style="width:15px;height:15px"></i></div><div><b>Reminder · 14:00</b><p>Deposit cash before the bank closes.</p></div></div>
+          <div class="msgrow"><div class="a" style="background:var(--violet-soft);color:var(--violet)">A</div><div><b>Adwoa</b> <span class="muted">· yesterday</span><p>Yaw Mensah confirmed. Call before you go.</p></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DELIVERIES -->
+    <section class="scr" id="s-deliveries">
+      <div class="ph"><div><h2>Deliveries</h2><small id="dsum"></small></div></div>
+      <label class="find"><i data-lucide="search"></i><input id="q" placeholder="Name, phone, area, order #" aria-label="Search deliveries"></label>
+      <div class="ptabs" id="dtabs"></div>
+      <div class="stack" id="dlist"></div>
+    </section>
+
+    <!-- DETAIL -->
+    <section class="scr" id="s-detail">
+      <div class="ph"><button class="ibtn back" id="back" aria-label="Back"><i data-lucide="arrow-left"></i></button><div><h2 id="d-name"></h2><small id="d-ord"></small></div><span class="sp" id="d-tag"></span></div>
+      <div class="stack">
+        <div class="card pad"><div class="step3" id="d-steps"></div></div>
+        <div class="acts">
+          <a href="#" id="d-call" aria-label="Call"><i data-lucide="phone"></i>Call</a>
+          <a href="#" id="d-wa" aria-label="WhatsApp"><i data-lucide="message-circle"></i>WhatsApp</a>
+          <a href="#" id="d-map" aria-label="Open in Maps"><i data-lucide="map-pin"></i>Maps</a>
+        </div>
+        <div class="card pad">
+          <small class="muted">Deliver to</small>
+          <b id="d-addr" style="display:block;font-size:15px"></b>
+          <span class="sub" id="d-phone"></span>
+        </div>
+        <div class="card">
+          <div class="li"><span>1 x Magic Groove copybook set</span><b class="num">GH₵249</b></div>
+          <div class="li" id="d-extra" style="display:none"><span>1 x Refill pens</span><b class="num">GH₵40</b></div>
+          <div class="li" style="background:var(--hover)"><b>Cash to collect</b><b class="num" id="d-cod" style="font-size:18px"></b></div>
+        </div>
+        <div class="card">
+          <div class="ct"><h3>Past attempts</h3></div>
+          <div id="d-hist" style="padding-bottom:6px"></div>
+        </div>
+        <div class="cta" id="d-cta">
+          <button class="btn pri" data-sheet="complete"><i data-lucide="check-circle-2"></i> Complete delivery</button>
+          <button class="btn bad" data-sheet="failed"><i data-lucide="x-circle"></i> Report failed</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- STOCK -->
+    <section class="scr" id="s-stock">
+      <div class="ph"><div><h2>My stock</h2><small id="onhand">99 units on hand</small></div></div>
+      <div class="stack">
+        <div class="card" id="inc-card">
+          <div class="ct"><h3 data-i="incTitle">Incoming stock</h3><span class="tag v" id="inc-n"></span></div>
+          <div id="inc-list"></div>
+        </div>
+        <div class="card">
+          <div class="stk"><div class="pimg" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="book-open"></i></div><div><b>Copybook set</b><small class="muted" style="display:block">MG-CB-SET</small></div><div class="n2" id="n-cb">36</div></div>
+          <div class="stk" style="border-top:1px solid var(--line)"><div class="pimg" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="pen-tool"></i></div><div><b>Refill pens</b><small class="muted" style="display:block">Magic pen refills</small></div><div class="n2">18</div></div>
+          <div class="stk" style="border-top:1px solid var(--line)"><div class="pimg" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="hand"></i></div><div><b>Grip trainer</b><small class="muted" style="display:block">Pencil grip</small></div><div class="n2">45</div></div>
+        </div>
+        <div class="pt"><h3>History</h3><span class="muted">Last 7 days</span></div>
+        <div class="ptabs" id="mtabs" style="margin-bottom:0"></div>
+        <div class="card" id="mlist"></div>
+      </div>
+    </section>
+
+    <!-- CASH -->
+    <section class="scr" id="s-cash">
+      <div class="ph"><div><h2>Cash</h2><small>Collected cash and deposits</small></div></div>
+      <div class="stack">
+        <div class="card pad">
+          <small class="muted">You still hold</small>
+          <div class="num" style="font-size:34px;font-weight:800">GH₵2,900</div>
+          <div class="row" style="margin-top:8px"><span class="tag warn">1 pending</span><span class="tag n">12 orders</span></div>
+          <button class="btn pri" style="width:100%;justify-content:center;margin-top:14px" data-sheet="deposit"><i data-lucide="plus"></i> New deposit</button>
+        </div>
+        <div class="seg" style="display:flex;margin:0"><button class="on" data-ct="col" style="flex:1">Collections</button><button data-ct="dep" style="flex:1">Deposits</button><button data-ct="fee" style="flex:1">Fees you kept</button></div>
+        <div class="card" id="clist"></div>
+      </div>
+    </section>
+
+    <!-- INBOX: reached from the bell on Home -->
+    <section class="scr" id="s-inbox">
+      <div class="ph"><button class="ibtn back" aria-label="Back" data-go="home"><i data-lucide="arrow-left"></i></button><div><h2 data-i="inboxTitle">Inbox</h2><small id="ib-sum"></small></div><button class="mini sp" id="ib-mark" data-i="markAll">Mark all read</button></div>
+      <div class="stack" id="ib-list"></div>
+    </section>
+
+    <!-- MORE -->
+    <section class="scr" id="s-more">
+      <div class="ph"><div><h2>More</h2></div></div>
+      <div class="stack">
+        <div class="card pad row">
+          <div class="avatar" style="width:54px;height:54px;font-size:18px">KA</div>
+          <div><b style="font-size:17px">Kofi Appiah</b><span class="sub" style="display:block">Delivery agent · Kumasi</span><span class="sub">+233 24 400 0111</span></div>
+        </div>
+        <div class="pt"><h3>Notifications</h3><span class="muted">Same settings as the Inbox page</span></div>
+        <div class="card">
+          <button class="mrow" data-sw><span class="a"><i data-lucide="package-plus"></i></span>New orders<span class="sw on"></span></button>
+          <button class="mrow" data-sw><span class="a"><i data-lucide="alarm-clock"></i></span>Reminders<span class="sw on"></span></button>
+          <button class="mrow" data-sw><span class="a"><i data-lucide="messages-square"></i></span>Team messages<span class="sw on"></span></button>
+          <button class="mrow" data-sw><span class="a"><i data-lucide="gift"></i></span>Reward updates<span class="sw"></span></button>
+        </div>
+        <div class="card" style="margin-top:4px">
+          <button class="mrow" id="signout" style="color:var(--coral)"><span class="a" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="log-out"></i></span>Sign out</button>
+        </div>
+        <p class="muted" style="text-align:center">CodAdmin · Manny Dynamics</p>
+      </div>
+    </section>
+
+    <div class="veil2" id="veil"></div>
+
+    <!-- SHEETS -->
+    <div class="sheet" id="sh-complete" role="dialog" aria-label="Complete delivery">
+      <div class="grab"></div>
+      <h3>Complete delivery</h3><p class="sub" id="c-sub"></p>
+      <div class="fld"><label for="c-name">Who received it</label><input id="c-name" placeholder="Name of person receiving"></div>
+      <div class="fld"><label for="c-amt">Cash collected (GH₵)</label><input id="c-amt" class="amt" inputmode="decimal" value="249.00"></div>
+      <div class="fld"><label>Photo</label><button class="photo" data-photo><i data-lucide="camera"></i><span>Take a photo</span></button></div>
+      <button class="btn pri" id="c-go"><i data-lucide="check"></i> Confirm delivered</button>
+    </div>
+
+    <div class="sheet" id="sh-failed" role="dialog" aria-label="Report failed delivery">
+      <div class="grab"></div>
+      <h3>Report failed</h3><p class="sub">What went wrong?</p>
+      <div class="fld"><div class="chips" id="reasons">
+        <button class="on">Not reachable</button><button>Refused</button><button>Wrong address</button><button>Rescheduled</button></div></div>
+      <div class="fld"><label for="f-note">Note</label><textarea id="f-note" rows="3" placeholder="Add details for the team"></textarea></div>
+      <button class="btn pri" id="f-go" style="background:var(--coral);border-color:var(--coral)"><i data-lucide="x"></i> Report failed</button>
+    </div>
+
+    <div class="sheet" id="sh-deposit" role="dialog" aria-label="New deposit">
+      <div class="grab"></div>
+      <h3>New deposit</h3><p class="sub">You hold GH₵2,900.</p>
+      <div class="fld"><label for="p-amt">Amount (GH₵)</label><input id="p-amt" class="amt" inputmode="decimal" value="2,900.00"></div>
+      <div class="fld"><label>How did you pay</label><div class="chips" id="methods"><button class="on">Cash</button><button>Bank transfer</button><button>MoMo</button></div></div>
+      <div class="fld"><label>Receipt photo</label><button class="photo" data-photo><i data-lucide="camera"></i><span>Take a photo of the receipt</span></button></div>
+      <div class="fld"><label for="p-ref">Reference number</label><input id="p-ref" placeholder="MoMo or bank reference"></div>
+      <div class="fld"><label for="p-note">Notes</label><textarea id="p-note" rows="2" placeholder="Optional"></textarea></div>
+      <button class="btn pri" id="p-go"><i data-lucide="send"></i> Submit deposit</button>
+    </div>
+
+    <div class="sheet" id="sh-receive" role="dialog" aria-label="Confirm received">
+      <div class="grab"></div>
+      <h3 data-i="confirm">Confirm received</h3><p class="sub" id="r-sub"></p>
+      <div class="fld"><label for="r-q" data-i="unitsRecv">Units received</label><input id="r-q" class="amt" inputmode="numeric" value="20"><p class="shortnote" id="r-short" hidden></p></div>
+      <div class="fld" id="r-why" hidden><label data-i="reason">Reason</label><div class="chips" id="r-reasons"><button data-r="short" data-i="rShort">Short in package</button><button data-r="damaged" data-i="rDamaged">Damaged</button><button data-r="none" data-i="rNone">Not received</button></div></div>
+      <button class="btn pri" id="r-go"><i data-lucide="package-check"></i> <span data-i="confirm">Confirm received</span></button>
+    </div>
+
+    <div class="sheet" id="sh-reply" role="dialog" aria-label="Reply">
+      <div class="grab"></div>
+      <h3 id="rp-h"></h3><p class="sub" id="rp-sub"></p>
+      <div class="fld"><label for="rp-t" data-i="replyLbl">Your reply</label><textarea id="rp-t" rows="3"></textarea></div>
+      <button class="btn pri" id="rp-go"><i data-lucide="send"></i> <span data-i="sendReply">Send reply</span></button>
+    </div>
+
+    <div class="toast" id="toast"><i data-lucide="check-circle-2"></i><span id="toast-t"></span></div>
+  </div>
+
+  <nav class="ntabs" aria-label="Main">
+    <button class="on" data-go="home"><i data-lucide="home"></i>Home</button>
+    <button data-go="deliveries"><i data-lucide="truck"></i>Deliveries<span class="dot">3</span></button>
+    <button data-go="stock"><i data-lucide="package"></i>Stock</button>
+    <button data-go="cash"><i data-lucide="banknote"></i>Cash</button>
+    <button data-go="more"><i data-lucide="menu"></i>More</button>
+  </nav>
+</div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const T={ok:'tag ok',bad:'tag bad',warn:'tag warn',v:'tag v',n:'tag n'};
+const ST={pick:['To pick up','warn'],out:['Out','v'],done:['Done','ok'],failed:['Failed','bad']};
+const orders=[
+ {id:'#24117',n:'Abena Owusu',area:'Adum',addr:'14 Adum Road, Adum',ph:'024 555 0182',cod:249,s:'done',h:[]},
+ {id:'#24020',n:'Yaw Mensah',area:'Ahodwo',addr:'House 7, Ahodwo Roundabout',ph:'055 902 3318',cod:289,s:'out',extra:1,h:[['16 Oct','Not reachable','Phone off at 15:20']]},
+ {id:'#24024',n:'Akosua Boateng',area:'Asokwa',addr:'12 Asokwa Market Lane',ph:'020 773 4410',cod:249,s:'pick',h:[]},
+ {id:'#24029',n:'Kwabena Frimpong',area:'Santasi',addr:'Santasi Roundabout, near the pharmacy',ph:'024 318 6652',cod:249,s:'pick',h:[]},
+ {id:'#24001',n:'Efua Sarpong',area:'Nhyiaeso',addr:'Block C, Nhyiaeso Estates',ph:'050 126 9087',cod:249,s:'done',h:[]},
+ {id:'#23998',n:'Kojo Antwi',area:'Bantama',addr:'Bantama High Street 31',ph:'054 880 2275',cod:249,s:'done',h:[]},
+ {id:'#23990',n:'Ama Serwaa',area:'Suame',addr:'Suame Magazine, Gate 2',ph:'027 540 1193',cod:249,s:'done',h:[]},
+ {id:'#23987',n:'Nana Yeboah',area:'Ejisu',addr:'Ejisu Junction, Shop 5',ph:'024 205 7731',cod:249,s:'failed',h:[['17 Oct','Refused','Said he changed his mind']]},
+ {id:'#24114',n:'Yaw Boateng',area:'Asokwa',addr:'Asokwa, Kumasi',ph:'024 555 0103',cod:249,s:'failed',h:[['17 Oct','Refused','His brother refused the parcel at the gate. Re-delivery Tue 20 Oct']]}
+];
+let tab='all',cur=null,view='home';
+const tabs=[['all','All'],['pick','To pick up'],['out','Out'],['done','Done'],['failed','Failed']];
+function renderTabs(){
+  $('#dtabs').innerHTML=tabs.map(([k,l])=>{const c=k==='all'?orders.length:orders.filter(o=>o.s===k).length;
+    return `<button class="tab ${tab===k?'on':''}" data-t="${k}">${l}<span>${c}</span></button>`}).join('');
+  const dn=orders.filter(o=>o.s==='done').length, lf=orders.filter(o=>o.s==='pick'||o.s==='out').length;
+  $('#dsum').textContent=dn+' of '+orders.length+' delivered today';
+  $('#h-done').textContent=dn; $('#h-of').textContent='of '+orders.length+' delivered'; $('#h-left').textContent=lf+' left'; $('#h-bar').style.width=Math.round(dn/orders.length*100)+'%';
+  const dd=document.querySelector('.ntabs .dot'); if(dd) dd.textContent=lf;
+}
+function renderList(){
+  const q=$('#q').value.toLowerCase();
+  const l=orders.filter(o=>(tab==='all'||o.s===tab)&&(o.n+o.area+o.id+o.ph).toLowerCase().includes(q));
+  const ic={pick:['package','gold'],out:['truck','violet'],done:['check','mint'],failed:['x','coral']};
+  $('#dlist').innerHTML=l.length?l.map(o=>`<button class="card o" data-o="${o.id}"><span class="a" style="background:var(--${ic[o.s][1]}-soft);color:var(--${ic[o.s][1]})"><i data-lucide="${ic[o.s][0]}"></i></span>
+   <div><b>${o.n}</b><small>${o.area} · ${o.id}</small></div><div class="amt"><b>GH₵${o.cod}</b><span class="${T[ST[o.s][1]]}">${ST[o.s][0]}</span></div></button>`).join(''):'<p class="sub" style="text-align:center;padding:30px 0">No orders here.</p>';
+  lucide.createIcons();
+}
+function renderDetail(){
+  const o=cur; $('#d-name').textContent=o.n; $('#d-ord').textContent=o.id+' · '+o.area;
+  $('#d-tag').innerHTML=`<span class="${T[ST[o.s][1]]}">${ST[o.s][0]}</span>`;
+  $('#d-addr').textContent=o.addr; $('#d-phone').textContent=o.ph;
+  const dg=o.ph.replace(/\s/g,''); $('#d-call').href='tel:+233'+dg.replace(/^0/,''); $('#d-wa').href='https://wa.me/233'+dg.replace(/^0/,''); $('#d-map').href='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(o.addr+', '+o.area+', Ghana');
+  $('#d-extra').style.display=o.extra?'flex':'none'; $('#d-cod').textContent='GH₵'+o.cod;
+  const idx={pick:0,out:1,done:3,failed:1}[o.s];
+  const st=[['Picked up','package-check'],['Out for delivery','truck'],['Delivered','check']];
+  $('#d-steps').innerHTML=st.map(([l,i],k)=>`<div class="s3 ${k<idx?'done':k===idx?'cur':''}"><i><i data-lucide="${k<idx?'check':i}"></i></i>${l}</div>`).join('');
+  $('#d-hist').innerHTML=o.h.length?o.h.map(h=>`<div class="mv"><span class="a" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="x"></i></span><div><b>${h[1]}</b><small>${h[0]} · ${h[2]}</small></div></div>`).join(''):'<p class="muted" style="padding:6px 20px 10px">No failed attempts.</p>';
+  const open=o.s==='out'||o.s==='pick';
+  $('#d-cta').innerHTML=o.s==='pick'?`<button class="btn pri" style="grid-column:1/3" id="goout"><i data-lucide="truck"></i> Start delivery</button>`:open?`<button class="btn pri" data-sheet="complete"><i data-lucide="check-circle-2"></i> Complete delivery</button><button class="btn bad" data-sheet="failed"><i data-lucide="x-circle"></i> Report failed</button>`:'';
+  $('#c-sub').textContent=o.n+' · '+o.id; $('#c-amt').value=o.cod.toFixed(2);
+  lucide.createIcons();
+}
+const mv=[['allocated','Allocated','Manny','+20','Copybook set','14 Oct','plus','mint'],['delivered','Delivered','#24001','-1','Copybook set','17 Oct','check','pine'],['delivered','Delivered','#23998','-1','Copybook set','17 Oct','check','pine'],['transferred','Transferred','To Esi Badu','-5','Refill pens','16 Oct','arrow-right-left','violet'],['returned','Returned','#23987 refused','+1','Copybook set','17 Oct','undo-2','gold'],['adjusted','Adjusted','Stock count fix','-2','Grip trainer','15 Oct','sliders-horizontal','coral']];
+let INC=[{p:'Copybook set',q:20,by:'Manny',d:'17 Oct'}];
+let mt='all';
+function renderMv(){
+  const m=[['all','All'],['allocated','Allocated'],['delivered','Delivered'],['transferred','Transferred'],['returned','Returned'],['adjusted','Adjusted'],['received','Received']];
+  $('#mtabs').innerHTML=m.map(([k,l])=>`<button class="tab ${mt===k?'on':''}" data-m="${k}">${l}</button>`).join('');
+  $('#mlist').innerHTML=mv.filter(x=>mt==='all'||x[0]===mt).map(x=>`<div class="mv"><span class="a" style="background:var(--${x[7]}-soft);color:var(--${x[7]})"><i data-lucide="${x[6]}"></i></span><div><b>${x[0]==='received'?tr('received'):x[1]} · ${x[4]}</b><small>${x[2]} · ${x[5]}</small>${x[8]?`<small style="color:var(--coral);font-weight:600">${x[8]}</small>`:''}</div><span class="q2">${x[3]}</span></div>`).join('');
+  lucide.createIcons();
+}
+const col=[['#24001','Efua Sarpong','GH₵249','Pending','warn','17 Oct'],['#23998','Kojo Antwi','GH₵249','Pending','warn','17 Oct'],['#23990','Ama Serwaa','GH₵249','Draft','n','17 Oct'],['#23976','Adjoa Mensah','GH₵289','Verified','ok','15 Oct'],['#23970','Kwame Asante','GH₵249','Reconciled','v','13 Oct']];
+const dep=[['Cash','GH₵1,200','Pending','warn','16 Oct'],['MoMo','GH₵1,500','Deposited','ok','14 Oct'],['Bank transfer','GH₵980','Reconciled','v','10 Oct'],['Cash','GH₵498','Rejected','bad','8 Oct']];
+let ct='col';
+function renderCash(){
+  if(ct==='fee'){ $('#clist').innerHTML=`<div class="pad"><small class="muted">Fees you kept in October</small><div class="num" style="font-size:30px;font-weight:800">GH₵2,400</div><p class="sub" style="margin-top:6px">You keep your delivery fee from the cash you collect and hand in the rest. Nothing is paid to you later.</p></div><div class="li"><span>Delivered<small class="muted" style="display:block">82 × GH₵25</small></span><b class="num">GH₵2,050</b></div><div class="li"><span>Failed<small class="muted" style="display:block">70 × GH₵5</small></span><b class="num">GH₵350</b></div><div class="li"><span>Returned<small class="muted" style="display:block">0 × GH₵0</small></span><b class="num">GH₵0</b></div><div class="li" style="background:var(--hover)"><b>Cash you hold</b><b class="num">GH₵2,900</b></div><p class="muted" style="padding:8px 16px 14px">Cash you hold = cash collected, minus your fees, minus what you deposited.</p>`; lucide.createIcons(); return; }
+  $('#clist').innerHTML=ct==='col'?col.map(c=>`<div class="mv"><span class="a" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="banknote"></i></span><div><b>${c[1]}</b><small>${c[0]} · ${c[5]}</small></div><div style="margin-left:auto;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px"><b class="num">${c[2]}</b><span class="${T[c[4]]}">${c[3]}</span></div></div>`).join('')
+  :dep.map(c=>`<div class="mv"><span class="a" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="${c[0]==='Cash'?'wallet':c[0]==='MoMo'?'smartphone':'landmark'}"></i></span><div><b>${c[0]}</b><small>${c[4]}${c[3]==='Rejected'?' · receipt unclear':''}</small></div><div style="margin-left:auto;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px"><b class="num">${c[1]}</b><span class="${T[c[3]]}">${c[2]||c[3]}</span></div></div>`).join('');
+  lucide.createIcons();
+}
+/* incoming stock: units sit "in transit" until the agent confirms */
+let lang='en',recv=null,onhand=99;
+const I18N={ /* English only */
+ en:{incTitle:'Incoming stock',toConfirm:n=>n+' to confirm',sentBy:(b,d)=>'Sent by '+b+' · '+d,confirm:'Confirm received',unitsRecv:'Units received',reason:'Reason',rShort:'Short in package',rDamaged:'Damaged',rNone:'Not received',
+  shortBy:n=>'Short by '+n+(n===1?' unit':' units')+'. Manny will see this.',none:'Nothing waiting. Stock sent to you shows up here.',sheetSub:(p,b,d)=>p+' · sent by '+b+', '+d,received:'Received',from:b=>'From '+b,
+  okAll:(n,p)=>n+' '+p+' received. Added to your stock.',okShort:(n,s)=>n+' received. '+s+' short reported to Manny.',shortLine:(s,r)=>s+' short · '+r}
+};
+/* Inbox strings. */
+const INB={inboxTitle:'Inbox',markAll:'Mark all read',unreadN:n=>n?n+' unread':'You are all caught up',gToday:'Today',gYesterday:'Yesterday',gEarlier:'Earlier',
+ newDel:n=>'New delivery: '+n,newDelSub:(a,c)=>a+' · GH₵'+c+' to collect',moved:n=>n+' moved the delivery time',movedSub:'Home after 17:00. Bring change for GH₵500.',
+ stockN:n=>n+' copybook sets are waiting for you',stockSub:'Sent by Manny · 17 Oct. Tap Confirm received when they arrive.',
+ cashT:'Reminder: deposit cash before the bank closes',cashSub:'You hold GH₵2,900 from 12 orders. The oldest is 4 days old.',
+ payT:'Fees you kept this month: GH₵2,400',paySub:'82 delivered at GH₵25 and 70 failed at GH₵5, kept from the cash you collected. There is no payout.',
+ noteFrom:(n,o)=>n+' · '+o,openDel:'Open delivery',openStock:'Go to My stock',openCash:'Go to Cash',reply:'Reply',replyTo:n=>'Reply to '+n,replyLbl:'Your reply',sendReply:'Send reply',replySent:n=>'Reply sent to '+n};
+Object.assign(I18N.en,INB);
+const tr=(k,...a)=>{const v=I18N[lang][k];return typeof v==='function'?v(...a):v};
+const rLabel={short:'rShort',damaged:'rDamaged',none:'rNone'};
+function renderInc(){
+  $('#inc-n').textContent=INC.length?tr('toConfirm',INC.length):''; $('#inc-n').style.display=INC.length?'':'none';
+  $('#inc-list').innerHTML=INC.length?INC.map((x,i)=>`<div class="inc"><div class="stk"><div class="pimg" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="truck"></i></div><div><b>${x.p}</b><small class="muted" style="display:block">${tr('sentBy',x.by,x.d)}</small></div><div class="n2">${x.q}</div></div><button class="btn pri" data-recv="${i}"><i data-lucide="package-check"></i> ${tr('confirm')}</button></div>`).join(''):`<p class="muted" style="padding:6px 16px 16px">${tr('none')}</p>`;
+  lucide.createIcons();
+}
+/* inbox: rows are built from orders and INC so names and amounts agree with Deliveries and Stock */
+const IBN=[
+ {id:'cash',g:'Today',ic:['alarm-clock','gold'],w:'14:00',go:'cash',lk:'openCash',u:1},
+ {id:'moved',g:'Today',ic:['clock','violet'],w:'09:20',go:'detail:#24020',lk:'openDel',u:1},
+ {id:'note1',g:'Today',ic:['messages-square','pine'],w:'08:40',go:'detail:#24024',lk:'openDel',u:1,from:'Manny',oid:'#24024',nt:'Please collect from Akosua today.'},
+ {id:'stock',g:'Today',ic:['truck','violet'],w:'08:30',go:'stock',lk:'openStock',u:1},
+ {id:'del2',g:'Today',ic:['package-plus','gold'],w:'08:12',go:'detail:#24029',lk:'openDel',u:1,oid:'#24029'},
+ {id:'del1',g:'Today',ic:['package-plus','gold'],w:'08:10',go:'detail:#24024',lk:'openDel',u:1,oid:'#24024'},
+ {id:'note2',g:'Yesterday',ic:['messages-square','violet'],w:'Yesterday',go:'detail:#24020',lk:'openDel',u:1,from:'Adwoa',oid:'#24020',nt:'Yaw Mensah confirmed. Call before you go.'},
+ {id:'pay',g:'Earlier',ic:['banknote','gold'],w:'12 Oct',go:'cash',lk:'openCash',u:0}
+];
+function ibText(n){
+  const o=n.oid&&orders.find(x=>x.id===n.oid);
+  if(n.id==='del1'||n.id==='del2')return{t:tr('newDel',o.n),p:tr('newDelSub',o.area,o.cod)};
+  if(n.id==='moved')return{t:tr('moved','Yaw Mensah'),p:tr('movedSub')};
+  if(n.id==='stock')return INC.length?{t:tr('stockN',INC.reduce((s,x)=>s+x.q,0)),p:tr('stockSub')}:null;
+  if(n.id==='cash')return{t:tr('cashT'),p:tr('cashSub')};
+  if(n.id==='pay')return{t:tr('payT'),p:tr('paySub')};
+  return{t:tr('noteFrom',n.from,o.n+' · '+o.id),p:'“'+n.nt+'”',reply:1};
+}
+function ibLive(){return IBN.map(n=>({n,x:ibText(n)})).filter(r=>r.x)}
+function renderInbox(){
+  const rows=ibLive(), un=rows.filter(r=>r.n.u).length;
+  $('#ib-sum').textContent=tr('unreadN',un); $('#bdot').style.display=un?'':'none';
+  $('#bell').setAttribute('aria-label',tr('inboxTitle')+(un?', '+un+' unread':''));
+  let h='';
+  [['Today','gToday'],['Yesterday','gYesterday'],['Earlier','gEarlier']].forEach(([g,k])=>{
+    const rs=rows.filter(r=>r.n.g===g); if(!rs.length)return;
+    h+=`<div class="pt"><h3>${tr(k)}</h3></div><div class="card">`+rs.map(({n,x})=>`<div class="ibr ${n.u?'unread':''}" ${n.go?`role="button" tabindex="0" data-ibgo="${n.go}" data-ibid="${n.id}"`:`data-ibid="${n.id}"`}><span class="ud"></span><span class="a" style="background:var(--${n.ic[1]}-soft);color:var(--${n.ic[1]})"><i data-lucide="${n.ic[0]}"></i></span><div class="bd"><b>${x.t}</b><p>${x.p}</p><div class="meta"><span>${n.w}</span>${x.reply?`<button class="mini" data-ibreply="${n.id}"><i data-lucide="corner-down-right" style="width:12px;height:12px;vertical-align:-2px"></i> ${tr('reply')}</button>`:''}</div></div></div>`).join('')+'</div>';
+  });
+  $('#ib-list').innerHTML=h; lucide.createIcons();
+}
+let rpFor=null,backTo='deliveries';
+function ibOpen(dest,id){
+  const n=IBN.find(x=>x.id===id); if(n)n.u=0;
+  const [t,oid]=dest.split(':');
+  if(t==='detail'){cur=orders.find(x=>x.id===oid);backTo='inbox';renderDetail();renderInbox();go('detail');return}
+  renderInbox(); go(t);
+}
+document.addEventListener('click',e=>{
+  const rb=e.target.closest('[data-ibreply]');
+  if(rb){const n=IBN.find(x=>x.id===rb.dataset.ibreply); rpFor=n; $('#rp-h').textContent=tr('replyTo',n.from); $('#rp-sub').textContent=n.oid+' · '+orders.find(x=>x.id===n.oid).n; $('#rp-t').value=''; openSheet('reply'); return}
+  const r=e.target.closest('[data-ibgo]'); if(r){ibOpen(r.dataset.ibgo,r.dataset.ibid);return}
+  if(e.target.closest('#ib-mark')){IBN.forEach(n=>n.u=0);renderInbox();toast(tr('markAll'));return}
+  if(e.target.closest('#rp-go')&&rpFor){const n=rpFor; rpFor=null; n.u=0; closeSheet(); renderInbox(); toast(tr('replySent',n.from))}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.dataset&&e.target.dataset.ibgo)ibOpen(e.target.dataset.ibgo,e.target.dataset.ibid)});
+function recvSub(){ $('#r-sub').textContent=tr('sheetSub',recv.p,recv.by,recv.d) }
+function recvCheck(){
+  const q=Math.max(0,Math.min(recv.q,parseInt($('#r-q').value,10)||0)), sh=recv.q-q;
+  $('#r-short').hidden=!sh; $('#r-short').textContent=sh?tr('shortBy',sh):''; $('#r-why').hidden=!sh;
+  $('#r-go').disabled=!!sh&&!$('#r-reasons .on');
+}
+function openRecv(i){
+  recv=INC[i]; recv.i=i; $('#r-q').value=recv.q; $$('#r-reasons button').forEach(b=>b.classList.remove('on')); recvSub(); recvCheck(); openSheet('receive');
+}
+$('#r-q').addEventListener('input',recvCheck);
+document.addEventListener('click',e=>{
+  const rb=e.target.closest('[data-recv]'); if(rb)openRecv(+rb.dataset.recv);
+  if(e.target.closest('#r-reasons button'))setTimeout(recvCheck,0); /* chip toggle runs in the listener below */
+  if(e.target.closest('#r-go')&&recv){
+    const q=Math.max(0,Math.min(recv.q,parseInt($('#r-q').value,10)||0)), sh=recv.q-q, why=sh?tr(rLabel[$('#r-reasons .on').dataset.r]):'';
+    INC.splice(recv.i,1); onhand+=q; $('#onhand').textContent=onhand+' units on hand'; $('#n-cb').textContent=36+q;
+    mv.unshift(['received','Received',tr('from',recv.by),'+'+q,recv.p,'17 Oct','package-check','mint',sh?tr('shortLine',sh,why):'']);
+    recv=null; closeSheet(); renderInc(); renderInbox(); mt='all'; renderMv();
+    toast(sh?tr('okShort',q,sh):tr('okAll',q,'copybook sets'));
+  }
+});
+/* nav + sheets */
+function go(v){
+  view=v; $$('.scr').forEach(s=>s.classList.toggle('on',s.id==='s-'+v));
+  const tabv=v==='detail'?(backTo==='inbox'?'home':'deliveries'):v==='inbox'?'home':v;
+  $$('.ntabs button').forEach(b=>b.classList.toggle('on',b.dataset.go===tabv));
+  $('#s-'+v).scrollTop=0; closeSheet();
+  location.hash=v;
+}
+function openSheet(n){$('#veil').classList.add('on');$$('.sheet').forEach(s=>s.classList.toggle('on',s.id==='sh-'+n))}
+function closeSheet(){$('#veil').classList.remove('on');$$('.sheet').forEach(s=>s.classList.remove('on'))}
+function toast(t){$('#toast-t').textContent=t;$('#toast').classList.add('on');setTimeout(()=>$('#toast').classList.remove('on'),2200)}
+document.addEventListener('click',e=>{
+  const g=e.target.closest('[data-go]'); if(g){go(g.dataset.go);return}
+  const sh=e.target.closest('[data-sheet]'); if(sh){openSheet(sh.dataset.sheet);return}
+  const t=e.target.closest('[data-t]'); if(t){tab=t.dataset.t;renderTabs();renderList();return}
+  const o=e.target.closest('[data-o]'); if(o){cur=orders.find(x=>x.id===o.dataset.o);backTo='deliveries';renderDetail();go('detail');return}
+  const m=e.target.closest('[data-m]'); if(m){mt=m.dataset.m;renderMv();return}
+  const c=e.target.closest('[data-ct]'); if(c){ct=c.dataset.ct;$$('[data-ct]').forEach(b=>b.classList.toggle('on',b===c));renderCash();return}
+  const sw=e.target.closest('[data-sw]'); if(sw){sw.querySelector('.sw').classList.toggle('on');return}
+  const ph=e.target.closest('[data-photo]'); if(ph){ph.classList.add('got');ph.innerHTML='<i data-lucide="image-check"></i><span>Photo added</span>';lucide.createIcons();return}
+  const ch=e.target.closest('.chips button'); if(ch){ch.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===ch));return}
+  if(e.target.id==='veil')closeSheet();
+  if(e.target.closest('#back')){const b=backTo;backTo='deliveries';go(b)}
+  if(e.target.closest('#goout')){cur.s='out';renderDetail();renderTabs();renderList();toast('Marked out for delivery')}
+  if(e.target.closest('#c-go')){cur.s='done';closeSheet();renderDetail();renderTabs();renderList();toast('Delivered. Cash added to your balance.')}
+  if(e.target.closest('#f-go')){cur.s='failed';cur.h.unshift(['17 Oct',$('#reasons .on').textContent,$('#f-note').value||'No note']);closeSheet();renderDetail();renderTabs();renderList();toast('Failed delivery reported')}
+  if(e.target.closest('#p-go')){closeSheet();toast('Deposit sent for checking')}
+  if(e.target.closest('#signout')){toast('Signed out. Sample only.')}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet()});
+$('#q').addEventListener('input',renderList);
+$('#theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'};
+cur=orders[0];renderTabs();renderList();renderDetail();renderMv();renderCash();renderInc();renderInbox();
+lucide.createIcons();
+const h=location.hash.slice(1); if(h&&$('#s-'+h)){if(h==='detail')renderDetail();go(h)}
+const sh=new URLSearchParams(location.search).get('sheet'); if(sh)openSheet(sh);
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

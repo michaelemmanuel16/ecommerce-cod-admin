@@ -3,6 +3,7 @@ import { withSoftDeleted } from '../utils/prismaExtensions';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
+import * as Money from '../utils/money';
 
 // Shared PUBLIC render payload — the fields safe to expose on the public
 // checkout page and the embed widget config endpoint. Reused so the page and
@@ -102,7 +103,7 @@ interface CreateCheckoutFormData {
   packages: Array<{
     name: string;
     description?: string;
-    price: number;
+    price: Money.MoneyInput;
     quantity: number;
     isPopular?: boolean;
     sortOrder?: number;
@@ -111,7 +112,7 @@ interface CreateCheckoutFormData {
     name: string;
     description?: string;
     imageUrl?: string;
-    price: number;
+    price: Money.MoneyInput;
     items: any;
     sortOrder?: number;
     productId?: number;
@@ -132,7 +133,7 @@ interface UpdateCheckoutFormData {
     id?: number;
     name: string;
     description?: string;
-    price: number;
+    price: Money.MoneyInput;
     quantity: number;
     isPopular?: boolean;
     sortOrder?: number;
@@ -142,7 +143,7 @@ interface UpdateCheckoutFormData {
     name: string;
     description?: string;
     imageUrl?: string;
-    price: number;
+    price: Money.MoneyInput;
     items: any;
     sortOrder?: number;
     productId?: number;
@@ -532,8 +533,9 @@ export class CheckoutFormService {
         for (const pkg of data.packages) {
           if (pkg.id) {
             // Update existing package
+            // formId ties the child to existingForm, which the tenant-scoped lookup above verified
             await tx.formPackage.update({
-              where: { id: pkg.id },
+              where: { id: pkg.id, formId: formIdNum },
               data: {
                 name: pkg.name,
                 description: pkg.description,
@@ -579,7 +581,7 @@ export class CheckoutFormService {
           if (upsell.id) {
             // Update existing upsell
             await tx.formUpsell.update({
-              where: { id: upsell.id },
+              where: { id: upsell.id, formId: formIdNum },
               data: {
                 name: upsell.name,
                 description: upsell.description,
@@ -708,10 +710,11 @@ export class CheckoutFormService {
       })
     ]);
 
+    const revenue = totalRevenue._sum?.totalAmount ?? Money.ZERO;
     const stats = {
       totalSubmissions: submissions,
-      totalRevenue: totalRevenue._sum?.totalAmount || 0,
-      averageOrderValue: submissions > 0 ? (totalRevenue._sum?.totalAmount || 0) / submissions : 0,
+      totalRevenue: Money.toApi(revenue),
+      averageOrderValue: submissions > 0 ? Money.toApi(Money.div(revenue, submissions)) : Money.toApi(0),
       packageBreakdown: packageStats
     };
 

@@ -6,6 +6,7 @@
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { prismaBase } from '../../utils/prisma';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { tenantStorage } from '../../utils/tenantContext';
 import orderService from '../../services/orderService';
 
@@ -28,9 +29,7 @@ let tenantId: string;
 let orderIds: number[] = [];
 
 beforeAll(async () => {
-  const tenant = await prismaBase.tenant.create({
-    data: { name: `DD Tenant ${SUFFIX}`, slug: `dd-${SUFFIX}` },
-  });
+  const tenant = await createTenant('DD Tenant');
   tenantId = tenant.id;
 
   const customer = await prismaBase.customer.create({
@@ -56,10 +55,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prismaBase.orderHistory.deleteMany({ where: { orderId: { in: orderIds } } });
-  await prismaBase.order.deleteMany({ where: { id: { in: orderIds } } });
-  await prismaBase.customer.deleteMany({ where: { tenantId } });
-  await prismaBase.tenant.delete({ where: { id: tenantId } });
+  await deleteTenantRows([tenantId]);
   await prismaBase.$disconnect();
 });
 

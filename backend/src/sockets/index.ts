@@ -2,16 +2,82 @@ import { Server as SocketServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { verifyAccessToken } from '../utils/jwt';
 import logger from '../utils/logger';
+import prisma from '../utils/prisma';
+import { getTenantId, runInTenant } from '../utils/tenantContext';
+import { isPlatformAdmin } from '../utils/platformAdmin';
+import { checkResourceOwnership } from '../utils/authUtils';
+import { JWTPayload } from '../types';
+import { roomNames } from './rooms';
+import * as Money from '../utils/money';
 
 /**
- * Helper to safely emit to a room. Handles cases where io.to() returns undefined (e.g., in tests).
+ * Helper to safely emit to one or more rooms. Handles cases where io.to() returns undefined (e.g., in tests).
+ * Several rooms are chained (io.to(a).to(b)), so one emit reaches the union of their sockets.
+ * Money in the payload goes out as "x.xx" strings, like the REST API (Money.jsonReplacer);
+ * the payload is serialised once per call, not once per room.
  */
-function safeEmit(io: SocketServer | undefined, room: string, event: string, data: any): void {
-  if (!io || typeof io.to !== 'function') return;
-  const roomObj = io.to(room);
-  if (roomObj && typeof roomObj.emit === 'function') {
-    roomObj.emit(event, data);
+function safeEmit(io: SocketServer | undefined, rooms: string | string[], event: string, data: any): void {
+  const list = Array.isArray(rooms) ? rooms : [rooms];
+  if (!io || list.length === 0) return;
+  let target: any = io;
+  for (const room of list) {
+    if (!target || typeof target.to !== 'function') return;
+    target = target.to(room);
   }
+  if (target && typeof target.emit === 'function') {
+    target.emit(event, data === undefined ? data : JSON.parse(JSON.stringify(data, Money.jsonReplacer)));
+  }
+}
+
+/**
+ * Tenant of an emit: the row's own tenantId first, then the request/job context.
+ * With neither, the event is dropped: a tenant event must never go to a shared room.
+ */
+function emitTenant(data?: { tenantId?: string | null } | null): string | null {
+  const tenantId = data?.tenantId ?? getTenantId();
+  if (!tenantId) logger.warn('Socket emit dropped: no tenant for the event');
+  return tenantId;
+}
+
+/** Emit to every socket of one tenant (the tenant-wide room). */
+export function emitToTenant(io: SocketServer, event: string, data: any, tenantId?: string | null) {
+  const t = tenantId ?? emitTenant();
+  if (t) safeEmit(io, roomNames.tenant(t), event, data);
+}
+
+/** Emit to one user of one tenant. */
+export function emitToUser(io: SocketServer, userId: number | string, event: string, data: any, tenantId?: string | null) {
+  const t = tenantId ?? emitTenant();
+  if (t) safeEmit(io, roomNames.user(t, userId), event, data);
+}
+
+/** Roles that see order and call events. super_admin is the tenant owner and sees what admin sees. */
+const ORDER_ROLES = ['super_admin', 'admin', 'manager', 'sales_rep'];
+/** Roles with financial permission. */
+const FINANCE_ROLES = ['super_admin', 'admin', 'manager', 'accountant'];
+/** Roles that oversee the team. */
+const MANAGEMENT_ROLES = ['super_admin', 'admin', 'manager'];
+
+/** Emit to the role rooms of one tenant in a single emit. */
+export function emitToRoles(io: SocketServer, tenantId: string, roles: string[], event: string, data: any) {
+  safeEmit(io, roles.map((role) => roomNames.role(tenantId, role)), event, data);
+}
+
+/** Can this user see the order? Same tenant scope and ownership rule as GET /orders/:id. */
+async function canJoinOrder(user: JWTPayload, orderId: number): Promise<boolean> {
+  if (!user.tenantId || !Number.isInteger(orderId)) return false;
+  return runInTenant(user.tenantId, async () => {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId, deletedAt: null },
+      select: { customerRepId: true, deliveryAgentId: true, customerId: true },
+    });
+    if (!order) return false;
+    return checkResourceOwnership(user, {
+      assignedRepId: order.customerRepId,
+      deliveryAgentId: order.deliveryAgentId,
+      customerId: order.customerId,
+    }, 'order');
+  });
 }
 
 export function initializeSocket(httpServer: HTTPServer): SocketServer {
@@ -22,8 +88,8 @@ export function initializeSocket(httpServer: HTTPServer): SocketServer {
     }
   });
 
-  // Authentication middleware
-  io.use((socket, next) => {
+  // Authentication middleware. The tenant comes from the signed JWT.
+  io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token;
       if (!token) {
@@ -32,34 +98,61 @@ export function initializeSocket(httpServer: HTTPServer): SocketServer {
 
       const decoded = verifyAccessToken(token);
       socket.data.user = decoded;
+      if (!decoded.tenantId) {
+        // No tenant in the JWT: only a platform admin may connect (same rule as the HTTP middleware)
+        if (!(await isPlatformAdmin(decoded.id))) {
+          return next(new Error('Authentication error'));
+        }
+        socket.data.isPlatformAdmin = true;
+      }
       next();
-    } catch (error) {
+    } catch (error: any) {
+      // The client refreshes its access token on TOKEN_EXPIRED and reconnects
+      if (error?.name === 'TokenExpiredError') {
+        return next(new Error('TOKEN_EXPIRED'));
+      }
       next(new Error('Authentication error'));
     }
   });
 
   io.on('connection', (socket) => {
-    const user = socket.data.user;
-    logger.info('User connected', { userId: user.id, role: user.role });
+    const user = socket.data.user as JWTPayload;
+    const tenantId = user.tenantId;
+    logger.info('User connected', { userId: user.id, role: user.role, tenantId });
 
-    // Join role-based rooms
-    socket.join(`role:${user.role}`);
-    socket.join(`user:${user.id}`);
+    // Heartbeat
+    socket.on('ping', () => socket.emit('pong'));
 
-    // Join order-specific rooms when requested
-    socket.on('join:order', (orderId: string) => {
-      socket.join(`order:${orderId}`);
-      logger.info('User joined order room', { userId: user.id, orderId });
+    if (!tenantId) {
+      // Platform admins have no tenant: they join only the platform rooms
+      socket.join(roomNames.platform);
+      socket.join(roomNames.platformUser(user.id));
+      return;
+    }
+
+    // Join tenant-scoped rooms
+    socket.join(roomNames.tenant(tenantId));
+    socket.join(roomNames.role(tenantId, user.role));
+    socket.join(roomNames.user(tenantId, user.id));
+
+    // Join order-specific rooms when requested: the order must be in this tenant
+    // and visible to this user
+    socket.on('join:order', async (orderId: string) => {
+      try {
+        if (!(await canJoinOrder(user, Number(orderId)))) {
+          logger.warn('Denied join of order room', { userId: user.id, orderId });
+          return;
+        }
+        socket.join(roomNames.order(tenantId, Number(orderId)));
+        logger.info('User joined order room', { userId: user.id, orderId });
+      } catch (error: any) {
+        logger.error('join:order failed', { userId: user.id, orderId, error: error?.message });
+      }
     });
 
     socket.on('leave:order', (orderId: string) => {
-      socket.leave(`order:${orderId}`);
+      socket.leave(roomNames.order(tenantId, Number(orderId)));
       logger.info('User left order room', { userId: user.id, orderId });
-    });
-
-    // Heartbeat
-    socket.on('ping', () => {
-      socket.emit('pong');
     });
 
     socket.on('disconnect', () => {
@@ -72,24 +165,28 @@ export function initializeSocket(httpServer: HTTPServer): SocketServer {
 
 // Helper functions to emit events
 export function emitOrderCreated(io: SocketServer, order: any) {
-  safeEmit(io, 'role:admin', 'order:created', order);
-  safeEmit(io, 'role:manager', 'order:created', order);
-  safeEmit(io, 'role:sales_rep', 'order:created', order);
+  const t = emitTenant(order);
+  if (!t) return;
+  emitToRoles(io, t, ORDER_ROLES, 'order:created', order);
 }
 
 export function emitOrderUpdated(io: SocketServer, order: any) {
-  safeEmit(io, `order:${order.id}`, 'order:updated', order);
+  const t = emitTenant(order);
+  if (!t) return;
+  safeEmit(io, roomNames.order(t, order.id), 'order:updated', order);
 
   if (order.customerRepId) {
-    safeEmit(io, `user:${order.customerRepId}`, 'order:updated', order);
+    emitToUser(io, order.customerRepId, 'order:updated', order, t);
   }
 
   if (order.deliveryAgentId) {
-    safeEmit(io, `user:${order.deliveryAgentId}`, 'order:updated', order);
+    emitToUser(io, order.deliveryAgentId, 'order:updated', order, t);
   }
 }
 
 export function emitOrderStatusChanged(io: SocketServer, order: any, oldStatus: string, newStatus: string) {
+  const t = emitTenant(order);
+  if (!t) return;
   const event = {
     orderId: order.id,
     orderNumber: order.orderNumber,
@@ -98,20 +195,21 @@ export function emitOrderStatusChanged(io: SocketServer, order: any, oldStatus: 
     timestamp: new Date()
   };
 
-  safeEmit(io, `order:${order.id}`, 'order:status_changed', event);
-  safeEmit(io, 'role:admin', 'order:status_changed', event);
-  safeEmit(io, 'role:manager', 'order:status_changed', event);
+  safeEmit(io, roomNames.order(t, order.id), 'order:status_changed', event);
+  emitToRoles(io, t, MANAGEMENT_ROLES, 'order:status_changed', event);
 
   if (order.customerRepId) {
-    safeEmit(io, `user:${order.customerRepId}`, 'order:status_changed', event);
+    emitToUser(io, order.customerRepId, 'order:status_changed', event, t);
   }
 
   if (order.deliveryAgentId) {
-    safeEmit(io, `user:${order.deliveryAgentId}`, 'order:status_changed', event);
+    emitToUser(io, order.deliveryAgentId, 'order:status_changed', event, t);
   }
 }
 
 export function emitOrderAssigned(io: SocketServer, order: any, userId: string, role: string) {
+  const t = emitTenant(order);
+  if (!t) return;
   const event = {
     orderId: order.id,
     orderNumber: order.orderNumber,
@@ -120,104 +218,101 @@ export function emitOrderAssigned(io: SocketServer, order: any, userId: string, 
     timestamp: new Date()
   };
 
-  safeEmit(io, `user:${userId}`, 'order:assigned', event);
-  safeEmit(io, `order:${order.id}`, 'order:assigned', event);
+  emitToUser(io, userId, 'order:assigned', event, t);
+  safeEmit(io, roomNames.order(t, order.id), 'order:assigned', event);
 }
 
 export function emitDeliveryUpdated(io: SocketServer, delivery: any) {
-  safeEmit(io, `user:${delivery.agentId}`, 'delivery:updated', delivery);
-  safeEmit(io, `order:${delivery.orderId}`, 'delivery:updated', delivery);
+  const t = emitTenant(delivery);
+  if (!t) return;
+  emitToUser(io, delivery.agentId, 'delivery:updated', delivery, t);
+  safeEmit(io, roomNames.order(t, delivery.orderId), 'delivery:updated', delivery);
 }
 
 export function emitOrdersDeleted(io: SocketServer, orderIds: number[]) {
+  const t = emitTenant();
+  if (!t) return;
   const event = {
     orderIds,
     timestamp: new Date()
   };
 
-  safeEmit(io, 'role:admin', 'orders:deleted', event);
-  safeEmit(io, 'role:manager', 'orders:deleted', event);
-  safeEmit(io, 'role:sales_rep', 'orders:deleted', event);
+  emitToRoles(io, t, ORDER_ROLES, 'orders:deleted', event);
 }
 
 export function emitNotification(io: SocketServer, userId: string, notification: any) {
-  safeEmit(io, `user:${userId}`, 'notification', notification);
+  const t = emitTenant(notification);
+  if (!t) return;
+  emitToUser(io, userId, 'notification', notification, t);
 }
 
 export function emitPermissionsUpdated(io: SocketServer, updatedRoles: string[]) {
+  const t = emitTenant();
+  if (!t) return;
   const event = {
     updatedRoles,
     timestamp: new Date()
   };
 
   // Emit to all affected roles
-  updatedRoles.forEach(role => {
-    safeEmit(io, `role:${role}`, 'permissions:updated', event);
-  });
-
-  // Also emit to all connected clients (in case they need to refresh)
-  if (io && typeof io.emit === 'function') {
-    io.emit('permissions:updated', event);
-  }
+  emitToRoles(io, t, updatedRoles, 'permissions:updated', event);
 }
 
 export function emitCallLogged(io: SocketServer, call: any) {
+  const t = emitTenant(call);
+  if (!t) return;
   // Emit to managers and admins
-  safeEmit(io, 'role:admin', 'call:logged', call);
-  safeEmit(io, 'role:manager', 'call:logged', call);
+  emitToRoles(io, t, MANAGEMENT_ROLES, 'call:logged', call);
 
   // Emit to the sales rep who logged it
-  safeEmit(io, `user:${call.salesRepId}`, 'call:logged', call);
+  emitToUser(io, call.salesRepId, 'call:logged', call, t);
 }
 
 // Financial event emitters
 export function emitExpenseCreated(io: SocketServer, expense: any) {
-  // Emit to roles with financial permission
-  safeEmit(io, 'role:admin', 'expense:created', expense);
-  safeEmit(io, 'role:manager', 'expense:created', expense);
-  safeEmit(io, 'role:accountant', 'expense:created', expense);
+  const t = emitTenant(expense);
+  if (!t) return;
+  emitToRoles(io, t, FINANCE_ROLES, 'expense:created', expense);
 }
 
 export function emitExpenseUpdated(io: SocketServer, expense: any) {
-  // Emit to roles with financial permission
-  safeEmit(io, 'role:admin', 'expense:updated', expense);
-  safeEmit(io, 'role:manager', 'expense:updated', expense);
-  safeEmit(io, 'role:accountant', 'expense:updated', expense);
+  const t = emitTenant(expense);
+  if (!t) return;
+  emitToRoles(io, t, FINANCE_ROLES, 'expense:updated', expense);
 }
 
 export function emitExpenseDeleted(io: SocketServer, expenseId: string) {
+  const t = emitTenant();
+  if (!t) return;
   const event = {
     id: expenseId,
     timestamp: new Date()
   };
 
-  // Emit to roles with financial permission
-  safeEmit(io, 'role:admin', 'expense:deleted', event);
-  safeEmit(io, 'role:manager', 'expense:deleted', event);
-  safeEmit(io, 'role:accountant', 'expense:deleted', event);
+  emitToRoles(io, t, FINANCE_ROLES, 'expense:deleted', event);
 }
 
 export function emitTransactionDeposited(io: SocketServer, transactionIds: string[], depositReference?: string) {
+  const t = emitTenant();
+  if (!t) return;
   const event = {
     transactionIds,
     depositReference,
     timestamp: new Date()
   };
 
-  // Emit to roles with financial permission
-  safeEmit(io, 'role:admin', 'transaction:deposited', event);
-  safeEmit(io, 'role:manager', 'transaction:deposited', event);
-  safeEmit(io, 'role:accountant', 'transaction:deposited', event);
+  emitToRoles(io, t, FINANCE_ROLES, 'transaction:deposited', event);
 }
 
 export function emitTransactionReconciled(io: SocketServer, transaction: any) {
-  // Emit to roles with financial permission
-  safeEmit(io, 'role:admin', 'transaction:reconciled', transaction);
-  safeEmit(io, 'role:manager', 'transaction:reconciled', transaction);
-  safeEmit(io, 'role:accountant', 'transaction:reconciled', transaction);
+  const t = emitTenant(transaction);
+  if (!t) return;
+  emitToRoles(io, t, FINANCE_ROLES, 'transaction:reconciled', transaction);
 }
 
 export function emitGLEntryCreated(io: SocketServer, entry: any, metadata?: any) {
+  const t = emitTenant(entry);
+  if (!t) return;
   const event = {
     entry: {
       id: entry.id,
@@ -231,13 +326,12 @@ export function emitGLEntryCreated(io: SocketServer, entry: any, metadata?: any)
     timestamp: new Date()
   };
 
-  // Emit to roles with GL/financial permission
-  safeEmit(io, 'role:admin', 'gl:entry-created', event);
-  safeEmit(io, 'role:accountant', 'gl:entry-created', event);
-  safeEmit(io, 'role:manager', 'gl:entry-created', event);
+  emitToRoles(io, t, FINANCE_ROLES, 'gl:entry-created', event);
 }
 
 export function emitCollectionVerified(io: SocketServer, collection: any) {
+  const t = emitTenant(collection);
+  if (!t) return;
   const event = {
     id: collection.id,
     orderId: collection.orderId,
@@ -246,13 +340,13 @@ export function emitCollectionVerified(io: SocketServer, collection: any) {
     timestamp: new Date()
   };
 
-  safeEmit(io, 'role:admin', 'collection:verified', event);
-  safeEmit(io, 'role:manager', 'collection:verified', event);
-  safeEmit(io, 'role:accountant', 'collection:verified', event);
-  safeEmit(io, `user:${collection.agentId}`, 'collection:verified', event);
+  emitToRoles(io, t, FINANCE_ROLES, 'collection:verified', event);
+  emitToUser(io, collection.agentId, 'collection:verified', event, t);
 }
 
 export function emitCollectionApproved(io: SocketServer, collection: any) {
+  const t = emitTenant(collection);
+  if (!t) return;
   const event = {
     id: collection.id,
     orderId: collection.orderId,
@@ -261,13 +355,13 @@ export function emitCollectionApproved(io: SocketServer, collection: any) {
     timestamp: new Date()
   };
 
-  safeEmit(io, 'role:admin', 'collection:approved', event);
-  safeEmit(io, 'role:manager', 'collection:approved', event);
-  safeEmit(io, 'role:accountant', 'collection:approved', event);
-  safeEmit(io, `user:${collection.agentId}`, 'collection:approved', event);
+  emitToRoles(io, t, FINANCE_ROLES, 'collection:approved', event);
+  emitToUser(io, collection.agentId, 'collection:approved', event, t);
 }
 
 export function emitAgentBalanceUpdated(io: SocketServer, userId: number, balance: any) {
+  const t = emitTenant(balance);
+  if (!t) return;
   const event = {
     userId,
     totalCollected: balance.totalCollected,
@@ -276,13 +370,13 @@ export function emitAgentBalanceUpdated(io: SocketServer, userId: number, balanc
     timestamp: new Date()
   };
 
-  safeEmit(io, `user:${userId}`, 'agent:balance-updated', event);
-  safeEmit(io, 'role:admin', 'agent:balance-updated', event);
-  safeEmit(io, 'role:manager', 'agent:balance-updated', event);
-  safeEmit(io, 'role:accountant', 'agent:balance-updated', event);
+  emitToUser(io, userId, 'agent:balance-updated', event, t);
+  emitToRoles(io, t, FINANCE_ROLES, 'agent:balance-updated', event);
 }
 
 export function emitDepositVerified(io: SocketServer, deposit: any) {
+  const t = emitTenant(deposit);
+  if (!t) return;
   const event = {
     id: deposit.id,
     agentId: deposit.agentId,
@@ -291,8 +385,6 @@ export function emitDepositVerified(io: SocketServer, deposit: any) {
     timestamp: new Date()
   };
 
-  safeEmit(io, `user:${deposit.agentId}`, 'deposit:verified', event);
-  safeEmit(io, 'role:admin', 'deposit:verified', event);
-  safeEmit(io, 'role:manager', 'deposit:verified', event);
-  safeEmit(io, 'role:accountant', 'deposit:verified', event);
+  emitToUser(io, deposit.agentId, 'deposit:verified', event, t);
+  emitToRoles(io, t, FINANCE_ROLES, 'deposit:verified', event);
 }

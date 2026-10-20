@@ -34,15 +34,6 @@ export interface LoginCredentials {
   password: string;
 }
 
-export interface RegisterData {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  phoneNumber: string;
-  role: string;
-}
-
 export type OrderStatus =
   | 'pending_confirmation'
   | 'confirmed'

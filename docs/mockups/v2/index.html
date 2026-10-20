@@ -1,0 +1,1126 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodAdmin Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+.ontarget{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-weight:700;font-size:13px;margin-top:6px}
+.ontarget svg.lucide{width:16px;height:16px;color:var(--mint);flex:none}
+.headtools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.rolebar{padding:0;border:0}
+.psel{font:600 13.5px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.psel:focus-visible,.tab:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.rolepanel[hidden]{display:none}
+.podium .role .tag{margin-left:4px;vertical-align:1px}
+.pct{display:flex;align-items:center;gap:10px}
+.pct .prog{margin-top:0;flex:1;min-width:60px}
+.pct b{min-width:38px;text-align:right}
+.who .tag{margin-left:4px;vertical-align:1px}
+.dist{padding:4px 20px 16px;border-top:1px solid var(--line)}
+.dist h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin:12px 0 6px}
+.dist .row{display:flex;align-items:center;gap:10px;padding:8px 0}
+.dist .row .a{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:11.5px}
+.dist .row b{display:block;font-size:13.5px}
+.dist .row small{display:block;color:var(--ink-3);font-size:12.5px}
+.dist .row .tag{margin-left:auto;flex:none}
+.medal b{font-size:13px;line-height:1.3;display:block}
+.lb2{align-items:start;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr)}
+.lb2 .who>div{white-space:nowrap}
+@media (max-width:1100px){.lb2{grid-template-columns:minmax(0,1fr)}}
+.grid.two>*,.lb2>*{min-width:0}
+.lb2 th{white-space:nowrap}
+.who .tag{white-space:nowrap}
+tbody tr.grp:hover{background:transparent}
+.grp td{background:var(--hover);padding:14px 20px;border-bottom:1px solid var(--line)}
+.grp .gwrap{display:grid;grid-template-columns:1fr 1fr;gap:8px 28px;align-items:center}
+.grp small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.grp .feeds{grid-column:1/-1;display:flex;align-items:center;gap:6px;color:var(--ink-2);font-size:12.5px}
+.grp .feeds svg.lucide{width:15px;height:15px;color:var(--pine);flex:none}
+.ns .chip + .chip{margin-top:8px;display:flex;width:max-content;max-width:100%}
+.ns .chip{color:#fff;background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.28)}
+.q .tag.mm{display:inline-block;margin-top:6px;font-size:11.5px}
+.q .mo em{display:block;font-style:normal;font-size:10.5px;color:var(--ink-3);font-weight:500}
+.drivers.n3{grid-template-columns:repeat(3,1fr)}
+.drivers.n2{grid-template-columns:repeat(2,1fr);margin-top:10px}
+.drv .dq{display:flex;align-items:center;gap:4px;margin:2px 0}
+.drv .dq input{width:4.5ch;min-width:0;border:0;border-bottom:2px solid var(--line);background:transparent;color:var(--ink);font:800 20px "Bricolage Grotesque";padding:2px 0;outline:0}
+.drv .dq input:focus-visible{border-bottom-color:var(--pine)}
+.drv .dq span{font:800 20px "Bricolage Grotesque";color:var(--ink-3)}
+.drv.calc{background:var(--pine-soft);border-color:transparent}
+.drv.calc b{font-size:26px}
+@media (max-width:760px){.drivers.n3,.drivers.n2{grid-template-columns:1fr}}
+.how{padding:6px 20px 16px}
+.how .row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.how .row:last-child{border-bottom:0}
+.how .row span{color:var(--ink-3)}
+.how .row b{white-space:nowrap}
+.how .row span{text-align:right}
+@media (max-width:760px){.grp .gwrap{grid-template-columns:1fr}.podium .p{width:100%}}
+/* r2 layers: sheets, modals, menus, forms (tokens only) */
+select:focus-visible,textarea:focus-visible,.sheet button:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.scrim{position:fixed;inset:0;background:rgba(8,18,16,.4);backdrop-filter:blur(2px);z-index:54;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;top:0;right:0;height:100vh;width:560px;max-width:100%;background:var(--card);border-left:1px solid var(--line);box-shadow:-20px 0 50px -20px rgba(0,0,0,.25);transform:translateX(105%);transition:transform .28s cubic-bezier(.2,.8,.2,1);z-index:55;display:flex;flex-direction:column;visibility:hidden}
+.sheet.on{transform:none;visibility:visible}
+.sheet .sh{display:flex;align-items:flex-start;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.sheet .sh h2{font-size:21px;font-weight:800;line-height:1.2}
+.sheet .sh p{color:var(--ink-3);font-size:13px;margin-top:2px}
+.sheet .sh .ibtn{margin-left:auto;flex:none}
+.sheet .sb{flex:1;overflow:auto;padding:18px 20px 24px;display:flex;flex-direction:column;gap:20px}
+.sheet .sf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.sec>h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fg .full{grid-column:1/-1}
+.fl label{display:block;font-weight:600;font-size:13px;margin-bottom:5px}
+.fl .opt{font-weight:500;color:var(--ink-3)}
+.fl input:not([type=checkbox]):not([type=file]),.fl select,.fl textarea{width:100%;font:500 14px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+.fl textarea{resize:vertical;min-height:70px}
+.fl .hint,.hint{font-size:12.5px;color:var(--ink-3);margin-top:5px}
+.chk{display:flex;align-items:center;gap:8px;font-weight:600}
+.chk input{width:16px;height:16px;accent-color:var(--pine)}
+.mveil{position:fixed;inset:0;background:rgba(8,18,16,.45);backdrop-filter:blur(3px);z-index:65;display:none;align-items:center;justify-content:center;padding:20px}
+.mveil.on{display:flex}
+.dlg{width:520px;max-width:100%;max-height:90vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.dlg.wide{width:1120px}
+.dlg .tablewrap{overflow-x:auto}
+.dlg .mh{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--line)}
+.dlg .mh h3{font-size:19px;font-weight:800}
+.dlg .mh p{color:var(--ink-3);font-size:13px;margin-top:2px}
+.dlg .mh .ibtn{margin-left:auto;flex:none}
+.dlg .mb{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.dlg .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+.dlg table th,.dlg table td{padding:10px 10px;white-space:nowrap}
+.dlg table th:first-child,.dlg table td:first-child{padding-left:20px}
+.dlg table td:last-child{white-space:normal;min-width:160px}
+.mwrap{position:relative;display:inline-block}
+.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);min-width:210px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 40px -16px rgba(0,0,0,.35);padding:6px;z-index:58;text-align:left}
+.menu.up{top:auto;bottom:calc(100% + 6px)}
+.menu.fixed{position:fixed;right:auto}
+.menu.on{display:block}
+.menu p{font-size:12px;color:var(--ink-3);font-weight:600;padding:6px 10px 2px}
+.menu button{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border-radius:8px;text-align:left;font-weight:500}
+.menu button:hover{background:var(--hover)}
+.menu button svg.lucide{width:15px;height:15px;color:var(--ink-3)}
+.menu button .cur{margin-left:auto;color:var(--pine)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:5px 0}
+.ibtn.sm{width:30px;height:30px;border-radius:9px}
+.ibtn.sm svg.lucide{width:16px;height:16px}
+.toast{position:fixed;left:50%;bottom:64px;transform:translateX(-50%) translateY(10px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:13px;z-index:80;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;display:flex;gap:8px;align-items:center;max-width:92vw}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.toast svg.lucide{width:16px;height:16px;color:var(--mint)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid var(--line);color:var(--ink-2);background:var(--card);white-space:nowrap}
+.chip svg.lucide{width:13px;height:13px}
+.chip.v{color:var(--violet);border-color:var(--violet-soft);background:var(--violet-soft)}
+.drop{border:2px dashed var(--line);border-radius:14px;padding:22px;text-align:center;color:var(--ink-2)}
+.drop svg.lucide{width:26px;height:26px;color:var(--ink-3)}
+.drop b{display:block;margin-top:6px}
+.filebar{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.filebar .ic{flex:none;width:36px;height:36px;border-radius:10px;display:grid;place-items:center}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:8px 12px}
+.kv dt{color:var(--ink-3);font-size:13px}
+.kv dd{font-weight:500}
+.hl{border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.hl+.hl{margin-top:8px}
+.srch{display:inline-flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink-3);min-width:260px}
+.srch input{border:0;background:transparent;color:var(--ink);font:500 14px "Plus Jakarta Sans",system-ui,sans-serif;padding:9px 0;width:100%;outline:0}
+.srch:focus-within{outline:2px solid var(--pine);outline-offset:2px}
+.pfoot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px}
+.tbtns{display:flex;gap:6px;justify-content:flex-end}
+@media (max-width:760px){.fg{grid-template-columns:1fr}.kv{grid-template-columns:1fr}.sheet{width:100%}}
+
+a.btn{color:var(--ink);text-decoration:none}
+.ot td,.ot th{padding-left:10px;padding-right:10px;white-space:nowrap}
+.ot td.stc{white-space:normal;max-width:200px;min-width:150px}
+.ot td:first-child,.ot th:first-child{padding-left:20px}
+.ot td:last-child,.ot th:last-child{padding-right:20px}
+.ot tbody tr.orow{cursor:pointer}
+.ot tbody tr.orow.sel{background:var(--pine-soft)}
+.ot input[type=checkbox],#selAll{width:16px;height:16px;accent-color:var(--pine);cursor:pointer}
+.ot .flag{margin-top:3px}
+.ot .chips{display:flex;gap:6px;margin-top:4px;flex-wrap:wrap}
+.bulk{display:none;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 20px;background:var(--pine-soft);border-bottom:1px solid var(--line)}
+.bulk.on{display:flex}
+.bulk>b{color:var(--pine);margin-right:4px}
+.menu button .cur{margin-left:auto}
+.oi{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.oi:last-child{border-bottom:0}
+.oi small{display:block;color:var(--ink-3);font-size:12.5px}
+.oi.t{font-weight:700;border-top:1px solid var(--line);border-bottom:0}
+.tl{list-style:none;display:flex;flex-direction:column}
+.tl li{display:grid;grid-template-columns:12px 1fr;gap:12px;position:relative;padding-bottom:14px}
+.tl li:last-child{padding-bottom:0}
+.tl li:not(:last-child)::after{content:"";position:absolute;left:5px;top:16px;bottom:0;width:2px;background:var(--line)}
+.tl .d{width:12px;height:12px;border-radius:50%;background:var(--mint);margin-top:4px}
+.tl .d.bad{background:var(--coral)}
+.tl small{display:block;color:var(--ink-3);font-size:12.5px}
+.call{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.call:last-child{border-bottom:0}
+.call p{grid-column:1/-1;color:var(--ink-2)}
+.call small{color:var(--ink-3);font-size:12.5px;text-align:right}
+.nt{border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.nt+.nt{margin-top:8px}
+.nt .m{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-3)}
+.nt .m b{color:var(--ink);font-size:13.5px}
+.nt .m .a{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:10.5px;flex:none}
+.nt p{margin:6px 0 0;color:var(--ink)}
+.nt .rp{margin:10px 0 0 12px;padding-left:12px;border-left:2px solid var(--line)}
+.men{color:var(--violet);font-weight:700;background:var(--violet-soft);border-radius:6px;padding:0 4px}
+.gt{width:26px;height:26px;border-radius:8px;border:1px solid var(--line);background:var(--card);display:inline-grid;place-items:center;vertical-align:middle;margin-right:8px;color:var(--ink-2)}
+.gt svg.lucide{width:15px;height:15px;transition:transform .2s}
+.gt[aria-expanded="false"] svg.lucide{transform:rotate(-90deg)}
+tr.grp{cursor:pointer}
+tr[data-g][hidden]{display:none}
+.nl{display:grid;grid-template-columns:1fr 70px 90px 34px;gap:8px;align-items:end;margin-bottom:10px}
+.nl .fl label{font-size:12px}
+@media (max-width:760px){.nl{grid-template-columns:1fr 60px 80px 34px}}
+.tl .d.plan{background:var(--card);border:2px solid var(--violet)}
+.wstep[hidden]{display:none}
+.wgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:640px}
+.wgrid .full{grid-column:1/-1}
+.wgrid label{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.wgrid input,.wgrid select{width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit}
+.wgrid input[readonly]{background:var(--hover);color:var(--ink-2)}
+.wgrid .hint{color:var(--ink-3);font-size:12px;margin-top:5px}
+.linkbtn{background:none;border:0;color:var(--violet);font:inherit;font-weight:600;cursor:pointer;padding:0;text-decoration:underline}
+@media (max-width:760px){.wgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav on" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+
+<!-- ================= DASHBOARD ================= -->
+<section class="view on" id="dash">
+  <div class="head">
+    <div><h1>Good evening, Manny</h1><p>Friday 17 October. You need GH₵2,100 more delivered revenue today to stay on pace.</p></div>
+    <div style="display:flex;gap:8px"><select class="psel" id="dashPeriod" aria-label="Period"><option>Today</option><option>This week</option><option selected>This month</option><option>This year</option></select></div>
+  </div>
+
+  <!-- Target ladder -->
+  <div class="card ladder">
+    <div class="ns">
+      <small>North Star 2026 · delivered revenue</small>
+      <div class="big num">GH₵1.38M</div>
+      <div class="of">of GH₵1,800,000 this year</div>
+      <svg class="ring" width="92" height="92" viewBox="0 0 92 92" aria-hidden="true"><circle cx="46" cy="46" r="38" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="9"/><circle cx="46" cy="46" r="38" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-dasharray="238.8" stroke-dashoffset="55" transform="rotate(-90 46 46)"/><text x="46" y="52" text-anchor="middle" fill="currentColor" font-family="Bricolage Grotesque" font-weight="800" font-size="19">77%</text></svg>
+      <div class="chip"><i data-lucide="trending-up" style="width:14px;height:14px"></i>3 pts behind the year's pace</div>
+      <div class="chip"><i data-lucide="percent" style="width:14px;height:14px"></i>Margin 12% year to date · target 35%</div>
+    </div>
+    <div class="rungs">
+      <div class="rung">
+        <small>Q4 target</small>
+        <div class="v num">GH₵92k <span class="tag warn">Behind</span></div>
+        <div class="t">of GH₵540,000 · 75 days left</div>
+        <div class="prog"><i style="width:17%;background:var(--gold)"></i><span class="pace" style="left:18.5%"></span></div>
+      </div>
+      <div class="rung">
+        <small>October target</small>
+        <div class="v num">GH₵92k <span class="tag bad">Off track</span></div>
+        <div class="t">of GH₵180,000 · 14 days left</div>
+        <div class="prog"><i style="width:51%;background:var(--coral)"></i><span class="pace" style="left:55%"></span></div>
+      </div>
+      <div class="rung">
+        <small>Today's target</small>
+        <div class="v num">GH₵4.2k <span class="tag n">In progress</span></div>
+        <div class="t">of GH₵6,300 · 17 delivered so far</div>
+        <div class="prog"><i style="width:67%;background:var(--gold)"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Daily targets -->
+  <div class="quests">
+    <div class="card qhead"><h3>Today's targets</h3><div class="ontarget"><i data-lucide="calendar-check"></i>On target 14 of 17 days this month</div></div>
+    <div class="card quest done"><div class="ck"><i data-lucide="check"></i></div><div style="flex:1"><b>New orders</b><small>64 of 56 orders</small><div class="prog" style="margin-top:8px"><i style="width:100%"></i></div></div><span class="tag ok">Hit</span></div>
+    <div class="card quest"><div class="ck"><i data-lucide="banknote"></i></div><div style="flex:1"><b>Delivered revenue</b><small>GH₵4.2k of GH₵6,300</small><div class="prog" style="margin-top:8px"><i style="width:67%;background:var(--gold)"></i></div></div><span class="tag warn">67%</span></div>
+    <div class="card quest"><div class="ck"><i data-lucide="phone-call"></i></div><div style="flex:1"><b>Failed delivery calls</b><small>6 of 15 done · daily target, set in Targets</small><div class="prog" style="margin-top:8px"><i style="width:40%;background:var(--coral)"></i></div></div><span class="tag bad">40%</span></div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="grid kpis">
+    <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="shopping-cart"></i></div><div class="v num">64</div><div class="l">Orders today</div><div class="s"><span>Target 56</span><span class="tag ok">▲ 18% vs last Fri</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="phone"></i></div><div class="v num">71%</div><div class="l">Confirmation rate</div><div class="s"><span>Target 70%</span><span class="tag ok">On track</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="truck"></i></div><div class="v num">48%</div><div class="l">Delivery success rate</div><div class="s"><span>Target 60% · yield 34%</span><span class="tag bad">▼ 12 pts</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="hourglass"></i></div><div class="v num">GH₵23.4k</div><div class="l">Cash still with agents</div><div class="s"><span>38 orders over 8 days</span><span class="tag warn">Chase</span></div></div>
+  </div>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="ct"><h3>Delivered revenue vs target</h3><div class="legend"><span><i style="background:var(--pine)"></i>Delivered</span><span><i style="background:var(--ink-3)"></i>Target pace</span></div></div>
+      <div class="chart">
+        <svg viewBox="0 0 640 230" width="100%" role="img" aria-label="Delivered revenue for October compared with the target pace">
+          <defs><linearGradient id="gA" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--pine)" stop-opacity=".28"/><stop offset="1" stop-color="var(--pine)" stop-opacity="0"/></linearGradient></defs>
+          <g stroke="var(--line)" stroke-width="1"><line x1="40" x2="630" y1="30" y2="30"/><line x1="40" x2="630" y1="85" y2="85"/><line x1="40" x2="630" y1="140" y2="140"/><line x1="40" x2="630" y1="195" y2="195"/></g>
+          <g fill="var(--ink-3)" font-size="11" font-family="Plus Jakarta Sans"><text x="0" y="34">180k</text><text x="0" y="89">120k</text><text x="6" y="144">60k</text><text x="20" y="199">0</text>
+          <text x="40" y="220">1 Oct</text><text x="200" y="220">7</text><text x="350" y="220">14</text><text x="600" y="220">31</text></g>
+          <path d="M40 195 L630 30" stroke="var(--ink-3)" stroke-width="2" stroke-dasharray="5 6" fill="none"/>
+          <path d="M40 195 C80 190,110 186,140 180 S200 168,230 158 S290 135,320 126 S345 115,355 111 L355 195 L40 195Z" fill="url(#gA)"/>
+          <path d="M40 195 C80 190,110 186,140 180 S200 168,230 158 S290 135,320 126 S345 115,355 111" stroke="var(--pine)" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <circle cx="355" cy="111" r="6" fill="var(--card)" stroke="var(--pine)" stroke-width="3"/>
+          <g transform="translate(368 118)"><rect width="150" height="44" rx="10" fill="var(--ink)"/><text x="12" y="19" fill="var(--bg)" font-size="11" font-family="Plus Jakarta Sans">Today, 17 Oct</text><text x="12" y="35" fill="var(--bg)" font-size="13" font-weight="700" font-family="Plus Jakarta Sans">GH₵92k · −7k vs pace</text></g>
+        </svg>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px">
+          <div class="drv"><small>Projected October</small><b>GH₵164k</b><em>91% of target at today's rate</em></div>
+          <div class="drv"><small>Needed per day</small><b>GH₵6.3k</b><em>for the last 14 days</em></div>
+          <div class="drv"><small>Biggest lever</small><b>Delivery success</b><em>+5 pts = +GH₵22k this month</em></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 3 things</h3><span>Updated 06:42</span></div>
+      <div class="ins">
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="banknote"></i></div><div><b>Logiswift paid GH₵840 less than its order list</b><p>Payout of 11 Oct covers 41 orders. 3 paid orders are missing.</p></div></div><div class="act"><button class="mini pri" data-link="finance.html#recon">Show the 3 orders</button><button class="mini">Dismiss</button></div></div>
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="package-x"></i></div><div><b>Magic Groove stock is 12 units short</b><p>Logiswift says 88. Our records say 100.</p></div></div><div class="act"><button class="mini pri" data-link="inventory.html#count">Start a stock count</button><button class="mini">Dismiss</button></div></div>
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="megaphone"></i></div><div><b>₦41,000 Meta spend has no product</b><p>Campaign "MG_Oct_Retarget" is not mapped.</p></div></div><div class="act"><button class="mini pri" data-link="marketing.html#mapping">Map to Magic Groove</button><button class="mini">Dismiss</button></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="ct"><h3>Recent orders</h3><button class="mini" data-go="orders">View all</button></div>
+      <div class="tablewrap"><table style="margin-top:8px">
+        <thead><tr><th>Order</th><th>Customer</th><th>Status</th><th class="r">Amount</th></tr></thead>
+        <tbody>
+          <tr><td><b>#24117</b></td><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">AO</div><div>Abena Owusu<small>Kumasi</small></div></div></td><td><span class="tag ok">Delivered</span></td><td class="r num">GH₵249</td></tr>
+          <tr><td><b>#24116</b></td><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">KM</div><div>Kwame Mensah<small>Tema</small></div></div></td><td><span class="tag v">Out for delivery</span></td><td class="r num">GH₵498</td></tr>
+          <tr><td><b>#24115</b></td><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">EA</div><div>Efua Asante<small>Osu, Accra</small></div></div></td><td><span class="tag n">Confirmed</span></td><td class="r num">GH₵249</td></tr>
+          <tr><td><b>#24114</b></td><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">YB</div><div>Yaw Boateng<small>Kumasi</small></div></div></td><td><span class="tag bad">Failed delivery</span></td><td class="r num">GH₵249</td></tr>
+        </tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="ct"><h3>Top this month</h3><button class="mini" data-go="board">Leaderboard</button></div>
+      <div style="padding:10px 20px 18px;display:flex;flex-direction:column;gap:12px">
+        <div class="who"><div class="rank" style="background:var(--gold-soft);color:var(--gold)">1</div><div class="a" style="background:var(--mint-soft);color:#14975f">EB</div><div>Esi Badu<small>Delivery · 55% delivery success</small></div><span class="tag ok" style="margin-left:auto">92% of target</span></div>
+        <div class="who"><div class="rank" style="background:var(--hover)">2</div><div class="a" style="background:var(--gold-soft);color:var(--gold)">KA</div><div>Kofi Appiah<small>Delivery · 54% delivery success</small></div><span class="tag ok" style="margin-left:auto">90% of target</span></div>
+        <div class="who"><div class="rank" style="background:var(--hover)">3</div><div class="a" style="background:var(--pine-soft);color:var(--pine)">AD</div><div>Adwoa Darko<small>Call rep · 253 confirmed and delivered</small></div><span class="tag ok" style="margin-left:auto">60% of target</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= TARGETS ================= -->
+<section class="view" id="targets">
+  <div class="head">
+    <div><h1>Targets</h1><p>The North Star splits into quarters and months, with revenue and margin at each level. Each person's target adds up to it.</p></div>
+    <div style="display:flex;gap:8px"><button class="btn" data-go="onboard"><i data-lucide="pencil"></i>Edit North Star</button><button class="btn pri" data-open="sh-target"><i data-lucide="plus"></i>Add target</button></div>
+  </div>
+  <div class="card">
+    <div class="ct"><h3>2026 North Star: GH₵1,800,000 delivered revenue at 35% margin</h3><span class="tag warn">77% done · 3 pts behind · margin 12% of 35%</span></div>
+    <div class="tree">
+      <div class="q"><h4>Q1 <span class="tag ok">Revenue hit</span></h4><div class="t" style="color:var(--ink-3);font-size:13px">GH₵372k of 360k</div><span class="tag bad mm">Margin 11% of 35%</span><div class="mo"><div class="hit">Jan<b>118k</b></div><div class="hit">Feb<b>121k</b></div><div class="hit">Mar<b>133k</b></div></div></div>
+      <div class="q"><h4>Q2 <span class="tag ok">Revenue hit</span></h4><div class="t" style="color:var(--ink-3);font-size:13px">GH₵421k of 420k</div><span class="tag bad mm">Margin 12% of 35%</span><div class="mo"><div class="miss">Apr<b>131k</b></div><div class="hit">May<b>142k</b></div><div class="hit">Jun<b>148k</b></div></div></div>
+      <div class="q"><h4>Q3 <span class="tag ok">Revenue hit</span></h4><div class="t" style="color:var(--ink-3);font-size:13px">GH₵497k of 480k</div><span class="tag bad mm">Margin 12% of 35%</span><div class="mo"><div class="hit">Jul<b>158k</b></div><div class="hit">Aug<b>166k</b><em>12%</em></div><div class="hit">Sep<b>173k</b><em>12%</em></div></div></div>
+      <div class="q now"><h4>Q4 <span class="tag warn">Behind</span></h4><div class="t" style="color:var(--ink-3);font-size:13px">GH₵92k of 540k</div><span class="tag bad mm">Oct margin −16% of 35%</span><div class="mo"><div class="cur">Oct<b>92k</b><em>−16%</em></div><div>Nov<b>180k</b></div><div>Dec<b>180k</b></div></div></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3>October targets by role</h3><span>A role can be held by a person, an AI agent or a company. Rewards are set in Settings, Rewards.</span><button class="mini" data-link="settings.html#rewards">Edit rules</button></div>
+    <div class="tablewrap"><table style="margin-top:8px">
+      <thead><tr><th>Who</th><th>Their target</th><th style="width:30%">Progress</th><th>Status</th><th class="r">Reward at 100%</th></tr></thead>
+      <tbody>
+        <tr class="grp"><td colspan="5"><div class="gwrap">
+          <div><button class="gt" data-g="call" aria-expanded="true" aria-label="Show or hide call reps"><i data-lucide="chevron-down"></i></button><b>Call reps</b> <span class="tag n">3 holders</span><small>Role target: 723 confirmed orders that get delivered, counted at month close</small></div>
+          <div><div class="prog" style="margin-top:0"><i style="width:52%;background:var(--gold)"></i><span class="pace" style="left:55%"></span></div><small>376 of 723 confirmed and delivered · 52% of role target · 1,026 confirmed so far</small></div>
+          <div class="feeds"><i data-lucide="trending-up"></i>Feeds October GH₵180k: 723 delivered orders × GH₵249</div>
+        </div></td></tr>
+        <tr data-g="call"><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">AD</div><div>Adwoa Darko<small>Call rep</small></div></div></td><td>423 confirmed and delivered</td><td><div class="prog"><i style="width:60%"></i><span class="pace" style="left:55%"></span></div><small style="color:var(--ink-3)">253 of 423 · 640 confirmed so far</small></td><td><span class="tag ok">Ahead</span></td><td class="r"><b style="color:var(--gold)">GH₵300 bonus</b></td></tr>
+                <tr data-g="call"><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">AI</div><div>Confirm agent <span class="tag v">AI agent</span><small>Call rep · night shift</small></div></div></td><td>250 confirmed and delivered</td><td><div class="prog"><i style="width:44%;background:var(--gold)"></i><span class="pace" style="left:55%"></span></div><small style="color:var(--ink-3)">110 of 250 · 328 confirmed so far</small></td><td><span class="tag warn">Behind</span></td><td class="r" style="color:var(--ink-3)">No payout</td></tr>
+        <tr data-g="call"><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">NK</div><div>Nana Kyei<small>Call rep · new</small></div></div></td><td>50 confirmed and delivered</td><td><div class="prog"><i style="width:26%;background:var(--coral)"></i><span class="pace" style="left:55%"></span></div><small style="color:var(--ink-3)">13 of 50 · 58 confirmed so far</small></td><td><span class="tag bad">Behind</span></td><td class="r"><b style="color:var(--gold)">GH₵300 bonus</b></td></tr>
+        <tr data-g="call"><td colspan="5"><div class="who"><div class="a" style="background:var(--hover);color:var(--ink-2)"><i data-lucide="phone-call" style="width:15px;height:15px"></i></div><div>Daily target for every call rep: failed delivery calls<small>15 calls a day. Shown on the Dashboard as "Failed delivery calls". Not part of the reward.</small></div><button class="mini" style="margin-left:auto" data-open="sh-target">Edit</button></div></td></tr>
+
+        <tr class="grp"><td colspan="5"><div class="gwrap">
+          <div><button class="gt" data-g="del" aria-expanded="true" aria-label="Show or hide delivery"><i data-lucide="chevron-down"></i></button><b>Delivery</b> <span class="tag n">5 holders</span><small>Role target: 60% delivery success</small></div>
+          <div><div class="prog" style="margin-top:0"><i style="width:80%;background:var(--gold)"></i></div><small>48% now · 80% of role target</small></div>
+          <div class="feeds"><i data-lucide="trending-up"></i>Feeds October GH₵180k: every +5 pts of delivery success adds about GH₵22k</div>
+        </div></td></tr>
+        <tr data-g="del"><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">KA</div><div>Kofi Appiah<small>Delivery agent · Kumasi</small></div></div></td><td>60% delivery success</td><td><div class="prog"><i style="width:90%"></i></div><small style="color:var(--ink-3)">54% now · 82 delivered</small></td><td><span class="tag ok">On track</span></td><td class="r"><b style="color:var(--gold)">GH₵250 bonus</b></td></tr>
+        <tr data-g="del"><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">EB</div><div>Esi Badu<small>Delivery agent · Accra</small></div></div></td><td>60% delivery success</td><td><div class="prog"><i style="width:92%"></i></div><small style="color:var(--ink-3)">55% now · 48 delivered</small></td><td><span class="tag ok">On track</span></td><td class="r"><b style="color:var(--gold)">GH₵250 bonus</b></td></tr>
+        <tr data-g="del"><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">KW</div><div>Kwesi Amoah<small>Delivery agent · Takoradi</small></div></div></td><td>60% delivery success</td><td><div class="prog"><i style="width:90%"></i></div><small style="color:var(--ink-3)">54% now · 26 delivered</small></td><td><span class="tag ok">On track</span></td><td class="r"><b style="color:var(--gold)">GH₵250 bonus</b></td></tr>
+        <tr data-g="del"><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">LS</div><div>Logiswift<small>3PL · delivery</small></div></div></td><td>60% delivery success</td><td><div class="prog"><i style="width:75%;background:var(--gold)"></i></div><small style="color:var(--ink-3)">45% now · 220 delivered</small></td><td><span class="tag warn">Behind</span></td><td class="r" style="color:var(--ink-3)">Contract review</td></tr>
+        <tr data-g="del"><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">KE</div><div>Kasapa Express <span class="tag n">Trial</span><small>3PL · Cape Coast</small></div></div></td><td>60% delivery success</td><td><div class="prog"><i style="width:0%"></i></div><small style="color:var(--ink-3)">No closed orders yet · 8 out now</small></td><td><span class="tag n">Too early</span></td><td class="r" style="color:var(--ink-3)">No payout</td></tr>
+
+        <tr class="grp"><td colspan="5"><div class="gwrap">
+          <div><button class="gt" data-g="mkt" aria-expanded="true" aria-label="Show or hide marketing"><i data-lucide="chevron-down"></i></button><b>Marketing</b> <span class="tag n">1 holder</span><small>Role target: CPA under max CPA (₦7,040 at 34% yield)</small></div>
+          <div><div class="prog" style="margin-top:0"><i style="width:84%"></i></div><small>₦5,903 now · ₦1,137 under the max</small></div>
+          <div class="feeds"><i data-lucide="trending-up"></i>Feeds October GH₵180k: max CPA moves with the yield, so the ad budget keeps buying 56 orders a day</div>
+        </div></td></tr>
+        <tr data-g="mkt"><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">MA</div><div>Manny<small>Marketing</small></div></div></td><td>CPA under ₦7,040 (34% yield)</td><td><div class="prog"><i style="width:84%"></i></div><small style="color:var(--ink-3)">₦5,903 now</small></td><td><span class="tag ok">On track</span></td><td class="r" style="color:var(--ink-3)">—</td></tr>
+      </tbody></table></div>
+  </div>
+</section>
+
+<!-- ================= LEADERBOARD ================= -->
+<section class="view" id="board">
+  <div class="head">
+    <div><h1>Leaderboard</h1><p>Ranked inside each role by % of the role target, then by the role's own numbers.</p></div>
+    <div class="headtools">
+      <div class="tabs rolebar" role="tablist" aria-label="Role">
+        <button class="tab on" role="tab" aria-selected="true" data-role="call">Call reps <span>3</span></button>
+        <button class="tab" role="tab" aria-selected="false" data-role="delivery">Delivery <span>5</span></button>
+        <button class="tab" role="tab" aria-selected="false" data-role="upsell">Upsell <span>3</span></button>
+      </div>
+      <select class="psel" aria-label="Period"><option>Today</option><option>This week</option><option selected>October</option><option>2026</option></select>
+    </div>
+  </div>
+
+  <!-- CALL REPS -->
+  <div class="rolepanel" data-panel="call">
+    <div class="podium">
+      <div class="p"><div class="place">2nd</div><div class="face" style="background:#2d2a6b">AI</div><h3>Confirm agent</h3><div class="role">Call rep <span class="tag v">AI agent</span></div><div class="stats"><div><small>Of target</small><b>44%</b></div><div><small>Confirmed</small><b>328</b></div><div><small>Confirmation</small><b>70%</b></div></div><div class="badges"><span class="bdg" title="Hit target 3 months running"><i data-lucide="calendar-check"></i></span></div></div>
+      <div class="p first"><span class="crown"><i data-lucide="crown"></i></span><div class="place">1st</div><div class="face" style="background:#15675e">AD</div><h3>Adwoa Darko</h3><div class="role">Call rep</div><div class="stats"><div><small>Of target</small><b>60%</b></div><div><small>Confirmed</small><b>640</b></div><div><small>Confirmation</small><b>73%</b></div></div><div class="badges"><span class="bdg" title="Top of month"><i data-lucide="star"></i></span><span class="bdg" title="Hit target 3 months running"><i data-lucide="calendar-check"></i></span></div></div>
+      <div class="p"><div class="place">3rd</div><div class="face" style="background:#6b4a12">NK</div><h3>Nana Kyei</h3><div class="role">Call rep · new</div><div class="stats"><div><small>Of target</small><b>26%</b></div><div><small>Confirmed</small><b>58</b></div><div><small>Confirmation</small><b>58%</b></div></div><div class="badges"></div></div>
+    </div>
+
+    <div class="grid lb2">
+      <div class="card">
+        <div class="ct"><h3>Full ranking: call reps</h3><span class="per">October</span></div>
+        <div class="tablewrap"><table style="margin-top:8px">
+          <thead><tr><th>Rank</th><th>Staff</th><th style="width:22%">Of role target<small style="display:block;font-weight:400">confirmed and delivered</small></th><th class="r">Confirmed</th><th class="r" style="white-space:normal">Confirmation rate</th><th class="r" style="white-space:normal">Delivered from confirmed</th></tr></thead>
+          <tbody>
+            <tr><td><div class="rank" style="background:var(--gold-soft);color:var(--gold)">1</div></td><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">AD</div><div>Adwoa Darko<small>Call rep</small></div></div></td><td><div class="pct"><div class="prog"><i style="width:60%"></i></div><b class="num">60%</b></div></td><td class="r num"><b>640</b></td><td class="r">73%</td><td class="r">52%</td></tr>
+            <tr><td><div class="rank" style="background:var(--hover)">2</div></td><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">AI</div><div>Confirm agent <span class="tag v">AI agent</span><small>Call rep · night shift</small></div></div></td><td><div class="pct"><div class="prog"><i style="width:44%;background:var(--gold)"></i></div><b class="num">44%</b></div></td><td class="r num"><b>328</b></td><td class="r">70%</td><td class="r">44%</td></tr>
+            <tr><td><div class="rank" style="background:var(--hover)">3</div></td><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">NK</div><div>Nana Kyei<small>Call rep · new</small></div></div></td><td><div class="pct"><div class="prog"><i style="width:26%;background:var(--coral)"></i></div><b class="num">26%</b></div></td><td class="r num"><b>58</b></td><td class="r">58%</td><td class="r">30%</td></tr>
+          </tbody></table></div>
+      </div>
+      <div class="grid" style="gap:16px">
+        <div class="card">
+          <div class="ct"><h3>Rewards</h3><button class="mini" data-link="settings.html#rewards">Edit rules</button></div>
+          <div style="margin-top:6px">
+            <div class="reward"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="banknote"></i></div><div><b>100% of target</b><small>GH₵300 bonus</small></div><div class="cost"><small>No one yet</small></div></div>
+            <div class="reward"><div class="ico" style="background:var(--mint-soft);color:#14975f"><i data-lucide="sun"></i></div><div><b>120% of target</b><small>GH₵500 + paid day off</small></div><div class="cost"><small>No one yet</small></div></div>
+          </div>
+          <div class="dist">
+            <h4>Distance to the next tier</h4>
+            <div class="row"><div class="a" style="background:var(--pine-soft);color:var(--pine)">AD</div><div><b>Adwoa Darko</b><small>170 more confirmed and delivered orders to 100%</small></div><span class="tag ok">GH₵300</span></div>
+            <div class="row"><div class="a" style="background:var(--coral-soft);color:var(--coral)">NK</div><div><b>Nana Kyei</b><small>37 more confirmed and delivered orders to 100%</small></div><span class="tag ok">GH₵300</span></div>
+            <div class="row"><div class="a" style="background:var(--violet-soft);color:var(--violet)">AI</div><div><b>Confirm agent</b><small>140 more to 100%. AI agents get no payout</small></div><span class="tag n">None</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ct"><h3>Badges</h3><span>Earned from results</span></div>
+          <div class="medals" style="grid-template-columns:repeat(3,1fr)">
+            <div class="medal"><div class="m" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="star"></i></div><b>Top of month</b><small>Adwoa, September</small></div>
+            <div class="medal"><div class="m" style="background:var(--mint-soft);color:#14975f"><i data-lucide="calendar-check"></i></div><b>Hit target 3 months running</b><small>Adwoa, Confirm agent</small></div>
+            <div class="medal locked"><div class="m" style="background:var(--hover)"><i data-lucide="lock"></i></div><b>Beat target by 20%</b><small>No one yet</small></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DELIVERY -->
+  <div class="rolepanel" data-panel="delivery" hidden>
+    <div class="podium">
+      <div class="p"><div class="place">2nd</div><div class="face" style="background:#6b4a12">KA</div><h3>Kofi Appiah</h3><div class="role">Delivery agent</div><div class="stats"><div><small>Of target</small><b>90%</b></div><div><small>Success</small><b>54%</b></div><div><small>Days to pay</small><b>1.8</b></div></div><div class="badges"><span class="bdg" title="Zero unpaid over 8 days"><i data-lucide="shield-check"></i></span></div></div>
+      <div class="p first"><span class="crown"><i data-lucide="crown"></i></span><div class="place">1st</div><div class="face" style="background:#15675e">EB</div><h3>Esi Badu</h3><div class="role">Delivery agent</div><div class="stats"><div><small>Of target</small><b>92%</b></div><div><small>Success</small><b>55%</b></div><div><small>Days to pay</small><b>2.4</b></div></div><div class="badges"><span class="bdg" title="Zero unpaid over 8 days"><i data-lucide="shield-check"></i></span></div></div>
+      <div class="p"><div class="place">3rd</div><div class="face" style="background:#2d2a6b">KW</div><h3>Kwesi Amoah</h3><div class="role">Delivery agent</div><div class="stats"><div><small>Of target</small><b>90%</b></div><div><small>Success</small><b>54%</b></div><div><small>Days to pay</small><b>3.1</b></div></div><div class="badges"><span class="bdg" title="Zero unpaid over 8 days"><i data-lucide="shield-check"></i></span></div></div>
+    </div>
+
+    <div class="grid lb2">
+      <div class="card">
+        <div class="ct"><h3>Full ranking: delivery</h3><span class="per">October</span></div>
+        <div class="tablewrap"><table style="margin-top:8px">
+          <thead><tr><th>Rank</th><th>Agent</th><th style="width:20%">Of 60% target</th><th class="r">Success</th><th class="r">Days to pay</th><th class="r">Delivered</th></tr></thead>
+          <tbody>
+            <tr><td><div class="rank" style="background:var(--gold-soft);color:var(--gold)">1</div></td><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">EB</div><div>Esi Badu<small>Agent · Accra</small></div></div></td><td><div class="pct"><div class="prog"><i style="width:92%"></i></div><b class="num">92%</b></div></td><td class="r">55%</td><td class="r num">2.4</td><td class="r num"><b>48</b></td></tr>
+            <tr><td><div class="rank" style="background:var(--hover)">2</div></td><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">KA</div><div>Kofi Appiah<small>Agent · Kumasi</small></div></div></td><td><div class="pct"><div class="prog"><i style="width:90%"></i></div><b class="num">90%</b></div></td><td class="r">54%</td><td class="r num">1.8</td><td class="r num"><b>82</b></td></tr>
+            <tr><td><div class="rank" style="background:var(--hover)">3</div></td><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">KW</div><div>Kwesi Amoah<small>Agent · Takoradi</small></div></div></td><td><div class="pct"><div class="prog"><i style="width:90%"></i></div><b class="num">90%</b></div></td><td class="r">54%</td><td class="r num">3.1</td><td class="r num"><b>26</b></td></tr>
+            <tr><td><div class="rank" style="background:var(--hover)">4</div></td><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">LS</div><div>Logiswift<small>3PL · Tema</small></div></div></td><td><div class="pct"><div class="prog"><i style="width:75%;background:var(--gold)"></i></div><b class="num">75%</b></div></td><td class="r">45%</td><td class="r num" style="color:var(--coral)"><b>9.2</b></td><td class="r num"><b>220</b></td></tr>
+            <tr><td><div class="rank" style="background:var(--hover)">&ndash;</div></td><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">KE</div><div>Kasapa Express <span class="tag n">Trial</span><small>3PL · Cape Coast</small></div></div></td><td><span class="tag n">Too early</span></td><td class="r">&ndash;</td><td class="r num">&ndash;</td><td class="r num"><b>0</b></td></tr>
+          </tbody></table></div>
+      </div>
+      <div class="grid" style="gap:16px">
+        <div class="card">
+          <div class="ct"><h3>Rewards</h3><button class="mini" data-link="settings.html#rewards">Edit rules</button></div>
+          <div style="margin-top:6px">
+            <div class="reward"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="banknote"></i></div><div><b>100% of target</b><small>GH₵250 bonus</small></div><div class="cost"><small>No one yet</small></div></div>
+            <div class="reward"><div class="ico" style="background:var(--mint-soft);color:#14975f"><i data-lucide="sun"></i></div><div><b>120% of target</b><small>GH₵400 + paid day off</small></div><div class="cost"><small>No one yet</small></div></div>
+          </div>
+          <div class="dist">
+            <h4>Distance to the next tier</h4>
+            <div class="row"><div class="a" style="background:var(--mint-soft);color:#14975f">EB</div><div><b>Esi Badu</b><small>12 more deliveries with no failure to 100%</small></div><span class="tag ok">GH₵250</span></div>
+            <div class="row"><div class="a" style="background:var(--gold-soft);color:var(--gold)">KA</div><div><b>Kofi Appiah</b><small>23 more deliveries with no failure to 100%</small></div><span class="tag ok">GH₵250</span></div>
+            <div class="row"><div class="a" style="background:var(--violet-soft);color:var(--violet)">KW</div><div><b>Kwesi Amoah</b><small>7 more deliveries with no failure to 100%</small></div><span class="tag ok">GH₵250</span></div>
+            <div class="row"><div class="a" style="background:var(--coral-soft);color:var(--coral)">LS</div><div><b>Logiswift</b><small>Below 80% of target: contract review. Companies get no bonus</small></div><span class="tag n">Review</span></div>
+            <div class="row"><div class="a" style="background:var(--mint-soft);color:#14975f">KE</div><div><b>Kasapa Express</b><small>No closed orders yet. Too early to rank</small></div><span class="tag n">None</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ct"><h3>Badges</h3><span>Earned from results</span></div>
+          <div class="medals">
+            <div class="medal"><div class="m" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="star"></i></div><b>Top of month</b><small>Kofi, September</small></div>
+            <div class="medal"><div class="m" style="background:var(--mint-soft);color:#14975f"><i data-lucide="calendar-check"></i></div><b>Hit target 3 months running</b><small>Kofi</small></div>
+            <div class="medal"><div class="m" style="background:var(--mint-soft);color:#14975f"><i data-lucide="trending-up"></i></div><b>Beat target by 20%</b><small>Kofi, September</small></div>
+            <div class="medal"><div class="m" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="shield-check"></i></div><b>Zero unpaid over 8 days</b><small>Kofi, Esi, Kwesi</small></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UPSELL -->
+  <div class="rolepanel" data-panel="upsell" hidden>
+    <div class="grid lb2">
+      <div class="card">
+        <div class="ct"><h3>Full ranking: upsell</h3><span class="per">October</span></div>
+        <div class="tablewrap"><table style="margin-top:8px">
+          <thead><tr><th>Rank</th><th>Staff</th><th class="r">Upsell rate</th><th class="r">Extra value, delivered</th><th class="r">Reward earned</th></tr></thead>
+          <tbody>
+            <tr><td><div class="rank" style="background:var(--gold-soft);color:var(--gold)">1</div></td><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">AD</div><div>Adwoa Darko<small>Call rep</small></div></div></td><td class="r">24%</td><td class="r num"><b>GH₵6,100</b></td><td class="r"><b style="color:var(--gold)">GH₵610</b></td></tr>
+            <tr><td><div class="rank" style="background:var(--hover)">2</div></td><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">AI</div><div>Confirm agent <span class="tag v">AI agent</span><small>Call rep · night shift</small></div></div></td><td class="r">15%</td><td class="r num"><b>GH₵2,200</b></td><td class="r" style="color:var(--ink-3)">No payout</td></tr>
+            <tr><td><div class="rank" style="background:var(--hover)">3</div></td><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">NK</div><div>Nana Kyei<small>Call rep · new</small></div></div></td><td class="r">9%</td><td class="r num"><b>GH₵300</b></td><td class="r"><b style="color:var(--gold)">GH₵30</b></td></tr>
+            <tr><td></td><td><b>All reps</b></td><td class="r">20%</td><td class="r num"><b>GH₵8,600</b></td><td class="r"><b>GH₵640</b></td></tr>
+          </tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="ct"><h3>How the reward works</h3><span>Separate from the target</span></div>
+        <div class="how">
+          <div class="row"><b>Reward</b><span>10% of the extra value added</span></div>
+          <div class="row"><b>Paid</b><span>When the order is delivered</span></div>
+          <div class="row"><b>AI agents</b><span>No payout</span></div>
+          <div class="row"><b>Packages</b><span>1 set GH₵249 · 2 sets GH₵449 · 3 sets GH₵629</span></div>
+          <div class="row"><b>Add-ons</b><span>Pens GH₵40 · grip trainer GH₵35 · guide GH₵59</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    const v = document.getElementById('board');
+    const tabs = v.querySelectorAll('[data-role]'), panels = v.querySelectorAll('.rolepanel');
+    tabs.forEach(t => t.onclick = () => {
+      tabs.forEach(x => { x.classList.toggle('on', x === t); x.setAttribute('aria-selected', x === t); });
+      panels.forEach(p => p.hidden = p.dataset.panel !== t.dataset.role);
+    });
+    const sel = v.querySelector('.psel');
+    sel.onchange = () => v.querySelectorAll('.per').forEach(s => s.textContent = sel.options[sel.selectedIndex].text);
+  })();
+  </script>
+</section>
+<!-- ================= ORDERS ================= -->
+<section class="view" id="orders">
+  <div class="head">
+    <div><h1>Orders</h1><p>1,445 orders in October. The agent flags orders that need you.</p></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-open="m-import"><i data-lucide="upload"></i>Import</button><button class="btn" id="exportBtn"><i data-lucide="download"></i>Export</button><button class="btn pri" id="newOrderBtn"><i data-lucide="plus"></i>New order</button></div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 1 thing</h3><span>Updated 06:42</span></div>
+    <div class="ins"><div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="user-plus"></i></div><div><b>9 new orders have no call rep</b><p>Gifty Addo and 8 others wait for a first call. Adwoa Darko has the lightest queue today, with 14 open orders.</p></div></div><div class="act"><button class="mini pri" id="insAssign">Assign all 9 to Adwoa</button><button class="mini">Dismiss</button></div></div></div>
+  </div>
+
+  <div class="card">
+    <div class="tabs" id="otabs"></div>
+    <div class="filters" style="align-items:center"><label class="srch"><i data-lucide="search" style="width:16px;height:16px"></i><input id="osearch" type="text" placeholder="Search order, phone or name" aria-label="Search orders"></label><select class="psel" id="fProd" aria-label="Product"><option value="">All products</option><option>Copybook set</option><option>Refill pens</option><option>Pencil grip trainer</option><option>Smart Parent's Home Study Guide</option></select><select class="psel" id="fAg" aria-label="Delivery agent"><option value="">All agents</option><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Logiswift</option><option>Kasapa Express</option></select><select class="psel" id="fRep" aria-label="Call rep"><option value="">Any call rep</option><option>Adwoa Darko</option><option>Nana Kyei</option><option>Confirm agent</option><option value="none">Unassigned</option></select><button class="btn" id="fFlag" aria-pressed="false"><i data-lucide="sparkles" style="color:var(--violet)"></i>Flagged by agent</button></div>
+    <div class="bulk" id="bulk">
+      <b id="bulkN">0 selected</b>
+      <div class="mwrap"><button class="btn" data-menu="bm-status"><i data-lucide="refresh-cw"></i>Change status<i data-lucide="chevron-down" style="width:15px;height:15px"></i></button><div class="menu" id="bm-status" style="left:0;right:auto"></div></div>
+      <div class="mwrap"><button class="btn" data-menu="bm-rep"><i data-lucide="phone"></i>Assign to call rep<i data-lucide="chevron-down" style="width:15px;height:15px"></i></button><div class="menu" id="bm-rep" style="left:0;right:auto"></div></div>
+      <div class="mwrap"><button class="btn" data-menu="bm-ag"><i data-lucide="truck"></i>Assign to delivery agent<i data-lucide="chevron-down" style="width:15px;height:15px"></i></button><div class="menu" id="bm-ag" style="left:0;right:auto"></div></div>
+      <button class="btn" id="bulkDel" style="color:var(--coral)"><i data-lucide="trash-2"></i>Delete</button>
+      <button class="mini" id="bulkClear" style="margin-left:auto">Clear selection</button>
+    </div>
+    <div class="tablewrap"><table class="ot">
+      <thead><tr><th style="width:36px"><input type="checkbox" id="selAll" aria-label="Select all"></th><th>Order</th><th>Customer</th><th>Product</th><th>Status</th><th>Call rep</th><th>Delivery agent</th><th class="r">Amount</th><th class="r" style="width:50px"><span style="position:absolute;left:-9999px">Assign</span></th></tr></thead>
+      <tbody id="obody"></tbody></table></div>
+    <div class="pfoot"><span id="ocount">Showing 11 of 1,445 orders</span><span>Click a row to open the order</span></div>
+  </div>
+  <div class="menu fixed" id="rowmenu" role="menu" style="width:230px"></div>
+</section>
+
+<!-- ================= ONBOARDING ================= -->
+<section class="view" id="onboard">
+  <div class="card wiz">
+    <div class="steps" id="wsteps">
+      <div class="brand" style="padding:0 0 14px"><div class="logo"><i data-lucide="zap"></i></div><b>Set up</b></div>
+      <div class="step" data-i="1"><span class="n">1</span>Your store</div>
+      <div class="step" data-i="2"><span class="n">2</span>Connect your 3PL</div>
+      <div class="step" data-i="3"><span class="n">3</span>Set your North Star</div>
+      <div class="step" data-i="4"><span class="n">4</span>Driver targets</div>
+      <div class="step" data-i="5"><span class="n">5</span>Invite your team</div>
+      <div class="step" data-i="6"><span class="n">6</span>Rewards</div>
+    </div>
+    <div class="wbody">
+      <!-- 1 -->
+      <div class="wstep" data-i="1">
+        <h2>Your store</h2>
+        <p>Pick the country you sell in. Your currency and regions follow it. You can change both later in Settings.</p>
+        <div class="wgrid">
+          <div class="fl"><label for="w-c">Selling country</label><select id="w-c"><option value="GHS|GH₵ Ghana cedi" selected>Ghana</option><option value="NGN|₦ Nigerian naira">Nigeria</option><option value="KES|KSh Kenyan shilling">Kenya</option><option value="ZAR|R South African rand">South Africa</option><option value="UGX|USh Ugandan shilling">Uganda</option></select></div>
+          <div class="fl"><label for="w-cur">Store currency</label><input id="w-cur" type="text" value="GH₵ Ghana cedi" readonly><div class="hint">Set from the country. You can change it in Settings, Currencies &amp; FX.</div></div>
+          <div class="fl full"><label for="w-b">Business name</label><input id="w-b" type="text" value="Manny Dynamics Limited"></div>
+        </div>
+      </div>
+      <!-- 2 -->
+      <div class="wstep" data-i="2" hidden>
+        <h2>Connect your 3PL</h2>
+        <p>Add the first delivery partner. You can skip this and add partners later in Deliveries.</p>
+        <div class="wgrid">
+          <div class="fl"><label for="w-pn">Partner name</label><input id="w-pn" type="text" value="Logiswift"></div>
+          <div class="fl"><label for="w-pt">Type</label><select id="w-pt"><option>3PL company</option><option>Own delivery agent</option></select></div>
+          <div class="fl"><label for="w-f1">Fee per delivered order (<span class="wcur">GH₵</span>)</label><input id="w-f1" type="text" inputmode="numeric" placeholder="For example: 30"></div>
+          <div class="fl"><label for="w-f2">Fee per failed order (<span class="wcur">GH₵</span>)</label><input id="w-f2" type="text" inputmode="numeric" placeholder="For example: 5"></div>
+          <div class="fl"><label for="w-f3">Fee per returned order (<span class="wcur">GH₵</span>)</label><input id="w-f3" type="text" inputmode="numeric" placeholder="For example: 0"></div>
+        </div>
+        <div class="hint" style="margin-top:12px">The partner keeps its fee from the cash it collects and hands in the rest.</div>
+      </div>
+      <!-- 3 -->
+      <div class="wstep" data-i="3" hidden>
+      <h2>What is your goal for 2026?</h2>
+      <p>Enter the delivered revenue you want this year. We split it into quarterly and monthly targets. You can change the split.</p>
+      <div class="field"><label for="ns">Annual North Star (delivered revenue)</label><div class="money"><span>GH₵</span><input id="ns" class="num" value="1,800,000" inputmode="numeric"></div></div>
+      <div style="margin-top:18px"><label style="font-weight:600">How should it grow?</label><br><div class="seg" id="wseg"><button data-m="even">Even each month</button><button class="on" data-m="grow">Grow each quarter</button><button data-m="custom">Custom</button></div></div>
+      <div class="split">
+        <div class="q"><h4>Q1</h4><b class="num" style="font-size:20px" id="q1">GH₵360k</b><div class="t" style="color:var(--ink-3);font-size:12.5px" id="qm1">GH₵120k a month</div></div>
+        <div class="q"><h4>Q2</h4><b class="num" style="font-size:20px" id="q2">GH₵420k</b><div class="t" style="color:var(--ink-3);font-size:12.5px" id="qm2">GH₵140k a month</div></div>
+        <div class="q"><h4>Q3</h4><b class="num" style="font-size:20px" id="q3">GH₵480k</b><div class="t" style="color:var(--ink-3);font-size:12.5px" id="qm3">GH₵160k a month</div></div>
+        <div class="q"><h4>Q4</h4><b class="num" style="font-size:20px" id="q4">GH₵540k</b><div class="t" style="color:var(--ink-3);font-size:12.5px" id="qm4">GH₵180k a month</div></div>
+      </div>
+      <div class="hint" id="wcustom" hidden style="margin-top:8px">Custom: type each quarter in the Settings tab North Star &amp; targets. Here the quarters show the even split until you save.</div>
+      <div style="margin-top:24px;font-weight:600">To hit <span id="d-tgt">GH₵180k</span> in a month, set your drivers:</div>
+      <div class="drivers n3">
+        <div class="drv"><small>Average order</small><div class="dq"><span>GH₵</span><input id="d-aov" class="num" value="249" inputmode="numeric" aria-label="Planned average order in cedis"></div><em id="d-aov-s">Last 30 days of delivered orders. <button class="linkbtn" id="d-aov-r" hidden>Reset</button></em></div>
+        <div class="drv"><small>Confirmation rate</small><div class="dq"><input id="d-conf" class="num" value="70" inputmode="numeric" aria-label="Confirmation rate percent"><span>%</span></div><em>call rep or AI agent</em></div>
+        <div class="drv"><small>Delivery success rate</small><div class="dq"><input id="d-succ" class="num" value="60" inputmode="numeric" aria-label="Delivery success rate percent"><span>%</span></div><em>delivery target. Now 48%</em></div>
+      </div>
+      <div class="drivers n2">
+        <div class="drv calc"><small>Orders a day you need</small><b class="num" id="d-orders">56</b><em id="d-orders-s">GH₵180k ÷ GH₵249 ÷ 70% ÷ 60% ÷ 31 days (October)</em></div>
+        <div class="drv calc"><small>Max cost per order (moves with the yield)</small><b class="num" id="d-cpa">₦8,700</b><em id="d-cpa-s">₦20,720 profit per delivered order × 42% yield</em></div>
+      </div>
+      </div>
+      <!-- 4 -->
+      <div class="wstep" data-i="4" hidden>
+        <h2>Driver targets</h2>
+        <p>These role targets come from your drivers. Split the call rep target (confirmed orders that get delivered) between your people. It must add up.</p>
+        <div class="tablewrap"><table class="dt">
+          <thead><tr><th>Role</th><th>Target</th><th>Where it comes from</th></tr></thead>
+          <tbody>
+            <tr><td><b>Call reps</b></td><td>723 confirmed orders that get delivered, counted at month close</td><td>Delivered orders needed (GH₵180k ÷ planned average order)</td></tr>
+            <tr><td><b>Delivery</b></td><td><span id="w-succ">60</span>% delivery success</td><td>Your delivery success driver</td></tr>
+            <tr><td><b>Marketing</b></td><td>Cost per order under <span id="w-cpa">₦8,700</span></td><td>Profit per delivered order × planned yield</td></tr>
+          </tbody></table></div>
+        <div style="margin-top:18px;font-weight:600">Split the call rep target</div>
+        <div class="wgrid" style="margin-top:8px">
+          <div class="fl"><label for="w-s1">Adwoa Darko</label><input id="w-s1" class="ws" type="text" inputmode="numeric" value="423"></div>
+          <div class="fl"><label for="w-s2">Confirm agent (AI)</label><input id="w-s2" class="ws" type="text" inputmode="numeric" value="250"></div>
+          <div class="fl"><label for="w-s3">Nana Kyei</label><input id="w-s3" class="ws" type="text" inputmode="numeric" value="50"></div>
+        </div>
+        <div class="hint" id="w-sum" style="margin-top:10px">Total 723 of 723.</div>
+      </div>
+      <!-- 5 -->
+      <div class="wstep" data-i="5" hidden>
+        <h2>Invite your team</h2>
+        <p>Invite the people who will work orders. They get a link to set their own password. You can skip this and invite later in Staff &amp; roles.</p>
+        <div class="wgrid">
+          <div class="fl"><label for="w-in">Full name</label><input id="w-in" type="text" placeholder="For example: Nana Kyei"></div>
+          <div class="fl"><label for="w-ie">Email or WhatsApp number</label><input id="w-ie" type="text" placeholder="nana@example.com"></div>
+          <div class="fl"><label for="w-ir">Role</label><select id="w-ir"><option>Call rep</option><option>Delivery agent</option><option>Finance clerk</option><option>Marketing</option><option>Stock keeper</option></select></div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn" id="w-send"><i data-lucide="send"></i>Send invite</button><a class="btn" href="staff.html">Open Staff &amp; roles</a><span class="hint" id="w-sent"></span></div>
+      </div>
+      <!-- 6 -->
+      <div class="wstep" data-i="6" hidden>
+        <h2>Rewards</h2>
+        <p>Reward tiers are set in one place: Settings, Rewards. Cash tiers for call reps and delivery, a commission and an upsell share. Nothing is copied into this wizard.</p>
+        <a class="btn pri" href="settings.html#rewards"><i data-lucide="gift"></i>Open Rewards</a>
+      </div>
+      <div class="wfoot"><button class="btn" id="wBack"><i data-lucide="arrow-left"></i>Back</button><button class="btn pri" id="wNext">Continue</button></div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+</div>
+
+<script>
+(function(){
+  const g = id => document.getElementById(id), n = el => parseFloat(String(el.value).replace(/[^\d.]/g,'')) || 0, fmt = v => v.toLocaleString('en-US');
+  const DAYS = new Date(2026, 10, 0).getDate(); /* real days in October 2026 = 31 */
+  const GROW = [360000, 420000, 480000, 540000];
+  let mode = 'grow', aovMan = false, cur = 1;
+  const K = v => 'GH\u20B5' + (v / 1000).toLocaleString('en-US', {maximumFractionDigits: 1}) + 'k';
+  function tiles(){
+    const a = n(g('ns')), q = mode === 'even' ? [a/4,a/4,a/4,a/4] : GROW.map(x => x * a / 1800000);
+    q.forEach((v, i) => { g('q' + (i+1)).textContent = K(v); g('qm' + (i+1)).textContent = K(v / 3) + ' a month'; });
+    g('wcustom').hidden = mode !== 'custom'; calc();
+  }
+  function calc(){
+    const aov = n(g('d-aov')), c = n(g('d-conf'))/100, d = n(g('d-succ'))/100;
+    if(!aov || !c || !d) return;
+    const a = n(g('ns')), month = (mode === 'even' ? a/4 : GROW[3] * a / 1800000) / 3, delivered = Math.round(month / aov), orders = Math.round(delivered / (c * d)), perDay = Math.round(orders / DAYS), y = c * d;
+    g('d-tgt').textContent = K(month);
+    g('d-orders').textContent = perDay;
+    g('d-orders-s').textContent = K(month) + ' \u00F7 GH\u20B5' + aov + ' \u00F7 ' + Math.round(c*100) + '% \u00F7 ' + Math.round(d*100) + '% \u00F7 ' + DAYS + ' days (October)';
+    g('d-cpa').textContent = '\u20A6' + fmt(Math.round(20720 * y / 10) * 10);
+    g('d-cpa-s').textContent = '\u20A620,720 profit per delivered order \u00D7 ' + Math.round(y*100) + '% yield';
+    g('w-succ').textContent = Math.round(d*100); g('w-cpa').textContent = g('d-cpa').textContent;
+  }
+  ['d-aov','d-conf','d-succ','ns'].forEach(i => g(i).addEventListener('input', () => { if (i === 'd-aov') { aovMan = true; g('d-aov-s').firstChild.textContent = 'Typed by you. '; g('d-aov-r').hidden = false; } tiles(); }));
+  g('d-aov-r').onclick = () => { aovMan = false; g('d-aov').value = '249'; g('d-aov-s').firstChild.textContent = 'Last 30 days of delivered orders. '; g('d-aov-r').hidden = true; calc(); };
+  g('wseg').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { mode = b.dataset.m; tiles(); }));
+  g('w-c').onchange = e => { const v = e.target.value.split('|'); g('w-cur').value = v[1]; document.querySelectorAll('.wcur').forEach(x => x.textContent = v[1].split(' ')[0]); };
+  document.querySelectorAll('.ws').forEach(i => i.addEventListener('input', () => { const t = [...document.querySelectorAll('.ws')].reduce((a, x) => a + n(x), 0); g('w-sum').textContent = 'Total ' + fmt(t) + ' of 723.' + (t === 723 ? '' : ' It must add up to 723.'); g('w-sum').style.color = t === 723 ? '' : 'var(--coral)'; }));
+  g('w-send').onclick = () => { if (!g('w-in').value.trim() || !g('w-ie').value.trim()) { g('w-sent').textContent = 'Enter a name and an email or number.'; return; } g('w-sent').textContent = 'Invite sent to ' + g('w-in').value.trim() + ' as ' + g('w-ir').value.toLowerCase() + '. Sample only.'; g('w-in').value = ''; g('w-ie').value = ''; };
+  const LBL = {1:'Continue',2:'Continue',3:'Save and set driver targets',4:'Save driver targets',5:'Continue',6:'Finish setup'};
+  function show(i){
+    cur = i;
+    document.querySelectorAll('#onboard .wstep').forEach(x => x.hidden = +x.dataset.i !== i);
+    document.querySelectorAll('#wsteps .step').forEach(x => { const k = +x.dataset.i; x.classList.toggle('done', k < i); x.classList.toggle('on', k === i); x.querySelector('.n').textContent = k < i ? '\u2713' : k; });
+    g('wBack').disabled = i === 1; g('wBack').style.opacity = i === 1 ? .5 : 1; g('wNext').textContent = LBL[i];
+    window.scrollTo(0, 0);
+  }
+  g('wBack').onclick = () => { if (cur > 1) show(cur - 1); };
+  g('wNext').onclick = () => {
+    if (cur === 4) { const t = [...document.querySelectorAll('.ws')].reduce((a, x) => a + n(x), 0); if (t !== 723) { g('w-sum').scrollIntoView({block:'center'}); return; } }
+    if (cur < 6) { show(cur + 1); return; }
+    const nav = document.querySelector('a.nav[data-v="onboard"]'); if (nav) nav.hidden = true;
+    if (window.toast) toast('Setup finished. Targets are saved. Sample only.'); document.querySelector('a.nav[data-v="dash"]').click();
+  };
+  show(3); tiles();
+})();
+</script>
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="toast" id="toast" role="status"><i data-lucide="check-circle-2"></i><span></span></div>
+
+<!-- Order details drawer -->
+<aside class="sheet" id="sh-order" style="width:640px" aria-label="Order details">
+  <div class="sh"><div><h2 id="od-title">#24114</h2><p id="od-sub"></p></div><span id="od-pay" style="margin-left:auto;margin-top:4px"></span><button class="ibtn" data-close aria-label="Close" style="margin-left:0"><i data-lucide="x"></i></button></div>
+  <div class="sb">
+    <div class="sec">
+      <div class="fg">
+        <div class="fl"><label for="od-st">Order status</label><select id="od-st"></select></div>
+        <div class="fl"><label>Follow up</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div class="mwrap"><button class="btn" data-menu="rem-pop" id="remBtn"><i data-lucide="bell-plus"></i>Set reminder</button>
+              <div class="menu" id="rem-pop" style="left:0;right:auto;width:300px;padding:14px" role="dialog" aria-label="Set reminder">
+                <div class="fl"><label for="rm-w">What</label><input id="rm-w" type="text" value="Call back about this order"></div>
+                <div class="fg" style="margin-top:10px"><div class="fl"><label for="rm-t">When</label><input id="rm-t" type="text" value="18 Oct, 09:00"></div><div class="fl"><label for="rm-u">Who</label><select id="rm-u"><option>Me</option><option>Adwoa Darko</option><option>Nana Kyei</option><option>Kofi Appiah</option></select></div></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" data-menu="rem-pop">Cancel</button><button class="btn pri" id="rmSave">Set reminder</button></div>
+              </div></div>
+            <span class="chip v" id="od-rem" hidden><i data-lucide="bell"></i><span></span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec"><h4>Items <span id="od-n" style="font-weight:500"></span></h4><div id="od-items"></div></div>
+
+    <div class="sec"><h4>Customer</h4>
+      <dl class="kv">
+        <dt>Name</dt><dd id="od-name"></dd>
+        <dt>Phone</dt><dd style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span id="od-phone"></span><button class="mini" id="odCall"><i data-lucide="phone" style="width:13px;height:13px;vertical-align:-2px"></i> Call</button><button class="mini" id="odWa"><i data-lucide="message-circle" style="width:13px;height:13px;vertical-align:-2px"></i> WhatsApp</button></dd>
+        <dt>Address</dt><dd id="od-addr"></dd>
+        <dt>Region</dt><dd id="od-reg"></dd>
+      </dl>
+    </div>
+
+    <div class="sec"><h4>Payment</h4>
+      <dl class="kv"><dt>Status</dt><dd id="od-pay2"></dd><dt>Method</dt><dd>Cash on delivery</dd><dt>Amount</dt><dd id="od-amt" class="num"></dd><dt>Cash held by</dt><dd id="od-held"></dd></dl>
+    </div>
+
+    <div class="sec"><h4>Assigned to</h4>
+      <div class="fg">
+        <div class="fl"><label for="od-rep">Call rep</label><select id="od-rep"></select></div>
+        <div class="fl"><label for="od-ag">Delivery agent</label><select id="od-ag"></select></div>
+      </div>
+    </div>
+
+    <div class="sec"><h4>Timeline</h4><ul class="tl" id="od-tl"></ul></div>
+
+    <div class="sec"><h4>Call history <button class="mini" id="logBtn"><i data-lucide="phone-call" style="width:13px;height:13px;vertical-align:-2px"></i> Log call</button></h4>
+      <div class="hl" id="logForm" hidden style="margin-bottom:10px">
+        <div class="fg">
+          <div class="fl"><label for="lg-o">Outcome</label><select id="lg-o"><option>Confirmed</option><option>Rescheduled</option><option>No answer</option><option>Cancelled</option><option>Other</option></select></div>
+          <div class="fl"><label for="lg-w">Called by</label><select id="lg-w"><option>Manny</option><option>Adwoa Darko</option><option>Nana Kyei</option></select></div>
+          <div class="fl full"><label for="lg-n">Note</label><textarea id="lg-n" placeholder="What did the customer say?"></textarea></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn" id="logCancel">Cancel</button><button class="btn pri" id="logSave">Save call</button></div>
+      </div>
+      <div id="od-calls"></div>
+    </div>
+
+    <div class="sec"><h4>Team notes <span class="chip" id="od-rc"></span></h4>
+      <div id="od-notes"></div>
+      <div class="hl" style="margin-top:8px">
+        <div class="fl"><label for="nt-t" style="position:absolute;left:-9999px">Write a note</label><textarea id="nt-t" placeholder="Write a note. Type @ to mention a teammate." style="min-height:56px"></textarea></div>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="mini" data-men="@Adwoa Darko">@Adwoa</button><button class="mini" data-men="@Nana Kyei">@Nana</button><button class="mini" data-men="@Kofi Appiah">@Kofi</button><a href="inbox.html" class="mini" style="text-decoration:none;color:var(--ink-2);margin-left:auto">Open in Inbox</a><button class="btn pri" id="ntPost">Post note</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="sf"><button class="btn" data-close>Close</button><button class="btn pri" id="odSave">Save changes</button></div>
+</aside>
+
+<!-- Add target drawer -->
+<aside class="sheet" id="sh-target" aria-label="Add target">
+  <div class="sh"><div><h2>Add target</h2><p>A target for a person, an AI agent or a company. It adds up under the role target.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="sb">
+    <div class="sec"><div class="fg">
+      <div class="fl"><label for="tg-who">Who</label><select id="tg-who"><option>Every call rep</option><option>Adwoa Darko</option><option>Nana Kyei</option><option>Confirm agent</option><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Logiswift</option><option>Kasapa Express</option></select></div>
+      <div class="fl"><label for="tg-m">Target for</label><select id="tg-m"><option>Confirmed and delivered orders (month)</option><option>Delivery success rate (month)</option><option>Failed delivery calls (a day)</option><option>Max cost per order</option></select></div>
+      <div class="fl"><label for="tg-v">Target</label><input id="tg-v" type="text" placeholder="For example: 15"></div>
+      <div class="fl"><label for="tg-p">Period</label><select id="tg-p"><option>October</option><option>November</option><option>Every day</option></select></div>
+    </div><div class="hint">Role targets add up to the North Star. Rewards for hitting a target are set in Settings, Rewards.</div></div>
+  </div>
+  <div class="sf"><button class="btn" data-close>Cancel</button><button class="btn pri" id="tgSave"><i data-lucide="check"></i>Save target</button></div>
+</aside>
+
+<!-- New order drawer -->
+<aside class="sheet" id="sh-new" aria-label="New order">
+  <div class="sh"><div><h2>New order</h2><p>Add an order by hand, for example from a phone call or WhatsApp chat.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="sb">
+    <div class="sec"><h4>Customer</h4><div class="fg">
+      <div class="fl"><label for="no-n">Customer name</label><input id="no-n" type="text" placeholder="For example: Abena Owusu"></div>
+      <div class="fl"><label for="no-p">Phone</label><input id="no-p" type="text" placeholder="024 555 0182"></div>
+      <div class="fl full"><label for="no-a">Delivery address</label><textarea id="no-a" placeholder="House number, street, landmark" style="min-height:56px"></textarea></div>
+      <div class="fl"><label for="no-r">Region</label><select id="no-r"><option>Greater Accra</option><option>Ashanti</option><option>Western</option><option>Central</option><option>Eastern</option><option>Volta</option><option>Northern</option></select></div>
+      <div class="fl"><label for="no-c">Town or area</label><input id="no-c" type="text" placeholder="Osu"></div>
+    </div></div>
+    <div class="sec"><h4>Products <button class="mini" id="addLine"><i data-lucide="plus" style="width:13px;height:13px;vertical-align:-2px"></i> Add product line</button></h4>
+      <div id="no-lines"></div>
+    </div>
+    <div class="sec"><h4>Price and status</h4><div class="fg">
+      <div class="fl"><label for="no-t">Order total (GH₵)</label><input id="no-t" type="number" value="249"><div class="hint">Adds up from the lines. Change it to give a discount.</div></div>
+      <div class="fl"><label for="no-s">Status</label><select id="no-s"></select></div>
+      <div class="fl"><label for="no-rep">Call rep</label><select id="no-rep"></select></div>
+      <div class="fl"><label for="no-ag">Delivery agent</label><select id="no-ag"></select></div>
+    </div></div>
+  </div>
+  <div class="sf"><button class="btn" data-close>Cancel</button><button class="btn pri" id="noSave"><i data-lucide="check"></i>Create order</button></div>
+</aside>
+
+<!-- Import modal -->
+<div class="mveil" id="m-import" role="dialog" aria-modal="true" aria-labelledby="t-import">
+  <div class="dlg">
+    <div class="mh"><div><h3 id="t-import">Import orders</h3><p>Upload a CSV or Excel file. One row per order line.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="filebar"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="file-spreadsheet"></i></div><div style="flex:1"><b>Start from the template</b><div class="hint" style="margin-top:0">Same columns the importer reads: customer, phone, address, region, product, quantity, price, status.</div></div><a class="btn" download="order_import_template.csv" href="data:text/csv;charset=utf-8,customer_name%2Cphone%2Caddress%2Cregion%2Cproduct%2Cquantity%2Cprice%2Cstatus%0AAbena%20Owusu%2C0245550182%2C14%20Adum%20Road%20Kumasi%2CAshanti%2CMagic%20Groove%20copybook%20set%2C1%2C249%2Cpending_confirmation%0A" style="text-decoration:none"><i data-lucide="download"></i>Download template</a></div>
+      <div class="drop"><i data-lucide="upload-cloud"></i><b>Drop a .csv, .xlsx or .xls file here</b><div class="hint">or <u>browse your computer</u>. Up to 2,000 rows.</div></div>
+      <div class="filebar"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="check-circle-2"></i></div><div style="flex:1"><b>meta-leads-17-oct.xlsx</b><div class="hint" style="margin-top:0">42 rows read. 40 ready to import.</div></div><span class="tag ok">40 ready</span><span class="tag bad">2 need a fix</span></div>
+      <div class="hl"><b style="font-size:13px">2 rows need a fix</b><div class="hint" style="margin-top:4px">Row 17: phone has 9 digits. Row 31: region "Ashante" is not a region. Fix them in the file and upload again, or import the 40 ready rows now.</div></div>
+    </div>
+    <div class="mf"><button class="btn" data-close>Cancel</button><button class="btn pri" id="impGo"><i data-lucide="check"></i>Import 40 orders</button></div>
+  </div>
+</div>
+
+<script>
+// r2 layers: open/close for sheets and modals, menus, toast
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const scrim = document.getElementById('scrim');
+const toastEl = document.getElementById('toast');
+let toastT;
+function toast(msg){ toastEl.querySelector('span').textContent = msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), 2600); }
+function closeMenus(){ $$('.menu.on').forEach(m => m.classList.remove('on')); }
+function closeLayers(){ $$('.sheet.on,.mveil.on').forEach(l => l.classList.remove('on')); scrim.classList.remove('on'); closeMenus(); }
+function openLayer(id){
+  const el = document.getElementById(id); if(!el) return;
+  if(el.classList.contains('sheet')){ $$('.sheet.on').forEach(l => l.classList.remove('on')); scrim.classList.add('on'); }
+  el.classList.add('on'); closeMenus();
+  (el.querySelector('input:not([type=checkbox]),select,textarea') || el).focus?.({preventScroll:true});
+}
+function closeLayer(el){ el.classList.remove('on'); if(!$$('.sheet.on').length) scrim.classList.remove('on'); }
+document.addEventListener('click', e => {
+  const o = e.target.closest('[data-open]');
+  if(o){ if(o.dataset.fill) fillForm(o.dataset.open, JSON.parse(o.dataset.fill)); openLayer(o.dataset.open); if(window.onOpenLayer) window.onOpenLayer(o); return; }
+  const c = e.target.closest('[data-close]');
+  if(c){ closeLayer(c.closest('.sheet,.mveil')); return; }
+  if(e.target.classList && e.target.classList.contains('mveil')){ closeLayer(e.target); return; }
+  const m = e.target.closest('[data-menu]');
+  if(m){ const menu = document.getElementById(m.dataset.menu); const was = menu.classList.contains('on'); closeMenus(); if(!was){ menu.classList.add('on'); } return; }
+  if(!e.target.closest('.menu')) closeMenus();
+});
+scrim.onclick = closeLayers;
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeLayers(); });
+function fillForm(id, vals){ const el = document.getElementById(id); Object.entries(vals).forEach(([k,v]) => { const f = el.querySelector('[name="'+k+'"]'); if(f){ f.value = v; f.dispatchEvent(new Event('change',{bubbles:true})); } }); }
+const money = n => 'GH₵' + n.toLocaleString('en-GB', {minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2});
+
+lucide.createIcons();
+const go = v => {
+  document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === v));
+  document.querySelectorAll('.nav').forEach(n => n.classList.toggle('on', n.dataset.v === v));
+  document.getElementById('veil').classList.remove('on');
+  window.scrollTo(0,0);
+};
+document.querySelectorAll('a.nav[href^="index.html#"]').forEach(a => a.onclick = e => { e.preventDefault(); const v=a.getAttribute('href').split('#')[1]; history.replaceState(null,'','#'+v); go(v); });
+go((location.hash||'#dash').slice(1));
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+// ---- orders ----
+const ST = {pending:['Pending confirmation','warn'],confirmed:['Confirmed','n'],preparing:['Preparing','n'],ready:['Ready for pickup','n'],ofd:['Out for delivery','v'],delivered:['Delivered','ok'],cancelled:['Cancelled','n'],returned:['Returned','bad'],failed:['Failed delivery','bad']};
+const REPS = ['Adwoa Darko','Nana Kyei','Confirm agent'], AGENTS = ['Kofi Appiah','Esi Badu','Kwesi Amoah','Logiswift','Kasapa Express'];
+const PROD = {'Copybook set':249,'Refill pens':40,'Pencil grip trainer':35,"Smart Parent's Home Study Guide":59};
+const TONE = [['var(--pine-soft)','var(--pine)'],['var(--gold-soft)','var(--gold)'],['var(--violet-soft)','var(--violet)'],['var(--coral-soft)','var(--coral)'],['var(--mint-soft)','#14975f']];
+const PAY = {paid:['Paid','ok'],held:['Cash with agent','warn'],late:['Overdue from agent','bad'],cod:['Pay on delivery','n'],none:['No payment','n']};
+const SB = ['Set','Refill pens'];
+let ORD = [
+ {id:24117,d:'17 Oct, 14:02',n:'Abena Owusu',p:'024 555 0182',a:'14 Adum Road, Adum',reg:'Ashanti',it:[['Copybook set',1]],st:'delivered',rep:'Adwoa Darko',ag:'Kofi Appiah',pay:'held',calls:[['Confirmed','Adwoa Darko','17 Oct, 14:20','Wants delivery today.']]},
+ {id:24116,d:'17 Oct, 13:47',n:'Kwame Mensah',p:'020 555 0144',a:'Community 9, Tema',reg:'Greater Accra',it:[['Copybook set',2]],st:'ofd',rep:'Confirm agent',ag:'Logiswift',pay:'cod',calls:[['Confirmed','Confirm agent','17 Oct, 13:55','Two sets for his nieces.']]},
+ {id:24098,d:'6 Oct, 10:12',n:'Ama Nkrumah',p:'027 555 0119',a:'Lapaz, near the market',reg:'Greater Accra',it:[['Copybook set',1]],st:'delivered',rep:'Adwoa Darko',ag:'Logiswift',pay:'late',flag:'Not paid after 11 days',calls:[['Confirmed','Adwoa Darko','6 Oct, 10:30','']]},
+ {id:24115,d:'17 Oct, 12:30',n:'Efua Asante',p:'055 555 0177',a:'27 Ring Road East, Osu',reg:'Greater Accra',it:[['Copybook set',1]],st:'confirmed',rep:'Confirm agent',ag:'Esi Badu',pay:'cod',calls:[['Confirmed','Confirm agent','17 Oct, 12:41','Call after 4 pm.']]},
+ {id:24114,d:'15 Oct, 11:58',n:'Yaw Boateng',p:'024 555 0103',a:'Asokwa, Kumasi',reg:'Ashanti',it:[['Copybook set',1]],st:'failed',rep:'Adwoa Darko',ag:'Kofi Appiah',pay:'cod',flag:'Re-delivery Tue 20 Oct',rem:'20 Oct, 16:00',
+  tl:[['Order placed','Checkout form, Meta ad, 15 Oct, 11:58',''],['Confirmed by phone','15 Oct, 12:20',''],['Packed and ready for pickup','16 Oct, 14:00',''],['Out for delivery','17 Oct, 07:30, Kofi Appiah',''],['Delivery failed',"17 Oct, 08:40. Customer's brother refused at the gate. Customer is travelling.",'bad'],['Re-delivery planned','Tue 20 Oct, after 4 pm, Kofi Appiah','plan']],
+  calls:[['Answered','Adwoa Darko','17 Oct, 09:20','Agrees to re-delivery Tue 20 Oct after 4pm. Will pay GH₵249.']],
+  notes:[{w:'Kofi Appiah',t:'17 Oct, 08:41',x:"Yaw's brother refused the parcel at the gate in Asokwa. Yaw is travelling and back on Monday. Slip attached.",r:[{w:'Kofi Appiah',t:'08:52',x:'@Manny I can go back on Tuesday 20 Oct. Re-delivery then?'},{w:'Manny',t:'09:05',x:'Yes, 20 Oct works. @Adwoa please call Yaw and confirm.'},{w:'Adwoa Darko',t:'09:20',x:'Called him. He agrees to 20 Oct after 4pm and will pay GH₵249 on delivery.'},{w:'Manny',t:'09:24',x:'Good. I set a reminder for Kofi on Tuesday at 16:00 so the parcel is in his bag.'}]}]},
+ {id:24113,d:'17 Oct, 11:41',n:'Gifty Addo',p:'050 555 0161',a:'Kejetia, Stall 214',reg:'Ashanti',it:[['Copybook set',3]],st:'pending',rep:'',ag:'',pay:'cod',calls:[]},
+ {id:24112,d:'17 Oct, 10:20',n:'Kojo Annan',p:'026 555 0128',a:'Market Circle, Takoradi',reg:'Western',it:[['Copybook set',1]],st:'preparing',rep:'Adwoa Darko',ag:'Kwesi Amoah',pay:'cod',calls:[['Confirmed','Adwoa Darko','17 Oct, 10:42','']]},
+ {id:24111,d:'17 Oct, 09:55',n:'Akosua Frimpong',p:'054 555 0190',a:'Kotokuraba Road, Cape Coast',reg:'Central',it:[['Copybook set',1],['Refill pens',1]],st:'ready',rep:'Adwoa Darko',ag:'Kasapa Express',pay:'cod',calls:[['Confirmed','Adwoa Darko','17 Oct, 10:10','Added a pack of refill pens.']]},
+ {id:24109,d:'16 Oct, 17:30',n:'Selina Tetteh',p:'027 555 0166',a:'Spintex Road, Baatsona',reg:'Greater Accra',it:[['Copybook set',1]],st:'failed',rep:'Nana Kyei',ag:'Esi Badu',pay:'cod',calls:[['Rescheduled','Nana Kyei','16 Oct, 18:00','Asked for Saturday.']]},
+ {id:24107,d:'16 Oct, 15:12',n:'Nii Lamptey',p:'050 555 0138',a:'Teshie, Nungua Road',reg:'Greater Accra',it:[['Copybook set',1],['Pencil grip trainer',1]],st:'returned',rep:'Adwoa Darko',ag:'Logiswift',pay:'none',calls:[['Confirmed','Adwoa Darko','16 Oct, 15:40','']]},
+ {id:24105,d:'16 Oct, 13:04',n:'Mercy Agyeman',p:'024 555 0115',a:'Tamale Central, near the post office',reg:'Northern',it:[['Copybook set',1]],st:'cancelled',rep:'Adwoa Darko',ag:'',pay:'none',calls:[['Cancelled','Adwoa Darko','16 Oct, 13:30','Found it cheaper elsewhere.']]}
+];
+const TABS = [['all','All',1445],['pending','Pending confirmation',64],['confirmed','Confirmed',21],['preparing','Preparing',41],['ready','Ready for pickup',38],['ofd','Out for delivery',148],['delivered','Delivered',376],['failed','Failed delivery',354],['returned','Returned',48],['cancelled','Cancelled',355],['unpaid','Unpaid by agent',38]];
+let oTab = 'all', selected = new Set(), cur = null;
+const ini = n => n.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+const amt = o => o.it.reduce((a, [n, q]) => a + PROD[n] * q, 0);
+const itemTxt = o => o.it[0][0] + ' × ' + o.it[0][1] + (o.it.length > 1 ? ' + ' + (o.it.length - 1) + ' more' : '');
+const tag = (t, c) => '<span class="tag ' + c + '">' + t + '</span>';
+const opts = (arr, sel, blank) => (blank ? '<option value="">' + blank + '</option>' : '') + arr.map(a => '<option' + (a === sel ? ' selected' : '') + '>' + a + '</option>').join('');
+const stOpts = sel => Object.entries(ST).map(([k, [l]]) => '<option value="' + k + '"' + (k === sel ? ' selected' : '') + '>' + l + '</option>').join('');
+function renderTabs(){ $('#otabs').innerHTML = TABS.map(([k, l, n]) => '<button class="tab' + (k === oTab ? ' on' : '') + '" data-ot="' + k + '">' + l + ' <span' + (k === 'unpaid' ? ' style="background:var(--coral-soft);color:var(--coral)"' : '') + '>' + n.toLocaleString('en-GB') + '</span></button>').join(''); $$('[data-ot]').forEach(b => b.onclick = () => { oTab = b.dataset.ot; renderRows(); renderTabs(); }); }
+function visible(){ const q = $('#osearch').value.toLowerCase(), fp = $('#fProd').value, fa = $('#fAg').value, fr = $('#fRep').value, ff = $('#fFlag').getAttribute('aria-pressed') === 'true'; return ORD.filter(o => (oTab === 'all' || o.st === oTab || (oTab === 'unpaid' && (o.pay === 'late' || o.pay === 'held'))) && (!q || (o.n + o.p + o.id).toLowerCase().includes(q)) && (!fp || o.it.some(i => i[0] === fp)) && (!fa || o.ag === fa) && (!fr || (fr === 'none' ? !o.rep : o.rep === fr)) && (!ff || o.flag)); }
+function renderRows(){
+  const rows = visible();
+  $('#obody').innerHTML = rows.map(o => { const t = TONE[o.id % 5], [sl, sc] = ST[o.st];
+    return '<tr class="orow' + (selected.has(o.id) ? ' sel' : '') + '" data-id="' + o.id + '"><td><input type="checkbox" class="rc" data-id="' + o.id + '" aria-label="Select order ' + o.id + '"' + (selected.has(o.id) ? ' checked' : '') + '></td>' +
+    '<td><b>#' + o.id + '</b><br><small style="color:var(--ink-3)">' + o.d + '</small></td>' +
+    '<td><div class="who"><div class="a" style="background:' + t[0] + ';color:' + t[1] + '">' + ini(o.n) + '</div><div>' + o.n + '<small>' + o.p + '</small></div></div></td>' +
+    '<td>' + itemTxt(o) + '</td>' +
+    '<td class="stc">' + tag(sl, sc) + (o.flag ? '<div class="flag"><i data-lucide="sparkles" style="width:13px;height:13px"></i>' + o.flag + '</div>' : '') + (o.rem || o.notes ? '<div class="chips">' + (o.rem ? '<span class="chip v"><i data-lucide="bell"></i>Reminder ' + o.rem + '</span>' : '') + (o.notes ? '<span class="chip"><i data-lucide="message-square"></i>' + o.notes[0].r.length + ' repl' + (o.notes[0].r.length === 1 ? 'y' : 'ies') + '</span>' : '') + '</div>' : '') + '</td>' +
+    '<td>' + (o.rep || '<span style="color:var(--ink-3)">Unassigned</span>') + '</td><td>' + (o.ag || '<span style="color:var(--ink-3)">' + (o.rep ? 'Unassigned' : '—') + '</span>') + '</td>' +
+    '<td class="r num"><b>GH₵' + amt(o) + '</b></td>' +
+    '<td class="r"><button class="ibtn sm ras" data-id="' + o.id + '" aria-label="Assign order ' + o.id + '" title="Assign"><i data-lucide="user-plus"></i></button></td></tr>'; }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--ink-3);padding:30px">No orders match.</td></tr>';
+  $('#ocount').textContent = 'Showing ' + rows.length + ' of ' + (oTab === 'all' ? '1,445' : TABS.find(t => t[0] === oTab)[2].toLocaleString('en-GB')) + ' orders';
+  $('#selAll').checked = rows.length > 0 && rows.every(o => selected.has(o.id));
+  updateBulk(); lucide.createIcons();
+}
+function updateBulk(){ const n = selected.size; $('#bulk').classList.toggle('on', n > 0); $('#bulkN').textContent = n + ' selected'; }
+$('#obody').addEventListener('click', e => {
+  const rc = e.target.closest('.rc'); if(rc){ rc.checked ? selected.add(+rc.dataset.id) : selected.delete(+rc.dataset.id); rc.closest('tr').classList.toggle('sel', rc.checked); updateBulk(); $('#selAll').checked = visible().every(o => selected.has(o.id)); return; }
+  const ra = e.target.closest('.ras'); if(ra){ e.stopPropagation(); openRowMenu(ra); return; }
+  const tr = e.target.closest('tr.orow'); if(tr) openOrder(+tr.dataset.id);
+}, false);
+$('#selAll').onchange = e => { visible().forEach(o => e.target.checked ? selected.add(o.id) : selected.delete(o.id)); renderRows(); };
+$('#osearch').oninput = renderRows;
+['#fProd','#fAg','#fRep'].forEach(i => $(i).onchange = renderRows);
+$('#fFlag').onclick = e => { const b = e.currentTarget; b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true'); b.classList.toggle('pri', b.getAttribute('aria-pressed') === 'true'); renderRows(); };
+$('#dashPeriod').onchange = e => toast('Showing ' + e.target.value.toLowerCase() + '. The sample data covers October.');
+$('#bulkClear').onclick = () => { selected.clear(); renderRows(); };
+// per-row assign menu (fixed, filled on open)
+function menuItems(cur){ return '<p>Call rep</p>' + REPS.map(r => '<button data-as="rep" data-v="' + r + '"><i data-lucide="' + (r === 'Confirm agent' ? 'sparkles' : 'phone') + '"></i>' + r + (cur && cur.rep === r ? '<i data-lucide="check" class="cur"></i>' : '') + '</button>').join('') + '<hr><p>Delivery agent</p>' + AGENTS.map(r => '<button data-as="ag" data-v="' + r + '"><i data-lucide="' + (r === 'Logiswift' || r === 'Kasapa Express' ? 'building-2' : 'truck') + '"></i>' + r + (cur && cur.ag === r ? '<i data-lucide="check" class="cur"></i>' : '') + '</button>').join('') + '<hr><button data-as="clear"><i data-lucide="user-minus"></i>Unassign both</button>'; }
+let menuId = null;
+function openRowMenu(btn){
+  const m = $('#rowmenu'); menuId = +btn.dataset.id; m.innerHTML = menuItems(ORD.find(o => o.id === menuId)); lucide.createIcons();
+  const r = btn.getBoundingClientRect(); m.style.left = Math.max(8, r.right - 230) + 'px';
+  if(r.bottom + 400 > innerHeight){ m.style.top = 'auto'; m.style.bottom = (innerHeight - r.top + 6) + 'px'; } else { m.style.bottom = 'auto'; m.style.top = (r.bottom + 6) + 'px'; }
+  const was = m.classList.contains('on'); closeMenus(); if(!was) m.classList.add('on');
+}
+$('#rowmenu').addEventListener('click', e => { const b = e.target.closest('[data-as]'); if(!b) return; const o = ORD.find(x => x.id === menuId); assign([o], b.dataset.as, b.dataset.v); closeMenus(); });
+function assign(list, kind, v){
+  list.forEach(o => { if(kind === 'rep') o.rep = v; else if(kind === 'ag') o.ag = v; else { o.rep = ''; o.ag = ''; } });
+  renderRows(); if(cur && list.includes(cur)) fillOrder();
+  toast(kind === 'clear' ? 'Unassigned ' + list.length + ' order' + (list.length > 1 ? 's' : '') : (kind === 'rep' ? v + ' will call ' : v + ' will deliver ') + list.length + ' order' + (list.length > 1 ? 's' : ''));
+}
+// bulk bar menus
+$('#bm-status').innerHTML = Object.entries(ST).map(([k, [l]]) => '<button data-bs="' + k + '">' + l + '</button>').join('');
+$('#bm-rep').innerHTML = REPS.map(r => '<button data-br="' + r + '"><i data-lucide="phone"></i>' + r + '</button>').join('');
+$('#bm-ag').innerHTML = AGENTS.map(r => '<button data-ba="' + r + '"><i data-lucide="truck"></i>' + r + '</button>').join('');
+const sel = () => ORD.filter(o => selected.has(o.id));
+$('#bulk').addEventListener('click', e => {
+  const s = e.target.closest('[data-bs]'), r = e.target.closest('[data-br]'), a = e.target.closest('[data-ba]');
+  if(s){ const L = sel(); L.forEach(o => o.st = s.dataset.bs); renderRows(); closeMenus(); toast('Changed ' + L.length + ' orders to ' + ST[s.dataset.bs][0]); }
+  if(r){ closeMenus(); assign(sel(), 'rep', r.dataset.br); }
+  if(a){ closeMenus(); assign(sel(), 'ag', a.dataset.ba); }
+});
+$('#bulkDel').onclick = () => { const n = selected.size; shellConfirm('Delete ' + n + ' order' + (n > 1 ? 's' : '') + '?', 'The selected order' + (n > 1 ? 's' : '') + ' will be deleted with ' + (n > 1 ? 'their' : 'its') + ' call notes. This cannot be undone.', 'Delete ' + n + ' order' + (n > 1 ? 's' : ''), () => { ORD = ORD.filter(o => !selected.has(o.id)); selected.clear(); renderRows(); toast('Deleted ' + n + ' order' + (n > 1 ? 's' : '')); }); };
+$('#insAssign').onclick = () => shellConfirm('Assign 9 orders to Adwoa Darko?', 'Gifty Addo and 8 others have no call rep. Adwoa has the lightest queue today. Nothing changes until you confirm.', 'Assign 9 orders', () => { const L = ORD.filter(o => !o.rep); L.forEach(o => o.rep = 'Adwoa Darko'); renderRows(); toast('Assigned 9 orders to Adwoa Darko'); });
+$('#exportBtn').onclick = () => toast('Exported 1,445 orders to orders-17-oct.csv');
+$('#impGo').onclick = () => { closeLayer($('#m-import')); toast('Imported 40 orders. They are in Pending confirmation.'); };
+// ---- order details ----
+const FLOW = ['pending','confirmed','preparing','ready','ofd','delivered'];
+const EV = {pending:['Order placed','Checkout form, Meta ad',0],confirmed:['Confirmed by phone','',25],preparing:['Packed','',180],ready:['Ready for pickup','',300],ofd:['Out for delivery','',1500],delivered:['Delivered','Cash collected',1700]};
+function clock(d, mins){ const m = /(\d+) (\w+), (\d+):(\d+)/.exec(d); let t = +m[3] * 60 + +m[4] + mins, day = +m[1] + Math.floor(t / 1440); t %= 1440; return day + ' ' + m[2] + ', ' + String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); }
+function timeline(o){
+  if(o.tl) return o.tl;
+  const idx = FLOW.indexOf(o.st), out = [];
+  const upto = idx >= 0 ? idx : (o.st === 'cancelled' ? 1 : 4);
+  for(let i = 0; i <= upto; i++){ const [t, s, m] = EV[FLOW[i]]; out.push([t, (s ? s + ', ' : '') + clock(o.d, m), '']); }
+  if(o.st === 'failed') out.push(['Delivery failed', clock(o.d, 1700) + ', customer not reachable', 'bad']);
+  if(o.st === 'returned') out.push(['Returned to warehouse', clock(o.d, 3000), 'bad']);
+  if(o.st === 'cancelled') out.push(['Cancelled', clock(o.d, 1400) + ', ' + (o.calls[0] ? o.calls[0][3] : ''), 'bad']);
+  return out;
+}
+const oTag = x => tag(x[0], x[0] === 'Confirmed' || x[0] === 'Answered' ? 'ok' : x[0] === 'Rescheduled' ? 'v' : x[0] === 'No answer' ? 'warn' : x[0] === 'Cancelled' ? 'bad' : 'n');
+function mention(t){ return t.replace(/@(Adwoa Darko|Nana Kyei|Kofi Appiah|Adwoa|Nana|Kofi|Manny)/g, '<span class="men">@$1</span>'); }
+function openOrder(id){ cur = ORD.find(o => o.id === id); fillOrder(); $('#logForm').hidden = true; openLayer('sh-order'); }
+function fillOrder(){
+  const o = cur, [sl, sc] = ST[o.st], pay = PAY[o.pay];
+  $('#od-title').textContent = '#' + o.id; $('#od-sub').textContent = o.d + ' · from Meta ad, checkout form';
+  $('#od-pay').innerHTML = tag(pay[0], pay[1]);
+  $('#od-st').innerHTML = stOpts(o.st);
+  $('#od-n').textContent = '(' + o.it.reduce((a, i) => a + i[1], 0) + ')';
+  $('#od-items').innerHTML = o.it.map(([n, q]) => '<div class="oi"><div><b>' + n + '</b><small>GH₵' + PROD[n] + ' each</small></div><span class="num">× ' + q + '</span><b class="num">GH₵' + PROD[n] * q + '</b></div>').join('') + '<div class="oi t"><span>Total</span><span></span><span class="num">GH₵' + amt(o) + '</span></div>';
+  $('#od-name').textContent = o.n; $('#od-phone').textContent = o.p; $('#od-addr').textContent = o.a; $('#od-reg').textContent = o.reg;
+  $('#od-pay2').innerHTML = tag(pay[0], pay[1]); $('#od-amt').textContent = 'GH₵' + amt(o);
+  $('#od-held').textContent = o.pay === 'held' || o.pay === 'late' ? o.ag : (o.pay === 'paid' ? 'Paid in' : 'Nobody yet');
+  $('#od-rep').innerHTML = opts(REPS, o.rep, 'Unassigned'); $('#od-ag').innerHTML = opts(AGENTS, o.ag, 'Unassigned');
+  $('#od-tl').innerHTML = timeline(o).map(([t, s, c]) => '<li><i class="d ' + c + '"></i><div><b>' + t + '</b><small>' + s + '</small></div></li>').join('');
+  $('#od-calls').innerHTML = o.calls.length ? o.calls.map(c => '<div class="call"><div>' + oTag(c) + ' <b style="margin-left:6px">' + c[1] + '</b></div><small>' + c[2] + '</small>' + (c[3] ? '<p>' + c[3] + '</p>' : '') + '</div>').join('') : '<p class="hint">No calls yet. Log the first one.</p>';
+  const nts = o.notes || [];
+  $('#od-notes').innerHTML = nts.length ? nts.map(n => '<div class="nt"><div class="m"><div class="a" style="background:var(--gold-soft);color:var(--gold)">' + ini(n.w) + '</div><b>' + n.w + '</b>' + n.t + '</div><p>' + mention(n.x) + '</p>' + n.r.map(r => '<div class="rp"><div class="m"><div class="a" style="background:var(--pine-soft);color:var(--pine)">' + ini(r.w) + '</div><b>' + r.w + '</b>' + r.t + '</div><p>' + mention(r.x) + '</p></div>').join('') + '</div>').join('') : '<p class="hint">No notes yet. Write one to tell the team what you know.</p>';
+  const rc = nts.reduce((a, n) => a + n.r.length, 0); $('#od-rc').textContent = rc + ' repl' + (rc === 1 ? 'y' : 'ies'); $('#od-rc').hidden = !nts.length;
+  $('#od-rem').hidden = !o.rem; $('#od-rem span').textContent = o.rem ? 'Reminder ' + o.rem : '';
+  lucide.createIcons();
+}
+$('#od-st').onchange = e => { cur.st = e.target.value; renderRows(); fillOrder(); toast('Status is now ' + ST[cur.st][0]); };
+$('#od-rep').onchange = e => { cur.rep = e.target.value; renderRows(); toast(cur.rep ? cur.rep + ' will call this order' : 'Call rep removed'); };
+$('#od-ag').onchange = e => { cur.ag = e.target.value; renderRows(); toast(cur.ag ? cur.ag + ' will deliver this order' : 'Delivery agent removed'); };
+$('#logBtn').onclick = () => { $('#logForm').hidden = !$('#logForm').hidden; };
+$('#logCancel').onclick = () => { $('#logForm').hidden = true; };
+$('#logSave').onclick = () => { cur.calls.unshift([$('#lg-o').value, $('#lg-w').value, '17 Oct, 17:05', $('#lg-n').value]); $('#lg-n').value = ''; $('#logForm').hidden = true; fillOrder(); toast('Call logged'); };
+$('#rmSave').onclick = () => { cur.rem = $('#rm-t').value; closeMenus(); fillOrder(); renderRows(); toast('Reminder set for ' + $('#rm-u').value.toLowerCase().replace('me', 'you') + ', ' + cur.rem); };
+$$('[data-men]').forEach(b => b.onclick = () => { const t = $('#nt-t'); t.value = (t.value + ' ' + b.dataset.men + ' ').trimStart(); t.focus(); });
+$('#ntPost').onclick = () => { const v = $('#nt-t').value.trim(); if(!v) return; (cur.notes = cur.notes || []).push({w:'Manny',t:'17 Oct, 17:08',x:v,r:[]}); $('#nt-t').value = ''; fillOrder(); renderRows(); toast('Note posted. Mentioned teammates get a notification.'); };
+$('#odCall').onclick = () => { location.href = 'tel:' + cur.p.replace(/\s/g, ''); };
+$('#odWa').onclick = () => { location.href = 'https://wa.me/233' + cur.p.replace(/\s/g, '').replace(/^0/, ''); };
+$('#tgSave').onclick = () => { closeLayer($('#sh-target')); toast('Target saved for ' + $('#tg-who').value.toLowerCase().replace('every call rep', 'every call rep') + '. Sample only.'); };
+$('#odSave').onclick = () => { closeLayer($('#sh-order')); toast('Order #' + cur.id + ' saved'); };
+// ---- new order ----
+function lineHtml(){ return '<div class="nl"><div class="fl"><label>Product</label><select class="lp">' + Object.keys(PROD).map(p => '<option>' + p + '</option>').join('') + '</select></div><div class="fl"><label>Qty</label><input class="lq" type="number" min="1" value="1"></div><div class="fl"><label>Price</label><input class="lu" type="number" value="249"></div><button class="ibtn sm lx" aria-label="Remove line" style="margin-bottom:4px"><i data-lucide="x"></i></button></div>'; }
+function sumLines(){ $('#no-t').value = $$('#no-lines .nl').reduce((a, r) => a + (+r.querySelector('.lq').value || 0) * (+r.querySelector('.lu').value || 0), 0); }
+$('#no-lines').addEventListener('input', sumLines);
+$('#no-lines').addEventListener('change', e => { if(e.target.classList.contains('lp')){ e.target.closest('.nl').querySelector('.lu').value = PROD[e.target.value]; } sumLines(); });
+$('#no-lines').addEventListener('click', e => { const x = e.target.closest('.lx'); if(x && $$('#no-lines .nl').length > 1){ x.closest('.nl').remove(); sumLines(); } });
+$('#addLine').onclick = () => { $('#no-lines').insertAdjacentHTML('beforeend', lineHtml()); lucide.createIcons(); sumLines(); };
+$('#no-s').innerHTML = stOpts('pending'); $('#no-rep').innerHTML = opts(REPS, '', 'Assign later'); $('#no-ag').innerHTML = opts(AGENTS, '', 'Assign later');
+$('#newOrderBtn').onclick = () => { $('#no-lines').innerHTML = lineHtml(); lucide.createIcons(); sumLines(); openLayer('sh-new'); };
+$('#noSave').onclick = () => {
+  const L = $$('#no-lines .nl').map(r => [r.querySelector('.lp').value, +r.querySelector('.lq').value || 1]);
+  ORD.unshift({id:24118,d:'17 Oct, 17:10',n:$('#no-n').value || 'New customer',p:$('#no-p').value || '—',a:$('#no-a').value || '—',reg:$('#no-r').value,it:L,st:$('#no-s').value,rep:$('#no-rep').value,ag:$('#no-ag').value,pay:'cod',calls:[]});
+  oTab = 'all'; closeLayer($('#sh-new')); renderTabs(); renderRows(); toast('Order #24118 created');
+};
+renderTabs(); renderRows();
+// ---- targets: collapse role groups ----
+$$('tr.grp').forEach(g => { const b = g.querySelector('.gt'); const flip = () => { const open = b.getAttribute('aria-expanded') === 'true'; b.setAttribute('aria-expanded', !open); $$('tr[data-g="' + b.dataset.g + '"]').forEach(r => r.hidden = open); }; b.onclick = e => { e.stopPropagation(); flip(); }; g.onclick = flip; });
+
+lucide.createIcons();
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

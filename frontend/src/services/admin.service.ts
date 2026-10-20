@@ -17,6 +17,8 @@ export interface SystemConfig {
     accountSid?: string;
     authToken?: string;
     phoneNumber?: string;
+    senderId?: string;
+    isEnabled?: boolean;
   };
   emailProvider?: {
     provider: string;
@@ -110,19 +112,18 @@ export const adminService = {
     return response.data;
   },
 
-  async getPublicConfig(): Promise<Pick<SystemConfig, 'businessName' | 'currency'>> {
+  async getPublicConfig(formSlug: string): Promise<Pick<SystemConfig, 'businessName' | 'currency'>> {
     // Use publicClient (no auth interceptor) since this endpoint doesn't require auth.
     // Using apiClient here caused iframe embedding to break: stale tokens triggered
     // 401 → redirect to /login → X-Frame-Options blocked the iframe.
-    const response = await publicClient.get('/api/admin/config');
+    // The backend needs the tenant: the form slug of the public page identifies it.
+    const response = await publicClient.get('/api/admin/config', { params: { form: formSlug } });
     return response.data;
   },
 
   // Same shape as getPublicConfig, but authenticated so the backend resolves the
-  // caller's tenant from the JWT and returns THEIR currency/business name. The
-  // public /config route is tenant-blind and falls back to the global USD row,
-  // which is why the dashboard showed "$" instead of the tenant's configured
-  // currency. Signed-in surfaces use this; token-less iframe/checkout keeps /config.
+  // caller's tenant from the JWT and returns THEIR currency/business name.
+  // Signed-in surfaces use this; the token-less public form page uses /config?form=<slug>.
   async getTenantConfig(): Promise<Pick<SystemConfig, 'businessName' | 'currency'>> {
     const response = await apiClient.get('/api/admin/config/me');
     return response.data;

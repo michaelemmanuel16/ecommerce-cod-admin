@@ -5,12 +5,11 @@ on:
     branches: [main, develop]
     paths:
       - 'backend/**'
+      - 'scripts/deploy*.sh'
+      - 'scripts/tests/**'
       - '.github/workflows/backend-ci.yml'
   pull_request:
     branches: [main, develop]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/backend-ci.yml'
 
 env:
   NODE_VERSION: '20.x'
@@ -39,6 +38,9 @@ jobs:
       - name: Run ESLint
         working-directory: backend
         run: npm run lint
+
+      - name: Deploy scripts stop when migrate deploy fails
+        run: bash scripts/tests/deploy-guard.sh
 
   test:
     name: Run Tests
@@ -92,6 +94,12 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
         run: npx prisma migrate deploy
+
+      - name: Fail if schema.prisma differs from the migrated database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ecommerce_test
+        run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
 
       - name: Run unit tests
         working-directory: backend

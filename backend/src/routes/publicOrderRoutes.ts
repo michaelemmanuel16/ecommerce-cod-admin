@@ -1,15 +1,19 @@
 import { Router } from 'express';
 import * as publicOrderController from '../controllers/publicOrderController';
-import { webhookLimiter, publicOrderLimiter } from '../middleware/rateLimiter';
+import { webhookLimiter, publicOrderLimiter, publicDownloadLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validation';
 import { body, param } from 'express-validator';
 import { digitalDeliveryService } from '../services/digitalDeliveryService';
 import logger from '../utils/logger';
+import { resolveFormSlugTenant } from '../middleware/publicTenant';
 
 const router = Router();
 
 // Apply rate limiting to all public routes
 router.use(webhookLimiter);
+
+// Every /forms/:slug route resolves its tenant from the slug before any other query
+router.param('slug', resolveFormSlugTenant);
 
 // Validation rules
 const getFormValidation = [
@@ -95,7 +99,7 @@ router.post(
 );
 
 // Download digital product by token
-router.get('/download/:token', async (req, res) => {
+router.get('/download/:token', publicDownloadLimiter, async (req, res) => {
   try {
     const { token } = req.params;
     const result = await digitalDeliveryService.validateAndGetDownloadUrl(token);
@@ -103,6 +107,14 @@ router.get('/download/:token', async (req, res) => {
     if (!result) {
       res.status(404).json({
         error: 'Download link is invalid, expired, or has reached its download limit.',
+      });
+      return;
+    }
+
+    // The token exists but can no longer be used: 410 Gone, not a missing page
+    if ('gone' in result) {
+      res.status(410).json({
+        error: 'Download link has expired or has reached its download limit.',
       });
       return;
     }

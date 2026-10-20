@@ -10,11 +10,11 @@
  */
 
 import { Prisma, Order, OrderItem, Product, Customer, User } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
 import { GLAutomationService, OrderWithItems } from './glAutomationService';
 import logger from '../utils/logger';
 import { SYSTEM_USER_ID } from '../config/constants';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 interface OrderForSync extends Order {
   orderItems: (OrderItem & { product: Product })[];
@@ -47,7 +47,8 @@ export class FinancialSyncService {
       return { transaction: null, journalEntry: null };
     }
 
-    if (!order.codAmount) {
+    // A Decimal is always truthy: a zero COD amount is not a COD order
+    if (!Money.isNonZero(order.codAmount)) {
       logger.info(`Skipping financial sync for order ${order.id} - not a COD order`);
       return { transaction: null, journalEntry: null };
     }
@@ -95,11 +96,7 @@ export class FinancialSyncService {
       logger.info(`Created Transaction record for order ${order.id} (Transaction ID: ${transaction.id})`);
 
       // Step 2: Calculate COGS
-      let totalCOGS = new Decimal(0);
-      for (const item of order.orderItems) {
-        const cogs = item.product.cogs ? new Decimal(item.product.cogs.toString()) : new Decimal(0);
-        totalCOGS = totalCOGS.plus(cogs.times(item.quantity));
-      }
+      const totalCOGS = Money.sum(order.orderItems.map((item) => Money.mul(Money.orZero(item.product.cogs), item.quantity)));
 
       // Step 3: Create GL entries using GLAutomationService
       const journalEntry = await GLAutomationService.createRevenueRecognitionEntry(
@@ -124,11 +121,9 @@ export class FinancialSyncService {
       // This is crucial for the Agent Reconciliation module
       // Agents are held accountable for NET amount: Gross - Agent Commission
       if (order.deliveryAgentId) {
-        const agentComm = order.deliveryAgent?.commissionAmount
-          ? new Decimal(order.deliveryAgent.commissionAmount.toString())
-          : new Decimal(0);
-        const grossAmount = new Decimal(order.totalAmount.toString());
-        const netAmount = grossAmount.minus(agentComm);
+        const agentComm = Money.orZero(order.deliveryAgent?.commissionAmount);
+        const grossAmount = Money.parse(order.totalAmount);
+        const netAmount = Money.sub(grossAmount, agentComm);
 
         const existingCollection = await tx.agentCollection.findUnique({
           where: { orderId: order.id }
@@ -137,6 +132,7 @@ export class FinancialSyncService {
         if (!existingCollection) {
           await (tx as any).agentCollection.create({
             data: {
+              tenantId: resolveTenantId(order.tenantId),
               orderId: order.id,
               agentId: order.deliveryAgentId,
               amount: netAmount, // Record net amount
@@ -266,7 +262,7 @@ export class FinancialSyncService {
       }
     });
 
-    if (!order || order.status !== 'delivered' || !order.codAmount) {
+    if (!order || order.status !== 'delivered' || !Money.isNonZero(order.codAmount)) {
       return false;
     }
 

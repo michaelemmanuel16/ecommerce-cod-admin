@@ -22,7 +22,7 @@ jest.mock('../../services/paystackSettlementService', () => ({
 import { prismaMock } from '../mocks/prisma.mock';
 import * as paystackServiceModule from '../../services/paystackService';
 import * as settlementModule from '../../services/paystackSettlementService';
-import { handleWebhook, handleLegacyWebhook } from '../../controllers/paystackController';
+import { handleWebhook } from '../../controllers/paystackController';
 
 const mockedPaystack = paystackServiceModule.paystackService as jest.Mocked<
   typeof paystackServiceModule.paystackService
@@ -159,19 +159,5 @@ describe('paystackController.handleWebhook — tenant scoping + idempotency', ()
     // Outer catch still 200s (always-ACK contract), but the dedup row was removed.
     expect(prismaMock.webhookEvent.delete).toHaveBeenCalledWith({ where: { id: 999 } });
     expect(res.status).toHaveBeenCalledWith(200);
-  });
-});
-
-describe('paystackController.handleLegacyWebhook', () => {
-  it('returns 410 with a hint pointing at the per-tenant URL', () => {
-    const res = buildRes();
-    handleLegacyWebhook({} as any, res);
-    expect(res.status).toHaveBeenCalledWith(410);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        error: expect.stringContaining('moved'),
-        hint: expect.stringContaining('/api/paystack/webhook/'),
-      }),
-    );
   });
 });

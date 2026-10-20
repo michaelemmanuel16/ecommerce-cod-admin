@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { MCP_CONFIG } from './config';
+import * as Money from '../utils/money';
+import { getCurrency } from '../utils/currency';
 
 // Cursor pagination utilities
 export function encodeCursor(id: number): string {
@@ -38,7 +40,12 @@ export function mcpText(text: string) {
 }
 
 export function mcpJson(data: unknown) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+  return { content: [{ type: 'text' as const, text: JSON.stringify(data, Money.jsonReplacer, 2) }] };
+}
+
+/** mcpJson with the tenant currency added as `currency`: tool money values are 2-decimal strings in that unit. */
+export async function mcpMoneyJson(data: Record<string, unknown>) {
+  return mcpJson({ currency: await getCurrency(), ...data });
 }
 
 export function mcpError(message: string) {

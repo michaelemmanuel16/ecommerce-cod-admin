@@ -4,14 +4,17 @@ import logger from '../utils/logger';
 import { refreshLongLivedToken, isOAuthConfigured, tokenFallbackExpiry, getRedirectUri } from './metaOAuthService';
 import { encryptProviderSecrets, decryptProviderSecrets } from '../utils/providerCrypto';
 import { clearWhatsAppConfigCache } from './whatsappService';
+import { resolveTenantId } from '../utils/tenantContext';
+import { forEachTenant } from '../utils/tenantLoop';
 
-let isRefreshing = false;
+// Tenants with a refresh in flight (one refresh per tenant at a time)
+const refreshing = new Set<string>();
 
 const REFRESH_BUFFER_DAYS = 7;
 
 /**
- * Refresh the WhatsApp OAuth token if it's within 7 days of expiry.
- * Uses an `isRefreshing` flag to prevent concurrent refresh attempts.
+ * Refresh the current tenant's WhatsApp OAuth token if it's within 7 days of expiry.
+ * Runs inside a tenant context. Prevents concurrent refresh attempts per tenant.
  */
 export async function refreshTokenIfNeeded(): Promise<{
   refreshed: boolean;
@@ -22,11 +25,12 @@ export async function refreshTokenIfNeeded(): Promise<{
     return { refreshed: false };
   }
 
-  if (isRefreshing) {
+  const tenantId = resolveTenantId();
+  if (refreshing.has(tenantId)) {
     return { refreshed: false, error: 'Refresh already in progress' };
   }
 
-  isRefreshing = true;
+  refreshing.add(tenantId);
   try {
     const config = await prisma.systemConfig.findFirst({
       select: { id: true, whatsappProvider: true },
@@ -84,7 +88,28 @@ export async function refreshTokenIfNeeded(): Promise<{
     logger.error('WhatsApp OAuth token refresh failed', { error: error.message });
     return { refreshed: false, error: error.message };
   } finally {
-    isRefreshing = false;
+    refreshing.delete(tenantId);
+  }
+}
+
+/**
+ * Refresh every tenant's WhatsApp OAuth token (once per tenant, each in its own tenant context).
+ */
+export async function refreshAllTenantTokens(): Promise<void> {
+  logger.info('Running scheduled WhatsApp OAuth token refresh...');
+  try {
+    await forEachTenant('WhatsApp token refresh', async (tenantId) => {
+      const result = await refreshTokenIfNeeded();
+      if (result.refreshed) {
+        logger.info('Scheduled token refresh completed', { tenantId });
+      } else if (result.error) {
+        logger.error('Scheduled token refresh failed', { tenantId, error: result.error });
+      } else {
+        logger.info('Scheduled token refresh: no refresh needed', { tenantId });
+      }
+    });
+  } catch (error: any) {
+    logger.error('Scheduled WhatsApp token refresh loop failed', { error: error.message });
   }
 }
 
@@ -101,17 +126,7 @@ export function scheduleTokenRefresh(): void {
   const redirectUri = getRedirectUri();
   logger.info('WhatsApp OAuth redirect URI', { redirectUri });
 
-  cron.schedule('0 1 * * *', async () => {
-    logger.info('Running scheduled WhatsApp OAuth token refresh...');
-    const result = await refreshTokenIfNeeded();
-    if (result.refreshed) {
-      logger.info('Scheduled token refresh completed');
-    } else if (result.error) {
-      logger.error('Scheduled token refresh failed', { error: result.error });
-    } else {
-      logger.info('Scheduled token refresh: no refresh needed');
-    }
-  });
+  cron.schedule('0 1 * * *', () => refreshAllTenantTokens());
 
   logger.info('WhatsApp OAuth token refresh cron scheduled (daily at 01:00)');
 }

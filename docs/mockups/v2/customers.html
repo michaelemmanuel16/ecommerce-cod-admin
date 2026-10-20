@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodAdmin Customers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+.ct2 td,.ct2 th{padding-left:14px;padding-right:14px;white-space:nowrap}
+.ct2 td:first-child,.ct2 th:first-child{padding-left:20px}
+.ct2 td:last-child,.ct2 th:last-child{padding-right:20px}
+.insrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;padding:14px 20px 18px}
+.foot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px;gap:12px;flex-wrap:wrap}
+.refs{color:var(--coral);font-weight:700}
+.fsrch{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:11px;padding:7px 12px;background:var(--card);color:var(--ink-3);min-width:220px}
+.fsrch input{border:0;outline:0;background:transparent;color:var(--ink);font:inherit;width:100%}
+.cin{width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit;margin-top:6px}
+.tags2{display:flex;gap:6px;align-items:center}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav on" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+<section class="view on" id="customers">
+  <div class="head">
+    <div><h1>Customers</h1><p>Who buys, who comes back, and who refuses delivery.</p></div>
+    <div style="display:flex;gap:8px"><button class="btn" id="expBtn"><i data-lucide="download"></i>Export CSV</button><button class="btn pri" id="addBtn"><i data-lucide="user-plus"></i>Add customer</button></div>
+  </div>
+
+  <div class="grid kpis" style="margin-top:0">
+    <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="users"></i></div><div class="v num">6,420</div><div class="l">Total customers</div><div class="s"><span>Since January</span><span class="tag ok">+312 in Oct</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="user-plus"></i></div><div class="v num">4,980</div><div class="l">First-time</div><div class="s"><span>78% of customers</span><span class="tag n">1 order</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="repeat"></i></div><div class="v num">1,440</div><div class="l">Repeat customers</div><div class="s"><span>2 or more orders</span><span class="tag ok">22%</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="user-x"></i></div><div class="v num">23</div><div class="l">Blocked for refusing delivery</div><div class="s"><span>Refused 3 times</span><span class="tag bad">COD off</span></div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 2 things</h3><span>Updated 06:42</span></div>
+    <div class="insrow">
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="shield-alert"></i></div><div><b>9 customers refused 2+ deliveries</b><p>They are marked High risk. At 3 refusals cash on delivery turns off and the order goes to a manual call. A refused order costs GH₵0 to GH₵5 in fees, set by each partner's fee rule.</p></div></div><div class="act"><button class="mini pri" id="show9">Show the 9</button><button class="mini">Dismiss</button></div></div>
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="repeat"></i></div><div><b>212 repeat customers have not ordered in 60 days</b><p>They bought the copybook set. Refill pens fit them. Send a WhatsApp offer?</p></div></div><div class="act"><button class="mini pri" data-link="messages.html#bulk">Draft the offer</button><button class="mini">Dismiss</button></div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="tabs">
+      <button class="tab on" data-f="all">All <span>6,420</span></button><button class="tab" data-f="repeat">Repeat <span>1,440</span></button><button class="tab" data-f="first">First-time <span>4,980</span></button><button class="tab" data-f="refused">Refused before <span style="background:var(--coral-soft);color:var(--coral)">612</span></button><button class="tab" data-f="unreach">Not reachable <span>318</span></button>
+    </div>
+    <div class="filters" style="align-items:center"><label class="fsrch"><i data-lucide="search" style="width:16px;height:16px"></i><input id="csearch" type="text" placeholder="Search name or phone" aria-label="Search customers"></label><select class="psel" id="ccity" aria-label="City"><option value="">All cities</option><option>Accra</option><option>Tema</option><option>Kumasi</option><option>Takoradi</option><option>Cape Coast</option><option>Tamale</option></select><select class="psel" id="crisk" aria-label="Risk"><option value="">Any risk</option><option>Low</option><option>Watch</option><option>High</option></select><button class="btn" id="cflag" aria-pressed="false"><i data-lucide="sparkles" style="color:var(--violet)"></i>Flagged by agent</button></div>
+    <div class="tablewrap"><table class="ct2">
+      <thead><tr><th>Customer</th><th>City</th><th class="r">Orders</th><th class="r">Delivered</th><th class="r">Refused</th><th class="r">Delivered value</th><th>Last order</th><th>Risk</th></tr></thead>
+      <tbody>
+        <tr data-seg="repeat"><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">AO</div><div>Abena Owusu<small>024 555 0182</small></div></div></td><td>Kumasi</td><td class="r num">5</td><td class="r num">4</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num"><b>GH₵996</b></td><td>17 Oct</td><td><div class="tags2"><span class="tag ok">Low</span></div></td></tr>
+        <tr data-seg="repeat"><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">KM</div><div>Kwame Mensah<small>020 555 0144</small></div></div></td><td>Tema</td><td class="r num">3</td><td class="r num">2</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num"><b>GH₵747</b></td><td>17 Oct</td><td><div class="tags2"><span class="tag ok">Low</span></div></td></tr>
+        <tr data-seg="repeat refused unreach"><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">YB</div><div>Yaw Boateng<small>024 555 0103</small></div></div></td><td>Kumasi</td><td class="r num">4</td><td class="r num">1</td><td class="r num"><span class="refs">2</span></td><td class="r num"><b>GH₵249</b></td><td>15 Oct</td><td><div class="tags2"><span class="tag bad">High</span><span class="tag n">Not reachable</span></div></td></tr>
+        <tr data-seg="repeat refused"><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">SA</div><div>Selorm Agbeko<small>026 555 0127</small></div></div></td><td>Tema</td><td class="r num">6</td><td class="r num">3</td><td class="r num"><span class="refs">3</span></td><td class="r num"><b>GH₵747</b></td><td>28 Sep</td><td><div class="tags2"><span class="tag bad">High</span><span class="tag n">Blocked</span></div></td></tr>
+        <tr data-seg="repeat refused"><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">KA</div><div>Kojo Agyeman<small>054 555 0138</small></div></div></td><td>Cape Coast</td><td class="r num">3</td><td class="r num">1</td><td class="r num"><span class="refs">1</span></td><td class="r num"><b>GH₵249</b></td><td>15 Oct</td><td><div class="tags2"><span class="tag warn">Watch</span></div></td></tr>
+        <tr data-seg="repeat"><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">NQ</div><div>Naa Adjeley Quaye<small>020 555 0190</small></div></div></td><td>Accra</td><td class="r num">2</td><td class="r num">2</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num"><b>GH₵747</b></td><td>12 Oct</td><td><div class="tags2"><span class="tag ok">Low</span></div></td></tr>
+        <tr data-seg="repeat"><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">AN</div><div>Ama Nkrumah<small>027 555 0119</small></div></div></td><td>Accra</td><td class="r num">2</td><td class="r num">2</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num"><b>GH₵498</b></td><td>6 Oct</td><td><div class="tags2"><span class="tag ok">Low</span></div></td></tr>
+        <tr data-seg="repeat refused"><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">AF</div><div>Akosua Frimpong<small>055 555 0166</small></div></div></td><td>Cape Coast</td><td class="r num">2</td><td class="r num">1</td><td class="r num"><span class="refs">1</span></td><td class="r num"><b>GH₵249</b></td><td>9 Oct</td><td><div class="tags2"><span class="tag warn">Watch</span></div></td></tr>
+        <tr data-seg="first refused"><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">ET</div><div>Edem Tsikata<small>024 555 0154</small></div></div></td><td>Takoradi</td><td class="r num">1</td><td class="r num">0</td><td class="r num"><span class="refs">1</span></td><td class="r num"><b>GH₵0</b></td><td>14 Oct</td><td><div class="tags2"><span class="tag warn">Watch</span></div></td></tr>
+        <tr data-seg="first"><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">EA</div><div>Efua Asante<small>055 555 0177</small></div></div></td><td>Accra</td><td class="r num">1</td><td class="r num">0</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num"><b>GH₵0</b></td><td>17 Oct</td><td><div class="tags2"><span class="tag ok">Low</span></div></td></tr>
+        <tr data-seg="first unreach"><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">NT</div><div>Nii Armah Tetteh<small>050 555 0172</small></div></div></td><td>Accra</td><td class="r num">1</td><td class="r num">0</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num"><b>GH₵0</b></td><td>16 Oct</td><td><div class="tags2"><span class="tag ok">Low</span><span class="tag n">Not reachable</span></div></td></tr>
+      </tbody></table></div>
+    <div class="foot"><span id="count">Showing 11 of 6,420 customers</span><span>Risk: low means no refusals, watch means 1, high means 2 or more. At 3 refusals cash on delivery is off until you override it</span></div>
+  </div>
+</section>
+
+    </main>
+  </div>
+</div>
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sx-veil" id="av"><div class="sx-modal" role="dialog" aria-modal="true" aria-label="Add customer"><h3>Add customer</h3><p>For a phone or WhatsApp customer. Their orders show on this page once they buy.</p>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px"><div style="grid-column:1/-1"><label for="an" style="font-weight:600;font-size:13px">Full name</label><input id="an" class="cin"></div><div><label for="ap" style="font-weight:600;font-size:13px">Phone</label><input id="ap" class="cin" placeholder="024 555 0100"></div><div><label for="ac" style="font-weight:600;font-size:13px">City</label><select id="ac" class="cin"><option>Accra</option><option>Tema</option><option>Kumasi</option><option>Takoradi</option><option>Cape Coast</option><option>Tamale</option></select></div></div>
+  <div class="sx-act"><button class="btn" data-x>Cancel</button><button class="btn pri" id="ago">Add customer</button></div></div></div>
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.href = 'index.html#' + b.dataset.go; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+
+const totals = {all:'6,420', repeat:'1,440', first:'4,980', refused:'612', unreach:'318'};
+const $ = id => document.getElementById(id);
+let tabF = 'all';
+function rowsAll(){ return [...document.querySelectorAll('tbody tr[data-seg]')]; }
+function applyFilters(){
+  const q = $('csearch').value.trim().toLowerCase(), city = $('ccity').value, risk = $('crisk').value, flag = $('cflag').getAttribute('aria-pressed') === 'true';
+  let n = 0;
+  rowsAll().forEach(r => {
+    const c = r.children, txt = (c[0].textContent).toLowerCase(), rk = c[7].querySelector('.tag').textContent.trim();
+    const show = (tabF === 'all' || r.dataset.seg.split(' ').includes(tabF)) && (!q || txt.includes(q)) && (!city || c[1].textContent.trim() === city) && (!risk || rk === risk) && (!flag || rk === 'High' || rk === 'Watch');
+    r.style.display = show ? '' : 'none'; if (show) n++;
+  });
+  const filtered = q || city || risk || flag;
+  $('count').textContent = 'Showing ' + n + (filtered ? ' matching customers' : ' of ' + totals[tabF] + ' customers');
+}
+document.querySelectorAll('.tab[data-f]').forEach(t => t.onclick = () => { tabF = t.dataset.f; document.querySelectorAll('.tab[data-f]').forEach(x => x.classList.toggle('on', x === t)); applyFilters(); });
+['csearch','ccity','crisk'].forEach(i => $(i).addEventListener('input', applyFilters));
+$('cflag').onclick = e => { const b = e.currentTarget, on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on); b.classList.toggle('pri', on); applyFilters(); };
+$('show9').onclick = () => document.querySelector('.tab[data-f="refused"]').click();
+/* export what is on screen */
+$('expBtn').onclick = () => {
+  const head = ['Customer','Phone','City','Orders','Delivered','Refused','Delivered value','Last order','Risk'];
+  const lines = rowsAll().filter(r => r.style.display !== 'none').map(r => { const c = r.children; return [c[0].querySelector('div > div').firstChild.textContent, c[0].querySelector('small').textContent, c[1].textContent, c[2].textContent, c[3].textContent, c[4].textContent, c[5].textContent, c[6].textContent, c[7].querySelector('.tag').textContent].map(v => '"' + v.trim() + '"').join(','); });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([head.join(',') + '\n' + lines.join('\n')], {type:'text/csv'})); a.download = 'customers-17-oct.csv'; a.click();
+  shellSay('Exported ' + lines.length + ' customers to customers-17-oct.csv');
+};
+/* add customer */
+$('addBtn').onclick = () => { $('av').classList.add('on'); $('an').focus(); };
+$('av').onclick = e => { if (e.target === $('av') || e.target.hasAttribute('data-x')) $('av').classList.remove('on'); };
+$('ago').onclick = () => {
+  const n = $('an').value.trim(), p = $('ap').value.trim(); if (!n || !p) { (n ? $('ap') : $('an')).focus(); return; }
+  const ini = n.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+  document.querySelector('tbody').insertAdjacentHTML('afterbegin', '<tr data-seg="first"><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">' + ini + '</div><div>' + n.replace(/</g,'&lt;') + '<small>' + p.replace(/</g,'&lt;') + '</small></div></div></td><td>' + ($('ac').value || 'Accra') + '</td><td class="r num">0</td><td class="r num">0</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num"><b>GH\u20B50</b></td><td>Today</td><td><div class="tags2"><span class="tag ok">Low</span></div></td></tr>');
+  $('av').classList.remove('on'); $('an').value = ''; $('ap').value = ''; applyFilters(); shellSay(n + ' added. Sample only.'); lucide.createIcons();
+};
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

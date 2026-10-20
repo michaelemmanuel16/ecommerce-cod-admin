@@ -6,7 +6,7 @@ interface ConfigState {
     businessName: string;
     currency: string;
     isLoading: boolean;
-    fetchConfig: () => Promise<void>;
+    fetchConfig: (formSlug?: string) => Promise<void>;
 }
 
 export const useConfigStore = create<ConfigState>((set) => ({
@@ -14,17 +14,20 @@ export const useConfigStore = create<ConfigState>((set) => ({
     currency: 'USD',
     isLoading: false,
 
-    fetchConfig: async () => {
+    fetchConfig: async (formSlug) => {
         set({ isLoading: true });
         try {
-            // When signed in, fetch the tenant-scoped config so the dashboard shows
-            // THIS tenant's currency. The public /config route is tenant-blind and
-            // falls back to the global USD row (that mismatch was the "$ everywhere"
-            // bug). Token-less surfaces (iframe/checkout bootstrap) use /config.
+            // Signed in: the tenant-scoped config, so the dashboard shows THIS tenant's
+            // currency. Signed out: the public form page passes its form slug. Other
+            // token-less pages have no tenant and keep the defaults.
             const isAuthenticated = Boolean(useAuthStore.getState().accessToken);
-            const config = isAuthenticated
-                ? await adminService.getTenantConfig()
-                : await adminService.getPublicConfig();
+            let config;
+            if (isAuthenticated) config = await adminService.getTenantConfig();
+            else if (formSlug) config = await adminService.getPublicConfig(formSlug);
+            else {
+                set({ isLoading: false });
+                return;
+            }
             set({
                 businessName: config.businessName || 'COD Admin',
                 currency: config.currency || 'USD',

@@ -104,7 +104,10 @@ done
 
 # Step 5: Run database migrations
 echo -e "${BLUE}[5/6] Running database migrations...${NC}"
-docker-compose -p staging -f docker-compose.staging.yml exec -T backend npx prisma migrate deploy || echo -e "${YELLOW}Warning: Migrations may have failed or already applied${NC}"
+if ! docker-compose -p staging -f docker-compose.staging.yml exec -T backend npx prisma migrate deploy; then
+    echo -e "${RED}Error: prisma migrate deploy failed. Stopping the deployment.${NC}"
+    exit 1
+fi
 
 # Step 6: Health checks
 echo -e "${BLUE}[6/6] Final health checks...${NC}"

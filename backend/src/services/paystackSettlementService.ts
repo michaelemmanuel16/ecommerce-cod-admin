@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { paystackService } from './paystackService';
@@ -8,6 +9,7 @@ import { metaCapiService } from './metaCapiService';
 import workflowService from './workflowService';
 import { emitOrderCreated } from '../sockets';
 import { getSocketInstance } from '../utils/socketInstance';
+import * as Money from '../utils/money';
 
 export type SettlementStatus = 'success' | 'failed' | 'pending' | 'not_found';
 
@@ -39,10 +41,30 @@ export async function settlePaystackPayment(
   reference: string,
   opts: { webhookTenantId?: string } = {},
 ): Promise<SettlementResult> {
+  // Settlement always runs scoped to one tenant: the webhook's tenant, the signed-in
+  // caller's tenant, or (public verify, no context) the tenant that owns the
+  // reference, found by a minimal unscoped lookup of the pending checkout / order.
+  let tenantId = opts.webhookTenantId ?? getTenantId();
+  if (!tenantId) {
+    tenantId = await withoutTenant('paystack-verify', async () => {
+      const pendingRow = await prisma.pendingCheckout.findUnique({ where: { reference }, select: { tenantId: true } });
+      if (pendingRow) return pendingRow.tenantId;
+      const orderRow = await prisma.order.findFirst({ where: { paymentReference: reference }, select: { tenantId: true } });
+      return orderRow?.tenantId ?? null;
+    });
+    if (!tenantId) {
+      return { status: 'not_found' };
+    }
+  }
+  return runInTenant(tenantId, () => settleInTenant(reference, opts));
+}
+
+async function settleInTenant(
+  reference: string,
+  opts: { webhookTenantId?: string },
+): Promise<SettlementResult> {
   // Reference lookups are scoped to the webhook's tenant when we have one, so a
   // cross-account reference collision can never resolve another tenant's order.
-  // The public/admin verify paths carry no tenant context and fall back to the
-  // (Paystack-globally-unique) reference alone.
   const orderWhere: Prisma.OrderWhereInput = {
     paymentReference: reference,
     ...(opts.webhookTenantId ? { tenantId: opts.webhookTenantId } : {}),
@@ -87,11 +109,11 @@ export async function settlePaystackPayment(
   // SECURITY: the amount actually paid must cover the expected charge (deposit
   // portion or full total). Stops an underpaid/tampered initialize from
   // fulfilling — digital products auto-deliver. Paystack amounts are minor units.
-  const paidMinor = Number(verification.data.amount ?? 0);
-  if (paidMinor < pending.paystackChargeMinor) {
+  const paidMinor = Money.orZero(verification.data.amount);
+  if (Money.lt(paidMinor, pending.paystackChargeMinor)) {
     logger.warn('Paystack underpayment — not creating order', {
       reference,
-      paidMinor,
+      paidMinor: paidMinor.toString(),
       expectedMinor: pending.paystackChargeMinor,
     });
     return { status: 'failed' };
@@ -111,6 +133,9 @@ export async function settlePaystackPayment(
     throw err;
   }
 
+  // Order money is in major units (F-405). Paystack's amount is minor units: convert once here.
+  const paid = Money.fromMinor(paidMinor);
+  const paystackFee = Money.fromMinor(verification.data.fees ?? 0);
   const isDeposit = pending.paymentMethod === 'paystack_deposit';
   const formData = pending.formData as Record<string, any>;
 
@@ -129,7 +154,7 @@ export async function settlePaystackPayment(
       totalAmount: pending.totalAmount,
       codAmount: pending.codAmount,
       balanceDue: pending.balanceDue,
-      depositPaid: paidMinor,
+      depositPaid: paid,
       paymentReference: reference,
       deliveryAddress: formData.address || null,
       deliveryState: formData.state || null,
@@ -150,6 +175,7 @@ export async function settlePaystackPayment(
   // COD path writes at creation, written here now that payment is confirmed.
   await prisma.formSubmission.create({
     data: {
+      tenantId: resolveTenantId(pending.tenantId),
       formId: pending.formId,
       orderId: order.id,
       formData: pending.formData ?? Prisma.JsonNull,
@@ -174,13 +200,13 @@ export async function settlePaystackPayment(
       data: {
         orderId: order.id,
         type: 'payment',
-        amount: paidMinor / 100,
+        amount: paid,
         paymentMethod: 'paystack',
         status: 'paid',
         reference,
         metadata: {
           currency: verification.data.currency,
-          fees: Number(verification.data.fees ?? 0) / 100,
+          fees: Money.toApi(paystackFee),
           paystackReference: reference,
         },
       },
@@ -188,6 +214,7 @@ export async function settlePaystackPayment(
 
     await tx.orderHistory.create({
       data: {
+        tenantId: resolveTenantId(order.tenantId),
         orderId: order.id,
         status: 'confirmed',
         notes: `Payment confirmed via Paystack (ref: ${reference})`,
@@ -197,11 +224,10 @@ export async function settlePaystackPayment(
     if (order.orderType === 'digital') {
       try {
         const glService = new GLAutomationService();
-        const paystackFee = Number(verification.data.fees ?? 0) / 100;
         await glService.createDigitalSaleEntry(
           tx as any,
           order.id,
-          paidMinor / 100,
+          paid,
           paystackFee,
           order.customer?.id || 1,
         );
@@ -218,7 +244,7 @@ export async function settlePaystackPayment(
     tenantId: pending.tenantId,
     orderId: order.id,
     reference,
-    amount: paidMinor / 100,
+    amount: Money.toApi(paid),
   });
 
   // Workflows + realtime, now that the order exists.
@@ -250,6 +276,7 @@ export async function settlePaystackPayment(
       order.status = 'digital_delivered';
       await prisma.orderHistory.create({
         data: {
+          tenantId: resolveTenantId(order.tenantId),
           orderId: order.id,
           status: 'digital_delivered',
           notes: 'Download link sent to customer',
@@ -270,6 +297,7 @@ export async function settlePaystackPayment(
         });
         await prisma.orderHistory.create({
           data: {
+            tenantId: resolveTenantId(order.tenantId),
             orderId: order.id,
             status: 'confirmed',
             notes: `Automatic digital delivery failed: ${err.message}. Customer was charged. Manual resend required.`,

@@ -14,13 +14,18 @@ export const generateSignature = (payload: string): string => {
     .digest('hex');
 };
 
-export const verifySignature = (payload: string, signature: string): boolean => {
-  const expectedSignature = generateSignature(payload);
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
+/**
+ * Constant-time string compare. Both sides are hashed first so a length mismatch
+ * returns false instead of throwing (and leaks nothing about the length).
+ */
+export const safeEqual = (a: string, b: string): boolean =>
+  crypto.timingSafeEqual(
+    crypto.createHash('sha256').update(a).digest(),
+    crypto.createHash('sha256').update(b).digest()
   );
-};
+
+export const verifySignature = (payload: string, signature: string): boolean =>
+  safeEqual(signature, generateSignature(payload));
 
 /**
  * SECURITY NOTE: API Key Generation

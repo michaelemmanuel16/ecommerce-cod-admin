@@ -7,6 +7,7 @@ import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals
 import agingService from '../../services/agingService';
 import prisma from '../../utils/prisma';
 import { Prisma } from '@prisma/client';
+import { tenantStorage } from '../../utils/tenantContext';
 
 jest.mock('../../utils/prisma', () => ({
   __esModule: true,
@@ -83,7 +84,7 @@ describe('AgingService (extended branch coverage)', () => {
       mockPrisma.agentAgingBucket.upsert.mockResolvedValue({});
       mockPrisma.agentAgingBucket.deleteMany.mockResolvedValue({});
 
-      await agingService.refreshAll();
+      await tenantStorage.run({ tenantId: 'tenant-1' }, () => agingService.refreshAll());
 
       // Upsert should have the oldest date as Jan 10
       const upsertCall = mockPrisma.agentAgingBucket.upsert.mock.calls[0][0];

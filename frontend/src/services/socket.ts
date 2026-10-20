@@ -2,6 +2,8 @@ import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/authStore';
 import { useNotificationsStore } from '../stores/notificationsStore';
 import toast from 'react-hot-toast';
+import { normalizeMoney } from '../utils/money';
+import { refreshAccessToken, handleSessionExpired } from './tokenRefresh';
 
 // Use relative URLs in production (when served by Nginx), absolute URLs in development
 const WS_URL = import.meta.env.VITE_WS_URL === 'relative'
@@ -19,12 +21,34 @@ export const connectSocket = () => {
   }
 
   socket = io(WS_URL, {
-    auth: {
-      token,
-    },
+    // A function, so every reconnect sends the current access token
+    auth: (cb) => cb({ token: useAuthStore.getState().accessToken }),
+  });
+
+  // Money arrives as "x.xx" strings. Parse every payload in place before any listener
+  // (including financialStore's) sees it.
+  socket.prependAny((_event, payload) => normalizeMoney(payload));
+
+  let refreshedAfterReject = false;
+
+  // The server rejects an expired or invalid access token. Ask the shared refresh (the same
+  // single in-flight call axios uses) and reconnect. Only a 401 from the refresh itself ends the session.
+  socket.on('connect_error', async (err) => {
+    if (err.message !== 'TOKEN_EXPIRED' && err.message !== 'Authentication error') return;
+    // One refresh-and-reconnect per failed connect: a token that is still refused after a refresh is not a token problem
+    if (refreshedAfterReject) return;
+    refreshedAfterReject = true;
+    try {
+      await refreshAccessToken();
+      socket?.connect();
+    } catch (refreshError: any) {
+      console.error('Socket token refresh failed:', refreshError);
+      if (refreshError?.response?.status === 401) handleSessionExpired();
+    }
   });
 
   socket.on('connect', () => {
+    refreshedAfterReject = false;
     console.log('Socket connected:', socket?.id);
   });
 

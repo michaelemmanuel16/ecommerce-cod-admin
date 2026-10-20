@@ -1,7 +1,8 @@
-import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import appEvents, { AppEvent } from '../utils/appEvents';
+import { resolveTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 export class AgingService {
   constructor() {
@@ -48,9 +49,11 @@ export class AgingService {
   }
 
   /**
-   * Refreshes aging buckets for all agents with approved but non-deposited collections
+   * Refreshes aging buckets for all agents (of the current tenant) with approved but non-deposited collections.
+   * Runs inside a tenant context; the aging queue calls it once per tenant. It only touches that tenant's buckets.
    */
   async refreshAll(): Promise<void> {
+    const tenantId = resolveTenantId();
     logger.info('Starting agent aging refresh...');
     const now = new Date();
 
@@ -77,7 +80,7 @@ export class AgingService {
 
       if (collections.length === 0) {
         // Clear existing buckets if no approved collections exist
-        await (prisma as any).agentAgingBucket.deleteMany({});
+        await (prisma as any).agentAgingBucket.deleteMany({ where: { tenantId } });
         return;
       }
 
@@ -89,17 +92,18 @@ export class AgingService {
         if (!agentAgingMap.has(agentId)) {
           agentAgingMap.set(agentId, {
             agentId,
-            bucket_0_1: new Prisma.Decimal(0),
-            bucket_2_3: new Prisma.Decimal(0),
-            bucket_4_7: new Prisma.Decimal(0),
-            bucket_8_plus: new Prisma.Decimal(0),
-            totalBalance: new Prisma.Decimal(0),
+            bucket_0_1: Money.ZERO,
+            bucket_2_3: Money.ZERO,
+            bucket_4_7: Money.ZERO,
+            bucket_8_plus: Money.ZERO,
+            totalBalance: Money.ZERO,
             oldestCollectionDate: col.collectionDate,
+            tenantId: col.tenantId,
           });
         }
 
         const data = agentAgingMap.get(agentId);
-        const amount = new Prisma.Decimal(col.amount.toString());
+        const amount = Money.parse(col.amount);
         data.totalBalance = data.totalBalance.add(amount);
 
         if (col.collectionDate < data.oldestCollectionDate) {
@@ -127,6 +131,7 @@ export class AgingService {
         const currentAgentIds = Array.from(agentAgingMap.keys());
         await extTx.agentAgingBucket.deleteMany({
           where: {
+            tenantId,
             agentId: {
               notIn: currentAgentIds
             }
@@ -145,6 +150,7 @@ export class AgingService {
               oldestCollectionDate: data.oldestCollectionDate,
             },
             create: {
+              tenantId: data.tenantId,
               agentId,
               bucket_0_1: data.bucket_0_1,
               bucket_2_3: data.bucket_2_3,
@@ -220,7 +226,7 @@ export class AgingService {
       const agentName = `${entry.agent.firstName} ${entry.agent.lastName}`;
       const oldestDate = entry.oldestCollectionDate ? new Date(entry.oldestCollectionDate).toLocaleDateString() : 'N/A';
 
-      csv += `"${agentName}",${entry.totalBalance},${entry.bucket_0_1},${entry.bucket_2_3},${entry.bucket_4_7},${entry.bucket_8_plus},"${oldestDate}"\n`;
+      csv += `"${agentName}",${Money.toApi(entry.totalBalance)},${Money.toApi(entry.bucket_0_1)},${Money.toApi(entry.bucket_2_3)},${Money.toApi(entry.bucket_4_7)},${Money.toApi(entry.bucket_8_plus)},"${oldestDate}"\n`;
     }
 
     return csv;
@@ -231,21 +237,21 @@ export class AgingService {
    */
   private async getAgingSummary(buckets: any[]) {
     const totalAgentsWithBalance = buckets.length;
-    let totalOutstandingAmount = new Prisma.Decimal(0);
+    let totalOutstandingAmount = Money.ZERO;
     let overdueAgentsCount = 0;
-    let criticalOverdueAmount = new Prisma.Decimal(0);
-    let warningOverdueAmount = new Prisma.Decimal(0);
-    let bucket_0_1_total = new Prisma.Decimal(0);
-    let bucket_2_3_total = new Prisma.Decimal(0);
+    let criticalOverdueAmount = Money.ZERO;
+    let warningOverdueAmount = Money.ZERO;
+    let bucket_0_1_total = Money.ZERO;
+    let bucket_2_3_total = Money.ZERO;
 
     for (const bucket of buckets) {
-      const balance = new Prisma.Decimal(bucket.totalBalance.toString());
+      const balance = Money.parse(bucket.totalBalance);
       totalOutstandingAmount = totalOutstandingAmount.add(balance);
 
-      const b01 = new Prisma.Decimal(bucket.bucket_0_1.toString());
-      const b23 = new Prisma.Decimal(bucket.bucket_2_3.toString());
-      const critical = new Prisma.Decimal(bucket.bucket_8_plus.toString());
-      const warning = new Prisma.Decimal(bucket.bucket_4_7.toString());
+      const b01 = Money.parse(bucket.bucket_0_1);
+      const b23 = Money.parse(bucket.bucket_2_3);
+      const critical = Money.parse(bucket.bucket_8_plus);
+      const warning = Money.parse(bucket.bucket_4_7);
 
       bucket_0_1_total = bucket_0_1_total.add(b01);
       bucket_2_3_total = bucket_2_3_total.add(b23);
@@ -268,21 +274,21 @@ export class AgingService {
 
     // Outstanding receivables = same source as totalOutstandingAmount (AgentCollection records)
     // Both use the same data so they always agree — no GL reconciliation gap
-    const outstandingReceivables = totalOutstandingAmount.toNumber();
+    const outstandingReceivables = totalOutstandingAmount;
 
     return {
       totalAgentsWithBalance,
-      totalOutstandingAmount: totalOutstandingAmount.toNumber(),
+      totalOutstandingAmount,
       outstandingReceivables,
       overdueAgentsCount,
-      criticalOverdueAmount: criticalOverdueAmount.toNumber(),
-      warningOverdueAmount: warningOverdueAmount.toNumber(),
+      criticalOverdueAmount,
+      warningOverdueAmount,
       blockedAgentsWithBalance: blockedCount,
       bucketTotals: {
-        bucket_0_1: bucket_0_1_total.toNumber(),
-        bucket_2_3: bucket_2_3_total.toNumber(),
-        bucket_4_7: warningOverdueAmount.toNumber(),
-        bucket_8_plus: criticalOverdueAmount.toNumber(),
+        bucket_0_1: bucket_0_1_total,
+        bucket_2_3: bucket_2_3_total,
+        bucket_4_7: warningOverdueAmount,
+        bucket_8_plus: criticalOverdueAmount,
       }
     };
   }
@@ -290,7 +296,7 @@ export class AgingService {
    * Get agents with overdue collections (4-7 day or 8+ day buckets)
    * Used by the notification job to alert admins
    */
-  async getOverdueAgents(): Promise<{ agentId: number; agentName: string; totalBalance: number; warningAmount: number; criticalAmount: number }[]> {
+  async getOverdueAgents(): Promise<{ agentId: number; agentName: string; totalBalance: Money.Money; warningAmount: Money.Money; criticalAmount: Money.Money }[]> {
     const overdueBuckets = await (prisma as any).agentAgingBucket.findMany({
       where: {
         OR: [
@@ -308,9 +314,9 @@ export class AgingService {
     return overdueBuckets.map((bucket: any) => ({
       agentId: bucket.agentId,
       agentName: `${bucket.agent.firstName} ${bucket.agent.lastName}`,
-      totalBalance: parseFloat(bucket.totalBalance.toString()),
-      warningAmount: parseFloat(bucket.bucket_4_7.toString()),
-      criticalAmount: parseFloat(bucket.bucket_8_plus.toString()),
+      totalBalance: Money.parse(bucket.totalBalance),
+      warningAmount: Money.parse(bucket.bucket_4_7),
+      criticalAmount: Money.parse(bucket.bucket_8_plus),
     }));
   }
 }

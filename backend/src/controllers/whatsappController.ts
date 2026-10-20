@@ -1,18 +1,27 @@
 import { Response } from 'express';
 import crypto from 'crypto';
+import { safeEqual } from '../utils/crypto';
 import { AuthRequest } from '../types';
-import whatsappService, { TEMPLATE_BY_NAME, getDbWhatsappConfig } from '../services/whatsappService';
+import whatsappService, {
+  TEMPLATE_BY_NAME,
+  getDbWhatsappConfig,
+  resolveWhatsappTenantFromPayload,
+  findWhatsappConfigByVerifyToken,
+} from '../services/whatsappService';
+import { runInTenant } from '../utils/tenantContext';
 import logger from '../utils/logger';
 import { MessageChannel, MessageStatus } from '@prisma/client';
+import * as Money from '../utils/money';
 
 export const verifyWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
   const mode = req.query['hub.mode'] as string;
   const token = req.query['hub.verify_token'] as string;
   const challenge = req.query['hub.challenge'] as string;
 
-  // Read verify token from DB config first, fall back to env var
-  const dbConfig = await getDbWhatsappConfig();
-  const verifyToken = dbConfig?.webhookVerifyToken || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+  // The handshake carries no tenant: accept the token if any tenant's stored config
+  // has it, or the env var
+  const tenantMatch = mode === 'subscribe' ? await findWhatsappConfigByVerifyToken(token) : null;
+  const verifyToken = tenantMatch?.config.webhookVerifyToken || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
 
   if (mode === 'subscribe' && token === verifyToken) {
     logger.info('WhatsApp webhook verified');
@@ -39,12 +48,7 @@ function verifyWebhookSignature(rawBody: Buffer, signature: string | undefined, 
     ? signature.substring(7)
     : signature;
 
-  if (expectedHash.length !== receivedHash.length) return false;
-
-  return crypto.timingSafeEqual(
-    Buffer.from(expectedHash, 'hex'),
-    Buffer.from(receivedHash, 'hex'),
-  );
+  return safeEqual(expectedHash, receivedHash);
 }
 
 /**
@@ -52,31 +56,41 @@ function verifyWebhookSignature(rawBody: Buffer, signature: string | undefined, 
  * Public endpoint — validates via X-Hub-Signature-256 HMAC signature.
  */
 export const handleWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
-  const dbConfig = await getDbWhatsappConfig();
-  const appSecret = dbConfig?.appSecret || process.env.WHATSAPP_APP_SECRET;
-
-  // If app secret is configured, verify signature using the raw body buffer
-  // captured by the express.json verify callback in server.ts
-  if (appSecret) {
-    const signature = req.headers['x-hub-signature-256'] as string | undefined;
-    const rawBody: Buffer = (req as any).rawBody;
-
-    if (!rawBody) {
-      logger.warn('WhatsApp webhook: raw body not available for signature verification');
-      res.status(500).send('Internal Server Error');
-      return;
-    }
-
-    if (!verifyWebhookSignature(rawBody, signature, appSecret)) {
-      logger.warn('WhatsApp webhook signature verification failed');
+  // Resolve the tenant from the payload (phone_number_id / WABA id matched to a
+  // tenant's stored WhatsApp config) BEFORE verifying: the signature is checked
+  // with THAT tenant's app secret.
+  const candidates = await resolveWhatsappTenantFromPayload(req.body);
+  if (candidates.length === 0) {
+    // 200 so Meta does not retry; nothing to process
+    logger.warn('WhatsApp webhook: no tenant matches the payload, ignored');
+    res.status(200).send('EVENT_RECEIVED');
+    return;
+  }
+  // The signature decides: exactly one candidate's app secret must verify.
+  const signature = req.headers['x-hub-signature-256'] as string | undefined;
+  const rawBody: Buffer | undefined = (req as any).rawBody;
+  const verified = rawBody
+    ? candidates.filter((c) => {
+      const secret = c.config?.appSecret || process.env.WHATSAPP_APP_SECRET;
+      return !!secret && verifyWebhookSignature(rawBody, signature, secret);
+    })
+    : [];
+  if (verified.length !== 1) {
+    if (candidates.length === 1) {
+      logger.warn('WhatsApp webhook signature verification failed', { tenantId: candidates[0].tenantId });
       res.status(401).send('Unauthorized');
       return;
     }
-  } else {
-    logger.error('WHATSAPP_APP_SECRET not configured — rejecting unsigned webhook');
-    res.status(403).send('Webhook signature verification not configured');
+    // Several tenants share the phone / WABA id and the signature does not pick one:
+    // process nothing (200 so Meta does not retry)
+    logger.error('WhatsApp webhook: several tenant configs match and the signature does not pick exactly one, ignored', {
+      candidateTenantIds: candidates.map((c) => c.tenantId),
+      verifiedCount: verified.length,
+    });
+    res.status(200).send('EVENT_RECEIVED');
     return;
   }
+  const { tenantId, config: dbConfig } = verified[0];
 
   // Respond 200 quickly to prevent WhatsApp retries
   res.status(200).send('EVENT_RECEIVED');
@@ -86,31 +100,41 @@ export const handleWebhook = async (req: AuthRequest, res: Response): Promise<vo
 
     if (!body?.entry) return;
 
-    for (const entry of body.entry) {
-      for (const change of entry.changes || []) {
-        if (change.field !== 'messages') continue;
+    // Everything below runs inside the verified tenant's context
+    await runInTenant(tenantId, async () => {
+      for (const entry of body.entry) {
+        for (const change of entry.changes || []) {
+          if (change.field !== 'messages') continue;
 
-        const value = change.value;
+          const value = change.value;
 
-        // Process status updates (delivery receipts)
-        for (const status of value.statuses || []) {
-          await whatsappService.processStatusUpdate(
-            status.id,
-            status.status,
-            status.timestamp ? parseInt(status.timestamp, 10) : undefined
-          );
-        }
+          // The signature only proves this tenant's secret: skip changes that belong to another phone number
+          const phoneId = value?.metadata?.phone_number_id;
+          if (phoneId && dbConfig?.phoneNumberId && String(phoneId) !== String(dbConfig.phoneNumberId)) {
+            logger.warn('WhatsApp webhook: change for another phone number skipped', { tenantId, phoneId });
+            continue;
+          }
 
-        // Log inbound messages (for future reply handling)
-        for (const message of value.messages || []) {
-          logger.info('Inbound WhatsApp message received', {
-            from: message.from,
-            type: message.type,
-            messageId: message.id,
-          });
+          // Process status updates (delivery receipts)
+          for (const status of value.statuses || []) {
+            await whatsappService.processStatusUpdate(
+              status.id,
+              status.status,
+              status.timestamp ? parseInt(status.timestamp, 10) : undefined
+            );
+          }
+
+          // Log inbound messages (for future reply handling)
+          for (const message of value.messages || []) {
+            logger.info('Inbound WhatsApp message received', {
+              from: message.from,
+              type: message.type,
+              messageId: message.id,
+            });
+          }
         }
       }
-    }
+    });
   } catch (error: any) {
     logger.error('Error processing WhatsApp webhook', { error: error.message });
   }
@@ -295,7 +319,7 @@ export const testSend = async (req: AuthRequest, res: Response): Promise<void> =
       customerId: 0,
       customerName: 'Test Customer',
       customerPhone: to,
-      totalAmount: 150.00,
+      totalAmount: Money.parse('150.00'),
       deliveryAgentName: 'Test Agent',
       status: 'confirmed',
     };

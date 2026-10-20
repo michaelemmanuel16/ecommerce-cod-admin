@@ -21,6 +21,7 @@ jest.mock('../../utils/socketInstance', () => ({
 describe('Agent Collection Workflow Integration', () => {
     let testUser: any;
     let testAgent: any;
+    let testTenantId: string;
     let testOrder: any;
     let testDelivery: any;
     let deliveryService: DeliveryService;
@@ -32,7 +33,7 @@ describe('Agent Collection Workflow Integration', () => {
     beforeEach(async () => {
         GLAccountService.clearCache();
         // Unscoped cleanup, then seed + enter tenant context (mirrors a request).
-        await withGlTestTenant(async () => {
+        testTenantId = await withGlTestTenant(async () => {
             // Clean up - Order matters due to foreign keys
             await prisma.accountTransaction.deleteMany({});
             await (prisma as any).agentDeposit.deleteMany({});
@@ -61,7 +62,7 @@ describe('Agent Collection Workflow Integration', () => {
         ];
         for (const a of accounts) {
             await prisma.account.upsert({
-                where: { code: a.code },
+                where: { tenantId_code: { tenantId: testTenantId, code: a.code } },
                 update: a as Prisma.AccountUpdateInput,
                 create: a
             });
@@ -166,8 +167,8 @@ describe('Agent Collection Workflow Integration', () => {
         expect(glEntry).not.toBeNull();
         expect(glEntry!.transactions).toHaveLength(2);
 
-        const cihAccount = await prisma.account.findUnique({ where: { code: '1010' } });
-        const citAccount = await prisma.account.findUnique({ where: { code: '1015' } });
+        const cihAccount = await prisma.account.findUnique({ where: { tenantId_code: { tenantId: testTenantId, code: '1010' } } });
+        const citAccount = await prisma.account.findUnique({ where: { tenantId_code: { tenantId: testTenantId, code: '1015' } } });
 
         const cihTrans = glEntry!.transactions.find(t => t.accountId === cihAccount!.id);
         const citTrans = glEntry!.transactions.find(t => t.accountId === citAccount!.id);

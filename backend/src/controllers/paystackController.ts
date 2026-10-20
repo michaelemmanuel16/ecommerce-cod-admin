@@ -1,10 +1,11 @@
 import { Request, Response } from 'express';
 import { createHash } from 'crypto';
-import { Prisma } from '@prisma/client';
 import { paystackService } from '../services/paystackService';
 import { settlePaystackPayment } from '../services/paystackSettlementService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import { runInTenant } from '../utils/tenantContext';
+import { withWebhookDedup } from '../utils/webhookDedup';
 
 /**
  * Paystack webhook handler — called by Paystack on charge.success.
@@ -27,83 +28,8 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const signature = req.headers['x-paystack-signature'] as string;
-    if (!signature) {
-      res.status(400).json({ error: 'Missing signature' });
-      return;
-    }
-
-    // Use rawBody preserved by the verify callback in server.ts (avoids express.json() parsing issue)
-    const rawBody = (req as any).rawBody;
-    if (!rawBody) {
-      logger.error('Paystack webhook: rawBody not available — check server.ts verify callback');
-      res.status(500).json({ error: 'Server configuration error' });
-      return;
-    }
-    const isValid = await paystackService.validateWebhookSignature(tenant.id, rawBody, signature);
-    if (!isValid) {
-      logger.warn('Invalid Paystack webhook signature', { tenantId: tenant.id });
-      res.status(401).json({ error: 'Invalid signature' });
-      return;
-    }
-
-    // req.body is already parsed by express.json(); use it directly
-    const event = req.body;
-    logger.info('Paystack webhook received', { tenantId: tenant.id, event: event.event });
-
-    // Idempotency gate: record (tenant_id, provider, event_type, reference) before any side effect.
-    // Unique-constraint violation = replay; ack and return without re-processing.
-    // If side-effect processing throws below, the row is removed so Paystack retries succeed.
-    const reference: string | undefined = event?.data?.reference;
-    let dedupRowId: number | null = null;
-    if (reference && event?.event) {
-      const payloadHash = createHash('sha256').update(rawBody).digest('hex');
-      try {
-        const created = await prisma.webhookEvent.create({
-          data: {
-            provider: 'paystack',
-            eventType: event.event,
-            reference,
-            payloadHash,
-            tenantId: tenant.id,
-          },
-          select: { id: true },
-        });
-        dedupRowId = created.id;
-      } catch (err) {
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-          logger.info('Paystack webhook replay ignored', { tenantId: tenant.id, eventType: event.event, reference });
-          res.status(200).json({ received: true, duplicate: true });
-          return;
-        }
-        throw err;
-      }
-    }
-
-    try {
-      if (event.event === 'charge.success') {
-        await handleChargeSuccess(tenant.id, event.data);
-      }
-    } catch (processingError: any) {
-      // Side-effect processing failed — remove the dedup row so Paystack's
-      // retries can re-enter the handler. Otherwise a transient miss (Paystack
-      // API blip, isEnabled toggled mid-flight, GL error) permanently burns
-      // the reference because we 200 the ACK regardless.
-      if (dedupRowId !== null) {
-        try {
-          await prisma.webhookEvent.delete({ where: { id: dedupRowId } });
-        } catch (cleanupError: any) {
-          logger.error('Failed to delete dedup row after processing error', {
-            dedupRowId,
-            error: cleanupError.message,
-          });
-        }
-      }
-      throw processingError;
-    }
-
-    // Always return 200 to acknowledge receipt
-    res.status(200).json({ received: true });
+    // Everything below runs inside the URL tenant's context
+    await runInTenant(tenant.id, () => processTenantWebhook(req, res, tenant.id));
   } catch (error: any) {
     logger.error('Paystack webhook error', { error: error.message });
     // Still return 200 to prevent retries for processing errors
@@ -111,21 +37,48 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
   }
 }
 
-/**
- * Legacy unscoped webhook — pointed at by tenants who haven't updated their
- * Paystack dashboard yet. Returns 410 so the failure is loud.
- *
- * TODO(MAN-66 cleanup, sunset 2026-09-01): delete this handler + its route
- * after Phase 6 migrations are done (all live tenants pointed at the
- * per-tenant URL). Log volume to /api/paystack/webhook should be zero before
- * removal; until then this stays as a visible 410 rather than a 404.
- */
-export function handleLegacyWebhook(_req: Request, res: Response): void {
-  logger.warn('Paystack webhook hit legacy unscoped URL — tenant Paystack dashboard still misconfigured');
-  res.status(410).json({
-    error: 'Webhook URL has moved.',
-    hint: 'Use the per-tenant URL from Settings → Integrations → Paystack: /api/paystack/webhook/<tenant-slug>',
-  });
+async function processTenantWebhook(req: Request, res: Response, tenantId: string): Promise<void> {
+  const signature = req.headers['x-paystack-signature'] as string;
+  if (!signature) {
+    res.status(400).json({ error: 'Missing signature' });
+    return;
+  }
+
+  // Use rawBody preserved by the verify callback in server.ts (avoids express.json() parsing issue)
+  const rawBody = (req as any).rawBody;
+  if (!rawBody) {
+    logger.error('Paystack webhook: rawBody not available — check server.ts verify callback');
+    res.status(500).json({ error: 'Server configuration error' });
+    return;
+  }
+  const isValid = await paystackService.validateWebhookSignature(tenantId, rawBody, signature);
+  if (!isValid) {
+    logger.warn('Invalid Paystack webhook signature', { tenantId });
+    res.status(401).json({ error: 'Invalid signature' });
+    return;
+  }
+
+  // req.body is already parsed by express.json(); use it directly
+  const event = req.body;
+  logger.info('Paystack webhook received', { tenantId: tenantId, event: event.event });
+
+  const reference: string | undefined = event?.data?.reference;
+  await withWebhookDedup(
+    res,
+    {
+      provider: 'paystack',
+      eventType: event.event,
+      reference: event?.event ? reference : undefined,
+      payloadHash: createHash('sha256').update(rawBody).digest('hex'),
+      tenantId,
+    },
+    'Paystack',
+    async () => {
+      if (event.event === 'charge.success') {
+        await handleChargeSuccess(tenantId, event.data);
+      }
+    }
+  );
 }
 
 /**

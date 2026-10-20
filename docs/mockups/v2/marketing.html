@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marketing · CodAdmin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+.ontarget{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-weight:700;font-size:13px;margin-top:6px}
+.ontarget svg.lucide{width:16px;height:16px;color:var(--mint);flex:none}
+.headtools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.rolebar{padding:0;border:0}
+.psel{font:600 13.5px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.psel:focus-visible,.tab:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.rolepanel[hidden]{display:none}
+.podium .role .tag{margin-left:4px;vertical-align:1px}
+.pct{display:flex;align-items:center;gap:10px}
+.pct .prog{margin-top:0;flex:1;min-width:60px}
+.pct b{min-width:38px;text-align:right}
+.who .tag{margin-left:4px;vertical-align:1px}
+.dist{padding:4px 20px 16px;border-top:1px solid var(--line)}
+.dist h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin:12px 0 6px}
+.dist .row{display:flex;align-items:center;gap:10px;padding:8px 0}
+.dist .row .a{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:11.5px}
+.dist .row b{display:block;font-size:13.5px}
+.dist .row small{display:block;color:var(--ink-3);font-size:12.5px}
+.dist .row .tag{margin-left:auto;flex:none}
+.medal b{font-size:13px;line-height:1.3;display:block}
+.lb2{align-items:start;grid-template-columns:1.9fr 1fr}
+.lb2 .who>div{white-space:nowrap}
+@media (max-width:1100px){.lb2{grid-template-columns:1fr}}
+.lb2 th{white-space:nowrap}
+.who .tag{white-space:nowrap}
+tbody tr.grp:hover{background:transparent}
+.grp td{background:var(--hover);padding:14px 20px;border-bottom:1px solid var(--line)}
+.grp .gwrap{display:grid;grid-template-columns:1fr 1fr;gap:8px 28px;align-items:center}
+.grp small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.grp .feeds{grid-column:1/-1;display:flex;align-items:center;gap:6px;color:var(--ink-2);font-size:12.5px}
+.grp .feeds svg.lucide{width:15px;height:15px;color:var(--pine);flex:none}
+@media (max-width:760px){.grp .gwrap{grid-template-columns:1fr}.podium .p{width:100%}}
+</style>
+
+<style>
+
+select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px 8px;max-width:100%}
+select:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.tag svg.lucide{width:13px;height:13px;stroke-width:2.4}
+.dt{font-size:13px}
+.dt th,.dt td{padding:12px 10px}
+.dt th:first-child,.dt td:first-child{padding-left:20px}
+.dt th:last-child,.dt td:last-child{padding-right:20px}
+.dt small{color:var(--ink-3);font-size:12px}
+.dt .num{white-space:nowrap}
+.tablewrap{overflow-x:auto}
+.rate{min-width:112px}
+.rate .prog{margin-top:6px}
+.bars{padding:14px 20px 18px;display:flex;flex-direction:column;gap:14px}
+.bar-row{display:grid;grid-template-columns:130px 1fr 92px;gap:14px;align-items:center}
+.bar-row .track{height:10px;border-radius:99px;background:var(--hover);overflow:hidden}
+.bar-row .track i{display:block;height:100%;border-radius:99px}
+.bar-row .val{text-align:right;font-weight:700}
+.bar-row .val small{color:var(--ink-3);font-weight:500}
+.note{padding:0 20px 18px;color:var(--ink-2);font-size:13px}
+.kpi .tag{white-space:nowrap}
+.two{align-items:start}
+.hd-actions{display:flex;gap:8px;flex-wrap:wrap}
+@media (max-width:760px){.bar-row{grid-template-columns:100px 1fr 76px;gap:10px}}
+
+.conn{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:11px;border:1px solid var(--line);background:var(--card);font-weight:600}
+.conn i{width:8px;height:8px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 3px var(--mint-soft)}
+.conn small{color:var(--ink-3);font-weight:500}
+
+/* marketing: funnel strip, campaign table, ads */
+.fn{display:grid;grid-template-columns:repeat(7,1fr);padding:14px 20px 6px}
+.fs{padding:2px 10px 10px 14px;border-left:1px solid var(--line);min-width:0}
+.fs:first-child{border-left:0;padding-left:0}
+.fs .fl{display:block;color:var(--ink-3);font-size:12px;font-weight:600}
+.fs .fc{display:block;font-family:"Bricolage Grotesque",sans-serif;font-size:22px;font-weight:800;margin:2px 0 4px}
+.fs .fm{display:block;color:var(--ink-2);font-size:12.5px;font-weight:600}
+.fs .fm span{display:block;color:var(--ink-3);font-weight:500}
+.fs .fm .sep{display:none}
+.fnote{padding:0 20px 16px;color:var(--ink-3);font-size:12.5px}
+.scopebar{display:flex;align-items:center;gap:8px;color:var(--ink-3);font-size:13px}
+.scopebar b{color:var(--ink)}
+@media (max-width:1200px){
+  .fn{grid-template-columns:1fr;padding:8px 20px 4px}
+  .fs{display:grid;grid-template-columns:1fr auto;gap:0 12px;border-left:0;border-top:1px solid var(--line);padding:10px 0}
+  .fs:first-child{border-top:0;padding-left:0}
+  .fs .fl{grid-column:1;grid-row:1}
+  .fs .fc{grid-column:2;grid-row:1/3;align-self:center;margin:0;font-size:20px}
+  .fs .fm{grid-column:1;grid-row:2}
+  .fs .fm span{display:inline}
+  .fs .fm .sep{display:inline;color:var(--ink-3);font-weight:500}
+}
+.crow{cursor:pointer}
+.crow:hover td{background:var(--hover)}
+.crow.sel td{background:var(--pine-soft)}
+.crow.sel td:first-child{box-shadow:inset 3px 0 0 var(--pine)}
+.crow .chev{width:30px;padding-right:0!important}
+.chevbtn{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;color:var(--ink-3)}
+.chevbtn:hover{background:var(--hover)}
+.chevbtn:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.chevbtn svg{width:16px;height:16px;transition:transform .15s}
+.crow.sel .chevbtn svg{transform:rotate(90deg)}
+.adrow[hidden]{display:none}
+.adrow>td{padding:0!important;background:var(--hover)}
+.adbox{padding:12px 20px 16px;position:sticky;left:0;max-width:100%}
+.adbox .adh{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3);margin-bottom:6px}
+.adbox .adh b{color:var(--ink);font-size:13px}
+.adbox .adt{background:var(--card);border:1px solid var(--line);border-radius:12px;width:100%}
+.adbox .adt th:first-child,.adbox .adt td:first-child{padding-left:14px}
+.adbox .adt th:last-child,.adbox .adt td:last-child{padding-right:14px}
+.adbox .adt tr:last-child td{border-bottom:0}
+.dt th small{display:block;font-weight:500;color:var(--ink-3)}
+@media (max-width:760px){.adbox{width:calc(100vw - 34px);overflow-x:auto}}
+.dt tr.tot td{background:var(--hover);font-weight:700}
+.dt .tag{white-space:nowrap}
+.dt.camp th{white-space:nowrap;vertical-align:bottom}
+.ct.wrapct{flex-wrap:wrap;gap:6px 12px}
+
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav on" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+
+<section>
+  <div class="head">
+    <div><h1>Marketing</h1><p>Meta ad results by product, from ad click to delivered order.</p></div>
+    <div class="hd-actions"><span class="conn"><i></i>Meta account: connected <small>pulled 06:42</small></span><select class="psel" id="mkPeriod" aria-label="Period"><option>Today</option><option>This week</option><option selected>This month</option><option>Last month</option></select></div>
+  </div>
+
+  <div class="grid kpis" style="margin-top:0">
+    <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="megaphone"></i></div><div class="v num">₦8.53M</div><div class="l">Ad spend this month</div><div class="s"><span>About GH₵76k (₦112 = GH₵1)</span><span class="tag n">1 to 17 Oct</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="target"></i></div><div class="v num">₦5,903</div><div class="l">CPA against max CPA</div><div class="s"><span>Max ₦7,040 at 34% yield</span><span class="tag ok">▼ ₦1,137 under</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="truck"></i></div><div class="v num">₦17,360</div><div class="l">Projected cost per delivered</div><div class="s"><span>Break-even ₦20,720</span><span class="tag ok">▼ ₦3,360 under</span></div><div class="s" style="margin-top:4px"><span>Actual so far ₦22,686, by delivery date</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="wallet"></i></div><div class="v num">34%</div><div class="l">Order-to-cash yield</div><div class="s"><span>Campaigns range 29% to 36%</span><span class="tag n">Closed orders</span></div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="ct wrapct"><h3>Funnel</h3><span class="scopebar" id="fnScope"></span></div>
+    <div class="fn" id="fnBody" aria-live="polite"></div>
+    <p class="fnote" id="fnNote"></p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3>Campaigns</h3><span>Spend in ₦ · 1 to 17 Oct</span></div>
+    <div class="tablewrap"><table class="dt camp" style="margin-top:8px">
+      <thead><tr><th></th><th>Campaign</th><th class="r">Spend</th><th class="r">Orders</th><th class="r">Confirmed</th><th class="r">Delivered</th><th class="r">CPA</th><th class="r">Max CPA</th><th class="r">Yield</th><th class="r">Projected cost<br>per delivered</th><th class="r">Actual so far<small>by delivery date</small></th><th>Status</th></tr></thead>
+      <tbody id="campBody"></tbody></table></div>
+    <p class="note" style="padding-top:12px">Max CPA is the profit per delivered order before ads (₦20,720 for a copybook) times the campaign's yield. Status compares CPA with that campaign's max CPA.</p>
+  </div>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="ct"><h3>Daily spend vs orders</h3><div class="legend"><span><i style="background:var(--pine)"></i>Spend (₦)</span><span><i style="background:var(--violet)"></i>Orders</span></div></div>
+      <div class="chart">
+        <svg viewBox="0 0 640 230" width="100%" role="img" aria-label="Daily Meta ad spend in naira compared with orders for 4 to 17 October">
+          <g stroke="var(--line)" stroke-width="1"><line x1="40" x2="600" y1="30" y2="30"/><line x1="40" x2="600" y1="85" y2="85"/><line x1="40" x2="600" y1="140" y2="140"/><line x1="40" x2="600" y1="195" y2="195"/></g>
+          <g fill="var(--ink-3)" font-size="11" font-family="Plus Jakarta Sans"><text x="0" y="34">₦600k</text><text x="0" y="89">₦400k</text><text x="0" y="144">₦200k</text><text x="20" y="199">0</text>
+          <text x="606" y="34">120</text><text x="606" y="89">80</text><text x="606" y="144">40</text><text x="606" y="199">0</text>
+          <text x="48" y="220">4 Oct</text><text x="178" y="220">7</text><text x="336" y="220">11</text><text x="572" y="220">17</text></g>
+          <rect x="51.0" y="58.1" width="22" height="136.9" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="91.0" y="54.2" width="22" height="140.8" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="131.0" y="52.0" width="22" height="143.0" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="171.0" y="63.6" width="22" height="131.4" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="211.0" y="58.9" width="22" height="136.1" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="251.0" y="47.1" width="22" height="147.9" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="291.0" y="50.1" width="22" height="144.9" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="331.0" y="56.1" width="22" height="138.9" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="371.0" y="65.8" width="22" height="129.2" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="411.0" y="68.0" width="22" height="127.0" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="451.0" y="55.3" width="22" height="139.7" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="491.0" y="49.0" width="22" height="146.0" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="531.0" y="45.1" width="22" height="149.9" rx="5" fill="var(--pine)" opacity="0.32"/><rect x="571.0" y="52.0" width="22" height="143.0" rx="5" fill="var(--pine)" opacity="1"/>
+          <path d="M62.0 79.5 L102.0 75.4 L142.0 71.2 L182.0 87.8 L222.0 78.1 L262.0 63.0 L302.0 68.5 L342.0 75.4 L382.0 86.4 L422.0 94.6 L462.0 76.8 L502.0 65.8 L542.0 57.5 L582.0 69.9" stroke="var(--violet)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="62.0" cy="79.5" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="102.0" cy="75.4" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="142.0" cy="71.2" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="182.0" cy="87.8" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="222.0" cy="78.1" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="262.0" cy="63.0" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="302.0" cy="68.5" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="342.0" cy="75.4" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="382.0" cy="86.4" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="422.0" cy="94.6" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="462.0" cy="76.8" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="502.0" cy="65.8" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/><circle cx="542.0" cy="57.5" r="3.5" fill="var(--card)" stroke="var(--violet)" stroke-width="2"/>
+          <circle cx="582.0" cy="69.9" r="6" fill="var(--card)" stroke="var(--violet)" stroke-width="3"/>
+          <g transform="translate(394.0 7.9)"><rect width="170" height="44" rx="10" fill="var(--ink)"/><text x="12" y="19" fill="var(--bg)" font-size="11" font-family="Plus Jakarta Sans">Today, 17 Oct</text><text x="12" y="35" fill="var(--bg)" font-size="13" font-weight="700" font-family="Plus Jakarta Sans">₦520k · 91 orders</text></g>
+        </svg>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px">
+          <div class="drv"><small>Best day</small><b>16 Oct</b><em>₦5,450 per order</em></div>
+          <div class="drv"><small>Worst day</small><b>13 Oct</b><em>₦6,329 per order</em></div>
+          <div class="drv"><small>Average a day</small><b>₦502k</b><em>85 orders</em></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 3 things</h3><span>Updated 06:42</span></div>
+      <div class="ins">
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="trending-down"></i></div><div><b>Benefit Stack is over its ₦6,010 max CPA</b><p>CPA is ₦6,534. Only 29% of its orders turn into cash (account 34%), so its max CPA is lower and each delivered order costs about ₦22,530.</p></div></div><div class="act"><button class="mini pri" data-confirm="Cut MG_Oct_Benefit_Stack budget by 30%?||CPA is ₦6,534 against a ₦6,010 max. The new daily budget goes to Meta only after you confirm.||Cut budget by 30%||Budget cut by 30% on MG_Oct_Benefit_Stack. Sample only.">Cut budget by 30%</button><button class="mini">Dismiss</button></div></div>
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--mint-soft);color:#14975f"><i data-lucide="trending-up"></i></div><div><b>Teacher UGC has room to scale</b><p>CPA is ₦5,624 against a ₦7,460 max, and it has the best hook rate (32%). Its yield is 36%.</p></div></div><div class="act"><button class="mini pri" data-confirm="Raise MG_Oct_Teacher_UGC budget by 20%?||CPA is ₦5,624 against a ₦7,460 max. The new daily budget goes to Meta only after you confirm.||Raise budget by 20%||Budget raised by 20% on MG_Oct_Teacher_UGC. Sample only.">Raise budget by 20%</button><button class="mini">Dismiss</button></div></div>
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="megaphone"></i></div><div><b>₦41,000 Meta spend has no product</b><p>Campaign "MG_Oct_Retarget" is not mapped. It has no max CPA until it is.</p></div></div><div class="act"><button class="mini pri" id="mapBtn">Map to Magic Groove</button><button class="mini">Dismiss</button></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+</div>
+
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sx-veil" id="mapv"><div class="sx-modal" role="dialog" aria-modal="true" aria-label="Map campaign to a product"><h3>Map a campaign to a product</h3><p>MG_Oct_Retarget spent ₦41,000 and has no product, so it has no max CPA. Pick the product it sells.</p>
+  <label for="mapp" style="font-weight:600;font-size:13px;display:block;margin-top:14px">Product</label><select id="mapp" class="psel" style="width:100%;margin-top:6px"><option>Magic Groove copybook set</option><option>Refill pens</option><option>Pencil grip trainer</option><option>Smart Parent's Home Study Guide</option><option>Dictamni cream</option></select>
+  <div class="sx-act"><button class="btn" data-x>Cancel</button><button class="btn pri" id="mapgo">Save mapping</button></div></div></div>
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.href = 'index.html#' + b.dataset.go; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+
+const $ = (q, r) => (r || document).querySelector(q), $$ = (q, r) => Array.from((r || document).querySelectorAll(q));
+/* ---------- campaigns, funnel and ads (NUMBERS.md, 1 to 17 Oct) ---------- */
+const NAIRA = n => '₦' + Math.round(n).toLocaleString('en-US');
+const CNT = n => n >= 1e6 ? +(n / 1e6).toFixed(2) + 'M' : n >= 10000 ? +(n / 1000).toFixed(1) + 'k' : Math.round(n).toLocaleString('en-US');
+const PCT = (a, b) => (a / b * 100 < 10 ? (a / b * 100).toFixed(1) : Math.round(a / b * 100)) + '%';
+const CAMP = [
+  { id: 'teacher', name: 'MG_Oct_Teacher_UGC', prod: 'Magic Groove', spend: 4370000, imp: 2000000, clk: 33000, lpv: 23400, chk: 2300, ord: 777, conf: 565, del: 208, yld: 36, pcd: 15620, max: 7460, st: ['ok', 'Winning'], ads: [
+    ['Teacher_UGC_Hook_A', 'Video', 1900000, 345, 32, 10, 2.1], ['Teacher_UGC_Hook_B', 'Video', 1420000, 249, 28, 8, 1.9], ['Teacher_UGC_Cut_C', 'Video', 1050000, 183, 24, 7, 1.6]] },
+  { id: 'mom', name: 'MG_Oct_Mom_POV', prod: 'Magic Groove', spend: 2350000, imp: 1150000, clk: 16500, lpv: 11500, chk: 1170, ord: 387, conf: 277, del: 100, yld: 34, pcd: 17860, max: 7040, st: ['ok', 'On track'], ads: [
+    ['Mom_POV_Kitchen', 'Video', 1300000, 220, 25, 7, 2.0], ['Mom_POV_Homework', 'Video', 1050000, 167, 21, 6, 2.4]] },
+  { id: 'benefit', name: 'MG_Oct_Benefit_Stack', prod: 'Magic Groove', spend: 1529000, imp: 820000, clk: 10800, lpv: 7300, chk: 700, ord: 234, conf: 150, del: 56, yld: 29, pcd: 22530, max: 6010, st: ['bad', 'Over max CPA'], ads: [
+    ['Benefit_Stack_Video', 'Video', 969000, 156, 20, 5, 2.5], ['Benefit_Stack_Static', 'Static', 560000, 78, null, null, 2.6]] },
+  { id: 'retarget', name: 'MG_Oct_Retarget', prod: null, spend: 41000, imp: 30000, clk: 600, lpv: 450, chk: 30, ord: 7, conf: 5, del: 2, yld: 33, pcd: 17750, max: null, st: ['warn', 'Not mapped'], ads: [
+    ['Retarget_Cart_Video', 'Video', 26000, 4, 26, 8, 2.6], ['Retarget_Visitors_Video', 'Video', 15000, 3, 22, 6, 2.5]] },
+  { id: 'dignity', name: 'DT_Oct_Dignity', prod: 'Dictamni cream', spend: 240000, imp: 100000, clk: 600, lpv: 350, chk: 100, ord: 40, conf: 29, del: 10, yld: 30, pcd: 20000, max: 4030, st: ['n', 'Paused'], ads: [
+    ['Dignity_Story_A', 'Video', 140000, 24, 23, 6, 1.4], ['Dignity_Story_B', 'Video', 100000, 16, 21, 5, 1.5]] }
+];
+const ALLC = { name: 'All campaigns', spend: 8530000, imp: 4100000, clk: 61500, lpv: 43000, chk: 4300, ord: 1445, conf: 1026, del: 376, yld: 34, pcd: 17360, max: 7040 };
+const rowTds = c => {
+  const cpa = c.spend / c.ord, over = c.max && cpa > c.max;
+  return `<td class="r num">${NAIRA(c.spend)}</td><td class="r num">${c.ord.toLocaleString('en-US')}</td><td class="r num">${c.conf.toLocaleString('en-US')}</td><td class="r num">${c.del}</td>` +
+    `<td class="r num">${over ? '<b style="color:var(--coral)">' + NAIRA(cpa) + '</b>' : NAIRA(cpa)}</td><td class="r num">${c.max ? NAIRA(c.max) : '<span class="ink3">None</span>'}</td><td class="r num">${c.yld}%</td>` +
+    `<td class="r num"><b>${NAIRA(c.pcd)}</b></td><td class="r num ink3">${NAIRA(c.spend / c.del)}</td>`;
+};
+function drawCampaigns() {
+  const prodCell = c => c.prod ? `<small>${c.prod}</small>` : `<select aria-label="Map ${c.name} to a product"><option>Map to product</option><option>Magic Groove</option><option>Dictamni cream</option><option>Smart Parent's Home Study Guide</option></select>`;
+  $('#campBody').innerHTML = CAMP.map(c => `<tr class="crow" data-id="${c.id}"><td class="chev"><button class="chevbtn" aria-expanded="false" aria-label="Show ads and funnel for ${c.name}"><i data-lucide="chevron-right"></i></button></td><td><b>${c.name}</b><br>${prodCell(c)}</td>${rowTds(c)}<td><span class="tag ${c.st[0]}">${c.st[1]}</span></td></tr>` +
+    `<tr class="adrow" data-for="${c.id}" hidden><td colspan="12"><div class="adbox"><div class="adh"><b>Ads in ${c.name}</b><span>Hook rate: 3-second views ÷ impressions. Hold rate: ThruPlays ÷ impressions.</span></div><table class="dt adt"><thead><tr><th>Ad</th><th class="r">Spend</th><th class="r">Orders</th><th class="r">CPA</th><th class="r">Hook rate</th><th class="r">Hold rate</th><th class="r">Frequency</th></tr></thead><tbody>` +
+    c.ads.map(a => { const cpa = a[2] / a[3]; return `<tr><td><b>${a[0]}</b> <small>${a[1].toLowerCase()}</small></td><td class="r num">${NAIRA(a[2])}</td><td class="r num">${a[3]}</td><td class="r num">${c.max && cpa > c.max ? '<b style="color:var(--coral)">' + NAIRA(cpa) + '</b>' : NAIRA(cpa)}</td><td class="r num">${a[4] === null ? '<span class="ink3">n/a</span>' : a[4] + '%'}</td><td class="r num">${a[5] === null ? '<span class="ink3">n/a</span>' : a[5] + '%'}</td><td class="r num">${a[6].toFixed(1)}</td></tr>`; }).join('') +
+    `</tbody></table></div></td></tr>`).join('') +
+    `<tr class="tot crow" data-id="all"><td></td><td>All campaigns</td>${rowTds(ALLC)}<td></td></tr>`;
+  $$('#campBody select').forEach(s => s.addEventListener('click', e => e.stopPropagation()));
+  $$('#campBody .crow').forEach(r => r.addEventListener('click', () => setScope(r.dataset.id === 'all' ? null : r.dataset.id)));
+  lucide.createIcons();
+}
+let scope = null;
+function drawFunnel() {
+  const c = scope ? CAMP.find(x => x.id === scope) : ALLC;
+  const del = Math.round(c.ord * c.yld / 100), s = c.spend;
+  const steps = [
+    ['Impressions', CNT(c.imp), 'Top of funnel', 'CPM ' + NAIRA(s / c.imp * 1000)],
+    ['Link clicks', CNT(c.clk), 'CTR ' + PCT(c.clk, c.imp), 'CPC ' + NAIRA(s / c.clk)],
+    ['Landing page views', CNT(c.lpv), PCT(c.lpv, c.clk) + ' of clicks', NAIRA(s / c.lpv) + ' per view'],
+    ['Checkouts started', CNT(c.chk), PCT(c.chk, c.lpv) + ' of views', NAIRA(s / c.chk) + ' each'],
+    ['Orders', c.ord.toLocaleString('en-US'), PCT(c.ord, c.chk) + ' of checkouts', 'CPA ' + NAIRA(s / c.ord)],
+    ['Confirmed', c.conf.toLocaleString('en-US'), PCT(c.conf, c.ord) + ' of orders', NAIRA(s / c.conf) + ' each'],
+    ['Delivered, projected', del.toLocaleString('en-US'), 'Yield ' + c.yld + '% of orders', NAIRA(c.pcd) + ' each']
+  ];
+  $('#fnBody').innerHTML = steps.map(t => `<div class="fs"><span class="fl">${t[0]}</span><b class="fc num">${t[1]}</b><span class="fm">${t[2]}<i class="sep"> · </i><span>${t[3]}</span></span></div>`).join('');
+  $('#fnScope').innerHTML = scope ? `<b>${c.name}</b><button class="mini" id="fnClear">Show all campaigns</button>` : 'All campaigns, click a row to look at one';
+  $('#fnNote').textContent = `Delivered is projected from closed order cohorts at the ${c.yld}% yield. ${c.del} delivered so far, ${NAIRA(c.spend / c.del)} each by delivery date.`;
+  const cl = $('#fnClear'); if (cl) cl.onclick = () => setScope(null);
+}
+function setScope(id) {
+  scope = id === scope ? null : id;
+  $$('#campBody .crow').forEach(r => { const on = r.dataset.id === scope; r.classList.toggle('sel', on); const b = r.querySelector('.chevbtn'); if (b) b.setAttribute('aria-expanded', String(on)); });
+  $$('#campBody .adrow').forEach(r => r.hidden = r.dataset.for !== scope);
+  drawFunnel();
+}
+
+drawCampaigns(); drawFunnel();
+
+document.getElementById('mkPeriod').onchange = e => shellSay('Showing ' + e.target.value.toLowerCase() + '. The sample data covers 1 to 17 Oct.');
+const mapv = document.getElementById('mapv');
+document.getElementById('mapBtn').onclick = () => mapv.classList.add('on');
+mapv.onclick = e => { if (e.target === mapv || e.target.hasAttribute('data-x')) mapv.classList.remove('on'); };
+document.getElementById('mapgo').onclick = () => { mapv.classList.remove('on'); shellSay('MG_Oct_Retarget mapped to ' + document.getElementById('mapp').value + '. Sample only.'); };
+if (location.hash === '#mapping') mapv.classList.add('on');
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

@@ -13,7 +13,9 @@ import {
   preserveMaskedSecrets,
   SENSITIVE_FIELDS,
 } from '../utils/providerCrypto';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
+import { tenantIdForFormSlug } from './tenantLookupService';
+import { clearCurrencyCache } from '../utils/currency';
 
 export const adminService = {
   /**
@@ -56,6 +58,7 @@ export const adminService = {
     try {
       await prisma.auditLog.create({
         data: {
+          tenantId: resolveTenantId(),
           userId: requester.id,
           action,
           resource,
@@ -149,6 +152,30 @@ export const adminService = {
     };
   },
 
+  /**
+   * Public config for the checkout form: business name and currency of ONE tenant, found by
+   * tenant slug or form slug. Read-only (never seeds a row). 404 for no slug or an unknown slug.
+   */
+  async getPublicConfigBySlug(slugs: { tenant?: string; form?: string }) {
+    const select = {
+      name: true,
+      currency: true,
+      systemConfigs: { select: { businessName: true, currency: true }, take: 1 },
+    } as const;
+    const tenant = await withoutTenant('public-config-slug', async () => {
+      if (slugs.tenant) return prisma.tenant.findUnique({ where: { slug: slugs.tenant }, select });
+      const tenantId = slugs.form ? await tenantIdForFormSlug(slugs.form) : null;
+      return tenantId ? prisma.tenant.findUnique({ where: { id: tenantId }, select }) : null;
+    });
+    if (!tenant) throw new AppError('Not found', 404);
+
+    const config = tenant.systemConfigs[0];
+    return {
+      businessName: config?.businessName ?? tenant.name ?? null,
+      currency: config?.currency ?? tenant.currency ?? 'USD',
+    };
+  },
+
   async updateSystemConfig(requester: Requester, data: {
     businessName?: string;
     businessEmail?: string;
@@ -228,6 +255,7 @@ export const adminService = {
       where: { id: config.id },
       data,
     });
+    clearCurrencyCache();
 
     // Invalidate provider config caches when settings change
     if (data.whatsappProvider !== undefined) {

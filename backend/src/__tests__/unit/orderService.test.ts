@@ -1,3 +1,4 @@
+import * as Money from '../../utils/money';
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
 // Mock server module to prevent it from starting
@@ -33,8 +34,10 @@ jest.mock('../../utils/appEvents', () => ({
   },
 }));
 import appEvents, { AppEvent } from '../../utils/appEvents';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 describe('OrderService', () => {
+  useTestTenant();
   let serviceInstance: typeof orderService; // Renamed to avoid conflict with imported instance
 
   beforeEach(() => {
@@ -557,8 +560,8 @@ describe('OrderService', () => {
       const stats = await orderService.getOrderStats({});
 
       expect(stats.totalOrders).toBe(100);
-      expect(stats.totalRevenue).toBe(5000);
-      expect(stats.avgOrderValue).toBe(50);
+      expect(Money.toApi(stats.totalRevenue)).toBe('5000.00');
+      expect(Money.toApi(stats.avgOrderValue)).toBe('50.00');
       expect(stats.ordersByStatus.delivered).toBe(50);
       expect(stats.ordersByStatus.pending_confirmation).toBe(30);
       expect(stats.ordersByStatus.cancelled).toBe(20);

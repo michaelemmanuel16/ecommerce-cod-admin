@@ -66,6 +66,10 @@ export async function validateKey(apiKey: string): Promise<string> {
     throw new Error('API key has expired');
   }
 
+  if (!mcpKey.tenantId) {
+    throw new Error('API key is not linked to a tenant');
+  }
+
   // Update lastUsedAt (fire-and-forget, don't block the tool call)
   prisma.mcpApiKey.update({
     where: { id: mcpKey.id },

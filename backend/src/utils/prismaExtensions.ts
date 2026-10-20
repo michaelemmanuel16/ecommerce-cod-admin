@@ -1,66 +1,70 @@
 import { Prisma } from '@prisma/client';
 import { AsyncLocalStorage } from 'async_hooks';
-import { getTenantId } from './tenantContext';
+import { getTenantId, isUnscoped, TenantContextMissing } from './tenantContext';
 
 // Models that carry a tenantId column and need automatic scoping
 // Must match EXACTLY the PascalCase model names in prisma/schema.prisma
-const TENANT_SCOPED_MODELS = new Set([
+export const TENANT_SCOPED_MODELS = new Set([
   'User', 'Customer', 'Product', 'Order', 'Delivery',
   'Transaction', 'Expense', 'Account', 'JournalEntry', 'AccountTransaction',
   'Workflow', 'WorkflowExecution', 'WebhookConfig', 'Notification',
   'CheckoutForm', 'InventoryShipment', 'InventoryTransfer',
   'AgentBalance', 'AgentStock', 'MessageLog', 'SystemConfig',
   'McpApiKey', 'EmailTemplate', 'EmailCampaign',
+  'AgentCollection', 'AgentDeposit', 'AgentAgingBucket', 'Payout', 'Call',
+  'OrderHistory', 'AuditLog', 'WebhookLog', 'SmsTemplate', 'DownloadToken',
+  'FormSubmission', 'product_cost_entries', 'PendingCheckout', 'WebhookEvent',
 ]);
 
 /**
+ * Resolve the tenant for a query on a scoped model. Returns the tenantId to
+ * inject, or null inside withoutTenant() (query runs unscoped). Throws
+ * TenantContextMissing when there is no tenant context at all (fail-closed).
+ */
+function requireTenant(model: string, operation: string): string | null {
+  const tenantId = getTenantId();
+  if (tenantId) return tenantId;
+  if (isUnscoped()) return null;
+  throw new TenantContextMissing(model, operation);
+}
+
+function scopeWhere(operation: string) {
+  return async ({ model, args, query }: { model: string; args: any; query: (a: any) => Promise<any> }) => {
+    if (TENANT_SCOPED_MODELS.has(model)) {
+      const tenantId = requireTenant(model, operation);
+      if (tenantId) {
+        args.where = { ...args.where, tenantId };
+      }
+    }
+    return query(args);
+  };
+}
+
+/**
  * Auto-injects tenantId into Prisma queries for all tenant-scoped models.
- * Reads tenantId from AsyncLocalStorage (set by tenantMiddleware).
- * When no tenantId is in context (e.g. public routes, seeds), passes through unchanged.
+ * Reads tenantId from AsyncLocalStorage (set by auth middleware, queues, public routes).
+ * Fail-closed: with no tenant context a scoped-model query throws TenantContextMissing.
+ * Use withoutTenant(reason, fn) for the few paths that must run across tenants.
  */
 export const tenantIsolationExtension = Prisma.defineExtension({
   name: 'tenantIsolation',
   query: {
     $allModels: {
-      async findMany({ model, args, query }) {
-        if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
-          if (tenantId) {
-            args.where = { ...args.where, tenantId } as any;
-          }
-        }
-        return query(args);
-      },
-      async findFirst({ model, args, query }) {
-        if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
-          if (tenantId) {
-            args.where = { ...args.where, tenantId } as any;
-          }
-        }
-        return query(args);
-      },
-      async findUnique({ model, args, query }) {
-        if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
-          if (tenantId) {
-            args.where = { ...args.where, tenantId } as any;
-          }
-        }
-        return query(args);
-      },
-      async count({ model, args, query }) {
-        if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
-          if (tenantId) {
-            args.where = { ...args.where, tenantId } as any;
-          }
-        }
-        return query(args);
-      },
+      findMany: scopeWhere('findMany'),
+      findFirst: scopeWhere('findFirst'),
+      findFirstOrThrow: scopeWhere('findFirstOrThrow'),
+      findUnique: scopeWhere('findUnique'),
+      findUniqueOrThrow: scopeWhere('findUniqueOrThrow'),
+      count: scopeWhere('count'),
+      update: scopeWhere('update'),
+      updateMany: scopeWhere('updateMany'),
+      aggregate: scopeWhere('aggregate'),
+      groupBy: scopeWhere('groupBy'),
+      delete: scopeWhere('delete'),
+      deleteMany: scopeWhere('deleteMany'),
       async create({ model, args, query }) {
         if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
+          const tenantId = requireTenant(model, 'create');
           if (tenantId) {
             args.data = { ...args.data, tenantId } as any;
           }
@@ -69,7 +73,7 @@ export const tenantIsolationExtension = Prisma.defineExtension({
       },
       async createMany({ model, args, query }) {
         if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
+          const tenantId = requireTenant(model, 'createMany');
           if (tenantId) {
             const data = args.data as any;
             if (Array.isArray(data)) {
@@ -81,67 +85,13 @@ export const tenantIsolationExtension = Prisma.defineExtension({
         }
         return query(args);
       },
-      async update({ model, args, query }) {
-        if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
-          if (tenantId) {
-            args.where = { ...args.where, tenantId } as any;
-          }
-        }
-        return query(args);
-      },
-      async updateMany({ model, args, query }) {
-        if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
-          if (tenantId) {
-            args.where = { ...args.where, tenantId } as any;
-          }
-        }
-        return query(args);
-      },
       async upsert({ model, args, query }) {
         if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
+          const tenantId = requireTenant(model, 'upsert');
           if (tenantId) {
             args.where = { ...args.where, tenantId } as any;
             args.create = { ...args.create, tenantId } as any;
             args.update = { ...args.update, tenantId } as any;
-          }
-        }
-        return query(args);
-      },
-      async aggregate({ model, args, query }) {
-        if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
-          if (tenantId) {
-            args.where = { ...args.where, tenantId } as any;
-          }
-        }
-        return query(args);
-      },
-      async groupBy({ model, args, query }) {
-        if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
-          if (tenantId) {
-            args.where = { ...args.where, tenantId } as any;
-          }
-        }
-        return query(args);
-      },
-      async delete({ model, args, query }) {
-        if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
-          if (tenantId) {
-            args.where = { ...args.where, tenantId } as any;
-          }
-        }
-        return query(args);
-      },
-      async deleteMany({ model, args, query }) {
-        if (TENANT_SCOPED_MODELS.has(model)) {
-          const tenantId = getTenantId();
-          if (tenantId) {
-            args.where = { ...args.where, tenantId } as any;
           }
         }
         return query(args);

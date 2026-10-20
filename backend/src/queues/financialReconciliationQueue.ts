@@ -3,7 +3,8 @@ import { FinancialSyncService } from '../services/financialSyncService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { SYSTEM_USER_ID } from '../config/constants';
-import { tenantStorage } from '../utils/tenantContext';
+import { runInTenantOf } from '../utils/tenantContext';
+import { forEachTenant } from '../utils/tenantLoop';
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -30,8 +31,13 @@ export const financialReconciliationQueue = process.env.NODE_ENV === 'test'
     });
 
 // Find delivered orders missing financial records and retry sync
-financialReconciliationQueue.process('reconcile-delivered-orders', async () => {
+export const processReconcileDeliveredOrders = async () => {
     logger.info('Processing financial reconciliation job...');
+    // Once per tenant, each inside its own tenant context
+    await forEachTenant('Financial reconciliation', reconcileTenantOrders);
+};
+
+async function reconcileTenantOrders() {
 
     const unsynced = await prisma.order.findMany({
         where: {
@@ -62,13 +68,12 @@ financialReconciliationQueue.process('reconcile-delivered-orders', async () => {
 
     for (const order of unsynced) {
         try {
-            // This cron runs in a Bull worker with no HTTP request, so there is
-            // no AsyncLocalStorage tenant context. Establish it from the order's
-            // own tenant before syncing — otherwise every financial row this job
-            // writes (account_transactions, Transaction, AgentCollection) is
-            // tagged tenant_id = NULL and disappears from tenant-scoped reporting.
-            const result = await tenantStorage.run(
-                { tenantId: (order as any).tenantId ?? null },
+            // Order.tenantId is nullable, so continue inside the order's own tenant
+            // (a NULL-tenant legacy row runs unscoped, with a log line) — otherwise
+            // every financial row this job writes is tagged tenant_id = NULL.
+            const result = await runInTenantOf(
+                order.tenantId,
+                'financial-reconciliation',
                 () => FinancialSyncService.syncOrderFinancialData(
                     prisma as any,
                     order as any,
@@ -96,7 +101,8 @@ financialReconciliationQueue.process('reconcile-delivered-orders', async () => {
     } else if (failed > 0) {
         logger.warn(`Partial reconciliation: ${failed}/${unsynced.length} orders failed — next run will retry.`);
     }
-});
+}
+financialReconciliationQueue.process('reconcile-delivered-orders', processReconcileDeliveredOrders);
 
 // Setup the daily cron
 export const setupFinancialReconciliationCron = async () => {

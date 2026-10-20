@@ -16,7 +16,7 @@ import app from '../../server';
 
 // Integration tests require a real test database with seeded data
 // TODO: Set up test database and seed script before enabling these tests
-describe.skip('Order Workflow Integration Tests', () => {
+describe.skip('[COD-2] Order Workflow Integration Tests (skipped: needs seeded test DB)', () => {
   let authToken: string;
   let orderId: string;
   let customerId: string;

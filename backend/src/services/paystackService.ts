@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { safeEqual } from '../utils/crypto';
 import prisma from '../utils/prisma';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { AppError } from '../middleware/errorHandler';
@@ -204,12 +205,7 @@ export const paystackService = {
       .update(rawBody)
       .digest('hex');
 
-    try {
-      return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(signature, 'hex'));
-    } catch {
-      // Length mismatch throws — treat as invalid signature
-      return false;
-    }
+    return safeEqual(hash, signature);
   },
 
   /**

@@ -252,7 +252,7 @@ export const WorkflowWizard: React.FC = () => {
         {currentStep === 5 && (
           <ReviewStep
             formData={formData}
-            isEditMode={isEditMode}
+            isEditMode={!!isEditMode}
             workflowId={id}
             onEdit={(stepId) => setCurrentStep(stepId)}
             onSave={handleSave}

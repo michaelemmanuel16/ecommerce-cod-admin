@@ -14,7 +14,12 @@ export const AgentCreateModal: React.FC<AgentCreateModalProps> = ({
   isOpen,
   onClose
 }) => {
-  const { createAgent } = useDeliveryAgentsStore();
+  // NOTE: the store has no `createAgent` action (and this modal is not rendered anywhere),
+  // so calling it throws and is caught below. The cast only mirrors that runtime shape;
+  // wiring a real create action is a behaviour change left for a separate task.
+  const { createAgent } = useDeliveryAgentsStore() as unknown as {
+    createAgent: (data: Record<string, unknown>) => Promise<void>;
+  };
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     firstName: '',

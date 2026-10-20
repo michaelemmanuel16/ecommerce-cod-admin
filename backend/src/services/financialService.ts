@@ -16,7 +16,8 @@ import { GL_ACCOUNTS } from '../config/glAccounts';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { GLAutomationService } from './glAutomationService';
 import { SYSTEM_USER_ID } from '../config/constants';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 interface DateFilters {
   startDate?: Date;
@@ -25,7 +26,7 @@ interface DateFilters {
 
 interface CreateExpenseData {
   category: string;
-  amount: number;
+  amount: Money.MoneyInput;
   description: string;
   expenseDate: Date;
   recordedBy: string;
@@ -34,9 +35,9 @@ interface CreateExpenseData {
 
 interface CashFlowForecast {
   date: string;
-  expectedCollection: number;
-  expectedExpense: number;
-  projectedBalance: number;
+  expectedCollection: Money.Money;
+  expectedExpense: Money.Money;
+  projectedBalance: Money.Money;
 }
 
 interface AgentHolding {
@@ -46,7 +47,7 @@ interface AgentHolding {
     lastName: string;
     email: string;
   };
-  totalCollected: number;
+  totalCollected: Money.Money;
   orderCount: number;
   OldestCollectionDate: Date;
 }
@@ -69,25 +70,25 @@ interface FinancialStatementAccount {
   id: number;
   code: string;
   name: string;
-  balance: number;
+  balance: Money.Money;
 }
 
 interface BalanceSheetData {
   asOfDate: Date;
   assets: {
     accounts: FinancialStatementAccount[];
-    total: number;
+    total: Money.Money;
   };
   liabilities: {
     accounts: FinancialStatementAccount[];
-    total: number;
+    total: Money.Money;
   };
   equity: {
     accounts: FinancialStatementAccount[];
-    retainedEarnings: number;
-    total: number;
+    retainedEarnings: Money.Money;
+    total: Money.Money;
   };
-  totalLiabilitiesAndEquity: number;
+  totalLiabilitiesAndEquity: Money.Money;
   isBalanced: boolean;
 }
 
@@ -96,32 +97,25 @@ interface ProfitLossData {
   endDate: Date;
   revenue: {
     accounts: FinancialStatementAccount[];
-    total: number;
+    total: Money.Money;
   };
   cogs: {
     accounts: FinancialStatementAccount[];
-    total: number;
+    total: Money.Money;
   };
   expenses: {
     accounts: FinancialStatementAccount[];
-    total: number;
+    total: Money.Money;
   };
-  grossProfit: number;
+  grossProfit: Money.Money;
   grossMarginPercentage: number;
-  netIncome: number;
+  netIncome: Money.Money;
   netMarginPercentage: number;
 }
 
 export class FinancialService {
   private forecastCache = new Map<string, { data: CashFlowForecast[]; timestamp: number }>();
   private readonly FORECAST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
-
-  /**
-   * Safe conversion to number
-   */
-  private toNumber(value: string | number | null | undefined | Prisma.Decimal): number {
-    return Number(value || 0);
-  }
 
   /**
    * Get financial summary — GL is the single source of truth for Revenue, Expenses, and Profit.
@@ -187,23 +181,23 @@ export class FinancialService {
     });
     const accountMap = new Map(accounts.map(a => [a.id, a]));
 
-    let totalRevenue = 0;
-    let totalExpenses = 0;
+    let totalRevenue = Money.ZERO;
+    let totalExpenses = Money.ZERO;
 
     for (const agg of glAggregations) {
       const account = accountMap.get(agg.accountId);
       if (!account) continue;
 
-      const debit = this.toNumber(agg._sum.debitAmount);
-      const credit = this.toNumber(agg._sum.creditAmount);
+      const debit = Money.orZero(agg._sum.debitAmount);
+      const credit = Money.orZero(agg._sum.creditAmount);
       const balance = account.normalBalance === 'debit'
-        ? debit - credit
-        : credit - debit;
+        ? Money.sub(debit, credit)
+        : Money.sub(credit, debit);
 
       if (account.accountType === 'revenue') {
-        totalRevenue += balance;
+        totalRevenue = Money.add(totalRevenue, balance);
       } else if (account.accountType === 'expense') {
-        totalExpenses += balance;
+        totalExpenses = Money.add(totalExpenses, balance);
       }
     }
 
@@ -240,7 +234,7 @@ export class FinancialService {
       },
       _sum: { amount: true }
     });
-    const outstandingReceivables = this.toNumber(outstandingCollections._sum.amount);
+    const outstandingReceivables = Money.orZero(outstandingCollections._sum.amount);
 
     const [codCollections, outForDeliveryOrders] = await Promise.all([
       // COD Collected (operational metric)
@@ -264,20 +258,20 @@ export class FinancialService {
       })
     ]);
 
-    const totalCOD = this.toNumber(codCollections._sum.amount);
-    const outForDelivery = this.toNumber(outForDeliveryOrders._sum.totalAmount);
+    const totalCOD = Money.orZero(codCollections._sum.amount);
+    const outForDelivery = Money.orZero(outForDeliveryOrders._sum.totalAmount);
     // Pending COD = outstanding receivables (GL, delivered but uncollected) + out-for-delivery (operational)
     // Uses GL Cash in Transit for delivered-uncollected to stay consistent with accrual accounting
-    const pendingCODAmount = outstandingReceivables + outForDelivery;
+    const pendingCODAmount = Money.add(outstandingReceivables, outForDelivery);
 
     return {
       totalRevenue,
       totalExpenses,
-      profit: totalRevenue - totalExpenses,
+      profit: Money.sub(totalRevenue, totalExpenses),
       codCollected: totalCOD,
       codPending: pendingCODAmount,
       outstandingReceivables,
-      profitMargin: totalRevenue > 0 ? ((totalRevenue - totalExpenses) / totalRevenue) * 100 : 0
+      profitMargin: Money.percent(Money.sub(totalRevenue, totalExpenses), totalRevenue)
     };
   }
 
@@ -345,7 +339,8 @@ export class FinancialService {
    * Create expense record
    */
   async recordExpense(data: CreateExpenseData, requester?: Requester) {
-    if (!data.amount || data.amount <= 0) {
+    const amount = Money.tryParse(data.amount);
+    if (!amount || amount.lte(0)) {
       throw new AppError('Expense amount must be a positive number', 400);
     }
 
@@ -355,7 +350,7 @@ export class FinancialService {
       const created = await tx.expense.create({
         data: {
           category: data.category,
-          amount: data.amount,
+          amount,
           description: data.description,
           expenseDate: data.expenseDate,
           recordedBy: userId,
@@ -375,7 +370,7 @@ export class FinancialService {
       await GLAutomationService.createExpenseGLEntry(
         tx as any,
         created.id,
-        data.amount,
+        amount,
         data.description,
         userId
       );
@@ -601,9 +596,9 @@ export class FinancialService {
     return {
       collections,
       summary: {
-        totalCollected: totalCollected._sum.amount || 0,
-        totalPending: totalPending._sum.amount || 0,
-        totalDeposited: totalDeposited._sum.amount || 0,
+        totalCollected: Money.orZero(totalCollected._sum.amount),
+        totalPending: Money.orZero(totalPending._sum.amount),
+        totalDeposited: Money.orZero(totalDeposited._sum.amount),
         totalCount: collections.length
       }
     };
@@ -751,11 +746,13 @@ export class FinancialService {
           })).map((c) => c.orderId)
         );
 
-        const nonReconciledAmount = transactions
-          .filter(t => !t.orderId || !reconciledOrderIds.has(t.orderId))
-          .reduce((sum, t) => sum + Number(t.amount), 0);
+        const nonReconciledAmount = Money.sum(
+          transactions
+            .filter(t => !t.orderId || !reconciledOrderIds.has(t.orderId))
+            .map(t => t.amount)
+        );
 
-        if (nonReconciledAmount > 0) {
+        if (nonReconciledAmount.gt(0)) {
           const userId = requester?.id ?? SYSTEM_USER_ID;
           // Use the minimum transaction ID as a stable idempotency key for the batch.
           // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
@@ -844,7 +841,7 @@ export class FinancialService {
     ]);
 
     // Group by period
-    const groupedData: Record<string, { revenue: number; expenses: number; orders: number }> = {};
+    const groupedData: Record<string, { revenue: Money.Money; expenses: Money.Money; orders: number }> = {};
 
     // Fetch delivered orders for the same period to get Accrual Revenue trends
     const deliveredOrders = await prisma.order.findMany({
@@ -861,10 +858,10 @@ export class FinancialService {
           : `${order.updatedAt.getFullYear()}-${String(order.updatedAt.getMonth() + 1).padStart(2, '0')}`;
 
       if (!groupedData[key]) {
-        groupedData[key] = { revenue: 0, expenses: 0, orders: 0 };
+        groupedData[key] = { revenue: Money.ZERO, expenses: Money.ZERO, orders: 0 };
       }
 
-      groupedData[key].revenue += Number(order.totalAmount);
+      groupedData[key].revenue = Money.add(groupedData[key].revenue, order.totalAmount);
       groupedData[key].orders += 1;
     });
 
@@ -875,17 +872,17 @@ export class FinancialService {
           : `${e.expenseDate.getFullYear()}-${String(e.expenseDate.getMonth() + 1).padStart(2, '0')}`;
 
       if (!groupedData[key]) {
-        groupedData[key] = { revenue: 0, expenses: 0, orders: 0 };
+        groupedData[key] = { revenue: Money.ZERO, expenses: Money.ZERO, orders: 0 };
       }
 
-      groupedData[key].expenses += e.amount;
+      groupedData[key].expenses = Money.add(groupedData[key].expenses, e.amount);
     });
 
     const reports = Object.entries(groupedData).map(([date, data]) => ({
       date,
       revenue: data.revenue,
       expenses: data.expenses,
-      profit: data.revenue - data.expenses,
+      profit: Money.sub(data.revenue, data.expenses),
       orders: data.orders
     })).sort((a, b) => a.date.localeCompare(b.date));
 
@@ -915,14 +912,14 @@ export class FinancialService {
       where
     }) || [];
 
-    const normalizedBreakdown: Record<string, { totalAmount: number; count: number }> = {};
+    const normalizedBreakdown: Record<string, { totalAmount: Money.Money; count: number }> = {};
 
     breakdown.forEach((item) => {
       const category = item.category.trim().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
       if (!normalizedBreakdown[category]) {
-        normalizedBreakdown[category] = { totalAmount: 0, count: 0 };
+        normalizedBreakdown[category] = { totalAmount: Money.ZERO, count: 0 };
       }
-      normalizedBreakdown[category].totalAmount += item.amount;
+      normalizedBreakdown[category].totalAmount = Money.add(normalizedBreakdown[category].totalAmount, item.amount);
       normalizedBreakdown[category].count += 1;
     });
 
@@ -932,7 +929,7 @@ export class FinancialService {
         totalAmount: stats.totalAmount,
         count: stats.count
       }))
-      .sort((a, b) => b.totalAmount - a.totalAmount);
+      .sort((a, b) => Money.compare(b.totalAmount, a.totalAmount));
   }
 
   /**
@@ -948,7 +945,7 @@ export class FinancialService {
     const codData = await this.getCODCollectionsByAgent(agentId, filters, requester);
 
     // Calculate pending settlement
-    const pendingAmount = codData.summary.totalCollected - codData.summary.totalDeposited;
+    const pendingAmount = Money.sub(codData.summary.totalCollected, codData.summary.totalDeposited);
 
     return {
       agentId,
@@ -995,19 +992,18 @@ export class FinancialService {
       }
     });
 
-    let totalRevenue = 0;
-    let totalCost = 0;
+    let totalRevenue = Money.ZERO;
+    let totalCost = Money.ZERO;
 
     orders.forEach((order) => {
-      totalRevenue += order.totalAmount;
+      totalRevenue = Money.add(totalRevenue, order.totalAmount);
       order.orderItems.forEach((item) => {
-        const cogs = item.product.cogs ? Number(item.product.cogs) : 0;
-        totalCost += cogs * item.quantity;
+        totalCost = Money.add(totalCost, Money.mul(Money.orZero(item.product.cogs), item.quantity));
       });
     });
 
-    const grossProfit = totalRevenue - totalCost;
-    const profitMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+    const grossProfit = Money.sub(totalRevenue, totalCost);
+    const profitMargin = Money.percent(grossProfit, totalRevenue);
 
     return {
       totalRevenue,
@@ -1082,79 +1078,80 @@ export class FinancialService {
     });
 
     // Calculate revenue and COGS
-    let totalRevenue = 0;
-    let totalCOGS = 0;
-    let totalShippingCost = 0;
-    let totalDiscount = 0;
+    let totalCOGS = Money.ZERO;
+    let totalShippingCost = Money.ZERO;
+    let totalDiscount = Money.ZERO;
 
     const productProfitability: Record<number, {
       id: number,
       name: string,
       sku: string,
-      revenue: number,
-      cogs: number,
+      revenue: Money.Money,
+      cogs: Money.Money,
       quantity: number,
-      commission: number,
-      grossProfit: number
+      commission: Money.Money,
+      grossProfit: Money.Money
     }> = {};
 
     const dailyProfitability: Record<string, {
       date: string,
-      revenue: number,
-      cogs: number,
-      grossProfit: number
+      revenue: Money.Money,
+      cogs: Money.Money,
+      grossProfit: Money.Money
     }> = {};
 
     for (const order of orders) {
       // Use totalAmount (subtotal + shipping - discount) to match GL revenue recognition
-      totalRevenue += order.totalAmount;
-      totalShippingCost += order.shippingCost;
-      totalDiscount += order.discount;
+      totalShippingCost = Money.add(totalShippingCost, order.shippingCost);
+      totalDiscount = Money.add(totalDiscount, order.discount);
 
       const dateStr = (order.deliveryDate || order.updatedAt).toISOString().split('T')[0];
       if (!dailyProfitability[dateStr]) {
         dailyProfitability[dateStr] = {
           date: dateStr,
-          revenue: 0,
-          cogs: 0,
-          grossProfit: 0
+          revenue: Money.ZERO,
+          cogs: Money.ZERO,
+          grossProfit: Money.ZERO
         };
       }
-      dailyProfitability[dateStr].revenue += order.totalAmount;
+      dailyProfitability[dateStr].revenue = Money.add(dailyProfitability[dateStr].revenue, order.totalAmount);
 
-      const orderCommission = (order.deliveryAgent?.commissionAmount ?? 0)
-                            + (order.customerRep?.commissionAmount ?? 0);
-      const orderSubtotal = order.orderItems.reduce(
-        (sum, item) => sum + (item.unitPrice * item.quantity), 0
+      const orderCommission = Money.add(
+        Money.orZero(order.deliveryAgent?.commissionAmount),
+        Money.orZero(order.customerRep?.commissionAmount)
+      );
+      const orderSubtotal = Money.sum(
+        order.orderItems.map(item => Money.mul(item.unitPrice, item.quantity))
       );
 
       for (const item of order.orderItems) {
-        const itemCOGS = (Number(item.product.cogs) || 0) * item.quantity;
-        totalCOGS += itemCOGS;
-        dailyProfitability[dateStr].cogs += itemCOGS;
+        const itemCOGS = Money.mul(Money.orZero(item.product.cogs), item.quantity);
+        totalCOGS = Money.add(totalCOGS, itemCOGS);
+        dailyProfitability[dateStr].cogs = Money.add(dailyProfitability[dateStr].cogs, itemCOGS);
 
-        const itemRevenue = item.unitPrice * item.quantity;
-        const itemCommission = orderSubtotal > 0
-          ? orderCommission * (itemRevenue / orderSubtotal)
-          : 0;
+        const itemRevenue = Money.mul(item.unitPrice, item.quantity);
+        const itemCommission = Money.gt(orderSubtotal, 0)
+          ? Money.div(Money.mul(orderCommission, itemRevenue), orderSubtotal)
+          : Money.ZERO;
 
         if (!productProfitability[item.productId]) {
           productProfitability[item.productId] = {
             id: item.productId,
             name: item.product.name,
             sku: item.product.sku,
-            revenue: 0,
-            cogs: 0,
+            revenue: Money.ZERO,
+            cogs: Money.ZERO,
             quantity: 0,
-            commission: 0,
-            grossProfit: 0
+            commission: Money.ZERO,
+            grossProfit: Money.ZERO
           };
         }
 
-        productProfitability[item.productId].revenue += itemRevenue;
-        productProfitability[item.productId].cogs += itemCOGS;
-        productProfitability[item.productId].quantity += item.quantity;
-        productProfitability[item.productId].commission += itemCommission;
+        const productStats = productProfitability[item.productId];
+        productStats.revenue = Money.add(productStats.revenue, itemRevenue);
+        productStats.cogs = Money.add(productStats.cogs, itemCOGS);
+        productStats.quantity += item.quantity;
+        productStats.commission = Money.add(productStats.commission, itemCommission);
       }
     }
 
@@ -1175,7 +1172,7 @@ export class FinancialService {
       _sum: { debitAmount: true, creditAmount: true }
     });
     // Revenue account has credit-normal balance
-    const glRevenue = this.toNumber(revenueAgg._sum.creditAmount) - this.toNumber(revenueAgg._sum.debitAmount);
+    const glRevenue = Money.sub(Money.orZero(revenueAgg._sum.creditAmount), Money.orZero(revenueAgg._sum.debitAmount));
 
     const commissionCodes = [GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, GL_ACCOUNTS.SALES_REP_COMMISSION];
 
@@ -1200,24 +1197,27 @@ export class FinancialService {
       expenseAccounts.filter(a => a.code === GL_ACCOUNTS.COGS).map(a => a.id)
     );
 
-    const glCOGS = expenseAgg
+    const netDebit = (r: (typeof expenseAgg)[number]) =>
+      Money.sub(Money.orZero(r._sum.debitAmount), Money.orZero(r._sum.creditAmount));
+
+    const glCOGS = Money.sum(expenseAgg
       .filter(r => cogsIdSet.has(r.accountId))
-      .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
+      .map(netDebit));
 
-    const totalCommissions = expenseAgg
+    const totalCommissions = Money.sum(expenseAgg
       .filter(r => commissionIdSet.has(r.accountId))
-      .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
+      .map(netDebit));
 
-    const totalOperatingExpenses = expenseAgg
+    const totalOperatingExpenses = Money.sum(expenseAgg
       .filter(r => !commissionIdSet.has(r.accountId) && !cogsIdSet.has(r.accountId))
-      .reduce((sum, r) => sum + this.toNumber(r._sum.debitAmount) - this.toNumber(r._sum.creditAmount), 0);
+      .map(netDebit));
 
     // Use GL revenue + GL COGS for summary totals (matches Overview exactly)
-    const grossProfit = glRevenue - glCOGS;
-    const grossMargin = glRevenue > 0 ? (grossProfit / glRevenue) * 100 : 0;
+    const grossProfit = Money.sub(glRevenue, glCOGS);
+    const grossMargin = Money.percent(grossProfit, glRevenue);
 
-    const netProfit = grossProfit - totalCommissions - totalOperatingExpenses;
-    const netMargin = glRevenue > 0 ? (netProfit / glRevenue) * 100 : 0;
+    const netProfit = Money.sub(Money.sub(grossProfit, totalCommissions), totalOperatingExpenses);
+    const netMargin = Money.percent(netProfit, glRevenue);
 
     // Format product profitability
     const products = Object.values(productProfitability).map(p => ({
@@ -1228,15 +1228,15 @@ export class FinancialService {
       cogs: p.cogs,
       quantity: p.quantity,
       commission: p.commission,
-      grossProfit: p.revenue - p.cogs,
-      grossMargin: p.revenue > 0 ? ((p.revenue - p.cogs) / p.revenue) * 100 : 0
-    })).sort((a, b) => b.grossProfit - a.grossProfit);
+      grossProfit: Money.sub(p.revenue, p.cogs),
+      grossMargin: Money.percent(Money.sub(p.revenue, p.cogs), p.revenue)
+    })).sort((a, b) => Money.compare(b.grossProfit, a.grossProfit));
 
     // Format daily profitability
     const daily = Object.values(dailyProfitability).map(d => ({
       ...d,
-      grossProfit: d.revenue - d.cogs,
-      grossMargin: d.revenue > 0 ? ((d.revenue - d.cogs) / d.revenue) * 100 : 0
+      grossProfit: Money.sub(d.revenue, d.cogs),
+      grossMargin: Money.percent(Money.sub(d.revenue, d.cogs), d.revenue)
     })).sort((a, b) => a.date.localeCompare(b.date));
 
     return {
@@ -1271,12 +1271,12 @@ export class FinancialService {
     expenseId: string,
     data: {
       category?: string;
-      amount?: number;
+      amount?: Money.MoneyInput;
       description?: string;
       expenseDate?: Date;
     }
     , requester?: Requester) {
-    if (data.amount !== undefined && data.amount <= 0) {
+    if (data.amount !== undefined && Money.parse(data.amount).lte(0)) {
       throw new AppError('Expense amount must be a positive number', 400);
     }
 
@@ -1317,7 +1317,7 @@ export class FinancialService {
       });
 
       // Create new GL entry with updated amount
-      const newAmount = data.amount !== undefined ? data.amount : Number(expense.amount);
+      const newAmount = data.amount !== undefined ? data.amount : expense.amount;
       const newDescription = data.description || expense.description;
       await GLAutomationService.createExpenseGLEntry(
         tx as any,
@@ -1412,32 +1412,19 @@ export class FinancialService {
       where.deliveryAgentId = requester.id;
     }
 
-    const orders = await prisma.order.findMany({
+    const groups = await prisma.order.groupBy({
+      by: ['status'],
       where,
-      select: {
-        totalAmount: true,
-        status: true
-      }
+      _sum: { totalAmount: true },
+      _count: { _all: true },
     });
 
-    // Calculate total expected revenue
-    const totalExpected = orders.reduce((sum, order) => sum + order.totalAmount, 0);
-
-    // Group by status
-    const byStatus = orders.reduce((acc, order) => {
-      const existing = acc.find((item) => item.status === order.status);
-      if (existing) {
-        existing.amount += order.totalAmount;
-        existing.count += 1;
-      } else {
-        acc.push({
-          status: order.status,
-          amount: order.totalAmount,
-          count: 1
-        });
-      }
-      return acc;
-    }, [] as { status: string; amount: number; count: number }[]);
+    const byStatus = groups.map((g) => ({
+      status: g.status as string,
+      amount: Money.orZero(g._sum.totalAmount),
+      count: g._count._all,
+    }));
+    const totalExpected = Money.sum(byStatus.map((g) => g.amount));
 
     return {
       totalExpected,
@@ -1514,13 +1501,13 @@ export class FinancialService {
         lastName: b.agent.lastName,
         email: b.agent.email
       },
-      totalCollected: this.toNumber(b.currentBalance),
+      totalCollected: Money.orZero(b.currentBalance),
       orderCount: countMap.get(b.agentId) || 0,
       OldestCollectionDate: oldestMap.get(b.agentId) || b.updatedAt
     }));
 
     // Sort by total collected (descending)
-    return holdings.sort((a, b) => b.totalCollected - a.totalCollected).slice(0, 20);
+    return holdings.sort((a, b) => Money.compare(b.totalCollected, a.totalCollected)).slice(0, 20);
   }
 
   /**
@@ -1528,10 +1515,11 @@ export class FinancialService {
    */
   async getCashFlowReport(requester?: Requester) {
     // 1. Get current cash position KPIs from GL
+    const tenantId = resolveTenantId();
     const [cashInHand, , arAgents] = await Promise.all([
-      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_HAND } }),
-      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT } }),
-      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.AR_AGENTS } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.CASH_IN_TRANSIT } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.AR_AGENTS } } }),
     ]);
 
     // 2. Calculate operational figures from actual order status
@@ -1555,15 +1543,15 @@ export class FinancialService {
     ]);
 
     const kpis = {
-      cashInHand: this.toNumber(cashInHand?.currentBalance),
-      cashInTransit: this.toNumber(cashInTransitData._sum.totalAmount),
-      outstandingReceivables: this.toNumber(arAgents?.currentBalance),
-      cashExpected: this.toNumber(cashExpectedData._sum.totalAmount),
+      cashInHand: Money.orZero(cashInHand?.currentBalance),
+      cashInTransit: Money.orZero(cashInTransitData._sum.totalAmount),
+      outstandingReceivables: Money.orZero(arAgents?.currentBalance),
+      cashExpected: Money.orZero(cashExpectedData._sum.totalAmount),
     };
 
-    const cashAvailableNow = kpis.cashInHand + kpis.outstandingReceivables;
-    const totalCashPosition = kpis.cashInHand + kpis.cashInTransit + kpis.outstandingReceivables + kpis.cashExpected;
-    const totalCashPipeline = cashAvailableNow + kpis.cashInTransit + kpis.cashExpected;
+    const cashAvailableNow = Money.add(kpis.cashInHand, kpis.outstandingReceivables);
+    const totalCashPosition = Money.sum([kpis.cashInHand, kpis.cashInTransit, kpis.outstandingReceivables, kpis.cashExpected]);
+    const totalCashPipeline = Money.sum([cashAvailableNow, kpis.cashInTransit, kpis.cashExpected]);
 
     // 3. 30-day Forecast
     const forecast = await this.generateCashFlowForecast();
@@ -1614,17 +1602,18 @@ export class FinancialService {
       })
     ]);
 
-    const avgDailyCollection = this.toNumber(historicalCollections._sum.amount) / 30;
-    const avgDailyExpense = this.toNumber(historicalExpenses._sum.amount) / 30;
+    const avgDailyCollection = Money.div(Money.orZero(historicalCollections._sum.amount), 30);
+    const avgDailyExpense = Money.div(Money.orZero(historicalExpenses._sum.amount), 30);
 
     // Start with current liquidity (Cash in Hand + Bank if existed)
     // For this implementation, we'll use Total Cash Position as starting balance
+    const accountTenantId = resolveTenantId(tenantId);
     const [cashInHand, cashInTransit] = await Promise.all([
-      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_HAND } }),
-      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: accountTenantId, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: accountTenantId, code: GL_ACCOUNTS.CASH_IN_TRANSIT } } }),
     ]);
 
-    let runningBalance = this.toNumber(cashInHand?.currentBalance) + this.toNumber(cashInTransit?.currentBalance);
+    let runningBalance = Money.add(Money.orZero(cashInHand?.currentBalance), Money.orZero(cashInTransit?.currentBalance));
 
     const forecast: CashFlowForecast[] = [];
     const today = new Date();
@@ -1633,13 +1622,13 @@ export class FinancialService {
       const forecastDate = new Date(today);
       forecastDate.setDate(today.getDate() + i);
 
-      runningBalance += (avgDailyCollection - avgDailyExpense);
+      runningBalance = Money.add(runningBalance, Money.sub(avgDailyCollection, avgDailyExpense));
 
       forecast.push({
         date: forecastDate.toISOString().split('T')[0],
         expectedCollection: avgDailyCollection,
         expectedExpense: avgDailyExpense,
-        projectedBalance: Math.max(0, runningBalance)
+        projectedBalance: runningBalance.lt(0) ? Money.ZERO : runningBalance
       });
     }
 
@@ -1655,17 +1644,17 @@ export class FinancialService {
 
     // Prepare data for CSV
     const csvData = [
-      { Section: 'KPIs', Label: 'Cash in Hand', Value: report.kpis.cashInHand },
-      { Section: 'KPIs', Label: 'Cash in Transit', Value: report.kpis.cashInTransit },
-      { Section: 'KPIs', Label: 'Outstanding Receivables', Value: report.kpis.outstandingReceivables },
-      { Section: 'KPIs', Label: 'Cash Expected', Value: report.kpis.cashExpected },
-      { Section: 'KPIs', Label: 'Total Cash Position', Value: report.kpis.totalCashPosition },
+      { Section: 'KPIs', Label: 'Cash in Hand', Value: Money.toApi(report.kpis.cashInHand) },
+      { Section: 'KPIs', Label: 'Cash in Transit', Value: Money.toApi(report.kpis.cashInTransit) },
+      { Section: 'KPIs', Label: 'Outstanding Receivables', Value: Money.toApi(report.kpis.outstandingReceivables) },
+      { Section: 'KPIs', Label: 'Cash Expected', Value: Money.toApi(report.kpis.cashExpected) },
+      { Section: 'KPIs', Label: 'Total Cash Position', Value: Money.toApi(report.kpis.totalCashPosition) },
       { Section: '---', Label: '---', Value: '---' },
       { Section: 'Forecast (Next 30 Days)', Label: 'Date', Value: 'Projected Balance' },
       ...report.forecast.map(f => ({
         Section: 'Forecast',
         Label: f.date,
-        Value: f.projectedBalance
+        Value: Money.toApi(f.projectedBalance)
       }))
     ];
 
@@ -1706,32 +1695,29 @@ export class FinancialService {
     });
 
     // Create a map for quick lookup
-    const aggregationMap = new Map();
+    const aggregationMap = new Map<number, { debit: Money.Money; credit: Money.Money }>();
     aggregations.forEach(agg => {
       aggregationMap.set(agg.accountId, {
-        debit: this.toNumber(agg._sum.debitAmount),
-        credit: this.toNumber(agg._sum.creditAmount)
+        debit: Money.orZero(agg._sum.debitAmount),
+        credit: Money.orZero(agg._sum.creditAmount)
       });
     });
 
-    const categories: Record<string, { accounts: FinancialStatementAccount[]; total: number }> = {
-      asset: { accounts: [], total: 0 },
-      liability: { accounts: [], total: 0 },
-      equity: { accounts: [], total: 0 },
-      revenue: { accounts: [], total: 0 },
-      expense: { accounts: [], total: 0 }
+    const categories: Record<string, { accounts: FinancialStatementAccount[]; total: Money.Money }> = {
+      asset: { accounts: [], total: Money.ZERO },
+      liability: { accounts: [], total: Money.ZERO },
+      equity: { accounts: [], total: Money.ZERO },
+      revenue: { accounts: [], total: Money.ZERO },
+      expense: { accounts: [], total: Money.ZERO }
     };
 
     // Process accounts using pre-calculated aggregations
     accounts.forEach(account => {
-      const agg = aggregationMap.get(account.id) || { debit: 0, credit: 0 };
+      const agg = aggregationMap.get(account.id) || { debit: Money.ZERO, credit: Money.ZERO };
 
-      let balance = 0;
-      if (account.normalBalance === 'debit') {
-        balance = agg.debit - agg.credit;
-      } else {
-        balance = agg.credit - agg.debit;
-      }
+      const balance = account.normalBalance === 'debit'
+        ? Money.sub(agg.debit, agg.credit)
+        : Money.sub(agg.credit, agg.debit);
 
       const financialAccount = {
         id: account.id,
@@ -1742,16 +1728,16 @@ export class FinancialService {
 
       if (categories[account.accountType]) {
         categories[account.accountType].accounts.push(financialAccount);
-        categories[account.accountType].total += balance;
+        categories[account.accountType].total = Money.add(categories[account.accountType].total, balance);
       }
     });
 
     // Calculate Retained Earnings: Total Revenue - Total Expense (all time up to asOfDate)
-    const retainedEarnings = categories.revenue.total - categories.expense.total;
+    const retainedEarnings = Money.sub(categories.revenue.total, categories.expense.total);
 
     // Equity: System Equity Accounts + Retained Earnings
-    const totalEquity = categories.equity.total + retainedEarnings;
-    const totalLiabilitiesAndEquity = categories.liability.total + totalEquity;
+    const totalEquity = Money.add(categories.equity.total, retainedEarnings);
+    const totalLiabilitiesAndEquity = Money.add(categories.liability.total, totalEquity);
     const totalAssets = categories.asset.total;
 
     return {
@@ -1764,7 +1750,7 @@ export class FinancialService {
         total: totalEquity
       },
       totalLiabilitiesAndEquity,
-      isBalanced: Math.abs(totalAssets - totalLiabilitiesAndEquity) < 0.01
+      isBalanced: Money.sub(totalAssets, totalLiabilitiesAndEquity).abs().lt('0.01')
     } as BalanceSheetData;
   }
 
@@ -1803,35 +1789,32 @@ export class FinancialService {
       }
     });
 
-    const aggregationMap = new Map();
+    const aggregationMap = new Map<number, { debit: Money.Money; credit: Money.Money }>();
     aggregations.forEach(agg => {
       aggregationMap.set(agg.accountId, {
-        debit: this.toNumber(agg._sum.debitAmount),
-        credit: this.toNumber(agg._sum.creditAmount)
+        debit: Money.orZero(agg._sum.debitAmount),
+        credit: Money.orZero(agg._sum.creditAmount)
       });
     });
 
     const result: ProfitLossData = {
       startDate,
       endDate,
-      revenue: { accounts: [], total: 0 },
-      cogs: { accounts: [], total: 0 },
-      expenses: { accounts: [], total: 0 },
-      grossProfit: 0,
+      revenue: { accounts: [], total: Money.ZERO },
+      cogs: { accounts: [], total: Money.ZERO },
+      expenses: { accounts: [], total: Money.ZERO },
+      grossProfit: Money.ZERO,
       grossMarginPercentage: 0,
-      netIncome: 0,
+      netIncome: Money.ZERO,
       netMarginPercentage: 0
     };
 
     accounts.forEach(account => {
-      const agg = aggregationMap.get(account.id) || { debit: 0, credit: 0 };
+      const agg = aggregationMap.get(account.id) || { debit: Money.ZERO, credit: Money.ZERO };
 
-      let balance = 0;
-      if (account.normalBalance === 'debit') {
-        balance = agg.debit - agg.credit;
-      } else {
-        balance = agg.credit - agg.debit;
-      }
+      const balance = account.normalBalance === 'debit'
+        ? Money.sub(agg.debit, agg.credit)
+        : Money.sub(agg.credit, agg.debit);
 
       const financialAccount = {
         id: account.id,
@@ -1842,22 +1825,22 @@ export class FinancialService {
 
       if (account.accountType === 'revenue') {
         result.revenue.accounts.push(financialAccount);
-        result.revenue.total += balance;
+        result.revenue.total = Money.add(result.revenue.total, balance);
       } else if (account.accountType === 'expense') {
         if (account.code === GL_ACCOUNTS.COGS) {
           result.cogs.accounts.push(financialAccount);
-          result.cogs.total += balance;
+          result.cogs.total = Money.add(result.cogs.total, balance);
         } else {
           result.expenses.accounts.push(financialAccount);
-          result.expenses.total += balance;
+          result.expenses.total = Money.add(result.expenses.total, balance);
         }
       }
     });
 
-    result.grossProfit = result.revenue.total - result.cogs.total;
-    result.grossMarginPercentage = result.revenue.total > 0 ? (result.grossProfit / result.revenue.total) * 100 : 0;
-    result.netIncome = result.grossProfit - result.expenses.total;
-    result.netMarginPercentage = result.revenue.total > 0 ? (result.netIncome / result.revenue.total) * 100 : 0;
+    result.grossProfit = Money.sub(result.revenue.total, result.cogs.total);
+    result.grossMarginPercentage = Money.percent(result.grossProfit, result.revenue.total);
+    result.netIncome = Money.sub(result.grossProfit, result.expenses.total);
+    result.netMarginPercentage = Money.percent(result.netIncome, result.revenue.total);
 
     return result;
   }
@@ -1881,14 +1864,14 @@ export class FinancialService {
       agentId: agent.id,
       name: `${agent.firstName} ${agent.lastName}`,
       email: agent.email,
-      balance: this.toNumber(agent.balance?.currentBalance),
+      balance: Money.orZero(agent.balance?.currentBalance),
       buckets: {
-        '0-1 days': this.toNumber(agent.agingBucket?.bucket_0_1),
-        '2-3 days': this.toNumber(agent.agingBucket?.bucket_2_3),
-        '4-7 days': this.toNumber(agent.agingBucket?.bucket_4_7),
-        '8+ days': this.toNumber(agent.agingBucket?.bucket_8_plus),
+        '0-1 days': Money.orZero(agent.agingBucket?.bucket_0_1),
+        '2-3 days': Money.orZero(agent.agingBucket?.bucket_2_3),
+        '4-7 days': Money.orZero(agent.agingBucket?.bucket_4_7),
+        '8+ days': Money.orZero(agent.agingBucket?.bucket_8_plus),
       },
-      totalBalance: this.toNumber(agent.agingBucket?.totalBalance),
+      totalBalance: Money.orZero(agent.agingBucket?.totalBalance),
       oldestCollectionDate: agent.agingBucket?.oldestCollectionDate,
       isBlocked: agent.balance?.isBlocked || false,
     }));

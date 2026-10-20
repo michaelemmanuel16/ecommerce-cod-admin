@@ -1,4 +1,6 @@
+import { Prisma } from '@prisma/client';
 import logger from './logger';
+import * as Money from './money';
 
 /**
  * Supported comparison operators for condition evaluation
@@ -52,6 +54,19 @@ export type Conditions = ConditionGroup;
  */
 
 /**
+ * Compare two numeric values. Money fields from Prisma are Decimal, not number
+ * (a Decimal fails `typeof x === 'number'`), so both kinds are accepted.
+ * Returns null when either side is not a number or a Decimal.
+ */
+function compareNumeric(actual: any, expected: any): number | null {
+  const isNumeric = (v: any) => typeof v === 'number' || Prisma.Decimal.isDecimal(v);
+  if (!isNumeric(actual) || !isNumeric(expected)) return null;
+  // NaN is never greater, less or equal (Money.parse throws on it)
+  if (Number.isNaN(Number(actual)) || Number.isNaN(Number(expected))) return null;
+  return Money.compare(actual, expected);
+}
+
+/**
  * Evaluate a single rule against actual value
  *
  * @param actual - Actual value from context
@@ -62,35 +77,35 @@ export type Conditions = ConditionGroup;
 export function evaluateRule(actual: any, operator: ConditionOperator, expected?: any): boolean {
   try {
     switch (operator) {
-      case 'equals':
+      case 'equals': {
+        if (Prisma.Decimal.isDecimal(actual)) return compareNumeric(actual, expected) === 0;
         return actual === expected;
+      }
 
-      case 'not_equals':
+      case 'not_equals': {
+        if (Prisma.Decimal.isDecimal(actual)) return compareNumeric(actual, expected) !== 0;
         return actual !== expected;
+      }
 
-      case 'greater_than':
-        if (typeof actual !== 'number' || typeof expected !== 'number') {
-          return false;
-        }
-        return actual > expected;
+      case 'greater_than': {
+        const cmp = compareNumeric(actual, expected);
+        return cmp !== null && cmp > 0;
+      }
 
-      case 'less_than':
-        if (typeof actual !== 'number' || typeof expected !== 'number') {
-          return false;
-        }
-        return actual < expected;
+      case 'less_than': {
+        const cmp = compareNumeric(actual, expected);
+        return cmp !== null && cmp < 0;
+      }
 
-      case 'greater_than_or_equal':
-        if (typeof actual !== 'number' || typeof expected !== 'number') {
-          return false;
-        }
-        return actual >= expected;
+      case 'greater_than_or_equal': {
+        const cmp = compareNumeric(actual, expected);
+        return cmp !== null && cmp >= 0;
+      }
 
-      case 'less_than_or_equal':
-        if (typeof actual !== 'number' || typeof expected !== 'number') {
-          return false;
-        }
-        return actual <= expected;
+      case 'less_than_or_equal': {
+        const cmp = compareNumeric(actual, expected);
+        return cmp !== null && cmp <= 0;
+      }
 
       case 'contains':
         if (typeof actual === 'string' && typeof expected === 'string') {

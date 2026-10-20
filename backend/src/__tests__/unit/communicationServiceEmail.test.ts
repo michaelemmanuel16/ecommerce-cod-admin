@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { prismaMock } from '../mocks/prisma.mock';
-import { tenantStorage } from '../../utils/tenantContext';
+import { runInTenant } from '../../utils/tenantContext';
 import { MessageStatus } from '@prisma/client';
 
 // Mock the queue so we assert enqueue calls without Redis; keep the real
@@ -16,7 +16,7 @@ import { communicationService } from '../../services/communicationService';
 
 const mockedEnqueue = enqueueCampaignRecipient as jest.MockedFunction<typeof enqueueCampaignRecipient>;
 
-const withTenant = <T>(fn: () => Promise<T>) => tenantStorage.run({ tenantId: 'tenant-a' }, fn);
+const withTenant = <T>(fn: () => Promise<T>) => runInTenant('tenant-a', fn);
 
 describe('communicationService — bulk email (MAN-83)', () => {
   beforeEach(() => {

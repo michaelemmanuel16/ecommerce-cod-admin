@@ -14,8 +14,10 @@ jest.mock('../../server', () => {
 import { prismaMock } from '../mocks/prisma.mock';
 import { CallService } from '../../services/callService';
 import { AppError } from '../../middleware/errorHandler';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 describe('CallService', () => {
+  useTestTenant();
   let callService: CallService;
 
   beforeEach(() => {

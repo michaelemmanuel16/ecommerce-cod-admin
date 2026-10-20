@@ -3,7 +3,9 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma, AccountType, NormalBalance, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
+import { BALANCE_TOLERANCE } from '../config/glAccounts';
 
 
 interface AccountFilters {
@@ -262,7 +264,7 @@ export class GLService {
 
     // Check balance with 0.01 tolerance for floating-point precision
     const difference = totalDebits.minus(totalCredits).abs();
-    if (difference.greaterThan(new Decimal(0.01))) {
+    if (difference.greaterThan(BALANCE_TOLERANCE)) {
       throw new AppError(
         `Journal entry not balanced. Debits: ${totalDebits.toString()}, Credits: ${totalCredits.toString()}`,
         400,
@@ -384,7 +386,7 @@ export class GLService {
     ]);
 
     // Compute period activity per account when a date range is provided
-    let periodActivityMap: Map<number, { debits: number; credits: number }> | null = null;
+    let periodActivityMap: Map<number, { debits: Money.Money; credits: Money.Money }> | null = null;
     if (startDate || endDate) {
       const dateFilter: Prisma.DateTimeFilter = {};
       if (startDate) dateFilter.gte = new Date(startDate);
@@ -405,8 +407,8 @@ export class GLService {
       periodActivityMap = new Map();
       for (const txn of txns) {
         periodActivityMap.set(txn.accountId, {
-          debits: Number(txn._sum.debitAmount ?? 0),
-          credits: Number(txn._sum.creditAmount ?? 0)
+          debits: Money.orZero(txn._sum.debitAmount),
+          credits: Money.orZero(txn._sum.creditAmount)
         });
       }
     }
@@ -414,7 +416,7 @@ export class GLService {
     const accountsWithActivity = accounts.map(acc => ({
       ...acc,
       periodActivity: periodActivityMap
-        ? (periodActivityMap.get(acc.id) ?? { debits: 0, credits: 0 })
+        ? (periodActivityMap.get(acc.id) ?? { debits: Money.ZERO, credits: Money.ZERO })
         : null
     }));
 
@@ -476,7 +478,7 @@ export class GLService {
 
     // Check if code already exists
     const existing = await prisma.account.findUnique({
-      where: { code }
+      where: { tenantId_code: { tenantId: resolveTenantId(), code } }
     });
 
     if (existing) {
@@ -533,6 +535,7 @@ export class GLService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(account.tenantId),
         userId: requester?.id,
         action: 'create_account',
         resource: 'account',
@@ -620,6 +623,7 @@ export class GLService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(updated.tenantId),
         userId: requester?.id,
         action: 'update_account',
         resource: 'account',
@@ -684,6 +688,7 @@ export class GLService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(account.tenantId),
         userId: requester?.id,
         action: 'delete_account',
         resource: 'account',
@@ -723,6 +728,7 @@ export class GLService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(updated.tenantId),
         userId: requester?.id,
         action: 'toggle_account_status',
         resource: 'account',
@@ -828,6 +834,7 @@ export class GLService {
       // Create audit log
       await tx.auditLog.create({
         data: {
+          tenantId: resolveTenantId(entry.tenantId),
           userId: requester?.id,
           action: 'create_journal_entry',
           resource: 'journal_entry',
@@ -1082,6 +1089,7 @@ export class GLService {
       // Create audit log
       await tx.auditLog.create({
         data: {
+          tenantId: resolveTenantId(entry.tenantId),
           userId: requester?.id,
           action: 'void_journal_entry',
           resource: 'journal_entry',
@@ -1333,9 +1341,9 @@ export class GLService {
           EntryNumber: t.journalEntry.entryNumber,
           Description: t.description || t.journalEntry.description,
           Source: t.journalEntry.sourceType,
-          Debit: t.debitAmount.toNumber(),
-          Credit: t.creditAmount.toNumber(),
-          RunningBalance: t.runningBalance.toNumber()
+          Debit: Money.toApi(t.debitAmount),
+          Credit: Money.toApi(t.creditAmount),
+          RunningBalance: Money.toApi(t.runningBalance)
         }));
 
         allData = allData.concat(mappedChunk);

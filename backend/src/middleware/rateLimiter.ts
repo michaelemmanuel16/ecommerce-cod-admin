@@ -59,10 +59,17 @@ export const healthLimiter = rateLimit({
   ...commonSettings
 });
 
-// Prevent brute force order tracking lookups (very restrictive)
-export const publicOrderLimiter = rateLimit({
+// Public, unauthenticated lookups: cap each IP at 30 per 15 minutes (very restrictive).
+// Each limiter is its own instance, so one endpoint's traffic never uses up another's budget.
+const publicLookupLimiter = (message: string) => rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: isDevelopment ? 5000 : 30, // Relaxed for development
-  message: { message: 'Too many order tracking attempts. Please try again later.' },
+  message: { message },
   ...commonSettings
 });
+
+// Prevent brute force order tracking lookups
+export const publicOrderLimiter = publicLookupLimiter('Too many order tracking attempts. Please try again later.');
+
+// Digital download links are guessable only by token, but a leaked link can be hammered
+export const publicDownloadLimiter = publicLookupLimiter('Too many download attempts. Please try again later.');

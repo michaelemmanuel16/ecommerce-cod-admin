@@ -4,7 +4,8 @@ import { verifyAccessToken } from '../utils/jwt';
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { tenantStorage, getTenantId } from '../utils/tenantContext';
+import { enterTenant, getTenantId, withoutTenant } from '../utils/tenantContext';
+import { isPlatformAdmin } from '../utils/platformAdmin';
 
 // Per-tenant cache for role permissions to avoid database hits on every request.
 // Keyed by tenantId to prevent cross-tenant permission leakage.
@@ -158,8 +159,24 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
     try {
       const decoded = verifyAccessToken(token);
       req.user = decoded;
-      // Propagate tenantId into AsyncLocalStorage so Prisma extension can scope queries
-      tenantStorage.run({ tenantId: decoded.tenantId ?? null }, next);
+      if (decoded.tenantId) {
+        // Propagate tenantId into AsyncLocalStorage so Prisma extension can scope queries
+        enterTenant(decoded.tenantId, next);
+        return;
+      }
+      // No tenant in the JWT: only a platform admin may continue (no tenant, on purpose).
+      // Everyone else gets 403 instead of an unscoped context.
+      isPlatformAdmin(decoded.id).then((isAdmin) => {
+        if (!isAdmin) {
+          res.status(403).json({ error: 'Forbidden: account has no tenant' });
+          return;
+        }
+        req.isPlatformAdmin = true;
+        withoutTenant('platform-admin', () => next());
+      }).catch((err) => {
+        logger.error('[AuthMiddleware] Tenant-less user check failed:', err);
+        res.status(500).json({ error: 'Internal application error' });
+      });
     } catch (jwtError: any) {
       logger.info(`[AuthMiddleware] JWT Verification Failed for ${req.method} ${req.path}:`, jwtError.message);
 
@@ -168,6 +185,12 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
           error: 'Token format outdated. Please log in again.',
           code: 'TOKEN_FORMAT_OUTDATED'
         });
+        return;
+      }
+
+      // Same status and message as before; the code lets clients tell "expired" from "bad signature"
+      if (jwtError.name === 'TokenExpiredError') {
+        res.status(401).json({ error: 'Invalid token', code: 'TOKEN_EXPIRED' });
         return;
       }
 

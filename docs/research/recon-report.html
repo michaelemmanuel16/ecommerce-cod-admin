@@ -1,0 +1,281 @@
+<title>CodAdmin Recon</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column (~860px), full-width tables in scroll boxes, the COD loop as a wrapped flow of stage tiles. */
+:root{
+  --bg:#f4f6f5; --surface:#ffffff; --ink:#15211f; --muted:#5b6b67; --line:#d9e0de;
+  --accent:#0d6b62; --accent-soft:#e2f1ee; --mark:#b7791f;
+  --ok:#1f7a45; --ok-bg:#e3f3e9; --warn:#9a6a00; --warn-bg:#fbf0d6; --bad:#b3261e; --bad-bg:#fbe5e3; --na:#6b7280; --na-bg:#eceff0;
+  --display:"Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --body:"Public Sans", "Segoe UI", system-ui, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1716; --surface:#16211f; --ink:#e6eeec; --muted:#9aaba7; --line:#2a3836;
+  --accent:#4fc1b2; --accent-soft:#183531; --mark:#e0a94a;
+  --ok:#6fd39a; --ok-bg:#163526; --warn:#e8c35c; --warn-bg:#3a3012; --bad:#ff8a80; --bad-bg:#3d1c1a; --na:#a3adb0; --na-bg:#232d2f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1716; --surface:#16211f; --ink:#e6eeec; --muted:#9aaba7; --line:#2a3836;
+  --accent:#4fc1b2; --accent-soft:#183531; --mark:#e0a94a;
+  --ok:#6fd39a; --ok-bg:#163526; --warn:#e8c35c; --warn-bg:#3a3012; --bad:#ff8a80; --bad-bg:#3d1c1a; --na:#a3adb0; --na-bg:#232d2f; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font:400 16px/1.6 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:40px 64px}
+.wrap{max-width:880px;margin:0 auto;display:grid;gap:48px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(2rem,5vw,2.9rem);font-weight:700;letter-spacing:-.01em}
+h2{font-size:1.6rem;font-weight:700}
+h3{font-size:1.15rem;font-weight:700}
+p{margin:0;max-width:68ch}
+section{display:grid;gap:16px;min-width:0}
+.eyebrow{font:500 .75rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.lede{font-size:1.1rem;color:var(--muted)}
+.meta{font:400 .85rem/1.5 var(--mono);color:var(--muted)}
+ul,ol{margin:0;padding-left:1.25em;display:grid;gap:6px}
+code,.mono{font-family:var(--mono);font-size:.88em}
+a{color:var(--accent)}
+.bottom{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 22px;display:grid;gap:10px}
+.bottom li::marker{color:var(--mark)}
+/* COD loop */
+.loop{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;counter-reset:st}
+.loop li{counter-increment:st;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px;display:grid;gap:6px;align-content:start;position:relative}
+.loop li::before{content:counter(st);font:500 .72rem/1 var(--mono);color:var(--muted)}
+.loop b{font-family:var(--display);font-size:1rem}
+.loop small{color:var(--muted);font-size:.82rem;line-height:1.4}
+.chip{display:inline-block;font:500 .72rem/1 var(--mono);padding:4px 7px;border-radius:999px;white-space:nowrap;justify-self:start}
+.ok{background:var(--ok-bg);color:var(--ok)} .part{background:var(--warn-bg);color:var(--warn)} .no{background:var(--bad-bg);color:var(--bad)} .na{background:var(--na-bg);color:var(--na)}
+/* competitor cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;display:grid;gap:10px;align-content:start;min-width:0}
+.card .price{font:500 .85rem/1.5 var(--mono);color:var(--ink);background:var(--accent-soft);border-radius:6px;padding:8px 10px}
+.card dl{margin:0;display:grid;gap:8px}
+.card dt{font:500 .72rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.card dd{margin:0;font-size:.92rem}
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:.9rem}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+thead th{font:500 .72rem/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--bg)}
+tbody tr:last-child td{border-bottom:0}
+td:first-child{font-weight:600}
+td.us{background:var(--accent-soft)}
+.num{font-variant-numeric:tabular-nums}
+.risk{display:grid;gap:10px;list-style:none;padding:0}
+.risk li{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:grid;gap:10px;align-content:start;min-width:0}
+.note{font-size:.9rem;color:var(--muted)}
+footer{border-top:1px solid var(--line);padding-top:16px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<main class="wrap">
+
+<header style="display:grid;gap:14px">
+  <span class="eyebrow">MD Solutions · CodAdmin · research before the rebuild</span>
+  <h1>What COD sellers use, and where CodAdmin stands</h1>
+  <p class="lede">We studied 3 competitors (Sniper, SalesGee, SalesUnbox), the CodAdmin code, the open Linear issues and the E-Myth books. This page shows what we found. It is the input for the CodAdmin build plan.</p>
+  <p class="meta">17 Oct 2026 · Evidence: codadmin/docs/research/ · 177 screenshots · every key claim checked in fact-check.md</p>
+</header>
+
+<section>
+  <span class="eyebrow">Bottom line</span>
+  <div class="bottom">
+    <ul>
+      <li><b>Sniper is the real benchmark.</b> It covers the full cash-on-delivery loop and adds strong finance and fraud controls. It costs ₦12,000–₦15,000 a month.</li>
+      <li><b>No competitor connects to couriers, and no competitor has a working AI agent.</b> Sniper shows an "AI Sales Rep" in its menu, but it is not built. These are the two clear gaps CodAdmin can take.</li>
+      <li><b>CodAdmin already has most of the core loop.</b> Orders, forms, Paystack, agent stock, agent cash collection and accounting all exist.</li>
+      <li><b>But CodAdmin is not safe to sell yet.</b> Unpaid tenants can use it, the accounts are not split per business, and 12 data tables are not split per business.</li>
+      <li><b>Finished work is stuck on branches.</b> The order state machine and multi-store were built but never merged.</li>
+      <li><b>Nothing in CodAdmin covers goals, targets, ad spend or team accountability.</b> These are the E-Myth areas the owner asked for.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">The loop every COD business runs</span>
+  <h2>8 stages from ad to profit, and CodAdmin's coverage today</h2>
+  <p>Each tile is one stage. The chip shows what CodAdmin does at that stage today.</p>
+  <ol class="loop">
+    <li><b>Ad and lead</b><small>Ad spend, clicks, form fills</small><span class="chip no">missing: no ad spend</span></li>
+    <li><b>Order form</b><small>Form, embed, upsells, pixel</small><span class="chip ok">works</span></li>
+    <li><b>Confirm by call</b><small>Assign rep, call, follow up</small><span class="chip part">partial: no follow-up queue</span></li>
+    <li><b>Stock to agent</b><small>Office stock moves to agent</small><span class="chip part">partial: office stock has no history</span></li>
+    <li><b>Deliver</b><small>Agent or courier delivers</small><span class="chip part">partial: no courier link</span></li>
+    <li><b>Cash with agent</b><small>Agent holds the COD cash</small><span class="chip ok">works: aging buckets</span></li>
+    <li><b>Remit to bank</b><small>Deposit, verify, reconcile</small><span class="chip ok">works</span></li>
+    <li><b>Profit and goals</b><small>P&amp;L, targets, owner view</small><span class="chip part">partial: 4 revenue formulas, no goals</span></li>
+  </ol>
+</section>
+
+<section>
+  <span class="eyebrow">The competitors</span>
+  <h2>Three tools, three different shapes</h2>
+  <div class="cards">
+    <article class="card">
+      <h3>Sniper <span class="meta">sniper.ng</span></h3>
+      <div class="price">Basic ₦12,000/mo · Big Boss ₦15,000/mo · Enterprise ₦2.5M once</div>
+      <dl>
+        <div><dt>What it is</dt><dd>A COD operations app. 152 menu items. Built with Lovable and Supabase.</dd></div>
+        <div><dt>Strongest</dt><dd>Agent cash float flagged after 48 hours, remittance matched to the bank, full statements, payroll, 7 fraud controls, 9 roles that can hide profit and customer data.</dd></div>
+        <div><dt>Weak</dt><dd>No courier link. AI Sales Rep not built. Ad ROI is split by spend share, so it is an estimate. Very dense screens.</dd></div>
+      </dl>
+    </article>
+    <article class="card">
+      <h3>SalesGee <span class="meta">getsalesgee.com</span></h3>
+      <div class="price">Scale ₦12,500/mo · Platinum ₦20,000/mo · Enterprise ₦1.5M/yr · homepage also advertises a free plan</div>
+      <dl>
+        <div><dt>What it is</dt><dd>A WordPress plugin with a React screen. Orders, reps, agent stock by waybill, staff targets.</dd></div>
+        <div><dt>Strongest</dt><dd>Simple order flow with 13 call-centre statuses, staff targets and a leaderboard, form editor with live preview.</dd></div>
+        <div><dt>Weak</dt><dd>Remittance is typed in by hand per order. Only one fraud check (same-day duplicate). No AI. No page links (no back button).</dd></div>
+      </dl>
+    </article>
+    <article class="card">
+      <h3>SalesUnbox <span class="meta">salesunbox.africa</span></h3>
+      <div class="price">Each module ₦30k / ₦60k / ₦150k per month · Store ₦5k / ₦12k per month</div>
+      <dl>
+        <div><dt>What it is</dt><dd>A general suite for Nigerian SMEs: inventory, CRM, accounting, online store. Says it has more than 5,000 businesses.</dd></div>
+        <div><dt>Strongest</dt><dd>Real double-entry accounting and multi-location stock.</dd></div>
+        <div><dt>Weak</dt><dd>No COD flow, no call centre, no agent cash, no fraud checks. Not a direct competitor.</dd></div>
+      </dl>
+    </article>
+  </div>
+  <p class="note">No public reviews or complaints exist for any of the three. Sniper and SalesGee have very small social followings.</p>
+</section>
+
+<section>
+  <span class="eyebrow">Feature by feature</span>
+  <h2>Who does what</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Feature</th><th>Sniper</th><th>SalesGee</th><th>SalesUnbox</th><th>CodAdmin today</th></tr></thead>
+      <tbody>
+        <tr><td>Order form and embed</td><td>Yes, with upsells</td><td>Yes, live preview</td><td>Online store</td><td class="us"><span class="chip ok">works</span> forms, embed, upsells, pixel and CAPI</td></tr>
+        <tr><td>Save half-filled forms</td><td>Yes (captures as people type)</td><td>Claimed, not seen</td><td>Not found</td><td class="us"><span class="chip part">partial</span> only unpaid Paystack checkouts</td></tr>
+        <tr><td>Fair order assignment</td><td>Round-robin</td><td>Round-robin and product rules</td><td>No</td><td class="us"><span class="chip ok">works</span> round-robin and weighted</td></tr>
+        <tr><td>Call-centre statuses and follow-ups</td><td>16 statuses plus custom tabs</td><td>13 statuses, follow-up lists</td><td>No</td><td class="us"><span class="chip part">partial</span> call log, no follow-up queue</td></tr>
+        <tr><td>Stock with agents</td><td>Yes, per variant</td><td>Yes, by waybill</td><td>Multi-location</td><td class="us"><span class="chip ok">works</span> agent stock ledger</td></tr>
+        <tr><td>Office stock history</td><td>Yes, plus blind audit</td><td>Stock record</td><td>Audit trail</td><td class="us"><span class="chip no">missing</span> stock is overwritten</td></tr>
+        <tr><td>Agent cash and remittance</td><td>Float, 48 h flag, bank match</td><td>Typed in per order</td><td>No</td><td class="us"><span class="chip ok">works</span> collect, verify, deposit, reconcile</td></tr>
+        <tr><td>Courier connection</td><td>"Coming soon"</td><td>No</td><td>Fez only</td><td class="us"><span class="chip no">missing</span> (Logiswift sync runs outside the app)</td></tr>
+        <tr><td>Financial statements</td><td>Income, cash flow, balance sheet</td><td>Income and expenses only</td><td>Full double-entry</td><td class="us"><span class="chip part">partial</span> full ledger, but not split per business</td></tr>
+        <tr><td>Payroll and commission</td><td>Payroll, loans, tax</td><td>Salary plus targets</td><td>Not found</td><td class="us"><span class="chip part">partial</span> rep commission and payouts</td></tr>
+        <tr><td>Fraud controls</td><td>7 controls, blacklist, IP ban</td><td>Same-day duplicate only</td><td>None</td><td class="us"><span class="chip no">missing</span> only duplicate check on imports</td></tr>
+        <tr><td>Roles and data hiding</td><td>9 roles, hide profit and customers</td><td>8 roles plus custom</td><td>Not seen</td><td class="us"><span class="chip part">partial</span> 7 fixed roles with a matrix</td></tr>
+        <tr><td>Ad spend and ROAS</td><td>Pulls spend; estimate by share</td><td>Campaign tracking</td><td>No</td><td class="us"><span class="chip no">missing</span></td></tr>
+        <tr><td>Goals and staff targets</td><td>Staff targets</td><td>Targets and leaderboard</td><td>No</td><td class="us"><span class="chip no">missing</span></td></tr>
+        <tr><td>WhatsApp, SMS, email</td><td>Yes</td><td>SMS, email; WhatsApp soon</td><td>SMS; WhatsApp not yet</td><td class="us"><span class="chip ok">works</span> WhatsApp Cloud API, SMS, email</td></tr>
+        <tr><td>Multi-store</td><td>Branches and countries</td><td>Platinum plan</td><td>Multi-location</td><td class="us"><span class="chip part">built, not merged</span></td></tr>
+        <tr><td>AI agent</td><td>Menu item, not built</td><td>No</td><td>No</td><td class="us"><span class="chip part">partial</span> 14 MCP tools, 1 can make changes</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Numbers worth tracking</span>
+  <h2>KPIs that fit a COD business</h2>
+  <p>Sniper uses "realised" numbers: money counts only when the order is delivered and the cash is collected. These are the most useful ones we found.</p>
+  <div class="two">
+    <div class="box"><h3>Money</h3><ul>
+      <li>Realised revenue: delivered and settled orders only</li>
+      <li>Cash in the field: delivered, not yet paid in</li>
+      <li>Revenue leak: unremitted cash, returns, cancelled after confirmation</li>
+      <li>Contribution margin after delivery fees and returns</li>
+    </ul></div>
+    <div class="box"><h3>Marketing and sales</h3><ul>
+      <li>Cost per delivered order (ad spend ÷ delivered orders)</li>
+      <li>Realised ROAS (realised revenue ÷ ad spend)</li>
+      <li>Confirmation rate per rep</li>
+      <li>Customer trust score: delivered ÷ all orders for that phone</li>
+    </ul></div>
+    <div class="box"><h3>Delivery</h3><ul>
+      <li>Delivery rate per agent, product and state</li>
+      <li>Return rate per agent</li>
+      <li>Days from dispatch to delivery</li>
+      <li>Failed delivery reasons</li>
+    </ul></div>
+    <div class="box"><h3>Team</h3><ul>
+      <li>Staff cost per order</li>
+      <li>Performance against target</li>
+      <li>Orders handled and delivered per staff member</li>
+    </ul></div>
+  </div>
+  <p class="note">Note: CodAdmin's delivery rate today divides orders delivered in the period by orders created in the period. SalesGee makes the same mistake. The rebuild must use one formula everywhere.</p>
+</section>
+
+<section>
+  <span class="eyebrow">CodAdmin today</span>
+  <h2>What must be fixed before anything new</h2>
+  <ul class="risk">
+    <li><span class="chip no">high</span><div><b>Unpaid tenants can use the app.</b> No check blocks suspended or unpaid businesses. Order and user limits are only displayed.</div></li>
+    <li><span class="chip no">high</span><div><b>Accounts are not split per business.</b> Account codes are unique across the whole app, and new businesses get no chart of accounts.</div></li>
+    <li><span class="chip no">high</span><div><b>12 tables have no business ID.</b> For example agent cash collections, deposits, payouts and calls.</div></li>
+    <li><span class="chip no">high</span><div><b>The repo and the live database do not match.</b> 3 migrations are empty placeholders. The changes were made by hand.</div></li>
+    <li><span class="chip part">medium</span><div><b>Money is stored two ways.</b> Orders use decimal numbers that can round; the ledger uses exact numbers.</div></li>
+    <li><span class="chip part">medium</span><div><b>Revenue has 4 formulas on different screens.</b></div></li>
+    <li><span class="chip part">medium</span><div><b>Finished work sits on branches.</b> The order state machine is on a branch on the Mac only, 5 months old and never pushed. Multi-store is on 3 GitHub branches, 3 months old and not merged.</div></li>
+    <li><span class="chip part">medium</span><div><b>Workflows skip the rules.</b> Two workflow actions change orders directly, so stock and ledger entries are not made.</div></li>
+  </ul>
+</section>
+
+<section>
+  <span class="eyebrow">E-Myth</span>
+  <h2>How the book maps to the app</h2>
+  <p>Gerber's model: a business is a system that runs without the owner. Marketing makes leads, sales converts them, operations fulfils them, and finance supports all three. Every role gets a written contract before anyone is hired. Every system gets its own numbers.</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>E-Myth area</th><th>App section (proposal)</th><th>What it tracks</th><th>CodAdmin today</th></tr></thead>
+      <tbody>
+        <tr><td>Primary Aim, Strategic Objective</td><td>Goals</td><td>Vision, yearly and monthly targets, quarterly review</td><td class="us"><span class="chip no">missing</span></td></tr>
+        <tr><td>Lead generation</td><td>Marketing</td><td>Ad spend, cost per lead, cost per delivered order</td><td class="us"><span class="chip no">missing</span></td></tr>
+        <tr><td>Lead conversion</td><td>Sales and call centre</td><td>Confirmation rate, time to first call, follow-ups</td><td class="us"><span class="chip part">partial</span></td></tr>
+        <tr><td>Client fulfilment</td><td>Stock and delivery</td><td>Delivery rate, returns, stock-outs, days to deliver</td><td class="us"><span class="chip part">partial</span></td></tr>
+        <tr><td>Finance</td><td>Money</td><td>Cash in field, remittance, profit, break-even</td><td class="us"><span class="chip part">partial</span></td></tr>
+        <tr><td>Wild cards</td><td>Risk and fraud</td><td>Fake orders, blacklist, unremitted cash</td><td class="us"><span class="chip no">missing</span></td></tr>
+        <tr><td>Re-conversion</td><td>Repeat customers</td><td>Repeat rate, orders per customer</td><td class="us"><span class="chip part">partial</span></td></tr>
+        <tr><td>Organisation and people</td><td>Team</td><td>Org chart, role contracts, tasks, targets per person</td><td class="us"><span class="chip part">partial</span> roles only</td></tr>
+        <tr><td>Systems and manuals</td><td>Playbooks</td><td>SOPs and scripts per role; AI agents own a system like a person</td><td class="us"><span class="chip no">missing</span></td></tr>
+        <tr><td>Quantification</td><td>Dashboards and reports</td><td>3 levels: strategic (quarterly), business (daily/weekly), system (live)</td><td class="us"><span class="chip part">partial</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Linear</span>
+  <h2>36 open issues, all older than 60 days</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Project</th><th class="num">Open</th><th>State</th><th>Recommendation (needs your OK)</th></tr></thead>
+      <tbody>
+        <tr><td>Future Backlog</td><td class="num">11</td><td>Ideas, no schedule</td><td>Fold the useful ones into the new plan; close the rest</td></tr>
+        <tr><td>Embed Widget + Paystack</td><td class="num">9</td><td>47% done</td><td>Keep subscription work (MAN-68–74) for the "safe to sell" milestone; MAN-62/63 are deploy tasks</td></tr>
+        <tr><td>Platform Launch</td><td class="num">8</td><td>70% done</td><td>Close MAN-64 (skins were dropped in June)</td></tr>
+        <tr><td>Multi-Store Per Login</td><td class="num">6</td><td>75% done</td><td>Decide: merge the branches or rebuild inside the new plan</td></tr>
+        <tr><td>Financial Management</td><td class="num">2</td><td>87% done</td><td>Keep MAN-19, MAN-20; merge MAN-42 into MAN-20</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Nothing in Linear changes until you approve a keep, merge and close list.</p>
+</section>
+
+<section>
+  <span class="eyebrow">Corrections and limits</span>
+  <h2>What we fixed and what we could not see</h2>
+  <ul>
+    <li>A first search said Sniper prices were in US dollars. That came from old page code. The live prices are in naira.</li>
+    <li>The code audit said the MCP server has 13 tools. It has 14.</li>
+    <li>SalesGee's homepage advertises a free plan, but the app's own plan list has no free plan.</li>
+    <li>Not seen: staff and driver logins at Sniper, SalesGee's real server (the demo is offline mock data), and the SalesUnbox app behind its login.</li>
+    <li>Nothing was submitted, saved or deleted on any competitor site.</li>
+  </ul>
+</section>
+
+<footer class="meta">
+  Sources: competitors/sniper/findings.md · competitors/salesgee/findings.md · competitors/salesunbox/findings.md · competitors/public/findings.md · codebase-audit.md · linear-audit.md · emyth-framework.md · fact-check.md
+</footer>
+
+</main>

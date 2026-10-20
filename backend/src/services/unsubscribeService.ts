@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { getBackendUrl } from '../utils/url';
+import { runInTenantOf, withoutTenant } from '../utils/tenantContext';
 import { appendUnsubscribeFooter } from './emailTemplateService';
 
 /**
@@ -63,18 +64,20 @@ export async function ensureUnsubscribeToken(
 }
 
 /**
- * Look up a customer by unsubscribe token. Unscoped on purpose — the token is
+ * Look up a customer by unsubscribe token (withoutTenant). Unscoped on purpose — the token is
  * globally unique + random, and the public routes carry no tenant context.
  * Returns null for an unknown/forged/empty token.
  */
 export async function findCustomerByUnsubscribeToken(
   token: string,
-): Promise<{ id: number; emailOptOut: boolean } | null> {
+): Promise<{ id: number; emailOptOut: boolean; tenantId: string | null } | null> {
   if (!token) return null;
-  return prisma.customer.findUnique({
-    where: { unsubscribeToken: token },
-    select: { id: true, emailOptOut: true },
-  });
+  return withoutTenant('unsubscribe', () =>
+    prisma.customer.findUnique({
+      where: { unsubscribeToken: token },
+      select: { id: true, emailOptOut: true, tenantId: true },
+    })
+  );
 }
 
 /**
@@ -87,10 +90,14 @@ export async function optOutByUnsubscribeToken(token: string): Promise<boolean> 
   const customer = await findCustomerByUnsubscribeToken(token);
   if (!customer) return false;
   if (!customer.emailOptOut) {
-    await prisma.customer.update({
-      where: { id: customer.id },
-      data: { emailOptOut: true },
-    });
+    // The token gave us the tenant: the write itself is scoped to it
+    const optOut = () =>
+      prisma.customer.update({
+        where: { id: customer.id },
+        data: { emailOptOut: true },
+      });
+    // A legacy NULL-tenant customer must still be able to unsubscribe
+    await runInTenantOf(customer.tenantId, 'unsubscribe', optOut);
     logger.info('Customer unsubscribed from email', { customerId: customer.id });
   }
   return true;

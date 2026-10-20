@@ -10,6 +10,7 @@ import {
 } from '../services/platformPaystackService';
 import { bindSubscription } from '../services/platformBillingService';
 import logger from '../utils/logger';
+import * as Money from '../utils/money';
 
 /**
  * GET /api/billing/plans — list all active plans (public)
@@ -95,7 +96,7 @@ export const startSubscription = async (req: AuthRequest, res: Response, next: N
     if (!email) throw new AppError('User email required', 400);
 
     // Amount is server-computed from the Plan row — never trusted from the client.
-    const amountMinor = Math.round(Number(plan.priceNGN) * 100);
+    const amountMinor = Money.toMinor(plan.priceNGN);
     const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/settings/billing/callback`;
 
     const result = await platformPaystackService.initializeSubscriptionTransaction(

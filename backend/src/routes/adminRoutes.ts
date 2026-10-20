@@ -4,16 +4,16 @@ import { authenticate, requireSuperAdmin, requirePermission } from '../middlewar
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 const router = Router();
 
-// Public Configuration (No auth required)
-router.get('/config', adminController.getPublicConfig);
+// Public Configuration (No auth required). Needs ?tenant=<slug> or ?form=<form slug>;
+// returns only that tenant's business name and currency. 404 without a known slug.
+router.get('/config', adminController.getPublicConfigBySlug);
 
 router.use(authenticate);
 router.use(tenantRateLimiter);
 
 // Authenticated tenant config — same public-safe shape as /config, but the JWT
 // gives us tenant context so the caller gets THEIR tenant's currency/business
-// name (the public /config route is tenant-blind and falls back to the global
-// USD row). Available to every authenticated role, not just super_admin.
+// name. Available to every authenticated role, not just super_admin.
 router.get('/config/me', adminController.getPublicConfig);
 
 // System Configuration

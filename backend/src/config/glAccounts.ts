@@ -12,6 +12,8 @@
  * - Expenses: 5000-5999
  */
 
+import { Prisma } from '@prisma/client';
+
 export const GL_ACCOUNTS = {
   // Asset Accounts (1000-1999)
   CASH_IN_TRANSIT: '1015',           // Cash from delivered orders (with delivery agents)
@@ -59,6 +61,9 @@ export const GL_DEFAULTS = {
   DEFAULT_RETURN_PROCESSING_FEE: 0,
 } as const;
 
+/** Largest debit/credit imbalance a journal entry may carry (rounding noise). */
+export const BALANCE_TOLERANCE = new Prisma.Decimal('0.01');
+
 /**
  * Validate that all GL account codes are configured
  * Should be called at application startup to ensure accounts exist
@@ -92,3 +97,33 @@ export function validateGLAccountCodes(): void {
 export function getAccountCode(key: keyof typeof GL_ACCOUNTS): string {
   return GL_ACCOUNTS[key];
 }
+
+type DefaultGLAccount = {
+  code: string;
+  name: string;
+  accountType: 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
+  normalBalance: 'debit' | 'credit';
+};
+
+/**
+ * The chart of accounts every tenant needs. One row per GL_ACCOUNTS code.
+ * Created per tenant by seedTenantDefaults.
+ */
+export const DEFAULT_GL_ACCOUNTS: readonly DefaultGLAccount[] = [
+  { code: GL_ACCOUNTS.CASH_IN_HAND, name: 'Cash in Hand', accountType: 'asset', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.CASH_IN_TRANSIT, name: 'Cash in Transit', accountType: 'asset', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.AR_AGENTS, name: 'Accounts Receivable - Agents', accountType: 'asset', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.INVENTORY, name: 'Inventory', accountType: 'asset', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.PAYSTACK_RECEIVABLE, name: 'Paystack Receivable', accountType: 'asset', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.PRODUCT_REVENUE, name: 'Product Sales Revenue', accountType: 'revenue', normalBalance: 'credit' },
+  { code: GL_ACCOUNTS.DIGITAL_REVENUE, name: 'Digital Product Revenue', accountType: 'revenue', normalBalance: 'credit' },
+  { code: GL_ACCOUNTS.COGS, name: 'Cost of Goods Sold', accountType: 'expense', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.PAYSTACK_FEES, name: 'Paystack Transaction Fees', accountType: 'expense', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE, name: 'Failed Delivery Expense', accountType: 'expense', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE, name: 'Return Processing Expense', accountType: 'expense', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION, name: 'Delivery Agent Commission', accountType: 'expense', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.SALES_REP_COMMISSION, name: 'Sales Rep Commission', accountType: 'expense', normalBalance: 'debit' },
+  { code: GL_ACCOUNTS.COMMISSIONS_PAYABLE, name: 'Commissions Payable', accountType: 'liability', normalBalance: 'credit' },
+  { code: GL_ACCOUNTS.REFUND_LIABILITY, name: 'Refund Liability', accountType: 'liability', normalBalance: 'credit' },
+  { code: GL_ACCOUNTS.OPERATING_EXPENSE, name: 'Operating Expenses', accountType: 'expense', normalBalance: 'debit' },
+];

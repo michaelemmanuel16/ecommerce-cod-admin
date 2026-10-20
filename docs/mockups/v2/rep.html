@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CodAdmin Call Rep</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+/* Call rep screen. Built only from app.css tokens. Role-limited shell: five pages, one view at a time. */
+body{min-height:100vh}
+.content{padding:26px 28px 70px}
+.bar2{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;padding:14px 28px;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.bar2 .logo{width:32px;height:32px;border-radius:10px;display:none}
+.bar2 .who2{line-height:1.2}
+.bar2 .who2 b{font-family:"Bricolage Grotesque";font-size:17px;font-weight:800;display:block}
+.bar2 .who2 small{color:var(--ink-3);font-size:12.5px}
+.bar2 .sp{flex:1}
+.bar2 .back{display:inline-flex;gap:6px;align-items:center;color:var(--pine);font-weight:600;text-decoration:none;font-size:13px}
+.sub{color:var(--ink-2);font-size:13px}
+.muted{color:var(--ink-3);font-size:12.5px}
+.row{display:flex;align-items:center;gap:10px}
+.sp{margin-left:auto}
+.pad{padding:16px 18px}
+.sec{margin-top:16px}
+.view{display:none}.view.on{display:block}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+.head h1{font-size:30px;font-weight:800;line-height:1.1}
+.head p{color:var(--ink-2);margin-top:4px}
+
+/* today */
+.today{display:grid;grid-template-columns:1.1fr 1.5fr;gap:16px}
+.hero{padding:22px;background:radial-gradient(120% 120% at 0% 0%,var(--pine-2),var(--pine));color:#fff;border-radius:20px}
+[data-theme="dark"] .hero{color:#04211d}
+.hero small{opacity:.85;font-weight:600}
+.hero .big{font-size:52px;font-weight:800;line-height:1;margin:8px 0 4px}
+.hero .big .of2{font-size:22px;font-weight:600;opacity:.8}
+.hero .bar{height:8px;margin-top:14px}
+.hero .of{opacity:.9;font-size:13px;margin-top:8px}
+.rew{padding:18px 20px}
+.rew h3{font-size:16px}
+.tier{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.tier div{border:1px solid var(--line);border-radius:12px;padding:8px 6px;text-align:center;font-size:12px;color:var(--ink-3)}
+.tier div b{display:block;font-family:"Bricolage Grotesque";font-size:15px;color:var(--ink)}
+.tier .got{background:var(--mint-soft);border-color:transparent}
+.tier .next{border-color:var(--pine);box-shadow:0 0 0 3px var(--pine-soft)}
+.tkpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+.tk{padding:14px 16px}
+.tk small{color:var(--ink-2);font-weight:500;display:block}
+.tk .v{font-family:"Bricolage Grotesque";font-size:28px;font-weight:700;line-height:1.15;margin-top:4px}
+.tk .s{font-size:12.5px;color:var(--ink-3);margin-top:2px}
+
+/* insights */
+.ins2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.ins2 .insight{background:var(--card);box-shadow:var(--shadow)}
+
+/* work area */
+.work{display:grid;grid-template-columns:minmax(340px,440px) 1fr;gap:16px;align-items:start}
+.qtabs{display:flex;gap:2px;padding:12px 10px;border-bottom:1px solid var(--line);overflow:auto;scrollbar-width:none}
+.qtabs::-webkit-scrollbar{display:none}
+.qtabs .tab{flex:none;padding:7px 9px;gap:5px}
+.find{display:flex;align-items:center;gap:10px;padding:9px 14px;margin:12px 14px 0;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink-3)}
+.find input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:500 14px "Plus Jakarta Sans";outline:0}
+.qlist{padding:6px 0}
+.qi{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;border-left:3px solid transparent}
+.qi:last-child{border-bottom:0}
+.qi:hover{background:var(--hover)}
+.qi.sel{background:var(--pine-soft);border-left-color:var(--pine)}
+.wt{flex:none;width:84px;white-space:nowrap;text-align:center;border-radius:12px;padding:6px 4px;background:var(--hover)}
+.wt small{display:block;font-size:11px;color:var(--ink-3);font-weight:600}
+.wt b{display:block;font-family:"Bricolage Grotesque";font-size:15px;line-height:1.2}
+.wt.gold{background:var(--gold-soft)}.wt.gold b{color:#b77612}[data-theme="dark"] .wt.gold b{color:var(--gold)}
+.wt.coral{background:var(--coral-soft)}.wt.coral b{color:var(--coral)}
+.wt.mint{background:var(--mint-soft)}.wt.mint b{color:#14975f}[data-theme="dark"] .wt.mint b{color:var(--mint)}
+.qm{min-width:0;flex:1}
+.qm b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qm small{display:block;color:var(--ink-3);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qa{display:flex;gap:6px;flex:none}
+.qa .ibtn{width:34px;height:34px;border-radius:10px;text-decoration:none}
+.qa .ibtn.call{background:var(--pine);border-color:var(--pine);color:#fff}
+[data-theme="dark"] .qa .ibtn.call{color:#04211d}
+.empty{padding:34px 20px;text-align:center;color:var(--ink-2)}
+.empty i{color:var(--ink-3)}
+
+/* call card */
+.callpanel{position:sticky;top:76px;max-height:calc(100vh - 92px);overflow:auto;scrollbar-width:thin}
+.cc-head{padding:18px 20px;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.cc-head h2{font-size:24px;font-weight:800;line-height:1.1}
+.cc-head .backm{display:none}
+.cc-val{margin-left:auto;text-align:right}
+.cc-val small{display:block;color:var(--ink-3);font-size:12px}
+.cc-val .num{font-size:30px;font-weight:800;line-height:1}
+.acts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 20px 16px}
+.acts a,.acts button{display:flex;align-items:center;justify-content:center;gap:7px;padding:11px 6px;border:1px solid var(--line);border-radius:12px;background:var(--card);font-weight:600;text-decoration:none;color:var(--ink)}
+.acts a.pri{background:var(--pine);border-color:var(--pine);color:#fff}
+[data-theme="dark"] .acts a.pri{color:#04211d}
+.blk{padding:14px 20px;border-top:1px solid var(--line)}
+.blk h4{font-size:13px;font-weight:600;color:var(--ink-3);margin-bottom:8px}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;font-size:13.5px}
+.kv dt{color:var(--ink-3)}
+.kv dd{min-width:0;overflow-wrap:anywhere}
+.li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;font-size:13.5px}
+.li.tot{border-top:1px solid var(--line);margin-top:6px;padding-top:10px}
+.li.tot b.num{font-size:20px}
+.hist{display:flex;flex-direction:column;gap:10px}
+.hi{display:flex;gap:10px;font-size:13px}
+.hi .tag{flex:none;align-self:flex-start}
+.hi p{color:var(--ink-2)}
+.hi small{color:var(--ink-3)}
+.outs{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.outs button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:11px 4px;border:1px solid var(--line);border-radius:12px;background:var(--card);font-weight:600;font-size:12.5px;line-height:1.2;text-align:center}
+.outs button:hover{background:var(--hover)}
+.outs button.on{border-color:var(--pine);background:var(--pine-soft);color:var(--pine);box-shadow:0 0 0 3px var(--pine-soft)}
+.outs button.on.bad{border-color:var(--coral);background:var(--coral-soft);color:var(--coral);box-shadow:none}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{padding:8px 13px;border:1px solid var(--line);border-radius:99px;font-weight:600;color:var(--ink-2);background:var(--bg);font-size:13px}
+.chips button.on{background:var(--pine-soft);border-color:var(--pine);color:var(--pine)}
+.fld label{display:block;font-weight:600;margin-bottom:6px;font-size:13px}
+.fld input,.fld textarea{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);font:500 14px "Plus Jakarta Sans";padding:10px 12px;outline:0;resize:none}
+.fld input:focus,.fld textarea:focus{border-color:var(--pine)}
+.fl2{display:grid;grid-template-columns:1fr 130px;gap:10px}
+.ups{border:1px solid var(--line);border-radius:14px;padding:14px;background:var(--bg)}
+.ups h5{font-size:14px;font-weight:700}
+.opt{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);margin-top:8px;text-align:left;font-weight:600}
+.opt:hover{background:var(--hover)}
+.opt .rd{flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center}
+.opt .ck{border-radius:6px}
+.opt.on{border-color:var(--pine);background:var(--pine-soft)}
+.opt.on .rd{border-color:var(--pine);background:var(--pine);color:#fff}
+.opt .rd svg{width:12px;height:12px;stroke-width:3;display:none}
+.opt.on .rd svg{display:block}
+.opt small{display:block;font-weight:500;color:var(--ink-3);font-size:12px}
+.opt .pr{margin-left:auto;font-family:"Bricolage Grotesque";font-weight:700;white-space:nowrap}
+.earnbox{display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--mint-soft);font-size:13.5px;font-weight:600}
+.earnbox.none{background:var(--hover);color:var(--ink-2);font-weight:500}
+.save{padding:14px 20px 18px;border-top:1px solid var(--line)}
+.save .btn{width:100%;justify-content:center;padding:13px}
+.save .btn:disabled{opacity:.45;pointer-events:none}
+.hint{font-size:13px;color:var(--ink-2);padding:10px 12px;background:var(--hover);border-radius:12px}
+
+/* earnings + numbers */
+.low{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.low>.card.sec{margin-top:0}
+.owed{padding:18px 20px 6px}
+.owed small{color:var(--ink-3)}
+.owed .big{font-size:38px;font-weight:800;line-height:1.1}
+.lines{padding:6px 20px 4px}
+.lines .li{padding:9px 0;border-bottom:1px solid var(--line)}
+.lines .li:last-child{border:0}
+.lines .li span em{display:block;font-style:normal;font-size:12px;color:var(--ink-3)}
+.note1{margin:6px 20px 18px;padding:10px 12px;border-radius:12px;background:var(--gold-soft);color:var(--ink);font-size:13px;display:flex;gap:10px;align-items:flex-start}
+.note1 svg{flex:none;color:var(--gold)}
+.pays td,.pays th{padding:10px 20px}
+.nums{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:16px 20px}
+.nums .drv b{font-size:22px}
+.ranks{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 20px 16px}
+.rk{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.rk .rank{background:var(--mint-soft);color:#14975f;font-size:18px;width:38px;height:38px}
+[data-theme="dark"] .rk .rank{color:var(--mint)}
+.rk small{display:block;color:var(--ink-3);font-size:12px}
+.rk b{font-size:13.5px}
+.stack{display:flex;height:12px;border-radius:99px;overflow:hidden;gap:2px;margin:0 20px}
+.stack i{display:block;height:100%}
+.leg{display:flex;flex-wrap:wrap;gap:6px 14px;padding:10px 20px 4px;font-size:12.5px;color:var(--ink-2)}
+.leg i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px}
+.sh{padding:14px 20px 0;font-size:13px;font-weight:600;color:var(--ink-3)}
+.bars{display:flex;align-items:flex-end;gap:5px;height:64px;padding:0 20px;margin-top:8px}
+.bars i{flex:1;background:var(--pine-soft);border-radius:5px 5px 0 0;min-height:4px}
+.bars i.t{background:var(--pine)}
+.callrow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:14px 20px 0}
+.callrow div{font-size:12px;color:var(--ink-3)}
+.callrow b{display:block;font-family:"Bricolage Grotesque";font-size:20px;color:var(--ink)}
+
+/* inbox: same row, thread and bubble patterns as the admin inbox.html */
+.bcnt{position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;border-radius:9px;background:var(--coral);color:#fff;font-size:10.5px;font-weight:700;display:grid;place-items:center;padding:0 4px;pointer-events:none}
+.bcnt[hidden]{display:none}
+.tab span.hot{background:var(--coral-soft);color:var(--coral)}
+.tab.on span.hot{background:var(--coral);color:#fff}
+.ib-sub{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--hover);font-size:12px;font-weight:700;color:var(--ink-3)}
+.ib-row{display:flex;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);align-items:flex-start;position:relative;cursor:pointer}
+.ib-row:last-child{border-bottom:0}
+.ib-row:hover{background:var(--hover)}
+.ib-row.unread{background:color-mix(in srgb,var(--pine-soft) 45%,transparent)}
+.ib-row.unread:hover{background:var(--pine-soft)}
+.ib-row .ud{position:absolute;left:7px;top:26px;width:7px;height:7px;border-radius:50%;background:var(--coral)}
+.ib-row:not(.unread) .ud{display:none}
+.ib-ic{flex:none;width:38px;height:38px;border-radius:11px;display:grid;place-items:center}
+.ib-b{flex:1;min-width:0}
+.ib-b b{display:block;font-size:14px;font-weight:600}
+.ib-row:not(.unread) .ib-b b{font-weight:500}
+.ib-b p{color:var(--ink-2);font-size:13px;margin-top:2px;overflow-wrap:anywhere}
+.ib-lnk{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--pine);margin-top:6px;padding:2px 8px;border-radius:8px;background:var(--pine-soft)}
+.ib-lnk svg.lucide{width:13px;height:13px}
+.ib-w{flex:none;text-align:right;white-space:nowrap;font-size:12.5px;color:var(--ink-3);font-weight:600}
+.ib-w .due{color:var(--coral)}
+.ib-thr{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:420px}
+.ib-tl{border-right:1px solid var(--line)}
+.ib-t{display:flex;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);width:100%;text-align:left;align-items:flex-start}
+.ib-t:hover{background:var(--hover)}
+.ib-t.on{background:var(--pine-soft)}
+.ib-t b{display:block;font-size:13.5px;line-height:1.35}
+.ib-t small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.ib-t .u{margin-left:auto;flex:none;width:9px;height:9px;border-radius:50%;background:var(--coral);margin-top:5px}
+.ib-pane{display:flex;flex-direction:column;min-width:0}
+.ib-th{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ib-th h3{font-size:16px}
+.ib-msgs{flex:1;padding:18px 20px;display:flex;flex-direction:column;gap:16px;overflow-wrap:anywhere}
+.ib-m{display:flex;gap:10px;min-width:0}
+.ib-m .a{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px}
+.ib-m .bub{min-width:0;flex:1}
+.ib-m .nm{font-weight:700;font-size:13.5px}
+.ib-m .nm small{color:var(--ink-3);font-weight:500;margin-left:6px}
+.ib-m .tx{margin-top:2px}
+.ib-comp{border-top:1px solid var(--line);padding:12px 20px 16px}
+.ib-comp textarea{width:100%;min-height:62px;resize:none;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:500 14px "Plus Jakarta Sans",sans-serif;background:var(--card);color:var(--ink)}
+.ib-comp textarea:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+.ib-comp .crow{display:flex;gap:8px;margin-top:10px;justify-content:flex-end}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);background:var(--ink);color:var(--bg);padding:11px 16px;border-radius:14px;font-weight:600;font-size:13.5px;z-index:90;opacity:0;pointer-events:none;transition:.25s;display:flex;gap:8px;align-items:center;max-width:calc(100vw - 32px)}
+.toast.on{transform:translate(-50%,0);opacity:1}
+
+/* phone tabs */
+.ptab{display:none}
+.nav .pill{font-style:normal}
+
+@media (max-width:1100px){
+  .today{grid-template-columns:minmax(0,1fr)}
+  .low{grid-template-columns:minmax(0,1fr)}
+  .work{grid-template-columns:minmax(0,1fr)}
+  .callpanel{display:none;position:fixed;inset:0;z-index:60;max-height:none;border-radius:0;border:0;background:var(--bg);padding:0 0 40px}
+  .callpanel.open{display:block}
+  .callpanel>.card-in{border-radius:0}
+  .cc-head .backm{display:grid}
+  .callpanel .cc-top{position:sticky;top:0;z-index:2;background:var(--card)}
+}
+@media (max-width:760px){
+  .bar2 .logo{display:grid}
+  .ins2{grid-template-columns:1fr}
+  .ptab{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:30;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line)}
+  .ptab a{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11.5px;font-weight:600;color:var(--ink-3);text-decoration:none;padding:4px 0;border-radius:10px}
+  .ptab a:hover,.ptab a.on{color:var(--pine)}
+  .ptab a.on{background:var(--pine-soft)}
+  .ptab .pill{position:absolute;top:0;left:calc(50% + 6px);font-size:10.5px;font-weight:700;padding:0 6px;border-radius:99px;background:var(--coral-soft);color:var(--coral)}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom))}
+  .content{padding-bottom:100px}
+}
+@media (max-width:640px){
+  .ib-thr{grid-template-columns:minmax(0,1fr)}
+  .ib-tl{border-right:0;border-bottom:1px solid var(--line)}
+  .ib-row{flex-wrap:wrap}
+  .ib-w{width:100%;text-align:left;padding-left:50px}
+  .content{padding:18px 16px 100px}
+  .bar2{padding:10px 16px}
+  .bar2 .back span,.bar2 .agentlbl{display:none}
+  .head h1{font-size:26px}
+  .hero .big{font-size:46px}
+  .tkpis{grid-template-columns:1fr 1fr}
+  .tkpis .tk:last-child{grid-column:1/3}
+  .outs{grid-template-columns:repeat(2,1fr)}
+  .outs button:last-child{grid-column:1/3}
+  .nums{grid-template-columns:1fr 1fr}
+  .ranks{grid-template-columns:1fr}
+  .cc-head h2{font-size:22px}
+  .kv{grid-template-columns:90px 1fr}
+  .callrow{grid-template-columns:repeat(2,1fr)}
+  .fl2{grid-template-columns:1fr}
+  .owed .big{font-size:34px}
+}
+@media (prefers-reduced-motion:reduce){.toast{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="side" aria-label="Main">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="navgroup">
+      <a href="#today" class="nav" data-v="today"><i data-lucide="layout-grid"></i>Today</a>
+      <a href="#queue" class="nav" data-v="queue"><i data-lucide="phone"></i>Queue<span class="pill" data-qcount>9</span></a>
+      <a href="#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>My orders</a>
+      <a href="#earnings" class="nav" data-v="earnings"><i data-lucide="wallet"></i>Earnings</a>
+      <a href="#numbers" class="nav" data-v="numbers"><i data-lucide="bar-chart-3"></i>My numbers</a>
+    </div>
+  </aside>
+<div class="main">
+<header class="bar2">
+  <div class="logo"><i data-lucide="zap"></i></div>
+  <div class="who2"><b>CodAdmin</b><small>Call rep · Adwoa Darko</small></div>
+  <div class="sp"></div>
+  <a href="index.html" class="back"><i data-lucide="arrow-left"></i><span>Back to CodAdmin</span></a>
+  <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+  <a href="#inbox" class="ibtn" id="bell" aria-label="Inbox"><i data-lucide="bell"></i><span class="bcnt" id="bcnt"></span></a>
+  <div class="avatar" aria-label="Adwoa Darko">AD</div>
+</header>
+
+<div class="content">
+
+  <!-- TODAY -->
+  <section class="view" id="today" aria-label="Today">
+    <div class="head">
+      <div><h1>Hi, Adwoa</h1><p>17 Oct · Your confirmations and your pay, in one place.</p></div>
+    </div>
+    <div class="today">
+      <div class="hero">
+        <small>Confirmed today</small>
+        <div class="big num"><span id="b-today">19</span></div>
+        <div class="of">Your target counts confirmed orders that get delivered, at month close.</div>
+      </div>
+      <div class="card rew">
+        <div class="row"><h3>Next reward</h3><span class="tag ok sp" id="b-togo-tag">170 more to GH₵300</span></div>
+        <div class="row" style="margin-top:10px;align-items:baseline"><span class="num" style="font-size:30px;font-weight:800" id="b-conf">253</span><span class="sub">of 423 confirmed and delivered orders in October</span></div>
+        <div class="prog"><i id="b-confbar" style="width:59.8%"></i></div>
+        <div class="tier">
+          <div class="next"><b>100%</b>GH₵300 bonus<br><span id="b-togo">170 more</span></div>
+          <div><b>120%</b>GH₵500 + paid day off</div>
+        </div>
+      </div>
+    </div>
+    <div class="tkpis">
+      <div class="card tk"><small>Confirmation rate</small><div class="v">73%</div><div class="s">Confirmed ÷ assigned · target 70%</div></div>
+      <div class="card tk"><small>Delivered from my confirmed</small><div class="v">52%</div><div class="s">253 delivered of 486 closed</div></div>
+      <div class="card tk"><small>Time to first call</small><div class="v">12 min</div><div class="s">Median, October</div></div>
+    </div>
+    <div class="ins2" id="insights"></div>
+  </section>
+
+
+  <!-- QUEUE + CALL CARD -->
+  <section class="view" id="queue" aria-label="My queue">
+    <div class="head"><div><h1>Queue</h1><p>Orders waiting for your call. <span id="qsum"></span></p></div><button class="btn pri" id="newOrd"><i data-lucide="plus"></i>New order</button></div>
+    <div class="work">
+      <div class="card" id="qcard">
+        <div class="qtabs" id="qtabs"></div>
+        <label class="find"><i data-lucide="search"></i><input id="q" placeholder="Name, phone, area or order #" aria-label="Search my queue"></label>
+        <div class="qlist" id="qlist"></div>
+      </div>
+
+      <div class="card callpanel" id="callpanel" aria-label="Order call card"></div>
+    </div>
+  </section>
+
+  <!-- MY ORDERS -->
+  <section class="view" id="orders" aria-label="My orders">
+    <div class="head"><div><h1>My orders</h1><p>Every order assigned to you, with its status.</p></div></div>
+    <div class="work">
+      <div class="card" id="ocard">
+        <label class="find"><i data-lucide="search"></i><input id="oq" placeholder="Name, phone, area or order #" aria-label="Search my orders"></label>
+        <div class="qlist" id="olist"></div>
+      </div>
+
+      <div class="card callpanel" id="opanel" aria-label="Order details"></div>
+    </div>
+  </section>
+
+  <!-- EARNINGS -->
+  <section class="view" id="earnings" aria-label="Earnings">
+    <div class="head"><div><h1>Earnings</h1><p>What you are owed, what you were paid, and your target reward.</p></div></div>
+    <div class="low">
+      <div class="card">
+        <div class="owed row">
+          <div><small>You are owed</small><div class="big num">GH₵2,034</div></div>
+          
+        </div>
+        <div class="lines">
+          <div class="li"><span>Commission<em>253 delivered × GH₵8</em></span><b class="num">GH₵2,024</b></div>
+          <div class="li"><span>Upsell reward<em>10% of GH₵6,100 extra value on delivered orders</em></span><b class="num">GH₵610</b></div>
+          <div class="li"><span>Paid on 9 Oct<em>October commission</em></span><b class="num">− GH₵600</b></div>
+          <div class="li" style="background:var(--hover);margin:0 -20px;padding:10px 20px"><b>Owed now</b><b class="num" style="font-size:18px">GH₵2,034</b></div>
+        </div>
+        <div class="note1"><i data-lucide="info"></i><span>Pay counts only delivered orders. 154 of your confirmed orders are still open, and each one adds GH₵8 when it is delivered.</span></div>
+        <div class="lines" style="padding-top:0">
+          <div class="li"><span>Target reward<em>GH₵300 at 423 confirmed and delivered (100%)</em></span><span class="tag n"><span id="b-conf2">253</span> of 423</span></div>
+        </div>
+      </div>
+      <div class="card sec">
+        <div class="ct"><h3>Payment history</h3><span>2 payments · GH₵1,440 paid</span></div>
+        <div class="tablewrap" style="overflow:auto;padding-top:8px">
+        <table class="pays">
+          <thead><tr><th>Date</th><th>Amount</th><th>Status</th><th>For</th></tr></thead>
+          <tbody>
+            <tr><td>9 Oct</td><td class="num"><b>GH₵600</b></td><td><span class="tag ok">Paid</span></td><td>October commission</td></tr>
+            <tr><td>1 Oct</td><td class="num"><b>GH₵840</b></td><td><span class="tag ok">Paid</span></td><td>September balance</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INBOX: reached from the top-bar bell, not from the sidebar or tab bar -->
+  <section class="view" id="inbox" aria-label="Inbox">
+    <div class="head">
+      <div><h1>Inbox</h1><p id="ibsum">Reminders, updates on your orders and notes from the team.</p></div>
+      <button class="btn" id="ibmark"><i data-lucide="check-check"></i>Mark all read</button>
+    </div>
+    <div class="card">
+      <div class="tabs" id="ibtabs" role="tablist" aria-label="Inbox views"></div>
+      <div id="ibbody"></div>
+    </div>
+  </section>
+
+  <!-- MY NUMBERS -->
+  <section class="view" id="numbers" aria-label="My numbers">
+    <div class="head"><div><h1>My numbers</h1><p>1–17 Oct · How your calls and orders are doing.</p></div></div>
+<div class="card">
+      <div class="nums">
+        <div class="drv"><small>Confirmed</small><b class="num" id="b-conf3">640</b><em>253 of 423 delivered target</em></div>
+        <div class="drv"><small>Confirmation rate</small><b class="num">73%</b><em>target 70%</em></div>
+        <div class="drv"><small>Delivered from confirmed</small><b class="num">52%</b><em>253 delivered</em></div>
+        <div class="drv"><small>Upsell rate</small><b class="num">24%</b><em>of your orders</em></div>
+        <div class="drv"><small>Extra value added</small><b class="num">GH₵6,100</b><em>on delivered orders</em></div>
+        <div class="drv"><small>Time to first call</small><b class="num">12 min</b><em>median</em></div>
+      </div>
+      <div class="ranks">
+        <div class="rk"><div class="rank">1</div><div><small>Rank in call reps</small><b>1st of 3</b></div></div>
+        <div class="rk"><div class="rank">1</div><div><small>Rank in Upsell</small><b>1st of 3</b></div></div>
+      </div>
+      <div class="sh" style="border-top:1px solid var(--line);padding-top:14px">Where my 640 confirmed orders are</div>
+      <div class="stack" style="margin-top:10px">
+        <i style="width:39.5%;background:var(--mint)"></i><i style="width:36.4%;background:var(--coral)"></i><i style="width:24.1%;background:var(--gold)"></i>
+      </div>
+      <div class="leg"><span><i style="background:var(--mint)"></i>Delivered 253</span><span><i style="background:var(--coral)"></i>Failed or returned 233</span><span><i style="background:var(--gold)"></i>Still open 154</span></div>
+      <div class="sh" style="border-top:1px solid var(--line);margin-top:10px;padding-top:14px">My calls</div>
+      <div class="callrow">
+        <div><b class="num">41</b>Today</div><div><b class="num">480</b>This week</div><div><b class="num">1,360</b>This month</div><div><b class="num">80</b>Average a day</div>
+      </div>
+      <div class="sh">Call outcomes this month</div>
+      <div class="stack" style="margin-top:10px">
+        <i style="width:47%;background:var(--mint)"></i><i style="width:22.1%;background:var(--gold)"></i><i style="width:14%;background:var(--coral)"></i><i style="width:11%;background:var(--violet)"></i><i style="width:5.9%;background:var(--ink-3)"></i>
+      </div>
+      <div class="leg"><span><i style="background:var(--mint)"></i>Confirmed 640</span><span><i style="background:var(--gold)"></i>Not reachable 300</span><span><i style="background:var(--coral)"></i>Declined 190</span><span><i style="background:var(--violet)"></i>Call back 150</span><span><i style="background:var(--ink-3)"></i>Wrong number or other 80</span></div>
+      <div class="sh">Calls a day, last 14 days</div>
+      <div class="bars" id="bars" aria-hidden="true"></div>
+      <p class="muted" style="padding:6px 20px 16px">Today is still counting.</p>
+    </div>
+  </section>
+</div>
+</div>
+</div>
+
+<nav class="ptab" aria-label="Pages">
+  <a href="#today"  data-v="today"><i data-lucide="layout-grid"></i>Today</a>
+  <a href="#queue"  data-v="queue"><i data-lucide="phone"></i>Queue<span class="pill" data-qcount>9</span></a>
+  <a href="#orders"  data-v="orders"><i data-lucide="shopping-bag"></i>Orders</a>
+  <a href="#earnings"  data-v="earnings"><i data-lucide="wallet"></i>Earnings</a>
+  <a href="#numbers"  data-v="numbers"><i data-lucide="bar-chart-3"></i>Numbers</a>
+</nav>
+
+<div class="sx-veil" id="no-veil"><div class="sx-modal" role="dialog" aria-modal="true" aria-label="New order" style="width:480px">
+  <h3>New order</h3><p>For a phone call or WhatsApp order. It goes in your queue as confirmed by you.</p>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px">
+    <div class="fld" style="grid-column:1/-1"><label for="no-n">Customer name</label><input id="no-n" placeholder="New or existing customer"></div>
+    <div class="fld"><label for="no-p">Phone</label><input id="no-p" placeholder="024 555 0100"></div>
+    <div class="fld"><label for="no-a">Area</label><input id="no-a" placeholder="Osu"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="no-ad">Delivery address</label><input id="no-ad" placeholder="House number, street, landmark"></div>
+    <div class="fld"><label for="no-t">Package</label><select id="no-t" style="width:100%;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);font:500 14px 'Plus Jakarta Sans';padding:10px 12px"><option value="249">1 copybook set GH₵249</option><option value="449">2 sets GH₵449</option><option value="629">3 sets GH₵629</option></select></div>
+    <div class="fld"><label for="no-x">Add-on</label><select id="no-x" style="width:100%;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);font:500 14px 'Plus Jakarta Sans';padding:10px 12px"><option value="0">None</option><option value="40">Refill pens GH₵40</option><option value="35">Pencil grip trainer GH₵35</option><option value="59">Smart Parent's guide GH₵59</option></select></div>
+  </div>
+  <div class="sx-act"><button class="btn" id="no-x-c">Cancel</button><button class="btn pri" id="no-go">Create order</button></div>
+</div></div>
+<div class="toast" id="toast" role="status"><i data-lucide="check-circle-2"></i><span id="toast-t"></span></div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const money=n=>'GH₵'+(Number.isInteger(n)?n.toLocaleString('en-GB'):n.toFixed(2));
+const TIER={1:{l:'1 copybook set',p:249},2:{l:'2 copybook sets',p:449,save:49},3:{l:'3 copybook sets',p:629,save:118}};
+const ADD={pens:{l:'Refill pens',p:40},grip:{l:'Pencil grip trainer',p:35},guide:{l:"Smart Parent's guide",p:59}};
+const REASONS=['Price too high','Prank or ordered by mistake','Changed mind','Bought elsewhere','Other'];
+const CBTIMES=[['In 30 min',30],['In 1 hour',60],['Today 16:00','t16'],['Tomorrow 09:00','t9']];
+const NOW=Date.now();
+const hhmm=ms=>{const d=new Date(ms);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+
+/* kind: p pending, c call back due, r re-delivery, m my orders (history) */
+const O=[
+ {id:'#24041',k:'p',n:'Efua Mensah',ph:'024 508 3317',area:'Tema',addr:'Community 18, House 22, Tema',m:190,t:1,a:[],prev:[],hist:[]},
+ {id:'#24043',k:'p',n:'Kojo Asante',ph:'055 217 4906',alt:'020 442 1187',area:'Kumasi',addr:'Ahodwo, near the roundabout',m:155,t:2,a:[],prev:[['2 Jul','Delivered','GH₵249']],hist:[['09:05','Not reachable','Adwoa Darko','Phone rang, no answer',0]]},
+ {id:'#24045',k:'p',n:'Ama Owusu',ph:'027 330 8841',email:'ama.owusu@mail.com',area:'Accra',addr:'Madina Estates, Block B, Flat 3',m:128,t:1,a:['pens'],prev:[['14 Aug','Delivered','GH₵249']],hist:[]},
+ {id:'#24047',k:'p',n:'Yaw Boakye',ph:'050 114 6672',area:'Takoradi',addr:'Market Circle, Shop 9',m:96,t:1,a:[],prev:[],hist:[['09:41','Not reachable','Adwoa Darko','Phone off',0]]},
+ {id:'#24049',k:'p',n:'Akosua Nyarko',ph:'024 780 5509',area:'Cape Coast',addr:'Abura, behind the Methodist church',m:74,t:1,a:[],prev:[],hist:[]},
+ {id:'#24052',k:'p',n:'Selorm Agbenyo',ph:'054 601 2238',area:'Tema',addr:'Community 8, Flat 4B',m:52,t:3,a:[],prev:[['20 Sep','Failed','Not at home']],hist:[]},
+ {id:'#24054',k:'p',n:'Nii Armah',ph:'020 905 3361',area:'Accra',addr:'Osu, Cantonments Road 14',m:37,t:1,a:['guide'],prev:[],hist:[]},
+ {id:'#24056',k:'p',n:'Abena Kyei',ph:'055 748 1920',area:'Kumasi',addr:'Bantama High Street 31',m:21,t:1,a:[],prev:[],hist:[]},
+ {id:'#24058',k:'p',n:'Kofi Tetteh',ph:'024 266 7714',area:'Tamale',addr:'Kalpohin Estates, House 12',m:9,t:1,a:[],prev:[],hist:[]},
+
+ {id:'#24026',k:'c',n:'Esi Quaye',ph:'024 119 7083',area:'Accra',addr:'Dansoman, Last Stop 6',due:-18,t:1,a:[],prev:[],hist:[['08:50','Call back','Adwoa Darko','Asked for a call after 10:30',92]]},
+ {id:'#24031',k:'c',n:'Kwame Adjei',ph:'050 884 2015',area:'Kumasi',addr:'Santasi Roundabout, near the pharmacy',due:25,t:1,a:[],prev:[],hist:[['09:20','Call back','Adwoa Darko','In a meeting, call at 11:15',41]]},
+ {id:'#24036',k:'c',n:'Naana Ofori',ph:'027 450 6623',area:'Accra',addr:'Haatso, Atomic Junction 2',due:95,t:2,a:[],prev:[],hist:[['09:55','Call back','Adwoa Darko','Will have cash after noon',58]]},
+
+ {id:'#24020',k:'r',n:'Yaw Mensah',ph:'055 902 3318',area:'Kumasi',addr:'House 7, Ahodwo Roundabout',ctx:'Kofi Appiah could not reach him on 16 Oct. Phone was off at 15:20.',day:'16 Oct',t:1,a:['pens'],prev:[],hist:[['16 Oct','Delivery failed','Kofi Appiah','Phone off at 15:20',0]],dagent:'Kofi Appiah'},
+ {id:'#23987',k:'r',n:'Nana Yeboah',ph:'024 205 7731',area:'Kumasi',addr:'Ejisu Junction, Shop 5',ctx:'Refused at the door on 17 Oct. He told Kofi Appiah he changed his mind.',day:'17 Oct',t:1,a:[],prev:[],hist:[['17 Oct','Delivery failed','Kofi Appiah','Refused. Said he changed his mind',0]],dagent:'Kofi Appiah'},
+
+ {id:'#24013',k:'m',n:'Abena Konadu',ph:'024 411 2087',area:'Kumasi',addr:'Plot 14, Bompata Road, Adum',st:'Out for delivery',stc:'v',t:1,a:[],prev:[],hist:[['16 Oct','Confirmed','Adwoa Darko','Home after 14:00',64]],dagent:'Kofi Appiah',closed:true},
+ {id:'#24001',k:'m',n:'Efua Sarpong',ph:'050 126 9087',area:'Kumasi',addr:'Block C, Nhyiaeso Estates',st:'Delivered',stc:'ok',t:1,a:[],prev:[],hist:[['15 Oct','Confirmed','Adwoa Darko','',48]],dagent:'Kofi Appiah',closed:true},
+ {id:'#23998',k:'m',n:'Kojo Antwi',ph:'054 880 2275',area:'Kumasi',addr:'Bantama High Street 31',st:'Delivered',stc:'ok',t:2,a:[],prev:[],hist:[['15 Oct','Confirmed','Adwoa Darko','Took the 2 set offer',121]],dagent:'Kofi Appiah',closed:true},
+ {id:'#24005',k:'m',n:'Mawuli Dzakpasu',ph:'024 937 1180',area:'Accra',addr:'Adenta Housing Down, House 40',st:'Waiting to dispatch',stc:'warn',t:1,a:[],prev:[],hist:[['16 Oct','Confirmed','Adwoa Darko','',52]],closed:true},
+ {id:'#23990',k:'m',n:'Ama Serwaa',ph:'027 540 1193',area:'Kumasi',addr:'Suame Magazine, Gate 2',st:'Failed',stc:'bad',t:1,a:[],prev:[],hist:[['12 Oct','Confirmed','Adwoa Darko','',39]],dagent:'Kofi Appiah',closed:true},
+ {id:'#23960',k:'m',n:'Kwabena Frimpong',ph:'024 318 6652',area:'Kumasi',addr:'Santasi Roundabout',st:'Declined',stc:'n',t:1,a:[],prev:[],hist:[['11 Oct','Declined','Adwoa Darko','Price too high',70]],closed:true}
+];
+O.forEach(o=>{o.t0=o.t;o.a0=[...o.a];o.sel=null});
+const val=(t,a)=>TIER[t].p+a.reduce((s,k)=>s+ADD[k].p,0);
+const baseVal=o=>val(o.t0,o.a0);
+const extra=o=>Math.max(0,val(o.t,o.a)-baseVal(o));
+const prodText=(t,a)=>TIER[t].l+a.map(k=>' + '+ADD[k].l.toLowerCase()).join('');
+const waitTxt=m=>m>=60?Math.floor(m/60)+' h '+String(m%60).padStart(2,'0')+' min':m+' min';
+const dueTxt=m=>m<0?'Overdue '+(-m)+' min':m===0?'Due now':'In '+(m>=60?Math.floor(m/60)+' h '+String(m%60).padStart(2,'0'):m+' min');
+
+const S={view:null,tab:'p',cur:null,curO:null,out:null,time:null,reason:null,confToday:19,conf:640,del:253};
+const TABS=[['p','Pending'],['c','Call backs'],['r','Re-delivery']];
+const count=k=>O.filter(o=>o.k===k).length;
+const list=()=>{
+  const isO=S.view==='orders', q=$(isO?'#oq':'#q').value.toLowerCase().trim(), kk=isO?'m':S.tab;
+  let l=O.filter(o=>o.k===kk&&(o.n+o.area+o.id+o.ph).toLowerCase().includes(q));
+  if(kk==='p')l.sort((a,b)=>b.m-a.m);
+  if(kk==='c')l.sort((a,b)=>a.due-b.due);
+  return l;
+};
+function renderTabs(){
+  $('#qtabs').innerHTML=TABS.map(([k,l])=>`<button class="tab ${S.tab===k?'on':''}" data-t="${k}">${l}<span>${count(k)}</span></button>`).join('');
+  const oldest=O.filter(o=>o.k==='p').reduce((m,o)=>Math.max(m,o.m),0);
+  $('#qsum').textContent=count('p')+' waiting'+(oldest?' · oldest '+waitTxt(oldest):'')+'.';
+  $$('[data-qcount]').forEach(e=>e.textContent=count('p'));
+}
+function renderQueue(){
+  const isO=S.view==='orders', l=list(), curId=isO?S.curO:S.cur, kk=isO?'m':S.tab;
+  $(isO?'#olist':'#qlist').innerHTML=l.length?l.map(o=>{
+    let wt,sub;
+    if(o.k==='p'){const c=o.m>=120?'coral':o.m>=60?'gold':'';wt=`<div class="wt ${c}" data-wt="${o.id}"><small>Waiting</small><b>${waitTxt(o.m)}</b></div>`;sub=`${o.area} · ${prodText(o.t,o.a)} · ${money(val(o.t,o.a))}`}
+    else if(o.k==='c'){const c=o.due<0?'coral':o.due<30?'gold':'';wt=`<div class="wt ${c}"><small>Call back</small><b>${dueTxt(o.due)}</b></div>`;sub=`${hhmm(NOW+o.due*60000)} · ${o.area} · ${money(val(o.t,o.a))}`}
+    else if(o.k==='r'){wt=`<div class="wt coral"><small>Failed</small><b>${o.day}</b></div>`;sub=`${o.area} · ${o.dagent} · ${money(val(o.t,o.a))}`}
+    else{wt=`<div class="wt"><small>${o.id.slice(3)}</small><b style="font-size:12.5px">${o.st.split(' ')[0]}</b></div>`;sub=`${o.area} · ${money(val(o.t,o.a))} · ${o.st}`}
+    const tel='+233'+o.ph.replace(/\s/g,'').slice(1);
+    return `<div class="qi ${curId===o.id?'sel':''}" data-o="${o.id}" tabindex="0" role="button" aria-label="Open ${o.n}">
+      ${wt}<div class="qm"><b>${o.n}</b><small>${sub}</small></div>
+      <div class="qa"><a class="ibtn call" href="tel:${tel}" aria-label="Call ${o.n}" data-stop><i data-lucide="phone"></i></a>
+      <a class="ibtn" href="https://wa.me/${tel.slice(1)}" aria-label="WhatsApp ${o.n}" data-stop><i data-lucide="message-circle"></i></a>
+      <button class="ibtn" aria-label="Open order ${o.id}" data-open="${o.id}"><i data-lucide="chevron-right"></i></button></div></div>`}).join('')
+   :`<div class="empty"><i data-lucide="check-circle-2" style="width:30px;height:30px"></i><p style="margin-top:8px;font-weight:600">${kk==='p'?'Queue is clear':'Nothing here'}</p><p class="sub">${kk==='p'?'New orders appear here as they come in.':kk==='m'?'No orders match your search.':'Try another tab.'}</p></div>`;
+  lucide.createIcons();
+}
+const cur=()=>O.find(o=>o.id===(S.view==='orders'?S.curO:S.cur));
+const pan=()=>$(S.view==='orders'?'#opanel':'#callpanel');
+const tagFor=x=>({'Confirmed':'ok','Not reachable':'warn','Call back':'v','Declined':'bad','Wrong number':'n','Delivery failed':'bad'}[x]||'n');
+
+function renderCard(){
+  const o=cur(), p=pan();
+  if(!o){p.innerHTML='<div class="empty" style="padding:70px 20px"><i data-lucide="phone" style="width:30px;height:30px"></i><p style="margin-top:8px;font-weight:600">Pick an order to call</p><p class="sub">Your oldest waiting order is at the top of the queue.</p></div>';lucide.createIcons();return}
+  const tel='+233'+o.ph.replace(/\s/g,'').slice(1), v=val(o.t,o.a), ex=extra(o);
+  const canUp=o.k==='p'||o.k==='c';
+  const status=o.k==='p'?`<span class="tag warn">Waiting ${waitTxt(o.m)}</span>`:o.k==='c'?`<span class="tag v">${dueTxt(o.due)}</span>`:o.k==='r'?'<span class="tag bad">Delivery failed</span>':`<span class="tag ${o.stc}">${o.st}</span>`;
+  const lines=[`<div class="li"><span>${TIER[o.t].l}</span><b class="num">${money(TIER[o.t].p)}</b></div>`].concat(o.a.map(k=>`<div class="li"><span>1 × ${ADD[k].l}</span><b class="num">${money(ADD[k].p)}</b></div>`)).join('');
+  const outs=[['confirmed','check-circle-2','Confirmed',''],['noreach','phone-missed','Not reachable',''],['callback','alarm-clock','Call back later',''],['declined','x-circle','Declined','bad'],['wrong','user-x','Wrong number','bad']];
+  p.innerHTML=`<div class="cc-top"><div class="cc-head">
+     <button class="ibtn backm" id="cc-back" aria-label="Back to queue"><i data-lucide="arrow-left"></i></button>
+     <div><h2>${o.n}</h2><div class="sub">${o.id} · ${o.area} ${status}</div></div>
+     <div class="cc-val"><small>Order value</small><div class="num" id="cc-val">${money(v)}</div></div></div></div>
+   <div class="acts"><a class="pri" href="tel:${tel}"><i data-lucide="phone"></i>Call</a><a href="https://wa.me/${tel.slice(1)}"><i data-lucide="message-circle"></i>WhatsApp</a><button data-notes="${o.id}"><i data-lucide="messages-square"></i>Team notes</button></div>
+   ${o.ctx?`<div class="blk" style="border-top:0;padding-top:0"><div class="hint"><b>Re-delivery call.</b> ${o.ctx} Ask when the customer can receive the order.</div></div>`:''}
+   <div class="blk"><h4>Customer</h4><dl class="kv"><dt>Phone</dt><dd>${o.ph}${o.alt?` · alt ${o.alt}`:''}</dd>${o.email?`<dt>Email</dt><dd>${o.email}</dd>`:''}<dt>Address</dt><dd>${o.addr}</dd><dt>Payment</dt><dd>Cash on delivery · unpaid</dd><dt>Assigned</dt><dd>Call rep Adwoa Darko${o.dagent?` · Delivery ${o.dagent}`:' · Delivery agent not set yet'}</dd></dl></div>
+   <div class="blk"><h4>Order</h4><div id="cc-lines">${lines}</div><div class="li tot"><b>Cash to collect</b><b class="num" id="cc-tot">${money(v)}</b></div></div>
+   <div class="blk"><h4>Previous orders</h4>${o.prev.length?o.prev.map(x=>`<div class="li"><span>${x[0]} · ${x[2]}</span><span class="tag ${x[1]==='Delivered'?'ok':'bad'}">${x[1]}</span></div>`).join(''):'<p class="sub">First order from this customer.</p>'}</div>
+   <div class="blk"><h4>Call history</h4>${o.hist.length?`<div class="hist">${o.hist.map(h=>`<div class="hi"><span class="tag ${tagFor(h[1])}">${h[1]}</span><div><small>${h[0]} · ${h[2]}${h[4]?' · '+Math.floor(h[4]/60)+':'+String(h[4]%60).padStart(2,'0')+' min':''}</small>${h[3]?`<p>${h[3]}</p>`:''}</div></div>`).join('')}</div>`:'<p class="sub">No calls yet.</p>'}</div>
+   <div class="blk"><h4>How did the call go?</h4>
+     <div class="outs" id="outs">${outs.map(([k,i,l,c])=>`<button class="${c} ${S.out===k?'on':''}" data-out="${k}"><i data-lucide="${i}"></i>${l}</button>`).join('')}</div>
+     <div id="sub" style="margin-top:12px"></div></div>
+   <div class="blk"><div class="fl2"><div class="fld"><label for="note">Call note</label><textarea id="note" rows="2" placeholder="What did the customer say?"></textarea></div><div class="fld"><label for="len">Call length (sec)</label><input id="len" inputmode="numeric" placeholder="Optional"></div></div></div>
+   <div class="save"><button class="btn pri" id="save" disabled><i data-lucide="save"></i><span id="save-t">Pick an outcome</span></button></div>`;
+  renderSub(); lucide.createIcons();
+}
+function renderSub(){
+  const o=cur(), s=$('#sub'); if(!s)return;
+  const k=S.out; let h='';
+  if(k==='confirmed'){
+    if(o.k==='r'||!(o.k==='p'||o.k==='c')){h='<div class="hint">Order stays as it is. Add a note for the delivery agent.</div>'}
+    else{
+      const ex=extra(o);
+      h=`<div class="ups"><h5>Change the order (optional)</h5><p class="sub" style="margin-top:2px">Offer more only when it helps the customer. Skip this if they are happy.</p>
+       ${[1,2,3].map(t=>`<button class="opt ${o.t===t?'on':''}" data-tier="${t}"><span class="rd"><i data-lucide="check"></i></span><span>${TIER[t].l}${TIER[t].save?`<small>Saves ${money(TIER[t].save)} against buying single sets</small>`:''}</span><span class="pr">${money(TIER[t].p)}</span></button>`).join('')}
+       <p class="muted" style="margin:12px 0 0;font-weight:600">Add-ons</p>
+       ${Object.keys(ADD).map(a=>`<button class="opt ${o.a.includes(a)?'on':''}" data-add="${a}"><span class="rd ck"><i data-lucide="check"></i></span><span>${ADD[a].l}</span><span class="pr">+ ${money(ADD[a].p)}</span></button>`).join('')}
+       <div class="earnbox ${ex?'':'none'}" id="earnbox">${ex?`<i data-lucide="wallet"></i><span>You earn ${money(ex/10)} extra if this order is delivered (10% of ${money(ex)}).</span>`:'<i data-lucide="info"></i><span>No extra value added. You still earn GH₵8 if it is delivered.</span>'}</div></div>`;
+    }
+  }
+  else if(k==='noreach')h='<div class="hint">Logs this attempt. The order stays in your queue.</div>';
+  else if(k==='callback')h=`<div class="fld"><label>When should you call?</label><div class="chips" id="cbt">${CBTIMES.map(([l,v])=>`<button class="${S.time===l?'on':''}" data-time="${l}">${l}</button>`).join('')}</div></div><div class="fld" style="margin-top:10px;max-width:200px"><label for="ctime">Or pick a time</label><input id="ctime" type="time" value=""></div>`;
+  else if(k==='declined')h=`<div class="fld"><label>Why did the customer decline?</label><div class="chips" id="rs">${REASONS.map(r=>`<button class="${S.reason===r?'on':''}" data-reason="${r}">${r}</button>`).join('')}</div></div>`;
+  else if(k==='wrong')h='<div class="hint">Marks this number as wrong. Put the correct number in the note if the customer gave one.</div>';
+  s.innerHTML=h; updSave(); lucide.createIcons();
+}
+function updSave(){
+  const b=$('#save'); if(!b)return; const k=S.out;
+  const lab={confirmed:'Save as confirmed',noreach:'Save, not reachable',callback:'Save call back',declined:'Save as declined',wrong:'Save, wrong number'};
+  const ct=$('#ctime');
+  const ok=k&&(k!=='callback'||S.time||(ct&&ct.value))&&(k!=='declined'||S.reason);
+  b.disabled=!ok; $('#save-t').textContent=k?lab[k]:'Pick an outcome';
+}
+function liveValue(){
+  const o=cur(); const v=val(o.t,o.a);
+  $('#cc-val').textContent=money(v); $('#cc-tot').textContent=money(v);
+  $('#cc-lines').innerHTML=`<div class="li"><span>${TIER[o.t].l}</span><b class="num">${money(TIER[o.t].p)}</b></div>`+o.a.map(k=>`<div class="li"><span>1 × ${ADD[k].l}</span><b class="num">${money(ADD[k].p)}</b></div>`).join('');
+  renderQueue();
+}
+function toast(t){$('#toast-t').textContent=t;$('#toast').classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>$('#toast').classList.remove('on'),3200)}
+function bindProgress(){
+  $('#b-today').textContent=S.confToday;
+  ['#b-conf','#b-conf2'].forEach(s=>$(s).textContent=S.del); $('#b-conf3').textContent=S.conf;
+  $('#b-confbar').style.width=Math.min(100,S.del/423*100)+'%';
+  const left=423-S.del; $('#b-togo').textContent=left+' more'; $('#b-togo-tag').textContent=left+' more to GH₵300';
+}
+function select(id,open){
+  if(S.view==='orders')S.curO=id;else S.cur=id;
+  S.out=null; S.time=null; S.reason=null;
+  renderQueue(); renderCard();
+  if(open&&matchMedia('(max-width:1100px)').matches){pan().classList.add('open');pan().scrollTop=0}
+}
+function closeCard(){$$('.callpanel').forEach(p=>p.classList.remove('open'))}
+const VIEWS=['today','queue','orders','earnings','numbers','inbox'];
+function route(){
+  const v=VIEWS.includes(location.hash.slice(1))?location.hash.slice(1):'today';
+  if(v===S.view)return;
+  S.view=v; S.fromInbox=false; closeCard();
+  $$('.view').forEach(e=>e.classList.toggle('on',e.id===v));
+  $$('[data-v]').forEach(n=>{n.classList.toggle('on',n.dataset.v===v);if(n.dataset.v===v)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current')});
+  $('#callpanel').innerHTML=''; $('#opanel').innerHTML='';
+  if(v==='queue'||v==='orders'){
+    const l=list(), id=v==='orders'?S.curO:S.cur;
+    if(l.length&&!l.find(o=>o.id===id)){if(v==='orders')S.curO=l[0].id;else S.cur=l[0].id}
+    renderQueue(); renderCard();
+  }
+  if(v==='inbox')renderInbox();
+  $('#bell').toggleAttribute('aria-current',v==='inbox');
+  window.scrollTo(0,0);
+}
+function afterSave(msg,remove){
+  const l=list(), i=l.findIndex(o=>o.id===cur().id);
+  const o=cur();
+  if(remove)O.splice(O.indexOf(o),1);
+  const l2=list(); const nxt=remove?(l2[Math.min(i,l2.length-1)]):(l2[Math.min(i+1,l2.length-1)]);
+  renderTabs(); renderInsights(); bindProgress(); closeCard();
+  if(nxt)select(nxt.id,false);else{if(S.view==='orders')S.curO=null;else S.cur=null;S.out=null;renderQueue();renderCard()}
+  toast(msg);
+}
+function save(){
+  const o=cur(), k=S.out, note=$('#note').value.trim(), len=parseInt($('#len').value)||0, t=hhmm(Date.now());
+  const add=(label)=>o.hist.unshift([t,label,'Adwoa Darko',note,len]);
+  if(k==='confirmed'){
+    const ex=extra(o); add('Confirmed'); S.confToday++; S.conf++;
+    const ch=ex?` Extra ${money(ex)}: you earn ${money(8+ex/10)} if delivered.`:' You earn GH₵8 if delivered.';
+    afterSave('Confirmed '+o.n+'.'+ch,true);
+  }
+  else if(k==='noreach'){add('Not reachable');afterSave('Logged. '+o.n+' stays in your queue.',false)}
+  else if(k==='callback'){
+    const ct=$('#ctime').value; let due=30;
+    if(S.time==='In 30 min')due=30;else if(S.time==='In 1 hour')due=60;else if(S.time==='Today 16:00')due=300;else if(S.time==='Tomorrow 09:00')due=1320;
+    else if(ct){const [h,m]=ct.split(':').map(Number);const d=new Date();d.setHours(h,m,0,0);due=Math.max(1,Math.round((d-Date.now())/60000))}
+    add('Call back'); o.k='c'; o.due=due; afterSave('Call back set. '+o.n+' is in Call backs.',false);
+  }
+  else if(k==='declined'){add('Declined'); o.hist[0][3]=S.reason+(note?'. '+note:''); afterSave('Saved as declined: '+S.reason.toLowerCase()+'.',true)}
+  else if(k==='wrong'){add('Wrong number');afterSave('Marked as wrong number.',true)}
+}
+function renderInsights(){
+  const late=O.find(o=>o.k==='c'&&o.due<0);
+  const off=O.filter(o=>o.k==='p'&&o.hist.some(h=>h[1]==='Not reachable'));
+  let h='';
+  if(late)h+=`<div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="sparkles"></i></div><div><b>${late.n} is waiting for your call</b><p>Asked for a call back at ${hhmm(NOW+late.due*60000)}. It is ${-late.due} minutes late.</p></div></div><div class="act"><button class="mini pri" data-ins="late" data-id="${late.id}">Open order</button></div></div>`;
+  if(off.length)h+=`<div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="sparkles"></i></div><div><b>${off.length} customers did not pick up</b><p>${off.map(o=>o.n.split(' ')[0]).join(' and ')} did not answer your last try. A WhatsApp message asks them for a good time to call.</p></div></div><div class="act"><button class="mini pri" data-ins="wa">Send WhatsApp</button></div></div>`;
+  $('#insights').innerHTML=h; lucide.createIcons();
+}
+
+/* inbox. Items are built from O and TH so the call-back times and amounts always agree with Queue and Earnings. */
+const IB_IC={rem:['alarm-clock','gold'],wa:['message-circle','mint'],assign:['user-check','pine'],ok:['check-circle-2','mint'],bad:['x-circle','coral'],pay:['banknote','gold'],tgt:['trophy','mint'],note:['messages-square','violet']};
+const PPL={Adwoa:['var(--pine-soft)','var(--pine)','AD'],Manny:['var(--violet-soft)','var(--violet)','MA'],Kofi:['var(--gold-soft)','var(--gold)','KA']};
+const TH=[
+ {id:'#24013',title:'Abena Konadu · #24013',st:'Out for delivery',stc:'v',u:1,msgs:[
+  {n:'Kofi',time:'09:20',tx:'Abena says evening please. She is home after 17:00 and asks for change for GH₵500.'},
+  {n:'Manny',time:'09:25',tx:'Fine. Adwoa, please tell Abena that Kofi comes after 17:00.'}]},
+ {id:'#24020',title:'Yaw Mensah · #24020',st:'Re-delivery',stc:'bad',u:1,msgs:[
+  {n:'Kofi',time:'Yesterday 15:20',tx:'Yaw Mensah\'s phone was off at 15:20. I could not deliver.'},
+  {n:'Adwoa',time:'Yesterday',tx:'Yaw Mensah confirmed. Call before you go.'},
+  {n:'Kofi',time:'09:05',tx:'His phone is off again. Can you try him? I am near Ahodwo now.'}]}
+];
+const ib={f:'all',t:'#24013',items:[
+ {id:'esi',g:'Today',ic:'rem',oid:'#24026',u:1},
+ {id:'ama',g:'Today',ic:'wa',oid:'#24045',u:1},
+ {id:'n1',g:'Today',ic:'note',th:'#24013',u:1},
+ {id:'n2',g:'Today',ic:'note',th:'#24020',u:1},
+ {id:'efua',g:'Today',ic:'assign',oid:'#24041',u:1},
+ {id:'nana',g:'Today',ic:'bad',oid:'#23987',u:1},
+ {id:'tgt',g:'Today',ic:'tgt',u:0},
+ {id:'kojo',g:'Yesterday',ic:'ok',oid:'#23998',u:1},
+ {id:'pay',g:'Earlier',ic:'pay',u:0}
+]};
+function ibText(n){
+  const o=n.oid&&O.find(x=>x.id===n.oid);
+  switch(n.id){
+   case 'esi':return o&&o.k==='c'?{t:'Call back '+o.n,p:'Asked for a call back at '+hhmm(NOW+o.due*60000)+' · '+o.area,l:['Open call card','order'],w:`<span class="${o.due<0?'due':''}">${dueTxt(o.due)}</span>`}:null;
+   case 'ama':return o&&o.k==='p'?{t:o.n+' asked on WhatsApp for a call after 15:00',p:o.area+' · '+prodText(o.t,o.a)+' · '+money(val(o.t,o.a)),l:['Open call card','order'],w:'WhatsApp'}:null;
+   case 'efua':return o&&o.k==='p'?{t:'Order '+o.id+' moved to you',p:o.n+' · '+o.area+' · '+money(val(o.t,o.a))+'. Manny moved it from Nana Kyei.',l:['Open call card','order'],w:'09:10'}:null;
+   case 'kojo':return o?{t:'Delivered: '+o.n+'. You earned GH₵28',p:'GH₵8 commission and GH₵20 upsell reward (10% of the GH₵200 extra from the 2 set offer).',l:['Open in My orders','order'],w:'16 Oct'}:null;
+   case 'nana':return o?{t:'Failed: '+o.n+' refused the order',p:'He told Kofi Appiah he changed his mind. A failed order earns no commission. Call him about a re-delivery.',l:['Open re-delivery call','order'],w:'17 Oct'}:null;
+   case 'tgt':return {t:'You are at '+Math.round(S.del/423*100)+'% of your target',p:S.del+' of 423 confirmed and delivered. '+(423-S.del)+' more to reach 100% and earn GH₵300 at month close.',l:['Open Earnings','earn'],w:'Today 06:00'};
+   case 'pay':return {t:'Payout paid: GH₵600',p:'October commission, paid on 9 Oct.',l:['Open Earnings','earn'],w:'9 Oct'};
+   default:{const t=TH.find(x=>x.id===n.th),m=t.msgs[t.msgs.length-1];return {t:m.n+' wrote on '+t.title.split(' · ')[0]+'\'s order',p:'“'+m.tx+'”',l:['Open note','note'],w:m.time.replace('Yesterday ','')}}
+  }
+}
+const ibLive=()=>ib.items.map(n=>({n,x:ibText(n)})).filter(r=>r.x);
+const ibUnread=(f)=>ibLive().filter(r=>r.n.u&&(f==='all'||(f==='rem'&&(r.n.ic==='rem'||r.n.ic==='wa'))||(f==='notes'&&r.n.ic==='note'))).length;
+function ibBadge(){
+  const n=ibUnread('all'), b=$('#bcnt'); b.textContent=n; b.hidden=!n;
+  $('#bell').setAttribute('aria-label','Inbox'+(n?', '+n+' unread':''));
+}
+function ibThread(id){
+  ib.t=id; const t=TH.find(x=>x.id===id); t.u=0;
+  const n=ib.items.find(x=>x.th===id); if(n)n.u=0;
+  renderInbox();
+}
+function openOrder(id){
+  const o=O.find(x=>x.id===id); if(!o)return;
+  const v=o.k==='m'?'orders':'queue';
+  if(v==='queue')S.tab=o.k;
+  location.hash=v; route();
+  if(v==='queue')renderTabs();
+  select(id,true); S.fromInbox=true;
+}
+function ibGo(a,item){
+  const n=item&&ib.items.find(x=>x.id===item); if(n)n.u=0;
+  const [t,...r]=a.split(':'), id=r.join(':');
+  if(t==='note'){ib.f='notes';ibThread(id);return}
+  ibBadge();
+  if(t==='earn'){location.hash='earnings';route();return}
+  openOrder(id);
+}
+function renderInbox(){
+  if(ib.f==='notes'){const t=TH.find(x=>x.id===ib.t); t.u=0; const ni=ib.items.find(x=>x.th===t.id); if(ni)ni.u=0}
+  const rows=ibLive(), F=ib.f;
+  const un=ibUnread('all');
+  $('#ibsum').textContent=un?un+' unread. Reminders, updates on your orders and notes from the team.':'You are all caught up.';
+  const cnt=(k)=>{const c=ibUnread(k);return c?`<span class="hot">${c}</span>`:''};
+  $('#ibtabs').innerHTML=[['all','All'],['rem','Reminders'],['notes','Team notes']].map(([k,l])=>`<button class="tab ${F===k?'on':''}" role="tab" aria-selected="${F===k}" data-ibf="${k}">${l}${cnt(k)}</button>`).join('');
+  let h='';
+  if(F==='notes'){
+    const t=TH.find(x=>x.id===ib.t), o=O.find(x=>x.id===t.id);
+    h=`<div class="ib-thr"><div class="ib-tl">${TH.map(x=>`<button class="ib-t ${x.id===t.id?'on':''}" data-ibt="${x.id}"><div class="ib-ic" style="width:32px;height:32px;background:var(--hover);color:var(--ink-2)"><i data-lucide="shopping-bag" style="width:15px;height:15px"></i></div><div style="min-width:0"><b>${x.title}</b><small>${x.msgs[x.msgs.length-1].n}: ${x.msgs[x.msgs.length-1].tx.slice(0,40)}…</small></div>${x.u?'<span class="u" aria-label="Unread"></span>':''}</button>`).join('')}</div>
+     <div class="ib-pane"><div class="ib-th"><h3>${t.title}</h3><span class="tag ${t.stc}">${t.st}</span>${o?`<button class="ib-lnk sp" style="margin:0" data-ib="order:${t.id}"><i data-lucide="link-2"></i>Open call card</button>`:''}</div>
+     <div class="ib-msgs">${t.msgs.map(m=>`<div class="ib-m"><div class="a" style="background:${PPL[m.n][0]};color:${PPL[m.n][1]}">${PPL[m.n][2]}</div><div class="bub"><div class="nm">${m.n}<small>${m.time}</small></div><div class="tx">${m.tx}</div></div></div>`).join('')}</div>
+     <div class="ib-comp"><textarea id="ibmsg" placeholder="Write a reply" aria-label="Reply"></textarea><div class="crow"><button class="btn pri" id="ibsend"><i data-lucide="send"></i>Send</button></div></div></div></div>`;
+  }else{
+    const list=rows.filter(r=>F==='all'||r.n.ic==='rem'||r.n.ic==='wa');
+    ['Today','Yesterday','Earlier'].forEach(g=>{
+      const rs=list.filter(r=>r.n.g===g); if(!rs.length)return;
+      h+=`<div class="ib-sub">${g}</div>`+rs.map(({n,x})=>{
+        const [ic,c]=IB_IC[n.ic], act=x.l[1]==='order'?'order:'+n.oid:x.l[1]==='note'?'note:'+n.th:'earn';
+        return `<div class="ib-row ${n.u?'unread':''}" role="link" tabindex="0" data-ib="${act}" data-item="${n.id}"><span class="ud"></span><div class="ib-ic" style="background:var(--${c}-soft);color:var(--${c})"><i data-lucide="${IB_IC[n.ic][0]}"></i></div><div class="ib-b"><b>${x.t}</b><p>${x.p}</p><span class="ib-lnk"><i data-lucide="link-2"></i>${x.l[0]}</span></div><div class="ib-w">${x.w}</div></div>`}).join('');
+    });
+    if(!list.length)h='<div class="empty"><i data-lucide="check-circle-2" style="width:30px;height:30px"></i><p style="margin-top:8px;font-weight:600">Nothing here</p><p class="sub">You are caught up.</p></div>';
+  }
+  $('#ibbody').innerHTML=h; ibBadge(); lucide.createIcons();
+}
+
+/* events */
+document.addEventListener('click',e=>{
+  const g=(s)=>e.target.closest(s);
+  let el;
+  if(g('[data-stop]'))return;
+  if(el=g('[data-t]')){S.tab=el.dataset.t;renderTabs();const l=list();if(l.length&&!l.find(o=>o.id===S.cur))select(l[0].id,false);else renderQueue();return}
+  if(el=g('[data-open]')){select(el.dataset.open,true);return}
+  if(el=g('.qi')){select(el.dataset.o,true);return}
+  if(g('#cc-back')){if(S.fromInbox){S.fromInbox=false;history.back();return}closeCard();return}
+  if(el=g('[data-out]')){S.out=el.dataset.out;$$('#outs button').forEach(b=>b.classList.toggle('on',b===el));renderSub();return}
+  if(el=g('[data-tier]')){cur().t=+el.dataset.tier;renderSub();liveValue();return}
+  if(el=g('[data-add]')){const o=cur(),a=el.dataset.add;o.a=o.a.includes(a)?o.a.filter(x=>x!==a):[...o.a,a];renderSub();liveValue();return}
+  if(el=g('[data-time]')){S.time=el.dataset.time;$('#ctime').value='';$$('#cbt button').forEach(b=>b.classList.toggle('on',b===el));updSave();return}
+  if(el=g('[data-reason]')){S.reason=el.dataset.reason;$$('#rs button').forEach(b=>b.classList.toggle('on',b===el));updSave();return}
+  if(g('#save')){save();return}
+  if(el=g('[data-notes]')){ib.f='notes';ib.t=TH.some(t=>t.id===el.dataset.notes)?el.dataset.notes:ib.t;location.hash='inbox';route();return}
+  if(el=g('[data-ib]')){ibGo(el.dataset.ib,el.dataset.item);return}
+  if(el=g('[data-ibf]')){ib.f=el.dataset.ibf;renderInbox();return}
+  if(el=g('[data-ibt]')){ibThread(el.dataset.ibt);return}
+  if(g('#ibmark')){ib.items.forEach(n=>n.u=0);TH.forEach(t=>t.u=0);renderInbox();toast('All marked read');return}
+  if(g('#ibsend')){const v=$('#ibmsg').value.trim();if(!v)return;TH.find(t=>t.id===ib.t).msgs.push({n:'Adwoa',time:'Just now',tx:v});renderInbox();toast('Note sent');return}
+  if(el=g('[data-ins]')){
+    if(el.dataset.ins==='late'){S.tab='c';location.hash='queue';route();renderTabs();select(el.dataset.id,true)}
+    else toast('WhatsApp message sent to '+O.filter(o=>o.k==='p'&&o.hist.some(h=>h[1]==='Not reachable')).length+' customers.');
+    return}
+});
+document.addEventListener('input',e=>{
+  if(e.target.id==='q'||e.target.id==='oq')renderQueue();
+  if(e.target.id==='ctime'){S.time=null;$$('#cbt button').forEach(b=>b.classList.remove('on'));updSave()}
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&e.target.dataset.ib){ibGo(e.target.dataset.ib,e.target.dataset.item);return}
+  if((e.key==='Enter'||e.key===' ')&&e.target.classList.contains('qi')){e.preventDefault();select(e.target.dataset.o,true)}
+  if(e.key==='Escape')closeCard();
+});
+$('#theme').onclick=()=>{const r=document.documentElement;const d=r.dataset.theme==='dark';r.dataset.theme=d?'light':'dark';$('#theme').innerHTML='<i data-lucide="'+(d?'moon':'sun')+'"></i>';lucide.createIcons()};
+
+/* calls a day bars */
+(()=>{const v=[74,81,88,69,92,85,78,71,83,90,76,84,79,41];$('#bars').innerHTML=v.map((x,i)=>`<i class="${i===13?'t':''}" style="height:${x/92*100}%"></i>`).join('')})();
+$('#newOrd').onclick=()=>{$('#no-veil').classList.add('on');$('#no-n').focus()};
+$('#no-x-c').onclick=()=>$('#no-veil').classList.remove('on');
+$('#no-veil').onclick=e=>{if(e.target.id==='no-veil')e.target.classList.remove('on')};
+$('#no-go').onclick=()=>{const n=$('#no-n').value.trim();if(!n){$('#no-n').focus();return}$('#no-veil').classList.remove('on');toast('Order for '+n+' created: '+money(+$('#no-t').value+ +$('#no-x').value)+'. Sample only.')};
+setInterval(()=>{O.filter(o=>o.k==='p').forEach(o=>o.m++);O.filter(o=>o.k==='c').forEach(o=>o.due--);renderQueue();const o=cur();if(o&&o.k==='p'){const t=document.querySelector('#callpanel .tag.warn');if(t)t.textContent='Waiting '+waitTxt(o.m)}renderTabs()},60000);
+
+window.addEventListener('hashchange',route);
+renderTabs(); renderInsights(); bindProgress(); ibBadge();
+route();
+lucide.createIcons();
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

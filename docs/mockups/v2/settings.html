@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings - CodAdmin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+
+.sw{flex:none;width:36px;height:20px;border-radius:99px;background:var(--line);position:relative;transition:background .15s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--ink-3);transition:transform .15s,background .15s}
+.sw[aria-checked="true"]{background:var(--pine)}
+.sw[aria-checked="true"]::after{transform:translateX(16px);background:var(--card)}
+.ins.row2{display:grid;grid-template-columns:1fr 1fr}
+.setgrid{display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start}
+.subnav{padding:8px;position:sticky;top:84px;display:flex;flex-direction:column;gap:2px}
+.subnav .nav{font-size:13.5px}
+.subnav .nav svg.lucide{width:17px;height:17px}
+.secs{display:flex;flex-direction:column;gap:16px;min-width:0}
+.sec{display:none;flex-direction:column;gap:16px}
+.sec.on{display:flex}
+.nsrow{display:grid;grid-template-columns:1fr 1.6fr;gap:16px;padding:16px 20px 4px}
+.nsrow .ns{border-radius:16px;display:flex;flex-direction:column;justify-content:center}
+.nsrow .ns .big{font-size:38px}
+.nsrow .split{margin-top:0;grid-template-columns:repeat(2,1fr)}
+.nsrow .split .q h4{align-items:center}
+.nsrow .split .q b{display:block;margin-top:6px}
+.sub{padding:18px 20px 0;font-weight:600}
+.sub small{display:block;color:var(--ink-3);font-weight:400;margin-top:1px}
+.drivers.in-card{margin:12px 20px 20px}
+.rin{display:flex;align-items:center;gap:6px;color:var(--ink-3);font-weight:700}
+.rin .in{width:76px;text-align:right;font:800 16px "Bricolage Grotesque";padding:6px 10px}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 20px 4px}
+.fields label{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.fields .hint{color:var(--ink-3);font-size:12px;margin-top:5px}
+.in{width:100%;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 12px;font:inherit}
+.cardfoot{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--line);margin-top:16px}
+.medals.three{grid-template-columns:repeat(3,1fr)}
+.medal b{display:block;font-size:13.5px}
+.medal .who-won{display:block;color:var(--ink-2);font-size:12px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
+.fx{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:16px 20px 4px}
+.fx .drv b{font-size:24px}
+.fxrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fxrow .in{width:110px;font:800 20px "Bricolage Grotesque";text-align:center}
+.srow{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line)}
+.srow:last-of-type{border-bottom:0}
+.srow b{display:block}
+.srow small{color:var(--ink-3)}
+.srow .sw{margin-left:auto}
+.srow .tag.lead{min-width:130px;justify-content:center}
+.plan{display:flex;align-items:center;gap:28px;padding:18px 20px;flex-wrap:wrap}
+.plan .big{font-family:"Bricolage Grotesque";font-size:30px;font-weight:800}
+@media (max-width:1100px){.nsrow,.ins.row2{grid-template-columns:1fr}}
+@media (max-width:900px){.setgrid{grid-template-columns:1fr}.subnav{position:static;flex-direction:row;overflow-x:auto}.subnav .nav{white-space:nowrap;width:auto}}
+@media (max-width:760px){.fields,.fx,.medals.three{grid-template-columns:1fr}}
+a.btn{text-decoration:none;color:var(--ink)}
+a.btn.pri{color:#fff}
+[data-theme="dark"] a.btn.pri{color:#04211d}
+a.btn:hover{background:var(--hover)}
+
+
+.insrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;padding:14px 20px 18px}
+.fields.one{grid-template-columns:1fr}
+.fields .full{grid-column:1/-1}
+.avbig{width:64px;height:64px;border-radius:50%;background:var(--coral-soft);color:var(--coral);display:grid;place-items:center;font:800 22px "Bricolage Grotesque";flex:none}
+.proftop{display:flex;align-items:center;gap:16px;padding:18px 20px 0}
+.proftop small{color:var(--ink-3);display:block}
+.sess{display:flex;align-items:center;gap:12px;padding:13px 20px;border-bottom:1px solid var(--line)}
+.sess:last-of-type{border-bottom:0}
+.sess .ico{width:38px;height:38px;border-radius:11px;background:var(--hover);color:var(--ink-2);display:grid;place-items:center;flex:none}
+.sess small{display:block;color:var(--ink-3)}
+.sess .mini{margin-left:auto}
+.danger{border-color:var(--coral)}
+.danger .ct h3{color:var(--coral)}
+.btn.dng{background:var(--coral);border-color:var(--coral);color:#fff}
+[data-theme="dark"] .btn.dng{color:#1f0a08}
+.dzrow{display:flex;gap:16px;align-items:center;padding:16px 20px 20px;flex-wrap:wrap}
+.dzrow p{flex:1;min-width:240px;color:var(--ink-2);font-size:13px}
+.confirm{padding:0 20px 20px}
+.confirm .in{max-width:320px}
+.usage{padding:6px 20px 4px}
+.usage .ut{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.usage .ut b{font:800 26px "Bricolage Grotesque"}
+.plans{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:16px 20px 6px}
+.pl{border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.pl.cur{border-color:var(--pine);box-shadow:0 0 0 3px var(--pine-soft)}
+.pl h4{font-family:"Bricolage Grotesque";font-size:16px;display:flex;justify-content:space-between;align-items:center}
+.pl .pr{font:800 24px "Bricolage Grotesque"}
+.pl .pr small{font:500 12.5px "Plus Jakarta Sans";color:var(--ink-3)}
+.pl ul{list-style:none;display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--ink-2);flex:1}
+.pl li{display:flex;gap:7px;align-items:flex-start}
+.pl li svg.lucide{width:15px;height:15px;color:var(--mint);flex:none;margin-top:2px}
+.pl .btn{justify-content:center;padding:7px 12px;font-size:13px}
+.pl.rec{border-color:var(--violet)}
+.toast{position:fixed;left:50%;bottom:58px;transform:translateX(-50%);background:var(--pine);color:#fff;padding:9px 16px;border-radius:12px;font-weight:600;font-size:13px;z-index:70;box-shadow:var(--shadow);display:none}
+[data-theme="dark"] .toast{color:#04211d}
+.toast.on{display:block}
+.linkcard{display:flex;align-items:center;gap:14px;padding:18px 20px;flex-wrap:wrap}
+.linkcard .ico{width:44px;height:44px;border-radius:12px;background:var(--violet-soft);color:var(--violet);display:grid;place-items:center;flex:none}
+.linkcard p{color:var(--ink-2);font-size:13px}
+.linkcard .btn{margin-left:auto}
+.fields .in[readonly]{background:var(--hover);color:var(--ink-2)}
+[hidden]{display:none!important}
+@media (max-width:1100px){.plans{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.plans{grid-template-columns:1fr}.proftop{flex-wrap:wrap}}
+
+.hr{display:grid;grid-template-columns:120px 1fr 1fr auto;gap:12px;align-items:center;padding:9px 20px;border-bottom:1px solid var(--line)}
+.hr .in{padding:7px 10px}
+.opserr{margin:12px 20px 0;padding:10px 12px;border-radius:12px;background:var(--coral-soft);color:var(--coral);font-weight:500;font-size:13px}
+.linkbtn{background:none;border:0;color:var(--violet);font:inherit;font-weight:600;cursor:pointer;padding:0;text-decoration:underline}
+.cardfoot .btn:disabled{opacity:.5;cursor:not-allowed}
+.nsrow .split .q .in{margin-top:4px}
+@media (max-width:760px){.hr{grid-template-columns:1fr 1fr auto}.hr b{grid-column:1/-1}.fields[style*="repeat(3"]{grid-template-columns:1fr!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav on" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+<section>
+  <div class="head">
+    <div><h1>Settings</h1><p>Your profile, business, hours, targets, rewards, currency and plan.</p></div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px" id="agentcards">
+    <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> <span id="agN">Agent found 2 things</span></h3><span>Updated 06:42</span></div>
+    <div class="insrow">
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="truck"></i></div><div><b>Delivery success of 48% keeps Q4 behind its 60% target</b><p>Q4 needs GH₵448k more in 75 days. A re-plan keeps the North Star and moves the driver targets.</p></div></div><div class="act"><button class="mini pri" data-show="northstar">Show a revised Q4 plan</button><button class="mini" data-dismiss>Dismiss</button></div></div>
+      <div class="insight" id="fxcard"><div class="h"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="arrow-left-right"></i></div><div><b>Your manual FX rate is 16 days old</b><p>Ad spend in ₦ converts at 1 GH₵ = ₦112, typed by hand on 1 Oct. Check it before you read profit by campaign.</p></div></div><div class="act"><button class="mini pri" data-show="fx">Check the rate</button><button class="mini" data-dismiss>Dismiss</button></div></div>
+    </div>
+  </div>
+
+  <div class="setgrid">
+    <nav class="card subnav" aria-label="Settings sections">
+      <button class="nav" data-sec="profile"><i data-lucide="user-round"></i>Profile</button>
+      <button class="nav" data-sec="security"><i data-lucide="shield-check"></i>Security</button>
+      <button class="nav" data-sec="business"><i data-lucide="store"></i>Business details</button>
+      <button class="nav" data-sec="ops"><i data-lucide="clock"></i>Operations</button>
+      <button class="nav on" data-sec="northstar"><i data-lucide="flag"></i>North Star &amp; targets</button>
+      <button class="nav" data-sec="rewards"><i data-lucide="gift"></i>Rewards</button>
+      <button class="nav" data-sec="fx"><i data-lucide="coins"></i>Currencies &amp; FX</button>
+      <button class="nav" data-sec="statuses"><i data-lucide="list-checks"></i>Order statuses</button>
+      <button class="nav" data-sec="notify"><i data-lucide="bell"></i>Notifications</button>
+      <button class="nav" data-sec="billing"><i data-lucide="credit-card"></i>Billing &amp; plans</button>
+    </nav>
+
+    <div class="secs">
+      <!-- PROFILE -->
+      <div class="sec" data-s="profile">
+        <div class="card">
+          <div class="ct"><h3>Profile</h3><span>Only you see this</span></div>
+          <div class="proftop"><div class="avbig">MA</div><div><b style="font-size:16px">Manny</b><small>Owner · member since 2 Jan 2026</small></div><button class="btn" style="margin-left:auto" data-toast="Photo upload opens here. Sample only.">Change photo</button></div>
+          <div class="fields">
+            <div><label for="p1">Full name</label><input class="in" id="p1" value="Michael Emmanuel"></div>
+            <div><label for="p2">Display name</label><input class="in" id="p2" value="Manny"><div class="hint">Shown to your team in notes and assignments.</div></div>
+            <div><label for="p3">Email</label><input class="in" id="p3" value="manny@mannydynamics.com"></div>
+            <div><label for="p4">Phone</label><input class="in" id="p4" value="+234 803 555 0142" placeholder="+233 24 000 0000"></div>
+            <div><label for="p5">Language</label><select class="in" id="p5"><option>English</option></select><div class="hint">CodAdmin is in English only.</div></div>
+          </div>
+          <div class="cardfoot"><button class="btn pri" data-toast="Profile saved. Sample only.">Save profile</button></div>
+        </div>
+      </div>
+
+      <!-- SECURITY -->
+      <div class="sec" data-s="security">
+        <div class="card">
+          <div class="ct"><h3>Password</h3><span>Changed 3 months ago</span></div>
+          <div class="fields">
+            <div class="full"><label for="s1">Current password</label><input class="in" id="s1" type="password" placeholder="Your current password"></div>
+            <div><label for="s2">New password</label><input class="in" id="s2" type="password" placeholder="At least 8 characters"></div>
+            <div><label for="s3">Repeat new password</label><input class="in" id="s3" type="password"></div>
+          </div>
+          <div class="cardfoot"><button class="btn pri" data-toast="Password changed. Other devices are signed out. Sample only.">Change password</button></div>
+        </div>
+        <div class="card">
+          <div class="ct"><h3>Where you are signed in</h3><button class="mini" data-toast="Signed out of 2 other places. Sample only.">Sign out everywhere else</button></div>
+          <div style="margin-top:8px">
+            <div class="sess"><span class="ico"><i data-lucide="laptop"></i></span><div><b>MacBook · Chrome</b><small>IP 102.89.34.12 · Now</small></div><span class="tag ok" style="margin-left:auto">This device</span></div>
+            <div class="sess"><span class="ico"><i data-lucide="smartphone"></i></span><div><b>iPhone · Safari</b><small>IP 102.89.34.12 · 2 hours ago</small></div><button class="mini" data-toast="Signed out. Sample only.">Sign out</button></div>
+            <div class="sess"><span class="ico"><i data-lucide="monitor"></i></span><div><b>Windows PC · Edge</b><small>IP 154.160.7.88 · 3 days ago</small></div><button class="mini" data-toast="Signed out. Sample only.">Sign out</button></div>
+          </div>
+        </div>
+        <div class="card danger">
+          <div class="ct"><h3>Danger zone</h3></div>
+          <div class="dzrow"><p><b style="color:var(--ink)">Delete your account</b><br>This removes your login, all orders, customers and messages. It cannot be undone. Export your data first.</p><button class="btn" data-toast="Export started. Sample only.">Export my data</button><button class="btn dng" id="dzopen">Delete account</button></div>
+          <div class="confirm" id="dzc" hidden><label for="dzp" style="display:block;font-weight:600;font-size:13px;margin-bottom:6px">Your password</label><input class="in" id="dzp" type="password" style="margin-bottom:10px"><label for="dz" style="display:block;font-weight:600;font-size:13px;margin-bottom:6px">Type DELETE to confirm</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="in" id="dz" placeholder="DELETE"><button class="btn dng" id="dzgo" disabled>Delete everything</button><button class="btn" id="dzno">Cancel</button></div></div>
+        </div>
+      </div>
+
+      <!-- BUSINESS -->
+      <div class="sec" data-s="business">
+        <div class="card">
+          <div class="ct"><h3>Business details</h3><span>Shown on invoices and customer messages</span></div>
+          <div class="fields">
+            <div><label for="b1">Business name</label><input class="in" id="b1" value="Manny Dynamics Limited"></div>
+            <div><label for="b3">Contact person <small style="color:var(--ink-3);font-weight:400">(optional)</small></label><input class="in" id="b3" value="Manny"></div>
+            <div><label for="b4">Contact email</label><input class="in" id="b4" value="hello@magicgroove.shop"></div>
+            <div><label for="b2">Business phone</label><input class="in" id="b2" value="+234 803 555 0100"></div>
+            <div><label for="b5">Customer support WhatsApp</label><input class="in" id="b5" value="+233 24 555 0100"><div class="hint">Customers see this number in delivery messages. Use the international format.</div></div>
+            <div><label for="b6">Tax ID (TIN)</label><input class="in" id="b6" value="C0012345678"></div>
+            <div class="full"><label for="b7">Business address</label><input class="in" id="b7" value="14 Adeola Odeku Street, Victoria Island, Lagos, Nigeria"></div>
+            <div><label for="b10">Time zone</label><select class="in" id="b10"><option selected>Africa/Accra (GMT)</option><option>Africa/Lagos (GMT+1)</option><option>Africa/Nairobi (GMT+3)</option><option>Africa/Johannesburg (GMT+2)</option></select><div class="hint">Reports, nightly jobs and operating hours use this. A change applies to future days only.</div></div>
+          </div>
+          <div class="cardfoot"><button class="btn pri" data-toast="Business details saved. Sample only.">Save</button></div>
+        </div>
+        <div class="linkcard card" style="padding:14px 20px"><span class="ico" style="width:36px;height:36px"><i data-lucide="coins" style="width:18px;height:18px"></i></span><div><b>Country and currency</b><p>Your selling country and store currency are in Currencies &amp; FX.</p></div><button class="btn" data-show="fx">Open Currencies &amp; FX</button></div>
+      </div>
+
+      <!-- OPERATIONS -->
+      <div class="sec" data-s="ops">
+        <div class="card">
+          <div class="ct"><h3>Operating hours</h3><span>Time zone: Africa/Accra (set in Business details)</span></div>
+          <div class="sub" style="padding-bottom:6px">When reps take calls<small>The time-to-first-call clock runs only inside these hours. An order at 22:00 starts counting at opening time. The auto-confirm message still goes out at once.</small></div>
+          <div id="hours" style="margin-top:6px">
+            <div class="hr" data-d="Monday"><b>Monday</b><input class="in" type="time" value="08:00" aria-label="Monday opens"><input class="in" type="time" value="20:00" aria-label="Monday closes"><button class="sw" role="switch" aria-checked="true" aria-label="Monday open"></button></div>
+            <div class="hr" data-d="Tuesday"><b>Tuesday</b><input class="in" type="time" value="08:00" aria-label="Tuesday opens"><input class="in" type="time" value="20:00" aria-label="Tuesday closes"><button class="sw" role="switch" aria-checked="true" aria-label="Tuesday open"></button></div>
+            <div class="hr" data-d="Wednesday"><b>Wednesday</b><input class="in" type="time" value="08:00" aria-label="Wednesday opens"><input class="in" type="time" value="20:00" aria-label="Wednesday closes"><button class="sw" role="switch" aria-checked="true" aria-label="Wednesday open"></button></div>
+            <div class="hr" data-d="Thursday"><b>Thursday</b><input class="in" type="time" value="08:00" aria-label="Thursday opens"><input class="in" type="time" value="20:00" aria-label="Thursday closes"><button class="sw" role="switch" aria-checked="true" aria-label="Thursday open"></button></div>
+            <div class="hr" data-d="Friday"><b>Friday</b><input class="in" type="time" value="08:00" aria-label="Friday opens"><input class="in" type="time" value="20:00" aria-label="Friday closes"><button class="sw" role="switch" aria-checked="true" aria-label="Friday open"></button></div>
+            <div class="hr" data-d="Saturday"><b>Saturday</b><input class="in" type="time" value="09:00" aria-label="Saturday opens"><input class="in" type="time" value="18:00" aria-label="Saturday closes"><button class="sw" role="switch" aria-checked="true" aria-label="Saturday open"></button></div>
+            <div class="hr" data-d="Sunday"><b>Sunday</b><input class="in" type="time" value="10:00" aria-label="Sunday opens"><input class="in" type="time" value="16:00" aria-label="Sunday closes"><button class="sw" role="switch" aria-checked="false" aria-label="Sunday open"></button></div>
+          </div>
+          <div class="opserr" id="opserr" hidden></div>
+        </div>
+        <div class="card">
+          <div class="ct"><h3>Queue and stock rules</h3></div>
+          <div class="fields">
+            <div><label for="o1">Queue wait alert (minutes)</label><input class="in" id="o1" value="30" inputmode="numeric"><div class="hint">Alert when an order waits this long for a first call.</div></div>
+            <div><label for="o2">Time to first call target (minutes)</label><input class="in" id="o2" value="15" inputmode="numeric"><div class="hint">Median now 9 min. Counted inside operating hours, to the first call attempt.</div></div>
+            <div><label for="o3">Default days to pay</label><input class="in" id="o3" value="7" inputmode="numeric"><div class="hint">Used for each new delivery partner. Change one partner in Deliveries.</div></div>
+            <div><label for="o4">Low stock alert (days of cover)</label><input class="in" id="o4" value="14" inputmode="numeric"><div class="hint">Alert when stock covers fewer days than this. Each product can override it.</div></div>
+          </div>
+          <div class="cardfoot"><button class="btn pri" id="opsSave">Save operations</button></div>
+        </div>
+      </div>
+
+      <!-- NORTH STAR -->
+      <div class="sec on" data-s="northstar">
+        <div class="card">
+          <div class="ct"><h3>North Star &amp; targets</h3><a class="btn" href="index.html#onboard"><i data-lucide="pencil"></i>Edit in setup</a></div>
+          <div class="fields">
+            <div><label for="n1">Annual North Star (delivered revenue)</label><div class="rin" style="gap:8px"><span>GH₵</span><input class="in num" id="n1" value="1,800,000" inputmode="numeric" style="width:100%;text-align:left;font:inherit"></div><div class="hint">Set on 2 Jan 2026</div></div>
+            <div><label for="n2">Net margin target</label><div class="rin" style="gap:8px"><input class="in num" id="n2" value="35" inputmode="numeric" style="width:90px;text-align:right;font:inherit"><span>%</span></div><div class="hint">Margin 12% year to date.</div></div>
+          </div>
+          <div class="sub" style="padding-top:18px">Growth split<small>The four quarters add up to the North Star. Months inside a quarter are equal.</small></div>
+          <div style="padding:10px 20px 0"><div class="seg" id="growth" style="margin-top:0"><button data-mode="even">Even each month</button><button class="on" data-mode="grow">Grow each quarter</button><button data-mode="custom">Custom</button></div></div>
+          <div class="nsrow">
+            <div class="ns"><small>North Star 2026 · delivered revenue</small><div class="big num" id="nsBig">GH₵1,800,000</div><div class="of">Set on 2 Jan 2026</div><div><span class="chip"><i data-lucide="trending-up" style="width:14px;height:14px"></i>77% done · 3 pts behind</span></div><div><span class="chip" style="margin-top:8px"><i data-lucide="percent" style="width:14px;height:14px"></i>Margin 12% year to date · target <span id="mtar">35</span>%</span></div></div>
+            <div class="split" id="qtiles"></div>
+          </div>
+          <div class="opserr" id="qerr" hidden></div>
+          <div class="sub" style="padding-top:20px">Driver targets<small>What it takes to deliver the October target. Role targets are set on the Targets page.</small></div>
+          <div class="fields" style="grid-template-columns:repeat(3,1fr)">
+            <div><label for="n3">Confirmation rate target</label><div class="rin" style="gap:8px"><input class="in num" id="n3" value="70" inputmode="numeric" style="width:90px;text-align:right;font:inherit"><span>%</span></div></div>
+            <div><label for="n4">Delivery success target</label><div class="rin" style="gap:8px"><input class="in num" id="n4" value="60" inputmode="numeric" style="width:90px;text-align:right;font:inherit"><span>%</span></div></div>
+            <div><label for="n5">Planned average order</label><div class="rin" style="gap:8px"><span>GH₵</span><input class="in num" id="n5" value="249" inputmode="numeric" style="width:100px;text-align:right;font:inherit"></div><div class="hint"><span id="aovState">Last 30 days of delivered orders (automatic).</span> <button class="linkbtn" id="aovReset" hidden>Reset to last 30 days</button></div></div>
+          </div>
+          <div class="drivers in-card" style="margin-top:6px">
+            <div class="drv"><small>Orders a day</small><b class="num" id="t-orders">56</b><em id="t-orders-s">Now 64 today</em></div>
+            <div class="drv"><small>Confirmation rate</small><b class="num" id="t-conf">70%</b><em>Now 71%</em></div>
+            <div class="drv"><small>Delivery success rate</small><b class="num" id="t-succ">60%</b><em>Now 48%</em></div>
+            <div class="drv"><small>Max cost per order</small><b class="num" id="t-cpa">₦8,700</b><em id="t-cpa-s">Moves with yield. Now ₦7,040 at 34%</em></div>
+          </div>
+          <div style="padding:0 20px;color:var(--ink-3);font-size:12.5px" id="t-math">GH₵180k ÷ GH₵249 = 723 delivered orders. ÷ 70% ÷ 60% = 1,721 orders. ÷ 31 days in October = 56 a day.</div>
+          <div class="confirm" id="nsconfirm" hidden style="padding:14px 20px 0"><div class="strip" style="display:flex;gap:8px;padding:12px;border-radius:12px;background:var(--gold-soft);color:var(--ink);font-size:13px"><i data-lucide="alert-triangle" style="color:var(--gold)"></i><span>Saving recalculates 12 monthly targets and 3 role targets. Past months do not change.</span></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn pri" id="nsok">Confirm and save</button><button class="btn" id="nsno">Cancel</button></div></div>
+          <div class="cardfoot"><button class="btn pri" id="nsSave">Save targets</button></div>
+        </div>
+        <div class="linkcard card" style="padding:14px 20px"><span class="ico" style="width:36px;height:36px"><i data-lucide="gift" style="width:18px;height:18px"></i></span><p><b style="color:var(--ink)">Rewards are set in Rewards.</b></p><button class="btn" data-show="rewards">Open Rewards</button></div>
+      </div>
+
+      <!-- REWARDS -->
+      <div class="sec" data-s="rewards">
+        <div class="card">
+          <div class="ct"><h3>Rewards</h3><span>Amounts are in your store currency (GH₵)</span></div>
+          <div class="sub" style="padding-bottom:6px">Target tiers<small>Paid when a role hits its monthly target, worked out at month close on delivery-date numbers. Each role has its own rule.</small></div>
+          <div>
+            <div class="reward"><div class="ico" style="background:var(--mint-soft);color:#14975f"><i data-lucide="phone-call"></i></div><div><b>Call rep hits 100%</b><small>Adwoa and Nana, each on their own target</small></div><div class="cost rin"><span>GH₵</span><input class="in" id="r-c100" value="300" inputmode="numeric" aria-label="Call rep reward at 100 percent"></div></div>
+            <div class="reward"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="phone-call"></i></div><div><b>Call rep hits 120%</b><small>Beat the target by a fifth. Plus a paid day off</small></div><div class="cost rin"><span>GH₵</span><input class="in" id="r-c120" value="500" inputmode="numeric" aria-label="Call rep reward at 120 percent"></div></div>
+            <div class="reward"><div class="ico" style="background:var(--mint-soft);color:#14975f"><i data-lucide="truck"></i></div><div><b>Delivery hits 100%</b><small>Kofi, Esi, Kwesi and other delivery agents</small></div><div class="cost rin"><span>GH₵</span><input class="in" id="r-d100" value="250" inputmode="numeric" aria-label="Delivery reward at 100 percent"></div></div>
+            <div class="reward"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="truck"></i></div><div><b>Delivery hits 120%</b><small>Delivery agents who are people. Plus a paid day off</small></div><div class="cost rin"><span>GH₵</span><input class="in" id="r-d120" value="400" inputmode="numeric" aria-label="Delivery reward at 120 percent"></div></div>
+            <div class="reward"><div class="ico" style="background:var(--hover);color:var(--ink-2)"><i data-lucide="bot"></i></div><div><b>Companies and AI agents</b><small>Logiswift, Kasapa Express, the confirm agent</small></div><div class="cost"><b style="color:var(--ink-2)">No payout</b></div></div>
+            <div class="reward"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="building-2"></i></div><div><b>3PL below 80% of target</b><small>A flag for you to review. It is not a payout</small></div><div class="cost"><b style="color:var(--coral)">Contract review</b></div></div>
+          </div>
+          <div class="opserr" id="rerr" hidden></div>
+          <div class="sub" style="padding-top:18px">Call rep pay<small>Paid to people only. AI agents get no payout.</small></div>
+          <div style="padding:0 20px">
+            <div class="reward"><div class="ico" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="phone-call"></i></div><div><b>Commission</b><small>Per order the rep confirmed by call that is delivered. Auto-confirmed orders earn none</small></div><div class="cost rin"><span>GH₵</span><input class="in" id="r-comm" value="8" inputmode="numeric" aria-label="Commission per confirmed order that is delivered"></div></div>
+            <div class="reward"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="trending-up"></i></div><div><b>Upsell reward</b><small>Share of the extra value added, paid when delivered</small></div><div class="cost rin"><input class="in" id="r-up" value="10" inputmode="numeric" aria-label="Upsell reward percent"><span>%</span></div></div>
+          </div>
+          <div class="sub" style="padding-top:18px">What reps can offer<small>Read from the checkout form. Extra value is what the rep adds beyond one copybook set.</small></div>
+          <div style="padding:10px 20px 0;display:flex;flex-wrap:wrap;gap:8px">
+            <span class="tag n">1 set GH₵249</span><span class="tag n">2 sets GH₵449</span><span class="tag n">3 sets GH₵629</span>
+            <span class="tag v">Refill pens GH₵40</span><span class="tag v">Pencil grip trainer GH₵35</span><span class="tag v">Smart Parent's guide GH₵59</span>
+          </div>
+          <div class="sub" style="padding-top:18px">Result badges<small>Earned only by hitting or beating a target. Shown here once.</small></div>
+          <div class="medals three">
+            <div class="medal"><div class="m" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="crown"></i></div><b>Top of month</b><small>Best result in a role for the month</small><span class="who-won">September: Adwoa Darko (call), Kofi Appiah (delivery)</span></div>
+            <div class="medal"><div class="m" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="calendar-check"></i></div><b>Hit target 3 months running</b><small>100% or more, three months in a row</small><span class="who-won">Adwoa Darko, Confirm agent (call), Kofi Appiah (delivery)</span></div>
+            <div class="medal"><div class="m" style="background:var(--mint-soft);color:#14975f"><i data-lucide="trending-up"></i></div><b>Beat target by 20%</b><small>120% or more in a month</small><span class="who-won">September: Kofi Appiah</span></div>
+          </div>
+          <div style="margin:16px 20px 0;padding:10px 12px;border-radius:12px;background:var(--hover);color:var(--ink-2);font-size:12.5px">New tier amounts apply from the next month close. A new commission or upsell share applies to orders delivered after you save.</div>
+          <div class="cardfoot"><button class="btn pri" id="rewSave">Save rewards</button></div>
+        </div>
+      </div>
+
+      <!-- FX -->
+      <div class="sec" data-s="fx">
+        <div class="card">
+          <div class="ct"><h3>Currencies &amp; FX</h3><span id="fxUpd">Manual rate set 1 Oct</span></div>
+          <div class="fields">
+            <div><label for="fc">Selling country</label><select class="in" id="fc"><option value="GHS" selected>Ghana</option><option value="NGN">Nigeria</option><option value="KES">Kenya</option><option value="ZAR">South Africa</option><option value="UGX">Uganda</option><option value="TZS">Tanzania</option><option value="RWF">Rwanda</option><option value="ETB">Ethiopia</option><option value="GBP">United Kingdom</option><option value="USD">United States</option><option value="EUR">Ireland</option><option value="INR">India</option><option value="CAD">Canada</option><option value="AUD">Australia</option><option value="JPY">Japan</option></select><div class="hint">Picking a country sets its currency. Regions come from the country.</div></div>
+            <div><label for="fs">Store currency</label><select class="in" id="fs"><option value="USD">USD US dollar</option><option value="GHS" selected>GHS Ghana cedi</option><option value="NGN">NGN Nigerian naira</option><option value="KES">KES Kenyan shilling</option><option value="ZAR">ZAR South African rand</option><option value="UGX">UGX Ugandan shilling</option><option value="TZS">TZS Tanzanian shilling</option><option value="RWF">RWF Rwandan franc</option><option value="ETB">ETB Ethiopian birr</option><option value="EUR">EUR Euro</option><option value="GBP">GBP British pound</option><option value="INR">INR Indian rupee</option><option value="CAD">CAD Canadian dollar</option><option value="AUD">AUD Australian dollar</option><option value="JPY">JPY Japanese yen</option></select><div class="hint" id="fsHint">You can change this at any time. Saved amounts stay as booked. Figures convert with the rate of each day.</div></div>
+          </div>
+          <div class="fx">
+            <div class="drv"><small>Sales and revenue</small><b id="fxStore">GH₵</b><em id="fxStoreN">Ghana cedi · what customers pay</em></div>
+            <div class="drv"><small>Ad spend</small><b>₦</b><em>Naira · what Meta charges, from the ad account</em></div>
+            <div class="drv"><small>Exchange rate</small><b id="fxTile">1 GH₵ = ₦112</b><em>Used to show ad spend in your store currency</em></div>
+          </div>
+          <div class="fields" style="grid-template-columns:1fr">
+            <div><label for="fxr">Naira per cedi</label><div class="fxrow"><input class="in num" id="fxr" value="112" inputmode="numeric"><button class="btn" id="fxToday">Use today's rate</button><span class="tag warn" id="fxState">Manual · 16 days old</span></div>
+              <div class="hint" id="fxHelp" style="margin-top:8px">CPA ₦5,903 is GH₵52.7. The max CPA ₦7,040 (at 34% yield) is GH₵62.9.</div>
+              <div class="hint" id="fxMode">The rate is on manual. It stays until you click Use today's rate. A manual rate older than 7 days shows a warning.</div></div>
+          </div>
+          <div class="cardfoot"><button class="btn pri" id="fxSave">Save</button></div>
+        </div>
+        <div class="card">
+          <div class="ct"><h3>Extra currencies</h3><span>Used for ad spend and supplier invoices</span></div>
+          <div id="xcur" style="margin-top:8px">
+            <div class="srow"><span class="tag n lead">NGN ₦</span><div><b>Nigerian naira</b><small>Meta ad account. Added by itself</small></div><span class="tag ok" style="margin-left:auto">In use</span></div>
+          </div>
+          <div class="cardfoot" style="justify-content:flex-start;align-items:center;flex-wrap:wrap"><label for="xadd" style="font-weight:600;font-size:13px">Add a currency</label><select class="in" id="xadd" style="width:auto"><option value="USD">USD US dollar</option><option value="EUR">EUR Euro</option><option value="GBP">GBP British pound</option><option value="CNY">CNY Chinese yuan</option><option value="KES">KES Kenyan shilling</option><option value="ZAR">ZAR South African rand</option></select><button class="btn" id="xaddbtn"><i data-lucide="plus"></i>Add</button><span style="color:var(--ink-3);font-size:12.5px">Supplier currencies are picked on a shipment and use the rate of the receive date.</span></div>
+        </div>
+        <div class="card">
+          <div class="ct"><h3>Rate history</h3><span>The ledger and P&amp;L use the rate of each day</span></div>
+          <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>Date</th><th>Pair</th><th class="r">Rate</th><th>Source</th></tr></thead><tbody id="fxHist">
+            <tr><td>2 to 17 Oct</td><td>₦ per GH₵1</td><td class="r num">112</td><td><span class="tag warn">Manual</span></td></tr>
+            <tr><td>1 Oct</td><td>₦ per GH₵1</td><td class="r num">112</td><td><span class="tag warn">Manual</span></td></tr>
+            <tr><td>30 Sep</td><td>₦ per GH₵1</td><td class="r num">111.6</td><td><span class="tag n">Automatic</span></td></tr>
+            <tr><td>29 Sep</td><td>₦ per GH₵1</td><td class="r num">111.8</td><td><span class="tag n">Automatic</span></td></tr>
+            <tr><td>28 Sep</td><td>₦ per GH₵1</td><td class="r num">112.1</td><td><span class="tag n">Automatic</span></td></tr>
+          </tbody></table></div>
+        </div>
+      </div>
+
+      <!-- STATUSES -->
+      <div class="sec" data-s="statuses">
+        <div class="card">
+          <div class="ct"><h3>Order statuses</h3><span>Fixed list. Read only</span></div>
+          <div style="margin-top:8px">
+            <div class="srow"><span class="tag warn lead">Pending</span><div><b>Waiting for a call</b><small>pending_confirmation · order came in from checkout</small></div></div>
+            <div class="srow"><span class="tag n lead">Confirmed</span><div><b>Customer said yes</b><small>confirmed · call rep sees "Waiting to dispatch"</small></div></div>
+            <div class="srow"><span class="tag n lead">Preparing</span><div><b>Being packed</b><small>preparing · stock is set aside for this order</small></div></div>
+            <div class="srow"><span class="tag n lead">Ready for pickup</span><div><b>Ready for the partner or agent</b><small>ready_for_pickup · delivery agent sees "To pick up"</small></div></div>
+            <div class="srow"><span class="tag v lead">Out for delivery</span><div><b>With a delivery agent or 3PL</b><small>out_for_delivery · cash is not collected yet · agent sees "Out"</small></div></div>
+            <div class="srow"><span class="tag ok lead">Delivered</span><div><b>Customer has the product</b><small>delivered · counts toward delivered revenue · agent sees "Done"</small></div></div>
+            <div class="srow"><span class="tag ok lead">Digital delivered</span><div><b>Paid digital order</b><small>digital_delivered · counts toward delivered revenue</small></div></div>
+            <div class="srow"><span class="tag bad lead">Failed delivery</span><div><b>Delivery did not happen</b><small>failed_delivery · refused, wrong address or not reachable · agent sees "Failed"</small></div></div>
+            <div class="srow"><span class="tag bad lead">Returned</span><div><b>Parcel came back</b><small>returned · the units go back to stock after a count</small></div></div>
+            <div class="srow"><span class="tag bad lead">Cancelled</span><div><b>Order will not go ahead</b><small>cancelled · declined or wrong number, with a reason · call rep sees "Declined"</small></div></div>
+            <div class="srow"><span class="tag n lead">Payment pending</span><div><b>Reserved. Not used yet</b><small>payment_pending · online orders are created after payment succeeds</small></div></div>
+            <div class="srow"><span class="tag n lead">Payment failed</span><div><b>Reserved. Not used yet</b><small>payment_failed · no order is created for a failed payment</small></div></div>
+          </div>
+          <div style="margin:16px 20px 0;padding:10px 12px;border-radius:12px;background:var(--hover);color:var(--ink-2);font-size:12.5px">Not reachable, Call back later and Wrong number are call outcomes, not statuses. Not reachable keeps the order in Pending. Declined and Wrong number set Cancelled with a reason.</div>
+          <div style="margin:10px 20px 20px;padding:10px 12px;border-radius:12px;background:var(--hover);color:var(--ink-2);font-size:12.5px">Payment is tracked apart from order status: unpaid, paid by 3PL, paid to you.</div>
+        </div>
+      </div>
+
+      <!-- NOTIFY -->
+      <div class="sec" data-s="notify">
+        <div class="card">
+          <div class="ct"><h3>Notifications</h3></div>
+          <div class="linkcard"><span class="ico"><i data-lucide="inbox"></i></span><div><b>Notification settings live in Inbox</b><p>Choose what reaches you, on WhatsApp, email or in the app, next to the alerts themselves.</p></div><a class="btn pri" href="inbox.html#settings"><i data-lucide="external-link"></i>Open Inbox settings</a></div>
+        </div>
+      </div>
+
+      <!-- BILLING -->
+      <div class="sec" data-s="billing">
+        <div class="card">
+          <div class="ct"><h3>Billing &amp; plans</h3><span class="tag ok">Active</span></div>
+          <div class="plan"><div><small style="color:var(--ink-3)">Plan</small><div class="big">Free</div></div><div><small style="color:var(--ink-3)">Limits</small><div class="big">None</div></div><div><small style="color:var(--ink-3)">Next charge</small><div class="big">None</div></div></div>
+          <div class="usage"><div class="ut"><div><small style="color:var(--ink-3)">Orders this month</small><br><b class="num">1,445</b> <span style="color:var(--ink-3)">no limit on your plan</span></div></div>
+            <small style="display:block;margin-top:8px;color:var(--ink-3)">Your plan was set by CodAdmin. Plans are billed in ₦. No free trial. Cancel subscription appears here after you subscribe.</small></div>
+        </div>
+        <div class="card">
+          <div class="ct"><h3>Plans</h3><span>Billed in ₦ a month</span></div>
+          <div class="plans" style="grid-template-columns:repeat(3,1fr)">
+            <div class="pl"><h4>Growth</h4><div class="pr">₦10,000<small> a month</small></div><ul><li><i data-lucide="check"></i>5,000 orders a month</li><li><i data-lucide="check"></i>10 staff</li></ul><button class="btn pri" data-toast="Paystack checkout opens here. Sample only.">Subscribe to Growth</button></div>
+            <div class="pl"><h4>Scale</h4><div class="pr">₦20,000<small> a month</small></div><ul><li><i data-lucide="check"></i>Unlimited orders</li><li><i data-lucide="check"></i>Unlimited staff</li></ul><button class="btn pri" data-toast="Paystack checkout opens here. Sample only.">Subscribe to Scale</button></div>
+            <div class="pl"><h4>Enterprise</h4><div class="pr" style="font-size:20px;padding:4px 0">Contact sales</div><ul><li><i data-lucide="check"></i>Custom contract</li><li><i data-lucide="check"></i>sales@codadmin.app</li></ul><a class="btn" href="mailto:sales@codadmin.app">Contact sales</a></div>
+          </div>
+          <div class="cardfoot" style="justify-content:flex-start"><span style="color:var(--ink-3);font-size:12.5px">Plan limits come from the plans table.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="toast" id="toast" role="status"></div>
+    </main>
+  </div>
+</div>
+
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-href="index.html#orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-href="index.html#board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-href="index.html#targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-href]').forEach(b => b.onclick = () => { location.href = b.dataset.href; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+</script>
+<script>
+function showSec(id) {
+  if (!document.querySelector('.sec[data-s="'+id+'"]')) id = 'northstar';
+  document.querySelectorAll('.sec').forEach(s => s.classList.toggle('on', s.dataset.s === id));
+  document.querySelectorAll('.subnav .nav').forEach(n => n.classList.toggle('on', n.dataset.sec === id));
+  try { history.replaceState(null, '', '#' + id); } catch (e) {}
+}
+document.querySelectorAll('.subnav .nav').forEach(n => n.onclick = () => showSec(n.dataset.sec));
+document.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { showSec(b.dataset.show); window.scrollTo({top:0,behavior:'smooth'}); });
+document.querySelectorAll('.sw').forEach(s => s.onclick = () => s.setAttribute('aria-checked', s.getAttribute('aria-checked') !== 'true'));
+let toastT; const toastEl = document.getElementById('toast');
+function toast(t){ toastEl.textContent=t; toastEl.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('on'),2600); }
+document.querySelectorAll('[data-toast]').forEach(b => b.addEventListener('click', () => toast(b.dataset.toast)));
+const $ = id => document.getElementById(id), num = el => parseFloat(String(el.value).replace(/[^\d.]/g,'')) || 0;
+
+/* agent cards */
+function agCount(){ const n = document.querySelectorAll('#agentcards .insight:not([hidden])').length; $('agN').textContent = n ? 'Agent found ' + n + (n === 1 ? ' thing' : ' things') : 'Nothing new from the agent'; }
+document.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { b.closest('.insight').hidden = true; agCount(); });
+
+/* delete account */
+$('dzopen').onclick = () => { $('dzc').hidden = false; $('dzp').focus(); };
+$('dzno').onclick = () => { $('dzc').hidden = true; };
+const dzCheck = () => { $('dzgo').disabled = !($('dz').value === 'DELETE' && $('dzp').value); };
+$('dz').oninput = dzCheck; $('dzp').oninput = dzCheck;
+$('dzgo').onclick = () => toast('Account deleted. Sample only.');
+
+/* operations */
+function opsCheck(){
+  const rows = [...document.querySelectorAll('#hours .hr')], on = rows.filter(r => r.querySelector('.sw').getAttribute('aria-checked') === 'true');
+  let msg = '';
+  if (!on.length) msg = 'Turn on at least one day.';
+  on.forEach(r => { const t = r.querySelectorAll('input'); if (t[1].value <= t[0].value) msg = msg || r.dataset.d + ': closing time must be after opening time. Overnight hours are not supported yet.'; });
+  const e = $('opserr'); e.hidden = !msg; e.textContent = msg; return !msg;
+}
+document.querySelectorAll('#hours input').forEach(i => i.oninput = opsCheck);
+document.querySelectorAll('#hours .sw').forEach(s => s.addEventListener('click', opsCheck));
+$('opsSave').onclick = () => { if (opsCheck()) toast('Operations saved. Sample only.'); };
+
+/* North Star */
+const GROW = [360000, 420000, 480000, 540000], MARGIN = ['margin 11% of 35%', 'margin 12% of 35%', 'margin 12% of 35%', ''], TAGS = [['ok','Revenue hit'], ['ok','Revenue hit'], ['ok','Revenue hit'], ['warn','Behind']];
+let mode = 'grow', custom = GROW.slice();
+const K = v => 'GH₵' + (v / 1000).toLocaleString('en-US', {maximumFractionDigits: 1}) + 'k';
+function annual(){ return num($('n1')); }
+function quarters(){ const a = annual(); return mode === 'even' ? [a/4, a/4, a/4, a/4] : mode === 'grow' ? GROW.map(g => g * a / 1800000) : custom; }
+function renderTiles(){
+  const q = quarters(), saved = mode === 'grow' && annual() === 1800000;
+  $('qtiles').innerHTML = q.map((v, i) => '<div class="q' + (i === 3 && saved ? ' now' : '') + '"><h4>Q' + (i+1) + (saved ? ' <span class="tag ' + TAGS[i][0] + '">' + TAGS[i][1] + '</span>' : '') + '</h4>' +
+    (mode === 'custom' ? '<div class="rin" style="gap:4px"><span>GH₵</span><input class="in num cq" data-i="' + i + '" value="' + Math.round(v).toLocaleString('en-US') + '" inputmode="numeric" style="width:100%;text-align:left;font:800 16px Bricolage Grotesque" aria-label="Q' + (i+1) + ' target"></div>' : '<b class="num" style="font-size:20px">' + K(v) + '</b>') +
+    '<div class="t" style="color:var(--ink-3);font-size:12.5px">' + K(v / 3) + ' a month' + (saved && MARGIN[i] ? ' · ' + MARGIN[i] : '') + '</div></div>').join('');
+  document.querySelectorAll('.cq').forEach(i => i.oninput = () => { custom[+i.dataset.i] = num(i); qCheck(); });
+  qCheck();
+}
+function qCheck(){
+  const e = $('qerr'); let bad = false;
+  if (mode === 'custom') { const diff = annual() - custom.reduce((a, b) => a + b, 0); bad = Math.abs(diff) > 0.5; e.hidden = !bad; e.textContent = 'The four quarters are GH₵' + Math.abs(Math.round(diff)).toLocaleString('en-US') + (diff > 0 ? ' short of' : ' over') + ' the North Star. Fix them to save.'; } else e.hidden = true;
+  $('nsSave').disabled = bad;
+}
+document.querySelectorAll('#growth button').forEach(b => b.addEventListener('click', () => { mode = b.dataset.mode; if (mode === 'custom') custom = quarters(); renderTiles(); }));
+$('n1').oninput = () => { $('nsBig').textContent = 'GH₵' + annual().toLocaleString('en-US'); if (mode === 'custom') custom = GROW.map(g => g * annual() / 1800000); renderTiles(); calc(); };
+$('n2').oninput = () => { $('mtar').textContent = Math.round(num($('n2'))); };
+let aovManual = false;
+$('n5').oninput = () => { aovManual = true; $('aovState').textContent = 'Typed by you.'; $('aovReset').hidden = false; calc(); };
+$('aovReset').onclick = () => { aovManual = false; $('n5').value = '249'; $('aovState').textContent = 'Last 30 days of delivered orders (automatic).'; $('aovReset').hidden = true; calc(); };
+function calc(){
+  const aov = num($('n5')), c = num($('n3')) / 100, d = num($('n4')) / 100;
+  if (!aov || !c || !d) { $('t-math').textContent = 'Enter an average order and both rates above 0.'; return; }
+  const target = GROW[3] / 3 * annual() / 1800000, delivered = Math.round(target / aov), orders = Math.round(delivered / (c * d)), perDay = Math.round(orders / 31), y = c * d;
+  $('t-orders').textContent = perDay; $('t-conf').textContent = Math.round(c*100) + '%'; $('t-succ').textContent = Math.round(d*100) + '%';
+  $('t-cpa').textContent = '₦' + (Math.round(20720 * y / 10) * 10).toLocaleString('en-US');
+  $('t-math').textContent = K(target) + ' ÷ GH₵' + aov + ' = ' + delivered.toLocaleString('en-US') + ' delivered orders. ÷ ' + Math.round(c*100) + '% ÷ ' + Math.round(d*100) + '% = ' + orders.toLocaleString('en-US') + ' orders. ÷ 31 days in October = ' + perDay + ' a day.';
+}
+['n3','n4'].forEach(i => $(i).oninput = calc);
+$('nsSave').onclick = () => { $('nsconfirm').hidden = false; };
+$('nsno').onclick = () => { $('nsconfirm').hidden = true; };
+$('nsok').onclick = () => { $('nsconfirm').hidden = true; toast('Targets saved and recalculated. Sample only.'); };
+renderTiles(); calc();
+
+/* Rewards */
+$('rewSave').onclick = () => {
+  const e = $('rerr'), bad = num($('r-c120')) < num($('r-c100')) ? 'Call rep' : num($('r-d120')) < num($('r-d100')) ? 'Delivery' : '';
+  e.hidden = !bad; e.textContent = bad ? bad + ': the 120% reward cannot be lower than the 100% reward.' : '';
+  if (!bad) toast('Rewards saved. Tiers apply from the next month close. Sample only.');
+};
+
+/* Currencies and FX */
+const SYM = {GHS:'GH₵',NGN:'₦',KES:'KSh',ZAR:'R',UGX:'USh',TZS:'TSh',RWF:'RF',ETB:'Br',USD:'$',EUR:'€',GBP:'£',INR:'₹',CAD:'C$',AUD:'A$',JPY:'¥'};
+const CN = {GHS:'Ghana cedi',NGN:'Nigerian naira',KES:'Kenyan shilling',ZAR:'South African rand',UGX:'Ugandan shilling',TZS:'Tanzanian shilling',RWF:'Rwandan franc',ETB:'Ethiopian birr',USD:'US dollar',EUR:'Euro',GBP:'British pound',INR:'Indian rupee',CAD:'Canadian dollar',AUD:'Australian dollar',JPY:'Japanese yen'};
+function fxHelp(){ const r = num($('fxr')); $('fxHelp').textContent = r ? 'CPA ₦5,903 is GH₵' + (5903 / r).toFixed(1) + '. The max CPA ₦7,040 (at 34% yield) is GH₵' + (7040 / r).toFixed(1) + '.' : 'Enter a rate above 0.'; }
+let fxManual = true;
+$('fxr').oninput = () => { fxHelp(); $('fxTile').textContent = '1 GH₵ = ₦' + (num($('fxr')) || 0); };
+$('fc').onchange = () => { $('fs').value = $('fc').value; $('fs').onchange(); };
+$('fs').onchange = () => { const c = $('fs').value; $('fxStore').textContent = SYM[c]; $('fxStoreN').textContent = CN[c] + ' · what customers pay'; $('fsHint').textContent = 'Changed to ' + c + '. Saved amounts stay as booked. Figures convert with the rate of each day.'; };
+$('fxToday').onclick = () => {
+  $('fxr').value = '112'; fxHelp(); $('fxTile').textContent = '1 GH₵ = ₦112'; fxManual = false;
+  $('fxState').className = 'tag ok'; $('fxState').textContent = 'Automatic · updated 06:00 today'; $('fxUpd').textContent = 'Automatic rate, updated 06:00 today';
+  $('fxMode').textContent = 'The rate updates every day at 06:00 Accra time. Type a rate to override it.';
+  $('fxHist').insertAdjacentHTML('afterbegin', '<tr><td>17 Oct</td><td>₦ per GH₵1</td><td class="r num">112</td><td><span class="tag n">Automatic</span></td></tr>');
+  const c = $('fxcard'); if (c) { c.hidden = true; agCount(); }
+  toast("Back on the daily automatic rate. Sample only.");
+};
+$('fxSave').onclick = () => {
+  if (!num($('fxr'))) { toast('Enter a rate above 0.'); return; }
+  fxManual = true; $('fxState').className = 'tag warn'; $('fxState').textContent = 'Manual · set today'; $('fxUpd').textContent = 'Manual rate set today';
+  $('fxMode').textContent = 'The rate is on manual. It stays until you click Use today\'s rate. A manual rate older than 7 days shows a warning.';
+  toast('Saved. Sample only.');
+};
+$('xaddbtn').onclick = () => {
+  const v = $('xadd').value, label = $('xadd').selectedOptions[0].textContent;
+  if ([...document.querySelectorAll('#xcur .srow .tag.lead')].some(t => t.textContent.indexOf(v) === 0)) { toast(v + ' is already in the list.'); return; }
+  $('xcur').insertAdjacentHTML('beforeend', '<div class="srow"><span class="tag n lead">' + v + '</span><div><b>' + label.slice(4) + '</b><small>Added by you. Rate of the day</small></div><button class="mini xrm" style="margin-left:auto">Remove</button></div>');
+  document.querySelectorAll('.xrm').forEach(b => b.onclick = () => b.closest('.srow').remove());
+};
+fxHelp(); agCount();
+showSec(location.hash.slice(1) || 'northstar');
+lucide.createIcons();
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

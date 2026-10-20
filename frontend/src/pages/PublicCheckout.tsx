@@ -7,6 +7,7 @@ import { buildOrderPayload, buildRedirectUrl } from '../lib/orderPayload';
 import { initPixels, fireInitiateCheckoutWithCapi, getFbCookies } from '../utils/pixelTracking';
 import { PixelConfig } from '../types/checkout-form';
 import toast from 'react-hot-toast';
+import { useConfigStore } from '../stores/configStore';
 
 const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -41,6 +42,11 @@ export const PublicCheckout: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<number | null>(null);
   const [submittedTotal, setSubmittedTotal] = useState<number>(0);
+
+  // the public config route needs this form's slug to find the tenant
+  useEffect(() => {
+    if (slug) useConfigStore.getState().fetchConfig(slug);
+  }, [slug]);
 
   useEffect(() => {
     if (!slug) {

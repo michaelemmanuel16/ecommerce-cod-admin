@@ -1,6 +1,7 @@
 import Bull from 'bull';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import { forEachTenant } from '../utils/tenantLoop';
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -31,19 +32,25 @@ export const pendingCheckoutCleanupQueue = process.env.NODE_ENV === 'test'
         }
     });
 
-pendingCheckoutCleanupQueue.process('cleanup-stale-pending', async () => {
+export const processCleanupStalePending = async () => {
     logger.info(`Processing pending-checkout cleanup (retention: ${RETENTION_HOURS}h)...`);
     try {
         const cutoffDate = new Date(Date.now() - RETENTION_HOURS * 60 * 60 * 1000);
-        const result = await prisma.pendingCheckout.deleteMany({
-            where: { createdAt: { lt: cutoffDate } },
+        let deletedCount = 0;
+        // Once per tenant, each inside its own tenant context
+        await forEachTenant('Pending-checkout cleanup', async () => {
+            const result = await prisma.pendingCheckout.deleteMany({
+                where: { createdAt: { lt: cutoffDate } },
+            });
+            deletedCount += result.count;
         });
-        logger.info(`Pending-checkout cleanup completed: ${result.count} abandoned checkouts deleted (older than ${cutoffDate.toISOString()}).`);
+        logger.info(`Pending-checkout cleanup completed: ${deletedCount} abandoned checkouts deleted (older than ${cutoffDate.toISOString()}).`);
     } catch (error: any) {
         logger.error('Pending-checkout cleanup job failed:', error.message);
         throw error;
     }
-});
+};
+pendingCheckoutCleanupQueue.process('cleanup-stale-pending', processCleanupStalePending);
 
 export const setupPendingCheckoutCleanupCron = async () => {
     if (process.env.NODE_ENV === 'test') return;

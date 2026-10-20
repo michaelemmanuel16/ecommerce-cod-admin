@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reports · CodAdmin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px 8px;max-width:100%}
+select:focus-visible,textarea:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+input[type=checkbox],input[type=radio]{accent-color:var(--pine);width:16px;height:16px}
+.tag svg.lucide{width:13px;height:13px;stroke-width:2.4}
+.dt{font-size:13px}
+.dt th,.dt td{padding:12px 10px}
+.dt th:first-child,.dt td:first-child{padding-left:20px}
+.dt th:last-child,.dt td:last-child{padding-right:20px}
+.dt small{color:var(--ink-3);font-size:12px}
+.dt .num{white-space:nowrap}
+.dt tr.tot td{background:var(--hover);font-weight:700}
+.tablewrap{overflow-x:auto}
+.rate{min-width:112px}
+.rate .prog{margin-top:6px}
+.bars{padding:14px 20px 18px;display:flex;flex-direction:column;gap:14px}
+.bar-row{display:grid;grid-template-columns:130px 1fr 92px;gap:14px;align-items:center}
+.bar-row .track{height:10px;border-radius:99px;background:var(--hover);overflow:hidden;position:relative}
+.bar-row .track i{display:block;height:100%;border-radius:99px}
+.bar-row .track .pace{position:absolute;top:-2px;width:2px;height:14px;background:var(--ink);border-radius:2px}
+.bar-row .val{text-align:right;font-weight:700}
+.bar-row .val small{color:var(--ink-3);font-weight:500}
+.note{padding:0 20px 18px;color:var(--ink-2);font-size:13px}
+.kpi .tag{white-space:nowrap}
+.two{align-items:start}
+.hd-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ink3{color:var(--ink-3)}
+.pgtabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px}
+.pgtabs .tab{border:1px solid var(--line);background:var(--card)}
+.pgtabs .tab.on{border-color:var(--ink);background:var(--ink);color:var(--bg)}
+a.mini{color:inherit;text-decoration:none;display:inline-block}
+a.mini.pri{color:#fff}
+.panel[hidden]{display:none}
+.menuwrap{position:relative;display:inline-block}
+.menu{position:absolute;right:0;top:calc(100% + 6px);min-width:250px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 24px 50px -18px rgba(0,0,0,.45);padding:6px;z-index:30;display:none}
+.menu.on{display:block}
+.menu .mi{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:9px;text-align:left;font-weight:600;color:var(--ink);text-decoration:none}
+.menu .mi:hover{background:var(--hover)}
+.menu .mi small{display:block;color:var(--ink-3);font-weight:500;font-size:12px}
+.menu .mi svg.lucide{color:var(--ink-3);flex:none}
+.menu hr{border:0;border-top:1px solid var(--line);margin:6px 0}
+.menu .mlabel{font-size:12px;color:var(--ink-3);font-weight:600;padding:6px 10px 2px}
+.mveil{position:fixed;inset:0;background:rgba(8,18,16,.45);backdrop-filter:blur(3px);z-index:70;display:none;align-items:flex-start;justify-content:center;padding:6vh 16px;overflow:auto}
+.mveil.on{display:flex}
+.modal{width:640px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.modal.wide{width:820px}
+.modal .mh{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line)}
+.modal .mh h3{font-size:19px;font-weight:800}
+.modal .mh p{color:var(--ink-3);font-size:13px}
+.modal .mb{padding:20px 22px;display:grid;gap:16px}
+.modal .mf{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 22px;border-top:1px solid var(--line);flex-wrap:wrap}
+.modal .mf .r2{display:flex;gap:8px}
+.fld label,.fld .lbl{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.fld input[type=text],.fld input[type=date],.fld input[type=number],.fld select,.fld textarea{width:100%;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+.fld input:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+.fld small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:5px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.fld .chk,.chk{display:flex!important;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:11px;font-weight:600;cursor:pointer}
+.chk:hover{background:var(--hover)}
+.chk small{margin-left:auto;color:var(--ink-3);font-weight:500}
+.chk input{flex:none}
+.sw{display:inline-flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
+.sw input{position:absolute;opacity:0;width:1px;height:1px}
+.sw .tg{width:38px;height:22px;border-radius:99px;background:var(--line);position:relative;transition:background .15s;flex:none}
+.sw .tg::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
+.sw input:checked+.tg{background:var(--pine)}
+.sw input:checked+.tg::after{transform:translateX(16px)}
+.sw input:focus-visible+.tg{outline:2px solid var(--pine);outline-offset:2px}
+.toast{position:fixed;left:50%;bottom:62px;transform:translateX(-50%) translateY(20px);background:var(--card);color:var(--ink);border:1px solid var(--line);padding:10px 16px;border-radius:12px;box-shadow:0 20px 50px -18px rgba(0,0,0,.5);font-weight:600;z-index:90;opacity:0;pointer-events:none;transition:all .2s;display:flex;gap:8px;align-items:center}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.toast svg.lucide{color:var(--mint)}
+.ch svg{display:block;width:100%;height:auto}
+.ch text{fill:var(--ink-3);font:500 11px "Plus Jakarta Sans",system-ui,sans-serif}
+.ch .gl{stroke:var(--line);stroke-width:1}
+.ch .zero{stroke:var(--ink-3);stroke-width:1}
+.chart.ch{padding:8px 16px 16px}
+.lgrow{display:flex;gap:14px;flex-wrap:wrap;padding:10px 20px 0}
+.legend i.dash{background:none;border-top:2px dashed var(--ink-3);height:0;width:14px;border-radius:0;vertical-align:3px}
+.donutrow{display:flex;align-items:center;gap:22px;padding:14px 20px 20px;flex-wrap:wrap}
+.donutrow .dl{flex:1;min-width:180px;display:grid;gap:8px}
+.donutrow .dl div{display:flex;align-items:center;gap:8px;font-size:13px}
+.donutrow .dl i{width:10px;height:10px;border-radius:3px;flex:none}
+.donutrow .dl b{margin-left:auto}
+.dlt{display:none;margin-top:8px;font-size:12.5px;color:var(--ink-3);align-items:center;gap:6px}
+body.cmp .dlt{display:flex}
+.insight .act a.mini{text-decoration:none;color:inherit}
+.insight .act a.mini.pri{color:#fff}
+[data-theme="dark"] .insight .act a.mini.pri{color:#04211d}
+.eform{display:grid;gap:8px}
+@media (max-width:760px){.bar-row{grid-template-columns:100px 1fr 76px;gap:10px}.row2,.row3{grid-template-columns:1fr}.menu{right:auto;left:0}}
+.psel{font:600 13.5px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.psel:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.tab svg.lucide{width:16px;height:16px}
+.insight.card{padding:14px 16px}
+@media (max-width:1100px){#agentRow{grid-template-columns:1fr!important}}
+/* marketing: funnel strip, campaign table, ads */
+.fn{display:grid;grid-template-columns:repeat(7,1fr);padding:14px 20px 6px}
+.fs{padding:2px 10px 10px 14px;border-left:1px solid var(--line);min-width:0}
+.fs:first-child{border-left:0;padding-left:0}
+.fs .fl{display:block;color:var(--ink-3);font-size:12px;font-weight:600}
+.fs .fc{display:block;font-family:"Bricolage Grotesque",sans-serif;font-size:22px;font-weight:800;margin:2px 0 4px}
+.fs .fm{display:block;color:var(--ink-2);font-size:12.5px;font-weight:600}
+.fs .fm span{display:block;color:var(--ink-3);font-weight:500}
+.fs .fm .sep{display:none}
+.fnote{padding:0 20px 16px;color:var(--ink-3);font-size:12.5px}
+.scopebar{display:flex;align-items:center;gap:8px;color:var(--ink-3);font-size:13px}
+.scopebar b{color:var(--ink)}
+@media (max-width:1200px){
+  .fn{grid-template-columns:1fr;padding:8px 20px 4px}
+  .fs{display:grid;grid-template-columns:1fr auto;gap:0 12px;border-left:0;border-top:1px solid var(--line);padding:10px 0}
+  .fs:first-child{border-top:0;padding-left:0}
+  .fs .fl{grid-column:1;grid-row:1}
+  .fs .fc{grid-column:2;grid-row:1/3;align-self:center;margin:0;font-size:20px}
+  .fs .fm{grid-column:1;grid-row:2}
+  .fs .fm span{display:inline}
+  .fs .fm .sep{display:inline;color:var(--ink-3);font-weight:500}
+}
+.crow{cursor:pointer}
+.crow:hover td{background:var(--hover)}
+.crow.sel td{background:var(--pine-soft)}
+.crow.sel td:first-child{box-shadow:inset 3px 0 0 var(--pine)}
+.crow .chev{width:30px;padding-right:0!important}
+.chevbtn{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;color:var(--ink-3)}
+.chevbtn:hover{background:var(--hover)}
+.chevbtn:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.chevbtn svg{width:16px;height:16px;transition:transform .15s}
+.crow.sel .chevbtn svg{transform:rotate(90deg)}
+.adrow[hidden]{display:none}
+.adrow>td{padding:0!important;background:var(--hover)}
+.adbox{padding:12px 20px 16px;position:sticky;left:0;max-width:100%}
+.adbox .adh{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3);margin-bottom:6px}
+.adbox .adh b{color:var(--ink);font-size:13px}
+.adbox .adt{background:var(--card);border:1px solid var(--line);border-radius:12px;width:100%}
+.adbox .adt th:first-child,.adbox .adt td:first-child{padding-left:14px}
+.adbox .adt th:last-child,.adbox .adt td:last-child{padding-right:14px}
+.adbox .adt tr:last-child td{border-bottom:0}
+.dt th small{display:block;font-weight:500;color:var(--ink-3)}
+@media (max-width:760px){.adbox{width:calc(100vw - 34px);overflow-x:auto}}
+.dt tr.tot td{background:var(--hover);font-weight:700}
+.dt.camp th{white-space:nowrap;vertical-align:bottom}
+.ct.wrapct{flex-wrap:wrap;gap:6px 12px}
+.dt .tag{white-space:nowrap}
+
+.dt.camp th{white-space:nowrap;vertical-align:bottom}
+.two3{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:14px 20px 4px}
+@media (max-width:760px){.two3{grid-template-columns:1fr}}
+
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav on" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+
+
+<section>
+  <div class="head">
+    <div><h1>Reports</h1><p>Sales, delivery, team, profit and ads for the dates you pick.</p></div>
+    <div class="hd-actions">
+      <div class="menuwrap">
+        <button class="btn pri" data-menu aria-haspopup="true" aria-expanded="false"><i data-lucide="download"></i>Export<i data-lucide="chevron-down"></i></button>
+        <div class="menu" id="exportMenu">
+          <div class="mlabel" id="expLabel">This report: Overview</div>
+          <button class="mi" data-fmt="CSV"><i data-lucide="file-text"></i><span>CSV<small>Opens in Excel or Sheets</small></span></button>
+          <button class="mi" data-fmt="Excel"><i data-lucide="file-spreadsheet"></i><span>Excel (.xlsx)<small>Charts data and table, one sheet</small></span></button>
+          <hr>
+          <button class="mi" id="dlAll"><i data-lucide="archive"></i><span>Download all reports<small>All 6 reports as one Excel file</small></span></button>
+          <button class="mi" data-open="expModal"><i data-lucide="sliders-horizontal"></i><span>Custom export…<small>Pick reports, dates and format</small></span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- date range + compare -->
+  <div class="card" style="padding:14px 18px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+    <div class="seg" id="presets" style="margin-top:0" role="group" aria-label="Date range">
+      <button data-p="Today">Today</button><button data-p="Last 7 days">Last 7 days</button><button class="on" data-p="This month">This month</button><button data-p="Last month">Last month</button><button data-p="Custom">Custom</button>
+    </div>
+    <div id="customDates" hidden style="display:none;align-items:center;gap:8px">
+      <input type="date" value="2026-10-01" aria-label="From date" class="psel"><span class="ink3">to</span><input type="date" value="2026-10-17" aria-label="To date" class="psel">
+    </div>
+    <label class="sw"><input type="checkbox" id="cmpToggle"><span class="tg"></span>Compare to previous period</label>
+    <div style="margin-left:auto;text-align:right"><b id="rangeLabel">1–17 Oct 2026</b><div class="ink3" style="font-size:12.5px" id="cmpLabel">Previous period: 1–17 Sep 2026</div></div>
+  </div>
+
+  <!-- agent cards -->
+  <div class="grid" style="grid-template-columns:1fr 1fr;margin-top:16px" id="agentRow">
+    <div class="insight card" style="padding:14px 16px">
+      <div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="sparkles"></i></div><div><b>Explain this month</b><p>Get a short read of October against 1–17 September, in plain words.</p></div></div>
+      <div id="explain" hidden style="margin:12px 0 0 40px;padding:12px 14px;border-radius:12px;background:var(--hover);font-size:13px">
+        <p>Delivered revenue is <b>GH₵92k, 4% below</b> the same days in September (GH₵96k).</p>
+        <p style="margin-top:6px"><b>Orders are ahead of plan</b>: 85 a day against the 58 you need, up 5% on September, with confirmation at 71% (target 70%). <b>Delivery success is behind</b>: 48% against a 60% target, so 376 were delivered instead of 387.</p>
+        <p style="margin-top:6px">Meta spend is ₦8.53M, about 83% of revenue, so October runs at <b>−GH₵14.3k</b> by delivery date, after rep commission. On the orders placed in October the month is on course for about GH₵9.9k profit (8%) once open orders close. Each +5 pts of delivery success is worth about GH₵22k this month.</p>
+      </div>
+      <div class="act"><button class="mini pri" id="explainBtn">Explain this month</button><button class="mini" id="saveExplain">Add to export</button></div>
+    </div>
+    <div class="insight card" style="padding:14px 16px">
+      <div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="map-pin"></i></div><div><b>Logiswift closes only 45% as delivered</b><p>The agents run at 54% to 55%, target 60%. Logiswift also takes 1.4 days to dispatch and 3.8 days to deliver, and 100 confirmed orders wait to dispatch.</p></div></div>
+      <div class="act"><button class="mini pri" id="toDelivery">Open Delivery report</button><a class="mini" href="deliveries.html">See partners</a></div>
+    </div>
+  </div>
+
+  <!-- report tabs -->
+  <div class="pgtabs" role="tablist" aria-label="Reports" style="margin-top:16px">
+    <button class="tab on" role="tab" data-tab="overview"><i data-lucide="layout-dashboard"></i>Overview</button>
+    <button class="tab" role="tab" data-tab="sales"><i data-lucide="circle-dollar-sign"></i>Sales &amp; revenue</button>
+    <button class="tab" role="tab" data-tab="delivery"><i data-lucide="truck"></i>Delivery &amp; operations</button>
+    <button class="tab" role="tab" data-tab="team"><i data-lucide="users"></i>Team performance</button>
+    <button class="tab" role="tab" data-tab="products"><i data-lucide="package"></i>Products &amp; profit</button>
+    <button class="tab" role="tab" data-tab="marketing"><i data-lucide="megaphone"></i>Marketing</button>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div class="panel" id="p-overview">
+    <div class="grid kpis" style="margin-top:0">
+      <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="shopping-cart"></i></div><div class="v num">1,445</div><div class="l">Orders</div><div class="s"><span>1 to 17 Oct</span><span class="tag n">Placed</span></div><div class="dlt"><span class="tag ok">▲ 5%</span>vs 1,380</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="phone-call"></i></div><div class="v num">1,026</div><div class="l">Confirmed</div><div class="s"><span>Confirmation rate 71%, target 70%</span><span class="tag ok">On target</span></div><div class="dlt"><span class="tag ok">▲ 5%</span>vs 980</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="package-check"></i></div><div class="v num">376</div><div class="l">Delivered</div><div class="s"><span>Delivery success 48%, target 60%</span><span class="tag bad">▼ 12 pts</span></div><div class="dlt"><span class="tag bad">▼ 3%</span>vs 387</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="circle-dollar-sign"></i></div><div class="v num">GH₵92,000</div><div class="l">Delivered revenue</div><div class="s"><span>Target GH₵180k for October</span><span class="tag warn">Behind pace</span></div><div class="dlt"><span class="tag bad">▼ 4%</span>vs GH₵96,000</div></div>
+    </div>
+    <div class="grid two">
+      <div class="card"><div class="ct"><h3>Orders and deliveries per day</h3><span>1 to 17 Oct</span></div><div id="lgOverview"></div><div class="chart ch" id="chOverview"></div></div>
+      <div class="card"><div class="ct"><h3>Where 1,445 orders ended up</h3><span>1 to 17 Oct</span></div>
+        <div class="bars">
+          <div class="bar-row"><span>Delivered</span><div class="track"><i style="width:100%;background:var(--mint)"></i></div><span class="val num">376</span></div>
+          <div class="bar-row"><span>Failed</span><div class="track"><i style="width:94%;background:var(--coral)"></i></div><span class="val num">354</span></div>
+          <div class="bar-row"><span>Returned</span><div class="track"><i style="width:13%;background:var(--coral)"></i></div><span class="val num">48</span></div>
+          <div class="bar-row"><span>Out for delivery</span><div class="track"><i style="width:39%;background:var(--violet)"></i></div><span class="val num">148</span></div>
+          <div class="bar-row"><span>Waiting to dispatch</span><div class="track"><i style="width:27%;background:var(--gold)"></i></div><span class="val num">100</span></div>
+          <div class="bar-row"><span>Pending call</span><div class="track"><i style="width:17%;background:var(--ink-3)"></i></div><span class="val num">64</span></div>
+          <div class="bar-row"><span>Cancelled</span><div class="track"><i style="width:94%;background:var(--ink-3)"></i></div><span class="val num">355</span></div>
+        </div>
+        <p class="note">Confirmed 1,026 = 100 waiting + 926 dispatched. Of the 778 closed orders, 376 were delivered: <b>delivery success 48%</b> (target 60%). Of all 1,445 orders placed, <b>order-to-cash yield is 34%</b>.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="ct"><h3>Daily breakdown</h3><span id="tblNote">17 days</span></div>
+      <div class="tablewrap" style="max-height:340px;overflow-y:auto"><table class="dt" style="margin-top:8px"><thead><tr><th>Date</th><th class="r">Orders</th><th class="r">Confirmed</th><th class="r">Delivered</th><th class="r">Revenue</th></tr></thead><tbody id="dailyBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- SALES -->
+  <div class="panel" id="p-sales" hidden>
+    <div class="grid kpis" style="margin-top:0">
+      <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="circle-dollar-sign"></i></div><div class="v num">GH₵92,000</div><div class="l">Delivered revenue</div><div class="s"><span>376 delivered orders</span><span class="tag warn">Behind pace</span></div><div class="dlt"><span class="tag bad">▼ 4%</span>vs GH₵96,000</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="receipt"></i></div><div class="v num">GH₵245</div><div class="l">Average order value</div><div class="s"><span>Copybook set is GH₵249</span><span class="tag n">Steady</span></div><div class="dlt"><span class="tag n">▼ GH₵3</span>vs GH₵248</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="wallet"></i></div><div class="v num">GH₵68.6k</div><div class="l">Cash received</div><div class="s"><span>75% of delivered revenue</span><span class="tag ok">Paid in</span></div><div class="dlt"><span class="tag n">Snapshot</span>no previous figure</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="hourglass"></i></div><div class="v num">GH₵23.4k</div><div class="l">Cash still with partners</div><div class="s"><span>38 orders over 8 days</span><span class="tag warn">Chase</span></div><div class="dlt"><span class="tag n">Snapshot</span>no previous figure</div></div>
+    </div>
+    <div class="grid two">
+      <div class="card"><div class="ct"><h3>Delivered revenue per day</h3><span>GH₵</span></div><div id="lgSales"></div><div class="chart ch" id="chSales"></div></div>
+      <div class="card"><div class="ct"><h3>Revenue by product</h3><span>GH₵92,000</span></div><div class="donutrow" id="donutProd"></div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="ct"><h3>Revenue by city</h3><span>Delivered orders, 1 to 17 Oct</span></div>
+      <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>City</th><th class="r">Delivered</th><th class="r">Revenue</th><th class="r">Average order</th><th class="r">Share</th></tr></thead><tbody>
+        <tr><td><b>Accra</b></td><td class="r num">176</td><td class="r num">GH₵43,100</td><td class="r num">GH₵245</td><td class="r num">47%</td></tr>
+        <tr><td><b>Tema</b></td><td class="r num">92</td><td class="r num">GH₵22,500</td><td class="r num">GH₵245</td><td class="r num">24%</td></tr>
+        <tr><td><b>Kumasi</b></td><td class="r num">82</td><td class="r num">GH₵20,100</td><td class="r num">GH₵245</td><td class="r num">22%</td></tr>
+        <tr><td><b>Takoradi</b></td><td class="r num">26</td><td class="r num">GH₵6,300</td><td class="r num">GH₵242</td><td class="r num">7%</td></tr>
+        <tr><td><b>Cape Coast</b> <small>Kasapa Express trial</small></td><td class="r num">0</td><td class="r num">GH₵0</td><td class="r num">n/a</td><td class="r num">0%</td></tr>
+        <tr class="tot"><td>Total</td><td class="r num">376</td><td class="r num">GH₵92,000</td><td class="r num">GH₵245</td><td class="r num">100%</td></tr>
+      </tbody></table></div>
+    </div>
+  </div>
+
+  <!-- DELIVERY -->
+  <div class="panel" id="p-delivery" hidden>
+    <div class="grid kpis" style="margin-top:0">
+      <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="gauge"></i></div><div class="v num">48%</div><div class="l">Delivery success rate</div><div class="s"><span>Target 60%</span><span class="tag bad">▼ 12 pts</span></div><div class="dlt"><span class="tag n">Closed only</span>376 of 778</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="package-x"></i></div><div class="v num">354</div><div class="l">Failed deliveries</div><div class="s"><span>48 more returned · 41% not reachable</span><span class="tag warn">Fixable</span></div><div class="dlt"><span class="tag bad">▲ 8%</span>vs 371</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="truck"></i></div><div class="v num">148</div><div class="l">Out for delivery now</div><div class="s"><span>Across 5 partners</span><span class="tag n">Live</span></div><div class="dlt"><span class="tag n">Snapshot</span>no previous figure</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="timer"></i></div><div class="v num">9.2 days</div><div class="l">Logiswift pays in</div><div class="s"><span>Agents pay in 3 to 4 days</span><span class="tag warn">Slow</span></div><div class="dlt"><span class="tag bad">▲ 1.1 days</span>vs 8.1 days</div></div>
+    </div>
+    <div class="grid two">
+      <div class="card"><div class="ct"><h3>Delivered per day</h3><span>Orders</span></div><div id="lgDelivery"></div><div class="chart ch" id="chDelivery"></div></div>
+      <div class="card"><div class="ct"><h3>Failed deliveries by reason</h3><span>354 failed and 48 returned</span></div>
+        <div class="bars">
+          <div class="bar-row"><span>Not reachable</span><div class="track"><i style="width:100%;background:var(--coral)"></i></div><span class="val num">41% <small>165</small></span></div>
+          <div class="bar-row"><span>Refused</span><div class="track"><i style="width:59%;background:var(--gold)"></i></div><span class="val num">24% <small>96</small></span></div>
+          <div class="bar-row"><span>Wrong address</span><div class="track"><i style="width:51%;background:var(--violet)"></i></div><span class="val num">21% <small>84</small></span></div>
+          <div class="bar-row"><span>Rescheduled</span><div class="track"><i style="width:34%;background:var(--ink-3)"></i></div><span class="val num">14% <small>57</small></span></div>
+        </div>
+        <p class="note">Calling the customer before dispatch is the cheapest fix for not reachable.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="ct"><h3>Delivery partners</h3><span>Closed orders, 1 to 17 Oct</span></div>
+      <div class="tablewrap"><table class="dt camp" style="margin-top:8px"><thead><tr><th>Partner</th><th class="r">Assigned</th><th class="r">Delivered</th><th class="r">Failed or returned</th><th class="r">Out now</th><th>Success <small>target 60%</small></th><th class="r">Days to dispatch<small>from confirmed</small></th><th class="r">Days to deliver<small>from dispatch</small></th><th class="r">Cash held</th><th class="r">Pays in</th></tr></thead><tbody>
+        <tr><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">LS</div><div><b>Logiswift</b> <span class="tag v">3PL</span></div></div></td><td class="r num">590</td><td class="r num">220</td><td class="r num">270</td><td class="r num">100</td><td class="rate"><b class="num">45%</b><div class="prog"><i style="width:45%;background:var(--coral)"></i><span class="pace" style="left:60%"></span></div></td><td class="r num">1.4</td><td class="r num">3.8</td><td class="r num"><b>GH₵17,300</b></td><td class="r num">9.2 days</td></tr>
+        <tr><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">KA</div><div><b>Kofi Appiah</b> <span class="tag n">Agent</span></div></div></td><td class="r num">172</td><td class="r num">82</td><td class="r num">70</td><td class="r num">20</td><td class="rate"><b class="num">54%</b><div class="prog"><i style="width:54%;background:var(--gold)"></i><span class="pace" style="left:60%"></span></div></td><td class="r num">0.6</td><td class="r num">1.2</td><td class="r num"><b>GH₵2,900</b></td><td class="r num">3.1 days</td></tr>
+        <tr><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">EB</div><div><b>Esi Badu</b> <span class="tag n">Agent</span></div></div></td><td class="r num">102</td><td class="r num">48</td><td class="r num">40</td><td class="r num">14</td><td class="rate"><b class="num">55%</b><div class="prog"><i style="width:55%;background:var(--gold)"></i><span class="pace" style="left:60%"></span></div></td><td class="r num">0.7</td><td class="r num">1.5</td><td class="r num"><b>GH₵2,100</b></td><td class="r num">3.6 days</td></tr>
+        <tr><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">KW</div><div><b>Kwesi Amoah</b> <span class="tag n">Agent</span></div></div></td><td class="r num">54</td><td class="r num">26</td><td class="r num">22</td><td class="r num">6</td><td class="rate"><b class="num">54%</b><div class="prog"><i style="width:54%;background:var(--gold)"></i><span class="pace" style="left:60%"></span></div></td><td class="r num">0.9</td><td class="r num">1.9</td><td class="r num"><b>GH₵1,100</b></td><td class="r num">4.2 days</td></tr>
+        <tr><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">KE</div><div><b>Kasapa Express</b> <span class="tag v">3PL trial</span></div></div></td><td class="r num">8</td><td class="r num">0</td><td class="r num">0</td><td class="r num">8</td><td class="ink3">No closed orders yet</td><td class="r num">1.0</td><td class="r num ink3">n/a</td><td class="r num"><b>GH₵0</b></td><td class="r num ink3">No payout yet</td></tr>
+        <tr class="tot"><td>All partners</td><td class="r num">926</td><td class="r num">376</td><td class="r num">402</td><td class="r num">148</td><td><b class="num">48%</b></td><td></td><td></td><td class="r num">GH₵23,400</td><td></td></tr>
+      </tbody></table></div>
+    </div>
+    <div class="grid two">
+      <div class="card"><div class="ct"><h3>Delivery success by city</h3><span>Target 60%</span></div><div class="chart ch" id="chRegion"></div></div>
+      <div class="card"><div class="ct"><h3>Waiting and returns</h3><span>Right now</span></div>
+        <div class="two3">
+          <div class="drv"><small>Waiting to dispatch</small><b>100 orders</b><em>Oldest has waited 3 days</em></div>
+          <div class="drv"><small>Returned orders</small><b>48</b><em>Logiswift sent back 41 units, we received 36 (5 missing)</em></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEAM -->
+  <div class="panel" id="p-team" hidden>
+    <div class="grid kpis" style="margin-top:0">
+      <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="phone-call"></i></div><div class="v num">1,026</div><div class="l">Orders confirmed</div><div class="s"><span>Confirmation rate 71%, target 70%</span><span class="tag ok">On target</span></div><div class="dlt"><span class="tag ok">▲ 5%</span>vs 980</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="phone-outgoing"></i></div><div class="v num">2,310</div><div class="l">Calls made</div><div class="s"><span>2.25 calls per confirmation</span><span class="tag n">3 reps</span></div><div class="dlt"><span class="tag ok">▲ 3%</span>vs 2,243</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="phone-missed"></i></div><div class="v num">540</div><div class="l">Not reachable</div><div class="s"><span>23% of calls</span><span class="tag warn">Retry later</span></div><div class="dlt"><span class="tag n">▼ 2%</span>vs 551</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="clock"></i></div><div class="v num">64</div><div class="l">Pending in the queue now</div><div class="s"><span>Oldest waiting 3 h 10 min, 9 with no rep</span><span class="tag warn">Clear it</span></div><div class="dlt"><span class="tag n">Snapshot</span>no previous figure</div></div>
+    </div>
+    <div class="grid two">
+      <div class="card"><div class="ct"><h3>Call outcomes</h3><span>2,310 calls</span></div><div class="donutrow" id="donutCalls"></div></div>
+      <div class="card"><div class="ct"><h3>Why customers decline</h3><span>301 declined</span></div>
+        <div class="bars">
+          <div class="bar-row"><span>Price too high</span><div class="track"><i style="width:100%;background:var(--coral)"></i></div><span class="val num">34%</span></div>
+          <div class="bar-row"><span>Prank or mistake</span><div class="track"><i style="width:65%;background:var(--gold)"></i></div><span class="val num">22%</span></div>
+          <div class="bar-row"><span>Changed mind</span><div class="track"><i style="width:59%;background:var(--violet)"></i></div><span class="val num">20%</span></div>
+          <div class="bar-row"><span>Bought elsewhere</span><div class="track"><i style="width:41%;background:var(--ink-3)"></i></div><span class="val num">14%</span></div>
+          <div class="bar-row"><span>Other</span><div class="track"><i style="width:29%;background:var(--ink-3)"></i></div><span class="val num">10%</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="ct"><h3>Call reps</h3><span>1 to 17 Oct</span></div>
+      <div class="tablewrap"><table class="dt camp" style="margin-top:8px"><thead><tr><th>Rep</th><th class="r">Calls</th><th class="r">Confirmed</th><th class="r">Confirmation rate</th><th class="r">Delivered from confirmed<small>of closed</small></th><th class="r">Time to first call<small>median</small></th><th class="r">Upsell rate</th><th class="r">Extra value<small>on delivered</small></th><th class="r">Target hit<small>delivered of 723</small></th><th class="r">Not reachable</th></tr></thead><tbody>
+        <tr><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">AD</div><div><b>Adwoa Darko</b> <span class="tag n">Human</span></div></div></td><td class="r num">1,360</td><td class="r num"><b>640</b></td><td class="r num">73%</td><td class="r num">52%</td><td class="r num">12 min</td><td class="r num">24%</td><td class="r num">GH₵6,100</td><td class="r"><span class="tag ok">60%</span><small style="display:block">253 of 423</small></td><td class="r num">300</td></tr>
+        <tr><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="bot" style="width:15px;height:15px"></i></div><div><b>Confirm agent</b> <span class="tag v">AI agent</span></div></div></td><td class="r num">780</td><td class="r num"><b>328</b></td><td class="r num">70%</td><td class="r num">44%</td><td class="r num">2 min</td><td class="r num">15%</td><td class="r num">GH₵2,200</td><td class="r"><span class="tag warn">44%</span><small style="display:block">110 of 250</small></td><td class="r num">206</td></tr>
+        <tr><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">NK</div><div><b>Nana Kyei</b> <span class="tag n">Human</span></div></div></td><td class="r num">170</td><td class="r num"><b>58</b></td><td class="r num">58%</td><td class="r num">30%</td><td class="r num">41 min</td><td class="r num">9%</td><td class="r num">GH₵300</td><td class="r"><span class="tag bad">26%</span><small style="display:block">13 of 50</small></td><td class="r num">34</td></tr>
+        <tr class="tot"><td>All call reps</td><td class="r num">2,310</td><td class="r num">1,026</td><td class="r num">71%</td><td class="r num">48%</td><td class="r num">9 min</td><td class="r num">20%</td><td class="r num">GH₵8,600</td><td class="r"><span class="tag warn">52%</span><small style="display:block">376 of 723</small></td><td class="r num">540</td></tr>
+      </tbody></table></div>
+      <p class="note" style="padding-top:12px">Confirmation rate is confirmed ÷ orders assigned to the rep. Confirm agent is an AI agent, scored under the Call rep role.</p>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="ct"><h3>Delivery partners ranked</h3><span>Delivery success, target 60%</span></div>
+      <div class="bars">
+        <div class="bar-row"><span>Esi Badu</span><div class="track"><i style="width:91.7%;background:var(--gold)"></i><span class="pace" style="left:100%"></span></div><span class="val num">55% <small>Accra</small></span></div>
+        <div class="bar-row"><span>Kofi Appiah</span><div class="track"><i style="width:90%;background:var(--gold)"></i></div><span class="val num">54% <small>Kumasi</small></span></div>
+        <div class="bar-row"><span>Kwesi Amoah</span><div class="track"><i style="width:90%;background:var(--gold)"></i></div><span class="val num">54% <small>Takoradi</small></span></div>
+        <div class="bar-row"><span>Logiswift</span><div class="track"><i style="width:75%;background:var(--coral)"></i></div><span class="val num">45% <small>Tema</small></span></div>
+        <div class="bar-row"><span>Kasapa Express</span><div class="track"><i style="width:0%;background:var(--coral)"></i></div><span class="val num">n/a <small>trial</small></span></div>
+      </div>
+      <p class="note">A full bar is the 60% target. Kasapa Express has no closed orders yet.</p>
+    </div>
+  </div>
+
+  <!-- PRODUCTS -->
+  <div class="panel" id="p-products" hidden>
+    <div class="grid kpis" style="margin-top:0">
+      <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="percent"></i></div><div class="v num"><span style="color:var(--coral)">−GH₵14.3k</span></div><div class="l">Net result, by delivery date</div><div class="s"><span>Net margin −16%, target 35%</span><span class="tag bad">Loss</span></div><div class="dlt"><span class="tag bad">▼</span>vs +GH₵21.3k in Sep (full month)</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="circle-dollar-sign"></i></div><div class="v num">GH₵92,000</div><div class="l">Delivered revenue</div><div class="s"><span>5 products sold</span><span class="tag n">Oct</span></div><div class="dlt"><span class="tag n">Sep</span>GH₵173,000</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="megaphone"></i></div><div class="v num">GH₵76,200</div><div class="l">Meta ad spend</div><div class="s"><span>83% of revenue</span><span class="tag bad">Too high</span></div><div class="dlt"><span class="tag n">Sep</span>GH₵95,200 (55%)</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="receipt"></i></div><div class="v num"><span style="color:var(--coral)">−GH₵38</span></div><div class="l">Profit per delivered order</div><div class="s"><span>Copybook set −GH₵57</span><span class="tag bad">Loss</span></div><div class="dlt"><span class="tag n">Snapshot</span>no previous figure</div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="ct"><h3>Two ways to read October</h3><span>1 to 17 Oct</span></div>
+      <div class="two3">
+        <div class="drv"><small>By delivery date, what has landed so far</small><b style="color:var(--coral)">−GH₵14.3k (−16%)</b><em>376 delivered, −GH₵38 on each</em></div>
+        <div class="drv"><small>By order cohort, projected at 34% yield</small><b>GH₵9.9k (8%)</b><em>491 delivered, GH₵20 on each, before other expenses</em></div>
+      </div>
+      <p class="note" style="padding-top:12px">The first view counts all the ad spend against only the orders delivered so far. The second counts every order placed in October at the 34% yield: GH₵120.3k revenue, GH₵14.7k product cost, GH₵15.9k fees and GH₵76.2k ads.</p>
+    </div>
+    <div class="grid two">
+      <div class="card"><div class="ct"><h3>Profit by product, last 3 months</h3><span>GH₵ before other expenses</span></div><div id="lgTrend"></div><div class="chart ch" id="chTrend"></div></div>
+      <div class="card"><div class="ct"><h3>October profit by product</h3><span>GH₵</span></div><div class="chart ch" id="chProdProfit"></div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="ct"><h3>Profit by product</h3><span>October · 1 to 17 Oct</span></div>
+      <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>Product</th><th class="r">Delivered</th><th class="r">Revenue</th><th class="r">Product cost</th><th class="r">Delivery fees</th><th class="r">Meta ads</th><th class="r">Profit</th><th class="r">Margin</th></tr></thead><tbody>
+        <tr><td><b>Magic Groove copybook set</b></td><td class="r num">306</td><td class="r num">GH₵76,100</td><td class="r num">GH₵9,200</td><td class="r num">GH₵10,500</td><td class="r num">GH₵73,700</td><td class="r num" style="color:var(--coral)"><b>−GH₵17,300</b></td><td class="r"><span class="tag bad">−23%</span></td></tr>
+        <tr><td><b>Refill pens</b></td><td class="r num">172</td><td class="r num">GH₵6,900</td><td class="r num">GH₵1,100</td><td class="r num">GH₵900</td><td class="r num">GH₵0</td><td class="r num"><b>GH₵4,900</b></td><td class="r"><span class="tag ok">71%</span></td></tr>
+        <tr><td><b>Pencil grip trainer</b></td><td class="r num">89</td><td class="r num">GH₵3,100</td><td class="r num">GH₵600</td><td class="r num">GH₵400</td><td class="r num">GH₵0</td><td class="r num"><b>GH₵2,100</b></td><td class="r"><span class="tag ok">68%</span></td></tr>
+        <tr><td><b>Smart Parent's Home Study Guide</b> <small>digital</small></td><td class="r num">58</td><td class="r num">GH₵3,400</td><td class="r num">GH₵200</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td class="r num"><b>GH₵3,200</b></td><td class="r"><span class="tag ok">94%</span></td></tr>
+        <tr><td><b>Dictamni cream</b> <small>winding down</small></td><td class="r num">10</td><td class="r num">GH₵2,500</td><td class="r num">GH₵900</td><td class="r num">GH₵400</td><td class="r num">GH₵2,100</td><td class="r num" style="color:var(--coral)"><b>−GH₵900</b></td><td class="r"><span class="tag bad">−36%</span></td></tr>
+        <tr><td>Meta spend with no product <small>MG_Oct_Retarget</small></td><td class="r num">0</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td class="r num">GH₵400</td><td class="r num" style="color:var(--coral)"><b>−GH₵400</b></td><td class="r ink3">n/a</td></tr>
+        <tr><td>Rep commission and rewards <small>not split by product</small></td><td></td><td></td><td></td><td></td><td></td><td class="r num" style="color:var(--coral)"><b>−GH₵2,768</b></td><td></td></tr>
+        <tr><td>Other expenses <small>not split by product</small></td><td></td><td></td><td></td><td></td><td></td><td class="r num" style="color:var(--coral)"><b>−GH₵3,100</b></td><td></td></tr>
+        <tr class="tot"><td>Net result</td><td class="r num">376</td><td class="r num">GH₵92,000</td><td class="r num">GH₵12,000</td><td class="r num">GH₵12,200</td><td class="r num">GH₵76,200</td><td class="r num" style="color:var(--coral)">−GH₵14,268</td><td class="r"><span class="tag bad">−16%</span></td></tr>
+      </tbody></table></div>
+    </div>
+  </div>
+
+  <!-- MARKETING -->
+  <div class="panel" id="p-marketing" hidden>
+    <div class="grid kpis" style="margin-top:0">
+      <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="megaphone"></i></div><div class="v num">₦8.53M</div><div class="l">Meta spend</div><div class="s"><span>About GH₵76k (₦112 = GH₵1)</span><span class="tag n">1 to 17 Oct</span></div><div class="dlt"><span class="tag n">▲ 5%</span>vs ₦8.10M</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="target"></i></div><div class="v num">₦5,903</div><div class="l">CPA against max CPA</div><div class="s"><span>Max ₦7,040 at 34% yield</span><span class="tag ok">▼ ₦1,137 under</span></div><div class="dlt"><span class="tag n">▲ ₦33</span>vs ₦5,870</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="truck"></i></div><div class="v num">₦17,360</div><div class="l">Projected cost per delivered</div><div class="s"><span>Break-even ₦20,720</span><span class="tag ok">▼ ₦3,360 under</span></div><div class="s" style="margin-top:4px"><span>Actual so far ₦22,686, by delivery date</span></div><div class="dlt"><span class="tag n">Snapshot</span>no previous figure</div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="wallet"></i></div><div class="v num">34%</div><div class="l">Order-to-cash yield</div><div class="s"><span>Campaigns range 29% to 36%</span><span class="tag n">Closed orders</span></div><div class="dlt"><span class="tag n">Snapshot</span>no previous figure</div></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="ct wrapct"><h3>Funnel</h3><span class="scopebar" id="fnScope"></span></div>
+      <div class="fn" id="fnBody" aria-live="polite"></div>
+      <p class="fnote" id="fnNote"></p>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="ct"><h3>Campaigns</h3><span>Spend in ₦ · 1 to 17 Oct</span></div>
+      <div class="tablewrap"><table class="dt camp" style="margin-top:8px">
+        <thead><tr><th></th><th>Campaign</th><th class="r">Spend</th><th class="r">Orders</th><th class="r">Confirmed</th><th class="r">Delivered</th><th class="r">CPA</th><th class="r">Max CPA</th><th class="r">Yield</th><th class="r">Projected cost<br>per delivered</th><th class="r">Actual so far<small>by delivery date</small></th><th>Status</th></tr></thead>
+        <tbody id="campBody"></tbody></table></div>
+      <p class="note" style="padding-top:12px">Max CPA is the profit per delivered order before ads (₦20,720 for a copybook) times the campaign's yield. Status compares CPA with that campaign's max CPA.</p>
+    </div>
+    <div class="grid two">
+      <div class="card"><div class="ct"><h3>Meta spend per day</h3><span>₦ thousands</span></div><div id="lgMkt"></div><div class="chart ch" id="chMkt"></div></div>
+      <div class="card"><div class="ct"><h3>CPA against max CPA</h3><span>Mapped campaigns</span></div><div id="lgCpa"></div><div class="chart ch" id="chCpa"></div></div>
+    </div>
+  </div>
+
+</section>
+
+<!-- Export dialog -->
+<div class="mveil" id="expModal" role="dialog" aria-modal="true" aria-labelledby="expTitle">
+  <div class="modal">
+    <div class="mh"><div><h3 id="expTitle">Export reports</h3><p>Pick what goes in the file.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="fld"><span class="lbl">Reports</span>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px" id="expReports">
+          <label class="chk"><input type="checkbox" value="Overview" checked>Overview</label>
+          <label class="chk"><input type="checkbox" value="Sales &amp; revenue">Sales &amp; revenue</label>
+          <label class="chk"><input type="checkbox" value="Delivery &amp; operations">Delivery &amp; operations</label>
+          <label class="chk"><input type="checkbox" value="Team performance">Team performance</label>
+          <label class="chk"><input type="checkbox" value="Products &amp; profit">Products &amp; profit</label>
+          <label class="chk"><input type="checkbox" value="Marketing">Marketing</label>
+        </div>
+        <div style="margin-top:8px"><button class="mini" id="expAll">Select all</button></div>
+      </div>
+      <div class="row2">
+        <div class="fld"><label for="expRange">Dates</label><select id="expRange"><option>1 to 17 Oct (this month)</option><option>1 to 30 Sep (last month)</option><option>Last 7 days</option><option>Custom dates</option></select></div>
+        <div class="fld"><span class="lbl">Format</span>
+          <div class="seg" id="expFmt" style="margin-top:0"><button class="on" data-f="CSV">CSV</button><button data-f="Excel">Excel</button></div>
+        </div>
+      </div>
+      <label class="sw"><input type="checkbox" id="expCmp"><span class="tg"></span>Include the previous period</label>
+      <p class="ink3" style="font-size:12.5px" id="expHint">One CSV file per report, zipped when you pick more than one.</p>
+    </div>
+    <div class="mf"><span class="ink3" id="expCount">1 report</span><div class="r2"><button class="btn" data-close>Cancel</button><button class="btn pri" id="expGo"><i data-lucide="download"></i>Export</button></div></div>
+  </div>
+</div>
+
+
+    </main>
+  </div>
+</div>
+
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.href = 'index.html#' + b.dataset.go; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+/* ---------- shared helpers ---------- */
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const gh = n => (n < 0 ? '−' : '') + 'GH₵' + fmt(Math.abs(n));
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+function fit(arr, total) {
+  const sum = arr.reduce((a, b) => a + b, 0);
+  const out = arr.map(v => Math.round(v * total / sum));
+  let diff = total - out.reduce((a, b) => a + b, 0), i = 0;
+  while (diff !== 0) { out[i % out.length] += diff > 0 ? 1 : -1; diff += diff > 0 ? -1 : 1; i += 3; }
+  return out;
+}
+let toastT;
+function toast(msg) {
+  let t = $('#toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  t.innerHTML = '<i data-lucide="check-circle-2"></i>' + msg;
+  lucide.createIcons();
+  t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600);
+}
+/* menus */
+$$('.menuwrap').forEach(w => {
+  const b = w.querySelector('[data-menu]'), m = w.querySelector('.menu');
+  if (!b || !m) return;
+  b.onclick = e => { e.stopPropagation(); const was = m.classList.contains('on'); $$('.menu.on').forEach(x => x.classList.remove('on')); if (!was) m.classList.add('on'); b.setAttribute('aria-expanded', String(!was)); };
+  m.onclick = e => e.stopPropagation();
+});
+document.addEventListener('click', () => $$('.menu.on').forEach(x => x.classList.remove('on')));
+/* modals */
+function openModal(id) { const m = document.getElementById(id); m.classList.add('on'); const f = m.querySelector('input,select,textarea,button.pri'); if (f) setTimeout(() => f.focus(), 30); }
+function closeModals() { $$('.mveil.on').forEach(x => x.classList.remove('on')); }
+$$('.mveil').forEach(v => v.addEventListener('mousedown', e => { if (e.target === v) closeModals(); }));
+$$('[data-close]').forEach(b => b.onclick = closeModals);
+$$('[data-open]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); $$('.menu.on').forEach(x => x.classList.remove('on')); openModal(b.dataset.open); }));
+/* ---------- svg charts ---------- */
+let CW = 640;
+function niceMax(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const m = v / p; const st=[1,1.2,1.6,2,2.4,3,4,5,6,8,10]; const n = st.find(x => m <= x + 1e-9); return n * p; }
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+function svgWrap(h, inner, label) { return `<svg viewBox="0 0 ${CW} ${h}" role="img" aria-label="${esc(label)}">${inner}</svg>`; }
+function grid(h, pl, pr, pt, pb, max, min, yFmt) {
+  let s = '';
+  for (let i = 0; i <= 4; i++) {
+    const v = min + (max - min) * i / 4, y = pt + (h - pt - pb) * (1 - i / 4);
+    s += `<line class="gl" x1="${pl}" x2="${CW - pr}" y1="${y}" y2="${y}"/><text x="${pl - 8}" y="${y + 4}" text-anchor="end">${yFmt(v)}</text>`;
+  }
+  return s;
+}
+function lineChart(o) {
+  CW = o.w || 640;
+  const h = o.h || 230, pl = 46, pr = 14, pt = 12, pb = 28, n = o.labels.length;
+  const all = o.series.flatMap(s => s.data).concat(o.ref ? [o.ref.value] : []);
+  const max = o.max || niceMax(Math.max(...all) * 1.05), min = 0, yFmt = o.yFmt || fmt;
+  const x = i => pl + (CW - pl - pr) * i / (n - 1), y = v => pt + (h - pt - pb) * (1 - (v - min) / (max - min));
+  let s = grid(h, pl, pr, pt, pb, max, min, yFmt);
+  const every = o.every || Math.ceil(n / 9);
+  o.labels.forEach((l, i) => { if (i % every === 0 || i === n - 1) s += `<text x="${x(i)}" y="${h - 8}" text-anchor="${i === n - 1 && i % every ? 'end' : 'middle'}">${esc(l)}</text>`; });
+  if (o.ref) s += `<line x1="${pl}" x2="${CW - pr}" y1="${y(o.ref.value)}" y2="${y(o.ref.value)}" stroke="var(--ink-3)" stroke-dasharray="5 4"/><text x="${CW - pr}" y="${y(o.ref.value) - 5}" text-anchor="end">${esc(o.ref.label)}</text>`;
+  o.series.forEach(se => {
+    const pts = se.data.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
+    if (se.area) s += `<path d="${pts}L${x(n - 1)} ${y(0)}L${x(0)} ${y(0)}Z" style="fill:${se.color};opacity:.10"/>`;
+    s += `<path d="${pts}" fill="none" style="stroke:${se.color}" stroke-width="${se.dash ? 1.8 : 2.4}" stroke-linejoin="round" stroke-linecap="round" ${se.dash ? 'stroke-dasharray="5 4"' : ''}/>`;
+    if (!se.dash) s += `<circle cx="${x(n - 1)}" cy="${y(se.data[n - 1])}" r="4" style="fill:${se.color}" stroke="var(--card)" stroke-width="2"/>`;
+  });
+  return svgWrap(h, s, o.label || 'Line chart');
+}
+function barChart(o) {
+  CW = o.w || 640;
+  const h = o.h || 230, pl = 46, pr = 10, pt = 12, pb = 28, n = o.labels.length, yFmt = o.yFmt || fmt;
+  const max = o.max || niceMax(Math.max(...o.data, o.ref ? o.ref.value : 0) * 1.08);
+  const y = v => pt + (h - pt - pb) * (1 - v / max), bw = (CW - pl - pr) / n;
+  let s = grid(h, pl, pr, pt, pb, max, 0, yFmt);
+  const every = o.every || Math.ceil(n / 9);
+  o.data.forEach((v, i) => {
+    const w = Math.min(bw * .62, 34), cx = pl + bw * (i + .5);
+    s += `<rect x="${cx - w / 2}" y="${y(v)}" width="${w}" height="${y(0) - y(v)}" rx="4" style="fill:${(o.colors && o.colors[i]) || o.color || 'var(--pine)'}"/>`;
+    if (i % every === 0 || i === n - 1) s += `<text x="${cx}" y="${h - 8}" text-anchor="middle">${esc(o.labels[i])}</text>`;
+  });
+  if (o.ref) s += `<line x1="${pl}" x2="${CW - pr}" y1="${y(o.ref.value)}" y2="${y(o.ref.value)}" stroke="var(--ink)" stroke-dasharray="5 4"/><text x="${CW - pr}" y="${y(o.ref.value) - 5}" text-anchor="end" style="fill:var(--ink-2)">${esc(o.ref.label)}</text>`;
+  return svgWrap(h, s, o.label || 'Bar chart');
+}
+function groupBars(o) {
+  CW = o.w || 640;
+  const h = o.h || 240, pl = 52, pr = 10, pt = 14, pb = 28, n = o.labels.length, yFmt = o.yFmt || fmt;
+  const vals = o.series.flatMap(s => s.data), hi = Math.max(...vals, 1), lo = Math.min(...vals, 0);
+  const steps = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 25000, 50000, 100000, 200000, 250000, 500000, 1000000];
+  const step = steps.find(st => Math.ceil(hi / st) + Math.ceil(-lo / st) <= 5) || 1000000;
+  const max = Math.ceil(hi / step) * step, min = -Math.ceil(-lo / step) * step;
+  const y = v => pt + (h - pt - pb) * (1 - (v - min) / (max - min)), gw = (CW - pl - pr) / n, k = o.series.length;
+  let s = '';
+  for (let v = min; v <= max + 1e-6; v += step) s += `<line class="gl" x1="${pl}" x2="${CW - pr}" y1="${y(v)}" y2="${y(v)}"/><text x="${pl - 8}" y="${y(v) + 4}" text-anchor="end">${yFmt(v)}</text>`;
+  if (min < 0) s += `<line class="zero" x1="${pl}" x2="${CW - pr}" y1="${y(0)}" y2="${y(0)}"/>`;
+  const bw = Math.min(30, gw * .7 / k);
+  o.labels.forEach((l, i) => {
+    const gx = pl + gw * (i + .5) - bw * k / 2;
+    o.series.forEach((se, j) => {
+      const v = se.data[i], top = Math.min(y(v), y(0)), ht = Math.abs(y(v) - y(0));
+      s += `<rect x="${gx + j * bw + 1}" y="${top}" width="${bw - 2}" height="${Math.max(ht, 1)}" rx="3" style="fill:${se.color}"/>`;
+    });
+    s += `<text x="${pl + gw * (i + .5)}" y="${h - 8}" text-anchor="middle">${esc(l)}</text>`;
+  });
+  return svgWrap(h, s, o.label || 'Grouped bar chart');
+}
+function donut(o) {
+  const tot = o.parts.reduce((a, p) => a + p.value, 0), R = 62, r = 42, c = 80;
+  let a0 = -Math.PI / 2, s = '';
+  o.parts.forEach(p => {
+    const a1 = a0 + 2 * Math.PI * p.value / tot, large = a1 - a0 > Math.PI ? 1 : 0;
+    const pt = (a, rad) => `${(c + rad * Math.cos(a)).toFixed(2)} ${(c + rad * Math.sin(a)).toFixed(2)}`;
+    s += `<path d="M${pt(a0, R)}A${R} ${R} 0 ${large} 1 ${pt(a1 - .012, R)}L${pt(a1 - .012, r)}A${r} ${r} 0 ${large} 0 ${pt(a0, r)}Z" style="fill:${p.color}"/>`;
+    a0 = a1;
+  });
+  s += `<text x="${c}" y="${c - 2}" text-anchor="middle" style="fill:var(--ink);font:800 19px 'Bricolage Grotesque',sans-serif">${esc(o.top)}</text><text x="${c}" y="${c + 15}" text-anchor="middle">${esc(o.sub)}</text>`;
+  return `<svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="${esc(o.label || 'Donut chart')}" style="flex:none">${s}</svg>`;
+}
+function stackH(o) { /* horizontal stacked bars: rows[{label, parts[]}], colors[] */
+  const rh = 34, pl = 118, pr = 70, pt = 6, h = pt + o.rows.length * rh + 6, max = niceMax(Math.max(...o.rows.map(r => r.parts.reduce((a, b) => a + b, 0))) * 1.02);
+  let s = '';
+  o.rows.forEach((r, i) => {
+    const y = pt + i * rh; let x = pl;
+    s += `<text x="${pl - 10}" y="${y + 17}" text-anchor="end" style="fill:var(--ink);font-weight:600">${esc(r.label)}</text>`;
+    r.parts.forEach((v, j) => { const w = (CW - pl - pr) * v / max; if (w > 0) s += `<rect x="${x}" y="${y + 6}" width="${w}" height="18" ${j === 0 ? '' : ''} style="fill:${o.colors[j]}"/>`; x += w; });
+    const tot = r.parts.reduce((a, b) => a + b, 0);
+    s += `<text x="${x + 8}" y="${y + 19}" style="fill:var(--ink);font-weight:700">${esc(o.fmt ? o.fmt(tot) : fmt(tot))}</text>`;
+  });
+  return svgWrap(h, s, o.label || 'Stacked bar chart');
+}
+function legend(items) { return '<div class="lgrow legend">' + items.map(i => `<span><i class="${i.dash ? 'dash' : ''}" style="${i.dash ? '' : 'background:' + i.color}"></i>${esc(i.name)}</span>`).join('') + '</div>'; }
+
+/* ---------- sample data: 1 to 17 Oct and 1 to 17 Sep ---------- */
+const days = Array.from({ length: 17 }, (_, i) => (i + 1) + ' Oct');
+const dShort = Array.from({ length: 17 }, (_, i) => String(i + 1));
+const OR = fit([78, 82, 91, 88, 95, 70, 62, 84, 90, 97, 93, 88, 76, 68, 89, 96, 98], 1445);
+const CF = fit(OR.map(v => v * .71), 1026);
+const DL = fit([20, 24, 22, 25, 23, 18, 15, 21, 26, 24, 27, 22, 20, 17, 23, 24, 25], 376);
+const RV = fit(DL, 92000);
+const OR_P = fit([80, 78, 84, 82, 88, 74, 70, 79, 85, 88, 86, 82, 80, 76, 84, 90, 94], 1380);
+const DL_P = fit([22, 24, 23, 25, 24, 20, 18, 22, 25, 26, 27, 24, 22, 19, 24, 23, 19], 387);
+const RV_P = fit(DL_P, 96000);
+const SP = fit([420, 450, 480, 470, 510, 400, 350, 470, 520, 540, 530, 500, 440, 400, 500, 540, 530], 8530); /* ₦ thousands */
+const SP_P = fit([430, 440, 470, 460, 500, 420, 380, 460, 500, 520, 510, 490, 450, 420, 500, 520, 530], 8100);
+const rate = (d, o) => d.map((v, i) => +(v / o[i] * 100).toFixed(1));
+let cmp = false, curTab = 'overview', curLabel = 'Overview';
+const TABS = { overview: 'Overview', sales: 'Sales & revenue', delivery: 'Delivery & operations', team: 'Team performance', products: 'Products & profit', marketing: 'Marketing' };
+
+function renderCharts() {
+  const P = 'var(--pine)', V = 'var(--violet)', G = 'var(--ink-3)';
+  // overview
+  const s1 = [{ name: 'Orders', data: OR, color: V, area: true }, { name: 'Delivered', data: DL, color: P }];
+  const lg1 = [{ name: 'Orders', color: V }, { name: 'Delivered', color: P }];
+  if (cmp) { s1.push({ data: OR_P, color: V, dash: true }, { data: DL_P, color: P, dash: true }); lg1.push({ name: 'Previous period (1 to 17 Sep)', dash: true }); }
+  $('#lgOverview').innerHTML = legend(lg1);
+  $('#chOverview').innerHTML = lineChart({ labels: dShort, series: s1, h: 240, every: 2, label: 'Orders and delivered orders per day, 1 to 17 October' });
+  // sales
+  if (cmp) {
+    $('#lgSales').innerHTML = legend([{ name: 'October', color: P }, { name: 'September, same days', color: 'var(--ink-3)' }]);
+    $('#chSales').innerHTML = groupBars({ labels: dShort, series: [{ data: RV, color: P }, { data: RV_P, color: 'var(--ink-3)' }], h: 240, yFmt: v => (v / 1000).toFixed(1) + 'k', label: 'Delivered revenue per day, October against September' });
+  } else {
+    $('#lgSales').innerHTML = '';
+    $('#chSales').innerHTML = barChart({ labels: dShort, data: RV, color: P, h: 240, yFmt: v => (v / 1000).toFixed(1) + 'k', every: 2, label: 'Delivered revenue per day, 1 to 17 October' });
+  }
+  const prod = [['Copybook set', 76100, 'var(--pine)'], ['Refill pens', 6900, 'var(--violet)'], ['Study guide', 3400, 'var(--gold)'], ['Grip trainer', 3100, 'var(--mint)'], ['Dictamni cream', 2500, 'var(--ink-3)']];
+  $('#donutProd').innerHTML = donut({ parts: prod.map(p => ({ value: p[1], color: p[2] })), top: 'GH₵92k', sub: 'delivered', label: 'Revenue by product' }) +
+    '<div class="dl">' + prod.map(p => `<div><i style="background:${p[2]}"></i>${p[0]}<b class="num">GH₵${fmt(p[1])}</b></div>`).join('') + '</div>';
+  // delivery
+  const s3 = [{ name: 'Delivered', data: DL, color: P, area: true }];
+  const lg3 = [{ name: 'Delivered', color: P }];
+  if (cmp) { s3.push({ data: DL_P, color: P, dash: true }); lg3.push({ name: 'Previous period', dash: true }); }
+  $('#lgDelivery').innerHTML = legend(lg3);
+  $('#chDelivery').innerHTML = lineChart({ labels: dShort, series: s3, h: 240, every: 2, label: 'Delivered orders per day, 1 to 17 October' });
+  $('#chRegion').innerHTML = barChart({ labels: ['Accra and Tema', 'Kumasi', 'Takoradi'], data: [46, 54, 54], h: 170, w: 400, max: 80, yFmt: v => Math.round(v) + '%', ref: { value: 60, label: 'Target 60%' }, colors: ['var(--coral)', 'var(--gold)', 'var(--gold)'], every: 1, label: 'Delivery success rate by city against the 60 percent target' });
+  // calls
+  const calls = [['Confirmed', 1026, 'var(--mint)'], ['Not reachable', 540, 'var(--coral)'], ['Call back later', 318, 'var(--gold)'], ['Declined', 301, 'var(--violet)'], ['Wrong number', 125, 'var(--ink-3)']];
+  $('#donutCalls').innerHTML = donut({ parts: calls.map(c => ({ value: c[1], color: c[2] })), top: '2,310', sub: 'calls', label: 'Call outcomes' }) +
+    '<div class="dl">' + calls.map(c => `<div><i style="background:${c[2]}"></i>${c[0]}<b class="num">${fmt(c[1])}</b></div>`).join('') + '</div>';
+  // products
+  const m = ['Aug', 'Sep', 'Oct'];
+  $('#lgTrend').innerHTML = legend([{ name: 'Copybook set', color: P }, { name: 'Add-ons (pens, grip, guide)', color: V }, { name: 'Dictamni cream', color: 'var(--gold)' }]);
+  $('#chTrend').innerHTML = groupBars({ labels: m, h: 250, yFmt: v => (v < 0 ? '−' : '') + (Math.abs(v) / 1000) + 'k', series: [
+    { data: [12600, 13100, -17300], color: P }, { data: [9800, 10400, 10200], color: V }, { data: [3800, 3700, -900], color: 'var(--gold)' }], label: 'Profit by product group, August to October' });
+  const pp = [['Copybook set', -17300], ['Pens', 4900], ['Grip', 2100], ['Guide', 3200], ['Dictamni', -900]];
+  $('#chProdProfit').innerHTML = groupBars({ labels: pp.map(p => p[0]), h: 250, w: 400, yFmt: v => (v < 0 ? '−' : '') + (Math.abs(v) / 1000) + 'k', series: [{ data: pp.map(p => p[1]), color: P }], label: 'October profit by product' });
+  // marketing
+  const cpaDay = SP.map((s, i) => Math.round(s * 1000 / OR[i]));
+  const sm = [{ data: SP, color: 'var(--gold)' }];
+  $('#lgMkt').innerHTML = legend([{ name: 'Spend per day (₦k)', color: 'var(--gold)' }].concat(cmp ? [{ name: 'Previous period', color: 'var(--ink-3)' }] : []));
+  if (cmp) sm.push({ data: SP_P, color: 'var(--ink-3)' });
+  $('#chMkt').innerHTML = groupBars({ labels: dShort, series: sm, h: 240, yFmt: v => fmt(v) + 'k', label: 'Meta spend per day in thousands of naira' });
+  $('#lgCpa').innerHTML = legend([{ name: 'CPA', color: P }, { name: 'Max CPA', color: 'var(--ink-3)' }]);
+  $('#chCpa').innerHTML = groupBars({ labels: ['Teacher UGC', 'Mom POV', 'Benefit Stack', 'Dictamni'], series: [{ data: [5624, 6072, 6534, 6000], color: P }, { data: [7460, 7040, 6010, 4030], color: 'var(--ink-3)' }], h: 260, w: 400, yFmt: v => '₦' + fmt(v), label: 'CPA against max CPA by campaign' });
+}
+function renderDaily() {
+  $('#dailyBody').innerHTML = days.map((d, i) => `<tr><td>${d}</td><td class="r num">${fmt(OR[i])}</td><td class="r num">${fmt(CF[i])}</td><td class="r num">${fmt(DL[i])}</td><td class="r num">GH₵${fmt(RV[i])}</td></tr>`).join('') +
+    `<tr class="tot"><td>Total</td><td class="r num">1,445</td><td class="r num">1,026</td><td class="r num">376</td><td class="r num">GH₵92,000</td></tr>`;
+}
+/* ---------- tabs ---------- */
+function showTab(id) {
+  curTab = id; curLabel = TABS[id];
+  $$('.pgtabs .tab').forEach(t => t.classList.toggle('on', t.dataset.tab === id));
+  $$('.panel').forEach(p => p.hidden = p.id !== 'p-' + id);
+  $('#expLabel').textContent = 'This report: ' + curLabel;
+}
+$$('.pgtabs .tab').forEach(t => t.onclick = () => showTab(t.dataset.tab));
+$('#toDelivery').onclick = () => { showTab('delivery'); $('#p-delivery').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+$('#explainBtn').onclick = () => { const e = $('#explain'); e.hidden = !e.hidden; $('#explainBtn').textContent = e.hidden ? 'Explain this month' : 'Hide explanation'; };
+$('#saveExplain').onclick = () => toast('Explanation added to the next export');
+/* ---------- dates + compare ---------- */
+const RANGES = { 'Today': ['17 Oct 2026', 'Previous period: 16 Oct 2026'], 'Last 7 days': ['11–17 Oct 2026', 'Previous period: 4–10 Oct 2026'], 'This month': ['1–17 Oct 2026', 'Previous period: 1–17 Sep 2026'], 'Last month': ['1–30 Sep 2026', 'Previous period: 1–31 Aug 2026'], 'Custom': ['1–17 Oct 2026', 'Previous period: 1–17 Sep 2026'] };
+$$('#presets button').forEach(b => b.onclick = () => {
+  $$('#presets button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+  const r = RANGES[b.dataset.p]; $('#rangeLabel').textContent = r[0]; $('#cmpLabel').textContent = r[1];
+  const cd = $('#customDates'); cd.style.display = b.dataset.p === 'Custom' ? 'flex' : 'none';
+});
+function setCmp(v) { cmp = v; $('#cmpToggle').checked = v; document.body.classList.toggle('cmp', v); renderCharts(); }
+$('#cmpToggle').onchange = e => setCmp(e.target.checked);
+/* ---------- exports ---------- */
+const EXT = { CSV: 'csv', Excel: 'xlsx' };
+function addExport(name, report, range, f, size) {
+  const csv = 'Report,Dates\n"' + report.replace(/&amp;/g, '&') + '","' + range + '"\n';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: f === 'Excel' ? 'application/vnd.ms-excel' : 'text/csv' })); a.download = name; a.click();
+}
+const slug = s => s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
+$$('#exportMenu [data-fmt]').forEach(b => b.onclick = () => {
+  const f = b.dataset.fmt; $('#exportMenu').classList.remove('on');
+  addExport(`codadmin-${slug(curLabel)}-1-17-oct.${EXT[f]}`, curLabel.replace('&', '&amp;'), $('#rangeLabel').textContent, f, f === 'Excel' ? '48 KB' : '5 KB');
+  toast(`${curLabel} downloaded as ${f}`);
+});
+$('#dlAll').onclick = () => { $('#exportMenu').classList.remove('on'); addExport('codadmin-all-reports-1-17-oct.xlsx', 'All 6 reports', $('#rangeLabel').textContent, 'Excel', '224 KB'); toast('All 6 reports downloaded as Excel'); };
+let expF = 'CSV';
+function expUpdate() {
+  const n = $$('#expReports input:checked').length;
+  $('#expCount').textContent = n + (n === 1 ? ' report' : ' reports');
+  $('#expGo').disabled = n === 0; $('#expGo').style.opacity = n ? 1 : .5;
+  $('#expHint').textContent = expF === 'CSV' ? (n > 1 ? 'One CSV file per report, in one zip.' : 'One CSV file.') : 'One Excel file. Each report gets its own sheet.';
+}
+$$('#expReports input').forEach(i => i.onchange = expUpdate);
+$$('#expFmt button').forEach(b => b.addEventListener('click', () => { expF = b.dataset.f; expUpdate(); }));
+$('#expAll').onclick = () => { const all = $$('#expReports input'); const on = all.some(i => !i.checked); all.forEach(i => i.checked = on); $('#expAll').textContent = on ? 'Clear all' : 'Select all'; expUpdate(); };
+$('#expGo').onclick = () => {
+  const picks = $$('#expReports input:checked').map(i => i.value); if (!picks.length) return;
+  const rg = $('#expRange').value.replace(/ \(.*\)/, '');
+  const name = picks.length === 1 ? `codadmin-${slug(picks[0])}` : `codadmin-${picks.length}-reports`;
+  const ext = picks.length > 1 && expF === 'CSV' ? 'zip' : EXT[expF];
+  addExport(`${name}.${ext}`, picks.length === 1 ? picks[0] : picks.length + ' reports', rg, expF, picks.length * 30 + ' KB');
+  closeModals(); toast('Download started: ' + name + '.' + ext);
+};
+$$('[data-open="expModal"]').forEach(b => b.addEventListener('click', () => {
+  const t = Object.keys(TABS).indexOf(curTab); $$('#expReports input').forEach((i, k) => i.checked = k === t); expUpdate();
+}));
+/* init */
+/* ---------- campaigns, funnel and ads (NUMBERS.md, 1 to 17 Oct) ---------- */
+const NAIRA = n => '₦' + Math.round(n).toLocaleString('en-US');
+const CNT = n => n >= 1e6 ? +(n / 1e6).toFixed(2) + 'M' : n >= 10000 ? +(n / 1000).toFixed(1) + 'k' : Math.round(n).toLocaleString('en-US');
+const PCT = (a, b) => (a / b * 100 < 10 ? (a / b * 100).toFixed(1) : Math.round(a / b * 100)) + '%';
+const CAMP = [
+  { id: 'teacher', name: 'MG_Oct_Teacher_UGC', prod: 'Magic Groove', spend: 4370000, imp: 2000000, clk: 33000, lpv: 23400, chk: 2300, ord: 777, conf: 565, del: 208, yld: 36, pcd: 15620, max: 7460, st: ['ok', 'Winning'], ads: [
+    ['Teacher_UGC_Hook_A', 'Video', 1900000, 345, 32, 10, 2.1], ['Teacher_UGC_Hook_B', 'Video', 1420000, 249, 28, 8, 1.9], ['Teacher_UGC_Cut_C', 'Video', 1050000, 183, 24, 7, 1.6]] },
+  { id: 'mom', name: 'MG_Oct_Mom_POV', prod: 'Magic Groove', spend: 2350000, imp: 1150000, clk: 16500, lpv: 11500, chk: 1170, ord: 387, conf: 277, del: 100, yld: 34, pcd: 17860, max: 7040, st: ['ok', 'On track'], ads: [
+    ['Mom_POV_Kitchen', 'Video', 1300000, 220, 25, 7, 2.0], ['Mom_POV_Homework', 'Video', 1050000, 167, 21, 6, 2.4]] },
+  { id: 'benefit', name: 'MG_Oct_Benefit_Stack', prod: 'Magic Groove', spend: 1529000, imp: 820000, clk: 10800, lpv: 7300, chk: 700, ord: 234, conf: 150, del: 56, yld: 29, pcd: 22530, max: 6010, st: ['bad', 'Over max CPA'], ads: [
+    ['Benefit_Stack_Video', 'Video', 969000, 156, 20, 5, 2.5], ['Benefit_Stack_Static', 'Static', 560000, 78, null, null, 2.6]] },
+  { id: 'retarget', name: 'MG_Oct_Retarget', prod: null, spend: 41000, imp: 30000, clk: 600, lpv: 450, chk: 30, ord: 7, conf: 5, del: 2, yld: 33, pcd: 17750, max: null, st: ['warn', 'Not mapped'], ads: [
+    ['Retarget_Cart_Video', 'Video', 26000, 4, 26, 8, 2.6], ['Retarget_Visitors_Video', 'Video', 15000, 3, 22, 6, 2.5]] },
+  { id: 'dignity', name: 'DT_Oct_Dignity', prod: 'Dictamni cream', spend: 240000, imp: 100000, clk: 600, lpv: 350, chk: 100, ord: 40, conf: 29, del: 10, yld: 30, pcd: 20000, max: 4030, st: ['n', 'Paused'], ads: [
+    ['Dignity_Story_A', 'Video', 140000, 24, 23, 6, 1.4], ['Dignity_Story_B', 'Video', 100000, 16, 21, 5, 1.5]] }
+];
+const ALLC = { name: 'All campaigns', spend: 8530000, imp: 4100000, clk: 61500, lpv: 43000, chk: 4300, ord: 1445, conf: 1026, del: 376, yld: 34, pcd: 17360, max: 7040 };
+const rowTds = c => {
+  const cpa = c.spend / c.ord, over = c.max && cpa > c.max;
+  return `<td class="r num">${NAIRA(c.spend)}</td><td class="r num">${c.ord.toLocaleString('en-US')}</td><td class="r num">${c.conf.toLocaleString('en-US')}</td><td class="r num">${c.del}</td>` +
+    `<td class="r num">${over ? '<b style="color:var(--coral)">' + NAIRA(cpa) + '</b>' : NAIRA(cpa)}</td><td class="r num">${c.max ? NAIRA(c.max) : '<span class="ink3">None</span>'}</td><td class="r num">${c.yld}%</td>` +
+    `<td class="r num"><b>${NAIRA(c.pcd)}</b></td><td class="r num ink3">${NAIRA(c.spend / c.del)}</td>`;
+};
+function drawCampaigns() {
+  const prodCell = c => c.prod ? `<small>${c.prod}</small>` : `<select aria-label="Map ${c.name} to a product"><option>Map to product</option><option>Magic Groove</option><option>Dictamni cream</option><option>Smart Parent's Home Study Guide</option></select>`;
+  $('#campBody').innerHTML = CAMP.map(c => `<tr class="crow" data-id="${c.id}"><td class="chev"><button class="chevbtn" aria-expanded="false" aria-label="Show ads and funnel for ${c.name}"><i data-lucide="chevron-right"></i></button></td><td><b>${c.name}</b><br>${prodCell(c)}</td>${rowTds(c)}<td><span class="tag ${c.st[0]}">${c.st[1]}</span></td></tr>` +
+    `<tr class="adrow" data-for="${c.id}" hidden><td colspan="12"><div class="adbox"><div class="adh"><b>Ads in ${c.name}</b><span>Hook rate: 3-second views ÷ impressions. Hold rate: ThruPlays ÷ impressions.</span></div><table class="dt adt"><thead><tr><th>Ad</th><th class="r">Spend</th><th class="r">Orders</th><th class="r">CPA</th><th class="r">Hook rate</th><th class="r">Hold rate</th><th class="r">Frequency</th></tr></thead><tbody>` +
+    c.ads.map(a => { const cpa = a[2] / a[3]; return `<tr><td><b>${a[0]}</b> <small>${a[1].toLowerCase()}</small></td><td class="r num">${NAIRA(a[2])}</td><td class="r num">${a[3]}</td><td class="r num">${c.max && cpa > c.max ? '<b style="color:var(--coral)">' + NAIRA(cpa) + '</b>' : NAIRA(cpa)}</td><td class="r num">${a[4] === null ? '<span class="ink3">n/a</span>' : a[4] + '%'}</td><td class="r num">${a[5] === null ? '<span class="ink3">n/a</span>' : a[5] + '%'}</td><td class="r num">${a[6].toFixed(1)}</td></tr>`; }).join('') +
+    `</tbody></table></div></td></tr>`).join('') +
+    `<tr class="tot crow" data-id="all"><td></td><td>All campaigns</td>${rowTds(ALLC)}<td></td></tr>`;
+  $$('#campBody select').forEach(s => s.addEventListener('click', e => e.stopPropagation()));
+  $$('#campBody .crow').forEach(r => r.addEventListener('click', () => setScope(r.dataset.id === 'all' ? null : r.dataset.id)));
+  lucide.createIcons();
+}
+let scope = null;
+function drawFunnel() {
+  const c = scope ? CAMP.find(x => x.id === scope) : ALLC;
+  const del = Math.round(c.ord * c.yld / 100), s = c.spend;
+  const steps = [
+    ['Impressions', CNT(c.imp), 'Top of funnel', 'CPM ' + NAIRA(s / c.imp * 1000)],
+    ['Link clicks', CNT(c.clk), 'CTR ' + PCT(c.clk, c.imp), 'CPC ' + NAIRA(s / c.clk)],
+    ['Landing page views', CNT(c.lpv), PCT(c.lpv, c.clk) + ' of clicks', NAIRA(s / c.lpv) + ' per view'],
+    ['Checkouts started', CNT(c.chk), PCT(c.chk, c.lpv) + ' of views', NAIRA(s / c.chk) + ' each'],
+    ['Orders', c.ord.toLocaleString('en-US'), PCT(c.ord, c.chk) + ' of checkouts', 'CPA ' + NAIRA(s / c.ord)],
+    ['Confirmed', c.conf.toLocaleString('en-US'), PCT(c.conf, c.ord) + ' of orders', NAIRA(s / c.conf) + ' each'],
+    ['Delivered, projected', del.toLocaleString('en-US'), 'Yield ' + c.yld + '% of orders', NAIRA(c.pcd) + ' each']
+  ];
+  $('#fnBody').innerHTML = steps.map(t => `<div class="fs"><span class="fl">${t[0]}</span><b class="fc num">${t[1]}</b><span class="fm">${t[2]}<i class="sep"> · </i><span>${t[3]}</span></span></div>`).join('');
+  $('#fnScope').innerHTML = scope ? `<b>${c.name}</b><button class="mini" id="fnClear">Show all campaigns</button>` : 'All campaigns, click a row to look at one';
+  $('#fnNote').textContent = `Delivered is projected from closed order cohorts at the ${c.yld}% yield. ${c.del} delivered so far, ${NAIRA(c.spend / c.del)} each by delivery date.`;
+  const cl = $('#fnClear'); if (cl) cl.onclick = () => setScope(null);
+}
+function setScope(id) {
+  scope = id === scope ? null : id;
+  $$('#campBody .crow').forEach(r => { const on = r.dataset.id === scope; r.classList.toggle('sel', on); const b = r.querySelector('.chevbtn'); if (b) b.setAttribute('aria-expanded', String(on)); });
+  $$('#campBody .adrow').forEach(r => r.hidden = r.dataset.for !== scope);
+  drawFunnel();
+}
+
+drawCampaigns(); drawFunnel();
+renderDaily(); renderCharts(); expUpdate(); lucide.createIcons();
+if (location.hash === '#cmp') setCmp(true);
+if (/^#t-/.test(location.hash)) showTab(location.hash.slice(3));
+if (location.hash === '#exp') openModal('expModal');
+if (location.hash === '#menu') $('#exportMenu').classList.add('on');
+
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

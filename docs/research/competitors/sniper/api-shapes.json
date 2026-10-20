@@ -1,0 +1,1477 @@
+{
+ "POST /functions/v1/demo-store": {
+  "status": 200,
+  "query": "",
+  "req_shape": {
+   "action": "str",
+   "referrer": "null"
+  },
+  "res_shape": {
+   "access_token": "<redacted>",
+   "refresh_token": "<redacted>",
+   "last_reset_at": "str"
+  },
+  "res_sample": {
+   "access_token": "<redacted>",
+   "refresh_token": "<redacted>",
+   "last_reset_at": "2026-10-17T04:23:30.244337+00:00"
+  }
+ },
+ "GET /auth/v1/user": {
+  "status": 200,
+  "query": "",
+  "req_shape": null,
+  "res_shape": {
+   "id": "str",
+   "aud": "str",
+   "role": "str",
+   "email": "str",
+   "email_confirmed_at": "str",
+   "phone": "str",
+   "confirmed_at": "str",
+   "recovery_sent_at": "str",
+   "last_sign_in_at": "str",
+   "app_metadata": {
+    "provider": "str",
+    "providers": [
+     "str"
+    ]
+   },
+   "user_metadata": {
+    "demo": "bool",
+    "email_verified": "bool",
+    "store_name": "str"
+   },
+   "identities": [
+    {
+     "identity_id": "str",
+     "id": "str",
+     "user_id": "str",
+     "identity_data": "{...}",
+     "provider": "str",
+     "last_sign_in_at": "str",
+     "created_at": "str",
+     "updated_at": "str",
+     "email": "str"
+    }
+   ],
+   "created_at": "str",
+   "updated_at": "str",
+   "is_anonymous": "bool"
+  },
+  "res_sample": {
+   "id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+   "aud": "authenticated",
+   "role": "authenticated",
+   "email": "demo@sniper.ng",
+   "email_confirmed_at": "2026-10-07T02:36:48.828501Z",
+   "phone": "",
+   "confirmed_at": "2026-10-07T02:36:48.828501Z",
+   "recovery_sent_at": "2026-10-17T05:19:48.338347Z",
+   "last_sign_in_at": "2026-10-17T05:19:48.377963Z",
+   "app_metadata": {
+    "provider": "email",
+    "providers": [
+     "email"
+    ]
+   },
+   "user_metadata": {
+    "demo": true,
+    "email_verified": true,
+    "store_name": "Demo Store"
+   },
+   "identities": [
+    {
+     "identity_id": "608b784e-b74b-4f41-9c00-54488cbdc878",
+     "id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+     "user_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+     "identity_data": {
+      "email": "demo@sniper.ng",
+      "email_verified": false,
+      "phone_verified": false,
+      "sub": "7a0bc564-6941-4fd1-afab-4f92ee1135af"
+     },
+     "provider": "email",
+     "last_sign_in_at": "2026-10-07T02:36:48.822847Z",
+     "created_at": "2026-10-07T02:36:48.822899Z",
+     "updated_at": "2026-10-07T02:36:48.822899Z",
+     "email": "demo@sniper.ng"
+    }
+   ],
+   "created_at": "2026-10-07T02:36:48.788046Z",
+   "updated_at": "2026-10-17T05:19:48.381136Z",
+   "is_anonymous": false
+  }
+ },
+ "GET /rest/v1/app_users": {
+  "status": 200,
+  "query": "select=owner_id&auth_user_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af",
+  "req_shape": null,
+  "res_shape": [],
+  "res_sample": []
+ },
+ "POST /rest/v1/rpc/current_impersonation": {
+  "status": 200,
+  "query": "",
+  "req_shape": {},
+  "res_shape": null,
+  "res_sample": null
+ },
+ "POST /rest/v1/rpc/my_session_revoked": {
+  "status": 200,
+  "query": "",
+  "req_shape": {
+   "_issued_at": "str"
+  },
+  "res_shape": "bool",
+  "res_sample": false
+ },
+ "POST /rest/v1/rpc/bootstrap_session": {
+  "status": 200,
+  "query": "",
+  "req_shape": {},
+  "res_shape": {
+   "prefs": {
+    "theme": "str",
+    "fontScale": "int",
+    "chatSoundMuted": "bool",
+    "whatsappButtonHidden": "bool",
+    "installBannerDismissedMobileAt": "str",
+    "installBannerDismissedDesktopAt": "str"
+   },
+   "user_id": "str",
+   "app_user": {
+    "name": "null",
+    "email": "null",
+    "agent_id": "null",
+    "is_owner": "bool",
+    "owner_id": "str",
+    "role_name": "null",
+    "app_user_id": "null",
+    "auth_user_id": "str",
+    "sees_all_orders": "bool"
+   },
+   "pinned_items": []
+  },
+  "res_sample": {
+   "prefs": {
+    "theme": "dark",
+    "fontScale": 1,
+    "chatSoundMuted": false,
+    "whatsappButtonHidden": true,
+    "installBannerDismissedMobileAt": "2026-10-16T14:00:35.007Z",
+    "installBannerDismissedDesktopAt": "2026-10-07T02:56:52.984Z"
+   },
+   "user_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+   "app_user": {
+    "name": null,
+    "email": null,
+    "agent_id": null,
+    "is_owner": true,
+    "owner_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+    "role_name": null,
+    "app_user_id": null,
+    "auth_user_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+    "sees_all_orders": false
+   },
+   "pinned_items": []
+  }
+ },
+ "POST /rest/v1/rpc/is_demo_owner": {
+  "status": 200,
+  "query": "",
+  "req_shape": {
+   "_owner": "str"
+  },
+  "res_shape": "bool",
+  "res_sample": true
+ },
+ "POST /rest/v1/rpc/onboarding_status": {
+  "status": 200,
+  "query": "",
+  "req_shape": {},
+  "res_shape": {
+   "owner_id": "str",
+   "resolved": "bool",
+   "completed": "bool",
+   "has_forms": "bool",
+   "hq_complete": "bool",
+   "has_products": "bool"
+  },
+  "res_sample": {
+   "owner_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+   "resolved": true,
+   "completed": true,
+   "has_forms": true,
+   "hq_complete": true,
+   "has_products": true
+  }
+ },
+ "GET /rest/v1/coupons": {
+  "status": 200,
+  "query": "select=*&order=created_at.desc",
+  "req_shape": null,
+  "res_shape": [],
+  "res_sample": []
+ },
+ "POST /rest/v1/rpc/orders_status_counts": {
+  "status": 200,
+  "query": "",
+  "req_shape": {
+   "_branch_id": "null"
+  },
+  "res_shape": [
+   {
+    "status": "str",
+    "cnt": "int"
+   }
+  ],
+  "res_sample": {
+   "status": "Switched Off",
+   "cnt": 7
+  }
+ },
+ "GET /rest/v1/countries": {
+  "status": 200,
+  "query": "select=code%2Cname%2Ccurrency%2Csymbol%2Cdial_code&order=name.asc",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "code": "str",
+    "name": "str",
+    "currency": "str",
+    "symbol": "str",
+    "dial_code": "str"
+   }
+  ],
+  "res_sample": {
+   "code": "AF",
+   "name": "Afghanistan",
+   "currency": "AFN",
+   "symbol": "\u060b",
+   "dial_code": "+93"
+  }
+ },
+ "POST /rest/v1/rpc/current_app_user": {
+  "status": 200,
+  "query": "",
+  "req_shape": {},
+  "res_shape": [
+   {
+    "app_user_id": "null",
+    "auth_user_id": "str",
+    "name": "null",
+    "email": "null",
+    "owner_id": "str",
+    "agent_id": "null",
+    "role_name": "null",
+    "is_owner": "bool",
+    "sees_all_orders": "bool"
+   }
+  ],
+  "res_sample": {
+   "app_user_id": null,
+   "auth_user_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+   "name": null,
+   "email": null,
+   "owner_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+   "agent_id": null,
+   "role_name": null,
+   "is_owner": true,
+   "sees_all_orders": false
+  }
+ },
+ "POST /rest/v1/rpc/effective_owner": {
+  "status": 200,
+  "query": "",
+  "req_shape": {
+   "_uid": "str"
+  },
+  "res_shape": "str",
+  "res_sample": "7a0bc564-6941-4fd1-afab-4f92ee1135af"
+ },
+ "GET /rest/v1/profiles": {
+  "status": 200,
+  "query": "select=display_name%2Cstore_name%2Cemail&user_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "display_name": "str",
+    "store_name": "str",
+    "email": "str"
+   }
+  ],
+  "res_sample": {
+   "display_name": "Demo Owner",
+   "store_name": "Demo Store",
+   "email": "demo@sniper.ng"
+  }
+ },
+ "GET /rest/v1/app_settings": {
+  "status": 200,
+  "query": "select=data&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "data": {
+     "email": "str",
+     "orderTabs": [
+      "str"
+     ],
+     "storeName": "str",
+     "onboarding": "{...}",
+     "phoneNumber": "str",
+     "storeAddress": "str",
+     "storeCountry": "str",
+     "whatsappNumber": "str",
+     "enableRoundRobin": "bool",
+     "sendInvoiceEmail": "bool",
+     "sendInvoiceWhatsapp": "bool",
+     "scheduledOrdersEmail": "bool",
+     "loginNotificationEmail": "bool",
+     "scheduledOrdersWhatsapp": "bool"
+    }
+   }
+  ],
+  "res_sample": {
+   "data": {
+    "email": "demo@sniper.ng",
+    "orderTabs": [
+     "Not Picking Calls",
+     "Switched Off",
+     "Audit Hold",
+     "Scheduled",
+     "Failed",
+     "After-Sale Followup",
+     "Returned",
+     "Deleted",
+     "Cart Abandonment",
+     "Banned",
+     "Paid",
+     "Delivered",
+     "Pending",
+     "Confirmed",
+     "Cash Remitted",
+     "Shipped",
+     "Cancelled"
+    ],
+    "storeName": "Demo Store",
+    "onboarding": {
+     "completed": true,
+     "productDoneAt": "2026-10-17T04:23:34.237Z"
+    },
+    "phoneNumber": "2348000000000",
+    "storeAddress": "12 Admiralty Way, Lekki Phase 1, Lagos",
+    "storeCountry": "NG",
+    "whatsappNumber": "2348000000000",
+    "enableRoundRobin": true,
+    "sendInvoiceEmail": false,
+    "sendInvoiceWhatsapp": false,
+    "scheduledOrdersEmail": false,
+    "loginNotificationEmail": false,
+    "scheduledOrdersWhatsapp": false
+   }
+  }
+ },
+ "GET /rest/v1/forms": {
+  "status": 200,
+  "query": "select=data&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af&deleted_at=is.null&order=created_at.desc&limit=1000",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "data": {
+     "id": "str",
+     "hits": "int",
+     "name": "str",
+     "bumps": [],
+     "fields": [
+      "{...}"
+     ],
+     "styling": "{...}",
+     "upsells": [],
+     "archived": "bool",
+     "branchId": "str",
+     "headline": "str",
+     "packages": [],
+     "createdAt": "str",
+     "pixelCode": "str",
+     "productId": "str",
+     "footerText": "str",
+     "orderBumps": [],
+     "subheadline": "str"
+    }
+   }
+  ],
+  "res_sample": {
+   "data": {
+    "id": "demo-frm-watch",
+    "hits": 576,
+    "name": "Ultra Pro Smart Watch 2.0 Order Form",
+    "bumps": [],
+    "fields": [
+     {
+      "id": "f-name",
+      "type": "name",
+      "label": "Full Name",
+      "required": true,
+      "mandatory": true,
+      "showLabel": true,
+      "placeholder": "Your Full Name"
+     },
+     {
+      "id": "f-phone",
+      "type": "phone",
+      "label": "Phone Number",
+      "required": true,
+      "mandatory": true,
+      "showLabel": true,
+      "placeholder": "080..."
+     },
+     {
+      "id": "f-whatsapp",
+      "type": "whatsapp",
+      "label": "WhatsApp Number",
+      "required": true,
+      "mandatory": true,
+      "showLabel": true
+     },
+     {
+      "id": "f-address",
+      "type": "address",
+      "label": "Delivery Address",
+      "required": true,
+      "mandatory": true,
+      "showLabel": true
+     },
+     {
+      "id": "f-state",
+      "type": "state",
+      "label": "State",
+      "required": true,
+      "mandatory": true,
+      "showLabel": true
+     },
+     {
+      "id": "f-package",
+      "type": "package",
+      "label": "Select your package",
+      "required": true,
+      "mandatory": true,
+      "showLabel": true
+     }
+    ],
+    "styling": {
+     "bgColor": "#ffffff",
+     "buttonBg": "#3E7BD6",
+     "fontSize": 14,
+     "textColor": "#111827",
+     "buttonText": "#ffffff",
+     "fontFamily": "Inter, system-ui, sans-serif",
+     "buttonRadius": 8
+    },
+    "upsells": [],
+    "archived": false,
+    "branchId": "d79532eb-a3ee-4481-b06a-b3f93246cc96",
+    "headline": "Order your Ultra Pro Smart Watch 2.0 today \u2014 Pay on Delivery",
+    "packages": [],
+    "createdAt": "2026-08-23T04:23:30Z",
+    "pixelCode": "",
+    "productId": "demo-prd-watch",
+    "footerText": "\u00a9 {{year}} Demo Store",
+    "orderBumps": [],
+    "subheadline": "Free delivery in Lagos, Abuja & Port Harcourt within 24\u201348 hours."
+   }
+  }
+ },
+ "GET /rest/v1/subscriptions": {
+  "status": 200,
+  "query": "select=plan%2Cbilling_cycle%2Cstatus%2Cstarted_at%2Cexpires_at&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "plan": "str",
+    "billing_cycle": "str",
+    "status": "str",
+    "started_at": "str",
+    "expires_at": "str"
+   }
+  ],
+  "res_sample": {
+   "plan": "big-boss",
+   "billing_cycle": "yearly",
+   "status": "active",
+   "started_at": "2026-10-17T04:23:30.244337+00:00",
+   "expires_at": "2099-12-31T23:59:59+00:00"
+  }
+ },
+ "GET /rest/v1/products": {
+  "status": 200,
+  "query": "select=data&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "data": {
+     "id": "str",
+     "sku": "str",
+     "name": "str",
+     "type": "str",
+     "archived": "bool",
+     "hasOffer": "bool",
+     "costPrice": "int",
+     "createdAt": "str",
+     "categoryId": "str",
+     "variations": [
+      "{...}"
+     ],
+     "countryCode": "str",
+     "pricePoints": [
+      "{...}"
+     ],
+     "stockHistory": [],
+     "countryPrices": [],
+     "priceVariations": [],
+     "lowStockAlertQty": "int",
+     "lowStockAlertEmails": "str",
+     "lowStockAlertQtyAgents": "int"
+    }
+   }
+  ],
+  "res_sample": {
+   "data": {
+    "id": "demo-prd-watch",
+    "sku": "WATCH-01",
+    "name": "Ultra Pro Smart Watch 2.0",
+    "type": "physical",
+    "archived": false,
+    "hasOffer": false,
+    "costPrice": 9500,
+    "createdAt": "2026-08-18T04:23:30Z",
+    "categoryId": "demo-cat-gadgets",
+    "variations": [
+     {
+      "id": "demo-prd-watch-var",
+      "type": "Color",
+      "options": [
+       {
+        "id": "demo-prd-watch-vo1",
+        "value": "Midnight Black"
+       },
+       {
+        "id": "demo-prd-watch-vo2",
+        "value": "Titanium Silver"
+       },
+       {
+        "id": "demo-prd-watch-vo3",
+        "value": "Ocean Blue"
+       }
+      ]
+     }
+    ],
+    "countryCode": "NG",
+    "pricePoints": [
+     {
+      "id": "demo-prd-watch-pp0",
+      "price": 25000,
+      "units": 1,
+      "offers": [],
+      "freeGifts": [],
+      "offerName": "",
+      "unitSymbol": "Unit",
+      "comboProducts": []
+     },
+     {
+      "id": "demo-prd-watch-pp1",
+      "price": 45000,
+      "units": 2,
+      "offers": [],
+      "freeGifts": [],
+      "offerName": "",
+      "unitSymbol": "Units",
+      "comboProducts": []
+     },
+     {
+      "id": "demo-prd-watch-pp2",
+      "price": 62000,
+      "units": 3,
+      "offers": [],
+      "freeGifts": [],
+      "offerName": "",
+      "unitSymbol": "Units",
+      "comboProducts": []
+     }
+    ],
+    "stockHistory": [],
+    "countryPrices": [],
+    "priceVariations": [],
+    "lowStockAlertQty": 15,
+    "lowStockAlertEmails": "",
+    "lowStockAlertQtyAgents": 5
+   }
+  }
+ },
+ "GET /rest/v1/product_categories": {
+  "status": 200,
+  "query": "select=data&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "data": {
+     "id": "str",
+     "name": "str"
+    }
+   }
+  ],
+  "res_sample": {
+   "data": {
+    "id": "demo-cat-gadgets",
+    "name": "Gadgets"
+   }
+  }
+ },
+ "POST /rest/v1/rpc/has_role": {
+  "status": 200,
+  "query": "",
+  "req_shape": {
+   "_user_id": "str",
+   "_role": "str"
+  },
+  "res_shape": "bool",
+  "res_sample": false
+ },
+ "GET /rest/v1/customer_blacklist": {
+  "status": 200,
+  "query": "select=id%2Cphone%2Cname%2Creason%2Ccreated_at&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af&order=created_at.desc",
+  "req_shape": null,
+  "res_shape": [],
+  "res_sample": []
+ },
+ "GET /rest/v1/branches": {
+  "status": 200,
+  "query": "select=*&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af&order=is_default.desc%2Cname.asc",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "id": "str",
+    "owner_id": "str",
+    "name": "str",
+    "country_code": "str",
+    "state": "str",
+    "city": "str",
+    "address": "str",
+    "phone": "str",
+    "whatsapp_number": "null",
+    "email": "null",
+    "currency": "str",
+    "manager_user_id": "null",
+    "status": "str",
+    "is_default": "bool",
+    "created_at": "str",
+    "updated_at": "str",
+    "restrict_orders_to_state": "bool"
+   }
+  ],
+  "res_sample": {
+   "id": "d79532eb-a3ee-4481-b06a-b3f93246cc96",
+   "owner_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+   "name": "Head Office (Lagos)",
+   "country_code": "NG",
+   "state": "Lagos",
+   "city": "Lekki",
+   "address": "12 Admiralty Way, Lekki Phase 1",
+   "phone": "2348000000000",
+   "whatsapp_number": null,
+   "email": null,
+   "currency": "NGN",
+   "manager_user_id": null,
+   "status": "active",
+   "is_default": true,
+   "created_at": "2026-10-07T02:36:48.909664+00:00",
+   "updated_at": "2026-10-07T02:36:48.909664+00:00",
+   "restrict_orders_to_state": false
+  }
+ },
+ "GET /rest/v1/platform_settings": {
+  "status": 200,
+  "query": "select=value&key=eq.default_roles_template",
+  "req_shape": null,
+  "res_shape": null,
+  "res_sample": null
+ },
+ "GET /rest/v1/form_hit_counts": {
+  "status": 200,
+  "query": "select=form_id%2Chits&form_id=in.%28demo-frm-watch%2Cdemo-frm-shaver%2Cdemo-frm-pillow%2Cdemo-frm-earbuds%2Cdemo-frm-dispenser%2Cdemo-frm-shoes%29",
+  "req_shape": null,
+  "res_shape": [],
+  "res_sample": []
+ },
+ "POST /rest/v1/rpc/chat_unread_total": {
+  "status": 200,
+  "query": "",
+  "req_shape": {},
+  "res_shape": "int",
+  "res_sample": 0
+ },
+ "POST /rest/v1/rpc/migration_bonus_status": {
+  "status": 200,
+  "query": "",
+  "req_shape": {},
+  "res_shape": {
+   "claimed": "bool",
+   "eligible": "bool",
+   "expires_at": "str",
+   "has_subscription": "bool"
+  },
+  "res_sample": {
+   "claimed": false,
+   "eligible": false,
+   "expires_at": "2099-12-31T23:59:59+00:00",
+   "has_subscription": true
+  }
+ },
+ "GET /rest/v1/sniper_sms_credits": {
+  "status": 200,
+  "query": "select=balance&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af",
+  "req_shape": null,
+  "res_shape": [],
+  "res_sample": []
+ },
+ "POST /rest/v1/audit_log": {
+  "status": 201,
+  "query": "",
+  "req_shape": {
+   "action": "str",
+   "entity": "str",
+   "entity_id": "null",
+   "actor": "str",
+   "details": {
+    "actorEmail": "str",
+    "page": "str",
+    "device": "str"
+   },
+   "owner_id": "str"
+  },
+  "res_shape": "str",
+  "res_sample": ""
+ },
+ "GET /rest/v1/in_app_notifications": {
+  "status": 200,
+  "query": "select=id%2Ckind%2Ctitle%2Cdetail%2Curl%2Cread_at%2Ccreated_at&recipient_auth_user_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af&order=created_at.desc&limit=50",
+  "req_shape": null,
+  "res_shape": [],
+  "res_sample": []
+ },
+ "DELETE /rest/v1/forms": {
+  "status": 204,
+  "query": "owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af&deleted_at=not.is.null&deleted_at=lt.2026-09-17T05%3A19%3A51.636Z",
+  "req_shape": null,
+  "res_shape": "str",
+  "res_sample": ""
+ },
+ "GET /rest/v1/structural_account_settings": {
+  "status": 200,
+  "query": "select=*&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "owner_id": "str",
+    "distribution_day": "str",
+    "distribution_time": "str",
+    "created_at": "str",
+    "updated_at": "str"
+   }
+  ],
+  "res_sample": {
+   "owner_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+   "distribution_day": "friday",
+   "distribution_time": "17:00",
+   "created_at": "2026-10-07T02:36:48.787729+00:00",
+   "updated_at": "2026-10-07T02:36:48.787729+00:00"
+  }
+ },
+ "GET /rest/v1/disbursement_reports": {
+  "status": 200,
+  "query": "select=status%2Cperiod_end&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af&period_end=gte.2026-10-16T16%3A00%3A00.000Z&order=period_end.desc&limit=5",
+  "req_shape": null,
+  "res_shape": [],
+  "res_sample": []
+ },
+ "GET /rest/v1/bank_accounts": {
+  "status": 200,
+  "query": "select=*&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "id": "str",
+    "owner_id": "str",
+    "bank_name": "str",
+    "account_name": "str",
+    "account_number": "str",
+    "currency": "str",
+    "balance": "int",
+    "notes": "str",
+    "created_at": "str",
+    "updated_at": "str"
+   }
+  ],
+  "res_sample": {
+   "id": "1a909f7c-5d73-4dff-a070-7945e74e1aaa",
+   "owner_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+   "bank_name": "Pseudo Income Bank",
+   "account_name": "Placeholder \u2014 Income Account",
+   "account_number": "0000000000",
+   "currency": "NGN",
+   "balance": 0,
+   "notes": "Auto-generated placeholder. Update with real bank details under Accounting \u203a Bank Accounts.",
+   "created_at": "2026-10-07T02:36:48.787729+00:00",
+   "updated_at": "2026-10-07T02:36:48.787729+00:00"
+  }
+ },
+ "GET /rest/v1/structural_accounts": {
+  "status": 200,
+  "query": "select=*&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "id": "str",
+    "owner_id": "str",
+    "slot": "str",
+    "position": "int",
+    "bank_account_id": "str",
+    "percentage": "null",
+    "created_at": "str",
+    "updated_at": "str"
+   }
+  ],
+  "res_sample": {
+   "id": "1888bde3-1cf5-4d20-b1f0-d845aacdaf40",
+   "owner_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af",
+   "slot": "income",
+   "position": 0,
+   "bank_account_id": "1a909f7c-5d73-4dff-a070-7945e74e1aaa",
+   "percentage": null,
+   "created_at": "2026-10-07T02:36:48.787729+00:00",
+   "updated_at": "2026-10-07T02:36:48.787729+00:00"
+  }
+ },
+ "POST /rest/v1/rpc/customer_tiers": {
+  "status": 200,
+  "query": "offset=0&limit=1000",
+  "req_shape": {
+   "p_from": "str",
+   "p_to": "str"
+  },
+  "res_shape": [
+   {
+    "phone": "str",
+    "customer_name": "str",
+    "state": "str",
+    "tier": "int",
+    "orders_in_period": "int",
+    "total_orders": "int",
+    "last_order_at": "str",
+    "delivered_count": "int"
+   }
+  ],
+  "res_sample": {
+   "phone": "7012114338",
+   "customer_name": "Wale Bello",
+   "state": "Lagos",
+   "tier": 1,
+   "orders_in_period": 1,
+   "total_orders": 1,
+   "last_order_at": "2026-10-05T04:09:14.135909+00:00",
+   "delivered_count": 1
+  }
+ },
+ "POST /rest/v1/rpc/dashboard_overview": {
+  "status": 200,
+  "query": "",
+  "req_shape": {
+   "_branch_id": "str",
+   "_hq_id": "str",
+   "_tz": "str",
+   "_week_start": "str",
+   "_month_start": "str",
+   "_prev_month_start": "str",
+   "_next_month_start": "str"
+  },
+  "res_shape": {
+   "week": {
+    "cur_del": "int",
+    "cur_rev": "int",
+    "prev_del": "int",
+    "prev_rev": "int",
+    "cur_orders": "int",
+    "prev_orders": "int"
+   },
+   "staff": [
+    {
+     "id": "str",
+     "closed": "int",
+     "revenue": "int",
+     "assigned": "int"
+    }
+   ],
+   "agents": [
+    {
+     "name": "str",
+     "total": "int",
+     "delivered": "int"
+    }
+   ],
+   "recent": [
+    {
+     "id": "str",
+     "date": "str",
+     "amount": "int",
+     "row_id": "str",
+     "status": "str",
+     "customer": "str",
+     "form_name": "str"
+    }
+   ],
+   "states": [
+    {
+     "name": "str",
+     "total": "int",
+     "delivered": "int"
+    }
+   ],
+   "weekly": [
+    {
+     "i": "int",
+     "cur": "int",
+     "prev": "int"
+    }
+   ],
+   "monthly": [
+    {
+     "i": "int",
+     "cur": "int",
+     "prev": "int"
+    }
+   ],
+   "products": [
+    {
+     "name": "str",
+     "units": "int"
+    }
+   ],
+   "customers": [
+    {
+     "name": "str",
+     "phone": "str",
+     "spend": "int",
+     "orders": "int"
+    }
+   ],
+   "sales_count": "int",
+   "total_count": "int",
+   "sales_amount": "int",
+   "delivered_revenue": "int"
+  },
+  "res_sample": {
+   "week": {
+    "cur_del": 17,
+    "cur_rev": 976500,
+    "prev_del": 25,
+    "prev_rev": 999500,
+    "cur_orders": 40,
+    "prev_orders": 38
+   },
+   "staff": [
+    {
+     "id": "b364f9a9-1271-491f-8ab1-ea96b251d903",
+     "closed": 36,
+     "revenue": 855500,
+     "assigned": 63
+    },
+    {
+     "id": "6974f715-5fc5-418b-950d-8542b261874c",
+     "closed": 32,
+     "revenue": 772500,
+     "assigned": 58
+    },
+    {
+     "id": "5609ec0d-169d-439d-a7a2-2da72956e9c2",
+     "closed": 30,
+     "revenue": 689500,
+     "assigned": 44
+    },
+    {
+     "id": "f33ee473-426b-405d-b8f6-4f2b8453b0c4",
+     "closed": 21,
+     "revenue": 615000,
+     "assigned": 55
+    }
+   ],
+   "agents": [
+    {
+     "name": "Garden City Logistics (Port Harcourt)",
+     "total": 24,
+     "delivered": 19
+    },
+    {
+     "name": "Swift Dispatch (Lagos Mainland)",
+     "total": 31,
+     "delivered": 30
+    },
+    {
+     "name": "Lekki Express (Lagos Island)",
+     "total": 29,
+     "delivered": 23
+    },
+    {
+     "name": "Oyo Movers (Ibadan)",
+     "total": 26,
+     "delivered": 22
+    },
+    {
+     "name": "Capital Riders (Abuja)",
+     "total": 29,
+     "delivered": 25
+    }
+   ],
+   "recent": [
+    {
+     "id": "8556324928",
+     "date": "2026-10-16T20:16:26.214+00:00",
+     "amount": 9500,
+     "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:8556324928",
+     "status": "Confirmed",
+     "customer": "Obinna Ogunleye",
+     "form_name": "Automatic Water Dispenser Pump Order Form"
+    },
+    {
+     "id": "4576503501",
+     "date": "2026-10-16T15:20:01.673+00:00",
+     "amount": 34000,
+     "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:4576503501",
+     "status": "Not Picking Calls",
+     "customer": "Bola Nwosu",
+     "form_name": "2-in-1 Electric Shaver & Grooming Kit Order Form"
+    },
+    {
+     "id": "7577752268",
+     "date": "2026-10-16T08:44:44.103+00:00",
+     "amount": 70000,
+     "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:7577752268",
+     "status": "Pending",
+     "customer": "Ngozi Balogun",
+     "form_name": "Italian Leather Oxford Shoes Order Form"
+    },
+    {
+     "id": "3227635712",
+     "date": "2026-10-15T22:12:59.523+00:00",
+     "amount": 16000,
+     "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:3227635712",
+     "status": "Confirmed",
+     "customer": "Musa Danjuma",
+     "form_name": "Orthopedic Memory Foam Pillow Order Form"
+    },
+    {
+     "id": "1936169779",
+     "date": "2026-10-15T17:38:31.87+00:00",
+     "amount": 18500,
+     "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:1936169779",
+     "status": "Confirmed",
+     "customer": "Esther Balogun",
+     "form_name": "2-in-1 Electric Shaver & Grooming Kit Order Form"
+    },
+    {
+     "id": "1746761224",
+     "date": "2026-10-15T10:14:58.388+00:00",
+     "amount": 16000,
+     "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:1746761224",
+     "status": "Scheduled",
+     "customer": "Lola Akande",
+     "form_name": "Orthopedic Memory Foam Pillow Order Form"
+    },
+    {
+     "id": "8960313642",
+     "date": "2026-10-15T08:17:04.53+00:00",
+     "amount": 18500,
+     "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:8960313642",
+     "status": "Not Picking Calls",
+     "customer": "Uche Okonkwo",
+     "form_name": "2-in-1 Electric Shaver & Grooming Kit Order Form"
+    },
+    {
+     "id": "8149721847",
+     "date": "2026-10-15T05:21:19.945+00:00",
+     "amount": 38000,
+     "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:8149721847",
+     "status": "Confirmed",
+     "customer": "Gbenga Danjuma",
+     "form_name": "Italian Leather Oxford Shoes Order Form"
+    },
+    {
+     "id": "9254321917",
+     "date": "2026-10-15T02:37:06.525+00:00",
+     "amount": 38000,
+     "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:9254321917",
+     "status": "Pending",
+     "customer": "Halima Akande",
+     "form_name": "Italian Leather Oxford Shoes Order Form"
+    },
+    {
+     "id": "3727221889",
+     "date": "2026-10-15T01:59:14.933+00:00",
+     "amount": 9500,
+     "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:3727221889",
+     "status": "Confirmed",
+     "customer": "Funke Eze",
+     "form_name": "Automatic Water Dispenser Pump Order Form"
+    }
+   ],
+   "states": [
+    {
+     "name": "Oyo",
+     "total": 43,
+     "delivered": 22
+    },
+    {
+     "name": "FCT",
+     "total": 39,
+     "delivered": 25
+    },
+    {
+     "name": "Rivers",
+     "total": 42,
+     "delivered": 19
+    },
+    {
+     "name": "Lagos",
+     "total": 96,
+     "delivered": 53
+    }
+   ],
+   "weekly": [
+    {
+     "i": 0,
+     "cur": 9,
+     "prev": 0
+    },
+    {
+     "i": 1,
+     "cur": 3,
+     "prev": 0
+    },
+    {
+     "i": 2,
+     "cur": 8,
+     "prev": 0
+    },
+    {
+     "i": 3,
+     "cur": 9,
+     "prev": 0
+    },
+    {
+     "i": 4,
+     "cur": 8,
+     "prev": 0
+    },
+    {
+     "i": 5,
+     "cur": 3,
+     "prev": 0
+    },
+    {
+     "i": 0,
+     "cur": 0,
+     "prev": 5
+    },
+    {
+     "i": 1,
+     "cur": 0,
+     "prev": 8
+    },
+    {
+     "i": 2,
+     "cur": 0,
+     "prev": 4
+    },
+    {
+     "i": 3,
+     "cur": 0,
+     "prev": 4
+    },
+    {
+     "i": 4,
+     "cur": 0,
+     "prev": 7
+    },
+    {
+     "i": 5,
+     "cur": 0,
+     "prev": 4
+    },
+    {
+     "i": 6,
+     "cur": 0,
+     "prev": 6
+    }
+   ],
+   "monthly": [
+    {
+     "i": 0,
+     "cur": 36,
+     "prev": 7
+    },
+    {
+     "i": 1,
+     "cur": 46,
+     "prev": 46
+    },
+    {
+     "i": 2,
+     "cur": 11,
+     "prev": 29
+    },
+    {
+     "i": 3,
+     "cur": 0,
+     "prev": 34
+    },
+    {
+     "i": 4,
+     "cur": 0,
+     "prev": 11
+    }
+   ],
+   "products": [
+    {
+     "name": "Orthopedic Memory Foam Pillow",
+     "units": 40
+    },
+    {
+     "name": "Automatic Water Dispenser Pump",
+     "units": 34
+    },
+    {
+     "name": "2-in-1 Electric Shaver & Grooming Kit",
+     "units": 25
+    },
+    {
+     "name": "Ultra Pro Smart Watch 2.0",
+     "units": 23
+    },
+    {
+     "name": "Wireless Noise-Cancelling Earbuds Pro",
+     "units": 18
+    }
+   ],
+   "customers": [
+    {
+     "name": "Chinedu Bello",
+     "phone": "2349037169823",
+     "spend": 70000,
+     "orders": 1
+    },
+    {
+     "name": "Sani Etim",
+     "phone": "2348138635913",
+     "spend": 70000,
+     "orders": 1
+    },
+    {
+     "name": "Ifeanyi Akande",
+     "phone": "2347066348651",
+     "spend": 70000,
+     "orders": 1
+    },
+    {
+     "name": "Gbenga Bello",
+     "phone": "2347011912062",
+     "spend": 52000,
+     "orders": 1
+    },
+    {
+     "name": "Sade Nwosu",
+     "phone": "2348022300225",
+     "spend": 52000,
+     "orders": 1
+    }
+   ],
+   "sales_count": 220,
+   "total_count": 220,
+   "sales_amount": 5618000,
+   "delivered_revenue": 2932500
+  }
+ },
+ "GET /rest/v1/service_status": {
+  "status": 200,
+  "query": "select=service%2Cstatus%2Cmessage&order=service.asc",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "service": "str",
+    "status": "str",
+    "message": "str"
+   }
+  ],
+  "res_sample": {
+   "service": "email",
+   "status": "running",
+   "message": ""
+  }
+ },
+ "POST /rest/v1/rpc/tenant_name_map": {
+  "status": 200,
+  "query": "",
+  "req_shape": {
+   "_ids": "null",
+   "_owner_ids": "null"
+  },
+  "res_shape": [
+   {
+    "id": "str",
+    "name": "str"
+   }
+  ],
+  "res_sample": {
+   "id": "47328a66-0bfb-479e-adc0-e3526e79ef77",
+   "name": "David Okon"
+  }
+ },
+ "GET /rest/v1/user_assignments": {
+  "status": 200,
+  "query": "select=user_id%2Cproducts%2Cagents%2Cfollow_up%2Cusers%2Cstates%2Cforms",
+  "req_shape": null,
+  "res_shape": [],
+  "res_sample": []
+ },
+ "POST /rest/v1/rpc/round_robin_sweep": {
+  "status": 200,
+  "query": "",
+  "req_shape": {
+   "_owner_id": "null"
+  },
+  "res_shape": "int",
+  "res_sample": 0
+ },
+ "POST /rest/v1/rpc/orders_keyset_page": {
+  "status": 200,
+  "query": "",
+  "req_shape": {
+   "_cursor_created_at": "null",
+   "_cursor_row_id": "null",
+   "_limit": "int",
+   "_branch_id": "null"
+  },
+  "res_shape": null,
+  "res_sample": null
+ },
+ "GET /rest/v1/audit_log": {
+  "status": 200,
+  "query": "select=entity_id%2Cactor%2Ccreated_at%2Caction&entity=eq.form&action=in.%28Add%2CDuplicate%29&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af&order=created_at.asc&limit=5000",
+  "req_shape": null,
+  "res_shape": [],
+  "res_sample": []
+ },
+ "GET /rest/v1/orders": {
+  "status": 200,
+  "query": "select=row_id%2Corder_id%2Cbranch_id%2Cdata%2Cupdated_at%2Ccreated_at&owner_id=eq.7a0bc564-6941-4fd1-afab-4f92ee1135af&updated_at=gt.2026-10-16T20%3A16%3A26.214Z&order=updated_at.asc&offset=0&limit=1000",
+  "req_shape": null,
+  "res_shape": [
+   {
+    "row_id": "str",
+    "order_id": "str",
+    "branch_id": "str",
+    "data": {
+     "id": "str",
+     "qty": "int",
+     "date": "str",
+     "hold": "bool",
+     "tags": [],
+     "email": "str",
+     "phone": "str",
+     "rowId": "str",
+     "state": "str",
+     "amount": "int",
+     "formId": "str",
+     "status": "str",
+     "addedBy": "str",
+     "address": "str",
+     "product": "str",
+     "branchId": "str",
+     "customer": "str",
+     "formName": "str",
+     "whatsapp": "str",
+     "freeGifts": [],
+     "orderType": "str",
+     "productId": "str",
+     "assignedAt": "str",
+     "assignedTo": "str",
+     "countryCode": "str",
+     "processedBy": "str",
+     "otherDetails": "{...}",
+     "pricePointId": "str",
+     "statusHistory": [
+      "{...}"
+     ],
+     "currencySymbol": "str",
+     "firstAssignedAt": "str",
+     "firstAssignedTo": "str",
+     "statusEnteredAt": "str",
+     "assignmentSource": "str",
+     "firstAssignmentSource": "str"
+    },
+    "updated_at": "str",
+    "created_at": "str"
+   }
+  ],
+  "res_sample": {
+   "row_id": "7a0bc564-6941-4fd1-afab-4f92ee1135af:8556324928",
+   "order_id": "8556324928",
+   "branch_id": "d79532eb-a3ee-4481-b06a-b3f93246cc96",
+   "data": {
+    "id": "8556324928",
+    "qty": 1,
+    "date": "2026-10-16T20:16:26.214Z",
+    "hold": false,
+    "tags": [],
+    "email": "obinna542@example.com",
+    "phone": "2349053759264",
+    "rowId": "8556324928",
+    "state": "Lagos",
+    "amount": 9500,
+    "formId": "demo-frm-dispenser",
+    "status": "Confirmed",
+    "addedBy": "Demo",
+    "address": "66, Ogunlana Drive",
+    "product": "Automatic Water Dispenser Pump",
+    "branchId": "d79532eb-a3ee-4481-b06a-b3f93246cc96",
+    "customer": "Obinna Ogunleye",
+    "formName": "Automatic Water Dispenser Pump Order Form",
+    "whatsapp": "2349053759264",
+    "freeGifts": [],
+    "orderType": "main",
+    "productId": "demo-prd-dispenser",
+    "assignedAt": "2026-10-16T20:17:26.214813+00:00",
+    "assignedTo": "b364f9a9-1271-491f-8ab1-ea96b251d903",
+    "countryCode": "NG",
+    "processedBy": "b364f9a9-1271-491f-8ab1-ea96b251d903",
+    "otherDetails": {},
+    "pricePointId": "demo-prd-dispenser-pp0",
+    "statusHistory": [
+     {
+      "at": "2026-10-16T20:46:26.214813+00:00",
+      "to": "Confirmed",
+      "from": "Pending",
+      "byName": "Amaka Eze"
+     }
+    ],
+    "currencySymbol": "\u20a6",
+    "firstAssignedAt": "2026-10-16T20:17:26.214813+00:00",
+    "firstAssignedTo": "b364f9a9-1271-491f-8ab1-ea96b251d903",
+    "statusEnteredAt": "2026-10-16T20:46:26.214813+00:00",
+    "assignmentSource": "round_robin",
+    "firstAssignmentSource": "round_robin"
+   },
+   "updated_at": "2026-10-16T20:46:26.214813+00:00",
+   "created_at": "2026-10-16T20:16:26.214813+00:00"
+  }
+ }
+}

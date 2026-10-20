@@ -15,17 +15,11 @@ import {
   AlertCircle,
   Info,
 } from 'lucide-react';
-import { WidgetProps } from '../../../config/types/dashboard';
+import { WidgetProps, RecentActivityConfig } from '../../../config/types/dashboard';
 import { formatDistanceToNow } from 'date-fns';
 
 interface RecentActivityWidgetProps extends WidgetProps {
-  config: {
-    id: string;
-    type: 'recentActivity';
-    title: string;
-    height: number;
-    dataSource: string;
-  };
+  config: RecentActivityConfig;
 }
 
 interface ActivityData {

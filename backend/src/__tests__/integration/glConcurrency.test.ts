@@ -3,7 +3,7 @@ import prisma from '../../utils/prisma';
 import glService from '../../services/glService';
 import { AccountType, NormalBalance, JournalSourceType } from '@prisma/client';
 import { withGlTestTenant } from './helpers/glTestTenant';
-import { tenantStorage } from '../../utils/tenantContext';
+import { tenantStorage, withoutTenant } from '../../utils/tenantContext';
 
 describe('GL Concurrency Integration Test', () => {
     let testAccount: any;
@@ -54,7 +54,7 @@ describe('GL Concurrency Integration Test', () => {
         });
     });
 
-    afterAll(async () => {
+    afterAll(() => withoutTenant('test cleanup', async () => {
         // Cleanup: Delete JournalEntries first, which will cascade to AccountTransactions
         const accountIds = [];
         if (testAccount) accountIds.push(testAccount.id);
@@ -95,7 +95,7 @@ describe('GL Concurrency Integration Test', () => {
                 });
             }
         }
-    });
+    }));
 
     it('should maintain correct balance under heavy concurrent updates', async () => {
         // restoreMocks wipes the beforeAll getTenantId spy before this test, so run

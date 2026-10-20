@@ -11,6 +11,7 @@ jest.mock('../../utils/logger', () => ({
 
 import { prismaMock } from '../mocks/prisma.mock';
 import { AnalyticsService } from '../../services/analyticsService';
+import { tenantStorage } from '../../utils/tenantContext';
 
 const makeOrder = (overrides: any = {}) => ({
   id: 1,
@@ -346,6 +347,14 @@ describe('AnalyticsService (extended branch coverage)', () => {
         endDate: new Date('2024-01-31'),
       });
       expect(result).toBeDefined();
+    });
+
+    it('scopes the order item groupBy to the tenant through the parent order', async () => {
+      const spy = jest.spyOn(tenantStorage, 'getStore').mockReturnValue({ tenantId: 'tenant-1' });
+      await analyticsService.getProductPerformance();
+      spy.mockRestore();
+      const where = (prismaMock.orderItem.groupBy as any).mock.calls[0][0].where;
+      expect(where.order).toEqual({ deletedAt: null, tenantId: 'tenant-1' });
     });
 
     it('returns product performance with only startDate', async () => {

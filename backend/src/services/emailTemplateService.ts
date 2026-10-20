@@ -1,6 +1,6 @@
 import sanitizeHtml from 'sanitize-html';
 import prisma from '../utils/prisma';
-import { tenantStorage } from '../utils/tenantContext';
+import { runInTenant } from '../utils/tenantContext';
 import { escapeHtml } from '../utils/sanitizer';
 
 /**
@@ -166,7 +166,7 @@ export const DEFAULT_EMAIL_TEMPLATES: { name: string; subject: string; body: str
  * stamps the tenantId. Returns the number of rows actually inserted.
  */
 export async function seedDefaultEmailTemplates(tenantId: string): Promise<number> {
-  return tenantStorage.run({ tenantId }, async () => {
+  return runInTenant(tenantId, async () => {
     const result = await prisma.emailTemplate.createMany({
       data: DEFAULT_EMAIL_TEMPLATES.map((t) => ({
         name: t.name,

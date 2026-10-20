@@ -255,6 +255,20 @@ describe('CheckoutFormService', () => {
       expect(result).toBeDefined();
     });
 
+    it('ties a package and an upsell update to the form being edited (formId in the where)', async () => {
+      (prismaMock.checkoutForm.findUnique as any).mockResolvedValue(makeForm({ packages: [], upsells: [] }) as any);
+      (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
+      (prismaMock.checkoutForm.update as any).mockResolvedValue(makeForm() as any);
+
+      await checkoutFormService.updateCheckoutForm('1', {
+        packages: [{ id: 7, name: 'P', price: 10, quantity: 1 }] as any,
+        upsells: [{ id: 9, name: 'U', price: 5, items: [] }] as any,
+      });
+
+      expect((prismaMock.formPackage.update as any).mock.calls[0][0].where).toEqual({ id: 7, formId: 1 });
+      expect((prismaMock.formUpsell.update as any).mock.calls[0][0].where).toEqual({ id: 9, formId: 1 });
+    });
+
     // Same archived-slug case as create, on the rename path.
     it('names the archive when renaming onto a slug an archived form holds', async () => {
       (prismaMock.checkoutForm.findUnique as any).mockResolvedValue(
@@ -369,7 +383,7 @@ describe('CheckoutFormService', () => {
 
       const result = await checkoutFormService.getFormStats('1');
       expect(result.totalSubmissions).toBe(0);
-      expect(result.totalRevenue).toBe(0);
+      expect(result.totalRevenue).toBe('0.00');
     });
   });
 });

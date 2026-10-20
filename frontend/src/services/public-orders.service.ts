@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { normalizeResponses } from '../utils/money';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -9,6 +10,9 @@ export const publicClient = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Money arrives as strings; parse once at the edge
+normalizeResponses(publicClient);
 
 export interface PublicCheckoutForm {
   id: number;

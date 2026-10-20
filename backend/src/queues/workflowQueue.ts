@@ -3,12 +3,11 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { evaluateConditions } from '../utils/conditionEvaluator';
 import { getSocketInstance } from '../utils/socketInstance';
-import { emitOrderUpdated, emitOrderAssigned } from '../sockets/index';
-import { tenantStorage, getTenantId } from '../utils/tenantContext';
+import { emitOrderUpdated, emitOrderAssigned, emitToTenant } from '../sockets/index';
+import { runJobInTenant, getTenantId } from '../utils/tenantContext';
 
 // Send actions read tenant-scoped provider config (SystemConfig) and write
-// tenant-scoped MessageLog rows. Running them with no tenant context would let
-// the fail-open Prisma extension read/write across tenants, so they fail closed.
+// tenant-scoped MessageLog rows. They refuse to run with no tenant context.
 const TENANT_SCOPED_SEND_ACTIONS = new Set([
   'send_email',
   'send_sms',
@@ -42,7 +41,7 @@ export const workflowQueue = process.env.NODE_ENV === 'test'
   });
 
 
-workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
+export const processExecuteWorkflow = async (job: Bull.Job) => {
   const { executionId, workflowId, actions, conditions, input, tenantId } = job.data;
 
   // Restore tenant context so all Prisma queries (MessageLog, SystemConfig, etc.)
@@ -52,7 +51,7 @@ workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
 
     const io = getSocketInstance();
     if (io) {
-      io.emit('workflow:execution_started', { workflowId, executionId });
+      emitToTenant(io, 'workflow:execution_started', { workflowId, executionId });
     }
 
     try {
@@ -101,7 +100,7 @@ workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
       logger.info('Workflow execution completed', { executionId });
 
       if (io) {
-        io.emit('workflow:execution_completed', {
+        emitToTenant(io, 'workflow:execution_completed', {
           workflowId,
           executionId,
           status: 'completed',
@@ -112,7 +111,7 @@ workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
       logger.error('Workflow execution failed', { executionId, error: error.message });
 
       if (io) {
-        io.emit('workflow:execution_completed', {
+        emitToTenant(io, 'workflow:execution_completed', {
           workflowId,
           executionId,
           status: 'failed',
@@ -133,16 +132,9 @@ workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
     }
   };
 
-  // Run with tenant context if available, otherwise run without (backwards compat).
-  // This fork still runs untenanted jobs fail-open; tenant-scoped send actions are
-  // guarded fail-closed in executeAction (see TENANT_SCOPED_SEND_ACTIONS). Moving
-  // enforcement down to this fork (refuse untenanted DB-touching jobs) is a separate
-  // follow-up — it changes behaviour for every action type and all legacy enqueues.
-  if (tenantId) {
-    return tenantStorage.run({ tenantId }, processJob);
-  }
-  return processJob();
-});
+  return runJobInTenant(`Workflow job ${job.id} (execution ${executionId})`, tenantId, processJob);
+};
+workflowQueue.process('execute-workflow', processExecuteWorkflow);
 
 async function executeAssignUserAction(action: any, input: any, conditions?: any): Promise<any> {
   const config = action.config || {};

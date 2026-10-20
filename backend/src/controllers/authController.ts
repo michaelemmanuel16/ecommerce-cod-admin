@@ -1,101 +1,27 @@
 import { Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { safeEqual } from '../utils/crypto';
 import bcrypt from 'bcrypt';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
+import { runInTenant, runInTenantOf, withoutTenant } from '../utils/tenantContext';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError } from '../middleware/errorHandler';
 import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
 import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
-
-export const register = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const { email, password, firstName, lastName, phoneNumber, role } = req.body;
-
-    if (!password || password.length > 72) {
-      throw new AppError('Password is required and must be 72 characters or fewer', 400);
-    }
-
-    // Deactivated users still hold their email in the unique index, and the
-    // soft-delete extension hides them from this check — so without the opt-out
-    // the create below dies on a constraint violation (500) instead of the 400.
-    // The message is deliberately identical for active and deactivated accounts:
-    // this route is public, so it must not disclose an account's state.
-    const existingUser = await withSoftDeleted(() => prisma.user.findUnique({ where: { email } }));
-    if (existingUser) {
-      throw new AppError('User already exists', 400);
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        phoneNumber,
-        role
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        tenantId: true,
-        commissionAmount: true,
-        deliveryRate: true,
-        createdAt: true
-      }
-    });
-
-    // Generate tokens
-    const accessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    const refreshToken = generateRefreshToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    // Save refresh token
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { refreshToken }
-    });
-
-    // Get user permissions from system config
-    const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
-    const userPermissions = allPermissions[user.role] || {};
-
-    res.status(201).json({
-      message: 'User registered successfully',
-      user,
-      tokens: {
-        accessToken,
-        refreshToken
-      },
-      permissions: userPermissions
-    });
-  } catch (error) {
-    next(error);
-  }
-};
+import { seedTenantDefaults } from '../services/tenantDefaultsService';
+import logger from '../utils/logger';
+import * as Money from '../utils/money';
 
 export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { email, password } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    // Email is globally unique and there is no tenant yet: look up unscoped on
+    // purpose, then continue inside the user's own tenant.
+    const user = await withoutTenant('auth-login', () => prisma.user.findUnique({ where: { email } }));
     if (!user) {
       throw new AppError('Invalid credentials', 401);
     }
@@ -109,50 +35,52 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
       throw new AppError('Invalid credentials', 401);
     }
 
-    const accessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    const refreshToken = generateRefreshToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        refreshToken,
-        lastLogin: new Date()
-      }
-    });
-
-    // Get user permissions from system config
-    const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
-    const userPermissions = allPermissions[user.role] || {};
-
-    res.json({
-      message: 'Login successful',
-      user: {
+    await runInTenantOf(user.tenantId, 'auth-login', async () => {
+      const accessToken = generateAccessToken({
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
         role: user.role,
-        isPlatformAdmin: user.isPlatformAdmin || false,
-        commissionAmount: user.commissionAmount || 0,
-        deliveryRate: user.deliveryRate,
-        preferences: user.preferences,
-      },
-      tokens: {
-        accessToken,
-        refreshToken
-      },
-      permissions: userPermissions
+        tenantId: user.tenantId ?? null
+      });
+
+      const refreshToken = generateRefreshToken({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        tenantId: user.tenantId ?? null
+      });
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          refreshToken,
+          lastLogin: new Date()
+        }
+      });
+
+      // Get user permissions from system config
+      const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
+      const userPermissions = allPermissions[user.role] || {};
+
+      res.json({
+        message: 'Login successful',
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          isPlatformAdmin: user.isPlatformAdmin || false,
+          commissionAmount: Money.orZero(user.commissionAmount),
+          deliveryRate: user.deliveryRate,
+          preferences: user.preferences,
+        },
+        tokens: {
+          accessToken,
+          refreshToken
+        },
+        permissions: userPermissions
+      });
     });
   } catch (error) {
     next(error);
@@ -184,14 +112,13 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
       throw new AppError('Token format outdated. Please log in again.', 401, 'TOKEN_FORMAT_OUTDATED');
     }
 
-    const user = await prisma.user.findUnique({
+    const user = await withoutTenant('auth-refresh', () => prisma.user.findUnique({
       where: { id: decoded.id }
-    });
+    }));
 
     // SECURITY: Use timing-safe comparison to prevent timing attacks on refresh tokens
     const isValidToken = user && user.refreshToken && refreshToken &&
-      user.refreshToken.length === refreshToken.length &&
-      crypto.timingSafeEqual(Buffer.from(user.refreshToken), Buffer.from(refreshToken));
+      safeEqual(user.refreshToken, refreshToken);
     if (!user || !isValidToken) {
       throw new AppError('Invalid refresh token', 401);
     }
@@ -230,26 +157,28 @@ export const forgotPassword = async (req: AuthRequest, res: Response, next: Next
   try {
     const { email } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await withoutTenant('auth-forgot-password', () => prisma.user.findUnique({ where: { email } }));
 
     if (user && user.isActive && (user.role === 'super_admin' || user.role === 'admin')) {
       try {
-        const rawToken = crypto.randomBytes(32).toString('hex');
-        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-        const expires = new Date(Date.now() + 15 * 60 * 1000);
+        await runInTenantOf(user.tenantId, 'auth-forgot-password', async () => {
+          const rawToken = crypto.randomBytes(32).toString('hex');
+          const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+          const expires = new Date(Date.now() + 15 * 60 * 1000);
 
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            passwordResetToken: hashedToken,
-            passwordResetExpires: expires,
-          },
+          await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              passwordResetToken: hashedToken,
+              passwordResetExpires: expires,
+            },
+          });
+
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+          const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
+
+          await sendPasswordResetEmail(email, user.firstName, resetUrl);
         });
-
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-        const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
-
-        await sendPasswordResetEmail(email, user.firstName, resetUrl);
       } catch (e) {
         console.error('Password reset email send failed:', e);
       }
@@ -267,12 +196,12 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
 
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
-    const user = await prisma.user.findFirst({
+    const user = await withoutTenant('auth-reset-password', () => prisma.user.findFirst({
       where: {
         passwordResetToken: hashedToken,
         passwordResetExpires: { gt: new Date() },
       },
-    });
+    }));
 
     if (!user) {
       throw new AppError('Invalid or expired reset token', 400);
@@ -284,7 +213,7 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await prisma.user.update({
+    await runInTenantOf(user.tenantId, 'auth-reset-password', () => prisma.user.update({
       where: { id: user.id },
       data: {
         password: hashedPassword,
@@ -292,7 +221,7 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
         passwordResetExpires: null,
         refreshToken: null,
       },
-    });
+    }));
 
     res.json({ message: 'Password reset successful. Please log in with your new password.' });
   } catch (error) {
@@ -370,7 +299,9 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
       // the email in the unique index, so this opts out of the soft-delete filter
       // — the P2002 catch below would otherwise turn a deactivated account into a
       // rolled-back transaction rather than this clean 400.
-      const existing = await withSoftDeleted(() => tx.user.findUnique({ where: { email: adminEmail } }));
+      const existing = await withoutTenant('register-email-check', () =>
+        withSoftDeleted(() => tx.user.findUnique({ where: { email: adminEmail } }))
+      );
       if (existing) {
         throw new AppError('An account with this email already exists', 400);
       }
@@ -405,7 +336,8 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
         data: { name: companyName, slug, ...planFields }
       });
 
-      const user = await tx.user.create({
+      // The new tenant's first user is created inside that tenant
+      const user = await runInTenant(tenant.id, async () => tx.user.create({
         data: {
           email: adminEmail,
           password: hashedPassword,
@@ -425,10 +357,13 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
           preferences: true,
           createdAt: true
         }
-      });
+      }));
 
       return { tenant, user };
     });
+
+    // A failed seed is logged, not fatal: the startup seed fills any gap
+    await seedTenantDefaults(tenant.id).catch((err) => logger.error(`Seeding defaults failed for tenant ${tenant.id}:`, err));
 
     const accessToken = generateAccessToken({
       id: user.id,
@@ -444,10 +379,10 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
       tenantId: user.tenantId ?? null
     });
 
-    await prisma.user.update({
+    await runInTenantOf(user.tenantId, 'register-tenant', () => prisma.user.update({
       where: { id: user.id },
       data: { refreshToken }
-    });
+    }));
 
     res.status(201).json({
       message: 'Tenant registered successfully',

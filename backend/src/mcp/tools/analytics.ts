@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import { getTenantId } from '../../utils/tenantContext';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
-import { mcpJson, mcpError } from '../utils';
+import { mcpMoneyJson, mcpError } from '../utils';
+import * as Money from '../../utils/money';
 
 const dailySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -34,6 +36,7 @@ export function registerAnalyticsTools(
         end.setHours(23, 59, 59, 999);
 
         const dateFilter = { createdAt: { gte: start, lte: end } };
+        const tenantId = getTenantId();
 
         const [orders, glRevenue, deliveredCount, statusCounts, topProducts] = await Promise.all([
           prisma.order.count({ where: { ...dateFilter, deletedAt: null } }),
@@ -63,14 +66,15 @@ export function registerAnalyticsTools(
           }),
           prisma.orderItem.groupBy({
             by: ['productId'],
-            where: { order: { ...dateFilter, deletedAt: null } },
+            // OrderItem has no tenantId: scope it through the parent order.
+            where: { order: { ...dateFilter, deletedAt: null, ...(tenantId ? { tenantId } : {}) } },
             _sum: { quantity: true },
             orderBy: { _sum: { quantity: 'desc' } },
             take: 5,
           }),
         ]);
 
-        const revenue = Number(glRevenue._sum.creditAmount || 0) - Number(glRevenue._sum.debitAmount || 0);
+        const revenue = Money.sub(Money.orZero(glRevenue._sum.creditAmount), Money.orZero(glRevenue._sum.debitAmount));
 
         // Resolve product names for top products
         const productIds = topProducts.map((p) => p.productId);
@@ -82,7 +86,7 @@ export function registerAnalyticsTools(
           : [];
         const productMap = new Map(products.map((p) => [p.id, p.name]));
 
-        return mcpJson({
+        return mcpMoneyJson({
           date: start.toISOString().split('T')[0],
           totalOrders: orders,
           revenue,
@@ -132,13 +136,13 @@ export function registerAnalyticsTools(
           getWeekStats(lastWeekStart, lastWeekEnd),
         ]);
 
-        return mcpJson({
+        return mcpMoneyJson({
           currentWeek: { from: thisWeekStart.toISOString().split('T')[0], to: thisWeekEnd.toISOString().split('T')[0], ...thisWeek },
           priorWeek: { from: lastWeekStart.toISOString().split('T')[0], to: lastWeekEnd.toISOString().split('T')[0], ...lastWeek },
           change: {
             orders: thisWeek.totalOrders - lastWeek.totalOrders,
-            revenue: (thisWeek.revenue as number) - (lastWeek.revenue as number),
-            deliveryRate: `${((thisWeek.deliveryRate as number) - (lastWeek.deliveryRate as number)).toFixed(1)}pp`,
+            revenue: Money.sub(thisWeek.revenue, lastWeek.revenue),
+            deliveryRate: `${(thisWeek.deliveryRate - lastWeek.deliveryRate).toFixed(1)}pp`,
           },
         });
       } catch (err) {
@@ -180,15 +184,15 @@ export function registerAnalyticsTools(
           ? (((current.totalOrders - prior.totalOrders) / prior.totalOrders) * 100).toFixed(1)
           : 'N/A';
 
-        return mcpJson({
+        return mcpMoneyJson({
           month: `${year}-${String(month).padStart(2, '0')}`,
           ...current,
           newCustomers,
           priorMonth: prior,
           growth: {
             orders: `${orderGrowth}%`,
-            revenue: prior.revenue
-              ? `${((((current.revenue as number) - (prior.revenue as number)) / (prior.revenue as number)) * 100).toFixed(1)}%`
+            revenue: prior.revenue.gt(0)
+              ? `${Money.percent(Money.sub(current.revenue, prior.revenue), prior.revenue).toFixed(1)}%`
               : 'N/A',
           },
         });
@@ -225,7 +229,7 @@ async function getWeekStats(start: Date, end: Date) {
     }),
   ]);
 
-  const revenue = Number(glRevenue._sum.creditAmount || 0) - Number(glRevenue._sum.debitAmount || 0);
+  const revenue = Money.sub(Money.orZero(glRevenue._sum.creditAmount), Money.orZero(glRevenue._sum.debitAmount));
 
   return {
     totalOrders: total,

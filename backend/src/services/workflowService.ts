@@ -5,7 +5,7 @@ import logger from '../utils/logger';
 import { workflowQueue } from '../queues/workflowQueue';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
 import crypto from 'crypto';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 
 
 interface CreateWorkflowData {
@@ -195,6 +195,7 @@ export class WorkflowService {
     // Create execution record
     const execution = await prisma.workflowExecution.create({
       data: {
+        tenantId: resolveTenantId(workflow.tenantId),
         workflowId,
         status: 'pending',
         input: input || {},
@@ -824,6 +825,7 @@ export class WorkflowService {
           // Create execution record
           const execution = await prisma.workflowExecution.create({
             data: {
+              tenantId: resolveTenantId(workflow.tenantId),
               workflowId: workflow.id,
               status: 'pending',
               input: orderContext

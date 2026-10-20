@@ -1,12 +1,13 @@
 import prisma from '../utils/prisma';
 import { OrderStatus } from '@prisma/client';
+import * as Money from '../utils/money';
 
 export interface RepPerformanceDetails {
   repId: number;
   repName: string;
   email: string;
   phoneNumber: string | null;
-  commissionAmount: number;
+  commissionAmount: Money.Money;
   isActive: boolean;
   isAvailable: boolean;
   country: string | null;
@@ -14,8 +15,8 @@ export interface RepPerformanceDetails {
     totalAssigned: number;
     deliveredCount: number;
     successRate: number;
-    totalEarnings: number;
-    monthlyEarnings: number;
+    totalEarnings: Money.Money;
+    monthlyEarnings: Money.Money;
     mtdDelivered: number;
     mtdTotalAssigned: number;
     mtdSuccessRate: number;
@@ -117,15 +118,15 @@ export const getRepPerformanceDetails = async (
         ? parseFloat(((deliveredCount / totalAssigned) * 100).toFixed(2))
         : 0;
 
-      const commissionAmountValue = (rep as any).commissionAmount || 0;
-      const totalEarnings = deliveredCount * commissionAmountValue;
+      const commissionAmountValue = Money.orZero(rep.commissionAmount);
+      const totalEarnings = Money.mul(deliveredCount, commissionAmountValue);
 
       // All orders created this month (MTD)
       const mtdOrders = rep.assignedOrdersAsRep.filter(o => new Date(o.createdAt) >= startOfMonth);
       // MTD delivered = delivered+unpaid orders created this month (same predicate as monthlyDeliveredOrders)
       const monthlyDeliveredOrders = deliveredOrders.filter(o => new Date(o.createdAt) >= startOfMonth);
       const mtdDelivered = monthlyDeliveredOrders.length;
-      const monthlyEarnings = mtdDelivered * commissionAmountValue;
+      const monthlyEarnings = Money.mul(mtdDelivered, commissionAmountValue);
       const mtdSuccessRate = mtdOrders.length > 0
         ? parseFloat(((mtdDelivered / mtdOrders.length) * 100).toFixed(2)) : 0;
 
@@ -150,7 +151,7 @@ export const getRepPerformanceDetails = async (
         repName: `${rep.firstName} ${rep.lastName}`,
         email: rep.email,
         phoneNumber: rep.phoneNumber,
-        commissionAmount: rep.commissionAmount || 0,
+        commissionAmount: commissionAmountValue,
         isActive: rep.isActive,
         isAvailable: rep.isAvailable,
         country: rep.country,
@@ -158,8 +159,8 @@ export const getRepPerformanceDetails = async (
           totalAssigned,
           deliveredCount,
           successRate,
-          totalEarnings: parseFloat(totalEarnings.toFixed(2)),
-          monthlyEarnings: parseFloat(monthlyEarnings.toFixed(2)),
+          totalEarnings: Money.roundHalfUp(totalEarnings),
+          monthlyEarnings: Money.roundHalfUp(monthlyEarnings),
           mtdDelivered,
           mtdTotalAssigned: mtdOrders.length,
           mtdSuccessRate
@@ -186,7 +187,7 @@ export const getRepEarningsByPeriod = async (
   repId: string,
   startDate: Date,
   endDate: Date
-): Promise<{ earnings: number; orderCount: number }> => {
+): Promise<{ earnings: Money.Money; orderCount: number }> => {
   try {
     const rep = await prisma.user.findUnique({
       where: { id: parseInt(repId, 10) },
@@ -213,11 +214,11 @@ export const getRepEarningsByPeriod = async (
     }
 
     // Calculate earnings: number of orders × commission amount
-    const commissionAmountValue = (rep as any).commissionAmount || 0;
-    const earnings = rep.assignedOrdersAsRep.length * commissionAmountValue;
+    const commissionAmountValue = Money.orZero(rep.commissionAmount);
+    const earnings = Money.mul(rep.assignedOrdersAsRep.length, commissionAmountValue);
 
     return {
-      earnings: parseFloat(earnings.toFixed(2)),
+      earnings: Money.roundHalfUp(earnings),
       orderCount: rep.assignedOrdersAsRep.length
     };
   } catch (error) {

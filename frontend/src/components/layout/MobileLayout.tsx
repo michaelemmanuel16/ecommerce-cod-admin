@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Home, Truck, Package, Menu, X, Wallet, Settings, LogOut } from 'lucide-react';
+import { Home, Truck, Package, Menu, X, Wallet, Settings, LogOut, type LucideIcon } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { DESKTOP_FLAG, MOBILE_OPT_IN } from '../../constants/mobile';
 
@@ -42,7 +42,8 @@ export function MobileLayout() {
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
             <span className="text-blue-700 text-xs font-medium">
-              {user?.name?.charAt(0)?.toUpperCase() || 'A'}
+              {/* User has no `name` field, so this always falls back to 'A' (typed cast keeps runtime unchanged). */}
+              {(user as ({ name?: string } | null))?.name?.charAt(0)?.toUpperCase() || 'A'}
             </span>
           </div>
         </div>
@@ -125,7 +126,7 @@ export function MobileLayout() {
 }
 
 function MoreItem({ icon: Icon, label, onClick, danger }: {
-  icon: React.ComponentType<{ size?: number }>;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
   danger?: boolean;

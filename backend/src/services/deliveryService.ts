@@ -1,13 +1,16 @@
 import { Prisma, DeliveryProofType, OrderStatus } from '@prisma/client';
+import { resolveTenantId } from '../utils/tenantContext';
 import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
+import { Requester } from '../utils/authUtils';
 import logger from '../utils/logger';
 import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService } from './glAutomationService';
 import agentReconciliationService from './agentReconciliationService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitGLEntryCreated } from '../sockets/index';
+import * as Money from '../utils/money';
 
 
 interface CreateDeliveryData {
@@ -25,7 +28,7 @@ interface DeliveryFilters {
 }
 
 interface CompleteDeliveryData {
-  codAmount?: number;
+  codAmount?: Decimal.Value;
   proofType: DeliveryProofType;
   proofData?: string;
   proofImageUrl?: string;
@@ -40,6 +43,13 @@ interface UpdateProofData {
   recipientName?: string;
   recipientPhone?: string;
 }
+
+/** A delivery agent may only touch their own deliveries (cross-tenant rows are already a 404). */
+const assertAgentOwnsDelivery = (delivery: { agentId: number | null }, requester?: Requester) => {
+  if (requester?.role === 'delivery_agent' && delivery.agentId !== requester.id) {
+    throw new AppError('Forbidden: this delivery is assigned to another agent', 403);
+  }
+};
 
 export class DeliveryService {
   /**
@@ -100,7 +110,7 @@ export class DeliveryService {
   /**
    * Get single delivery by ID
    */
-  async getDeliveryById(deliveryId: string) {
+  async getDeliveryById(deliveryId: string, requester?: Requester) {
 
     const delivery = await prisma.delivery.findUnique({
       where: { id: parseInt(deliveryId, 10) },
@@ -123,6 +133,7 @@ export class DeliveryService {
       throw new AppError('Delivery not found', 404);
     }
 
+    assertAgentOwnsDelivery(delivery, requester);
     return delivery;
   }
 
@@ -194,6 +205,7 @@ export class DeliveryService {
         status: order.status === 'ready_for_pickup' ? 'out_for_delivery' : order.status,
         orderHistory: {
           create: {
+            tenantId: resolveTenantId(order.tenantId),
             status: order.status === 'ready_for_pickup' ? 'out_for_delivery' : order.status,
             notes: 'Delivery assigned',
             metadata: { deliveryId: delivery.id, agentId: data.agentId }
@@ -241,7 +253,7 @@ export class DeliveryService {
   /**
    * Upload proof of delivery
    */
-  async uploadProofOfDelivery(deliveryId: string, data: UpdateProofData) {
+  async uploadProofOfDelivery(deliveryId: string, data: UpdateProofData, requester?: Requester) {
 
     const deliveryIdNum = parseInt(deliveryId, 10);
     const delivery = await prisma.delivery.findUnique({
@@ -252,6 +264,8 @@ export class DeliveryService {
     if (!delivery) {
       throw new AppError('Delivery not found', 404);
     }
+
+    assertAgentOwnsDelivery(delivery, requester);
 
     const updated = await prisma.delivery.update({
       where: { id: deliveryIdNum },
@@ -275,7 +289,7 @@ export class DeliveryService {
   /**
    * Complete delivery
    */
-  async completeDelivery(deliveryId: string, data: CompleteDeliveryData, userId?: string) {
+  async completeDelivery(deliveryId: string, data: CompleteDeliveryData, userId?: string, requester?: Requester) {
 
     const delivery = await prisma.delivery.findUnique({
       where: { id: parseInt(deliveryId, 10) },
@@ -286,6 +300,8 @@ export class DeliveryService {
       throw new AppError('Delivery not found', 404);
     }
 
+    assertAgentOwnsDelivery(delivery, requester);
+
     if (delivery.actualDeliveryTime) {
       throw new AppError('Delivery already completed', 400);
     }
@@ -293,6 +309,11 @@ export class DeliveryService {
     // Store order data before transaction
     const orderCodAmount = delivery.order.codAmount;
     const orderId = delivery.order.id;
+    // A Decimal is always truthy: an empty or zero amount from the agent falls back to the order's COD amount
+    const reportedAmount = Money.tryParse(data.codAmount);
+    const collectedAmount = reportedAmount && !reportedAmount.isZero()
+      ? reportedAmount
+      : (orderCodAmount ?? Money.ZERO);
 
     // Complete delivery and update order in transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -309,6 +330,20 @@ export class DeliveryService {
         }
       });
 
+      // an admin completing for the assigned agent leaves a trace
+      if ((requester?.role === 'admin' || requester?.role === 'super_admin') && delivery.agentId !== requester.id) {
+        await tx.auditLog.create({
+          data: {
+            tenantId: resolveTenantId(delivery.tenantId),
+            userId: requester.id,
+            action: 'complete_delivery_for_agent',
+            resource: 'delivery',
+            resourceId: deliveryId,
+            metadata: { agentId: delivery.agentId }
+          }
+        });
+      }
+
       // Update order status
       await tx.order.update({
         where: { id: delivery.orderId },
@@ -318,6 +353,7 @@ export class DeliveryService {
           paymentStatus: 'collected',
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(delivery.tenantId),
               status: 'delivered',
               notes: 'Order delivered successfully',
               changedBy: userId ? parseInt(userId, 10) : null
@@ -331,7 +367,7 @@ export class DeliveryService {
         data: {
           orderId: delivery.orderId,
           type: 'cod_collection',
-          amount: data.codAmount || orderCodAmount || 0,
+          amount: collectedAmount,
           paymentMethod: 'cash',
           status: 'collected',
           description: 'COD payment collected on delivery',
@@ -395,19 +431,17 @@ export class DeliveryService {
       logger.info(`GL entry created for order ${orderWithItems.id}: ${glEntry.entryNumber}`);
 
       // Create draft agent collection record with net amount (gross - agent commission)
-      if (orderWithItems.deliveryAgentId && orderWithItems.codAmount) {
-        const grossAmount = new Decimal(orderWithItems.codAmount.toString());
+      if (orderWithItems.deliveryAgentId && Money.isNonZero(orderWithItems.codAmount)) {
+        const grossAmount = Money.orZero(orderWithItems.codAmount);
         // Uses profile flat rate — must match createRevenueRecognitionEntry in glAutomationService
-        const agentCommission = orderWithItems.deliveryAgent?.commissionAmount
-          ? new Decimal(orderWithItems.deliveryAgent.commissionAmount.toString())
-          : new Decimal(0);
-        const netAmount = grossAmount.minus(agentCommission);
+        const agentCommission = Money.orZero(orderWithItems.deliveryAgent?.commissionAmount);
+        const netAmount = Money.sub(grossAmount, agentCommission);
 
         await agentReconciliationService.createDraftCollection(
           tx,
           orderWithItems.id,
           orderWithItems.deliveryAgentId,
-          netAmount.toNumber(),
+          netAmount,
           updatedDelivery.actualDeliveryTime || new Date()
         );
       }
@@ -488,6 +522,7 @@ export class DeliveryService {
           status: newStatus,
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(delivery.tenantId),
               status: newStatus,
               notes: `Delivery failed: ${reason}`,
               changedBy: userId ? parseInt(userId, 10) : null,
@@ -688,7 +723,7 @@ export class DeliveryService {
       order: {
         id: order.id,
         status: order.status,
-        totalAmount: order.totalAmount ? Number(order.totalAmount) : 0,
+        totalAmount: Money.orZero(order.totalAmount),
         paymentStatus: order.paymentStatus,
         deliveryAddress: order.deliveryAddress ?? '',
         deliveryState: order.deliveryState ?? '',
@@ -902,8 +937,8 @@ export class DeliveryService {
       orderItems: order.orderItems.map((item) => ({
         id: item.id,
         quantity: item.quantity,
-        unitPrice: Number(item.unitPrice),
-        totalPrice: Number(item.totalPrice),
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice,
         product: { id: item.product.id, name: item.product.name },
       })),
     });

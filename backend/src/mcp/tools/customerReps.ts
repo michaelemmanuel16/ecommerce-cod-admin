@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { mcpJson, mcpError, getDateRange } from '../utils';
+import { mcpJson, mcpMoneyJson, mcpError, getDateRange } from '../utils';
+import * as Money from '../../utils/money';
 
 const repsStatusSchema = z.object({});
 
@@ -136,11 +137,11 @@ export function registerCustomerRepTools(
             delivered,
             cancelled,
             successRate: `${successRate}%`,
-            revenue: revenueMap.get(rep.id) ?? 0,
+            revenue: Money.orZero(revenueMap.get(rep.id)),
           };
         });
 
-        return mcpJson({
+        return mcpMoneyJson({
           period: parsed.period,
           dateRange: { from: start.toISOString(), to: end.toISOString() },
           reps: repPerf.sort((a, b) => b.ordersCreated - a.ordersCreated),

@@ -1,12 +1,17 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import deliveryService from '../services/deliveryService';
+import { AppError } from '../middleware/errorHandler';
+
+const isAgent = (req: AuthRequest) => req.user!.role === 'delivery_agent';
+const requesterOf = (req: AuthRequest) => ({ id: req.user!.id, role: req.user!.role });
 
 export const getAllDeliveries = async (req: AuthRequest, res: Response): Promise<void> => {
   const { agentId, status, page = 1, limit = 20 } = req.query;
 
   const result = await deliveryService.getAllDeliveries({
-    agentId: agentId as string | undefined,
+    // a delivery agent only ever lists their own deliveries
+    agentId: isAgent(req) ? String(req.user!.id) : (agentId as string | undefined),
     status: status as string | undefined,
     page: Number(page),
     limit: Number(limit)
@@ -17,7 +22,7 @@ export const getAllDeliveries = async (req: AuthRequest, res: Response): Promise
 
 export const getDelivery = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const delivery = await deliveryService.getDeliveryById(id);
+  const delivery = await deliveryService.getDeliveryById(id, requesterOf(req));
   res.json({ delivery });
 };
 
@@ -25,12 +30,11 @@ export const uploadProofOfDelivery = async (req: AuthRequest, res: Response): Pr
   const { id } = req.params;
   const { proofType, proofData, recipientName, recipientPhone } = req.body;
 
-  const delivery = await deliveryService.uploadProofOfDelivery(id, {
-    proofType,
-    proofData,
-    recipientName,
-    recipientPhone
-  });
+  const delivery = await deliveryService.uploadProofOfDelivery(
+    id,
+    { proofType, proofData, recipientName, recipientPhone },
+    requesterOf(req)
+  );
 
   res.json({ delivery });
 };
@@ -41,13 +45,9 @@ export const completeDelivery = async (req: AuthRequest, res: Response): Promise
 
   const result = await deliveryService.completeDelivery(
     id,
-    {
-      codAmount,
-      proofType,
-      proofData,
-      recipientName
-    },
-    req.user?.id?.toString()
+    { codAmount, proofType, proofData, recipientName },
+    req.user?.id?.toString(),
+    requesterOf(req)
   );
 
   res.json(result);
@@ -73,7 +73,7 @@ export const getDeliveryByOrderId = async (req: AuthRequest, res: Response): Pro
   const { orderId } = req.params;
   const delivery = await deliveryService.getDeliveryByOrderId(
     parseInt(orderId, 10),
-    req.user!.role === 'delivery_agent' ? req.user!.id : undefined
+    isAgent(req) ? req.user!.id : undefined
   );
   res.json({ delivery });
 };
@@ -81,6 +81,10 @@ export const getDeliveryByOrderId = async (req: AuthRequest, res: Response): Pro
 export const getAgentRoute = async (req: AuthRequest, res: Response): Promise<void> => {
   const { agentId } = req.params;
   const { date } = req.query;
+
+  if (isAgent(req) && String(req.user!.id) !== agentId) {
+    throw new AppError('Forbidden: you can only view your own route', 403);
+  }
 
   const route = await deliveryService.getAgentRoute(
     agentId,

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodAdmin Layout Options</title>
+<script src="https://cdn.tailwindcss.com/3.4.1"></script>
+<style>
+  body { background:#f3f4f6; }
+  .tab.on { background:#2563eb; color:#fff; }
+  .frame { height: 640px; }
+</style>
+</head>
+<body class="font-sans text-gray-900">
+
+<div class="max-w-[1280px] mx-auto px-4 py-6">
+  <h1 class="text-2xl font-bold">CodAdmin layout options (Q19)</h1>
+  <p class="text-sm text-gray-600 mt-1">Four mockups. All numbers are made up. The sidebar and header copy the current app (dark sidebar, blue active item, white search bar).</p>
+
+  <div class="flex flex-wrap gap-2 mt-4" id="tabs">
+    <button class="tab on px-3 py-2 rounded-lg border bg-white text-sm" data-t="a">A · Cockpit first</button>
+    <button class="tab px-3 py-2 rounded-lg border bg-white text-sm" data-t="b">B · Areas (E-Myth) first</button>
+    <button class="tab px-3 py-2 rounded-lg border bg-white text-sm" data-t="c">C · Chat first</button>
+    <button class="tab px-3 py-2 rounded-lg border bg-white text-sm" data-t="d">D · Recommended: A + B + chat panel</button>
+  </div>
+  <p id="note" class="text-sm text-gray-700 mt-3"></p>
+
+  <!-- ================= A: COCKPIT FIRST ================= -->
+  <section data-p="a" class="panel mt-3 frame flex rounded-xl overflow-hidden border shadow bg-white">
+    <aside class="w-56 bg-gray-900 text-white p-4 shrink-0">
+      <div class="text-xl font-bold">COD Admin</div><div class="text-gray-400 text-xs mb-5">E-commerce Dashboard</div>
+      <nav class="space-y-1 text-sm">
+        <div class="px-3 py-2 rounded-lg bg-blue-600">Home (cockpit)</div>
+        <div class="px-3 py-2 text-gray-300">Orders</div><div class="px-3 py-2 text-gray-300">Customers</div>
+        <div class="px-3 py-2 text-gray-300">Products</div><div class="px-3 py-2 text-gray-300">Delivery Agents</div>
+        <div class="px-3 py-2 text-gray-300">Customer Reps</div><div class="px-3 py-2 text-gray-300">Financial</div>
+        <div class="px-3 py-2 text-gray-300">Analytics</div><div class="px-3 py-2 text-gray-300">Settings</div>
+      </nav>
+    </aside>
+    <main class="flex-1 flex flex-col min-w-0">
+      <header class="border-b px-6 py-3"><div class="max-w-md border rounded-lg px-3 py-1.5 text-sm text-gray-400">Search orders, customers…</div></header>
+      <div class="p-6 overflow-auto space-y-5">
+        <div class="rounded-xl border p-5">
+          <div class="text-xs uppercase text-gray-500">North Star · October · delivered revenue</div>
+          <div class="flex items-end gap-4 mt-1"><div class="text-4xl font-bold">GH₵142,300</div><div class="text-gray-500 mb-1">of GH₵200,000</div><span class="mb-1 text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">Off track −6%</span></div>
+          <div class="h-2 bg-gray-100 rounded mt-3"><div class="h-2 bg-blue-600 rounded" style="width:71%"></div></div>
+        </div>
+        <div class="grid grid-cols-4 gap-3 text-sm">
+          <div class="border rounded-lg p-3"><div class="text-gray-500">Orders / day</div><div class="text-xl font-semibold">64</div><div class="text-green-600 text-xs">On track (60)</div></div>
+          <div class="border rounded-lg p-3"><div class="text-gray-500">Confirm rate</div><div class="text-xl font-semibold">71%</div><div class="text-green-600 text-xs">On track (70%)</div></div>
+          <div class="border rounded-lg p-3"><div class="text-gray-500">Delivery rate</div><div class="text-xl font-semibold">26%</div><div class="text-red-600 text-xs">Off track (40%)</div></div>
+          <div class="border rounded-lg p-3"><div class="text-gray-500">CPA</div><div class="text-xl font-semibold">₦5,900</div><div class="text-green-600 text-xs">On track (≤ ₦6,400)</div></div>
+        </div>
+        <div class="border rounded-xl">
+          <div class="px-4 py-3 border-b font-semibold">Problems to fix today (5) <span class="text-xs text-gray-500 font-normal">from the daily orders / cash / stock match</span></div>
+          <table class="w-full text-sm"><tbody class="divide-y">
+            <tr><td class="px-4 py-2"><span class="text-red-600">●</span> 38 delivered orders not paid by Logiswift after 8+ days</td><td class="text-right px-4">GH₵21,400</td><td class="px-4 text-blue-600">Open</td></tr>
+            <tr><td class="px-4 py-2"><span class="text-red-600">●</span> Stock gap: Magic Groove −12 units at Logiswift</td><td class="text-right px-4">GH₵3,600</td><td class="px-4 text-blue-600">Open</td></tr>
+            <tr><td class="px-4 py-2"><span class="text-amber-500">●</span> Logiswift payout short by GH₵840 vs paid-order list</td><td class="text-right px-4">GH₵840</td><td class="px-4 text-blue-600">Open</td></tr>
+            <tr><td class="px-4 py-2"><span class="text-amber-500">●</span> Meta spend not mapped to a product</td><td class="text-right px-4">₦41,000</td><td class="px-4 text-blue-600">Map</td></tr>
+            <tr><td class="px-4 py-2"><span class="text-gray-400">●</span> logiswift-sync did not run at 06:30</td><td class="text-right px-4">—</td><td class="px-4 text-blue-600">Re-run</td></tr>
+          </tbody></table>
+        </div>
+      </div>
+    </main>
+  </section>
+
+  <!-- ================= B: AREAS FIRST ================= -->
+  <section data-p="b" class="panel hidden mt-3 frame flex rounded-xl overflow-hidden border shadow bg-white">
+    <aside class="w-56 bg-gray-900 text-white p-4 shrink-0">
+      <div class="text-xl font-bold">COD Admin</div><div class="text-gray-400 text-xs mb-5">E-commerce Dashboard</div>
+      <nav class="space-y-1 text-sm">
+        <div class="px-3 py-2 text-gray-300">Leadership</div>
+        <div class="px-3 py-2 text-gray-300">Marketing</div>
+        <div class="px-3 py-2 text-gray-300">Confirmation</div>
+        <div class="px-3 py-2 text-gray-300">Fulfilment</div>
+        <div class="px-3 py-2 rounded-lg bg-blue-600">Finance</div>
+        <div class="pl-7 py-1 text-gray-300 text-xs">Cash from 3PLs</div>
+        <div class="pl-7 py-1 text-gray-300 text-xs">Reconciliation</div>
+        <div class="pl-7 py-1 text-gray-300 text-xs">Expenses</div>
+        <div class="pl-7 py-1 text-gray-300 text-xs">Profit &amp; loss</div>
+        <div class="px-3 py-2 text-gray-300">Team &amp; Roles</div>
+        <div class="px-3 py-2 text-gray-300">Settings</div>
+      </nav>
+    </aside>
+    <main class="flex-1 flex flex-col min-w-0">
+      <header class="border-b px-6 py-3"><div class="max-w-md border rounded-lg px-3 py-1.5 text-sm text-gray-400">Search orders, customers…</div></header>
+      <div class="p-6 overflow-auto space-y-5">
+        <div class="flex items-center justify-between"><h2 class="text-xl font-bold">Finance</h2>
+          <div class="text-sm text-gray-600">Role: <b>Finance clerk</b> · filled by <span class="px-2 py-0.5 rounded bg-gray-100">You</span> <span class="text-blue-600 ml-2">Assign to human / AI agent / outside company</span></div></div>
+        <div class="grid grid-cols-4 gap-3 text-sm">
+          <div class="border rounded-lg p-3"><div class="text-gray-500">Cash received (Oct)</div><div class="text-xl font-semibold">GH₵118,900</div></div>
+          <div class="border rounded-lg p-3"><div class="text-gray-500">Cash outstanding</div><div class="text-xl font-semibold">GH₵23,400</div><div class="text-red-600 text-xs">Off track</div></div>
+          <div class="border rounded-lg p-3"><div class="text-gray-500">3PL fees</div><div class="text-xl font-semibold">GH₵9,120</div></div>
+          <div class="border rounded-lg p-3"><div class="text-gray-500">Net margin</div><div class="text-xl font-semibold">31%</div><div class="text-amber-600 text-xs">Target 35%</div></div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="border rounded-xl p-4"><div class="font-semibold mb-2">Tools in this area</div>
+            <ul class="text-sm space-y-2"><li>▸ Record a 3PL payout</li><li>▸ Match payout to paid-order list</li><li>▸ Add an expense</li><li>▸ Upload 3PL CSV</li></ul></div>
+          <div class="border rounded-xl p-4"><div class="font-semibold mb-2">Last 3PL payouts</div>
+            <table class="w-full text-sm"><thead class="text-gray-500"><tr><td>Date</td><td>3PL</td><td class="text-right">Amount</td><td>Match</td></tr></thead>
+            <tbody class="divide-y"><tr><td class="py-1">15 Oct</td><td>Logiswift</td><td class="text-right">GH₵12,300</td><td class="text-green-600">✓</td></tr>
+            <tr><td class="py-1">11 Oct</td><td>Logiswift</td><td class="text-right">GH₵9,880</td><td class="text-red-600">−840</td></tr>
+            <tr><td class="py-1">8 Oct</td><td>Logiswift</td><td class="text-right">GH₵14,050</td><td class="text-green-600">✓</td></tr></tbody></table></div>
+        </div>
+      </div>
+    </main>
+  </section>
+
+  <!-- ================= C: CHAT FIRST ================= -->
+  <section data-p="c" class="panel hidden mt-3 frame flex rounded-xl overflow-hidden border shadow bg-white">
+    <aside class="w-56 bg-gray-900 text-white p-4 shrink-0">
+      <div class="text-xl font-bold">COD Admin</div><div class="text-gray-400 text-xs mb-5">E-commerce Dashboard</div>
+      <div class="px-3 py-2 rounded-lg bg-blue-600 text-sm">+ New chat</div>
+      <div class="text-gray-500 text-xs uppercase mt-5 mb-2 px-3">Recent</div>
+      <div class="text-sm text-gray-300 space-y-2 px-3"><div>Why is delivery down?</div><div>Unpaid Logiswift orders</div><div>Magic Groove stock</div></div>
+      <div class="text-gray-500 text-xs uppercase mt-5 mb-2 px-3">Screens</div>
+      <div class="text-sm text-gray-400 space-y-1 px-3"><div>Orders</div><div>Financial</div><div>Settings</div></div>
+    </aside>
+    <main class="flex-1 flex flex-col min-w-0">
+      <div class="flex-1 overflow-auto p-6 space-y-4 max-w-3xl mx-auto w-full">
+        <div class="ml-auto max-w-md bg-blue-600 text-white rounded-2xl px-4 py-2 text-sm w-fit">How are we doing this month?</div>
+        <div class="max-w-2xl text-sm space-y-3">
+          <p>Delivered revenue is <b>GH₵142,300</b> of the GH₵200,000 target. That is 6% behind plan.</p>
+          <p>The main cause is the delivery rate: 26% against a 40% target.</p>
+          <div class="border rounded-lg p-3 grid grid-cols-4 gap-2 text-xs"><div>Orders/day<br><b class="text-base">64</b></div><div>Confirm<br><b class="text-base">71%</b></div><div>Delivery<br><b class="text-base text-red-600">26%</b></div><div>CPA<br><b class="text-base">₦5,900</b></div></div>
+          <p>I also found 38 delivered orders that Logiswift has not paid after 8+ days (GH₵21,400).</p>
+          <div class="flex gap-2"><span class="border rounded-full px-3 py-1 text-blue-600">Show the 38 orders</span><span class="border rounded-full px-3 py-1 text-blue-600">Open Financial screen</span></div>
+        </div>
+      </div>
+      <div class="border-t p-4"><div class="max-w-3xl mx-auto border rounded-xl px-4 py-3 text-sm text-gray-400">Ask about orders, cash, stock…</div></div>
+    </main>
+  </section>
+
+  <!-- ================= D: RECOMMENDED ================= -->
+  <section data-p="d" class="panel hidden mt-3 frame flex rounded-xl overflow-hidden border shadow bg-white">
+    <aside class="w-52 bg-gray-900 text-white p-4 shrink-0">
+      <div class="text-xl font-bold">COD Admin</div><div class="text-gray-400 text-xs mb-5">E-commerce Dashboard</div>
+      <nav class="space-y-1 text-sm">
+        <div class="px-3 py-2 rounded-lg bg-blue-600">Home</div>
+        <div class="px-3 py-2 text-gray-300">Leadership</div><div class="px-3 py-2 text-gray-300">Marketing</div>
+        <div class="px-3 py-2 text-gray-300">Confirmation</div><div class="px-3 py-2 text-gray-300">Fulfilment</div>
+        <div class="px-3 py-2 text-gray-300">Finance <span class="ml-1 text-xs bg-red-600 rounded px-1">2</span></div>
+        <div class="px-3 py-2 text-gray-300">Team &amp; Roles</div><div class="px-3 py-2 text-gray-300">Settings</div>
+      </nav>
+    </aside>
+    <main class="flex-1 flex flex-col min-w-0">
+      <header class="border-b px-5 py-3 flex justify-between"><div class="w-80 border rounded-lg px-3 py-1.5 text-sm text-gray-400">Search orders, customers…</div><div class="text-sm text-blue-600">AI chat ◧</div></header>
+      <div class="p-5 overflow-auto space-y-4">
+        <div class="rounded-xl border p-4">
+          <div class="text-xs uppercase text-gray-500">North Star · October · delivered revenue</div>
+          <div class="flex items-end gap-3 mt-1"><div class="text-3xl font-bold">GH₵142,300</div><div class="text-gray-500 mb-1 text-sm">of GH₵200,000</div><span class="mb-1 text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">Off track −6%</span></div>
+          <div class="h-2 bg-gray-100 rounded mt-2"><div class="h-2 bg-blue-600 rounded" style="width:71%"></div></div>
+        </div>
+        <div class="grid grid-cols-4 gap-2 text-sm">
+          <div class="border rounded-lg p-2"><div class="text-gray-500 text-xs">Marketing · CPA</div><div class="font-semibold">₦5,900 <span class="text-green-600">✓</span></div></div>
+          <div class="border rounded-lg p-2"><div class="text-gray-500 text-xs">Confirmation · rate</div><div class="font-semibold">71% <span class="text-green-600">✓</span></div></div>
+          <div class="border rounded-lg p-2"><div class="text-gray-500 text-xs">Fulfilment · delivery</div><div class="font-semibold">26% <span class="text-red-600">✗</span></div></div>
+          <div class="border rounded-lg p-2"><div class="text-gray-500 text-xs">Finance · outstanding</div><div class="font-semibold">GH₵23.4k <span class="text-red-600">✗</span></div></div>
+        </div>
+        <div class="border rounded-xl">
+          <div class="px-4 py-2 border-b font-semibold text-sm">Problems to fix today (5)</div>
+          <table class="w-full text-sm"><tbody class="divide-y">
+            <tr><td class="px-4 py-2"><span class="text-red-600">●</span> 38 delivered, unpaid after 8+ days</td><td class="text-xs text-gray-500">Finance</td><td class="text-right px-4">GH₵21,400</td></tr>
+            <tr><td class="px-4 py-2"><span class="text-red-600">●</span> Stock gap: Magic Groove −12 at Logiswift</td><td class="text-xs text-gray-500">Fulfilment</td><td class="text-right px-4">GH₵3,600</td></tr>
+            <tr><td class="px-4 py-2"><span class="text-amber-500">●</span> Payout short GH₵840 vs paid list</td><td class="text-xs text-gray-500">Finance</td><td class="text-right px-4">GH₵840</td></tr>
+            <tr><td class="px-4 py-2"><span class="text-amber-500">●</span> Meta spend not mapped to a product</td><td class="text-xs text-gray-500">Marketing</td><td class="text-right px-4">₦41,000</td></tr>
+            <tr><td class="px-4 py-2"><span class="text-gray-400">●</span> logiswift-sync did not run at 06:30</td><td class="text-xs text-gray-500">Fulfilment</td><td class="text-right px-4">—</td></tr>
+          </tbody></table>
+        </div>
+      </div>
+    </main>
+    <aside class="w-72 border-l bg-gray-50 flex flex-col shrink-0">
+      <div class="px-4 py-3 border-b font-semibold text-sm flex justify-between">AI chat <span class="text-gray-400">read-only</span></div>
+      <div class="flex-1 p-3 space-y-3 text-sm overflow-auto">
+        <div class="ml-auto bg-blue-600 text-white rounded-2xl px-3 py-2 w-fit max-w-[90%]">Why is delivery off track?</div>
+        <div class="bg-white border rounded-xl p-3 space-y-2">
+          <p>Delivery is 26% this month. 41% of failed orders say "customer not reachable".</p>
+          <p>Accra Central has the lowest rate (18%).</p>
+          <span class="inline-block border rounded-full px-2 py-0.5 text-blue-600 text-xs">Open Fulfilment → failed orders</span>
+        </div>
+      </div>
+      <div class="p-3 border-t"><div class="border rounded-lg px-3 py-2 text-sm text-gray-400 bg-white">Ask about this screen…</div></div>
+    </aside>
+  </section>
+</div>
+
+<script>
+const notes = {
+  a: "A · Cockpit first. Keeps today's menu. The home screen shows the North Star, the driver scorecard and the problems to fix.",
+  b: "B · Areas first. The menu follows the E-Myth areas. Each area shows its KPIs, its tools and the role that owns it.",
+  c: "C · Chat first. The AI chat is the main screen. Numbers and tables appear inside the answers.",
+  d: "D · Recommended. Cockpit home (A) + area menu (B) + AI chat as a side panel on every screen. Each problem shows which area owns it."
+};
+const show = t => {
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('hidden', p.dataset.p !== t));
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  document.getElementById('note').textContent = notes[t];
+};
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => show(b.dataset.t));
+show('a');
+</script>
+</body>
+</html>

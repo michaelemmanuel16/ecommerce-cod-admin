@@ -3,8 +3,13 @@ import { PrismaClient } from '@prisma/client';
 import Redis from 'ioredis';
 import { healthLimiter } from '../middleware/rateLimiter';
 import logger from '../utils/logger';
+import { requireSharedSecret } from '../middleware/requireSharedSecret';
 
 const router = Router();
+
+// /metrics and /health/detailed expose internals: they need the shared secret in the
+// x-metrics-token header. With METRICS_TOKEN unset they always answer 401.
+const requireMetricsToken = requireSharedSecret('METRICS_TOKEN', 'x-metrics-token');
 const prisma = new PrismaClient();
 
 // Lazy Redis client with proper cleanup
@@ -97,7 +102,7 @@ router.get('/live', (_req: Request, res: Response) => {
 });
 
 // Detailed health check with all dependencies
-router.get('/health/detailed', healthLimiter, async (_req: Request, res: Response) => {
+router.get('/health/detailed', requireMetricsToken, healthLimiter, async (_req: Request, res: Response) => {
   logger.info('Starting detailed health check...');
 
   const healthStatus = {
@@ -184,7 +189,7 @@ router.get('/health/detailed', healthLimiter, async (_req: Request, res: Respons
 });
 
 // Metrics endpoint (Prometheus format)
-router.get('/metrics', async (_req: Request, res: Response) => {
+router.get('/metrics', requireMetricsToken, async (_req: Request, res: Response) => {
   try {
     const metrics = [];
 

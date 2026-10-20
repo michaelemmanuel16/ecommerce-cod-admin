@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodAdmin Checkout forms</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+.sw{position:relative;display:inline-block;width:38px;height:22px;flex:none}
+.sw input{position:absolute;inset:0;opacity:0;cursor:pointer;margin:0;z-index:1}
+.sw i{position:absolute;inset:0;border-radius:99px;background:var(--line);transition:background .15s}
+.sw i::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.sw input:checked+i{background:var(--pine)}
+.sw input:checked+i::after{transform:translateX(16px)}
+.sw input:focus-visible+i{outline:2px solid var(--pine);outline-offset:2px}
+.in,.sel,.ta{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink);font:500 14px "Plus Jakarta Sans",sans-serif}
+.in:focus-visible,.sel:focus-visible,.ta:focus-visible{outline:2px solid var(--pine);outline-offset:1px;border-color:var(--pine)}
+.ta{resize:vertical;min-height:70px}
+.fl{display:block;font-weight:600;margin-bottom:6px}
+.hint{color:var(--ink-3);font-size:12.5px;margin-top:5px}
+.stack{display:grid;gap:16px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.icn{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none}
+.icn svg.lucide{width:17px;height:17px}
+.iconbtn{width:32px;height:32px;border-radius:9px;display:inline-grid;place-items:center;color:var(--ink-2);border:1px solid transparent}
+.iconbtn:hover{background:var(--hover);border-color:var(--line);color:var(--ink)}
+.iconbtn.dng:hover{color:var(--coral);background:var(--coral-soft)}
+.iconbtn svg.lucide{width:16px;height:16px}
+.iconbtn:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+.insrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;padding:14px 20px 18px}
+.foot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px;gap:12px;flex-wrap:wrap}
+.toolbar{display:flex;gap:10px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.toolbar .srch{flex:1;min-width:200px;max-width:340px;display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink-3)}
+.toolbar .srch input{border:0;background:transparent;color:var(--ink);font:500 14px "Plus Jakarta Sans";outline:0;width:100%}
+.toast{position:fixed;left:50%;bottom:60px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:12px;font-weight:600;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:70}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.mut{color:var(--ink-3)}
+.tablewrap td,.tablewrap th{white-space:nowrap}
+.lnkcell{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.lnkcell button{width:26px;height:26px;border-radius:7px;display:grid;plc-items:center;color:var(--ink-3)}
+.lnkcell button:hover{background:var(--hover);color:var(--ink)}
+.lnkcell svg.lucide{width:14px;height:14px}
+.ed{display:grid;grid-template-columns:minmax(0,1fr) 460px;gap:16px;align-items:start}
+.pvwrap{position:sticky;top:84px}
+.etabs{display:flex;gap:4px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.pane{display:none;padding:22px;position:relative}.pane.on{display:block}
+.pane h3{font-size:18px;font-weight:800;margin-bottom:2px}
+.pane>.sub{color:var(--ink-2);margin-bottom:18px}
+.stack{display:grid;gap:16px}
+.frow{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.frow+.frow{margin-top:8px}
+.frow .gr{color:var(--ink-3);cursor:grab}
+.frow b{display:block}.frow small{color:var(--ink-3);font-size:12.5px}
+.frow .sp{flex:1;min-width:0}
+.types{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.types button{border:1px dashed var(--line);border-radius:11px;padding:9px 10px;display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;color:var(--ink-2)}
+.types button:hover{border-color:var(--pine);color:var(--pine);background:var(--pine-soft)}
+.types svg.lucide{width:16px;height:16px}
+.pop{position:absolute;right:22px;width:340px;max-width:calc(100% - 44px);background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 60px -20px rgba(0,0,0,.45);padding:16px;z-index:10;display:none}
+.pop.on{display:block}
+.pop h4{font-family:"Bricolage Grotesque";font-size:16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.pop .stack{gap:12px}
+.pt2{width:100%}
+.pt2 th,.pt2 td{padding:10px 8px;white-space:nowrap}
+.pt2 th:first-child,.pt2 td:first-child{padding-left:0}
+.pt2 .in{padding:7px 9px}
+.pay{display:flex;gap:14px;padding:14px;border:1px solid var(--line);border-radius:14px;align-items:flex-start}
+.pay+.pay{margin-top:10px}
+.pay.off{opacity:.55}
+.pay b{display:block}.pay small{color:var(--ink-2)}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.swatches button{width:30px;height:30px;border-radius:50%;border:2px solid var(--card);box-shadow:0 0 0 1px var(--line)}
+.swatches button.on{box-shadow:0 0 0 2px var(--ink)}
+.unsaved{display:none}.unsaved.on{display:inline-flex}
+.pvbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);gap:8px;flex-wrap:wrap}
+.pvstage{padding:16px;background:var(--hover);border-radius:0 0 18px 18px;min-height:480px;display:flex;justify-content:center;overflow:hidden}
+.pvframe{background:var(--bg);border:1px solid var(--line);border-radius:14px;overflow:hidden;width:100%}
+.pvstage.m .pvframe{width:330px;border-radius:26px;border-width:6px;border-color:var(--ink)}
+.pvstage.d{align-items:flex-start;min-height:0}
+.pvstage.d .pvframe{width:760px;zoom:.55;max-width:none}
+.chrome{display:none;align-items:center;gap:6px;padding:8px 10px;background:var(--hover);border-bottom:1px solid var(--line);font-size:12px;color:var(--ink-3)}
+.pvstage.d .chrome{display:flex}
+.chrome i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.chrome span{margin-left:8px;background:var(--card);border-radius:6px;padding:2px 10px;flex:1}
+.pv{padding:18px;color:var(--ink);font-size:14px}
+.pvstage.d .pv{display:grid;grid-template-columns:1.2fr 1fr;gap:24px;padding:28px}
+.pv h2{font-size:20px;font-weight:800;margin-bottom:2px}
+.pv .psub{color:var(--ink-2);margin-bottom:14px}
+.pv .pk{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);width:100%;text-align:left;position:relative;margin-bottom:8px}
+.pv .pk.on{border-color:var(--pv-c,var(--pine));background:var(--pine-soft)}
+.pv .rd{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);flex:none}
+.pv .pk.on .rd{border:5px solid var(--pv-c,var(--pine))}
+.pv .bd{position:absolute;right:10px;top:-9px;font-size:11px;font-weight:700;padding:1px 8px;border-radius:99px;background:var(--gold);color:#3b2600}
+.pv .pk .pr{margin-left:auto;font-weight:800;font-family:"Bricolage Grotesque";font-size:16px}
+.pv .pk small{display:block;color:var(--ink-3);font-size:12px}
+.pv .fld{margin-bottom:9px}
+.pv .fld label{display:block;font-size:12.5px;font-weight:600;margin-bottom:3px}
+.pv .fld div{min-height:34px;border:1px solid var(--line);background:var(--card);border-radius:9px;padding:8px 10px;color:var(--ink-3);font-size:13px}
+.pv .half{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pv .addon{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1.5px dashed var(--gold);border-radius:12px;background:var(--gold-soft);margin:10px 0;width:100%;text-align:left}
+.pv .ck{width:18px;height:18px;border-radius:5px;border:2px solid var(--ink-3);flex:none;display:grid;plc-items:center;color:#fff}
+.pv .ck svg.lucide{width:12px;height:12px;display:none}
+.pv .addon.on .ck{background:var(--pv-c,var(--pine));border-color:var(--pv-c,var(--pine))}
+.pv .addon.on .ck svg.lucide{display:block}
+.pv .sumry{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:12px;margin:10px 0}
+.pv .sumry div{display:flex;justify-content:space-between;padding:2px 0;color:var(--ink-2)}
+.pv .sumry div.t{border-top:1px solid var(--line);margin-top:6px;padding-top:8px;color:var(--ink);font-weight:800;font-size:16px;font-family:"Bricolage Grotesque"}
+.pv .plc{width:100%;padding:13px;font-weight:800;font-size:15px;background:var(--pv-c,var(--pine));color:#fff;border-radius:var(--pv-r,12px);display:flex;justify-content:center;align-items:center;gap:8px}
+[data-theme="dark"] .pv .plc{color:#04211d}
+.pv .plc.outl{background:transparent;border:2px solid var(--pv-c,var(--pine));color:var(--pv-c,var(--pine))}
+.pv .plc.sm{padding:9px;font-size:13px}.pv .plc.lg{padding:16px;font-size:17px}
+.pv .secure{text-align:center;color:var(--ink-3);font-size:12px;margin-top:8px}
+.pv .pay2{display:flex;gap:8px;margin-bottom:10px}
+.pv .pay2 span{flex:1;border:1.5px solid var(--line);border-radius:10px;padding:8px;text-align:center;font-weight:600;font-size:12.5px;background:var(--card)}
+.pv .pay2 span.on{border-color:var(--pv-c,var(--pine));background:var(--pine-soft)}
+.cmod{position:fixed;inset:0;background:rgba(8,18,16,.45);backdrop-filter:blur(3px);z-index:60;display:none;align-items:center;justify-content:center;padding:20px}
+.cmod.on{display:flex}
+.cmod .box{width:480px;max-width:100%;max-height:92vh;overflow:auto}
+@media (max-width:1100px){.ed{grid-template-columns:1fr}.pvwrap{position:static}.types{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.row2{grid-template-columns:1fr}.pane{padding:16px}.pvstage.d{align-items:flex-start;min-height:0}
+.pvstage.d .pvframe{zoom:.42}.pt2{display:block;overflow-x:auto}}
+input[type=radio]{accent-color:var(--pine)}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav on" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+<section class="view on" id="list">
+  <div class="head">
+    <div><h1>Checkout forms</h1><p>Each form is a page where customers pick a package and place an order. 3 are live.</p></div>
+    <button class="btn pri" id="newForm"><i data-lucide="plus"></i>New form</button>
+  </div>
+  <div class="grid kpis" style="margin-top:0">
+    <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="file-text"></i></div><div class="v num" id="kForms">4</div><div class="l">Forms</div><div class="s"><span id="kLive">3 live</span><span class="tag ok">Live</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="shopping-bag"></i></div><div class="v num">1,445</div><div class="l">Orders from forms in October</div><div class="s"><span>1 to 17 October</span><span class="tag n">All forms</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="mouse-pointer-click"></i></div><div class="v num">6.8%</div><div class="l">Visit to order</div><div class="s"><span>21,250 visits</span><span class="tag warn">Test a new offer</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="layers"></i></div><div class="v num">2 sets</div><div class="l">Most picked package</div><div class="s"><span>47% of orders</span><span class="tag n">Best deal</span></div></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 2 things</h3><span>Updated 06:42</span></div>
+    <div class="insrow">
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="layers"></i></div><div><b>The 3 set package is picked by only 9%</b><p>Customers jump from GH₵449 to GH₵629. A 3 set price of GH₵599 could lift it to about 15%.</p></div></div><div class="act"><button class="mini pri" id="ag1">Test GH₵599</button><button class="mini">Dismiss</button></div></div>
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="smartphone"></i></div><div><b>Mobile converts at 5.9%, desktop at 9.4%</b><p>82% of visits are on phones. The WhatsApp field sits below the fold on small screens.</p></div></div><div class="act"><button class="mini pri" id="ag2">Move it up</button><button class="mini">Dismiss</button></div></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="tablewrap"><table id="ft">
+      <thead><tr><th>Form</th><th>Link</th><th class="r">Orders this month</th><th class="r">Conversion</th><th>Active</th><th class="r">Actions</th></tr></thead>
+      <tbody>
+        <tr><td><div class="who"><div class="icn" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="book-open"></i></div><div><b>Magic Groove copybook set</b><small>Product: Magic Groove copybook set</small></div></div></td><td><span class="lnkcell">/form/magic-groove<button data-copy="https://pay.codadmin.com/form/magic-groove" aria-label="Copy link"><i data-lucide="copy"></i></button></span></td><td class="r num"><b>1,198</b></td><td class="r num"><b>7.4%</b></td><td><label class="sw"><input type="checkbox" checked aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-clone aria-label="Clone" title="Clone"><i data-lucide="copy-plus"></i></button><button class="iconbtn" data-prev aria-label="Preview" title="Preview"><i data-lucide="eye"></i></button><button class="iconbtn" data-edit aria-label="Edit" title="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete" title="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+        <tr><td><div class="who"><div class="icn" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="book-open"></i></div><div><b>Magic Groove, Meta retargeting</b><small>Product: Magic Groove copybook set</small></div></div></td><td><span class="lnkcell">/form/magic-groove-rt<button data-copy="https://pay.codadmin.com/form/magic-groove-rt" aria-label="Copy link"><i data-lucide="copy"></i></button></span></td><td class="r num"><b>142</b></td><td class="r num"><b>9.1%</b></td><td><label class="sw"><input type="checkbox" checked aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-clone aria-label="Clone" title="Clone"><i data-lucide="copy-plus"></i></button><button class="iconbtn" data-prev aria-label="Preview" title="Preview"><i data-lucide="eye"></i></button><button class="iconbtn" data-edit aria-label="Edit" title="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete" title="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+        <tr><td><div class="who"><div class="icn" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="file-text"></i></div><div><b>Home study guide</b><small>Product: Smart Parent&rsquo;s Home Study Guide</small></div></div></td><td><span class="lnkcell">/form/study-guide<button data-copy="https://pay.codadmin.com/form/study-guide" aria-label="Copy link"><i data-lucide="copy"></i></button></span></td><td class="r num"><b>63</b></td><td class="r num"><b>4.2%</b></td><td><label class="sw"><input type="checkbox" checked aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-clone aria-label="Clone" title="Clone"><i data-lucide="copy-plus"></i></button><button class="iconbtn" data-prev aria-label="Preview" title="Preview"><i data-lucide="eye"></i></button><button class="iconbtn" data-edit aria-label="Edit" title="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete" title="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+        <tr><td><div class="who"><div class="icn" style="background:var(--hover);color:var(--ink-3)"><i data-lucide="pen-tool"></i></div><div><b>Refill pens</b><small>Product: Magic Groove refill pens</small></div></div></td><td><span class="lnkcell">/form/refill-pens<button data-copy="https://pay.codadmin.com/form/refill-pens" aria-label="Copy link"><i data-lucide="copy"></i></button></span></td><td class="r num"><b>42</b></td><td class="r num"><b>5.0%</b></td><td><label class="sw"><input type="checkbox" aria-label="Active"><i></i></label></td><td class="r"><button class="iconbtn" data-clone aria-label="Clone" title="Clone"><i data-lucide="copy-plus"></i></button><button class="iconbtn" data-prev aria-label="Preview" title="Preview"><i data-lucide="eye"></i></button><button class="iconbtn" data-edit aria-label="Edit" title="Edit"><i data-lucide="pencil"></i></button><button class="iconbtn dng" data-del aria-label="Delete" title="Delete"><i data-lucide="trash-2"></i></button></td></tr>
+      </tbody></table></div>
+    <div class="foot"><span>Clone copies fields, packages, upsells and design. The copy starts switched off.</span><span>Conversion is orders divided by visits</span></div>
+  </div>
+</section>
+
+<section class="view" id="editor">
+  <div class="head" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button class="btn" id="back"><i data-lucide="arrow-left"></i>Forms</button><h1 id="eTitle" style="font-size:24px">Magic Groove copybook set</h1><span class="tag warn unsaved" id="unsaved"><i data-lucide="circle-dot" style="width:12px;height:12px"></i>Unsaved changes</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="cLink"><i data-lucide="link"></i>Copy link</button><button class="btn" id="cEmbed"><i data-lucide="code-2"></i>Copy embed code</button><button class="btn pri" id="save"><i data-lucide="check"></i>Save form</button></div>
+  </div>
+  <div class="ed">
+    <div class="card" id="edcard">
+      <div class="etabs" role="tablist">
+        <button class="tab on" data-t="basics">Basics</button><button class="tab" data-t="fields">Fields</button><button class="tab" data-t="packages">Packages</button><button class="tab" data-t="upsells">Upsells</button><button class="tab" data-t="payment">Payment</button><button class="tab" data-t="tracking">Tracking</button><button class="tab" data-t="design">Design</button>
+      </div>
+      <!-- basics -->
+      <div class="pane on" data-p="basics">
+        <h3>Basics</h3><p class="sub">Name the form and say which product it sells.</p>
+        <div class="stack">
+          <div class="row2"><div><label class="fl" for="fn">Form name</label><input class="in" id="fn" value="Magic Groove copybook set"></div><div><label class="fl" for="fp">Product</label><select class="sel" id="fp"><option>Magic Groove copybook set</option><option>Magic Groove refill pens</option><option>Pencil grip trainer</option><option>Smart Parent&rsquo;s Home Study Guide</option></select></div></div>
+          <div><label class="fl" for="fs">Link</label><div style="display:flex;align-items:center;gap:8px"><span class="mut" style="white-space:nowrap">pay.codadmin.com/form/</span><input class="in" id="fs" value="magic-groove"></div></div>
+          <div><label class="fl" for="fd">Description</label><textarea class="ta" id="fd">Disappearing ink copybooks that teach your child neat handwriting in 2 weeks. Pay when it arrives.</textarea></div>
+          <div class="row2"><div><label class="fl">Default country</label><input class="in" value="Ghana" readonly><div class="hint">Follows your store country. Change it in <a href="settings.html#fx">Settings, Currencies &amp; FX</a>.</div></div><div><label class="fl">Thank you page</label><input class="in" placeholder="Leave empty to use the built-in page"></div></div>
+          <div><label class="fl">Embed on your site</label><textarea class="ta" style="min-height:54px" placeholder="Allowed domains, one per line">trustcartgh.com</textarea><div class="hint">Only these domains can show this form inside their pages.</div></div>
+        </div>
+      </div>
+      <!-- fields -->
+      <div class="pane" data-p="fields">
+        <h3>Fields</h3><p class="sub">Customers fill these in. &ldquo;Sends to&rdquo; says where each answer lands on the order.</p>
+        <div id="flist"></div>
+        <div class="pop" id="pop">
+          <h4><span id="popT">Edit field</span><button class="iconbtn" id="popX" aria-label="Close"><i data-lucide="x"></i></button></h4>
+          <div class="stack">
+            <div><label class="fl" for="pl">Label</label><input class="in" id="pl"></div>
+            <div><label class="fl" for="pst">Sends to</label><select class="sel" id="pst"><option>Customer name</option><option>Phone</option><option>Alternate phone</option><option>Address</option><option>City</option><option>Region</option><option>Email</option><option>Order notes</option><option>Custom field only</option></select></div>
+            <div style="display:flex;justify-content:space-between;align-items:center"><b>Required</b><label class="sw"><input type="checkbox" id="pr"><i></i></label></div>
+            <div><label class="fl">Width</label><div class="seg" style="margin:0" id="pw"><button data-w="Full">Full</button><button data-w="Half">Half</button></div></div>
+            <div style="display:flex;justify-content:space-between;gap:8px"><button class="btn" id="pdel" style="color:var(--coral)"><i data-lucide="trash-2"></i>Remove</button><button class="btn pri" id="pok">Done</button></div>
+          </div>
+        </div>
+        <div class="fl" style="margin-top:18px">Add a field</div>
+        <div class="types" id="types"></div>
+      </div>
+      <!-- packages -->
+      <div class="pane" data-p="packages">
+        <h3>Packages</h3><p class="sub">Bundles the customer picks from. One price is GH₵249 per set.</p>
+        <div class="tablewrap"><table class="pt2"><thead><tr><th>Sets</th><th>Name</th><th>Discount (GH₵)</th><th>Final price</th><th>Badge</th><th>Default</th><th></th></tr></thead><tbody id="ptb"></tbody></table></div>
+        <button class="btn" id="addPk" style="margin-top:14px"><i data-lucide="plus"></i>Add package</button>
+        <div class="hint" style="margin-top:12px">Final price is sets times GH₵249 minus the discount.</div>
+      </div>
+      <!-- upsells -->
+      <div class="pane" data-p="upsells">
+        <h3>Upsells</h3><p class="sub">Add-ons the customer can tick before they place the order.</p>
+        <div class="pay" id="up1"><label class="sw"><input type="checkbox" checked id="upOn"><i></i></label><div style="flex:1"><div class="row2"><div><label class="fl">Product</label><select class="sel"><option>Magic Groove refill pens</option><option>Pencil grip trainer</option></select></div><div><label class="fl">Price (GH₵)</label><input class="in" id="upPr" value="40"></div></div><label class="fl" style="margin-top:12px">Headline</label><input class="in" id="upHd" value="Add 5 refill pens"><div class="hint">Shown as a tick box above the order summary. 35% of copybook buyers also buy pens.</div></div></div>
+        <div class="pay off"><label class="sw"><input type="checkbox"><i></i></label><div style="flex:1"><b>Pencil grip trainer, GH₵35</b><small>Off. Turn on to show it as a second tick box.</small></div></div>
+        <button class="btn" id="addUp" style="margin-top:14px"><i data-lucide="plus"></i>Add upsell</button>
+      </div>
+      <!-- payment -->
+      <div class="pane" data-p="payment">
+        <h3>Payment</h3><p class="sub">Choose up to two ways to pay. Customers see these as buttons.</p>
+        <div id="pays">
+          <div class="pay"><label class="sw"><input type="checkbox" checked data-pm="Pay on delivery"><i></i></label><div><b>Cash on delivery</b><small>The delivery agent collects the money.</small></div></div>
+          <div class="pay"><label class="sw"><input type="checkbox" checked data-pm="Pay 30% now"><i></i></label><div style="flex:1"><b>Pay a deposit (Paystack)</b><small>Customer pays part online, the rest on delivery.</small><div style="display:flex;align-items:center;gap:8px;margin-top:10px"><input class="in" style="width:80px" value="30" aria-label="Deposit percent"><span class="mut">% paid online</span></div></div></div>
+          <div class="pay"><label class="sw"><input type="checkbox" data-pm="Pay in full"><i></i></label><div><b>Pay in full (Paystack)</b><small>Customer pays everything online. Needs your Paystack keys in Connections.</small></div></div>
+        </div>
+        <div class="hint" id="payhint" style="margin-top:12px;display:none;color:#b77612">Two methods are on. Turn one off to pick another.</div>
+      </div>
+      <!-- tracking -->
+      <div class="pane" data-p="tracking">
+        <h3>Tracking</h3><p class="sub">Send order events to your ad platforms. Meta gets both the browser pixel and the server event, so in-app browsers still count.</p>
+        <div class="stack">
+          <div class="row2"><div><label class="fl">Facebook Pixel ID</label><input class="in" value="482915073361842"></div><div><label class="fl">Google Analytics 4 ID</label><input class="in" placeholder="G-XXXXXXXXXX"></div></div>
+          <div><label class="fl">Meta Conversions API access token</label><input class="in" value="EAAB••••••••••••••••••••ZDZD"><div class="hint"><span class="tag ok">Connected</span> Browser and server events are matched, so orders are not counted twice.</div></div>
+          <div class="row2"><div><label class="fl">Meta test event code</label><input class="in" placeholder="TEST12345"><div class="hint">For testing only. Clear it before you run ads.</div></div><div><label class="fl">TikTok Pixel ID</label><input class="in" placeholder="C4XXXXXXXXXXXX"></div></div>
+          <div><label class="fl">Google Tag Manager ID</label><input class="in" placeholder="GTM-XXXXXXX" style="max-width:300px"></div>
+        </div>
+      </div>
+      <!-- design -->
+      <div class="pane" data-p="design">
+        <h3>Design</h3><p class="sub">Colours and button for the customer page.</p>
+        <div class="stack">
+          <div class="row2"><div><label class="fl">Primary and button colour</label><div class="swatches" id="sw"><button class="on" style="background:var(--pine)" data-c="var(--pine)" aria-label="Pine"></button><button style="background:var(--violet)" data-c="var(--violet)" aria-label="Violet"></button><button style="background:var(--coral)" data-c="var(--coral)" aria-label="Coral"></button><button style="background:var(--gold)" data-c="var(--gold)" aria-label="Gold"></button><button style="background:var(--ink)" data-c="var(--ink)" aria-label="Ink"></button></div></div><div><label class="fl">Button shape</label><div class="seg" style="margin:0" id="shape"><button data-r="4px">Square</button><button class="on" data-r="12px">Rounded</button><button data-r="99px">Pill</button></div></div></div>
+          <div class="row2"><div><label class="fl">Button size</label><div class="seg" style="margin:0" id="size"><button data-z="sm">S</button><button class="on" data-z="">M</button><button data-z="lg">L</button></div></div><div><label class="fl">Button style</label><div class="seg" style="margin:0" id="bst"><button>Flat</button><button data-o="1">Outlined</button><button class="on">Filled</button></div></div></div>
+          <div><label class="fl" for="bl">Button label</label><input class="in" id="bl" value="Place order" maxlength="60"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><b>Show order summary</b><div class="hint" style="margin:0">Price breakdown and total.</div></div><label class="sw"><input type="checkbox" checked id="osum"><i></i></label></div>
+          <div><label class="fl">Offer position</label><div class="seg" style="margin:0" id="opos"><button class="on">Top</button><button>Bottom</button></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pvwrap">
+      <div class="card" style="overflow:hidden">
+        <div class="pvbar"><b>Live preview</b><div class="seg" style="margin:0" id="dev"><button class="on" data-d="m"><i data-lucide="smartphone" style="width:14px;height:14px;vertical-align:-2px"></i> Mobile</button><button data-d="d"><i data-lucide="monitor" style="width:14px;height:14px;vertical-align:-2px"></i> Desktop</button></div></div>
+        <div class="pvstage m" id="stage">
+          <div class="pvframe" id="pvhost">
+           <div id="pvnode">
+            <div class="chrome"><i></i><i></i><i></i><span>pay.codadmin.com/form/<em id="pslug" style="font-style:normal">magic-groove</em></span></div>
+            <div class="pv" id="pv">
+              <div>
+                <h2 id="pvT">Magic Groove copybook set</h2><div class="psub">Neat handwriting in 2 weeks. Pay when it arrives.</div>
+                <div id="pvOfferTop"><div id="pvpk"></div></div>
+                <div id="pvflds"></div>
+              </div>
+              <div>
+                <button class="addon on" id="pvadd"><span class="ck"><i data-lucide="check"></i></span><span id="pvAdT">Add 5 refill pens</span><b style="margin-left:auto" id="pvAdP">GH₵40</b></button>
+                <div class="sumry" id="pvsum"><div><span id="sl1">1 set</span><span id="s1">GH₵249</span></div><div><span>Refill pens</span><span id="s2">GH₵40</span></div><div><span>Delivery</span><span>Free</span></div><div class="t"><span>Total</span><span id="stt">GH₵289</span></div></div>
+                <div class="pay2" id="pvpay"></div>
+                <button class="plc" id="pvbtn">Place order</button>
+                <div class="secure">Your details are safe. Pay when you receive it.</div>
+              </div>
+            </div>
+           </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="cmod" id="cmod"><div class="box card"><div class="pvbar"><b>Preview: <span id="cmT"></span></b><button class="iconbtn" id="cmX" aria-label="Close"><i data-lucide="x"></i></button></div><div class="pvstage m" id="cmHost"></div></div></div>
+<div class="toast" id="toast"></div>
+
+    </main>
+  </div>
+</div>
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.href = 'index.html#' + b.dataset.go; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('on'),2400)};
+const show=v=>{$$('.view').forEach(x=>x.classList.toggle('on',x.id===v));window.scrollTo(0,0)};
+const copy=(t,m)=>{try{navigator.clipboard.writeText(t)}catch(e){}toast(m)};
+/* list */
+const recount=()=>{const rs=$$('#ft tbody tr');$('#kForms').textContent=rs.length;const n=rs.filter(r=>r.querySelector('.sw input').checked).length;$('#kLive').textContent=n+' live'};
+const rowName=r=>r.querySelector('b').textContent;
+function wireRow(r){
+ r.querySelector('[data-copy]').onclick=e=>copy(e.currentTarget.dataset.copy,'Link copied');
+ r.querySelector('.sw input').onchange=recount;
+ r.querySelector('[data-edit]').onclick=()=>{$('#eTitle').textContent=rowName(r);$('#fn').value=rowName(r);setUnsaved(false);show('editor')};
+ r.querySelector('[data-prev]').onclick=()=>openPrev(rowName(r));
+ r.querySelector('[data-del]').onclick=()=>shellConfirm('Delete 1 form?','"'+rowName(r)+'" will be deleted. Its link stops working.','Delete 1 form',()=>{r.remove();recount();toast('Form deleted')});
+ r.querySelector('[data-clone]').onclick=()=>{const c=r.cloneNode(true);c.querySelector('b').textContent=rowName(r)+' (copy)';c.querySelector('.sw input').checked=false;
+  const l=c.querySelector('.lnkcell');const slug=l.firstChild.textContent+'-copy';l.firstChild.textContent=slug;l.querySelector('button').dataset.copy='https://pay.codadmin.com'+slug;
+  c.querySelectorAll('td.r.num b')[0].textContent='0';c.querySelectorAll('td.r.num b')[1].textContent='0%';
+  r.after(c);wireRow(c);lucide.createIcons();recount();toast('Form cloned. The copy is off')};
+}
+$$('#ft tbody tr').forEach(wireRow);
+$('#newForm').onclick=()=>{$('#eTitle').textContent='New form';$('#fn').value='';setUnsaved(true);show('editor')};
+$('#ag1').onclick=()=>{$$('[data-t]').forEach(t=>t.dataset.t==='packages'&&t.click());show('editor');setUnsaved(true);toast('3 set price set to GH₵599 in the editor. Save to apply')};
+$('#addUp').onclick=()=>{$('#addUp').insertAdjacentHTML('beforebegin','<div class="pay"><label class="sw"><input type="checkbox" checked><i></i></label><div style="flex:1"><div class="row2"><div><label class="fl">Product</label><select class="sel"><option>Smart Parent\'s Home Study Guide</option><option>Magic Groove refill pens</option><option>Pencil grip trainer</option></select></div><div><label class="fl">Price (GH\u20B5)</label><input class="in" value="59"></div></div><label class="fl" style="margin-top:12px">Headline</label><input class="in" placeholder="Add the study guide"></div></div>');setUnsaved(true);toast('Upsell added. Save to apply')};
+$('#ag2').onclick=()=>{show('editor');$$('[data-t]').find(t=>t.dataset.t==='fields').click()};
+/* preview modal */
+function openPrev(n){$('#cmT').textContent=n;$('#cmHost').appendChild($('#pvhost'));$('#cmod').classList.add('on')}
+function closePrev(){$('#stage').appendChild($('#pvhost'));$('#cmod').classList.remove('on')}
+$('#cmX').onclick=closePrev;$('#cmod').onclick=e=>{if(e.target.id==='cmod')closePrev()};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#cmod').classList.contains('on'))closePrev()});
+/* editor */
+const setUnsaved=v=>{$('#unsaved').classList.toggle('on',v);$('#save').disabled=!v;$('#save').style.opacity=v?'':'.55'};
+$('#edcard').addEventListener('input',()=>setUnsaved(true));$('#edcard').addEventListener('click',e=>{if(e.target.closest('.sw,.seg button,.swatches button,.types button,#addPk'))setUnsaved(true)});
+$('#back').onclick=()=>show('list');
+$('#save').onclick=()=>{setUnsaved(false);toast('Form saved')};
+$('#cLink').onclick=()=>copy('https://pay.codadmin.com/form/'+$('#fs').value,'Link copied');
+$('#cEmbed').onclick=()=>copy('<iframe src="https://pay.codadmin.com/form/'+$('#fs').value+'" width="100%" height="900" frameborder="0"></iframe>','Embed code copied');
+$$('.etabs .tab').forEach(t=>t.onclick=()=>{$$('.etabs .tab').forEach(x=>x.classList.toggle('on',x===t));$$('.pane').forEach(p=>p.classList.toggle('on',p.dataset.p===t.dataset.t));$('#pop').classList.remove('on')});
+$('#fn').oninput=e=>{$('#eTitle').textContent=e.target.value||'Untitled form';$('#pvT').textContent=e.target.value||'Untitled form'};
+$('#fs').oninput=e=>$('#pslug').textContent=e.target.value;
+$$('#dev button').forEach(b=>b.addEventListener('click',()=>{$('#stage').className='pvstage '+b.dataset.d}));
+/* fields */
+const TYPES=[['type','Text input'],['mail','Email'],['phone','Phone number'],['hash','Number'],['align-left','Text area'],['chevron-down','Dropdown'],['check-square','Checkbox'],['list-checks','Multi select'],['map-pin','State']];
+$('#types').innerHTML=TYPES.map(t=>'<button data-ty="'+t[1]+'"><i data-lucide="'+t[0]+'"></i>'+t[1]+'</button>').join('');
+let F=[{l:'Full name',ty:'Text input',to:'Customer name',req:1,w:'Full'},{l:'Phone number',ty:'Phone number',to:'Phone',req:1,w:'Half'},{l:'WhatsApp number',ty:'Phone number',to:'Alternate phone',req:0,w:'Half'},{l:'Delivery address',ty:'Text area',to:'Address',req:1,w:'Full'},{l:'City or town',ty:'Text input',to:'City',req:1,w:'Half'},{l:'Region',ty:'Dropdown',to:'Region',req:1,w:'Half'}];
+let cur=-1;
+function drawF(){
+ $('#flist').innerHTML=F.map((f,i)=>'<div class="frow"><i data-lucide="grip-vertical" class="gr"></i><div class="sp"><b>'+f.l+(f.req?' <span style="color:var(--coral)">*</span>':'')+'</b><small>'+f.ty+' · sends to '+f.to+'</small></div><span class="tag n">'+f.w+'</span><button class="iconbtn" data-ed="'+i+'" aria-label="Edit field"><i data-lucide="pencil"></i></button></div>').join('');
+ $$('[data-ed]').forEach(b=>b.onclick=()=>openPop(+b.dataset.ed,b.closest('.frow')));
+ $('#pvflds').innerHTML=(()=>{let h='',i=0;while(i<F.length){const f=F[i],n=F[i+1];const cell=x=>'<div class="fld"><label>'+x.l+(x.req?' *':'')+'</label><div>'+(x.ty==='Dropdown'?'Select':'')+'</div></div>';
+  if(f.w==='Half'&&n&&n.w==='Half'){h+='<div class="half">'+cell(f)+cell(n)+'</div>';i+=2}else{h+=cell(f);i++}}return h})();
+ lucide.createIcons()}
+function openPop(i,row){cur=i;const f=F[i];$('#pl').value=f.l;$('#pst').value=f.to;$('#pr').checked=!!f.req;$$('#pw button').forEach(b=>b.classList.toggle('on',b.dataset.w===f.w));
+ const p=$('#pop');p.style.top=(row.offsetTop+row.offsetHeight+6)+'px';p.classList.add('on')}
+const upd=()=>{if(cur<0)return;const f=F[cur];f.l=$('#pl').value;f.to=$('#pst').value;f.req=$('#pr').checked?1:0;f.w=($$('#pw button.on')[0]||{dataset:{w:'Full'}}).dataset.w;drawF()};
+['#pl','#pst','#pr'].forEach(s=>$(s).addEventListener('input',upd));$$('#pw button').forEach(b=>b.addEventListener('click',()=>setTimeout(upd)));
+$('#popX').onclick=$('#pok').onclick=()=>$('#pop').classList.remove('on');
+$('#pdel').onclick=()=>{F.splice(cur,1);cur=-1;$('#pop').classList.remove('on');drawF()};
+$$('#types button').forEach(b=>b.onclick=()=>{F.push({l:b.dataset.ty,ty:b.dataset.ty,to:'Custom field only',req:0,w:'Full'});drawF();const rows=$$('.frow');openPop(F.length-1,rows[rows.length-1])});
+/* packages */
+const UNIT=249;let P=[{q:1,n:'1 set',d:0,b:'',def:0},{q:2,n:'2 sets',d:49,b:'Best deal',def:1},{q:3,n:'3 sets',d:118,b:'',def:0}];
+const price=p=>p.q*UNIT-p.d;
+function drawP(){
+ $('#ptb').innerHTML=P.map((p,i)=>'<tr><td><input class="in" style="width:60px" data-k="q" data-i="'+i+'" value="'+p.q+'" aria-label="Sets"></td><td><input class="in" style="width:120px" data-k="n" data-i="'+i+'" value="'+p.n+'" aria-label="Name"></td><td><input class="in" style="width:90px" data-k="d" data-i="'+i+'" value="'+p.d+'" aria-label="Discount"></td><td class="num"><b>GH₵'+price(p)+'</b></td><td><input class="in" style="width:110px" data-k="b" data-i="'+i+'" value="'+p.b+'" placeholder="No badge" aria-label="Badge"></td><td><input type="radio" name="def" data-def="'+i+'" '+(p.def?'checked':'')+' aria-label="Default"></td><td><button class="iconbtn dng" data-rm="'+i+'" aria-label="Remove"><i data-lucide="trash-2"></i></button></td></tr>').join('');
+ $$('#ptb input[data-k]').forEach(el=>el.oninput=()=>{const p=P[+el.dataset.i],k=el.dataset.k;p[k]=k==='q'||k==='d'?(+el.value||0):el.value;
+   el.closest('tr').querySelector('b').textContent='GH₵'+price(p);drawPv()});
+ $$('[data-def]').forEach(r=>r.onchange=()=>{P.forEach((p,i)=>p.def=i===+r.dataset.def?1:0);drawPv();setUnsaved(true)});
+ $$('[data-rm]').forEach(b=>b.onclick=()=>{P.splice(+b.dataset.rm,1);if(P.length&&!P.some(p=>p.def))P[0].def=1;drawP();setUnsaved(true)});
+ drawPv();lucide.createIcons()}
+$('#addPk').onclick=()=>{P.push({q:4,n:'4 sets',d:200,b:'',def:0});drawP()};
+let sel=1,addOn=true;
+function drawPv(){
+ if(!P.some((p,i)=>i===sel))sel=Math.max(0,P.findIndex(p=>p.def));
+ $('#pvpk').innerHTML=P.map((p,i)=>'<button class="pk'+(i===sel?' on':'')+'" data-s="'+i+'"><span class="rd"></span><span><b>'+p.n+'</b>'+(p.d?'<small>Save GH₵'+p.d+'</small>':'')+'</span>'+(p.b?'<span class="bd">'+p.b+'</span>':'')+'<span class="pr">GH₵'+price(p)+'</span></button>').join('');
+ $$('#pvpk .pk').forEach(b=>b.onclick=()=>{sel=+b.dataset.s;drawPv()});
+ const p=P[sel]||P[0];const ad=$('#upOn').checked&&addOn;const ap=+$('#upPr').value||0;
+ $('#sl1').textContent=p.n;$('#s1').textContent='GH₵'+price(p);$('#s2').parentElement.style.display=ad?'':'none';$('#s2').textContent='GH₵'+ap;
+ $('#stt').textContent='GH₵'+(price(p)+(ad?ap:0));
+ $('#pvAdT').textContent=$('#upHd').value;$('#pvAdP').textContent='GH₵'+ap;$('#pvadd').style.display=$('#upOn').checked?'':'none';$('#pvadd').classList.toggle('on',addOn);
+ lucide.createIcons()}
+$('#pvadd').onclick=()=>{addOn=!addOn;drawPv()};
+['#upOn','#upPr','#upHd'].forEach(s=>$(s).addEventListener('input',drawPv));
+/* payment */
+function drawPay(){const on=$$('#pays input:checked');const mx=on.length>=2;
+ $$('#pays input').forEach(i=>{i.disabled=mx&&!i.checked;i.closest('.pay').classList.toggle('off',!i.checked)});$('#payhint').style.display=mx?'':'none';
+ $('#pvpay').innerHTML=on.map((i,k)=>'<span class="'+(k?'':'on')+'">'+i.dataset.pm+'</span>').join('')}
+$$('#pays input').forEach(i=>i.addEventListener('change',drawPay));
+/* design */
+const pv=$('#pv');
+$$('#sw button').forEach(b=>b.onclick=()=>{$$('#sw button').forEach(x=>x.classList.toggle('on',x===b));$('#pvhost').style.setProperty('--pv-c',b.dataset.c)});
+$$('#shape button').forEach(b=>b.addEventListener('click',()=>$('#pvhost').style.setProperty('--pv-r',b.dataset.r)));
+$$('#size button').forEach(b=>b.addEventListener('click',()=>{$('#pvbtn').className='plc '+b.dataset.z}));
+$$('#bst button').forEach(b=>b.addEventListener('click',()=>{$('#pvbtn').classList.toggle('outl',!!b.dataset.o)}));
+$('#bl').oninput=e=>$('#pvbtn').textContent=e.target.value||'Place order';
+$('#osum').onchange=e=>$('#pvsum').style.display=e.target.checked?'':'none';
+$$('#opos button').forEach(b=>b.addEventListener('click',()=>{const bottom=b.textContent==='Bottom';const o=$('#pvpk');bottom?$('#pvflds').after(o):$('#pvOfferTop').appendChild(o)}));
+drawF();drawP();drawPay();setUnsaved(false);lucide.createIcons();
+{const h=location.hash.slice(1);if(h.startsWith('edit')){show('editor');const t=h.split('-')[1];if(t)$$('.etabs .tab').find(x=>x.dataset.t===t).click();if(h.endsWith('pop'))$('[data-ed="1"]').click()}}
+
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

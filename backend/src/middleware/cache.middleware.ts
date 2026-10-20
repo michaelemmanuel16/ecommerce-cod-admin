@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import Redis from 'ioredis';
 import logger from '../utils/logger';
 import { getTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 // Redis client configuration
 const redis = new Redis({
@@ -81,12 +82,14 @@ export const cacheMiddleware = (options: CacheOptions = {}) => {
 
       // Override json method to cache response
       res.json = function (body: any) {
-        // Cache the response
-        redis.setex(cacheKey, ttl, JSON.stringify(body))
+        // Serialize once (money as "x.xx"): the same text goes to Redis and to the client
+        const json = JSON.stringify(body, Money.jsonReplacer);
+        redis.setex(cacheKey, ttl, json)
           .catch((err) => logger.error('Failed to cache response:', err));
 
-        // Send response
-        return originalJson(body);
+        if (json === undefined) return originalJson(body);
+        res.set('Content-Type', 'application/json; charset=utf-8');
+        return res.send(json);
       };
 
       next();

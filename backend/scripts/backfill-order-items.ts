@@ -17,8 +17,11 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { requireTenantIdEnv } from './lib/requireTenantIdEnv';
 
 const prisma = new PrismaClient();
+
+const TENANT_ID = requireTenantIdEnv();
 
 interface ProductMapping {
   sku: string;
@@ -39,7 +42,7 @@ async function main(dryRun: boolean) {
   // 1. Look up products by SKU
   const skus = Object.values(AMOUNT_TO_PRODUCT).map((m) => m.sku);
   const products = await prisma.product.findMany({
-    where: { sku: { in: skus } },
+    where: { tenantId: TENANT_ID, sku: { in: skus } },
     select: { id: true, sku: true, name: true },
   });
 

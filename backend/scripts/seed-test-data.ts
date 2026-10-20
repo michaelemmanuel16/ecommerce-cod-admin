@@ -1,7 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import { requireTenantIdEnv } from './lib/requireTenantIdEnv';
 
 const prisma = new PrismaClient();
+
+const TENANT_ID = requireTenantIdEnv();
 
 async function seedTestData() {
     try {
@@ -64,9 +67,10 @@ async function seedTestData() {
         // 3. Create Product (Magic Copybook)
         console.log('📦 Creating Product...');
         const product = await prisma.product.upsert({
-            where: { sku: 'MCB-001' },
+            where: { tenantId_sku: { tenantId: TENANT_ID, sku: 'MCB-001' } },
             update: {},
             create: {
+                tenantId: TENANT_ID,
                 name: 'Magic Copybook',
                 description: 'Reusable magic copybook for children - write, erase, repeat!',
                 price: 45.00,

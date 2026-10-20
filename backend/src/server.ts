@@ -42,6 +42,7 @@ import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
 import { validateGLAccountCodes } from './config/glAccounts';
 import { derivePlatformOrigin } from './utils/corsOrigins';
+import { forEachTenant } from './utils/tenantLoop';
 
 // Routes
 import authRoutes from './routes/authRoutes';
@@ -78,7 +79,7 @@ import mcpHttpTransport from './mcp/httpTransport';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
-import { GLAutomationService } from './services/glAutomationService';
+import { seedTenantDefaults } from './services/tenantDefaultsService';
 import { GLAccountService } from './services/glAccountService';
 import cron from 'node-cron';
 
@@ -90,6 +91,7 @@ import { setupAgingCron } from './queues/agingQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
 import { setupPendingCheckoutCleanupCron } from './queues/pendingCheckoutCleanupQueue';
+import * as Money from './utils/money';
 
 // Validate environment variables before starting server
 try {
@@ -149,6 +151,10 @@ app.use('/api/public', (_req, res, next) => {
 // SECURITY: Trust only the first proxy (nginx). Using `true` trusts ALL proxies,
 // allowing attackers to spoof X-Forwarded-For and bypass rate limiting.
 app.set("trust proxy", 1);
+
+// M0-T24: money in API responses is a string with 2 decimals. Every Prisma.Decimal in a res.json body goes
+// through Money.jsonReplacer, so no route formats money by hand.
+app.set("json replacer", Money.jsonReplacer);
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 const platformUrl = process.env.PLATFORM_URL || derivePlatformOrigin(frontendUrl);
@@ -310,17 +316,21 @@ if (process.env.NODE_ENV !== 'test') {
     cron.schedule('0 2 * * *', async () => {
       logger.info('Running daily GL balance verification...');
       try {
-        const result = await GLAccountService.verifyAllAccountBalances();
-        if (result.unbalanced.length > 0) {
-          logger.error('GL balance verification found discrepancies', {
-            totalAccounts: result.totalAccounts,
-            unbalancedCount: result.unbalanced.length,
-            maxDifference: result.maxDifference.toFixed(4),
-            unbalanced: result.unbalanced.map(u => ({ code: u.code, difference: u.difference.toFixed(4) }))
-          });
-        } else {
-          logger.info(`GL balance verification passed: ${result.totalAccounts} accounts verified`);
-        }
+        // Once per tenant, each inside its own tenant context
+        await forEachTenant('GL balance verification', async (tenantId) => {
+          const result = await GLAccountService.verifyAllAccountBalances();
+          if (result.unbalanced.length > 0) {
+            logger.error('GL balance verification found discrepancies', {
+              tenantId,
+              totalAccounts: result.totalAccounts,
+              unbalancedCount: result.unbalanced.length,
+              maxDifference: result.maxDifference.toFixed(4),
+              unbalanced: result.unbalanced.map(u => ({ code: u.code, difference: u.difference.toFixed(4) }))
+            });
+          } else {
+            logger.info(`GL balance verification passed for tenant ${tenantId}: ${result.totalAccounts} accounts verified`);
+          }
+        });
       } catch (err) {
         logger.error('GL balance verification cron failed', { error: err });
       }
@@ -349,11 +359,14 @@ if (process.env.NODE_ENV !== 'test') {
       }
     });
 
-    // Verify GL Accounts (Required for financial statements correctness)
-    const glValidated = await GLAutomationService.asyncVerifyGLAccounts();
-    if (!glValidated) {
-      logger.error('Failed to validate/seed GL accounts. Exiting...');
-      process.exit(1);
+    // Seed each tenant's defaults (chart of accounts, email templates).
+    // One tenant failing is logged; the others still run and the server stays up.
+    try {
+      await forEachTenant('startup seed', async (tenantId) => {
+        await seedTenantDefaults(tenantId);
+      });
+    } catch (error: any) {
+      logger.error('Startup seed finished with failures:', error?.message ?? error);
     }
 
     // Schedule WhatsApp OAuth token refresh (daily at 01:00)

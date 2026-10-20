@@ -6,6 +6,7 @@ import { OrderStatus, DeliveryProofType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GLAccountService } from '../../services/glAccountService';
 import * as tenantContext from '../../utils/tenantContext';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 // Mock logger
 jest.mock('../../utils/logger', () => ({
@@ -26,6 +27,7 @@ jest.mock('../../services/glAccountService', () => ({
 }));
 
 describe('DeliveryService', () => {
+  useTestTenant();
   let deliveryService: DeliveryService;
 
   beforeEach(() => {

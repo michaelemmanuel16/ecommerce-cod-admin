@@ -70,7 +70,7 @@ export function resolveTemplate(
 export function applyDataFilters<T = any>(
   data: T[] | undefined,
   filters?: Record<string, any>,
-  currentUserId?: string
+  currentUserId?: string | number
 ): T[] {
   if (!data || !Array.isArray(data)) return [];
   if (!filters) return data;

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { prismaMock } from '../mocks/prisma.mock';
 import { CustomerService } from '../../services/customerService';
 import { AppError } from '../../middleware/errorHandler';
+import * as Money from '../../utils/money';
 
 describe('CustomerService', () => {
   let customerService: CustomerService;
@@ -149,8 +150,8 @@ describe('CustomerService', () => {
       const analytics = await customerService.getCustomerAnalytics('1');
 
       expect(analytics.totalOrders).toBe(3);
-      expect(analytics.totalSpent).toBe(450);
-      expect(analytics.avgOrderValue).toBe(150);
+      expect(Money.toApi(analytics.totalSpent)).toBe('450.00');
+      expect(Money.toApi(analytics.avgOrderValue)).toBe('150.00');
       expect(analytics.ordersByStatus.delivered).toBe(2);
       expect(analytics.ordersByStatus.pending_confirmation).toBe(1);
       expect(analytics.firstOrderDate).toBeDefined();
@@ -174,8 +175,8 @@ describe('CustomerService', () => {
       const analytics = await customerService.getCustomerAnalytics('1');
 
       expect(analytics.totalOrders).toBe(0);
-      expect(analytics.totalSpent).toBe(0);
-      expect(analytics.avgOrderValue).toBe(0);
+      expect(Money.toApi(analytics.totalSpent)).toBe('0.00');
+      expect(Money.toApi(analytics.avgOrderValue)).toBe('0.00');
       expect(analytics.firstOrderDate).toBeNull();
       expect(analytics.lastOrderDate).toBeNull();
     });

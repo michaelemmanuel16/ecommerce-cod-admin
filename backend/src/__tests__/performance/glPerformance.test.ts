@@ -3,7 +3,7 @@ import prisma from '../../utils/prisma';
 import glService from '../../services/glService';
 import { AccountType, NormalBalance, JournalSourceType } from '@prisma/client';
 import { withGlTestTenant } from '../integration/helpers/glTestTenant';
-import { tenantStorage } from '../../utils/tenantContext';
+import { tenantStorage, withoutTenant } from '../../utils/tenantContext';
 
 describe('GL Performance Test', () => {
     let perfAccount: any;
@@ -82,7 +82,7 @@ describe('GL Performance Test', () => {
         }
     }, 60000); // 60s timeout for seeding
 
-    afterAll(async () => {
+    afterAll(() => withoutTenant('test cleanup', async () => {
         // Delete account transactions first, then journal entries, then accounts
         if (perfAccount) {
             await prisma.accountTransaction.deleteMany({ where: { accountId: perfAccount.id } });
@@ -105,7 +105,7 @@ describe('GL Performance Test', () => {
         await prisma.user.deleteMany({
             where: { email: 'gl-perf-tester@example.com' }
         });
-    });
+    }));
 
     it('should fetch paginated ledger data efficiently', async () => {
         // restoreMocks wipes the beforeAll getTenantId spy; run reads in real ALS context.

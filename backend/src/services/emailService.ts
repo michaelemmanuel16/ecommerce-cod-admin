@@ -9,6 +9,8 @@ import logger from '../utils/logger';
 import { getTenantId } from '../utils/tenantContext';
 import { renderEmailTemplate } from './emailTemplateService';
 import { ensureUnsubscribeToken, buildUnsubscribeUrl, applyUnsubscribe } from './unsubscribeService';
+import * as Money from '../utils/money';
+import { getCurrency } from '../utils/currency';
 
 // ---------- Types ----------
 
@@ -407,15 +409,14 @@ export async function sendWorkflowEmail(
   // — minting it in parallel with the tenant/config reads. No customer (e.g. an
   // explicit `to` override) → no opt-out link, since there's nothing to opt out.
   const tenantId = getTenantId();
-  const [tenant, sysConfig, unsubscribeToken] = await Promise.all([
+  const [tenant, currency, unsubscribeToken] = await Promise.all([
     tenantId
       ? prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } })
       : Promise.resolve(null),
-    prisma.systemConfig.findFirst({ select: { currency: true } }),
+    getCurrency(),
     customer ? ensureUnsubscribeToken(customer) : Promise.resolve(''),
   ]);
   const unsubscribeUrl = unsubscribeToken ? buildUnsubscribeUrl(unsubscribeToken) : '';
-  const currency = sysConfig?.currency || 'GHS';
   const { subject, html } = renderEmailTemplate(
     { subject: subjectTpl, body: bodyTpl },
     {
@@ -424,10 +425,7 @@ export async function sendWorkflowEmail(
       store_name: tenant?.name ?? '',
       order_number: order ? String(order.id) : '',
       order_total: order
-        ? `${currency} ${Number(order.totalAmount).toLocaleString('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}`
+        ? Money.format(order.totalAmount, currency)
         : '',
       download_url: '',
       unsubscribe_url: unsubscribeUrl,

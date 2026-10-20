@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { encodeCursor, decodeCursor, mcpJson, mcpError, getDateRange } from '../utils';
+import { encodeCursor, decodeCursor, mcpMoneyJson, mcpError, getDateRange } from '../utils';
+import * as Money from '../../utils/money';
 
 const ordersSearchSchema = z.object({
   status: z.enum([
@@ -80,7 +81,7 @@ export function registerOrderTools(
         const results = hasMore ? orders.slice(0, limit) : orders;
         const nextCursor = hasMore ? encodeCursor(results[results.length - 1].id) : undefined;
 
-        return mcpJson({
+        return mcpMoneyJson({
           orders: results.map((o) => ({
             id: o.id,
             status: o.status,
@@ -138,12 +139,12 @@ export function registerOrderTools(
         const delivered = statusCounts.find((s) => s.status === 'delivered')?._count.id ?? 0;
         const fulfillmentRate = totalOrders > 0 ? ((delivered / totalOrders) * 100).toFixed(1) : '0.0';
 
-        return mcpJson({
+        return mcpMoneyJson({
           period: parsed.period,
           dateRange: { from: start.toISOString(), to: end.toISOString() },
           totalOrders,
           statusBreakdown: Object.fromEntries(statusCounts.map((s) => [s.status, s._count.id])),
-          revenue: totalRevenue._sum.totalAmount ?? 0,
+          revenue: Money.orZero(totalRevenue._sum.totalAmount),
           deliveredCount: delivered,
           fulfillmentRate: `${fulfillmentRate}%`,
         });

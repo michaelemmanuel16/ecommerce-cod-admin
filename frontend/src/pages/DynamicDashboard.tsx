@@ -9,9 +9,10 @@ import { useAuthStore } from '../stores/authStore';
 import { dashboardConfigs } from '../config/dashboards';
 import { DashboardLayout } from '../components/dashboard/DashboardLayout';
 import { useDashboardData } from '../hooks/useDashboardData';
+import type { DateRangePreset } from '../config/types/dashboard';
 
 export interface DateRangeFilter {
-  preset?: string;
+  preset?: DateRangePreset;
   startDate?: string;
   endDate?: string;
 }

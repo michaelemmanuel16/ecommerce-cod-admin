@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { User, LoginCredentials, RegisterData, UserPreferences, Permissions } from '../types';
+import { User, LoginCredentials, UserPreferences, Permissions } from '../types';
 import { authService } from '../services/auth.service';
 import { usersService } from '../services/users.service';
 import { connectSocket, disconnectSocket, getSocket } from '../services/socket';
@@ -18,7 +18,6 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
   registerTenant: (data: { companyName: string; adminEmail: string; adminPassword: string; adminName: string; planName?: string }) => Promise<void>;
   logout: (showToast?: boolean) => void;
   setAccessToken: (token: string) => void;
@@ -54,26 +53,6 @@ export const useAuthStore = create<AuthState>()(
           toast.success(`Welcome back, ${user.firstName} ${user.lastName}!`);
           connectSocket();
           get().initSocket();
-        } catch (error) {
-          set({ isLoading: false });
-          throw error;
-        }
-      },
-
-      register: async (data: RegisterData) => {
-        set({ isLoading: true });
-        try {
-          const { user, tokens } = await authService.register(data);
-          set({
-            user,
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            permissions: null,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-          toast.success(`Welcome, ${user.firstName} ${user.lastName}!`);
-          connectSocket();
         } catch (error) {
           set({ isLoading: false });
           throw error;

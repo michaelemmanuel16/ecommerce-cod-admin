@@ -67,6 +67,7 @@ describe('WebhookService', () => {
   describe('processWebhook', () => {
     const webhookConfig = {
       id: 'config-1',
+      tenantId: 'tenant-1',
       name: 'Test Webhook',
       url: 'https://example.com/webhook',
       secret: 'test-secret',
@@ -243,23 +244,53 @@ describe('WebhookService', () => {
       expect(result.results.errors[0].error).toBe('Database error');
     });
 
-    it('should update webhook log on error', async () => {
-      prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
+    it('should reject an unknown API key and not write a log row (no tenant to own it)', async () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue(null);
-
-      let logUpdate: any;
-      prismaMock.webhookLog.update.mockImplementation((args: any) => {
-        logUpdate = args.data;
-        return Promise.resolve({} as any);
-      });
 
       await expect(
         webhookService.processWebhook(webhookData)
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({ message: 'Invalid API key', statusCode: 401 });
 
-      expect(logUpdate.success).toBe(false);
-      expect(logUpdate.statusCode).toBe(401);
-      expect(logUpdate.errorMessage).toBe('Invalid API key');
+      expect(prismaMock.webhookLog.create).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a webhook config that has no tenant and process nothing', async () => {
+      prismaMock.webhookConfig.findFirst.mockResolvedValue({ ...webhookConfig, tenantId: null } as any);
+
+      await expect(
+        webhookService.processWebhook(webhookData)
+      ).rejects.toMatchObject({ message: 'Invalid API key', statusCode: 401 });
+
+      expect(prismaMock.webhookLog.create).not.toHaveBeenCalled();
+      expect(prismaMock.customer.create).not.toHaveBeenCalled();
+      expect(prismaMock.order.create).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a unique-URL webhook config that has no tenant with 404', async () => {
+      prismaMock.webhookConfig.findUnique.mockResolvedValue({ ...webhookConfig, tenantId: null } as any);
+
+      await expect(
+        webhookService.processWebhookByUniqueUrl({
+          uniqueUrl: 'abc', body: webhookData.body, headers: {}, endpoint: '/x', method: 'POST',
+        } as any)
+      ).rejects.toMatchObject({ message: 'Webhook not found', statusCode: 404 });
+
+      expect(prismaMock.webhookLog.create).not.toHaveBeenCalled();
+      expect(prismaMock.customer.create).not.toHaveBeenCalled();
+    });
+
+    it('should write the log row with the tenant and config of the webhook', async () => {
+      prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
+      prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
+      prismaMock.webhookLog.update.mockResolvedValue({} as any);
+      prismaMock.customer.findFirst.mockResolvedValue(null);
+      prismaMock.customer.create.mockRejectedValue(new Error('Database error'));
+
+      await webhookService.processWebhook(webhookData);
+
+      expect(prismaMock.webhookLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ tenantId: 'tenant-1', webhookConfigId: 'config-1' }),
+      });
     });
   });
 
@@ -355,6 +386,7 @@ describe('WebhookService', () => {
       prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-2' } as any);
       prismaMock.webhookConfig.findFirst.mockResolvedValue({
         id: 'config-1',
+        tenantId: 'tenant-1',
         isActive: true,
         fieldMapping: {}
       } as any);

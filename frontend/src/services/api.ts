@@ -1,11 +1,8 @@
 import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
-
-// Use relative URLs in production (when served by Nginx), absolute URLs in development
-const API_URL = import.meta.env.VITE_API_URL === 'relative'
-  ? '' // Empty string for relative URLs - Nginx will proxy /api to backend
-  : import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import { API_URL, handleSessionExpired, refreshAccessToken } from './tokenRefresh';
+import { normalizeMoney } from '../utils/money';
 
 // Request cache (5 second TTL)
 const requestCache = new Map<string, { data: any; timestamp: number }>();
@@ -19,35 +16,6 @@ function getCacheKey(config: InternalAxiosRequestConfig): string {
 // Check if request should be cached (only GET requests)
 function shouldCache(config: InternalAxiosRequestConfig): boolean {
   return config.method?.toLowerCase() === 'get';
-}
-
-// Pages that should never trigger a 401 redirect to /login.
-// Includes public checkout pages embedded in iframes on external sites —
-// redirecting there would be blocked by X-Frame-Options.
-function isPublicPage(): boolean {
-  const path = window.location.pathname;
-  return ['/login', '/register', '/forgot-password', '/reset-password'].includes(path)
-    || path.startsWith('/form/');
-}
-
-// Once session expiry is detected, suppress further auth-error toasts until
-// the redirect to /login completes. Prevents parallel dashboard requests from
-// stacking duplicate toasts on the page being navigated away from.
-//
-// Only latched when we actually redirect: on public pages the redirect is
-// skipped (X-Frame-Options-safe for embedded checkouts), so leaving the flag
-// false there means a later SPA navigation into the admin can still surface
-// the next expiry. The full-page reload triggered by the redirect resets the
-// flag for the post-login session.
-let sessionExpiredHandled = false;
-function handleSessionExpired(message = 'Your session has expired. Please log in again.'): void {
-  if (sessionExpiredHandled) return;
-  useAuthStore.getState().logout(false);
-  if (!isPublicPage()) {
-    sessionExpiredHandled = true;
-    toast.error(message, { id: 'session-expired' });
-    window.location.href = '/login';
-  }
 }
 
 export const apiClient = axios.create({
@@ -103,6 +71,8 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
     console.log('[API Interceptor] Response:', response.config.method?.toUpperCase(), response.config.url, 'Status:', response.status);
+    // Money arrives as strings; parse once here, before the response is cached
+    normalizeMoney(response.data);
     // Cache successful GET responses
     if (response.config.method?.toLowerCase() === 'get') {
       const cacheKey = getCacheKey(response.config);
@@ -135,7 +105,7 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Skip auto-logout for auth endpoints that handle their own errors
       const isAuthEndpoint = originalRequest.url?.includes('/api/auth/login') ||
-        originalRequest.url?.includes('/api/auth/register') ||
+        originalRequest.url?.includes('/api/auth/register-tenant') ||
         originalRequest.url?.includes('/api/auth/logout') ||
         originalRequest.url?.includes('/api/auth/forgot-password') ||
         originalRequest.url?.includes('/api/auth/reset-password');
@@ -155,18 +125,7 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const refreshToken = useAuthStore.getState().refreshToken;
-        if (!refreshToken) {
-          handleSessionExpired();
-          return Promise.reject(error);
-        }
-
-        const response = await axios.post(`${API_URL}/api/auth/refresh`, {
-          refreshToken,
-        });
-
-        const { accessToken } = response.data;
-        useAuthStore.getState().setAccessToken(accessToken);
+        const accessToken = await refreshAccessToken();
 
         if (originalRequest.headers) {
           originalRequest.headers.Authorization = `Bearer ${accessToken}`;
@@ -197,8 +156,8 @@ apiClient.interceptors.response.use(
           return Promise.reject(refreshError);
         }
 
-        // Anything else (400, 403, ...): treat as session expiry to be safe.
-        handleSessionExpired();
+        // Anything else (429 rate limit, 400, 403, ...): the session is not proven dead.
+        // Keep the user signed in; the next request tries the refresh again.
         return Promise.reject(refreshError);
       }
     }

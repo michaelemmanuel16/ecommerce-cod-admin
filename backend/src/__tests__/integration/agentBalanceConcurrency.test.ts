@@ -4,7 +4,7 @@ import agentReconciliationService from '../../services/agentReconciliationServic
 import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { AccountType, NormalBalance, Prisma } from '@prisma/client';
 import { withGlTestTenant } from './helpers/glTestTenant';
-import { tenantStorage } from '../../utils/tenantContext';
+import { tenantStorage, withoutTenant } from '../../utils/tenantContext';
 
 describe('Agent Balance Concurrency Integration Test', () => {
     let testUser: any;
@@ -33,7 +33,7 @@ describe('Agent Balance Concurrency Integration Test', () => {
         ];
         for (const a of accounts) {
             await prisma.account.upsert({
-                where: { code: a.code },
+                where: { tenantId_code: { tenantId: testTenantId, code: a.code } },
                 update: a as Prisma.AccountUpdateInput,
                 create: a
             });
@@ -62,7 +62,7 @@ describe('Agent Balance Concurrency Integration Test', () => {
         });
     });
 
-    afterAll(async () => {
+    afterAll(() => withoutTenant('test cleanup', async () => {
         // Clean up - Order matters due to foreign keys
         await prisma.accountTransaction.deleteMany({});
         await (prisma as any).agentDeposit.deleteMany({});
@@ -71,7 +71,7 @@ describe('Agent Balance Concurrency Integration Test', () => {
         await prisma.user.deleteMany({
             where: { email: { in: ['admin-con@test.com', 'agent-con@test.com'] } }
         });
-    });
+    }));
 
     it('should maintain correct agent balance under concurrent deposit verifications', async () => {
         // restoreMocks wipes the beforeAll getTenantId spy before this test, so run

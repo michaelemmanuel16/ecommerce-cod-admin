@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { escapeHtml } from '../utils/sanitizer';
@@ -29,6 +30,7 @@ export const digitalDeliveryService = {
 
     await prisma.downloadToken.create({
       data: {
+        tenantId: resolveTenantId(order.tenantId),
         orderId,
         token,
         expiresAt,
@@ -42,24 +44,40 @@ export const digitalDeliveryService = {
 
   /**
    * Validate a download token and return the file URL if valid.
+   * `null` = no such token (404). `{ gone: true }` = the token exists but is expired,
+   * revoked or used up (410).
    */
-  async validateAndGetDownloadUrl(token: string): Promise<{ fileUrl: string; productName: string } | null> {
+  async validateAndGetDownloadUrl(token: string): Promise<{ fileUrl: string; productName: string } | { gone: true } | null> {
+    // The token is global: find its tenant first (minimal lookup), then run the rest scoped to it.
+    const tokenRow = await withoutTenant('download-token', () =>
+      prisma.downloadToken.findUnique({ where: { token }, select: { tenantId: true } })
+    );
+    if (!tokenRow) {
+      logger.warn('Download token not found', { token: token.substring(0, 8) + '...' });
+      return null;
+    }
+    return runInTenant(tokenRow.tenantId, () => this.consumeDownloadToken(token, tokenRow.tenantId));
+  },
+
+  async consumeDownloadToken(token: string, tenantId: string): Promise<{ fileUrl: string; productName: string } | { gone: true } | null> {
     // Atomic check-and-increment: prevents TOCTOU race condition where concurrent
     // requests could exceed maxDownloads. Uses raw SQL because Prisma updateMany
-    // doesn't support comparing two columns in a WHERE clause.
+    // doesn't support comparing two columns in a WHERE clause. Raw SQL bypasses the
+    // tenant extension, so the tenant is part of the WHERE clause.
     const updated: { id: number; orderId: number }[] = await prisma.$queryRaw`
-      UPDATE "DownloadToken"
-      SET "downloadCount" = "downloadCount" + 1
+      UPDATE "download_tokens"
+      SET "download_count" = "download_count" + 1
       WHERE "token" = ${token}
-        AND "isRevoked" = false
-        AND "expiresAt" > NOW()
-        AND "downloadCount" < "maxDownloads"
-      RETURNING "id", "orderId"
+        AND "tenant_id" = ${tenantId}
+        AND "is_revoked" = false
+        AND "expires_at" > NOW()
+        AND "download_count" < "max_downloads"
+      RETURNING "id", "order_id" AS "orderId"
     `;
 
     if (!updated || updated.length === 0) {
-      logger.warn('Download token invalid, expired, revoked, or limit reached', { token: token.substring(0, 8) + '...' });
-      return null;
+      logger.warn('Download token expired, revoked, or limit reached', { token: token.substring(0, 8) + '...' });
+      return { gone: true };
     }
 
     const { orderId } = updated[0];

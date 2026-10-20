@@ -6,7 +6,6 @@ import { authService } from '../../services/auth.service';
 vi.mock('../../services/auth.service', () => ({
   authService: {
     login: vi.fn(),
-    register: vi.fn(),
     logout: vi.fn(),
     getCurrentUser: vi.fn(),
     getMe: vi.fn(),
@@ -75,76 +74,6 @@ describe('Auth Store', () => {
 
     const state = useAuthStore.getState();
     expect(state.user).toBeNull();
-  });
-
-  it('should handle successful registration', async () => {
-    const mockResponse = {
-      user: {
-        id: '456',
-        email: 'new@example.com',
-        firstName: 'New',
-        lastName: 'User',
-        role: 'customer_rep',
-      },
-      tokens: {
-        accessToken: 'new_access_token',
-        refreshToken: 'new_refresh_token',
-      },
-      permissions: null,
-    };
-
-    vi.mocked(authService.register).mockResolvedValue(mockResponse);
-
-    const { register } = useAuthStore.getState();
-    await register({
-      email: 'new@example.com',
-      password: 'password123',
-      firstName: 'New',
-      lastName: 'User',
-    });
-
-    const state = useAuthStore.getState();
-    expect(state.user).toEqual(mockResponse.user);
-    expect(state.accessToken).toBe('new_access_token');
-  });
-
-  it('should clear user data on logout', () => {
-    // Set initial state
-    useAuthStore.setState({
-      user: { id: '123', email: 'test@example.com' } as any,
-      accessToken: 'token_123',
-      refreshToken: 'refresh_123',
-    });
-
-    vi.mocked(authService.logout).mockResolvedValue(undefined);
-
-    const { logout } = useAuthStore.getState();
-    logout(false); // Don't show toast in tests
-
-    const state = useAuthStore.getState();
-    expect(state.user).toBeNull();
-    expect(state.accessToken).toBeNull();
-    expect(state.refreshToken).toBeNull();
-  });
-
-  it('should handle registration error', async () => {
-    const mockError = new Error('Email already exists');
-    vi.mocked(authService.register).mockRejectedValue(mockError);
-
-    const { register } = useAuthStore.getState();
-
-    await expect(
-      register({
-        email: 'existing@example.com',
-        password: 'password123',
-        firstName: 'Test',
-        lastName: 'User',
-      })
-    ).rejects.toThrow();
-
-    const state = useAuthStore.getState();
-    expect(state.user).toBeNull();
-    expect(state.isLoading).toBe(false); // Should reset loading state
   });
 
   it('should set access token', () => {

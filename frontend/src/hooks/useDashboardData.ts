@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
-import { DashboardConfig, DashboardData } from '../config/types/dashboard';
+import { DashboardConfig, DashboardData, DateRangePreset } from '../config/types/dashboard';
 import { useAnalyticsStore } from '../stores/analyticsStore';
 import { useAuthStore } from '../stores/authStore';
 import { useOrdersStore } from '../stores/ordersStore';
@@ -499,7 +499,7 @@ async function executeFetcher(
 /**
  * Helper to parse date range preset to number of days
  */
-function parseDateRangeToDays(dateRange?: string): number {
+function parseDateRangeToDays(dateRange?: DateRangePreset): number {
   const rangeToDays: Record<string, number> = {
     today: 1,
     yesterday: 1,
@@ -524,7 +524,7 @@ function parseDateRangeToDays(dateRange?: string): number {
     all_time: 365,
   };
 
-  return rangeToDays[dateRange || 'last-30-days'] || 30;
+  return rangeToDays[(typeof dateRange === 'string' && dateRange) || 'last-30-days'] || 30;
 }
 
 /**

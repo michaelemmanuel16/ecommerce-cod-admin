@@ -1,0 +1,1000 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finance · CodAdmin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px 8px;max-width:100%}
+select:focus-visible,textarea:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+input[type=checkbox],input[type=radio]{accent-color:var(--pine);width:16px;height:16px}
+.tag svg.lucide{width:13px;height:13px;stroke-width:2.4}
+.dt{font-size:13px}
+.dt th,.dt td{padding:12px 10px}
+.dt th:first-child,.dt td:first-child{padding-left:20px}
+.dt th:last-child,.dt td:last-child{padding-right:20px}
+.dt small{color:var(--ink-3);font-size:12px}
+.dt .num{white-space:nowrap}
+.dt tr.tot td{background:var(--hover);font-weight:700}
+.tablewrap{overflow-x:auto}
+.rate{min-width:112px}
+.rate .prog{margin-top:6px}
+.bars{padding:14px 20px 18px;display:flex;flex-direction:column;gap:14px}
+.bar-row{display:grid;grid-template-columns:130px 1fr 92px;gap:14px;align-items:center}
+.bar-row .track{height:10px;border-radius:99px;background:var(--hover);overflow:hidden;position:relative}
+.bar-row .track i{display:block;height:100%;border-radius:99px}
+.bar-row .track .pace{position:absolute;top:-2px;width:2px;height:14px;background:var(--ink);border-radius:2px}
+.bar-row .val{text-align:right;font-weight:700}
+.bar-row .val small{color:var(--ink-3);font-weight:500}
+.note{padding:0 20px 18px;color:var(--ink-2);font-size:13px}
+.kpi .tag{white-space:nowrap}
+.two{align-items:start}
+.hd-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ink3{color:var(--ink-3)}
+.pgtabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px}
+.pgtabs .tab{border:1px solid var(--line);background:var(--card)}
+.pgtabs .tab.on{border-color:var(--ink);background:var(--ink);color:var(--bg)}
+a.mini{color:inherit;text-decoration:none;display:inline-block}
+a.mini.pri{color:#fff}
+.panel[hidden]{display:none}
+.menuwrap{position:relative;display:inline-block}
+.menu{position:absolute;right:0;top:calc(100% + 6px);min-width:250px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 24px 50px -18px rgba(0,0,0,.45);padding:6px;z-index:30;display:none}
+.menu.on{display:block}
+.menu .mi{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-radius:9px;text-align:left;font-weight:600;color:var(--ink);text-decoration:none}
+.menu .mi:hover{background:var(--hover)}
+.menu .mi small{display:block;color:var(--ink-3);font-weight:500;font-size:12px}
+.menu .mi svg.lucide{color:var(--ink-3);flex:none}
+.menu hr{border:0;border-top:1px solid var(--line);margin:6px 0}
+.menu .mlabel{font-size:12px;color:var(--ink-3);font-weight:600;padding:6px 10px 2px}
+.mveil{position:fixed;inset:0;background:rgba(8,18,16,.45);backdrop-filter:blur(3px);z-index:70;display:none;align-items:flex-start;justify-content:center;padding:6vh 16px;overflow:auto}
+.mveil.on{display:flex}
+.modal{width:640px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.modal.wide{width:820px}
+.modal .mh{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;border-bottom:1px solid var(--line)}
+.modal .mh h3{font-size:19px;font-weight:800}
+.modal .mh p{color:var(--ink-3);font-size:13px}
+.modal .mb{padding:20px 22px;display:grid;gap:16px}
+.modal .mf{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 22px;border-top:1px solid var(--line);flex-wrap:wrap}
+.modal .mf .r2{display:flex;gap:8px}
+.fld label,.fld .lbl{display:block;font-weight:600;font-size:13px;margin-bottom:6px}
+.fld input[type=text],.fld input[type=date],.fld input[type=number],.fld select,.fld textarea{width:100%;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+.fld input:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+.fld small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:5px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.fld .chk,.chk{display:flex!important;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:11px;font-weight:600;cursor:pointer}
+.chk:hover{background:var(--hover)}
+.chk small{margin-left:auto;color:var(--ink-3);font-weight:500}
+.chk input{flex:none}
+.sw{display:inline-flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
+.sw input{position:absolute;opacity:0;width:1px;height:1px}
+.sw .tg{width:38px;height:22px;border-radius:99px;background:var(--line);position:relative;transition:background .15s;flex:none}
+.sw .tg::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
+.sw input:checked+.tg{background:var(--pine)}
+.sw input:checked+.tg::after{transform:translateX(16px)}
+.sw input:focus-visible+.tg{outline:2px solid var(--pine);outline-offset:2px}
+.toast{position:fixed;left:50%;bottom:62px;transform:translateX(-50%) translateY(20px);background:var(--card);color:var(--ink);border:1px solid var(--line);padding:10px 16px;border-radius:12px;box-shadow:0 20px 50px -18px rgba(0,0,0,.5);font-weight:600;z-index:90;opacity:0;pointer-events:none;transition:all .2s;display:flex;gap:8px;align-items:center}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.toast svg.lucide{color:var(--mint)}
+.ch svg{display:block;width:100%;height:auto}
+.ch text{fill:var(--ink-3);font:500 11px "Plus Jakarta Sans",system-ui,sans-serif}
+.ch .gl{stroke:var(--line);stroke-width:1}
+.ch .zero{stroke:var(--ink-3);stroke-width:1}
+.chart.ch{padding:8px 16px 16px}
+.lgrow{display:flex;gap:14px;flex-wrap:wrap;padding:10px 20px 0}
+.legend i.dash{background:none;border-top:2px dashed var(--ink-3);height:0;width:14px;border-radius:0;vertical-align:3px}
+.donutrow{display:flex;align-items:center;gap:22px;padding:14px 20px 20px;flex-wrap:wrap}
+.donutrow .dl{flex:1;min-width:180px;display:grid;gap:8px}
+.donutrow .dl div{display:flex;align-items:center;gap:8px;font-size:13px}
+.donutrow .dl i{width:10px;height:10px;border-radius:3px;flex:none}
+.donutrow .dl b{margin-left:auto}
+.dlt{display:none;margin-top:8px;font-size:12.5px;color:var(--ink-3);align-items:center;gap:6px}
+body.cmp .dlt{display:flex}
+.insight .act a.mini{text-decoration:none;color:inherit}
+.insight .act a.mini.pri{color:#fff}
+[data-theme="dark"] .insight .act a.mini.pri{color:#04211d}
+.eform{display:grid;gap:8px}
+@media (max-width:760px){.bar-row{grid-template-columns:100px 1fr 76px;gap:10px}.row2,.row3{grid-template-columns:1fr}.menu{right:auto;left:0}}
+.psel{font:600 13.5px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.tab svg.lucide{width:16px;height:16px}
+.pgtabs .tab span{background:var(--hover);color:var(--ink-2)}
+.pgtabs .tab.on span{background:rgba(255,255,255,.18);color:inherit}
+.coa-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 10px;border-radius:11px;border:1px solid transparent}
+.coa-row:hover{background:var(--hover)}
+.coa-row.on{background:var(--pine-soft);border-color:var(--pine)}
+.coa-row .code{font:700 12.5px "Bricolage Grotesque";color:var(--ink-3);width:38px;flex:none}
+.coa-row b{margin-left:auto;font-variant-numeric:tabular-nums}
+.coa-grp{font-size:12px;color:var(--ink-3);font-weight:600;padding:8px 10px 2px}
+.jsel{width:100%;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.jin{width:100%;font:inherit;text-align:right;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.jin:focus-visible,.jsel:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+.iconbtn{width:30px;height:30px;border-radius:9px;display:inline-grid;place-items:center;color:var(--ink-2);border:1px solid var(--line)}
+.iconbtn:hover{background:var(--hover)}
+.iconbtn.del:hover{color:var(--coral);border-color:var(--coral)}
+.iconbtn svg.lucide{width:15px;height:15px}
+tr.sel td{background:var(--pine-soft)}
+.rcpt{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--pine)}
+.rcpt svg.lucide{width:15px;height:15px}
+.act2{white-space:nowrap}
+.dt td:first-child{white-space:nowrap}
+
+.kpis.k6{grid-template-columns:repeat(3,1fr)}
+@media (max-width:1100px){.kpis.k6{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.kpis.k6{grid-template-columns:1fr}}
+.grid.two>*{min-width:0}
+.cohort td:first-child{padding-left:20px}
+.cohort td:last-child{padding-right:20px}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav on" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+
+
+<section>
+  <div class="head">
+    <div><h1>Finance</h1><p>Cash and profit for October. 3PLs and agents owe you GH₵23.4k.</p></div>
+    <div class="hd-actions">
+      <button class="btn" data-open="expModal" data-mode="add"><i data-lucide="receipt"></i>Add expense</button>
+      <button class="btn" data-open="partnerPayModal"><i data-lucide="banknote"></i>Record payout</button>
+      <div class="menuwrap">
+        <button class="btn pri" data-menu aria-haspopup="true" aria-expanded="false"><i data-lucide="download"></i>Export<i data-lucide="chevron-down"></i></button>
+        <div class="menu">
+          <button class="mi" data-export="Profit and loss (CSV)"><i data-lucide="file-text"></i><span>Profit and loss<small>CSV</small></span></button>
+          <button class="mi" data-export="Agent collections (CSV)"><i data-lucide="file-text"></i><span>Agent aging and collections<small>CSV</small></span></button>
+          <button class="mi" data-export="General ledger (CSV)"><i data-lucide="file-text"></i><span>General ledger<small>CSV</small></span></button>
+          <button class="mi" data-export="Cash-flow forecast (CSV)"><i data-lucide="file-text"></i><span>Cash-flow forecast<small>CSV</small></span></button>
+          <hr>
+          <a class="mi" href="reports.html#t-products"><i data-lucide="bar-chart-3"></i><span>More in Reports<small>CSV and Excel, any dates</small></span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pgtabs" role="tablist" aria-label="Finance">
+    <button class="tab on" role="tab" data-tab="overview"><i data-lucide="layout-dashboard"></i>Overview</button>
+    <button class="tab" role="tab" data-tab="collections"><i data-lucide="hand-coins"></i>Agent collections <span>4</span></button>
+    <button class="tab" role="tab" data-tab="accounting"><i data-lucide="book-open"></i>Accounting</button>
+    <button class="tab" role="tab" data-tab="commissions"><i data-lucide="badge-percent"></i>Rep commissions <span>2</span></button>
+    <button class="tab" role="tab" data-tab="forecast"><i data-lucide="trending-up"></i>Cash-flow forecast</button>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div class="panel" id="p-overview">
+  <div class="grid kpis k6" style="margin-top:0">
+    <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="circle-dollar-sign"></i></div><div class="v num">GH₵92k</div><div class="l">Delivered revenue (Oct)</div><div class="s"><span>Target GH₵180k</span><span class="tag bad">Off track</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="wallet"></i></div><div class="v num">GH₵68.6k</div><div class="l">Cash received</div><div class="s"><span>75% of delivered revenue</span><span class="tag ok">Paid in</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="hourglass"></i></div><div class="v num">GH₵23.4k</div><div class="l">Cash outstanding</div><div class="s"><span>38 orders over 8 days</span><span class="tag warn">Chase</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="percent"></i></div><div class="v num"><span style="color:var(--coral)">−16%</span></div><div class="l">Net margin (Oct)</div><div class="s"><span>Target 35%</span><span class="tag bad">Loss GH₵14.3k</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="package-minus"></i></div><div class="v num"><span style="color:var(--coral)">−GH₵38</span></div><div class="l">Profit per delivered order (Oct)</div><div class="s"><span>Copybook set −GH₵57</span><span class="tag bad">Loss</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="fuel"></i></div><div class="v num">9 days</div><div class="l">Cash runway, in days of ads</div><div class="s"><span>GH₵41.9k cash ÷ GH₵4,500 ads a day</span><span class="tag warn">Tight</span></div></div>
+  </div>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="ct"><h3>Payout reconciliation</h3><span>Each payout against its order list. Expected cash = collected &minus; fees</span></div>
+      <div class="tablewrap"><table class="dt" style="margin-top:8px">
+        <thead><tr><th>Date</th><th>Paid by</th><th class="r">Paid in</th><th class="r">Expected after fees</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>11 Oct</td><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">LS</div><div><b>Logiswift</b> <span class="tag v">3PL</span></div></div></td><td class="r num"><b>GH₵9,880</b></td><td class="r num">44 orders<small style="display:block">GH₵10,720</small></td><td><span class="tag bad">Short GH₵840</span><small style="display:block">net of fees</small><div style="margin-top:6px"><button class="mini pri" data-toggle="miss" aria-expanded="false">Show the 3 orders</button></div></td></tr>
+          <tr id="miss" hidden><td colspan="5" style="background:var(--hover);padding:14px 20px">
+            <b style="font-size:13px">Orders on Logiswift's list that were not in the 11 Oct payout</b> <small class="ink3">GH₵840 net of fees: each order less the GH₵35 fee</small>
+            <div style="display:grid;gap:8px;margin-top:10px">
+              <div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">AN</div><div>#24098 · Ama Nkrumah<small>Delivered 6 Oct · Lapaz, Accra · GH₵249 less GH₵35 fee</small></div><b class="num" style="margin-left:auto">GH₵214</b></div>
+              <div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">KO</div><div>#24071 · Kojo Osei<small>Delivered 5 Oct · Accra · GH₵348 less GH₵35 fee</small></div><b class="num" style="margin-left:auto">GH₵313</b></div>
+              <div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">AA</div><div>#24063 · Akosua Amoah<small>Delivered 4 Oct · Tema · GH₵348 less GH₵35 fee</small></div><b class="num" style="margin-left:auto">GH₵313</b></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px"><button class="mini pri" data-link="messages.html">Message Logiswift</button><button class="mini" data-say="Marked as received. Sample only.">Mark as received</button></div>
+          </td></tr>
+          <tr><td>9 Oct</td><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">KA</div><div><b>Kofi Appiah</b> <span class="tag n">Agent</span></div></div></td><td class="r num"><b>GH₵3,136</b></td><td class="r num">14 orders<small style="display:block">GH₵3,136</small></td><td><span class="tag ok"><i data-lucide="check"></i>Matched</span></td></tr>
+          <tr><td>8 Oct</td><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">EB</div><div><b>Esi Badu</b> <span class="tag n">Agent</span></div></div></td><td class="r num"><b>GH₵2,688</b></td><td class="r num">12 orders<small style="display:block">GH₵2,688</small></td><td><span class="tag ok"><i data-lucide="check"></i>Matched</span></td></tr>
+          <tr><td>4 Oct</td><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">LS</div><div><b>Logiswift</b> <span class="tag v">3PL</span></div></div></td><td class="r num"><b>GH₵9,844</b></td><td class="r num">46 orders<small style="display:block">GH₵9,844</small></td><td><span class="tag ok"><i data-lucide="check"></i>Matched</span></td></tr>
+          <tr><td>2 Oct</td><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">KE</div><div><b>Kasapa Express</b> <span class="tag v">3PL</span></div></div></td><td class="r num"><b>GH₵1,752</b></td><td class="r num">8 orders<small style="display:block">GH₵1,752</small></td><td><span class="tag ok"><i data-lucide="check"></i>Matched</span></td></tr>
+        </tbody></table></div>
+    </div>
+    <div class="grid" style="gap:16px;align-content:start">
+      <div class="card">
+        <div class="ct"><h3>Unpaid delivered orders</h3><span>By age</span></div>
+        <div class="bars">
+        <div class="bar-row"><span>0–3 days <small style="color:var(--ink-3);display:block">31 orders</small></span><div class="track"><i style="width:100%;background:var(--mint)"></i></div><span class="val num">GH₵8,100</span></div>
+        <div class="bar-row"><span>4–7 days <small style="color:var(--ink-3);display:block">25 orders</small></span><div class="track"><i style="width:77%;background:var(--gold)"></i></div><span class="val num">GH₵6,200</span></div>
+        <div class="bar-row"><span>8–14 days <small style="color:var(--ink-3);display:block">26 orders</small></span><div class="track"><i style="width:81%;background:var(--coral)"></i></div><span class="val num">GH₵6,600</span></div>
+        <div class="bar-row"><span>15+ days <small style="color:var(--ink-3);display:block">12 orders</small></span><div class="track"><i style="width:31%;background:var(--coral)"></i></div><span class="val num">GH₵2,500</span></div>
+        </div>
+        <p class="note"><b class="num" style="color:var(--ink)">GH₵23,400</b> across 94 orders. 38 are older than 8 days.</p>
+      </div>
+      <div class="card">
+        <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 3 things</h3><span>Updated 06:42</span></div>
+        <div class="ins">
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="banknote"></i></div><div><b>Logiswift paid GH₵840 less than its order list</b><p>The 11 Oct payout covers 41 of the 44 orders on its list. 3 delivered orders are missing, GH₵840 net of fees.</p></div></div><div class="act"><button class="mini pri">Show the 3 orders</button><button class="mini">Dismiss</button></div></div>
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="hourglass"></i></div><div><b>38 orders are unpaid after 8 days</b><p>All 38 are with Logiswift, the oldest 18 days. They hold GH₵17.3k in total.</p></div></div><div class="act"><button class="mini pri" data-remind="Logiswift">Send reminders</button><button class="mini">Dismiss</button></div></div>
+        <div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="trending-up"></i></div><div><b>At 60% delivery success, October would be about GH₵1,900 profit</b><p>That is 467 delivered orders instead of 376, with the same ad spend. Today October runs at a GH₵14,300 loss.</p></div></div><div class="act"><button class="mini pri" data-link="index.html#orders">Show failed orders</button><button class="mini">Dismiss</button></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="ct"><h3>October order cohort</h3><span>Orders placed 1 to 17 Oct, projected at 34% yield</span></div>
+      <div class="tablewrap"><table class="dt cohort" style="margin-top:8px"><tbody>
+        <tr><td>Delivered orders</td><td class="r num">491</td></tr>
+        <tr><td>Revenue</td><td class="r num">GH₵120,300</td></tr>
+        <tr><td>Product cost</td><td class="r num">−GH₵14,700</td></tr>
+        <tr><td>Delivery fees</td><td class="r num">−GH₵15,900</td></tr>
+        <tr><td>Meta ad spend <small>₦112 = GH₵1</small></td><td class="r num">−GH₵76,200</td></tr>
+        <tr><td>Rep commission and rewards <small>about GH₵7.4 a delivered order</small></td><td class="r num">−GH₵3,600</td></tr>
+        <tr class="tot"><td>Profit before other expenses <small>8% margin</small></td><td class="r num">GH₵9,900</td></tr>
+      </tbody></table></div>
+      <p class="note">The −16% above counts only orders delivered by 17 Oct. Orders placed this month are still on the road, and when they close, October should make about GH₵9.9k.</p>
+    </div>
+    <div class="card">
+      <div class="ct"><h3>Cost of failed deliveries</h3><span>October · 1 to 17 Oct</span></div>
+      <div class="tablewrap"><table class="dt cohort" style="margin-top:8px"><tbody>
+        <tr><td>Fuel fee on failed orders <small style="display:block">Kofi Appiah 70 × GH₵5, Kwesi Amoah 22 × GH₵5</small></td><td class="r num">GH₵460</td></tr>
+        <tr><td>Returned units lost <small style="display:block">5 missing at Logiswift × GH₵30</small></td><td class="r num">GH₵150</td></tr>
+        <tr class="tot"><td>Total</td><td class="r num">GH₵610</td></tr>
+      </tbody></table></div>
+      <p class="note">This is the direct cash cost. It leaves out the lost sale and the ad spend behind each failed order.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3>Monthly profit and loss</h3><span>1–17 Sep is the same days last month <button class="mini" style="margin-left:8px" data-export="Profit and loss (CSV)">Export CSV</button></span></div>
+    <div class="tablewrap"><table class="dt" style="margin-top:8px">
+      <thead><tr><th>Line</th><th class="r">Aug</th><th class="r">Sep</th><th class="r">1–17 Sep</th><th class="r">1–17 Oct</th></tr></thead>
+      <tbody>
+          <tr><td><b>Delivered revenue</b></td><td class="r num"><b>GH₵166,000</b></td><td class="r num"><b>GH₵173,000</b></td><td class="r num"><b>GH₵96,000</b></td><td class="r num"><b>GH₵92,000</b></td></tr>
+          <tr><td>Product cost</td><td class="r num">GH₵28,200<small style="display:block">17% of revenue</small></td><td class="r num">GH₵29,400<small style="display:block">17% of revenue</small></td><td class="r num">GH₵16,300<small style="display:block">17% of revenue</small></td><td class="r num">GH₵12,000<small style="display:block">13% of revenue</small></td></tr>
+          <tr><td>Delivery fees</td><td class="r num">GH₵20,300<small style="display:block">12% of revenue</small></td><td class="r num">GH₵21,200<small style="display:block">12% of revenue</small></td><td class="r num">GH₵11,800<small style="display:block">12% of revenue</small></td><td class="r num">GH₵12,200<small style="display:block">13% of revenue</small></td></tr>
+          <tr><td>Meta ad spend, converted to GH₵ <small style="display:block">₦112 = GH₵1</small></td><td class="r num">GH₵91,300<small style="display:block">55% of revenue</small></td><td class="r num">GH₵95,200<small style="display:block">55% of revenue</small></td><td class="r num">GH₵52,800<small style="display:block">55% of revenue</small></td><td class="r num">GH₵76,200<small style="display:block">83% of revenue</small></td></tr>
+          <tr><td>Rep commission and rewards <small style="display:block">GH₵8 a delivered order + upsell reward</small></td><td class="r num"><span class="ink3">Not split out</span><small style="display:block">Not split out. Booked as before (D5)</small></td><td class="r num"><span class="ink3">Not split out</span></td><td class="r num"><span class="ink3">Not split out</span></td><td class="r num">GH₵2,768<small style="display:block">3% of revenue</small></td></tr>
+          <tr><td>Other expenses</td><td class="r num">GH₵5,500<small style="display:block">3% of revenue</small></td><td class="r num">GH₵5,900<small style="display:block">3% of revenue</small></td><td class="r num">GH₵3,300<small style="display:block">3% of revenue</small></td><td class="r num">GH₵3,100<small style="display:block">3% of revenue</small></td></tr>
+          <tr><td><b>Net profit</b></td><td class="r num"><b>GH₵20,700</b></td><td class="r num"><b>GH₵21,300</b></td><td class="r num"><b>GH₵11,800</b></td><td class="r num"><span style="color:var(--coral)"><b>−GH₵14,268</b></span></td></tr>
+          <tr><td><b>Net margin</b> <small style="color:var(--ink-3)">target 35%</small></td><td class="r"><span class="tag warn">12%</span></td><td class="r"><span class="tag warn">12%</span></td><td class="r"><span class="tag warn">12%</span></td><td class="r"><span class="tag bad">−16%</span></td></tr>
+      </tbody></table></div>
+    <p class="note">Aug and Sep stay as booked. Rep commission was not a separate line then, so it is not split out for those months.</p>
+  </div>
+  </div>
+
+  <!-- AGENT COLLECTIONS -->
+  <div class="panel" id="p-collections" hidden>
+    <div class="grid kpis" style="margin-top:0">
+      <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="hourglass"></i></div><div class="v num">GH₵23.4k</div><div class="l">Cash with agents and 3PLs</div><div class="s"><span>94 delivered orders unpaid</span><span class="tag warn">Chase</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="alarm-clock"></i></div><div class="v num">GH₵9,100</div><div class="l">Overdue, 8 days or more</div><div class="s"><span>38 orders, all Logiswift</span><span class="tag bad">Overdue</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="clipboard-check"></i></div><div class="v num" id="pendCount">4</div><div class="l">Collections to verify</div><div class="s"><span id="pendAmt">GH₵14,335</span><span class="tag warn">Pending</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="ban"></i></div><div class="v num" id="blockedCount">0</div><div class="l">Blocked from deliveries</div><div class="s"><span>Block stops new assignments</span><span class="tag n">None</span></div></div>
+    </div>
+
+    <div class="grid two">
+      <div class="card"><div class="ct"><h3>Cash exposure by partner</h3><span>GH₵ held, by age of the oldest orders</span></div>
+        <div id="lgExposure"></div><div class="chart ch" id="chExposure"></div>
+        <p class="note" style="padding-top:0">Logiswift holds 74% of the cash. Its 8 days or older orders are GH₵9,100.</p>
+      </div>
+      <div class="card"><div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 2 things</h3><span>Updated 06:42</span></div>
+        <div class="ins">
+          <div class="insight"><div class="h"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="hourglass"></i></div><div><b>Logiswift owes GH₵17,300, the oldest order is 18 days old</b><p>They paid GH₵9,880 on 11 Oct against an expected GH₵10,720.</p></div></div><div class="act"><button class="mini pri" data-remind="Logiswift">Send reminder</button><button class="mini" data-goto="#agingCard">See aging</button></div></div>
+          <div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="file-warning"></i></div><div><b>Esi Badu sent a collection with no receipt</b><p>GH₵1,344 for 6 orders. Ask for the MoMo screenshot before you verify.</p></div></div><div class="act"><button class="mini pri" data-review="1">Review collection</button><button class="mini" data-remind="Esi Badu">Ask for receipt</button></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px" id="agingCard">
+      <div class="ct"><h3>Agent aging</h3><span>Unpaid delivered orders, GH₵</span></div>
+      <div style="display:flex;gap:12px;align-items:center;padding:12px 20px 4px;flex-wrap:wrap">
+        <label class="sw"><input type="checkbox" id="overdueOnly"><span class="tg"></span>Show overdue only <small class="ink3" style="font-weight:500">8 days or more</small></label>
+        <button class="btn" style="margin-left:auto" data-export="Agent aging (CSV)"><i data-lucide="download"></i>Export CSV</button>
+      </div>
+      <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>Partner</th><th class="r">Cash held</th><th class="r">0–3 days</th><th class="r">4–7 days</th><th class="r">8–14 days</th><th class="r">15+ days</th><th>Oldest</th><th>Status</th><th class="r">Actions</th></tr></thead><tbody id="agingBody">
+        <tr data-overdue="1" data-p="Logiswift"><td><div class="who"><div class="a" style="background:var(--coral-soft);color:var(--coral)">LS</div><div><b>Logiswift</b> <span class="tag v">3PL</span></div></div></td><td class="r num"><b>GH₵17,300</b></td><td class="r num">GH₵3,500</td><td class="r num">GH₵4,700</td><td class="r num" style="color:var(--coral)">GH₵6,600</td><td class="r num" style="color:var(--coral)">GH₵2,500</td><td><span class="tag bad">18 days</span></td><td class="st"><span class="tag ok">Active</span></td><td class="r act2"><button class="mini pri" data-remind="Logiswift">Send reminder</button> <button class="mini" data-block>Block</button></td></tr>
+        <tr data-p="Kofi Appiah"><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">KA</div><div><b>Kofi Appiah</b> <span class="tag n">Agent</span></div></div></td><td class="r num"><b>GH₵2,900</b></td><td class="r num">GH₵2,900</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td><span class="tag n">3 days</span></td><td class="st"><span class="tag ok">Active</span></td><td class="r act2"><button class="mini" data-remind="Kofi Appiah">Send reminder</button> <button class="mini" data-block>Block</button></td></tr>
+        <tr data-p="Esi Badu"><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">EB</div><div><b>Esi Badu</b> <span class="tag n">Agent</span></div></div></td><td class="r num"><b>GH₵2,100</b></td><td class="r num">GH₵1,200</td><td class="r num">GH₵900</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td><span class="tag n">4 days</span></td><td class="st"><span class="tag ok">Active</span></td><td class="r act2"><button class="mini" data-remind="Esi Badu">Send reminder</button> <button class="mini" data-block>Block</button></td></tr>
+        <tr data-p="Kwesi Amoah"><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)">KW</div><div><b>Kwesi Amoah</b> <span class="tag n">Agent</span></div></div></td><td class="r num"><b>GH₵1,100</b></td><td class="r num">GH₵500</td><td class="r num">GH₵600</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td><span class="tag n">5 days</span></td><td class="st"><span class="tag ok">Active</span></td><td class="r act2"><button class="mini" data-remind="Kwesi Amoah">Send reminder</button> <button class="mini" data-block>Block</button></td></tr>
+        <tr data-p="Kasapa Express"><td><div class="who"><div class="a" style="background:var(--pine-soft);color:var(--pine)">KE</div><div><b>Kasapa Express</b> <span class="tag v">3PL</span></div></div></td><td class="r num"><b>GH₵0</b></td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td><span class="tag n">None</span></td><td class="st"><span class="tag ok">Active</span></td><td class="r act2"><button class="mini" data-remind="Kasapa Express">Send reminder</button> <button class="mini" data-block>Block</button></td></tr>
+        <tr class="tot"><td>All partners</td><td class="r num">GH₵23,400</td><td class="r num">GH₵8,100</td><td class="r num">GH₵6,200</td><td class="r num">GH₵6,600</td><td class="r num">GH₵2,500</td><td></td><td></td><td></td></tr>
+      </tbody></table></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="ct"><h3>Collections to verify</h3><span>Money a partner says they paid in</span></div>
+      <div style="display:flex;gap:12px;align-items:center;padding:12px 20px 4px;flex-wrap:wrap">
+        <b id="selCount" class="ink3" style="font-weight:600">Select collections to reconcile in bulk</b>
+        <button class="btn pri" style="margin-left:auto;opacity:.5" id="bulkBtn" disabled><i data-lucide="check-check"></i>Reconcile selected</button>
+      </div>
+      <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th style="width:36px"><input type="checkbox" id="selAll" aria-label="Select all pending"></th><th>Date</th><th>From</th><th class="r">Orders</th><th class="r">Amount</th><th>Receipt</th><th>Status</th><th class="r">Action</th></tr></thead><tbody id="collBody"></tbody></table></div>
+    </div>
+  </div>
+
+  <!-- ACCOUNTING -->
+  <div class="panel" id="p-accounting" hidden>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+      <div class="seg" id="acctSeg" style="margin-top:0" role="group" aria-label="Accounting section"><button class="on" data-a="gl">General ledger</button><button data-a="stmt">Statements</button><button data-a="prod">Profit by product</button><button data-a="exp">Expenses</button></div>
+      <div style="margin-left:auto"><button class="btn pri" data-open="jeModal"><i data-lucide="plus"></i>New journal entry</button></div>
+    </div>
+
+    <!-- general ledger -->
+    <div class="asec" id="a-gl">
+      <div class="grid" style="grid-template-columns:1fr 1.6fr;align-items:start">
+        <div class="card"><div class="ct"><h3>Chart of accounts</h3><span>Pick an account</span></div>
+          <div id="coa" style="padding:10px 12px 14px"></div>
+          <p class="note" style="padding-top:0" id="tbNote"></p>
+        </div>
+        <div class="card"><div class="ct"><h3 id="ledTitle">Account ledger</h3><span id="ledType"></span></div>
+          <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>Date</th><th>Entry</th><th>Description</th><th class="r">Debit</th><th class="r">Credit</th><th class="r">Balance</th></tr></thead><tbody id="ledBody"></tbody></table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- statements -->
+    <div class="asec" id="a-stmt" hidden>
+      <div class="grid two" style="margin-top:0">
+        <div class="card"><div class="ct"><h3>Income statement</h3><span>1 to 17 Oct <button class="mini" style="margin-left:8px" data-export="Income statement (CSV)">Export</button></span></div>
+          <div class="tablewrap"><table class="dt" style="margin-top:8px"><tbody>
+            <tr><td><b>Delivered revenue</b></td><td class="r num"><b>GH₵92,000</b></td></tr>
+            <tr><td>Product cost</td><td class="r num">−GH₵12,000</td></tr>
+            <tr class="tot"><td>Gross profit <small>87% margin</small></td><td class="r num">GH₵80,000</td></tr>
+            <tr><td>Delivery fees</td><td class="r num">−GH₵12,200</td></tr>
+            <tr><td>Meta ad spend <small>₦112 = GH₵1</small></td><td class="r num">−GH₵76,200</td></tr>
+            <tr><td>Rep commission and rewards <small>GH₵8 a delivered order + upsell reward</small></td><td class="r num">−GH₵2,768</td></tr>
+            <tr><td>Other expenses</td><td class="r num">−GH₵3,100</td></tr>
+            <tr class="tot"><td>Net result <small>−16% margin</small></td><td class="r num" style="color:var(--coral)">−GH₵14,268</td></tr>
+          </tbody></table></div>
+        </div>
+        <div class="card"><div class="ct"><h3>Balance sheet</h3><span>At 17 Oct <button class="mini" style="margin-left:8px" data-export="Balance sheet (CSV)">Export</button></span></div>
+          <div class="tablewrap"><table class="dt" style="margin-top:8px"><tbody>
+            <tr><td><b>Assets</b></td><td></td></tr>
+            <tr><td>Cash at bank and MoMo</td><td class="r num">GH₵41,900</td></tr>
+            <tr><td>Cash with delivery partners</td><td class="r num">GH₵23,400</td></tr>
+            <tr><td>Inventory</td><td class="r num">GH₵41,600</td></tr>
+            <tr class="tot"><td>Total assets</td><td class="r num">GH₵106,900</td></tr>
+            <tr><td><b>Liabilities</b></td><td></td></tr>
+            <tr><td>Supplier payables</td><td class="r num">GH₵9,800</td></tr>
+            <tr><td>Commissions payable</td><td class="r num">GH₵2,168</td></tr>
+            <tr><td><b>Equity</b></td><td></td></tr>
+            <tr><td>Owner's equity <small style="display:block">Set so the books balance with the October rep commission booked in 5050</small></td><td class="r num">GH₵109,200</td></tr>
+            <tr><td>October result</td><td class="r num" style="color:var(--coral)">−GH₵14,268</td></tr>
+            <tr class="tot"><td>Liabilities and equity</td><td class="r num">GH₵106,900</td></tr>
+          </tbody></table></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px"><div class="ct"><h3>Monthly profit and loss</h3><span>October runs to 17 Oct</span></div>
+        <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>Line</th><th class="r">Aug</th><th class="r">Sep</th><th class="r">1–17 Sep</th><th class="r">1–17 Oct</th></tr></thead><tbody>
+          <tr><td><b>Delivered revenue</b></td><td class="r num"><b>GH₵166,000</b></td><td class="r num"><b>GH₵173,000</b></td><td class="r num"><b>GH₵96,000</b></td><td class="r num"><b>GH₵92,000</b></td></tr>
+          <tr><td>Product cost</td><td class="r num">GH₵28,200</td><td class="r num">GH₵29,400</td><td class="r num">GH₵16,300</td><td class="r num">GH₵12,000</td></tr>
+          <tr><td>Delivery fees</td><td class="r num">GH₵20,300</td><td class="r num">GH₵21,200</td><td class="r num">GH₵11,800</td><td class="r num">GH₵12,200</td></tr>
+          <tr><td>Meta ad spend <small>₦112 = GH₵1</small></td><td class="r num">GH₵91,300</td><td class="r num">GH₵95,200</td><td class="r num">GH₵52,800</td><td class="r num">GH₵76,200</td></tr>
+          <tr><td>Rep commission and rewards</td><td class="r num ink3">Not split out</td><td class="r num ink3">Not split out</td><td class="r num ink3">Not split out</td><td class="r num">GH₵2,768</td></tr>
+          <tr><td>Other expenses</td><td class="r num">GH₵5,500</td><td class="r num">GH₵5,900</td><td class="r num">GH₵3,300</td><td class="r num">GH₵3,100</td></tr>
+          <tr class="tot"><td>Net profit</td><td class="r num">GH₵20,700</td><td class="r num">GH₵21,300</td><td class="r num">GH₵11,800</td><td class="r num" style="color:var(--coral)">−GH₵14,268</td></tr>
+        </tbody></table></div>
+      </div>
+    </div>
+
+    <!-- profit by product -->
+    <div class="asec" id="a-prod" hidden>
+      <div class="grid two" style="margin-top:0">
+        <div class="card"><div class="ct"><h3>Profit by product, last 3 months</h3><span>GH₵ before other expenses</span></div><div id="lgTrend"></div><div class="chart ch" id="chTrend"></div></div>
+        <div class="card"><div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 1 thing</h3><span>Updated 06:42</span></div>
+          <div class="ins"><div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="trending-down"></i></div><div><b>The copybook set lost GH₵17,300 in October</b><p>Each delivered set carries about GH₵241 of ads, GH₵34 of fees and GH₵30 of product cost against a GH₵249 price. The add-ons still earn GH₵10,200.</p></div></div><div class="act"><a class="mini pri" href="reports.html#t-products">Open profit report</a><button class="mini">Dismiss</button></div></div></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px"><div class="ct"><h3>Profit by product</h3><span>October · 1 to 17 Oct</span></div>
+        <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>Product</th><th class="r">Delivered</th><th class="r">Revenue</th><th class="r">Product cost</th><th class="r">Fees</th><th class="r">Meta ads</th><th class="r">Profit</th><th class="r">Margin</th></tr></thead><tbody>
+          <tr><td><b>Magic Groove copybook set</b></td><td class="r num">306</td><td class="r num">GH₵76,100</td><td class="r num">GH₵9,200</td><td class="r num">GH₵10,500</td><td class="r num">GH₵73,700</td><td class="r num" style="color:var(--coral)"><b>−GH₵17,300</b></td><td class="r"><span class="tag bad">−23%</span></td></tr>
+          <tr><td><b>Refill pens</b></td><td class="r num">172</td><td class="r num">GH₵6,900</td><td class="r num">GH₵1,100</td><td class="r num">GH₵900</td><td class="r num">GH₵0</td><td class="r num"><b>GH₵4,900</b></td><td class="r"><span class="tag ok">71%</span></td></tr>
+          <tr><td><b>Pencil grip trainer</b></td><td class="r num">89</td><td class="r num">GH₵3,100</td><td class="r num">GH₵600</td><td class="r num">GH₵400</td><td class="r num">GH₵0</td><td class="r num"><b>GH₵2,100</b></td><td class="r"><span class="tag ok">68%</span></td></tr>
+          <tr><td><b>Smart Parent's Home Study Guide</b></td><td class="r num">58</td><td class="r num">GH₵3,400</td><td class="r num">GH₵200</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td class="r num"><b>GH₵3,200</b></td><td class="r"><span class="tag ok">94%</span></td></tr>
+          <tr><td><b>Dictamni cream</b></td><td class="r num">10</td><td class="r num">GH₵2,500</td><td class="r num">GH₵900</td><td class="r num">GH₵400</td><td class="r num">GH₵2,100</td><td class="r num" style="color:var(--coral)"><b>−GH₵900</b></td><td class="r"><span class="tag bad">−36%</span></td></tr>
+          <tr><td>Meta spend with no product</td><td class="r num">0</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td class="r num">GH₵0</td><td class="r num">GH₵400</td><td class="r num" style="color:var(--coral)"><b>−GH₵400</b></td><td></td></tr>
+          <tr><td>Rep commission and rewards</td><td></td><td></td><td></td><td></td><td></td><td class="r num" style="color:var(--coral)"><b>−GH₵2,768</b></td><td></td></tr>
+          <tr><td>Other expenses</td><td></td><td></td><td></td><td></td><td></td><td class="r num" style="color:var(--coral)"><b>−GH₵3,100</b></td><td></td></tr>
+          <tr class="tot"><td>Net result</td><td class="r num">376</td><td class="r num">GH₵92,000</td><td class="r num">GH₵12,000</td><td class="r num">GH₵12,200</td><td class="r num">GH₵76,200</td><td class="r num" style="color:var(--coral)">−GH₵14,268</td><td class="r"><span class="tag bad">−16%</span></td></tr>
+        </tbody></table></div>
+      </div>
+    </div>
+
+    <!-- expenses -->
+    <div class="asec" id="a-exp" hidden>
+      <div class="grid two" style="margin-top:0">
+        <div class="card"><div class="ct"><h3>Expenses</h3><span>October · other expenses, not ads or fees</span></div>
+          <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Paid from</th><th class="r">Amount</th><th class="r">Actions</th></tr></thead><tbody id="expBody"></tbody></table></div>
+          <div style="padding:12px 20px 18px;display:flex;align-items:center;gap:12px"><button class="btn" data-open="expModal" data-mode="add"><i data-lucide="plus"></i>Add expense</button><span class="ink3" style="margin-left:auto">Total <b class="num" style="color:var(--ink)" id="expTotal">GH₵3,100</b></span></div>
+        </div>
+        <div class="card"><div class="ct"><h3>By category</h3><span id="expCatNote">GH₵3,100</span></div><div class="bars" id="expCats"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMMISSIONS -->
+  <div class="panel" id="p-commissions" hidden>
+    <div class="grid kpis" style="margin-top:0">
+      <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="badge-percent"></i></div><div class="v num" id="pendTotal">GH₵2,168</div><div class="l">Commission owed</div><div class="s"><span>2 reps · account 2020</span><span class="tag warn">To pay</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="check-circle-2"></i></div><div class="v num">GH₵1,440</div><div class="l">Paid this month</div><div class="s"><span>2 payouts, 1 and 9 Oct</span><span class="tag ok">Paid</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="phone-call"></i></div><div class="v num">GH₵8</div><div class="l">Per delivered confirmed order</div><div class="s"><span>Plus 10% upsell reward</span><span class="tag n">Rule</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="gift"></i></div><div class="v num">GH₵0</div><div class="l">Target rewards earned</div><div class="s"><span>Earned at month close</span><span class="tag n">Pending</span></div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="ct"><h3>Rep commissions</h3><span>October · GH₵8 × delivered confirmed orders + 10% of upsell value</span></div>
+      <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>Rep</th><th class="r">Delivered</th><th class="r">Commission</th><th class="r">Upsell reward</th><th class="r">Earned</th><th class="r">Paid in Oct</th><th class="r">Owed</th><th>Target reward</th><th>Last payout</th><th class="r">Action</th></tr></thead><tbody id="comBody">
+        <tr data-rep="Adwoa Darko" data-pend="2034"><td><div class="who"><div class="a" style="background:var(--mint-soft);color:#14975f">AD</div><div><b>Adwoa Darko</b> <span class="tag n">Human</span></div></div></td><td class="r num">253</td><td class="r num">GH₵2,024</td><td class="r num">GH₵610</td><td class="r num">GH₵2,634</td><td class="r num">GH₵600</td><td class="r num pendcell"><b>GH₵2,034</b></td><td><span class="tag n">Not yet</span> <small>60% of target</small></td><td>9 Oct, MoMo</td><td class="r"><button class="mini pri" data-pay>Record payout</button></td></tr>
+        <tr data-rep="Nana Kyei" data-pend="134"><td><div class="who"><div class="a" style="background:var(--gold-soft);color:var(--gold)">NK</div><div><b>Nana Kyei</b> <span class="tag n">Human</span></div></div></td><td class="r num">13</td><td class="r num">GH₵104</td><td class="r num">GH₵30</td><td class="r num">GH₵134</td><td class="r num">GH₵0</td><td class="r num pendcell"><b>GH₵134</b></td><td><span class="tag n">None yet</span> <small>26% of target</small></td><td class="ink3">No payout yet</td><td class="r"><button class="mini pri" data-pay>Record payout</button></td></tr>
+        <tr><td><div class="who"><div class="a" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="bot" style="width:15px;height:15px"></i></div><div><b>Confirm agent</b> <span class="tag v">AI agent</span></div></div></td><td class="r num">110</td><td class="r ink3" colspan="4">No payout for AI agents</td><td class="r num ink3">GH₵0</td><td class="ink3">None</td><td></td><td></td></tr>
+      </tbody></table></div>
+      <p class="note">Commission and upsell reward are paid only when the order is delivered. Adwoa's 1 Oct payout cleared her September balance.</p>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="ct"><h3>Payout history</h3><span>Commissions and rewards paid</span></div>
+      <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>Date</th><th>Rep</th><th>Method</th><th>Reference</th><th class="r">Amount</th></tr></thead><tbody id="payHist">
+        <tr><td>9 Oct</td><td><b>Adwoa Darko</b></td><td>MoMo</td><td>October commission</td><td class="r num">GH₵600</td></tr>
+        <tr><td>1 Oct</td><td><b>Adwoa Darko</b></td><td>MoMo</td><td>September balance</td><td class="r num">GH₵840</td></tr>
+      </tbody></table></div>
+    </div>
+  </div>
+
+  <!-- FORECAST -->
+  <div class="panel" id="p-forecast" hidden>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+      <div class="seg" id="fcSeg" style="margin-top:0" role="group" aria-label="Forecast pace"><button class="on" data-f="1">Today's pace, 48% delivery success</button><button data-f="2">If delivery success reaches 60%</button></div>
+      <button class="btn" style="margin-left:auto" data-export="Cash-flow forecast (CSV)"><i data-lucide="download"></i>Export CSV</button>
+    </div>
+    <div class="grid kpis" style="margin-top:0">
+      <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="wallet"></i></div><div class="v num">GH₵41.9k</div><div class="l">Cash at bank and MoMo today</div><div class="s"><span>17 Oct</span><span class="tag n">Start</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="arrow-down-to-line"></i></div><div class="v num" id="fcIn">-</div><div class="l">Expected in, 30 days</div><div class="s"><span>Partner payouts and new deliveries</span><span class="tag n">Forecast</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="arrow-up-from-line"></i></div><div class="v num" id="fcOut">-</div><div class="l">Expected out, 30 days</div><div class="s"><span>Ads, fees, stock, commissions</span><span class="tag n">Forecast</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="flag"></i></div><div class="v num" id="fcEnd">-</div><div class="l">Cash on 16 Nov</div><div class="s"><span id="fcLow">-</span><span class="tag" id="fcTag">-</span></div></div>
+    </div>
+    <div class="grid two">
+      <div class="card"><div class="ct"><h3>Cash balance, next 30 days</h3><span>17 Oct to 16 Nov</span></div><div id="lgFc"></div><div class="chart ch" id="chFc"></div></div>
+      <div class="card"><div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 1 thing</h3><span>Updated 06:42</span></div>
+        <div class="ins"><div class="insight"><div class="h"><div class="ico" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="alert-triangle"></i></div><div><b id="fcInsTitle">-</b><p id="fcInsBody">-</p></div></div><div class="act"><button class="mini pri" data-remind="Logiswift">Chase Logiswift now</button><a class="mini" href="marketing.html">Review ad budget</a></div></div></div>
+        <div style="padding:0 20px 18px;color:var(--ink-2);font-size:13px"><b style="color:var(--ink)">What the forecast assumes</b><br>Ad spend GH₵4,500 a day. Logiswift pays GH₵9,300 on 27 Oct, agents within 4 days. New deliveries are paid after 7 days on average. Supplier payables of GH₵5,000 on 31 Oct and rep commissions on 25 Oct.</div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="ct"><h3>Week by week</h3><span>GH₵</span></div>
+      <div class="tablewrap"><table class="dt" style="margin-top:8px"><thead><tr><th>Week</th><th class="r">Money in</th><th class="r">Money out</th><th class="r">Net</th><th class="r">Cash at end</th></tr></thead><tbody id="fcWeeks"></tbody></table></div>
+    </div>
+  </div>
+</section>
+
+<!-- Add / edit expense -->
+<div class="mveil" id="expModal" role="dialog" aria-modal="true" aria-labelledby="expTitle">
+  <div class="modal">
+    <div class="mh"><div><h3 id="expTitle">Add expense</h3><p>Money you spent that is not ad spend or a delivery fee.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="row2"><div class="fld"><label for="eDate">Date</label><input type="date" id="eDate" value="2026-10-17"></div><div class="fld"><label for="eAmt">Amount (GH₵)</label><input type="number" id="eAmt" placeholder="0.00"></div></div>
+      <div class="row2"><div class="fld"><label for="eCat">Category</label><select id="eCat"><option>Packaging</option><option>Software</option><option>Office and internet</option><option>Transport</option><option>Photography</option><option>Bank charges</option><option>Other</option></select></div><div class="fld"><label for="ePaid">Paid from</label><select id="ePaid"><option>MoMo</option><option>Bank</option><option>Cash</option></select></div></div>
+      <div class="fld"><label for="eDesc">Description</label><input type="text" id="eDesc" placeholder="What was it for?"></div>
+    </div>
+    <div class="mf"><span class="ink3" style="font-size:12.5px">Posts to account 5100 Operating Expenses.</span><div class="r2"><button class="btn" data-close>Cancel</button><button class="btn pri" id="eSave">Save expense</button></div></div>
+  </div>
+</div>
+
+<!-- New journal entry -->
+<div class="mveil" id="jeModal" role="dialog" aria-modal="true" aria-labelledby="jeTitle">
+  <div class="modal wide">
+    <div class="mh"><div><h3 id="jeTitle">New journal entry</h3><p>Debits and credits must be equal before you can post.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="row3"><div class="fld"><label for="jDate">Date</label><input type="date" id="jDate" value="2026-10-17"></div><div class="fld"><label for="jRef">Reference</label><input type="text" id="jRef" value="JE-0413"></div><div class="fld"><label for="jDesc">Description</label><input type="text" id="jDesc" placeholder="For example, Logiswift payout 11 Oct"></div></div>
+      <div class="tablewrap"><table class="dt"><thead><tr><th>Account</th><th class="r" style="width:150px">Debit</th><th class="r" style="width:150px">Credit</th><th style="width:44px"></th></tr></thead><tbody id="jeLines"></tbody></table></div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button class="btn" id="jeAdd"><i data-lucide="plus"></i>Add line</button><span style="margin-left:auto" class="num">Debit <b id="jeD">0</b> · Credit <b id="jeC">0</b></span><span class="tag n" id="jeState">Empty</span></div>
+    </div>
+    <div class="mf"><span class="ink3" style="font-size:12.5px">Needs at least two lines.</span><div class="r2"><button class="btn" data-close>Cancel</button><button class="btn pri" id="jePost" disabled style="opacity:.5">Post entry</button></div></div>
+  </div>
+</div>
+
+<!-- Review collection -->
+<div class="mveil" id="revModal" role="dialog" aria-modal="true" aria-labelledby="revTitle">
+  <div class="modal">
+    <div class="mh"><div><h3 id="revTitle">Review collection</h3><p id="revSub"></p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="row2">
+        <div><div class="fld"><span class="lbl">Receipt</span></div><div id="revReceipt" style="border:1px dashed var(--line);border-radius:14px;min-height:170px;display:grid;place-items:center;text-align:center;padding:14px;background:var(--hover);color:var(--ink-2)"></div></div>
+        <div id="revFacts" style="display:grid;gap:10px;align-content:start"></div>
+      </div>
+      <div id="rejectBox" hidden class="fld"><div class="row2"><div><label for="rejWhy">Rejection reason</label><select id="rejWhy"><option>Amount does not match the order list</option><option>Receipt is unclear or edited</option><option>No receipt attached</option><option>Payment not found in MoMo or bank</option><option>Other</option></select></div><div><label for="rejNote">Note to the partner</label><input type="text" id="rejNote" placeholder="Optional"></div></div></div>
+    </div>
+    <div class="mf"><button class="btn" id="revReject" style="color:var(--coral)"><i data-lucide="x-circle"></i>Reject</button><div class="r2"><button class="btn" data-close>Close</button><button class="btn pri" id="revVerify"><i data-lucide="check"></i>Verify and reconcile</button></div></div>
+  </div>
+</div>
+
+<!-- Partner payout received -->
+<div class="mveil" id="partnerPayModal" role="dialog" aria-modal="true" aria-labelledby="ppTitle">
+  <div class="modal">
+    <div class="mh"><div><h3 id="ppTitle">Record a payout from a partner</h3><p>Money a delivery agent or 3PL paid you.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="row2"><div class="fld"><label for="ppWho">Paid by</label><select id="ppWho"><option>Logiswift</option><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Kasapa Express</option></select></div><div class="fld"><label for="ppAmt">Amount (GH₵)</label><input type="number" id="ppAmt" placeholder="0.00"></div></div>
+      <div class="row2"><div class="fld"><label for="ppDate">Date</label><input type="date" id="ppDate" value="2026-10-17"></div><div class="fld"><label for="ppRef">Reference or receipt</label><input type="text" id="ppRef" placeholder="MoMo ref or bank ref"></div></div>
+      <p class="ink3" style="font-size:12.5px">Expected cash is the cash collected minus the partner's fees. The amount you enter is matched to the oldest unpaid orders for this partner, net of their fees. Any gap opens a finding.</p>
+    </div>
+    <div class="mf"><span></span><div class="r2"><button class="btn" data-close>Cancel</button><button class="btn pri" id="ppSave">Record payout</button></div></div>
+  </div>
+</div>
+
+<!-- Rep commission payout -->
+<div class="mveil" id="repPayModal" role="dialog" aria-modal="true" aria-labelledby="rpTitle">
+  <div class="modal">
+    <div class="mh"><div><h3 id="rpTitle">Record rep payout</h3><p id="rpSub"></p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="row2"><div class="fld"><label for="rpAmt">Amount (GH₵)</label><input type="number" id="rpAmt"><small id="rpHint"></small></div><div class="fld"><label for="rpMethod">Method</label><select id="rpMethod"><option>MoMo</option><option>Bank transfer</option><option>Cash</option></select></div></div>
+      <div class="row2"><div class="fld"><label for="rpDate">Date</label><input type="date" id="rpDate" value="2026-10-17"></div><div class="fld"><label for="rpRef">Reference</label><input type="text" id="rpRef" placeholder="MoMo ref"></div></div>
+            <div class="fld"><label for="rpNote">Note</label><input type="text" id="rpNote" placeholder="Optional"></div>
+    </div>
+    <div class="mf"><span class="ink3" style="font-size:12.5px">Posts to 2020 Commissions payable.</span><div class="r2"><button class="btn" data-close>Cancel</button><button class="btn pri" id="rpSave">Record payout</button></div></div>
+  </div>
+</div>
+
+
+    </main>
+  </div>
+</div>
+
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+<script>
+lucide.createIcons();
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.href = 'index.html#' + b.dataset.go; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+/* ---------- shared helpers ---------- */
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const gh = n => (n < 0 ? '−' : '') + 'GH₵' + fmt(Math.abs(n));
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+function fit(arr, total) {
+  const sum = arr.reduce((a, b) => a + b, 0);
+  const out = arr.map(v => Math.round(v * total / sum));
+  let diff = total - out.reduce((a, b) => a + b, 0), i = 0;
+  while (diff !== 0) { out[i % out.length] += diff > 0 ? 1 : -1; diff += diff > 0 ? -1 : 1; i += 3; }
+  return out;
+}
+let toastT;
+function toast(msg) {
+  let t = $('#toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  t.innerHTML = '<i data-lucide="check-circle-2"></i>' + msg;
+  lucide.createIcons();
+  t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600);
+}
+/* menus */
+$$('.menuwrap').forEach(w => {
+  const b = w.querySelector('[data-menu]'), m = w.querySelector('.menu');
+  if (!b || !m) return;
+  b.onclick = e => { e.stopPropagation(); const was = m.classList.contains('on'); $$('.menu.on').forEach(x => x.classList.remove('on')); if (!was) m.classList.add('on'); b.setAttribute('aria-expanded', String(!was)); };
+  m.onclick = e => e.stopPropagation();
+});
+document.addEventListener('click', () => $$('.menu.on').forEach(x => x.classList.remove('on')));
+/* modals */
+function openModal(id) { const m = document.getElementById(id); m.classList.add('on'); const f = m.querySelector('input,select,textarea,button.pri'); if (f) setTimeout(() => f.focus(), 30); }
+function closeModals() { $$('.mveil.on').forEach(x => x.classList.remove('on')); }
+$$('.mveil').forEach(v => v.addEventListener('mousedown', e => { if (e.target === v) closeModals(); }));
+$$('[data-close]').forEach(b => b.onclick = closeModals);
+$$('[data-open]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); $$('.menu.on').forEach(x => x.classList.remove('on')); openModal(b.dataset.open); }));
+/* ---------- svg charts ---------- */
+let CW = 640;
+function niceMax(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const m = v / p; const st=[1,1.2,1.6,2,2.4,3,4,5,6,8,10]; const n = st.find(x => m <= x + 1e-9); return n * p; }
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+function svgWrap(h, inner, label) { return `<svg viewBox="0 0 ${CW} ${h}" role="img" aria-label="${esc(label)}">${inner}</svg>`; }
+function grid(h, pl, pr, pt, pb, max, min, yFmt) {
+  let s = '';
+  for (let i = 0; i <= 4; i++) {
+    const v = min + (max - min) * i / 4, y = pt + (h - pt - pb) * (1 - i / 4);
+    s += `<line class="gl" x1="${pl}" x2="${CW - pr}" y1="${y}" y2="${y}"/><text x="${pl - 8}" y="${y + 4}" text-anchor="end">${yFmt(v)}</text>`;
+  }
+  return s;
+}
+function lineChart(o) {
+  CW = o.w || 640;
+  const h = o.h || 230, pl = 46, pr = 14, pt = 12, pb = 28, n = o.labels.length;
+  const all = o.series.flatMap(s => s.data).concat(o.ref ? [o.ref.value] : []);
+  const max = o.max || niceMax(Math.max(...all) * 1.05), min = 0, yFmt = o.yFmt || fmt;
+  const x = i => pl + (CW - pl - pr) * i / (n - 1), y = v => pt + (h - pt - pb) * (1 - (v - min) / (max - min));
+  let s = grid(h, pl, pr, pt, pb, max, min, yFmt);
+  const every = o.every || Math.ceil(n / 9);
+  o.labels.forEach((l, i) => { if (i % every === 0 || i === n - 1) s += `<text x="${x(i)}" y="${h - 8}" text-anchor="${i === n - 1 && i % every ? 'end' : 'middle'}">${esc(l)}</text>`; });
+  if (o.ref) s += `<line x1="${pl}" x2="${CW - pr}" y1="${y(o.ref.value)}" y2="${y(o.ref.value)}" stroke="var(--ink-3)" stroke-dasharray="5 4"/><text x="${CW - pr}" y="${y(o.ref.value) - 5}" text-anchor="end">${esc(o.ref.label)}</text>`;
+  o.series.forEach(se => {
+    const pts = se.data.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
+    if (se.area) s += `<path d="${pts}L${x(n - 1)} ${y(0)}L${x(0)} ${y(0)}Z" style="fill:${se.color};opacity:.10"/>`;
+    s += `<path d="${pts}" fill="none" style="stroke:${se.color}" stroke-width="${se.dash ? 1.8 : 2.4}" stroke-linejoin="round" stroke-linecap="round" ${se.dash ? 'stroke-dasharray="5 4"' : ''}/>`;
+    if (!se.dash) s += `<circle cx="${x(n - 1)}" cy="${y(se.data[n - 1])}" r="4" style="fill:${se.color}" stroke="var(--card)" stroke-width="2"/>`;
+  });
+  return svgWrap(h, s, o.label || 'Line chart');
+}
+function barChart(o) {
+  CW = o.w || 640;
+  const h = o.h || 230, pl = 46, pr = 10, pt = 12, pb = 28, n = o.labels.length, yFmt = o.yFmt || fmt;
+  const max = o.max || niceMax(Math.max(...o.data, o.ref ? o.ref.value : 0) * 1.08);
+  const y = v => pt + (h - pt - pb) * (1 - v / max), bw = (CW - pl - pr) / n;
+  let s = grid(h, pl, pr, pt, pb, max, 0, yFmt);
+  const every = o.every || Math.ceil(n / 9);
+  o.data.forEach((v, i) => {
+    const w = Math.min(bw * .62, 34), cx = pl + bw * (i + .5);
+    s += `<rect x="${cx - w / 2}" y="${y(v)}" width="${w}" height="${y(0) - y(v)}" rx="4" style="fill:${(o.colors && o.colors[i]) || o.color || 'var(--pine)'}"/>`;
+    if (i % every === 0 || i === n - 1) s += `<text x="${cx}" y="${h - 8}" text-anchor="middle">${esc(o.labels[i])}</text>`;
+  });
+  if (o.ref) s += `<line x1="${pl}" x2="${CW - pr}" y1="${y(o.ref.value)}" y2="${y(o.ref.value)}" stroke="var(--ink)" stroke-dasharray="5 4"/><text x="${CW - pr}" y="${y(o.ref.value) - 5}" text-anchor="end" style="fill:var(--ink-2)">${esc(o.ref.label)}</text>`;
+  return svgWrap(h, s, o.label || 'Bar chart');
+}
+function groupBars(o) {
+  CW = o.w || 640;
+  const h = o.h || 240, pl = 52, pr = 10, pt = 14, pb = 28, n = o.labels.length, yFmt = o.yFmt || fmt;
+  const vals = o.series.flatMap(s => s.data), hi = Math.max(...vals, 1), lo = Math.min(...vals, 0);
+  const steps = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 25000, 50000, 100000, 200000, 250000, 500000, 1000000];
+  const step = steps.find(st => Math.ceil(hi / st) + Math.ceil(-lo / st) <= 5) || 1000000;
+  const max = Math.ceil(hi / step) * step, min = -Math.ceil(-lo / step) * step;
+  const y = v => pt + (h - pt - pb) * (1 - (v - min) / (max - min)), gw = (CW - pl - pr) / n, k = o.series.length;
+  let s = '';
+  for (let v = min; v <= max + 1e-6; v += step) s += `<line class="gl" x1="${pl}" x2="${CW - pr}" y1="${y(v)}" y2="${y(v)}"/><text x="${pl - 8}" y="${y(v) + 4}" text-anchor="end">${yFmt(v)}</text>`;
+  if (min < 0) s += `<line class="zero" x1="${pl}" x2="${CW - pr}" y1="${y(0)}" y2="${y(0)}"/>`;
+  const bw = Math.min(30, gw * .7 / k);
+  o.labels.forEach((l, i) => {
+    const gx = pl + gw * (i + .5) - bw * k / 2;
+    o.series.forEach((se, j) => {
+      const v = se.data[i], top = Math.min(y(v), y(0)), ht = Math.abs(y(v) - y(0));
+      s += `<rect x="${gx + j * bw + 1}" y="${top}" width="${bw - 2}" height="${Math.max(ht, 1)}" rx="3" style="fill:${se.color}"/>`;
+    });
+    s += `<text x="${pl + gw * (i + .5)}" y="${h - 8}" text-anchor="middle">${esc(l)}</text>`;
+  });
+  return svgWrap(h, s, o.label || 'Grouped bar chart');
+}
+function donut(o) {
+  const tot = o.parts.reduce((a, p) => a + p.value, 0), R = 62, r = 42, c = 80;
+  let a0 = -Math.PI / 2, s = '';
+  o.parts.forEach(p => {
+    const a1 = a0 + 2 * Math.PI * p.value / tot, large = a1 - a0 > Math.PI ? 1 : 0;
+    const pt = (a, rad) => `${(c + rad * Math.cos(a)).toFixed(2)} ${(c + rad * Math.sin(a)).toFixed(2)}`;
+    s += `<path d="M${pt(a0, R)}A${R} ${R} 0 ${large} 1 ${pt(a1 - .012, R)}L${pt(a1 - .012, r)}A${r} ${r} 0 ${large} 0 ${pt(a0, r)}Z" style="fill:${p.color}"/>`;
+    a0 = a1;
+  });
+  s += `<text x="${c}" y="${c - 2}" text-anchor="middle" style="fill:var(--ink);font:800 19px 'Bricolage Grotesque',sans-serif">${esc(o.top)}</text><text x="${c}" y="${c + 15}" text-anchor="middle">${esc(o.sub)}</text>`;
+  return `<svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="${esc(o.label || 'Donut chart')}" style="flex:none">${s}</svg>`;
+}
+function stackH(o) { /* horizontal stacked bars: rows[{label, parts[]}], colors[] */
+  const rh = 34, pl = 118, pr = 70, pt = 6, h = pt + o.rows.length * rh + 6, max = niceMax(Math.max(...o.rows.map(r => r.parts.reduce((a, b) => a + b, 0))) * 1.02);
+  let s = '';
+  o.rows.forEach((r, i) => {
+    const y = pt + i * rh; let x = pl;
+    s += `<text x="${pl - 10}" y="${y + 17}" text-anchor="end" style="fill:var(--ink);font-weight:600">${esc(r.label)}</text>`;
+    r.parts.forEach((v, j) => { const w = (CW - pl - pr) * v / max; if (w > 0) s += `<rect x="${x}" y="${y + 6}" width="${w}" height="18" ${j === 0 ? '' : ''} style="fill:${o.colors[j]}"/>`; x += w; });
+    const tot = r.parts.reduce((a, b) => a + b, 0);
+    s += `<text x="${x + 8}" y="${y + 19}" style="fill:var(--ink);font-weight:700">${esc(o.fmt ? o.fmt(tot) : fmt(tot))}</text>`;
+  });
+  return svgWrap(h, s, o.label || 'Stacked bar chart');
+}
+function legend(items) { return '<div class="lgrow legend">' + items.map(i => `<span><i class="${i.dash ? 'dash' : ''}" style="${i.dash ? '' : 'background:' + i.color}"></i>${esc(i.name)}</span>`).join('') + '</div>'; }
+
+/* ---------- tabs ---------- */
+function showTab(id) {
+  $$('.pgtabs .tab').forEach(t => t.classList.toggle('on', t.dataset.tab === id));
+  $$('.panel').forEach(p => p.hidden = p.id !== 'p-' + id);
+  if (id === 'forecast') drawForecast();
+}
+$$('.pgtabs .tab').forEach(t => t.onclick = () => showTab(t.dataset.tab));
+function showAcct(id) {
+  $$('#acctSeg button').forEach(b => b.classList.toggle('on', b.dataset.a === id));
+  $$('.asec').forEach(s => s.hidden = s.id !== 'a-' + id);
+}
+$$('#acctSeg button').forEach(b => b.addEventListener('click', () => showAcct(b.dataset.a)));
+$$('[data-export]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); $$('.menu.on').forEach(m => m.classList.remove('on')); toast('Exported ' + b.dataset.export); }));
+$$('[data-goto]').forEach(b => b.onclick = () => $(b.dataset.goto).scrollIntoView({ behavior: 'smooth', block: 'start' }));
+/* overview helpers (kept from the old page) */
+$$('[data-toggle]').forEach(b => b.onclick = () => { const r = document.getElementById(b.dataset.toggle); r.hidden = !r.hidden; b.setAttribute('aria-expanded', String(!r.hidden)); b.textContent = r.hidden ? 'Show the 3 orders' : 'Hide the 3 orders'; });
+$$('.insight .mini.pri').forEach(b => { if (b.textContent === 'Show the 3 orders') b.onclick = () => $('[data-toggle]').click(); });
+/* ---------- agent collections ---------- */
+$$('[data-remind]').forEach(b => b.addEventListener('click', () => toast('Reminder sent to ' + b.dataset.remind + ' on WhatsApp')));
+$('#overdueOnly').onchange = e => $$('#agingBody tr[data-p]').forEach(r => r.hidden = e.target.checked && !r.dataset.overdue);
+function setBlocked() { const n = $$('#agingBody tr.blocked').length; $('#blockedCount').textContent = n; }
+$$('[data-block]').forEach(b => b.onclick = () => {
+  const tr = b.closest('tr'), on = !tr.classList.contains('blocked'); tr.classList.toggle('blocked', on);
+  tr.querySelector('.st').innerHTML = on ? '<span class="tag bad">Blocked</span><small style="display:block">No new orders</small>' : '<span class="tag ok">Active</span>';
+  b.textContent = on ? 'Unblock' : 'Block'; setBlocked(); toast(tr.dataset.p + (on ? ' is blocked from deliveries' : ' can take deliveries again'));
+});
+const COLL = [
+  { id: 1, date: '16 Oct', from: 'Kofi Appiah', orders: 9, amt: 2016, rc: 'momo-kofi-16oct.jpg', st: 'Pending', list: '#24041 to #24089, Kumasi. GH₵2,241 collected less GH₵225 fees' },
+  { id: 2, date: '16 Oct', from: 'Esi Badu', orders: 6, amt: 1344, rc: null, st: 'Pending', list: '#24052 to #24093, Accra. GH₵1,494 collected less GH₵150 fees' },
+  { id: 3, date: '15 Oct', from: 'Kwesi Amoah', orders: 5, amt: 1095, rc: 'momo-kwesi-15oct.jpg', st: 'Pending', list: '#24060 to #24086, Takoradi. GH₵1,245 collected less GH₵150 fees' },
+  { id: 4, date: '11 Oct', from: 'Logiswift', orders: 41, amt: 9880, rc: 'logiswift-payout-11oct.pdf', st: 'Pending', list: '41 of 44 orders on their list. Expected GH₵10,720 after fees, so GH₵840 (net of fees) is short.', short: 840 },
+  { id: 5, date: '9 Oct', from: 'Kofi Appiah', orders: 14, amt: 3136, rc: 'momo-kofi-9oct.jpg', st: 'Verified' },
+  { id: 6, date: '8 Oct', from: 'Esi Badu', orders: 12, amt: 2688, rc: 'momo-esi-8oct.jpg', st: 'Verified' }
+];
+const stTag = c => c.st === 'Verified' ? '<span class="tag ok"><i data-lucide="check"></i>Verified</span>' : c.st === 'Rejected' ? `<span class="tag bad">Rejected</span><small style="display:block">${esc(c.why || '')}</small>` : '<span class="tag warn">Pending</span>' + (c.short ? ' <span class="tag bad">Short GH₵840 net of fees</span>' : '');
+function drawColl() {
+  $('#collBody').innerHTML = COLL.map(c => `<tr data-id="${c.id}" class="${c._sel ? 'sel' : ''}"><td>${c.st === 'Pending' ? `<input type="checkbox" data-sel="${c.id}" ${c._sel ? 'checked' : ''} aria-label="Select ${esc(c.from)} ${c.date}">` : ''}</td><td>${c.date}</td><td><b>${c.from}</b></td><td class="r num">${c.orders}</td><td class="r num"><b>GH₵${fmt(c.amt)}</b></td><td>${c.rc ? `<span class="rcpt"><i data-lucide="paperclip"></i>${c.rc.split('.').pop().toUpperCase()}</span>` : '<span class="tag warn">No receipt</span>'}</td><td>${stTag(c)}</td><td class="r">${c.st === 'Pending' ? `<button class="mini pri" data-review="${c.id}">Review</button>` : `<button class="mini" data-review="${c.id}">View</button>`}</td></tr>`).join('');
+  const p = COLL.filter(c => c.st === 'Pending'), n = p.length;
+  $('#pendCount').textContent = n; $('#pendAmt').textContent = 'GH₵' + fmt(p.reduce((a, c) => a + c.amt, 0));
+  const sel = COLL.filter(c => c._sel).length;
+  $('#selCount').textContent = sel ? sel + ' selected' : 'Select collections to reconcile in bulk';
+  $('#bulkBtn').disabled = !sel; $('#bulkBtn').style.opacity = sel ? 1 : .5;
+  $('#selAll').checked = n > 0 && sel === n;
+  lucide.createIcons();
+  $$('[data-sel]').forEach(i => i.onchange = () => { COLL.find(c => c.id == i.dataset.sel)._sel = i.checked; drawColl(); });
+  $$('#collBody [data-review]').forEach(b => b.onclick = () => openReview(+b.dataset.review));
+}
+$('#selAll').onchange = e => { COLL.forEach(c => { if (c.st === 'Pending') c._sel = e.target.checked; }); drawColl(); };
+$('#bulkBtn').onclick = () => { const k = COLL.filter(c => c._sel); k.forEach(c => { c.st = 'Verified'; c._sel = false; }); drawColl(); toast(k.length + ' collections reconciled'); };
+let rv = null;
+function openReview(id) {
+  rv = COLL.find(c => c.id === id); const c = rv;
+  $('#revTitle').textContent = (c.st === 'Pending' ? 'Review collection from ' : 'Collection from ') + c.from;
+  $('#revSub').textContent = c.date + ' · ' + c.orders + ' orders · GH₵' + fmt(c.amt);
+  $('#revReceipt').innerHTML = c.rc ? `<div><i data-lucide="image" style="width:34px;height:34px;color:var(--ink-3)"></i><div style="font-weight:700;margin-top:6px">${esc(c.rc)}</div><small class="ink3">Tap to open full size</small></div>` : '<div><i data-lucide="file-x" style="width:34px;height:34px;color:var(--gold)"></i><div style="font-weight:700;margin-top:6px">No receipt attached</div><small class="ink3">Ask for a MoMo screenshot before you verify.</small></div>';
+  $('#revFacts').innerHTML = `<div class="drv"><small>Amount paid</small><b>GH₵${fmt(c.amt)}</b></div><div class="drv"><small>Orders covered</small><b>${c.orders}</b><em>${esc(c.list || 'Matched to order list')}</em></div>` + (c.short ? '<div class="drv" style="border-color:var(--coral)"><small>Short by</small><b style="color:var(--coral)">GH₵840</b><em>3 delivered orders missing, net of fees</em></div>' : '');
+  $('#rejectBox').hidden = true; $('#revReject').innerHTML = '<i data-lucide="x-circle"></i>Reject';
+  const pend = c.st === 'Pending'; $('#revVerify').style.display = pend ? '' : 'none'; $('#revReject').style.display = pend ? '' : 'none';
+  lucide.createIcons(); openModal('revModal');
+}
+$$('[data-review]').forEach(b => { if (!b.closest('#collBody')) b.onclick = () => openReview(+b.dataset.review); });
+$('#revVerify').onclick = () => { rv.st = 'Verified'; closeModals(); drawColl(); toast('Collection from ' + rv.from + ' verified'); };
+$('#revReject').onclick = () => {
+  if ($('#rejectBox').hidden) { $('#rejectBox').hidden = false; $('#revReject').innerHTML = '<i data-lucide="x-circle"></i>Confirm rejection'; lucide.createIcons(); return; }
+  rv.st = 'Rejected'; rv.why = $('#rejWhy').value; closeModals(); drawColl(); toast('Collection rejected. ' + rv.from + ' is told why.');
+};
+$('#ppSave').onclick = () => { closeModals(); toast('Payout recorded from ' + $('#ppWho').value); };
+/* exposure chart */
+$('#lgExposure').innerHTML = legend([{ name: '0–3 days', color: 'var(--mint)' }, { name: '4–7 days', color: 'var(--gold)' }, { name: '8–14 days', color: 'var(--coral)' }, { name: '15+ days', color: 'var(--violet)' }]);
+$('#chExposure').innerHTML = stackH({ rows: [{ label: 'Logiswift', parts: [3500, 4700, 6600, 2500] }, { label: 'Kofi Appiah', parts: [2900, 0, 0, 0] }, { label: 'Esi Badu', parts: [1200, 900, 0, 0] }, { label: 'Kwesi Amoah', parts: [500, 600, 0, 0] }, { label: 'Kasapa Express', parts: [0, 0, 0, 0] }], colors: ['var(--mint)', 'var(--gold)', 'var(--coral)', 'var(--violet)'], fmt: v => 'GH₵' + fmt(v), label: 'Cash held by each partner, split by age' });
+/* ---------- accounting: ledger ---------- */
+const ACC = [
+  { c: '1010', n: 'Cash in Hand', t: 'Asset', b: 41900, d: 1, e: [['16 Oct', 'JE-0411', 'Deposit from Kofi Appiah, net of fees', 3136, 0], ['12 Oct', 'JE-0402', 'Logiswift payout', 9880, 0], ['9 Oct', 'JE-0398', 'Meta ad top-up', 0, 12000], ['4 Oct', 'JE-0385', 'Logiswift payout', 9844, 0]] },
+  { c: '1015', n: 'Cash in Transit', t: 'Asset', b: 23400, d: 1, e: [['17 Oct', 'JE-0412', 'Delivered orders, all partners', 6200, 0], ['16 Oct', 'JE-0411', 'Kofi Appiah deposit, net of fees', 0, 3136], ['12 Oct', 'JE-0402', 'Logiswift paid in', 0, 9880]] },
+  { c: '1200', n: 'Inventory', t: 'Asset', b: 41600, d: 1, e: [['14 Oct', 'JE-0407', 'Copybook sets received, Tema', 8800, 0], ['10 Oct', 'JE-0400', 'Cost of goods delivered', 0, 4200]] },
+  { c: '2040', n: 'Unapplied partner receipts', t: 'Liability', b: 0, d: 0, e: [] },
+  { c: '2050', n: 'Supplier payables', t: 'Liability', b: 9800, d: 0, e: [['14 Oct', 'JE-0407', 'Copybook sets, supplier invoice', 0, 8800], ['6 Oct', 'JE-0392', 'Pen supplier payment', 3000, 0]] },
+  { c: '2020', n: 'Commissions Payable', t: 'Liability', b: 2168, d: 0, e: [['17 Oct', 'JE-0410', 'October commissions and upsell rewards earned', 0, 2768], ['9 Oct', 'JE-0399', 'Paid Adwoa Darko, October commission', 600, 0], ['1 Oct', 'JE-0381', 'Paid Adwoa Darko, September balance', 840, 0]] },
+  { c: '3010', n: "Owner's equity", t: 'Equity', b: 109200, d: 0, e: [['1 Oct', 'JE-0380', 'Opening balance, set so the books balance with the 5050 rep commission', 0, 109200]] },
+  { c: '4010', n: 'Product Sales Revenue', t: 'Revenue', b: 92000, d: 0, e: [['17 Oct', 'JE-0412', 'Delivered orders, 17 Oct', 0, 6100], ['16 Oct', 'JE-0409', 'Delivered orders, 16 Oct', 0, 5900], ['15 Oct', 'JE-0406', 'Delivered orders, 15 Oct', 0, 5600]] },
+  { c: '5010', n: 'Cost of Goods Sold', t: 'Expense', b: 12000, d: 1, e: [['17 Oct', 'JE-0412', 'Stock cost of 25 delivered orders', 800, 0], ['16 Oct', 'JE-0409', 'Stock cost of 24 delivered orders', 770, 0]] },
+  { c: '5050', n: 'Sales Rep Commission', t: 'Expense', b: 2768, d: 1, e: [['17 Oct', 'JE-0410', 'October commissions and upsell rewards earned', 2768, 0]] },
+  { c: '5070', n: 'Delivery fees', t: 'Expense', b: 12200, d: 1, e: [['17 Oct', 'JE-0412', 'Delivery fees, 17 Oct', 740, 0], ['16 Oct', 'JE-0409', 'Delivery fees, 16 Oct', 700, 0]] },
+  { c: '5080', n: 'Meta ad spend', t: 'Expense', b: 76200, d: 1, e: [['16 Oct', 'JE-0408', 'Meta daily spend, ₦530k at ₦112', 4730, 0], ['15 Oct', 'JE-0405', 'Meta daily spend, ₦540k', 4820, 0], ['14 Oct', 'JE-0403', 'Meta daily spend, ₦500k', 4460, 0]] },
+  { c: '5100', n: 'Operating Expenses', t: 'Expense', b: 3100, d: 1, e: [['15 Oct', 'EXP-021', 'Bank charges', 310, 0], ['12 Oct', 'EXP-020', 'Product photos, refill pens', 700, 0]] }
+];
+let curAcc = '5080';
+function drawCoa() {
+  let last = '', h = '';
+  ACC.forEach(a => { if (a.t !== last) { h += `<div class="coa-grp">${a.t === 'Asset' ? 'Assets' : a.t === 'Liability' ? 'Liabilities' : a.t === 'Equity' ? 'Equity' : a.t === 'Revenue' ? 'Revenue' : 'Expenses'}</div>`; last = a.t; }
+    h += `<button class="coa-row ${a.c === curAcc ? 'on' : ''}" data-acc="${a.c}"><span class="code">${a.c}</span>${a.n}<b>GH₵${fmt(a.b)}</b></button>`; });
+  $('#coa').innerHTML = h;
+  $$('#coa [data-acc]').forEach(b => b.onclick = () => { curAcc = b.dataset.acc; drawCoa(); drawLedger(); });
+  const D = ACC.filter(a => a.d).reduce((s, a) => s + a.b, 0), C = ACC.filter(a => !a.d).reduce((s, a) => s + a.b, 0);
+  $('#tbNote').innerHTML = `Trial balance: debits <b class="num" style="color:var(--ink)">GH₵${fmt(D)}</b>, credits <b class="num" style="color:var(--ink)">GH₵${fmt(C)}</b>. ${D === C ? '<span class="tag ok">Balanced</span>' : '<span class="tag bad">Out of balance</span>'}`;
+}
+function drawLedger() {
+  const a = ACC.find(x => x.c === curAcc);
+  $('#ledTitle').textContent = a.c + ' · ' + a.n; $('#ledType').textContent = a.t + ' account';
+  const net = a.e.reduce((s, r) => s + (a.d ? r[3] - r[4] : r[4] - r[3]), 0); let bal = a.b - net;
+  let h = `<tr><td>1 to 13 Oct</td><td></td><td class="ink3">${a.c === '3010' ? 'Opening balance' : 'Brought forward'}</td><td></td><td></td><td class="r num">GH₵${fmt(bal)}</td></tr>`;
+  a.e.slice().reverse().forEach(r => { bal += a.d ? r[3] - r[4] : r[4] - r[3]; h += `<tr><td>${r[0]}</td><td><span class="tag n">${r[1]}</span></td><td>${esc(r[2])}</td><td class="r num">${r[3] ? 'GH₵' + fmt(r[3]) : ''}</td><td class="r num">${r[4] ? 'GH₵' + fmt(r[4]) : ''}</td><td class="r num"><b>GH₵${fmt(bal)}</b></td></tr>`; });
+  h += `<tr class="tot"><td colspan="5">Closing balance, 17 Oct</td><td class="r num">GH₵${fmt(a.b)}</td></tr>`;
+  $('#ledBody').innerHTML = h;
+}
+/* journal entry */
+function jeLine(d, c) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td><select class="jsel" aria-label="Account">${ACC.map(a => `<option>${a.c} ${a.n}</option>`).join('')}</select></td><td><input class="jin" type="number" min="0" placeholder="0.00" value="${d || ''}" aria-label="Debit"></td><td><input class="jin" type="number" min="0" placeholder="0.00" value="${c || ''}" aria-label="Credit"></td><td><button class="iconbtn del" aria-label="Remove line"><i data-lucide="trash-2"></i></button></td>`;
+  $('#jeLines').appendChild(tr); lucide.createIcons();
+  tr.querySelectorAll('input').forEach(i => i.oninput = jeCheck);
+  tr.querySelector('.del').onclick = () => { tr.remove(); jeCheck(); };
+  return tr;
+}
+function jeCheck() {
+  let d = 0, c = 0; const rows = $$('#jeLines tr');
+  rows.forEach(r => { const i = r.querySelectorAll('input'); d += +i[0].value || 0; c += +i[1].value || 0; });
+  $('#jeD').textContent = 'GH₵' + fmt(d); $('#jeC').textContent = 'GH₵' + fmt(c);
+  const ok = rows.length >= 2 && d > 0 && Math.abs(d - c) < .005, st = $('#jeState');
+  st.className = 'tag ' + (ok ? 'ok' : d || c ? 'bad' : 'n'); st.textContent = ok ? 'Balanced' : d || c ? 'Out by GH₵' + fmt(Math.abs(d - c)) : 'Empty';
+  $('#jePost').disabled = !ok; $('#jePost').style.opacity = ok ? 1 : .5;
+}
+$('#jeAdd').onclick = () => { jeLine(); jeCheck(); };
+function jeReset(withSample) { $('#jeLines').innerHTML = ''; const a = jeLine(withSample ? 1500 : '', ''), b = jeLine('', withSample ? 1500 : ''); if (withSample) { a.querySelector('select').selectedIndex = 7; b.querySelector('select').selectedIndex = 0; } jeCheck(); }
+$$('[data-open="jeModal"]').forEach(b => b.addEventListener('click', () => jeReset(false)));
+$('#jePost').onclick = () => { closeModals(); toast('Journal entry ' + $('#jRef').value + ' posted'); $('#jRef').value = 'JE-0414'; };
+/* ---------- expenses ---------- */
+const EXPS = [
+  { d: '15 Oct', cat: 'Bank charges', desc: 'Monthly MoMo and bank fees', paid: 'Bank', amt: 310 },
+  { d: '12 Oct', cat: 'Photography', desc: 'Product photos, new refill pens', paid: 'MoMo', amt: 700 },
+  { d: '10 Oct', cat: 'Other', desc: 'Call rep training session, September', paid: 'MoMo', amt: 500 },
+  { d: '8 Oct', cat: 'Transport', desc: 'Drop-off to Logiswift hub, Tema', paid: 'Cash', amt: 180 },
+  { d: '5 Oct', cat: 'Software', desc: 'Zapier and Canva', paid: 'Bank', amt: 410 },
+  { d: '3 Oct', cat: 'Packaging', desc: 'Branded mailer boxes, 200', paid: 'MoMo', amt: 620 },
+  { d: '1 Oct', cat: 'Office and internet', desc: 'MTN fibre, October', paid: 'Bank', amt: 380 }
+];
+const CATC = ['var(--pine)', 'var(--violet)', 'var(--gold)', 'var(--coral)', 'var(--mint)', 'var(--ink-3)'];
+let editIdx = -1;
+function drawExps() {
+  $('#expBody').innerHTML = EXPS.map((e, i) => `<tr><td>${e.d}</td><td><span class="tag n">${e.cat}</span></td><td>${esc(e.desc)}</td><td>${e.paid}</td><td class="r num"><b>GH₵${fmt(e.amt)}</b></td><td class="r act2"><button class="iconbtn" data-ed="${i}" aria-label="Edit expense"><i data-lucide="pencil"></i></button> <button class="iconbtn del" data-del="${i}" aria-label="Delete expense"><i data-lucide="trash-2"></i></button></td></tr>`).join('');
+  const tot = EXPS.reduce((s, e) => s + e.amt, 0); $('#expTotal').textContent = 'GH₵' + fmt(tot); $('#expCatNote').textContent = 'GH₵' + fmt(tot);
+  const cats = {}; EXPS.forEach(e => cats[e.cat] = (cats[e.cat] || 0) + e.amt);
+  const rows = Object.entries(cats).sort((a, b) => b[1] - a[1]), mx = rows.length ? rows[0][1] : 1;
+  $('#expCats').innerHTML = rows.map((r, i) => `<div class="bar-row" style="grid-template-columns:150px 1fr 80px"><span>${r[0]}</span><div class="track"><i style="width:${r[1] / mx * 100}%;background:${CATC[i % 6]}"></i></div><span class="val num">GH₵${fmt(r[1])}</span></div>`).join('');
+  lucide.createIcons();
+  $$('[data-ed]').forEach(b => b.onclick = () => { editIdx = +b.dataset.ed; const e = EXPS[editIdx]; $('#expTitle').textContent = 'Edit expense'; $('#eAmt').value = e.amt; $('#eCat').value = e.cat; $('#ePaid').value = e.paid; $('#eDesc').value = e.desc; $('#eSave').textContent = 'Save changes'; openModal('expModal'); });
+  $$('[data-del]').forEach(b => b.onclick = () => shellConfirm('Delete 1 expense?', EXPS[+b.dataset.del].desc + ' will be deleted. The ledger entry is reversed.', 'Delete 1 expense', () => { const e = EXPS.splice(+b.dataset.del, 1)[0]; drawExps(); toast('Deleted ' + e.desc); }));
+}
+$$('[data-open="expModal"]').forEach(b => b.addEventListener('click', () => { editIdx = -1; $('#expTitle').textContent = 'Add expense'; $('#eSave').textContent = 'Save expense'; $('#eAmt').value = ''; $('#eDesc').value = ''; }));
+$('#eSave').onclick = () => {
+  const amt = +$('#eAmt').value; if (!amt) { $('#eAmt').focus(); return; }
+  const rec = { d: editIdx >= 0 ? EXPS[editIdx].d : '17 Oct', cat: $('#eCat').value, desc: $('#eDesc').value || $('#eCat').value, paid: $('#ePaid').value, amt };
+  if (editIdx >= 0) EXPS[editIdx] = rec; else EXPS.unshift(rec);
+  closeModals(); drawExps(); toast(editIdx >= 0 ? 'Expense updated' : 'Expense added'); if (!$('#p-accounting').hidden) showAcct('exp'); else { showTab('accounting'); showAcct('exp'); }
+};
+/* ---------- commissions ---------- */
+let payRow = null;
+$$('[data-pay]').forEach(b => b.onclick = () => {
+  payRow = b.closest('tr'); const p = +payRow.dataset.pend;
+  $('#rpTitle').textContent = 'Record payout for ' + payRow.dataset.rep; $('#rpSub').textContent = 'Pending commission GH₵' + fmt(p);
+  $('#rpAmt').value = p; $('#rpHint').textContent = 'Pending: GH₵' + fmt(p) + '. Pay less to part-pay.';
+  $('#rpRef').value = '';
+  openModal('repPayModal');
+});
+$('#rpSave').onclick = () => {
+  const amt = +$('#rpAmt').value; if (!amt) { $('#rpAmt').focus(); return; }
+  const left = Math.max(+payRow.dataset.pend - amt, 0); payRow.dataset.pend = left;
+  const rew = 0;
+  payRow.querySelector('.pendcell').innerHTML = '<b>GH₵' + fmt(left) + '</b>';
+  if (!left) payRow.querySelector('[data-pay]').outerHTML = '<span class="tag ok">Paid</span>';
+  $('#payHist').insertAdjacentHTML('afterbegin', `<tr><td>17 Oct</td><td><b>${payRow.dataset.rep}</b></td><td>${$('#rpMethod').value}</td><td>${esc($('#rpRef').value || 'No reference')}</td><td class="r num">GH₵${fmt(amt + rew)}</td></tr>`);
+  const tot = $$('#comBody tr[data-rep]').reduce((s, r) => s + +r.dataset.pend, 0); $('#pendTotal').textContent = 'GH₵' + fmt(tot);
+  closeModals(); toast('Payout of GH₵' + fmt(amt + rew) + ' recorded for ' + payRow.dataset.rep);
+};
+/* ---------- profit by product trend ---------- */
+$('#lgTrend').innerHTML = legend([{ name: 'Copybook set', color: 'var(--pine)' }, { name: 'Add-ons (pens, grip, guide)', color: 'var(--violet)' }, { name: 'Dictamni cream', color: 'var(--gold)' }]);
+$('#chTrend').innerHTML = groupBars({ labels: ['Aug', 'Sep', 'Oct'], h: 250, yFmt: v => (v < 0 ? '−' : '') + (Math.abs(v) / 1000) + 'k', series: [{ data: [12600, 13100, -17300], color: 'var(--pine)' }, { data: [9800, 10400, 10200], color: 'var(--violet)' }, { data: [3800, 3700, -900], color: 'var(--gold)' }], label: 'Profit by product group, August to October' });
+/* ---------- 30 day forecast ---------- */
+function forecast(mult) {
+  const bal = [], inn = [], out = []; let b = 41900;
+  for (let d = 1; d <= 30; d++) {
+    let i = 0, o = 4500 + 1600 + 180;
+    if (d <= 5) i += 1200;                 /* agents pay in */
+    if (d === 10) i += 9300;               /* Logiswift 27 Oct */
+    if (d === 3) i += 8000;                /* Logiswift part-payment 20 Oct */
+    if (d >= 8) i += Math.round(5400 * mult);   /* new deliveries, paid after about 7 days */
+    if (d === 9) o += 2168;                /* commissions 25 Oct */
+    if (d === 15) o += 5000;               /* supplier 31 Oct */
+    b += i - o; bal.push(b); inn.push(i); out.push(o);
+  }
+  return { bal, inn, out };
+}
+let fcMult = 1;
+function drawForecast() {
+  const f = forecast(fcMult), lo = Math.min(...f.bal), loDay = f.bal.indexOf(lo) + 1, end = f.bal[29];
+  const lab = d => { const dt = new Date(2026, 9, 17 + d); return dt.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dt.getMonth()]; };
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  $('#fcIn').textContent = gh(sum(f.inn)); $('#fcOut').textContent = gh(sum(f.out));
+  $('#fcEnd').textContent = gh(end); $('#fcLow').textContent = 'Lowest ' + gh(lo) + ' on ' + lab(loDay);
+  const t = $('#fcTag'); t.className = 'tag ' + (lo < 0 ? 'bad' : lo < 10000 ? 'warn' : 'ok'); t.textContent = lo < 0 ? 'Runs out' : lo < 10000 ? 'Tight' : 'Safe';
+  const labels = f.bal.map((_, i) => lab(i + 1));
+  $('#lgFc').innerHTML = legend([{ name: 'Cash balance', color: 'var(--pine)' }]);
+  $('#chFc').innerHTML = lineChart({ labels, series: [{ data: f.bal, color: 'var(--pine)', area: true }], h: 250, every: 6, yFmt: v => (v / 1000).toFixed(0) + 'k', ref: { value: 0, label: 'Zero' }, label: 'Forecast cash balance for 30 days' }).replace('stroke="var(--ink-3)" stroke-dasharray="5 4"', 'stroke="var(--coral)" stroke-dasharray="5 4"');
+  if (lo < 0) { $('#fcInsTitle').textContent = 'Cash runs out around ' + lab(f.bal.findIndex(v => v < 0) + 1) + ' at today\'s pace'; $('#fcInsBody').textContent = 'Ad spend of GH₵4,500 a day is more than delivered cash brings in. Chase GH₵9,100 overdue from Logiswift or lift delivery success to 60% to stay positive.'; }
+  else { $('#fcInsTitle').textContent = 'At 60% delivery success, cash stays above ' + gh(lo); $('#fcInsBody').textContent = 'The lowest point is ' + lab(loDay) + '. Logiswift payouts still land late, so chase the GH₵9,100 overdue early.'; }
+  let h = ''; for (let w = 0; w < 5; w++) { const a = w * 7, z = Math.min(a + 7, 30), i = sum(f.inn.slice(a, z)), o = sum(f.out.slice(a, z)); h += `<tr><td>${lab(a + 1)} to ${lab(z)}</td><td class="r num">${gh(i)}</td><td class="r num">${gh(-o)}</td><td class="r num" style="color:${i - o < 0 ? 'var(--coral)' : 'var(--ink)'}">${gh(i - o)}</td><td class="r num"><b>${gh(f.bal[z - 1])}</b></td></tr>`; }
+  $('#fcWeeks').innerHTML = h;
+}
+$$('#fcSeg button').forEach(b => b.addEventListener('click', () => { fcMult = b.dataset.f === '2' ? 60 / 48 : 1; drawForecast(); }));
+/* init */
+drawColl(); drawCoa(); drawLedger(); drawExps(); jeReset(false);
+if (/^#t-/.test(location.hash)) showTab(location.hash.slice(3));
+if (/^#a-/.test(location.hash)) { showTab('accounting'); showAcct(location.hash.slice(3)); }
+if (location.hash === '#je') { showTab('accounting'); jeReset(true); openModal('jeModal'); }
+if (location.hash === '#rev') { showTab('collections'); openReview(2); }
+if (location.hash === '#exp') { showTab('accounting'); showAcct('exp'); }
+if (location.hash === '#recon') { const t = $('[data-toggle]'); if (t) t.click(); const m = document.getElementById('miss'); if (m) m.scrollIntoView({ block: 'center' }); }
+if (location.hash === '#payout') openModal('partnerPayModal');
+if (/^#pay-/.test(location.hash)) { showTab('commissions'); const r = $('#comBody tr[data-rep="' + (location.hash.slice(5) === 'nana' ? 'Nana Kyei' : 'Adwoa Darko') + '"] [data-pay]'); if (r) r.click(); }
+lucide.createIcons();
+
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

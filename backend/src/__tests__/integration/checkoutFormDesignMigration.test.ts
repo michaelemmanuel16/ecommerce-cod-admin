@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from '@jest/globals';
 import prisma from '../../utils/prisma';
+import { withoutTenant } from '../../utils/tenantContext';
 
 // R1 (eng review E4/E7) — verify the backfill from styling to design.
 //
@@ -21,6 +22,10 @@ WHERE "design" IS NULL
   );
 `;
 
+// Legacy fixture (no tenant): every hook and test runs unscoped on purpose
+const unscoped = <T>(fn: () => Promise<T>) => withoutTenant('legacy fixture', fn);
+const itU = (name: string, fn: () => Promise<void>) => it(name, () => unscoped(fn));
+
 describe('CheckoutForm design backfill migration', () => {
   let productId: number;
   const seededSlugs = [
@@ -31,7 +36,7 @@ describe('CheckoutForm design backfill migration', () => {
     'r1-non-palette-hex',
   ];
 
-  beforeAll(async () => {
+  beforeAll(() => unscoped(async () => {
     const product = await prisma.product.create({
       data: {
         name: 'R1 Test Product',
@@ -42,22 +47,22 @@ describe('CheckoutForm design backfill migration', () => {
       },
     });
     productId = product.id;
-  });
+  }));
 
-  beforeEach(async () => {
+  beforeEach(() => unscoped(async () => {
     await prisma.formSubmission.deleteMany({ where: { form: { slug: { in: seededSlugs } } } });
     await prisma.formPackage.deleteMany({ where: { form: { slug: { in: seededSlugs } } } });
     await prisma.formUpsell.deleteMany({ where: { form: { slug: { in: seededSlugs } } } });
     await prisma.checkoutForm.deleteMany({ where: { slug: { in: seededSlugs } } });
-  });
+  }));
 
-  afterAll(async () => {
+  afterAll(() => unscoped(async () => {
     await prisma.formSubmission.deleteMany({ where: { form: { slug: { in: seededSlugs } } } });
     await prisma.formPackage.deleteMany({ where: { form: { slug: { in: seededSlugs } } } });
     await prisma.formUpsell.deleteMany({ where: { form: { slug: { in: seededSlugs } } } });
     await prisma.checkoutForm.deleteMany({ where: { slug: { in: seededSlugs } } });
     await prisma.product.deleteMany({ where: { id: productId } });
-  });
+  }));
 
   const seed = async (slug: string, styling: object): Promise<number> => {
     const form = await prisma.checkoutForm.create({
@@ -73,7 +78,7 @@ describe('CheckoutForm design backfill migration', () => {
     return form.id;
   };
 
-  it('backfills design.colors from full styling and leaves styling unchanged', async () => {
+  itU('backfills design.colors from full styling and leaves styling unchanged', async () => {
     const id = await seed('r1-full-styling', {
       buttonColor: '#0f172a',
       accentColor: '#dc2626',
@@ -91,7 +96,7 @@ describe('CheckoutForm design backfill migration', () => {
     });
   });
 
-  it('backfills only cta when only buttonColor is present', async () => {
+  itU('backfills only cta when only buttonColor is present', async () => {
     const id = await seed('r1-only-button', { buttonColor: '#4f46e5' });
 
     await prisma.$executeRawUnsafe(BACKFILL_SQL);
@@ -100,7 +105,7 @@ describe('CheckoutForm design backfill migration', () => {
     expect(form.design).toEqual({ colors: { cta: '#4f46e5' } });
   });
 
-  it('backfills only surface when only accentColor is present', async () => {
+  itU('backfills only surface when only accentColor is present', async () => {
     const id = await seed('r1-only-accent', { accentColor: '#059669' });
 
     await prisma.$executeRawUnsafe(BACKFILL_SQL);
@@ -109,7 +114,7 @@ describe('CheckoutForm design backfill migration', () => {
     expect(form.design).toEqual({ colors: { surface: '#059669' } });
   });
 
-  it('leaves design NULL when styling has no color values', async () => {
+  itU('leaves design NULL when styling has no color values', async () => {
     const id = await seed('r1-empty-styling', { showName: true, showDescription: false });
 
     await prisma.$executeRawUnsafe(BACKFILL_SQL);
@@ -118,7 +123,7 @@ describe('CheckoutForm design backfill migration', () => {
     expect(form.design).toBeNull();
   });
 
-  it('copies non-palette hex as-is (Zod normalizes on next save)', async () => {
+  itU('copies non-palette hex as-is (Zod normalizes on next save)', async () => {
     const id = await seed('r1-non-palette-hex', {
       buttonColor: '#abcdef',
       accentColor: '#123456',
@@ -132,7 +137,7 @@ describe('CheckoutForm design backfill migration', () => {
     });
   });
 
-  it('is idempotent — re-running the backfill does not change populated design rows', async () => {
+  itU('is idempotent — re-running the backfill does not change populated design rows', async () => {
     const id = await seed('r1-full-styling', {
       buttonColor: '#0f172a',
       accentColor: '#dc2626',

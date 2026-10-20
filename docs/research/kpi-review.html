@@ -1,0 +1,185 @@
+<title>CodAdmin KPI Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column; role sections as Keep / Change / Add blocks; decisions at the end. */
+:root{
+  --bg:#f6f7f5;--surface:#ffffff;--ink:#1b2420;--ink2:#56625c;--line:#dde2de;
+  --pine:#1f6b52;--pine-soft:#e3efe9;--amber:#a86a0c;--amber-soft:#fbf0dc;--red:#b23b3b;--red-soft:#f8e4e2;
+  --sans:"Public Sans",system-ui,-apple-system,Segoe UI,sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121815;--surface:#1a221e;--ink:#e6ece8;--ink2:#9daaa3;--line:#2c3631;
+  --pine:#5cc39b;--pine-soft:#1d3329;--amber:#e3a547;--amber-soft:#35290f;--red:#ec7b74;--red-soft:#3a1f1d;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121815;--surface:#1a221e;--ink:#e6ece8;--ink2:#9daaa3;--line:#2c3631;
+  --pine:#5cc39b;--pine-soft:#1d3329;--amber:#e3a547;--amber-soft:#35290f;--red:#ec7b74;--red-soft:#3a1f1d;color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55}
+.wrap{max-width:860px;margin:0 auto;padding-block:32px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:28px}
+h1{font-size:30px;font-weight:800;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h2{font-size:20px;font-weight:700;margin:0 0 10px;text-wrap:balance}
+h3{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);margin:14px 0 6px}
+p{margin:0 0 8px;max-width:68ch}
+.sub{color:var(--ink2)}
+.num,td.r,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;min-width:0}
+ul{margin:0;padding-left:20px;display:grid;gap:5px}
+li{max-width:70ch}
+.verdict{display:grid;gap:8px}
+.verdict div{display:flex;gap:10px;align-items:baseline}
+.tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:4px;white-space:nowrap}
+.ok{background:var(--pine-soft);color:var(--pine)}
+.warn{background:var(--amber-soft);color:var(--amber)}
+.bad{background:var(--red-soft);color:var(--red)}
+.tree{font-family:var(--mono);font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px;overflow-x:auto;white-space:pre;line-height:1.6}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--ink2);font-weight:600}
+td.r,th.r{text-align:right}
+.role-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline}
+.q{color:var(--ink2);font-style:italic}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.grid3>div{min-width:0}
+.dec{display:grid;gap:12px}
+.dec>div{border-left:3px solid var(--pine);padding-left:12px}
+.dec b{display:block}
+small{color:var(--ink2)}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="sub mono" style="font-size:12px;margin-bottom:6px">CodAdmin v2 mockups · review, 18 Oct 2026 · no changes made</p>
+  <h1>Do the screens show the numbers each role needs?</h1>
+  <p class="sub" style="margin-top:8px">I checked Dashboard, Targets, Reports, Marketing, Finance, Deliveries and Staff. For each role: what to keep, what to change, what to add.</p>
+</header>
+
+<section>
+  <h2>Short answer</h2>
+  <div class="verdict">
+    <div><span class="tag ok">Strong</span><span>Finance (reconciliation, aging, ledger, statements, forecast) and Deliveries (partners, failure reasons, cash held). Most of it stays.</span></div>
+    <div><span class="tag warn">Gaps</span><span>Marketing stops at the order. It has no click-to-order funnel and no ad-level view. The call centre has no speed or quality numbers.</span></div>
+    <div><span class="tag bad">Fix first</span><span>3 problems affect every role. "Delivery rate" means 3 different things. The target maths does not add up. The marketing target shows green while the business shows a loss.</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>How the numbers connect to the North Star</h2>
+  <p>Each role owns one branch. Each branch has one main number and a few supporting numbers.</p>
+<div class="tree">Delivered revenue = Orders × Confirmation rate × Delivery success rate × Order value
+                        │            │                     │                     │
+                    Marketer    Call centre          Fulfilment lead       Call reps (upsell)
+
+Profit = Delivered orders × (Order value − product cost − delivery fee) − Ad spend − Other costs
+                                         └──────── Accountant watches every term ────────┘</div>
+</section>
+
+<section>
+  <h2>Fix first: 3 problems that affect every role</h2>
+  <h3>1 · "Delivery rate" means 3 different things</h3>
+  <ul>
+    <li>Dashboard and Reports: 26% = delivered ÷ <b>all orders placed</b> (376 ÷ 1,445).</li>
+    <li>Partner table: Logiswift 22% = delivered ÷ <b>assigned</b>, and that count includes orders still on the road.</li>
+    <li>Agent card: "Logiswift fails 55%" = failed ÷ <b>closed</b> orders.</li>
+  </ul>
+  <p style="margin-top:8px">The 3PL gets blamed for unconfirmed orders and for orders still on the road. Of the confirmed orders that have closed, <span class="num">376 ÷ 778 = 48%</span> were delivered. Use one name for each:</p>
+  <div class="tw"><table>
+    <tr><th>Name</th><th>Formula</th><th>Owner</th><th class="r">Oct now</th></tr>
+    <tr><td>Confirmation rate</td><td>confirmed ÷ orders placed</td><td>Call centre</td><td class="r">71%</td></tr>
+    <tr><td>Delivery success rate</td><td>delivered ÷ (delivered + failed + returned), closed orders only</td><td>Fulfilment</td><td class="r">48%</td></tr>
+    <tr><td>Order-to-cash yield</td><td>delivered ÷ orders placed, on order cohorts that have closed</td><td>Owner, Marketer</td><td class="r">~34%</td></tr>
+  </table></div>
+
+  <h3>2 · The target maths does not add up</h3>
+  <p>The North Star setup says that GH₵180k a month needs 60 orders a day, 70% confirmation and 40% delivery. Check: <span class="num">60 × 30 × 70% × 40% × GH₵249 = GH₵125k</span>. The plan falls short by GH₵55k before the month starts. The setup must calculate the missing driver from the others and show the result.</p>
+
+  <h3>3 · The marketing target shows green while the business loses money</h3>
+  <p>Marketing shows "CPA ₦5,900, under the ₦6,400 ceiling: on track", yet October shows a GH₵14.6k loss. The ceiling is a fixed number, but the affordable CPA (cost per order) depends on how many orders turn into cash:</p>
+  <div class="tree">Max CPA = profit per delivered order before ads × order-to-cash yield
+        = (GH₵249 − 40 product − 34 fee = GH₵175 ≈ ₦19,600) × 34%  ≈  ₦6,660
+At 26% yield the max CPA falls to ≈ ₦5,100. At 40% it rises to ≈ ₦7,800.</div>
+  <p style="margin-top:8px">Today's ₦6,400 ceiling is about right, but only if the yield stays near 34%. Let the ceiling move with the yield so the marketing target turns red when delivery drops.</p>
+  <p class="sub">Part of the October "loss" comes from timing. The month's ad spend is all booked, but 248 of its orders are still on the road or waiting to dispatch. The P&L by delivery date (your Q16 choice) stays as it is. Marketing also needs a <b>cohort view</b>: the orders placed in a period, judged once they close.</p>
+</section>
+
+<section>
+  <div class="role-head"><h2>Marketer (lead generation, ads)</h2><span class="tag warn">Add the funnel</span></div>
+  <p class="q">"Which ads bring delivered orders at a profit, and where in the funnel do they leak?"</p>
+  <div class="grid3">
+    <div><h3>Keep</h3><ul><li>Spend, orders, confirmed, delivered per campaign</li><li>CPA and cost per delivered order</li><li>Unmapped-spend warning</li><li>Daily spend against orders</li></ul></div>
+    <div><h3>Change</h3><ul><li>Fixed ceiling becomes a max CPA that moves with the yield</li><li>Cost per delivered order on closed cohorts, so new campaigns don't look worse than they are</li><li>Status pills judged on profit, not CPA alone</li></ul></div>
+    <div><h3>Add</h3><ul><li>One funnel strip: impressions → link clicks → landing page views → checkouts started → orders → confirmed → delivered. Each step shows its rate and its cost (CPM, CTR, CPC, landing-page to order rate)</li><li>Ad-level view under each campaign: hook rate and hold rate for video, frequency (fatigue)</li><li>Profit per campaign</li></ul></div>
+  </div>
+  <p class="sub" style="margin-top:10px">Left out on purpose: reach, likes, comments, shares. They do not move the North Star.</p>
+</section>
+
+<section>
+  <div class="role-head"><h2>Call-centre manager and call reps</h2><span class="tag warn">Add speed and quality</span></div>
+  <p class="q">Manager: "Is my team fast, and do the orders it confirms get delivered?" Rep: "What do I call next, and am I on target?"</p>
+  <div class="grid3">
+    <div><h3>Keep</h3><ul><li>Confirmed against target, per rep</li><li>Calls and call outcomes</li><li>Leaderboard and reward tiers</li></ul></div>
+    <div><h3>Change</h3><ul><li>One name for the rate. The leaderboard says "Conf. rate 73%" but Reports says "confirmed per call 47%". Keep confirmed ÷ orders assigned, and show calls per confirmation next to it</li><li>Daily table: drop the per-day "delivery rate" column (same-day delivered ÷ same-day orders means nothing)</li></ul></div>
+    <div><h3>Add</h3><ul><li><b>Time to first call</b> (median), and orders waiting with the oldest wait. In COD this is the main driver of confirmation</li><li><b>Delivered from confirmed</b>, per rep. This shows the quality of each rep's confirmations</li><li><b>Upsell rate and order value</b>, per rep. Add-ons earn 68–94% margin while the copybook set loses money</li><li>Reasons for declines</li></ul></div>
+  </div>
+  <p class="sub" style="margin-top:10px">Reps have no screen of their own yet. A simple "My work" view (queue by age, today's target, own rates, commission earned) would be enough. You decide below.</p>
+</section>
+
+<section>
+  <div class="role-head"><h2>Fulfilment lead</h2><span class="tag ok">Mostly there</span></div>
+  <p class="q">"Do confirmed orders reach customers fast, and is the stock and cash safe?"</p>
+  <div class="grid3">
+    <div><h3>Keep</h3><ul><li>Partner table: delivered, failed, cash held, oldest unpaid, fee rule</li><li>Failed deliveries by reason</li><li>Delivery by region</li></ul></div>
+    <div><h3>Change</h3><ul><li>Partner rate becomes the delivery success rate on closed orders. Then Logiswift shows 45%, not 22%, and the agents show 54–55%. That ranking is fair</li></ul></div>
+    <div><h3>Add</h3><ul><li>Days from confirmed to dispatched, and from dispatched to delivered, per partner</li><li>Waiting to dispatch: count and oldest age (100 orders now, no age shown)</li><li>Returns: units the 3PL sent back, and units we received</li><li>Failure reasons per partner</li></ul></div>
+  </div>
+</section>
+
+<section>
+  <div class="role-head"><h2>Accountant</h2><span class="tag ok">Strong</span></div>
+  <p class="q">"Do we make money on each order, is the cash real, and can we afford next month's ads?"</p>
+  <div class="grid3">
+    <div><h3>Keep</h3><ul><li>Payout reconciliation and short-pay detection</li><li>Aging, collections to verify</li><li>Ledger, P&L, balance sheet</li><li>Profit by product, cash forecast</li></ul></div>
+    <div><h3>Change</h3><ul><li>Monthly P&L sets 17 days of October next to full months. Add a "same days last month" column (Reports already does this)</li><li>Show the ₦-to-GH₵ rate used for ad spend</li></ul></div>
+    <div><h3>Add</h3><ul><li><b>Profit per delivered order</b> as a headline number (copybook set ≈ −GH₵67 after ads now)</li><li><b>Cost of failed deliveries</b>: fees on failed orders and stock lost on returns</li><li>Cash runway: how many days of ad spend the cash covers</li></ul></div>
+  </div>
+</section>
+
+<section>
+  <div class="role-head"><h2>Owner (North Star)</h2><span class="tag warn">Add margin</span></div>
+  <ul>
+    <li>Your Q17 answer was revenue <b>and</b> margin. The Targets page tracks revenue only. It marks Q1–Q3 as "Hit" while net margin was 12% against a 35% target. Add a margin line next to revenue at year, quarter and month level.</li>
+    <li>The dashboard "Biggest lever" card is good. Keep it, and base it on the fixed driver maths.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Sample data that disagrees between pages</h2>
+  <p class="sub">These are mockup errors, not design gaps. I will fix them with the approved changes.</p>
+  <ul>
+    <li>Partners have 1,439 orders assigned, but only 1,026 orders are confirmed.</li>
+    <li>Rep pay: Finance says GH₵4 per <b>confirmed</b> order (Adwoa 640 → GH₵2,560). Staff says GH₵5 per <b>delivered</b> order (232 → GH₵1,160). The invite form says "confirmed, then delivered".</li>
+    <li>Delivery agent pay: Staff says GH₵12 or GH₵10 per delivery (Kofi 112 delivered). Deliveries says GH₵25 per delivery (Kofi 82 delivered).</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Data the app must capture to show this</h2>
+  <ul>
+    <li><b>The ad on every order.</b> The checkout form saves the campaign and ad ID from the link. Without it, the funnel stops at the campaign total.</li>
+    <li><b>Funnel numbers from Meta</b> (impressions, clicks, landing page views, checkouts started). They come with the Meta spend pull you chose in Q18.</li>
+    <li><b>Call times.</b> A time on each call attempt. Hand-logged calls give an estimate; tap-to-call (Q4) gives exact times.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Your decisions</h2>
+  <div class="dec">
+    <div><b>A. Rate names and the 40% target</b>Use the 3 names above? Is the 40% target the delivery success rate (my pick) or the order-to-cash yield?</div>
+    <div><b>B. Marketing target</b>A max CPA that moves with the yield (my pick), or keep the fixed ₦6,400?</div>
+    <div><b>C. Rep commission</b>Per confirmed order, or per confirmed order that gets delivered (my pick, because it stops reps confirming bad orders)?</div>
+    <div><b>D. Margin in the North Star</b>Add margin next to revenue on Targets and Dashboard?</div>
+    <div><b>E. Rep "My work" view</b>Build it now, or later when you hire reps?</div>
+  </div>
+  <p class="sub" style="margin-top:12px">After you approve, I will apply everything in one builder round and keep the numbers the same on every page.</p>
+</section>
+</div>

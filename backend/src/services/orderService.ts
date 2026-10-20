@@ -1,4 +1,5 @@
 import prisma, { prismaBase } from '../utils/prisma';
+import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, JournalSourceType } from '@prisma/client';
 import logger from '../utils/logger';
@@ -12,6 +13,7 @@ import {
   emitOrderStatusChanged,
   emitOrdersDeleted,
   emitGLEntryCreated,
+  emitToTenant,
 } from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
@@ -20,6 +22,7 @@ import { GLAutomationService, JournalEntryWithTransactions } from './glAutomatio
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
+import * as Money from '../utils/money';
 
 
 
@@ -32,14 +35,14 @@ interface CreateOrderData {
   orderItems: Array<{
     productId: number;
     quantity: number;
-    unitPrice: number;
+    unitPrice: Money.MoneyInput;
     itemType?: 'package' | 'upsell';
     metadata?: any;
   }>;
-  subtotal: number;
-  shippingCost?: number;
-  discount?: number;
-  totalAmount: number;
+  subtotal: Money.MoneyInput;
+  shippingCost?: Money.MoneyInput;
+  discount?: Money.MoneyInput;
+  totalAmount: Money.MoneyInput;
   deliveryAddress: string;
   deliveryState: string;
   deliveryArea: string;
@@ -53,15 +56,15 @@ export interface BulkImportOrderData {
   customerFirstName?: string;
   customerLastName?: string;
   customerAlternatePhone?: string;
-  subtotal: number;
-  totalAmount: number;
+  subtotal: Money.MoneyInput;
+  totalAmount: Money.MoneyInput;
   deliveryAddress: string;
   deliveryState: string;
   deliveryArea: string;
   notes?: string;
   productName?: string;
   quantity?: number;
-  unitPrice?: number;
+  unitPrice?: Money.MoneyInput;
   status?: OrderStatus;
   // User assignments from CSV
   assignedRepName?: string;
@@ -313,13 +316,14 @@ export class OrderService {
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
-              totalPrice: item.quantity * item.unitPrice,
+              totalPrice: Money.roundHalfUp(Money.mul(item.quantity, item.unitPrice), 4),
               itemType: item.itemType || 'package',
               metadata: item.metadata || null
             }))
           },
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(customer.tenantId),
               status: 'pending_confirmation',
               notes: 'Order created',
               changedBy: data.createdById
@@ -411,7 +415,7 @@ export class OrderService {
           const normalizedPhone = normalizePhone(orderData.customerPhone);
           const orderDateValue = orderData.orderDate || new Date();
           const orderDateString = orderDateValue.toDateString();
-          const orderFingerprint = `${normalizedPhone}| ${orderData.totalAmount}| ${normalize(orderData.deliveryAddress)}| ${orderDateString} `;
+          const orderFingerprint = `${normalizedPhone}| ${Money.toApi(orderData.totalAmount)}| ${normalize(orderData.deliveryAddress)}| ${orderDateString} `;
 
           if (processedInImport.has(orderFingerprint)) {
             logger.warn('🚫 CANARY: DUPLICATE FOUND IN SAME BATCH', {
@@ -444,7 +448,7 @@ export class OrderService {
               },
               totalAmount: orderData.totalAmount
             },
-            select: { id: true, deliveryAddress: true, deletedAt: true, status: true },
+            select: { id: true, deliveryAddress: true, deletedAt: true, status: true, tenantId: true },
             orderBy: { createdAt: 'desc' },
             take: 20
           });
@@ -484,6 +488,7 @@ export class OrderService {
                 });
                 await tx.orderHistory.create({
                   data: {
+                    tenantId: resolveTenantId(matchingExisting.tenantId),
                     orderId: matchingExisting.id,
                     status: newStatus,
                     notes: 'Status updated via bulk CSV re-import',
@@ -496,7 +501,7 @@ export class OrderService {
                     where: { id: matchingExisting.id },
                     include: { orderItems: { include: { product: true } }, customer: true, deliveryAgent: true, customerRep: true },
                   });
-                  if (updatedOrder?.codAmount) {
+                  if (Money.isNonZero(updatedOrder?.codAmount)) {
                     await FinancialSyncService.syncOrderFinancialData(tx as any, updatedOrder as any, createdById || SYSTEM_USER_ID).catch(err => {
                       logger.warn(`Financial sync skipped for re-imported order ${matchingExisting.id}`, { error: err.message });
                     });
@@ -566,11 +571,15 @@ export class OrderService {
               });
 
               if (product) {
+                // A missing or zero unit price in the CSV falls back to the product price.
+                const csvUnitPrice = Money.tryParse(orderData.unitPrice);
+                const unitPrice = csvUnitPrice && !csvUnitPrice.isZero() ? csvUnitPrice : Money.parse(product.price);
+                const quantity = orderData.quantity || 1;
                 orderItemsData = [{
                   productId: product.id,
-                  quantity: orderData.quantity || 1,
-                  unitPrice: orderData.unitPrice || product.price,
-                  totalPrice: (orderData.quantity || 1) * (orderData.unitPrice || product.price)
+                  quantity,
+                  unitPrice,
+                  totalPrice: Money.roundHalfUp(Money.mul(quantity, unitPrice), 4)
                 }];
               }
             }
@@ -599,6 +608,7 @@ export class OrderService {
                 orderItems: orderItemsData.length > 0 ? { create: orderItemsData } : undefined,
                 orderHistory: {
                   create: {
+                    tenantId: resolveTenantId(),
                     status: orderData.status || 'pending_confirmation',
                     notes: 'Order imported via bulk CSV',
                     changedBy: createdById
@@ -614,7 +624,7 @@ export class OrderService {
             });
 
             // 6. Auto-sync financial data if order is imported as delivered
-            if (newOrder.status === 'delivered' && newOrder.codAmount) {
+            if (newOrder.status === 'delivered' && Money.isNonZero(newOrder.codAmount)) {
               try {
                 const syncResult = await FinancialSyncService.syncOrderFinancialData(
                   tx as any,
@@ -710,7 +720,7 @@ export class OrderService {
       const processedCount = Math.min(i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE, orders.length);
       const progress = Math.round((processedCount / orders.length) * 100);
 
-      getSocketInstance()?.emit('bulk_import_progress', {
+      emitToTenant(getSocketInstance() as any, 'bulk_import_progress', {
         progress,
         processed: processedCount,
         total: orders.length,
@@ -736,7 +746,7 @@ export class OrderService {
     });
 
     // Always emit completion event for dashboard refreshing
-    getSocketInstance()?.emit('bulk_import_completed', {
+    emitToTenant(getSocketInstance() as any, 'bulk_import_completed', {
       success: results.success,
       failed: results.failed,
       duplicates: results.duplicates,
@@ -933,7 +943,7 @@ export class OrderService {
             productId: item.productId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-            totalPrice: item.unitPrice * item.quantity,
+            totalPrice: Money.roundHalfUp(Money.mul(item.unitPrice, item.quantity), 4),
             itemType: item.itemType || 'package',
             metadata: item.metadata || null
           }))
@@ -1163,6 +1173,7 @@ export class OrderService {
           ...(isReturnStatus && order.revenueRecognized ? { revenueRecognized: false } : {}),
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(order.tenantId),
               status: data.status,
               notes: data.notes || `Status changed to ${data.status} `,
               changedBy: data.changedBy
@@ -1224,7 +1235,7 @@ export class OrderService {
     // the order will be marked 'delivered' but GL entries won't be created.
     // syncOrderFinancialData is idempotent (checks revenueRecognized + existing transaction),
     // and the financialReconciliationQueue runs every 15 min to catch any missed orders.
-    if (data.status === 'delivered' && updated.codAmount) {
+    if (data.status === 'delivered' && Money.isNonZero(updated.codAmount)) {
       setImmediate(() => {
         FinancialSyncService.syncOrderFinancialData(
           prisma as any,
@@ -1343,6 +1354,7 @@ export class OrderService {
           status: 'cancelled',
           orderHistory: {
             create: {
+              tenantId: resolveTenantId(order.tenantId),
               status: 'cancelled',
               notes: notes || 'Order cancelled',
               changedBy
@@ -1433,6 +1445,7 @@ export class OrderService {
       // Create audit trail
       await tx.orderHistory.create({
         data: {
+          tenantId: resolveTenantId(order.tenantId),
           orderId: order.id,
           status: order.status,
           notes: `Order deleted by user ${userId || 'system'} `,
@@ -1507,20 +1520,21 @@ export class OrderService {
     }
 
     // Aggregate updates for performance
-    const customerUpdates = new Map<number, { count: number, total: number }>();
+    const customerUpdates = new Map<number, { count: number, total: Prisma.Decimal }>();
     const historyData: Prisma.OrderHistoryCreateManyInput[] = [];
     const actualOrderIds = orders.map(o => o.id);
 
     for (const order of orders) {
       // Aggregate customer stats
-      const currentCust = customerUpdates.get(order.customerId) || { count: 0, total: 0 };
+      const currentCust = customerUpdates.get(order.customerId) || { count: 0, total: Money.ZERO };
       customerUpdates.set(order.customerId, {
         count: currentCust.count + 1,
-        total: currentCust.total + order.totalAmount
+        total: Money.add(currentCust.total, order.totalAmount)
       });
 
       // Prepare history data
       historyData.push({
+        tenantId: resolveTenantId(order.tenantId),
         orderId: order.id,
         status: order.status,
         notes: `Order deleted in bulk by user ${userId || 'system'} `,
@@ -1647,6 +1661,7 @@ export class OrderService {
         customerRepId: customerRepId,
         orderHistory: {
           create: {
+            tenantId: resolveTenantId(order.tenantId),
             status: order.status,
             notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName} `,
             changedBy: requester.id,
@@ -1674,6 +1689,7 @@ export class OrderService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(order.tenantId),
         userId: requester.id,
         action: 'assign_rep',
         resource: 'order',
@@ -1726,6 +1742,7 @@ export class OrderService {
         deliveryAgentId: deliveryAgentId,
         orderHistory: {
           create: {
+            tenantId: resolveTenantId(order.tenantId),
             status: order.status,
             notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName} `,
             changedBy: requester.id,
@@ -1753,6 +1770,7 @@ export class OrderService {
     // Create audit log
     await prisma.auditLog.create({
       data: {
+        tenantId: resolveTenantId(order.tenantId),
         userId: requester.id,
         action: 'assign_agent',
         resource: 'order',
@@ -1870,8 +1888,8 @@ export class OrderService {
         acc[item.status] = item._count;
         return acc;
       }, {} as Record<string, number>),
-      totalRevenue: totalRevenue._sum.totalAmount || 0,
-      avgOrderValue: avgOrderValue._avg.totalAmount || 0
+      totalRevenue: Money.orZero(totalRevenue._sum.totalAmount),
+      avgOrderValue: Money.orZero(avgOrderValue._avg.totalAmount)
     };
 
     return stats;

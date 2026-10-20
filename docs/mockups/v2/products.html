@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodAdmin Products</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+.pimg{flex:none;width:40px;height:40px;border-radius:11px;display:grid;place-items:center}
+.insrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;padding:14px 20px 18px}
+tr.arch{opacity:.6}
+.pt td,.pt th{padding-left:14px;padding-right:14px}
+.pt td:first-child,.pt th:first-child{padding-left:20px}
+.pt td:last-child,.pt th:last-child{padding-right:20px}
+.sku{font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pt td{white-space:nowrap}
+.low{color:var(--coral)}
+.foot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px}
+/* r2 layers: sheets, modals, menus, forms (tokens only) */
+select:focus-visible,textarea:focus-visible,.sheet button:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.scrim{position:fixed;inset:0;background:rgba(8,18,16,.4);backdrop-filter:blur(2px);z-index:54;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;top:0;right:0;height:100vh;width:560px;max-width:100%;background:var(--card);border-left:1px solid var(--line);box-shadow:-20px 0 50px -20px rgba(0,0,0,.25);transform:translateX(105%);transition:transform .28s cubic-bezier(.2,.8,.2,1);z-index:55;display:flex;flex-direction:column;visibility:hidden}
+.sheet.on{transform:none;visibility:visible}
+.sheet .sh{display:flex;align-items:flex-start;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.sheet .sh h2{font-size:21px;font-weight:800;line-height:1.2}
+.sheet .sh p{color:var(--ink-3);font-size:13px;margin-top:2px}
+.sheet .sh .ibtn{margin-left:auto;flex:none}
+.sheet .sb{flex:1;overflow:auto;padding:18px 20px 24px;display:flex;flex-direction:column;gap:20px}
+.sheet .sf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.sec>h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fg .full{grid-column:1/-1}
+.fl label{display:block;font-weight:600;font-size:13px;margin-bottom:5px}
+.fl .opt{font-weight:500;color:var(--ink-3)}
+.fl input:not([type=checkbox]):not([type=file]),.fl select,.fl textarea{width:100%;font:500 14px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+.fl textarea{resize:vertical;min-height:70px}
+.fl .hint,.hint{font-size:12.5px;color:var(--ink-3);margin-top:5px}
+.chk{display:flex;align-items:center;gap:8px;font-weight:600}
+.chk input{width:16px;height:16px;accent-color:var(--pine)}
+.mveil{position:fixed;inset:0;background:rgba(8,18,16,.45);backdrop-filter:blur(3px);z-index:65;display:none;align-items:center;justify-content:center;padding:20px}
+.mveil.on{display:flex}
+.dlg{width:520px;max-width:100%;max-height:90vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.dlg.wide{width:1120px}
+.dlg .tablewrap{overflow-x:auto}
+.dlg .mh{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--line)}
+.dlg .mh h3{font-size:19px;font-weight:800}
+.dlg .mh p{color:var(--ink-3);font-size:13px;margin-top:2px}
+.dlg .mh .ibtn{margin-left:auto;flex:none}
+.dlg .mb{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.dlg .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+.dlg table th,.dlg table td{padding:10px 10px;white-space:nowrap}
+.dlg table th:first-child,.dlg table td:first-child{padding-left:20px}
+.dlg table td:last-child{white-space:normal;min-width:160px}
+.mwrap{position:relative;display:inline-block}
+.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);min-width:210px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 40px -16px rgba(0,0,0,.35);padding:6px;z-index:58;text-align:left}
+.menu.up{top:auto;bottom:calc(100% + 6px)}
+.menu.fixed{position:fixed;right:auto}
+.menu.on{display:block}
+.menu p{font-size:12px;color:var(--ink-3);font-weight:600;padding:6px 10px 2px}
+.menu button{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border-radius:8px;text-align:left;font-weight:500}
+.menu button:hover{background:var(--hover)}
+.menu button svg.lucide{width:15px;height:15px;color:var(--ink-3)}
+.menu button .cur{margin-left:auto;color:var(--pine)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:5px 0}
+.ibtn.sm{width:30px;height:30px;border-radius:9px}
+.ibtn.sm svg.lucide{width:16px;height:16px}
+.toast{position:fixed;left:50%;bottom:64px;transform:translateX(-50%) translateY(10px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:13px;z-index:80;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;display:flex;gap:8px;align-items:center;max-width:92vw}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.toast svg.lucide{width:16px;height:16px;color:var(--mint)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid var(--line);color:var(--ink-2);background:var(--card);white-space:nowrap}
+.chip svg.lucide{width:13px;height:13px}
+.chip.v{color:var(--violet);border-color:var(--violet-soft);background:var(--violet-soft)}
+.drop{border:2px dashed var(--line);border-radius:14px;padding:22px;text-align:center;color:var(--ink-2)}
+.drop svg.lucide{width:26px;height:26px;color:var(--ink-3)}
+.drop b{display:block;margin-top:6px}
+.filebar{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.filebar .ic{flex:none;width:36px;height:36px;border-radius:10px;display:grid;place-items:center}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:8px 12px}
+.kv dt{color:var(--ink-3);font-size:13px}
+.kv dd{font-weight:500}
+.hl{border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.hl+.hl{margin-top:8px}
+.srch{display:inline-flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--line);border-radius:11px;background:var(--card);color:var(--ink-3);min-width:260px}
+.srch input{border:0;background:transparent;color:var(--ink);font:500 14px "Plus Jakarta Sans",system-ui,sans-serif;padding:9px 0;width:100%;outline:0}
+.srch:focus-within{outline:2px solid var(--pine);outline-offset:2px}
+.pfoot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px}
+.tbtns{display:flex;gap:6px;justify-content:flex-end}
+@media (max-width:760px){.fg{grid-template-columns:1fr}.kv{grid-template-columns:1fr}.sheet{width:100%}}
+
+a.btn{color:var(--ink);text-decoration:none}
+
+.pt td,.pt th{padding-left:10px;padding-right:10px}
+.pt td:first-child,.pt th:first-child{padding-left:20px}
+.pt td:last-child,.pt th:last-child{padding-right:20px}
+.xbtn{flex:none;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:var(--ink-3);border:1px solid var(--line);background:var(--card)}
+.xbtn svg.lucide{width:15px;height:15px;transition:transform .2s}
+.xbtn[aria-expanded="true"] svg.lucide{transform:rotate(90deg)}
+.xbtn[aria-expanded="true"]{color:var(--pine);border-color:var(--pine)}
+tr.exp td{padding:0;background:var(--hover);border-bottom:1px solid var(--line)}
+tr.exp:hover{background:var(--hover)}
+tr.exp[hidden]{display:none}
+.exin{padding:16px 20px 18px;white-space:normal}
+.exhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.exhead b{font-size:14px}
+.exhead small{display:block;color:var(--ink-3);font-size:12.5px;font-weight:500;white-space:normal}
+.exbtns{display:flex;gap:6px;flex-wrap:wrap}
+.hold{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.hold table th{padding:9px 14px;font-size:12px}
+.hold table td{padding:10px 14px}
+.hold tr.tot td{background:var(--hover);font-weight:700}
+.hold tr.tot:hover{background:var(--hover)}
+.exnote{color:var(--ink-3);font-size:12.5px;margin-top:10px;white-space:normal}
+.pgtabs{display:flex;gap:6px;margin:0 0 16px;border-bottom:1px solid var(--line);padding-bottom:0}
+.pgtab{padding:9px 14px;font-weight:600;color:var(--ink-2);border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;gap:8px;align-items:center}
+.pgtab span{font-size:12px;padding:0 7px;border-radius:99px;background:var(--hover)}
+.pgtab.on{color:var(--pine);border-bottom-color:var(--pine)}
+.pane[hidden]{display:none}
+.shp{font-size:13px}
+.shp td,.shp th{padding-left:5px;padding-right:5px;white-space:nowrap}
+.shp th{white-space:normal;vertical-align:bottom}
+.shp td:nth-child(2),.shp td:nth-child(11){white-space:normal;min-width:76px}
+.shp td:first-child{white-space:normal;min-width:124px}
+.shp td:first-child,.shp th:first-child{padding-left:20px}
+.shp td:last-child,.shp th:last-child{padding-right:20px}
+.landed{background:var(--pine-soft);color:var(--pine);border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:600}
+.landed b{font-family:"Bricolage Grotesque";font-size:20px}
+.landed.bad{background:var(--coral-soft);color:var(--coral)}
+.digi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;gap:14px;align-items:flex-start;white-space:normal}
+.digi .ic{flex:none;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--violet-soft);color:var(--violet)}
+.drop.sm{padding:14px}
+.pfield[hidden]{display:none}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><div class="logo"><i data-lucide="zap"></i></div><b>CodAdmin</b></div>
+    <div class="store"><div class="av">MD</div><div><b>Manny Dynamics</b><small>Ghana · GH₵</small></div></div>
+
+    <div class="navgroup">
+      <a href="index.html#dash" class="nav" data-v="dash"><i data-lucide="layout-grid"></i>Dashboard</a>
+      <a href="inbox.html" class="nav" data-page="inbox.html"><i data-lucide="inbox"></i>Inbox<span class="pill">5</span></a>
+    </div>
+    <div class="navgroup">
+      <p>Sell</p>
+      <a href="index.html#orders" class="nav" data-v="orders"><i data-lucide="shopping-bag"></i>Orders<span class="pill">38</span></a>
+      <a href="customers.html" class="nav" data-page="customers.html"><i data-lucide="users"></i>Customers</a>
+      <a href="checkout-forms.html" class="nav" data-page="checkout-forms.html"><i data-lucide="file-text"></i>Checkout forms</a>
+      <a href="messages.html" class="nav" data-page="messages.html"><i data-lucide="message-circle"></i>Messages</a>
+    </div>
+    <div class="navgroup">
+      <p>Stock</p>
+      <a href="products.html" class="nav on" data-page="products.html"><i data-lucide="package"></i>Products</a>
+      <a href="inventory.html" class="nav" data-page="inventory.html"><i data-lucide="boxes"></i>Inventory &amp; stock</a>
+      <a href="deliveries.html" class="nav" data-page="deliveries.html"><i data-lucide="truck"></i>Deliveries</a>
+    </div>
+    <div class="navgroup">
+      <p>Money</p>
+      <a href="finance.html" class="nav" data-page="finance.html"><i data-lucide="wallet"></i>Finance<span class="pill">2</span></a>
+      <a href="marketing.html" class="nav" data-page="marketing.html"><i data-lucide="megaphone"></i>Marketing</a>
+      <a href="reports.html" class="nav" data-page="reports.html"><i data-lucide="bar-chart-3"></i>Reports</a>
+    </div>
+    <div class="navgroup">
+      <p>Team</p>
+      <a href="index.html#targets" class="nav" data-v="targets"><i data-lucide="target"></i>Targets</a>
+      <a href="index.html#board" class="nav" data-v="board"><i data-lucide="trophy"></i>Leaderboard</a>
+      <a href="staff.html" class="nav" data-page="staff.html"><i data-lucide="user-cog"></i>Staff &amp; roles</a>
+    </div>
+    <div class="navgroup">
+      <p>Setup</p>
+      <a href="workflows.html" class="nav" data-page="workflows.html"><i data-lucide="workflow"></i>Workflows</a>
+      <a href="connections.html" class="nav" data-page="connections.html"><i data-lucide="plug"></i>Connections</a>
+      <a href="settings.html" class="nav" data-page="settings.html"><i data-lucide="settings"></i>Settings</a>
+      <a href="index.html#onboard" class="nav" data-v="onboard"><i data-lucide="flag"></i>Set up North Star</a>
+    </div>
+
+    <div class="me">
+      <div class="row"><div class="avatar" style="background:rgba(255,255,255,.2);color:inherit">MA</div><div><b>Manny</b><div class="lv">Owner · all roles</div></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <button class="search" id="openK"><i data-lucide="search"></i>Search orders, customers or ask the agent…<kbd>⌘K</kbd></button>
+      <div style="flex:1"></div>
+      <button class="ibtn" id="theme" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+      <a href="inbox.html" class="ibtn" aria-label="Inbox and notifications"><i data-lucide="bell"></i><span class="dot"></span></a>
+      <button class="agentbtn" id="openAgent"><i data-lucide="sparkles" class="spark"></i><span>Ask agent</span></button>
+      <div class="avatar">MA</div>
+    </header>
+
+    <main class="content">
+<section class="view on" id="products">
+  <div class="head">
+    <div><h1>Products</h1><p>4 active products. The copybook set brings in most of your delivered revenue.</p></div>
+    <div style="display:flex;gap:8px"><button class="btn" data-open="m-ship"><i data-lucide="truck"></i>Add shipment</button><button class="btn pri" data-edit="new"><i data-lucide="plus"></i>Add product</button></div>
+  </div>
+  <div class="pgtabs" role="tablist"><button class="pgtab on" role="tab" data-pane="products">Products <span>6</span></button><button class="pgtab" role="tab" data-pane="incoming">Incoming shipments <span id="pendN">3 pending</span></button></div>
+  <div class="pane" id="pane-products">
+
+  <div class="grid kpis" style="margin-top:0">
+    <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="package"></i></div><div class="v num">4</div><div class="l">Active products</div><div class="s"><span>2 archived</span><span class="tag ok">Live</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="trophy"></i></div><div class="v num">Copybook set</div><div class="l">Best seller this month</div><div class="s"><span>306 delivered</span><span class="tag n">Main product</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--mint-soft);color:#14975f"><i data-lucide="percent"></i></div><div class="v num">66%</div><div class="l">Average margin</div><div class="s"><span>After product cost</span><span class="tag n">Before delivery</span></div></div>
+    <div class="card kpi"><div class="ic" style="background:var(--coral-soft);color:var(--coral)"><i data-lucide="package-x"></i></div><div class="v num">2</div><div class="l">Low stock</div><div class="s"><span>Under 14 days of cover</span><span class="tag bad">Reorder</span></div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="ct"><h3><i data-lucide="sparkles" style="color:var(--violet);vertical-align:-3px"></i> Agent found 2 things</h3><span>Updated 06:42</span></div>
+    <div class="insrow">
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="layers"></i></div><div><b>Refill pens sell with 35% of copybook orders</b><p>107 of 306 delivered copybook orders also had pens. A bundle at GH₵279 saves you one picking step.</p></div></div><div class="act"><button class="mini pri" data-link="checkout-forms.html">Make a bundle</button><button class="mini">Dismiss</button></div></div>
+      <div class="insight"><div class="h"><div class="ico" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="package-x"></i></div><div><b>The copybook set runs out in 7 days</b><p>158 units across four holders and you deliver about 22 a day. The 400 units due 22 Oct land 2 days before you run out.</p></div></div><div class="act"><button class="mini pri" data-tab="incoming">See the shipment</button><button class="mini">Dismiss</button></div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="tabs">
+      <button class="tab" data-f="active">Active <span>4</span></button><button class="tab" data-f="archived">Archived <span>2</span></button><button class="tab on" data-f="all">All <span>6</span></button>
+    </div>
+    <div class="tablewrap"><table class="pt">
+      <thead><tr><th>Product</th><th>SKU</th><th class="r">Price</th><th class="r">Cost</th><th class="r">Margin</th><th class="r">Stock</th><th class="r">Delivered in Oct</th><th class="r">Delivery success</th><th>Status</th><th class="r">Actions</th></tr></thead>
+      <tbody>
+        <tr data-st="active" data-r="0"><td><div class="who"><button class="xbtn" aria-expanded="false" aria-label="Show stock by holder" data-x="0"><i data-lucide="chevron-right"></i></button><div class="pimg" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="book-open"></i></div><div><b>Magic Groove copybook set</b><small>Main product</small></div></div></td><td class="sku">MG-CB-SET</td><td class="r num">GH₵249</td><td class="r num">GH₵30</td><td class="r num"><b>88%</b></td><td class="r num"><b>158</b><small style="display:block;color:var(--ink-3);font-size:12px">7 days of cover</small></td><td class="r num">306</td><td class="r"><span class="num low"><b>48%</b></span></td><td><span class="tag warn">Low stock</span></td><td class="r"><button class="ibtn sm" data-edit="copybook" aria-label="Edit product" title="Edit product"><i data-lucide="pencil"></i></button></td></tr><tr class="exp" hidden><td colspan="10"><div class="exin">
+<div class="exhead"><div><b>Stock by holder</b><small>Read only. Allocate, transfer, return and adjust stock in Inventory. On hand is allocated minus in transit, delivered and returned. Value is at cost.</small></div>
+<div class="exbtns"><a class="mini pri" href="inventory.html#stock" style="text-decoration:none"><i data-lucide="boxes" style="width:14px;height:14px;vertical-align:-2px"></i> Open in Inventory</a></div></div>
+<div class="hold"><div class="tablewrap"><table><thead><tr><th>Holder</th><th class="r">Allocated</th><th class="r">In transit</th><th class="r">Delivered</th><th class="r">Returned</th><th class="r">On hand</th><th class="r">Value</th></tr></thead><tbody><tr><td><b>Logiswift warehouse</b><small style="display:block;color:var(--ink-3);font-size:12px">3PL · Tema</small></td><td class="r num">300</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num">176</td><td class="r num">24</td><td class="r num"><b>100</b></td><td class="r num">GH₵3,000</td></tr><tr><td><b>Kofi Appiah</b><small style="display:block;color:var(--ink-3);font-size:12px">Delivery agent · Kumasi</small></td><td class="r num">160</td><td class="r num">20<span class="tag warn" style="margin-left:6px">Awaiting agent</span></td><td class="r num">98</td><td class="r num">6</td><td class="r num"><b>36</b></td><td class="r num">GH₵1,080</td></tr><tr><td><b>Esi Badu</b><small style="display:block;color:var(--ink-3);font-size:12px">Delivery agent · Accra</small></td><td class="r num">90</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num">70</td><td class="r num">8</td><td class="r num"><b>12</b></td><td class="r num">GH₵360</td></tr><tr><td><b>Kwesi Amoah</b><small style="display:block;color:var(--ink-3);font-size:12px">Delivery agent · Takoradi</small></td><td class="r num">60</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num">44</td><td class="r num">6</td><td class="r num"><b>10</b></td><td class="r num">GH₵300</td></tr><tr class="tot"><td>Total</td><td class="r num">610</td><td class="r num">20</td><td class="r num">388</td><td class="r num">44</td><td class="r num">158</td><td class="r num">GH₵4,740</td></tr></tbody></table></div></div>
+<p class="exnote">Our records say 100 on hand at Logiswift. They count 88: the 9 Oct shipment arrived 12 short (300 sent, 288 counted).</p>
+<p class="exnote">Kasapa Express holds none of this product. It is on trial and picks up stock per order.</p>
+</div></td></tr>
+        <tr data-st="active" data-r="1"><td><div class="who"><button class="xbtn" aria-expanded="false" aria-label="Show stock by holder" data-x="1"><i data-lucide="chevron-right"></i></button><div class="pimg" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="pen-tool"></i></div><div><b>Magic Groove refill pens</b><small>Add-on · 5 pens</small></div></div></td><td class="sku">MG-PEN-REF</td><td class="r num">GH₵40</td><td class="r num">GH₵12</td><td class="r num"><b>70%</b></td><td class="r num"><b>80</b><small style="display:block;color:var(--ink-3);font-size:12px">12 days of cover</small></td><td class="r num">172</td><td class="r"><span class="num low"><b>52%</b></span></td><td><span class="tag warn">Low stock</span></td><td class="r"><button class="ibtn sm" data-edit="pens" aria-label="Edit product" title="Edit product"><i data-lucide="pencil"></i></button></td></tr><tr class="exp" hidden><td colspan="10"><div class="exin">
+<div class="exhead"><div><b>Stock by holder</b><small>Read only. Allocate, transfer, return and adjust stock in Inventory. On hand is allocated minus in transit, delivered and returned. Value is at cost.</small></div>
+<div class="exbtns"><a class="mini pri" href="inventory.html#stock" style="text-decoration:none"><i data-lucide="boxes" style="width:14px;height:14px;vertical-align:-2px"></i> Open in Inventory</a></div></div>
+<div class="hold"><div class="tablewrap"><table><thead><tr><th>Holder</th><th class="r">Allocated</th><th class="r">In transit</th><th class="r">Delivered</th><th class="r">Returned</th><th class="r">On hand</th><th class="r">Value</th></tr></thead><tbody><tr><td><b>Logiswift warehouse</b><small style="display:block;color:var(--ink-3);font-size:12px">3PL · Tema</small></td><td class="r num">150</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num">70</td><td class="r num">18</td><td class="r num"><b>62</b></td><td class="r num">GH₵744</td></tr><tr><td><b>Kofi Appiah</b><small style="display:block;color:var(--ink-3);font-size:12px">Delivery agent · Kumasi</small></td><td class="r num">60</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num">38</td><td class="r num">4</td><td class="r num"><b>18</b></td><td class="r num">GH₵216</td></tr><tr class="tot"><td>Total</td><td class="r num">210</td><td class="r num">0</td><td class="r num">108</td><td class="r num">22</td><td class="r num">80</td><td class="r num">GH₵960</td></tr></tbody></table></div></div>
+<p class="exnote">Esi Badu, Kwesi Amoah and Kasapa Express hold none of this product right now.</p>
+</div></td></tr>
+        <tr data-st="active" data-r="2"><td><div class="who"><button class="xbtn" aria-expanded="false" aria-label="Show stock by holder" data-x="2"><i data-lucide="chevron-right"></i></button><div class="pimg" style="background:var(--mint-soft);color:#14975f"><i data-lucide="hand"></i></div><div><b>Pencil grip trainer</b><small>Add-on</small></div></div></td><td class="sku">MG-GRIP-01</td><td class="r num">GH₵35</td><td class="r num">GH₵11</td><td class="r num"><b>69%</b></td><td class="r num"><b>225</b><small style="display:block;color:var(--ink-3);font-size:12px">Plenty</small></td><td class="r num">89</td><td class="r"><span class="num low"><b>50%</b></span></td><td><span class="tag ok">Active</span></td><td class="r"><button class="ibtn sm" data-edit="grip" aria-label="Edit product" title="Edit product"><i data-lucide="pencil"></i></button></td></tr><tr class="exp" hidden><td colspan="10"><div class="exin">
+<div class="exhead"><div><b>Stock by holder</b><small>Read only. Allocate, transfer, return and adjust stock in Inventory. On hand is allocated minus in transit, delivered and returned. Value is at cost.</small></div>
+<div class="exbtns"><a class="mini pri" href="inventory.html#stock" style="text-decoration:none"><i data-lucide="boxes" style="width:14px;height:14px;vertical-align:-2px"></i> Open in Inventory</a></div></div>
+<div class="hold"><div class="tablewrap"><table><thead><tr><th>Holder</th><th class="r">Allocated</th><th class="r">In transit</th><th class="r">Delivered</th><th class="r">Returned</th><th class="r">On hand</th><th class="r">Value</th></tr></thead><tbody><tr><td><b>Logiswift warehouse</b><small style="display:block;color:var(--ink-3);font-size:12px">3PL · Tema</small></td><td class="r num">300</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num">108</td><td class="r num">12</td><td class="r num"><b>180</b></td><td class="r num">GH₵1,980</td></tr><tr><td><b>Kofi Appiah</b><small style="display:block;color:var(--ink-3);font-size:12px">Delivery agent · Kumasi</small></td><td class="r num">100</td><td class="r num"><span style="color:var(--ink-3)">0</span></td><td class="r num">50</td><td class="r num">5</td><td class="r num"><b>45</b></td><td class="r num">GH₵495</td></tr><tr class="tot"><td>Total</td><td class="r num">400</td><td class="r num">0</td><td class="r num">158</td><td class="r num">17</td><td class="r num">225</td><td class="r num">GH₵2,475</td></tr></tbody></table></div></div>
+<p class="exnote">Esi Badu, Kwesi Amoah and Kasapa Express hold none of this product right now.</p>
+</div></td></tr>
+        <tr data-st="active" data-r="3"><td><div class="who"><button class="xbtn" aria-expanded="false" aria-label="Show stock by holder" data-x="3"><i data-lucide="chevron-right"></i></button><div class="pimg" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="file-text"></i></div><div><b>Smart Parent&rsquo;s Home Study Guide</b><small>Digital · sent by WhatsApp</small></div></div></td><td class="sku">SPH-GUIDE-DIG</td><td class="r num">GH₵59</td><td class="r num">GH₵3</td><td class="r num"><b>95%</b></td><td class="r num"><b>—</b><small style="display:block;color:var(--ink-3);font-size:12px">No stock</small></td><td class="r num">58</td><td class="r"><span style="color:var(--ink-3)">—</span></td><td><span class="tag v">Digital</span></td><td class="r"><button class="ibtn sm" data-edit="guide" aria-label="Edit product" title="Edit product"><i data-lucide="pencil"></i></button></td></tr><tr class="exp" hidden><td colspan="10"><div class="exin"><div class="digi"><div class="ic"><i data-lucide="file-text"></i></div><div><b>Digital product, no stock to track</b><p style="color:var(--ink-2);font-size:13px;margin-top:2px">Sent as a link by WhatsApp after the order is paid. The link expires after 72 hours. 58 sent in October.</p><p style="color:var(--ink-3);font-size:12.5px;margin-top:6px">File: smart-parents-study-guide-v3.pdf · PDF</p></div></div></div></td></tr>
+        <tr data-st="archived" class="arch" data-r="4"><td><div class="who"><div class="pimg" style="background:var(--hover);color:var(--ink-3)"><i data-lucide="gift"></i></div><div><b>Magic Groove starter pack</b><small>Replaced by the copybook set</small></div></div></td><td class="sku">MG-STR-OLD</td><td class="r num">GH₵199</td><td class="r num">GH₵84</td><td class="r num"><b>58%</b></td><td class="r num"><b>0</b><small style="display:block;color:var(--ink-3);font-size:12px">Sold out</small></td><td class="r num">—</td><td class="r"><span style="color:var(--ink-3)">—</span></td><td><span class="tag n">Archived</span></td><td class="r"><button class="ibtn sm" data-edit="starter" aria-label="Edit product" title="Edit product"><i data-lucide="pencil"></i></button></td></tr>
+        <tr data-st="archived" class="arch" data-r="5"><td><div class="who"><div class="pimg" style="background:var(--hover);color:var(--ink-3)"><i data-lucide="droplet"></i></div><div><b>Disappearing ink 3-pack</b><small>Merged into refill pens</small></div></div></td><td class="sku">MG-INK-3PK</td><td class="r num">GH₵30</td><td class="r num">GH₵14</td><td class="r num"><b>53%</b></td><td class="r num"><b>0</b><small style="display:block;color:var(--ink-3);font-size:12px">Sold out</small></td><td class="r num">—</td><td class="r"><span style="color:var(--ink-3)">—</span></td><td><span class="tag n">Archived</span></td><td class="r"><button class="ibtn sm" data-edit="ink" aria-label="Edit product" title="Edit product"><i data-lucide="pencil"></i></button></td></tr>
+      </tbody></table></div>
+    <div class="foot"><span>Stock adds up across Logiswift, Kofi Appiah, Esi Badu and Kwesi Amoah. Delivery success target is 60%.</span><span>Margin is price minus product cost</span></div>
+  </div>
+  </div>
+  <div class="pane" id="pane-incoming" hidden>
+    <div class="grid kpis" style="margin-top:0;grid-template-columns:repeat(3,1fr)">
+      <div class="card kpi"><div class="ic" style="background:var(--violet-soft);color:var(--violet)"><i data-lucide="truck"></i></div><div class="v num" id="k-pend">3</div><div class="l">Pending shipments</div><div class="s"><span>Next: copybook set, 22 Oct</span><span class="tag n">Coming</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--pine-soft);color:var(--pine)"><i data-lucide="package-plus"></i></div><div class="v num" id="k-units">1,500</div><div class="l">Units on the way</div><div class="s"><span>Across 3 products</span><span class="tag n">Not in stock yet</span></div></div>
+      <div class="card kpi"><div class="ic" style="background:var(--gold-soft);color:var(--gold)"><i data-lucide="wallet"></i></div><div class="v num" id="k-cost">GH₵24,950</div><div class="l">Cost to land them</div><div class="s"><span>Product, shipping, customs, other</span><span class="tag n">Total</span></div></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="ct"><h3>Incoming shipments</h3><button class="btn pri" data-open="m-ship"><i data-lucide="plus"></i>Add shipment</button></div>
+      <div class="tabs" id="shp-tabs" style="margin-top:8px"></div>
+      <div class="tablewrap"><table class="shp">
+        <thead><tr><th>Product</th><th>Supplier</th><th class="r">Qty</th><th class="r">Unit cost</th><th class="r">Shipping</th><th class="r">Customs</th><th class="r">Other</th><th class="r">Total</th><th class="r">Landed per unit</th><th>Expected</th><th>Received at</th><th class="r">Counted</th><th class="r">Short</th><th>Status</th><th class="r">Actions</th></tr></thead>
+        <tbody id="shp-body"></tbody></table></div>
+      <div class="pfoot"><span>Landed cost per unit is the total divided by the units counted on arrival (the quantity until then). It updates the product cost when the shipment arrives.</span><span id="shp-count"></span></div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+</div>
+<div class="scrim" id="scrim"></div>
+<div class="toast" id="toast" role="status"><i data-lucide="check-circle-2"></i><span></span></div>
+<aside class="sheet" id="sh-product" aria-label="Product form">
+  <div class="sh"><div><h2 id="pf-title">Add product</h2><p id="pf-sub">Physical products track stock. Digital products send a download link.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="sb">
+    <div class="sec"><h4>Product type</h4><div class="seg" id="pf-type" style="margin-top:0"><button class="on" data-type="physical"><i data-lucide="package" style="width:15px;height:15px;vertical-align:-3px"></i> Physical</button><button data-type="digital"><i data-lucide="file-down" style="width:15px;height:15px;vertical-align:-3px"></i> Digital</button></div></div>
+    <div class="sec"><h4>Basics</h4><div class="fg">
+      <div class="fl full"><label for="pf-n">Product name</label><input id="pf-n" type="text" placeholder="For example: Magic Groove copybook set"></div>
+      <div class="fl full"><label for="pf-d">Description <span class="opt">(optional)</span></label><textarea id="pf-d" placeholder="What the customer gets"></textarea></div>
+      <div class="fl"><label for="pf-sku">SKU</label><input id="pf-sku" type="text" placeholder="MG-CB-SET"></div>
+      <div class="fl"><label for="pf-cat">Category</label><input id="pf-cat" type="text" placeholder="Education"></div>
+      <div class="fl full"><label>Images</label><div class="drop sm"><i data-lucide="image-plus"></i><b>Drop images here or browse</b></div></div>
+    </div></div>
+    <div class="sec"><h4>Pricing</h4><div class="fg">
+      <div class="fl"><label for="pf-p">Selling price (GH₵)</label><input id="pf-p" type="number" step="0.01" placeholder="249"></div>
+      <div class="fl"><label for="pf-c">Cost per unit (GH₵)</label><input id="pf-c" type="number" step="0.01" placeholder="30"></div>
+      <div class="fl full"><div class="landed" style="font-weight:600"><span>Margin before delivery</span><b class="num" id="pf-m">—</b></div></div>
+    </div></div>
+    <div class="sec pfield" id="pf-phys"><h4>Stock</h4><div class="fg">
+      <div class="fl"><label for="pf-st">Starting stock</label><input id="pf-st" type="number" placeholder="0"><div class="hint" id="pf-sth">Counted at the warehouse.</div></div>
+      <div class="fl"><label for="pf-lo">Low stock alert at</label><input id="pf-lo" type="number" placeholder="14"><div class="hint">Alert when stock covers fewer days than this.</div></div>
+    </div></div>
+    <div class="sec pfield" id="pf-dig" hidden><h4>Digital file</h4><div class="fg">
+      <div class="fl full"><label for="pf-url">File URL</label><input id="pf-url" type="text" placeholder="https://drive.google.com/file/d/... or a Dropbox link"></div>
+      <div class="fl"><label for="pf-ft">File type</label><select id="pf-ft"><option>PDF</option><option>EPUB</option><option>MP3</option><option>MP4 video</option><option>ZIP</option></select></div>
+      <div class="fl"><label for="pf-ex">Link expires after (hours)</label><input id="pf-ex" type="number" value="72"></div>
+      <div class="fl full"><div class="hint" style="margin-top:0">The customer gets the link by WhatsApp once the order is paid. No stock is tracked.</div></div>
+    </div></div>
+    <label class="chk"><input type="checkbox" id="pf-a" checked> Product is active and can be ordered</label>
+  </div>
+  <div class="sf"><button class="btn" data-close>Cancel</button><button class="btn pri" id="pf-save"><i data-lucide="check"></i>Save product</button></div>
+</aside>
+<div class="mveil" id="m-ship" role="dialog" aria-modal="true" aria-labelledby="t-ship">
+  <div class="dlg">
+    <div class="mh"><div><h3 id="t-ship">Add incoming shipment</h3><p>Record what is on the way and what it costs to land.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="fg">
+        <div class="fl"><label for="sp-p">Product</label><select id="sp-p"><option>Magic Groove copybook set</option><option>Magic Groove refill pens</option><option>Pencil grip trainer</option></select></div>
+        <div class="fl"><label for="sp-s">Supplier</label><input id="sp-s" type="text" value="Accra Print House"></div>
+      </div>
+      <div class="fg">
+        <div class="fl"><label for="sp-q">Quantity</label><input id="sp-q" type="number" min="1" value="400"></div>
+        <div class="fl"><label for="sp-u">Unit cost (GH₵)</label><input id="sp-u" type="number" step="0.01" value="27.9"></div>
+        <div class="fl"><label for="sp-sh">Shipping (GH₵)</label><input id="sp-sh" type="number" step="0.01" value="640"></div>
+        <div class="fl"><label for="sp-c">Customs and duties (GH₵)</label><input id="sp-c" type="number" step="0.01" value="0"></div>
+        <div class="fl"><label for="sp-o">Other costs (GH₵)</label><input id="sp-o" type="number" step="0.01" value="200"></div>
+        <div class="fl"><label for="sp-e">Expected arrival</label><input id="sp-e" type="text" value="22 Oct"></div>
+      </div>
+      <div class="fl"><label for="sp-n">Notes <span class="opt">(optional)</span></label><textarea id="sp-n" placeholder="Order reference, tracking number"></textarea></div>
+      <div class="landed"><span>Landed cost per unit</span><b class="num" id="sp-l">GH₵30.00</b></div>
+    </div>
+    <div class="mf"><button class="btn" data-close>Cancel</button><button class="btn pri" id="sp-save"><i data-lucide="check"></i>Save shipment</button></div>
+  </div>
+</div>
+<div class="mveil" id="m-recv" role="dialog" aria-modal="true" aria-labelledby="t-recv">
+  <div class="dlg">
+    <div class="mh"><div><h3 id="t-recv">Receive shipment</h3><p id="rv-sub">Count what arrived before it goes into stock.</p></div><button class="ibtn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+    <div class="mb">
+      <div class="fg">
+        <div class="fl"><label for="rv-at">Received at</label><select id="rv-at"><option>Own store (Accra)</option><option selected>Logiswift warehouse (Tema)</option><option>Kofi Appiah</option><option>Esi Badu</option><option>Kwesi Amoah</option><option>Kasapa Express (trial)</option></select></div>
+        <div class="fl"><label for="rv-d">Received date</label><input id="rv-d" type="text" value="18 Oct"></div>
+        <div class="fl"><label for="rv-s">Units shipped</label><input id="rv-s" type="number" readonly></div>
+        <div class="fl"><label for="rv-c">Units counted</label><input id="rv-c" type="number" min="1" inputmode="numeric"></div>
+      </div>
+      <div class="landed" id="rv-short-row"><span>Short or damaged</span><b class="num" id="rv-short">0</b></div>
+      <div class="fl"><label for="rv-n">Note <span class="opt">(optional)</span></label><textarea id="rv-n" placeholder="For example: two cartons wet, photos sent to the supplier"></textarea></div>
+      <div class="landed"><span>Landed cost per unit</span><b class="num" id="rv-l">GH₵0</b></div>
+    </div>
+    <div class="mf"><button class="btn" data-close>Cancel</button><button class="btn pri" id="rv-save"><i data-lucide="package-check"></i>Save and add to stock</button></div>
+  </div>
+</div>
+<!-- ===== Stock modals (allocate, transfer, return, adjust, history) ===== -->
+<!-- Agent drawer -->
+<aside class="drawer" id="drawer" aria-label="Agent">
+  <div class="dh"><div class="logo"><i data-lucide="sparkles"></i></div><div><b>CodAdmin agent</b><small>Read-only · sees your live data</small></div><button class="ibtn" id="closeAgent" aria-label="Close"><i data-lucide="x"></i></button></div>
+  <div class="dbody">
+    <div class="msg-u">Why are we behind on October?</div>
+    <div class="tool"><i data-lucide="check-circle-2"></i>Checked 1,445 orders, 6 payouts and Meta spend</div>
+    <div class="msg-a">
+      <p>October is <b>GH₵7k behind pace</b>. Orders and confirmations are on target. Delivery is the problem.</p>
+      <p>Delivery success is <b>48%</b>, target 60%. 41% of failed orders say "customer not reachable". Logiswift is lowest at 45%.</p>
+      <p>Each 5 points of delivery success adds about GH₵22k this month.</p>
+    </div>
+    <div class="sugg"><button>Show Logiswift failed orders</button><button>Who has the most "not reachable"?</button></div>
+  </div>
+  <div class="dfoot">
+    <div class="ask"><i data-lucide="message-square"></i>Ask about orders, cash, stock or targets…<span class="send"><i data-lucide="arrow-up"></i></span></div>
+  </div>
+</aside>
+
+<!-- Command palette -->
+<div class="veil" id="veil">
+  <div class="cmdk" role="dialog" aria-label="Command menu">
+    <div class="in"><i data-lucide="search"></i><input id="kq" placeholder="Type a command or ask a question…"></div>
+    <p>Ask the agent</p>
+    <button class="it sel"><i data-lucide="sparkles" style="color:var(--violet)"></i>How much cash is still with Logiswift?<small>↵</small></button>
+    <p>Go to</p>
+    <button class="it" data-go="orders"><i data-lucide="shopping-bag"></i>Orders<small>G O</small></button>
+    <button class="it" data-go="board"><i data-lucide="trophy"></i>Leaderboard<small>G L</small></button>
+    <button class="it" data-go="targets"><i data-lucide="target"></i>Targets<small>G T</small></button>
+    <p>Actions</p>
+    <button class="it"><i data-lucide="banknote"></i>Record a 3PL payout</button>
+    <button class="it"><i data-lucide="clipboard-check"></i>Start a stock count</button>
+  </div>
+</div>
+
+<div class="sample">Mockup · sample data · click the menu, ⌘K, "Ask agent" and the moon</div>
+
+<script>
+// r2 layers: open/close for sheets and modals, menus, toast
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const scrim = document.getElementById('scrim');
+const toastEl = document.getElementById('toast');
+let toastT;
+function toast(msg){ toastEl.querySelector('span').textContent = msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), 2600); }
+function closeMenus(){ $$('.menu.on').forEach(m => m.classList.remove('on')); }
+function closeLayers(){ $$('.sheet.on,.mveil.on').forEach(l => l.classList.remove('on')); scrim.classList.remove('on'); closeMenus(); }
+function openLayer(id){
+  const el = document.getElementById(id); if(!el) return;
+  if(el.classList.contains('sheet')){ $$('.sheet.on').forEach(l => l.classList.remove('on')); scrim.classList.add('on'); }
+  el.classList.add('on'); closeMenus();
+  (el.querySelector('input:not([type=checkbox]),select,textarea') || el).focus?.({preventScroll:true});
+}
+function closeLayer(el){ el.classList.remove('on'); if(!$$('.sheet.on').length) scrim.classList.remove('on'); }
+document.addEventListener('click', e => {
+  const o = e.target.closest('[data-open]');
+  if(o){ if(o.dataset.fill) fillForm(o.dataset.open, JSON.parse(o.dataset.fill)); openLayer(o.dataset.open); if(window.onOpenLayer) window.onOpenLayer(o); return; }
+  const c = e.target.closest('[data-close]');
+  if(c){ closeLayer(c.closest('.sheet,.mveil')); return; }
+  if(e.target.classList && e.target.classList.contains('mveil')){ closeLayer(e.target); return; }
+  const m = e.target.closest('[data-menu]');
+  if(m){ const menu = document.getElementById(m.dataset.menu); const was = menu.classList.contains('on'); closeMenus(); if(!was){ menu.classList.add('on'); } return; }
+  if(!e.target.closest('.menu')) closeMenus();
+});
+scrim.onclick = closeLayers;
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeLayers(); });
+function fillForm(id, vals){ const el = document.getElementById(id); Object.entries(vals).forEach(([k,v]) => { const f = el.querySelector('[name="'+k+'"]'); if(f){ f.value = v; f.dispatchEvent(new Event('change',{bubbles:true})); } }); }
+const money = n => 'GH₵' + n.toLocaleString('en-GB', {minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2});
+
+lucide.createIcons();
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { location.href = 'index.html#' + b.dataset.go; });
+const drawer = document.getElementById('drawer');
+document.getElementById('openAgent').onclick = () => drawer.classList.add('on');
+document.getElementById('closeAgent').onclick = () => drawer.classList.remove('on');
+const veil = document.getElementById('veil');
+const openK = () => { veil.classList.add('on'); document.getElementById('kq').focus(); };
+document.getElementById('openK').onclick = openK;
+veil.onclick = e => { if (e.target === veil) veil.classList.remove('on'); };
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openK(); }
+  if (e.key === 'Escape') { veil.classList.remove('on'); drawer.classList.remove('on'); }
+});
+const root = document.documentElement;
+document.getElementById('theme').onclick = () => {
+  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+};
+document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
+  s.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+
+const rows = [...document.querySelectorAll('tbody tr[data-st]')];
+document.querySelectorAll('.tab[data-f]').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab[data-f]').forEach(x => x.classList.toggle('on', x === t));
+  rows.forEach(r => r.style.display = (t.dataset.f === 'all' || r.dataset.st === t.dataset.f) ? '' : 'none');
+});
+
+// ---- stock on hand (read only here; actions are in Inventory) ----
+const STOCK = {
+  'Magic Groove copybook set': {'Logiswift warehouse':100,'Kofi Appiah':36,'Esi Badu':12,'Kwesi Amoah':10,'Kasapa Express (trial)':0},
+  'Magic Groove refill pens': {'Logiswift warehouse':62,'Kofi Appiah':18,'Esi Badu':0,'Kwesi Amoah':0,'Kasapa Express (trial)':0},
+  'Pencil grip trainer': {'Logiswift warehouse':180,'Kofi Appiah':45,'Esi Badu':0,'Kwesi Amoah':0,'Kasapa Express (trial)':0}
+};
+const stockOf = (p, h) => (STOCK[p] && STOCK[p][h]) || 0;
+function stockHints(){}
+// ---- products page ----
+$$('.pgtab').forEach(t => t.onclick = () => showPane(t.dataset.pane));
+function showPane(p){ $$('.pgtab').forEach(x => x.classList.toggle('on', x.dataset.pane === p)); $('#pane-products').hidden = p !== 'products'; $('#pane-incoming').hidden = p !== 'incoming'; }
+$$('[data-tab]').forEach(b => b.onclick = () => showPane(b.dataset.tab));
+$$('.xbtn').forEach(b => b.onclick = e => { e.stopPropagation(); const row = b.closest('tr'), d = row.nextElementSibling, open = b.getAttribute('aria-expanded') === 'true'; b.setAttribute('aria-expanded', !open); d.hidden = open; });
+// tab filter must also hide detail rows
+$$('.tab[data-f]').forEach(t => t.addEventListener('click', () => { $$('tr.exp').forEach(d => { const p = d.previousElementSibling; d.style.display = p.style.display === 'none' ? 'none' : ''; }); }));
+// product drawer
+const PRODS = {
+  copybook:{n:'Magic Groove copybook set',sku:'MG-CB-SET',cat:'Education',p:249,c:30,type:'physical',st:158,d:'Reusable copybooks with disappearing ink, a pen and a grip trainer.'},
+  pens:{n:'Magic Groove refill pens',sku:'MG-PEN-REF',cat:'Education',p:40,c:12,type:'physical',st:80,d:'Pack of 5 refill pens.'},
+  grip:{n:'Pencil grip trainer',sku:'MG-GRIP-01',cat:'Education',p:35,c:11,type:'physical',st:225,d:'Soft grip that trains the right hold.'},
+  guide:{n:"Smart Parent's Home Study Guide",sku:'SPH-GUIDE-DIG',cat:'Guides',p:59,c:3,type:'digital',d:'Home study plan for ages 3 to 8.',url:'https://drive.google.com/file/d/1sph-guide-v3/view',ft:'PDF',ex:72},
+  starter:{n:'Magic Groove starter pack',sku:'MG-STR-OLD',cat:'Education',p:199,c:84,type:'physical',st:0,d:'Replaced by the copybook set.',off:true},
+  ink:{n:'Disappearing ink 3-pack',sku:'MG-INK-3PK',cat:'Education',p:30,c:14,type:'physical',st:0,d:'Merged into refill pens.',off:true},
+  new:{n:'',sku:'',cat:'',p:'',c:'',type:'physical',d:''}
+};
+function setType(t){ $$('#pf-type button').forEach(b => b.classList.toggle('on', b.dataset.type === t)); $('#pf-phys').hidden = t !== 'physical'; $('#pf-dig').hidden = t !== 'digital'; }
+$$('#pf-type button').forEach(b => b.addEventListener('click', () => setType(b.dataset.type)));
+function margin(){ const p = +$('#pf-p').value, c = +$('#pf-c').value; $('#pf-m').textContent = p > 0 ? Math.round((p - c) / p * 100) + '%  ·  ' + money(p - c) + ' per unit' : '—'; }
+$('#pf-p').oninput = margin; $('#pf-c').oninput = margin;
+$$('[data-edit]').forEach(b => b.onclick = () => {
+  const d = PRODS[b.dataset.edit], isNew = b.dataset.edit === 'new';
+  $('#pf-title').textContent = isNew ? 'Add product' : 'Edit product';
+  $('#pf-sub').textContent = isNew ? 'Physical products track stock. Digital products send a download link.' : d.sku;
+  $('#pf-n').value = d.n; $('#pf-sku').value = d.sku; $('#pf-cat').value = d.cat; $('#pf-p').value = d.p; $('#pf-c').value = d.c; $('#pf-d').value = d.d;
+  $('#pf-st').value = isNew ? '' : (d.st ?? ''); $('#pf-st').disabled = !isNew && d.type === 'physical';
+  $('#pf-sth').textContent = isNew ? 'Counted at the warehouse.' : 'Change stock with Allocate stock or Adjust quantity.';
+  $('#pf-lo').value = isNew ? '' : 14;
+  $('#pf-url').value = d.url || ''; $('#pf-ft').value = d.ft || 'PDF'; $('#pf-ex').value = d.ex || 72;
+  $('#pf-a').checked = !d.off; setType(d.type); margin(); openLayer('sh-product');
+});
+$('#pf-save').onclick = () => { closeLayer($('#sh-product')); toast('Product saved'); };
+// shipments
+let SHIPS = [
+  {p:'Magic Groove copybook set',s:'Accra Print House',q:400,u:27.9,sh:640,c:0,o:200,e:'22 Oct',st:'pending'},
+  {p:'Magic Groove refill pens',s:'Guangzhou Stationery',q:600,u:9.5,sh:1200,c:600,o:0,e:'29 Oct',st:'pending'},
+  {p:'Pencil grip trainer',s:'Guangzhou Stationery',q:500,u:8,sh:900,c:450,o:100,e:'3 Nov',st:'pending'},
+  {p:'Magic Groove copybook set',s:'Accra Print House',q:300,u:27,sh:450,c:0,o:150,e:'9 Oct',st:'arrived',at:'Logiswift warehouse (Tema)',cnt:288},
+  {p:'Magic Groove refill pens',s:'Guangzhou Stationery',q:400,u:9.5,sh:800,c:400,o:0,e:'2 Oct',st:'arrived',at:'Logiswift warehouse (Tema)',cnt:400}
+];
+let shipF = 'all';
+const tot = x => x.q * x.u + x.sh + x.c + x.o;
+const units = x => x.st === 'arrived' ? x.cnt : x.q;
+const dash = '<span style="color:var(--ink-3)">—</span>';
+function renderShips(){
+  const pend = SHIPS.filter(x => x.st === 'pending'), arr = SHIPS.length - pend.length;
+  $('#shp-tabs').innerHTML = [['all','All',SHIPS.length],['pending','Pending',pend.length],['arrived','Arrived',arr]].map(([k,l,n]) => '<button class="tab' + (shipF === k ? ' on' : '') + '" data-sf="' + k + '">' + l + ' <span>' + n + '</span></button>').join('');
+  $('#shp-body').innerHTML = SHIPS.map((x, i) => ({x, i})).filter(({x}) => shipF === 'all' || x.st === shipF).map(({x, i}) =>
+    '<tr><td><b>' + x.p + '</b></td><td>' + x.s + '</td><td class="r num">' + x.q + '</td><td class="r num">' + money(x.u) + '</td><td class="r num">' + money(x.sh) + '</td><td class="r num">' + money(x.c) + '</td><td class="r num">' + money(x.o) + '</td><td class="r num"><b>' + money(tot(x)) + '</b></td><td class="r num"><b>' + money(Math.round(tot(x) / units(x) * 100) / 100) + '</b></td><td>' + x.e + '</td><td>' + (x.st === 'pending' ? dash : x.at.replace(/ \((.*)\)/, '<small style="display:block;color:var(--ink-3);font-size:12px">$1</small>')) + '</td><td class="r num">' + (x.st === 'pending' ? dash : x.cnt) + '</td><td class="r num">' + (x.st === 'pending' ? dash : x.q - x.cnt > 0 ? '<span class="tag bad">' + (x.q - x.cnt) + ' short</span>' : '0') + '</td><td>' + (x.st === 'pending' ? '<span class="tag v">Pending</span>' : '<span class="tag ok">Arrived</span>') + '</td><td class="r">' + (x.st === 'pending' ? '<button class="mini pri" data-arr="' + i + '">Mark as arrived</button>' : '<span style="color:var(--ink-3)">In stock</span>') + '</td></tr>').join('');
+  $('#pendN').textContent = pend.length + ' pending'; $('#k-pend').textContent = pend.length;
+  $('#k-units').textContent = pend.reduce((a, x) => a + x.q, 0).toLocaleString('en-GB'); $('#k-cost').textContent = money(Math.round(pend.reduce((a, x) => a + tot(x), 0)));
+  $('#shp-count').textContent = 'Showing ' + $$('#shp-body tr').length + ' of ' + SHIPS.length;
+  $$('[data-sf]').forEach(b => b.onclick = () => { shipF = b.dataset.sf; renderShips(); });
+  $$('[data-arr]').forEach(b => b.onclick = () => { recvI = +b.dataset.arr; const x = SHIPS[recvI]; $('#rv-sub').textContent = x.p + ' · ' + x.s; $('#rv-s').value = x.q; $('#rv-c').value = x.q; $('#rv-n').value = ''; recvCalc(); openLayer('m-recv'); });
+}
+let recvI = -1;
+function recvCalc(){
+  const x = SHIPS[recvI], c = Math.min(x.q, +$('#rv-c').value || 0), sh = x.q - c;
+  $('#rv-short').textContent = sh + (sh === 1 ? ' unit' : ' units'); $('#rv-short-row').classList.toggle('bad', sh > 0);
+  $('#rv-l').textContent = c ? money(Math.round(tot(x) / c * 100) / 100) : '—';
+}
+$('#rv-c').oninput = recvCalc;
+$('#rv-c').onchange = () => { const x = SHIPS[recvI]; $('#rv-c').value = Math.min(x.q, Math.max(1, +$('#rv-c').value || x.q)); recvCalc(); };
+$('#rv-save').onclick = () => {
+  const x = SHIPS[recvI], c = Math.min(x.q, Math.max(1, +$('#rv-c').value || x.q)), sh = x.q - c, at = $('#rv-at').value, h = at.replace(' (Tema)', '');
+  x.st = 'arrived'; x.at = at; x.cnt = c; STOCK[x.p][h] = stockOf(x.p, h) + c; stockHints();
+  closeLayer($('#m-recv')); renderShips();
+  toast(c + ' units added at ' + h + '. ' + (sh ? sh + ' short. Flagged for supplier claim.' : 'Landed cost ' + money(Math.round(tot(x) / c * 100) / 100) + ' each.'));
+};
+function landed(){ const q = +$('#sp-q').value || 0; const t = q * (+$('#sp-u').value || 0) + (+$('#sp-sh').value || 0) + (+$('#sp-c').value || 0) + (+$('#sp-o').value || 0); $('#sp-l').textContent = q ? money(Math.round(t / q * 100) / 100) : '—'; }
+['sp-q','sp-u','sp-sh','sp-c','sp-o'].forEach(i => document.getElementById(i).oninput = landed);
+$('#sp-save').onclick = () => { SHIPS.unshift({p:$('#sp-p').value,s:$('#sp-s').value,q:+$('#sp-q').value,u:+$('#sp-u').value,sh:+$('#sp-sh').value,c:+$('#sp-c').value,o:+$('#sp-o').value,e:$('#sp-e').value,st:'pending'}); closeLayer($('#m-ship')); showPane('incoming'); renderShips(); toast('Shipment added'); };
+renderShips(); landed();
+
+lucide.createIcons();
+</script>
+<script src="shell.js"></script>
+</body>
+</html>

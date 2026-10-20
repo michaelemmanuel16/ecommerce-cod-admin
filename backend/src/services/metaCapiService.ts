@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { decryptString } from '../utils/providerCrypto';
+import * as Money from '../utils/money';
 
 // Meta Conversion API (server-side Purchase events). Restores conversion signal
 // that iOS / in-app-browser blockers eat from the client-side Pixel. Events
@@ -168,7 +169,8 @@ async function fireCapiPurchaseEvent(orderId: number): Promise<void> {
       event_id: order.paymentReference || String(order.id),
       user_data: userData,
       custom_data: {
-        value: order.totalAmount,
+        // Meta needs a JSON number here (a Decimal serializes as a string): external boundary, display value only
+        value: Money.parse(order.totalAmount).toNumber(),
         currency: form.currency || 'GHS',
         content_ids: [form.productId],
         content_type: 'product',

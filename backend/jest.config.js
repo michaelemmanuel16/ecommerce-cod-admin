@@ -29,10 +29,10 @@ module.exports = {
   restoreMocks: true,
   coverageThreshold: {
     global: {
-      branches: 25,     // Pragmatic threshold - branch coverage is hardest
-      functions: 29,    // Match current coverage - focus on critical functions
-      lines: 37,        // Match current coverage - improved from initial 34%
-      statements: 38,   // Match current coverage - reasonable for complex codebase
+      branches: 49,     // Floor = current 49.33 rounded down (COD-8); raise at M5 and M11
+      functions: 60,    // Floor = current 60.30 rounded down
+      lines: 62,        // Floor = current 62.57 rounded down
+      statements: 62,   // Floor = current 62.87 rounded down
     },
   },
   globals: {

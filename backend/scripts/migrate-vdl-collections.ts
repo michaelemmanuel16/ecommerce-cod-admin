@@ -43,6 +43,7 @@ async function migrateVDLCollections() {
                 const amount = order.codAmount || order.totalAmount;
                 await prisma.agentCollection.create({
                     data: {
+                        tenantId: vdlAgent.tenantId!,
                         orderId: order.id,
                         agentId: vdlAgent.id,
                         amount: amount,

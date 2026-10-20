@@ -2,12 +2,14 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 import crypto from 'crypto';
+import { safeEqual } from '../utils/crypto';
 import { parsePackageField } from '../utils/packageParser';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
-import { tenantStorage } from '../utils/tenantContext';
+import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
+import * as Money from '../utils/money';
 
 
 interface CreateWebhookData {
@@ -181,8 +183,7 @@ export class WebhookService {
       const hmac = crypto.createHmac('sha256', secret);
       const digest = hmac.update(payload).digest('hex');
       const sig = signature.replace(/^sha256=/, '');
-      if (sig.length !== digest.length) return false;
-      return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(digest, 'hex'));
+      return safeEqual(sig, digest);
     } catch (error) {
       logger.error('Signature verification failed', { error });
       return false;
@@ -221,73 +222,25 @@ export class WebhookService {
   async processWebhook(data: ProcessWebhookData) {
     const { signature, apiKey, body, headers, endpoint, method } = data;
 
-    // Create webhook log (WebhookLog has no tenantId column)
-    const webhookLog = await prisma.webhookLog.create({
-      data: {
-        endpoint,
-        method,
-        headers: headers as any,
-        body: body as any,
-        success: false,
-      }
-    });
-
-    try {
-      // Find webhook config by API key
-      let webhookConfig = null;
-      if (apiKey) {
-        webhookConfig = await prisma.webhookConfig.findFirst({
+    // Find the config first: the tenant comes from it. No key, no tenant, no import.
+    const webhookConfig = apiKey
+      ? await withoutTenant('webhook-import-api-key', () =>
+        prisma.webhookConfig.findFirst({
           where: { apiKey, isActive: true }
-        });
+        })
+      )
+      : null;
 
-        if (!webhookConfig) {
-          await this.updateWebhookLog(webhookLog.id, {
-            success: false,
-            errorMessage: 'Invalid API key',
-            statusCode: 401
-          });
-          throw new AppError('Invalid API key', 401);
-        }
-
-        await prisma.webhookLog.update({
-          where: { id: webhookLog.id },
-          data: { webhookConfigId: webhookConfig.id }
-        });
-      }
-
-      await this.enforceSignature(webhookLog.id, webhookConfig, signature, body);
-
-      // Process orders within tenant context derived from webhook config
-      const tenantId = webhookConfig?.tenantId as string | null;
-      const results = tenantId
-        ? await tenantStorage.run({ tenantId }, () => this.processOrdersFromWebhook(body, webhookConfig))
-        : await this.processOrdersFromWebhook(body, webhookConfig);
-
-      // Update webhook log as successful
-      await this.updateWebhookLog(webhookLog.id, {
-        success: true,
-        response: results,
-        statusCode: 200
-      });
-
-      return {
-        message: 'Webhook processed',
-        results
-      };
-    } catch (error: any) {
-      logger.error('Webhook processing error', {
-        error: error.message,
-        webhookLogId: webhookLog.id
-      });
-
-      await this.updateWebhookLog(webhookLog.id, {
-        success: false,
-        errorMessage: error.message,
-        statusCode: error.statusCode || 500
-      });
-
-      throw error;
+    if (!webhookConfig) {
+      logger.warn('Webhook rejected: invalid API key', { endpoint });
+      throw new AppError('Invalid API key', 401);
     }
+    if (!webhookConfig.tenantId) {
+      logger.warn('Webhook rejected: config has no tenant', { endpoint, webhookConfigId: webhookConfig.id });
+      throw new AppError('Invalid API key', 401);
+    }
+
+    return this.processForConfig(webhookConfig, webhookConfig.tenantId, { signature, body, headers, endpoint, method });
   }
 
   /**
@@ -296,74 +249,72 @@ export class WebhookService {
   async processWebhookByUniqueUrl(data: ProcessWebhookByUniqueUrlData) {
     const { uniqueUrl, signature, body, headers, endpoint, method } = data;
 
-    // Create webhook log (WebhookLog has no tenantId column)
-    const webhookLog = await prisma.webhookLog.create({
-      data: {
-        endpoint,
-        method,
-        headers: headers as any,
-        body: body as any,
-        success: false,
-      }
-    });
-
-    try {
-      // Find webhook config by unique URL (include product relation)
-      const webhookConfig = await prisma.webhookConfig.findUnique({
+    // Find webhook config by unique URL (include product relation). The log row needs its tenant.
+    const webhookConfig = await withoutTenant('webhook-import-unique-url', () =>
+      prisma.webhookConfig.findUnique({
         where: { uniqueUrl, isActive: true },
         include: {
           product: true
         }
-      });
+      })
+    );
 
-      if (!webhookConfig) {
+    if (!webhookConfig) {
+      logger.warn('Webhook rejected: invalid webhook URL', { endpoint });
+      throw new AppError('Webhook not found', 404);
+    }
+    if (!webhookConfig.tenantId) {
+      logger.warn('Webhook rejected: config has no tenant', { endpoint, webhookConfigId: webhookConfig.id });
+      throw new AppError('Webhook not found', 404);
+    }
+
+    return this.processForConfig(webhookConfig, webhookConfig.tenantId, { signature, body, headers, endpoint, method });
+  }
+
+  /**
+   * Shared tail of both webhook entry paths. The config was found by an unscoped
+   * lookup (API key / unique URL) and has a tenant; from here everything runs inside it.
+   */
+  private async processForConfig(
+    webhookConfig: any,
+    tenantId: string,
+    data: { signature: string | undefined; body: any; headers: unknown; endpoint: string; method: string }
+  ) {
+    const { signature, body, headers, endpoint, method } = data;
+    return runInTenant(tenantId, async () => {
+      const webhookLog = await this.createWebhookLog(webhookConfig, tenantId, { endpoint, method, headers, body });
+
+      try {
+        await this.enforceSignature(webhookLog.id, webhookConfig, signature, body);
+
+        const results = await this.processOrdersFromWebhook(body, webhookConfig);
+
+        // Update webhook log as successful
+        await this.updateWebhookLog(webhookLog.id, {
+          success: true,
+          response: results,
+          statusCode: 200
+        });
+
+        return {
+          message: 'Webhook processed',
+          results
+        };
+      } catch (error: any) {
+        logger.error('Webhook processing error', {
+          error: error.message,
+          webhookLogId: webhookLog.id
+        });
+
         await this.updateWebhookLog(webhookLog.id, {
           success: false,
-          errorMessage: 'Invalid webhook URL',
-          statusCode: 404
+          errorMessage: error.message,
+          statusCode: error.statusCode || 500
         });
-        throw new AppError('Webhook not found', 404);
+
+        throw error;
       }
-
-      // Link webhook log to config
-      await prisma.webhookLog.update({
-        where: { id: webhookLog.id },
-        data: { webhookConfigId: webhookConfig.id }
-      });
-
-      await this.enforceSignature(webhookLog.id, webhookConfig, signature, body);
-
-      // Process orders within tenant context derived from webhook config
-      const tenantId = webhookConfig?.tenantId as string | null;
-      const results = tenantId
-        ? await tenantStorage.run({ tenantId }, () => this.processOrdersFromWebhook(body, webhookConfig))
-        : await this.processOrdersFromWebhook(body, webhookConfig);
-
-      // Update webhook log as successful
-      await this.updateWebhookLog(webhookLog.id, {
-        success: true,
-        response: results,
-        statusCode: 200
-      });
-
-      return {
-        message: 'Webhook processed',
-        results
-      };
-    } catch (error: any) {
-      logger.error('Webhook processing error', {
-        error: error.message,
-        webhookLogId: webhookLog.id
-      });
-
-      await this.updateWebhookLog(webhookLog.id, {
-        success: false,
-        errorMessage: error.message,
-        statusCode: error.statusCode || 500
-      });
-
-      throw error;
-    }
+    });
   }
 
   /**
@@ -379,9 +330,15 @@ export class WebhookService {
    * Hash of (phone + totalAmount + date) prevents race-condition duplicates
    * via a DB unique constraint.
    */
-  private generateWebhookFingerprint(phone: string, totalAmount: number, webhookConfigId?: number): string {
+  /** Money from an external payload field. Missing or invalid is zero. */
+  private parseMoneyField(value: unknown): Money.Money {
+    return Money.tryParse(typeof value === 'string' ? value.trim() : value) ?? Money.ZERO;
+  }
+
+  private generateWebhookFingerprint(phone: string, totalAmount: Money.Money, webhookConfigId?: number): string {
     const dateStr = new Date().toISOString().split('T')[0]; // same calendar day
-    const raw = `${phone}|${totalAmount}|${webhookConfigId || ''}|${dateStr}`;
+    // Decimal.toString() prints 675 and 675.5 as the old number form did, so same-day fingerprints stay stable
+    const raw = `${phone}|${totalAmount.toString()}|${webhookConfigId || ''}|${dateStr}`;
     return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 40);
   }
 
@@ -422,7 +379,7 @@ export class WebhookService {
         // Determine product, quantity, and price
         let product = null;
         let quantity = 1;
-        let price = 0;
+        let price: Money.Money = Money.ZERO;
         let packageInfo = '';
 
         // Check if webhook has a configured product (new flow)
@@ -437,7 +394,7 @@ export class WebhookService {
           if (packageField) {
             const parsed = parsePackageField(packageField);
             quantity = parsed.quantity;
-            price = parsed.price;
+            price = Money.fromNumber(parsed.price);
 
             logger.info('Parsed package field', {
               packageField,
@@ -448,13 +405,13 @@ export class WebhookService {
           } else {
             // Fall back to explicit quantity/price fields if package field is empty
             quantity = Number(mappedData.quantity || externalOrder.quantity || 1);
-            price = Number(mappedData.price || externalOrder.price || 0);
+            price = this.parseMoneyField(mappedData.price || externalOrder.price);
           }
         } else {
           // Old flow: Look up product by name (backward compatibility)
           const productName = mappedData.productName || externalOrder.product_name || externalOrder.product;
           quantity = Number(mappedData.quantity || externalOrder.quantity || 1);
-          price = Number(mappedData.price || externalOrder.price || 0);
+          price = this.parseMoneyField(mappedData.price || externalOrder.price);
           packageInfo = mappedData.package || externalOrder.package || '';
 
           product = productName ? await this.findProductByName(productName) : null;
@@ -464,9 +421,11 @@ export class WebhookService {
         // The parsed price from package field is the TOTAL price for the package, not per-unit
         // Example: "BUY THREE SETS - GH₵675" means 3 sets for 675 total (not 675 each)
         const itemTotal = price; // Use price as-is (it's already the total)
-        const subtotal = mappedData.subtotal ? Number(mappedData.subtotal) : itemTotal;
-        const shippingCost = Number(mappedData.shippingCost || mappedData.deliveryFee || externalOrder.shipping_cost || externalOrder.delivery_fee || 0);
-        const totalAmount = Math.round((mappedData.totalAmount ? Number(mappedData.totalAmount) : subtotal + shippingCost) * 100) / 100;
+        const subtotal = mappedData.subtotal ? this.parseMoneyField(mappedData.subtotal) : itemTotal;
+        const shippingCost = this.parseMoneyField(mappedData.shippingCost || mappedData.deliveryFee || externalOrder.shipping_cost || externalOrder.delivery_fee);
+        const totalAmount = Money.roundHalfUp(
+          mappedData.totalAmount ? this.parseMoneyField(mappedData.totalAmount) : Money.add(subtotal, shippingCost)
+        );
 
         // Guard 1: exact-retry deduplication by externalOrderId (in-memory lookup from pre-fetch)
         const externalId = this.getExternalId(externalOrder);
@@ -490,7 +449,7 @@ export class WebhookService {
         if (existingExternalIdSet.has(`fp:${fingerprint}`)) {
           logger.info('Skipping duplicate webhook order (same fingerprint in batch)', {
             phone: customer.phoneNumber,
-            totalAmount,
+            totalAmount: Money.toApi(totalAmount),
           });
           results.skipped++;
           continue;
@@ -518,12 +477,13 @@ export class WebhookService {
                 create: {
                   productId: product.id,
                   quantity,
-                  unitPrice: quantity > 0 ? price / quantity : price,
+                  unitPrice: quantity > 0 ? Money.roundHalfUp(Money.div(price, quantity), 4) : price,
                   totalPrice: itemTotal
                 }
               } : undefined,
               orderHistory: {
                 create: {
+                  tenantId: resolveTenantId(webhookConfig?.tenantId),
                   status: 'pending_confirmation',
                   notes: 'Order imported via webhook'
                 }
@@ -538,7 +498,7 @@ export class WebhookService {
           if (err.code === 'P2002' && err.meta?.target?.includes('webhook_fingerprint')) {
             logger.info('Skipping duplicate webhook order (concurrent fingerprint collision)', {
               phone: customer.phoneNumber,
-              totalAmount,
+              totalAmount: Money.toApi(totalAmount),
               fingerprint,
             });
             results.skipped++;
@@ -652,8 +612,26 @@ export class WebhookService {
   }
 
   /**
-   * Update webhook log
+   * Create the log row, in the tenant of the webhook config.
    */
+  private async createWebhookLog(
+    webhookConfig: { id: number },
+    tenantId: string,
+    data: { endpoint: string; method: string; headers: unknown; body: unknown }
+  ): Promise<{ id: number }> {
+    return prisma.webhookLog.create({
+      data: {
+        tenantId,
+        webhookConfigId: webhookConfig.id,
+        endpoint: data.endpoint,
+        method: data.method,
+        headers: data.headers as any,
+        body: data.body as any,
+        success: false,
+      }
+    });
+  }
+
   private async updateWebhookLog(
     logId: number,
     data: {

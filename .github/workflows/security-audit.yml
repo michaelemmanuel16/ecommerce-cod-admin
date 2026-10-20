@@ -71,6 +71,25 @@ jobs:
         with:
           fail-on-severity: moderate
 
+  docs-guard:
+    name: Docs Wording Guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Fail on stale UI names or retired KPI wording
+        run: |
+          if grep -nE "Shadcn|WorkflowEditor" CLAUDE.md; then
+            echo "CLAUDE.md names Shadcn or WorkflowEditor. The app uses hand-written UI and WorkflowWizard."
+            exit 1
+          fi
+          if grep -rniE "airtime|6,400|26% (delivered|delivery|of orders)" docs/mockups/v2 --exclude=NUMBERS.md; then
+            echo "Retired KPI wording found in docs/mockups/v2."
+            exit 1
+          fi
+
   trivy-scan-backend:
     name: Trivy Security Scan - Backend
     runs-on: ubuntu-latest

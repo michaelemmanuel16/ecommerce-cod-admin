@@ -13,8 +13,11 @@ jest.mock('../../server', () => {
 import { prismaMock } from '../mocks/prisma.mock';
 import { FinancialService } from '../../services/financialService';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
+import { useTestTenant } from '../mocks/tenant.mock';
+import * as Money from '../../utils/money';
 
 describe('FinancialService Cash Flow Report', () => {
+    useTestTenant();
     let financialService: FinancialService;
 
     beforeEach(() => {
@@ -26,13 +29,13 @@ describe('FinancialService Cash Flow Report', () => {
         it('should calculate cash flow report correctly', async () => {
             // Mock GL Account lookups
             prismaMock.account.findUnique.mockImplementation(({ where }: any) => {
-                if (where.code === GL_ACCOUNTS.CASH_IN_HAND) {
+                if (where.tenantId_code.code === GL_ACCOUNTS.CASH_IN_HAND) {
                     return Promise.resolve({ code: GL_ACCOUNTS.CASH_IN_HAND, currentBalance: 1000 }) as any;
                 }
-                if (where.code === GL_ACCOUNTS.CASH_IN_TRANSIT) {
+                if (where.tenantId_code.code === GL_ACCOUNTS.CASH_IN_TRANSIT) {
                     return Promise.resolve({ code: GL_ACCOUNTS.CASH_IN_TRANSIT, currentBalance: 2000 }) as any;
                 }
-                if (where.code === GL_ACCOUNTS.AR_AGENTS) {
+                if (where.tenantId_code.code === GL_ACCOUNTS.AR_AGENTS) {
                     return Promise.resolve({ code: GL_ACCOUNTS.AR_AGENTS, currentBalance: 3000 }) as any;
                 }
                 return Promise.resolve(null);
@@ -77,11 +80,11 @@ describe('FinancialService Cash Flow Report', () => {
 
             const report = await financialService.getCashFlowReport();
 
-            expect(report.kpis.cashInHand).toBe(1000);
-            expect(report.kpis.cashInTransit).toBe(2000);
-            expect(report.kpis.outstandingReceivables).toBe(3000);
-            expect(report.kpis.cashExpected).toBe(4000);
-            expect(report.kpis.totalCashPosition).toBe(10000);
+            expect(Money.toApi(report.kpis.cashInHand)).toBe('1000.00');
+            expect(Money.toApi(report.kpis.cashInTransit)).toBe('2000.00');
+            expect(Money.toApi(report.kpis.outstandingReceivables)).toBe('3000.00');
+            expect(Money.toApi(report.kpis.cashExpected)).toBe('4000.00');
+            expect(Money.toApi(report.kpis.totalCashPosition)).toBe('10000.00');
             expect(report.forecast).toHaveLength(30);
             expect(report.agentBreakdown).toHaveLength(1);
         });
@@ -95,8 +98,8 @@ describe('FinancialService Cash Flow Report', () => {
 
             // Starting liquidity (In Hand + In Transit) = 1000 + 2000 = 3000
             prismaMock.account.findUnique.mockImplementation(({ where }: any) => {
-                if (where.code === GL_ACCOUNTS.CASH_IN_HAND) return Promise.resolve({ currentBalance: 1000 }) as any;
-                if (where.code === GL_ACCOUNTS.CASH_IN_TRANSIT) return Promise.resolve({ currentBalance: 2000 }) as any;
+                if (where.tenantId_code.code === GL_ACCOUNTS.CASH_IN_HAND) return Promise.resolve({ currentBalance: 1000 }) as any;
+                if (where.tenantId_code.code === GL_ACCOUNTS.CASH_IN_TRANSIT) return Promise.resolve({ currentBalance: 2000 }) as any;
                 return Promise.resolve(null);
             });
 
@@ -105,12 +108,12 @@ describe('FinancialService Cash Flow Report', () => {
             expect(forecast).toHaveLength(30);
 
             // Day 1: 3000 + (1000 - 500) = 3500
-            expect(forecast[0].projectedBalance).toBe(3500);
-            expect(forecast[0].expectedCollection).toBe(1000);
-            expect(forecast[0].expectedExpense).toBe(500);
+            expect(Money.toApi(forecast[0].projectedBalance)).toBe('3500.00');
+            expect(Money.toApi(forecast[0].expectedCollection)).toBe('1000.00');
+            expect(Money.toApi(forecast[0].expectedExpense)).toBe('500.00');
 
             // Day 30: 3000 + 30 * (1000 - 500) = 18000
-            expect(forecast[29].projectedBalance).toBe(18000);
+            expect(Money.toApi(forecast[29].projectedBalance)).toBe('18000.00');
         });
 
         it('should use cache if valid', async () => {

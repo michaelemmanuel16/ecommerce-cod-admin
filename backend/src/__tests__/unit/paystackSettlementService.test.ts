@@ -24,6 +24,8 @@ import * as paystackServiceModule from '../../services/paystackService';
 import workflowService from '../../services/workflowService';
 import { metaCapiService } from '../../services/metaCapiService';
 import { settlePaystackPayment } from '../../services/paystackSettlementService';
+import { tenantStorage, getTenantId } from '../../utils/tenantContext';
+import * as Money from '../../utils/money';
 
 const mockedPaystack = paystackServiceModule.paystackService as jest.Mocked<
   typeof paystackServiceModule.paystackService
@@ -69,7 +71,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
       data: { status: 'success', reference: 'ref_ok', amount: 25000, currency: 'GHS', fees: 375 },
     });
     (prismaMock.pendingCheckout.delete as any).mockResolvedValue(pending);
-    const createdOrder = { id: 55, orderType: 'physical', status: 'confirmed', paymentStatus: 'paid', customer: { id: 7 } };
+    const createdOrder = { id: 55, tenantId: 'tenant-1', orderType: 'physical', status: 'confirmed', paymentStatus: 'paid', customer: { id: 7 } };
     (prismaMock.order.create as any).mockResolvedValue(createdOrder);
     (prismaMock.order.findUnique as any).mockResolvedValue({ ...createdOrder });
 
@@ -82,10 +84,11 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
           status: 'confirmed',
           paymentStatus: 'paid',
           paymentReference: 'ref_ok',
-          depositPaid: 25000,
         }),
       }),
     );
+    // major units (F-405): 25000 minor units from Paystack is 250.00, not 25000
+    expect(Money.toApi((prismaMock.order.create as any).mock.calls[0][0].data.depositPaid)).toBe('250.00');
     expect(prismaMock.pendingCheckout.delete).toHaveBeenCalledWith({ where: { reference: 'ref_ok' } });
   });
 
@@ -107,11 +110,36 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     const existing = { id: 55, status: 'confirmed', paymentStatus: 'paid' };
     (prismaMock.order.findFirst as any).mockResolvedValue(existing);
 
-    const result = await settlePaystackPayment('ref_ok');
+    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('ref_ok'));
 
     expect(result.status).toBe('success');
     expect(result.order).toBe(existing);
     expect(prismaMock.pendingCheckout.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.order.create).not.toHaveBeenCalled();
+  });
+
+  it('public verify (no context) resolves the tenant from the pending checkout before settling (T15)', async () => {
+    (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(pending);
+    const seen: Array<string | null> = [];
+    (prismaMock.order.findFirst as any).mockImplementation(async () => {
+      seen.push(getTenantId());
+      return { id: 55, status: 'confirmed', paymentStatus: 'paid' };
+    });
+
+    const result = await settlePaystackPayment('ref_ok');
+
+    expect(result.status).toBe('success');
+    // the tenant is the pending checkout's tenant for the settlement lookup
+    expect(seen[seen.length - 1]).toBe(pending.tenantId);
+  });
+
+  it('public verify (no context) with an unknown reference is not_found and settles nothing (T15)', async () => {
+    (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(null);
+    (prismaMock.order.findFirst as any).mockResolvedValue(null);
+
+    const result = await settlePaystackPayment('ref_nope');
+
+    expect(result.status).toBe('not_found');
     expect(prismaMock.order.create).not.toHaveBeenCalled();
   });
 
@@ -143,14 +171,14 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
   });
 
   it('settles a deposit to paymentStatus "deposited" when the deposit portion is paid', async () => {
-    const depositPending = { ...pending, paymentMethod: 'paystack_deposit', paystackChargeMinor: 10000, balanceDue: 40000 };
+    const depositPending = { ...pending, paymentMethod: 'paystack_deposit', paystackChargeMinor: 10000, balanceDue: 150 };
     (prismaMock.order.findFirst as any).mockResolvedValue(null);
     (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(depositPending);
     (mockedPaystack.verifyTransaction as any).mockResolvedValue({
       data: { status: 'success', reference: 'ref_ok', amount: 10000, currency: 'GHS', fees: 150 },
     });
     (prismaMock.pendingCheckout.delete as any).mockResolvedValue(depositPending);
-    const createdOrder = { id: 56, orderType: 'physical', status: 'confirmed', paymentStatus: 'deposited', customer: { id: 7 } };
+    const createdOrder = { id: 56, tenantId: 'tenant-1', orderType: 'physical', status: 'confirmed', paymentStatus: 'deposited', customer: { id: 7 } };
     (prismaMock.order.create as any).mockResolvedValue(createdOrder);
     (prismaMock.order.findUnique as any).mockResolvedValue({ ...createdOrder });
 
@@ -158,8 +186,43 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
 
     expect(result.status).toBe('success');
     expect(prismaMock.order.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ paymentStatus: 'deposited', depositPaid: 10000 }) }),
+      expect.objectContaining({ data: expect.objectContaining({ paymentStatus: 'deposited' }) }),
     );
+    expect(Money.toApi((prismaMock.order.create as any).mock.calls[0][0].data.depositPaid)).toBe('100.00');
+  });
+
+  // F-405 / M0-T22
+  it('a 249.00 deposit order stores depositPaid 74.70 (30%), not 7470, and the Paystack fee in major units', async () => {
+    const depositPending = {
+      ...pending,
+      paymentMethod: 'paystack_deposit',
+      subtotal: 249,
+      totalAmount: 249,
+      codAmount: 174.3,
+      balanceDue: 174.3,
+      paystackChargeMinor: 7470,
+    };
+    (prismaMock.order.findFirst as any).mockResolvedValue(null);
+    (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(depositPending);
+    (mockedPaystack.verifyTransaction as any).mockResolvedValue({
+      data: { status: 'success', reference: 'ref_ok', amount: 7470, currency: 'GHS', fees: 112 },
+    });
+    (prismaMock.pendingCheckout.delete as any).mockResolvedValue(depositPending);
+    const createdOrder = { id: 57, tenantId: 'tenant-1', orderType: 'physical', status: 'confirmed', paymentStatus: 'deposited', customer: { id: 7 } };
+    (prismaMock.order.create as any).mockResolvedValue(createdOrder);
+    (prismaMock.order.findUnique as any).mockResolvedValue({ ...createdOrder });
+
+    const result = await settlePaystackPayment('ref_ok');
+
+    expect(result.status).toBe('success');
+    const data = (prismaMock.order.create as any).mock.calls[0][0].data;
+    expect(Money.toApi(data.depositPaid)).toBe('74.70');
+    expect(Money.toApi(data.balanceDue)).toBe('174.30');
+    expect(Money.toApi(data.totalAmount)).toBe('249.00');
+    expect(Money.compare(Money.add(data.depositPaid, data.balanceDue), data.totalAmount)).toBe(0);
+    const txn = (prismaMock.transaction.create as any).mock.calls[0][0].data;
+    expect(Money.toApi(txn.amount)).toBe('74.70');
+    expect(txn.metadata.fees).toBe('1.12');
   });
 
   it('ignores a settlement whose pending checkout belongs to a different tenant', async () => {
