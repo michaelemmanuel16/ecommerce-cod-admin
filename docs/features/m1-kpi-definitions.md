@@ -55,3 +55,24 @@ One state machine now owns every order status change. It checks the F-301 table,
 - `backend/src/services/orderService.ts`, `deliveryService.ts`, `glAutomationService.ts`, `paystackSettlementService.ts`, `callService.ts`, `customerService.ts`
 - `backend/src/middleware/auth.ts`, `middleware/errorHandler.ts`, `queues/financialReconciliationQueue.ts`, `mcp/tools/ordersWrite.ts`
 - `frontend/src/pages/Orders.tsx`, `frontend/src/pages/mobile/MobileDeliveryDetail.tsx`, `frontend/src/components/admin/RolePermissionsMatrix.tsx`
+
+---
+
+## COD-11 — M1-I03 KPI base, revenue and rates
+**Date:** 2026-10-20 | **Type:** feat | **Branch:** feature/m1-kpi-definitions | **Commit:** f5431ac
+
+### Summary
+The KPI layer starts here. Every KPI number now comes from `services/kpi`, with one date basis and one formula id. Delivered revenue, confirmation rate, delivery success rate and order-to-cash yield are built. A fixed test data set (the "numbers fixture") proves the numbers of the v2 mockups. Plan tasks: M1-T15, T16, T17, and T23 brought forward (D15). Decisions: D15–D19 in `docs/plan/M1-decisions.md`.
+
+### Changes
+- **Backend:** `services/kpi/types.ts` (`KpiResult`: name, value, unit, dateBasis, formulaId, from, to, asOf, currency). `dates.ts`: day and month ranges in the store time zone (Africa/Accra until a tenant setting exists), no new dependency.
+- **Backend:** `deliveredRevenue` (F-250, F-900, F-901): physical `delivered` plus paid `digital_delivered` with a price, by `deliveryDate`. A returned order leaves revenue in its return month, not its delivery month (D16).
+- **Backend:** `rates` (F-251, F-1008): confirmation rate, delivery success rate on a `cohort` or `delivery` basis, and yield on closed day cohorts (D17). Filters `partnerId` and `repId` (D18). A rate is null when its denominator is 0.
+- **API:** `GET /api/kpi/revenue?from&to` and `GET /api/kpi/rates?from&to&basis&partnerId&repId`. Permission `analytics:view` (D19). Bad input is 400 `INVALID_RANGE`. No response key is named `deliveryRate`, `fulfilmentRate` or `conversionRate`.
+- **Guard:** `kpiGrep.test.ts` fails when code outside the KPI layer computes revenue or a rate. Legacy files are on an allow-list until M1-T25/T26 repoint them.
+- **Fixture:** `npm run seed:fixture` seeds the `fixture-numbers` tenant (1,445 orders, NUMBERS.md). It refuses production and non-local databases. On it the KPI services give GH₵92,000.00, 71% confirmation and 48% delivery success. Notes: `docs/plan/M1-fixture-notes.md`.
+
+### Key Files
+- `backend/src/services/kpi/` (new), `backend/src/controllers/kpiController.ts`, `backend/src/routes/kpiRoutes.ts` (new), `backend/src/server.ts`
+- `backend/scripts/seed-fixture.ts`, `backend/src/__tests__/fixtures/numbersFixture.ts` (new)
+- Tests: `kpiDates`, `kpiGrep`, `kpiRevenue`, `kpiRates`, `kpiRoutes`, `numbersFixture`
