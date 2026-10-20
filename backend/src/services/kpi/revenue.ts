@@ -42,10 +42,17 @@ function inRange(d: Date | null | undefined, from: Date, to: Date): boolean {
   return !!d && d >= from && d < to;
 }
 
+/** Limits revenue to one rep's or one partner's orders (role scope for sales reps and delivery agents). */
+export interface RevenueScope {
+  customerRepId?: number;
+  deliveryAgentId?: number;
+}
+
 export async function deliveredRevenue(
   tenantId: string,
   from: Date,
   to: Date,
+  scope: RevenueScope = {},
 ): Promise<DeliveredRevenue> {
   return runInTenant(tenantId, async () => {
     const dateWindow = {
@@ -54,7 +61,7 @@ export async function deliveredRevenue(
         { deliveryDate: null, updatedAt: { gte: from, lt: to } },
       ],
     };
-    const base = { deletedAt: null, ...dateWindow };
+    const base = { deletedAt: null, ...scope, ...dateWindow };
 
     const [currency, physicalAgg, digitalAgg, returned] = await Promise.all([
       getCurrency(),
@@ -71,6 +78,7 @@ export async function deliveredRevenue(
       prisma.order.findMany({
         where: {
           deletedAt: null,
+          ...scope,
           status: 'returned',
           orderHistory: { some: { status: 'delivered' } },
           OR: [

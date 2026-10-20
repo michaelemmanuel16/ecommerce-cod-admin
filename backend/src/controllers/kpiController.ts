@@ -31,12 +31,23 @@ function readId(value: unknown, label: string): number | undefined {
   return n;
 }
 
+/**
+ * Role scope, the same rule as analyticsService: a sales rep sees only orders assigned to them, a delivery
+ * agent only their own deliveries. It overrides any repId or partnerId in the query.
+ */
+function roleScope(req: AuthRequest): { repId?: number; partnerId?: number } {
+  if (req.user?.role === 'sales_rep') return { repId: req.user.id };
+  if (req.user?.role === 'delivery_agent') return { partnerId: req.user.id };
+  return {};
+}
+
 /** GET /api/kpi/revenue?from&to */
 export const getRevenue = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const tenantId = resolveTenantId();
     const { from, to } = readRange(req, tenantId);
-    res.json(await deliveredRevenue(tenantId, from, to));
+    const { repId, partnerId } = roleScope(req);
+    res.json(await deliveredRevenue(tenantId, from, to, { customerRepId: repId, deliveryAgentId: partnerId }));
   } catch (error) {
     next(error);
   }
@@ -53,6 +64,7 @@ export const getRates = async (req: AuthRequest, res: Response, next: NextFuncti
       basis,
       partnerId: readId(req.query.partnerId, 'partnerId'),
       repId: readId(req.query.repId, 'repId'),
+      ...roleScope(req),
     }));
   } catch (error) {
     next(error);
