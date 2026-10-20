@@ -4,7 +4,7 @@ import prisma from '../../utils/prisma';
 import { mcpJson, mcpMoneyJson, mcpError, getDateRange, getStoreRange } from '../utils';
 import { resolveTenantId } from '../../utils/tenantContext';
 import { repRates } from '../../services/kpi/reps';
-import { deliveredRevenue } from '../../services/kpi/revenue';
+import { deliveredRevenueByRep } from '../../services/kpi/revenue';
 
 const repsStatusSchema = z.object({});
 
@@ -98,11 +98,13 @@ export function registerCustomerRepTools(
         // Rates and revenue come from the KPI layer: confirmationRate by customerRepId, deliveredFromConfirmedRate by confirmedById.
         const tenantId = resolveTenantId();
         const to = new Date(end.getTime() + 1); // end is inclusive
-        const rangeRates = await repRates(tenantId, start, to);
+        const [rangeRates, revenueByRep] = await Promise.all([
+          repRates(tenantId, start, to),
+          deliveredRevenueByRep(tenantId, start, to),
+        ]);
 
-        const repPerf = await Promise.all(reps.map(async (rep) => {
+        const repPerf = reps.map((rep) => {
           const { confirmationRate, deliveredFromConfirmedRate } = rangeRates.rep(rep.id);
-          const revenue = await deliveredRevenue(tenantId, start, to, { customerRepId: rep.id });
           return {
             id: rep.id,
             name: `${rep.firstName} ${rep.lastName}`,
@@ -112,9 +114,9 @@ export function registerCustomerRepTools(
             closed: deliveredFromConfirmedRate.detail.closed,
             delivered: deliveredFromConfirmedRate.detail.delivered,
             deliveredFromConfirmedRate: deliveredFromConfirmedRate.value,
-            revenue: revenue.total.value,
+            revenue: revenueByRep.get(rep.id)?.revenue ?? '0.00',
           };
-        }));
+        });
 
         return mcpMoneyJson({
           period: parsed.period,

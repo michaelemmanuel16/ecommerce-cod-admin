@@ -1,6 +1,6 @@
 /**
  * Fixture checks for product delivered units (M1-T20, F-610), 1 to 17 October 2026.
- * `productsFixtureChecks` declares describe/it blocks; numbersFixture.test.ts (which seeds once) calls it.
+ * `productsFixtureChecks` declares describe/it blocks; kpiContract.test.ts (which seeds once) calls it.
  */
 import { describe, it, expect } from '@jest/globals';
 import { prismaBase } from '../../../utils/prisma';

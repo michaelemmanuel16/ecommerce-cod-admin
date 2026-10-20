@@ -13,6 +13,9 @@ import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 
 let pair: TwoTenants;
 let lateOrderId: number;
+let lateCallId: number;
+let lateJournalId: number;
+let lateMessageId: number;
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 // 23:30 on 17 Sep 2026 in the store zone (Africa/Accra, UTC+0). No other seeded row is in September.
@@ -34,6 +37,21 @@ beforeAll(async () => {
     },
   });
   lateOrderId = late.id;
+  const call = await prismaBase.call.create({
+    data: { customerId: own.customerId, salesRepId: a.users.salesRep.id, outcome: 'confirmed', createdAt: LATE, tenantId: a.id },
+  });
+  lateCallId = call.id;
+  const journal = await prismaBase.journalEntry.create({
+    data: {
+      entryNumber: `JE-DATEBOUNDS-${Date.now()}`, entryDate: LATE, description: 'late entry', sourceType: 'manual',
+      createdBy: a.users.admin.id, tenantId: a.id,
+    },
+  });
+  lateJournalId = journal.id;
+  const message = await prismaBase.messageLog.create({
+    data: { channel: 'whatsapp', messageBody: 'late message', createdAt: LATE, tenantId: a.id },
+  });
+  lateMessageId = message.id;
   await prismaBase.expense.create({
     data: { category: 'other', amount: 25, description: 'late expense', expenseDate: LATE, tenantId: a.id },
   });
@@ -129,8 +147,11 @@ describe('financial', () => {
     const day = await get(`/api/financial/reports?${DATE_ONLY}`);
     expect(day.status).toBe(200);
     expect(day.body.reports).toEqual([expect.objectContaining({ date: DAY, revenue: '100.00', orders: 1 })]);
+    // An ISO end snaps to the end of its day, as the summary does.
     const iso = await get(`/api/financial/reports?${ISO_EARLY_END}`);
-    expect(iso.body.reports).toEqual([]);
+    expect(iso.body.reports).toEqual([expect.objectContaining({ date: DAY, revenue: '100.00', orders: 1 })]);
+    const before = await get(`/api/financial/reports?startDate=${DAY}&endDate=2026-09-16T12:00:00.000Z`);
+    expect(before.body.reports).toEqual([]);
   });
 });
 
@@ -142,5 +163,32 @@ describe('deliveries (agent-orders)', () => {
     expect(day.body.deliveries.map((d: { orderId: number }) => d.orderId)).toContain(lateOrderId);
     const iso = await get(`/api/deliveries/agent-orders?status=delivered&${ISO_EARLY_END}`, tok);
     expect(iso.body.deliveries.map((d: { orderId: number }) => d.orderId)).not.toContain(lateOrderId);
+  });
+});
+
+// readDateBound in the controller (calls) and parseInclusiveBound in the service (journal entries, WhatsApp messages).
+describe('other date filters', () => {
+  it('calls list (controller path): a date-only endDate includes 23:30 on that day', async () => {
+    const day = await get(`/api/calls?${DATE_ONLY}`);
+    expect(day.status).toBe(200);
+    expect(day.body.calls.map((c: { id: number }) => c.id)).toContain(lateCallId);
+    const iso = await get(`/api/calls?${ISO_EARLY_END}`);
+    expect(iso.body.calls.map((c: { id: number }) => c.id)).not.toContain(lateCallId);
+  });
+
+  it('journal entries (service path): same rule', async () => {
+    const day = await get(`/api/gl/journal-entries?${DATE_ONLY}`);
+    expect(day.status).toBe(200);
+    expect(day.body.entries.map((e: { id: number }) => e.id)).toContain(lateJournalId);
+    const iso = await get(`/api/gl/journal-entries?${ISO_EARLY_END}`);
+    expect(iso.body.entries.map((e: { id: number }) => e.id)).not.toContain(lateJournalId);
+  });
+
+  it('WhatsApp messages (service path): same rule', async () => {
+    const day = await get(`/api/whatsapp/messages?${DATE_ONLY}`);
+    expect(day.status).toBe(200);
+    expect(day.body.data.map((m: { id: number }) => m.id)).toContain(lateMessageId);
+    const iso = await get(`/api/whatsapp/messages?${ISO_EARLY_END}`);
+    expect(iso.body.data.map((m: { id: number }) => m.id)).not.toContain(lateMessageId);
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Fixture checks for the leadership numbers (M1-T19, F-253, F-205) on 17 October 2026.
- * `leadershipFixtureChecks` declares describe/it blocks; numbersFixture.test.ts (which seeds once) calls it.
+ * `leadershipFixtureChecks` declares describe/it blocks; kpiContract.test.ts (which seeds once) calls it.
  */
 import { describe, it, expect, beforeAll } from '@jest/globals';
 import { leadership, Leadership } from '../../../services/kpi/leadership';

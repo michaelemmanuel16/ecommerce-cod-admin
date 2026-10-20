@@ -32,8 +32,8 @@
 import prisma from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
-import type { KpiResult } from './types';
-import { getCurrency } from '../../utils/currency';
+import { kpiMeta, type KpiResult } from './types';
+import { currencyOfTenant } from '../../utils/currency';
 import { Prisma } from '@prisma/client';
 import { getStoreTimeZone } from './dates';
 import { makeConverter } from '../fxService';
@@ -54,6 +54,11 @@ export interface RevenueScope {
   deliveryAgentId?: number;
 }
 
+/** A { repId, partnerId } scope (the shape of the KPI request scope) in the shape the revenue KPIs take. */
+export function revenueScope(scope: { repId?: number; partnerId?: number }): RevenueScope {
+  return { customerRepId: scope.repId, deliveryAgentId: scope.partnerId };
+}
+
 export async function deliveredRevenue(
   tenantId: string,
   from: Date,
@@ -70,13 +75,7 @@ export async function deliveredRevenue(
     deliveredCount += r.orders;
   }
 
-  const meta = {
-    dateBasis: 'deliveryDate' as const,
-    formulaId: FORMULA_ID,
-    from: from.toISOString(),
-    to: to.toISOString(),
-    asOf: new Date().toISOString(),
-  };
+  const meta = kpiMeta(from, to, { dateBasis: 'deliveryDate' as const, formulaId: FORMULA_ID });
   return {
     physical: { name: 'Delivered revenue, physical', value: Money.toApi(physical), unit: 'money', currency, ...meta },
     digital: { name: 'Delivered revenue, digital', value: Money.toApi(digital), unit: 'money', currency, ...meta },
@@ -169,7 +168,7 @@ async function signedRevenueRowsInStoreCurrency(
 ): Promise<{ rows: StoreCurrencyRow[]; currency: string }> {
   const [rows, currency] = await Promise.all([
     signedRevenueRows(tenantId, from, to, scope),
-    runInTenant(tenantId, () => getCurrency()),
+    currencyOfTenant(tenantId),
   ]);
   const converter = makeConverter(tenantId, currency);
   await converter.warm(rows.map((r) => ({ currency: r.currency, ymd: r.rateDay })));
@@ -212,9 +211,8 @@ export async function deliveredRevenueByArea(
 ): Promise<RevenueArea[]> {
   const { rows } = await signedRevenueRowsInStoreCurrency(tenantId, from, to, scope);
   return [...groupRows(rows, (r) => r.area).entries()]
-    .map(([area, a]) => ({ area, revenue: Money.toApi(a.revenue), deliveredOrders: a.orders, value: a.revenue }))
-    .sort((a, b) => Money.compare(b.value, a.value))
-    .map(({ value: _value, ...rest }) => rest);
+    .sort(([, a], [, b]) => Money.compare(b.revenue, a.revenue))
+    .map(([area, a]) => ({ area, revenue: Money.toApi(a.revenue), deliveredOrders: a.orders }));
 }
 
 /**
@@ -228,9 +226,6 @@ export async function deliveredRevenueByRep(
   scope: RevenueScope = {},
 ): Promise<Map<number, { revenue: string; deliveredOrders: number }>> {
   const rows = (await signedRevenueRowsInStoreCurrency(tenantId, from, to, scope)).rows.filter((r) => r.repId !== null);
-  const byRep = new Map<number, { revenue: string; deliveredOrders: number }>();
-  for (const [repId, g] of groupRows(rows, (r) => r.repId as number)) {
-    byRep.set(repId, { revenue: Money.toApi(g.revenue), deliveredOrders: g.orders });
-  }
-  return byRep;
+  return new Map([...groupRows(rows, (r) => r.repId as number)]
+    .map(([repId, g]) => [repId, { revenue: Money.toApi(g.revenue), deliveredOrders: g.orders }]));
 }

@@ -18,9 +18,9 @@ import { GLAutomationService } from './glAutomationService';
 import { SYSTEM_USER_ID } from '../config/constants';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
-import { revenueScope, roleScope } from '../utils/kpiRequest';
+import { roleScope } from '../utils/kpiRequest';
 import { getStoreTimeZone, kpiWindow, parseInclusiveBound } from './kpi/dates';
-import { deliveredRevenue } from './kpi/revenue';
+import { deliveredRevenue, revenueScope } from './kpi/revenue';
 import { PENDING_STATUSES } from './kpi/pending';
 
 interface DateFilters {

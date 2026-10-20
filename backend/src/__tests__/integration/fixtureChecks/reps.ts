@@ -1,5 +1,5 @@
 /**
- * M1-T18 fixture checks, 1 to 17 October 2026 (NUMBERS.md call reps table). Called from numbersFixture.test.ts,
+ * M1-T18 fixture checks, 1 to 17 October 2026 (NUMBERS.md call reps table). Called from kpiContract.test.ts,
  * which seeds once. Rates are stored to 1 decimal; the mockup shows whole percents, so the checks round.
  */
 import { describe, it, expect } from '@jest/globals';

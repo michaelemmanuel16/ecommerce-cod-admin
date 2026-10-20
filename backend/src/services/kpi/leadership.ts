@@ -32,16 +32,16 @@ import * as Money from '../../utils/money';
 import { getCurrency } from '../../utils/currency';
 import { Prisma } from '@prisma/client';
 import { addDays, DAY_MS, daysInMonth, endOfDay, getStoreTimeZone, localDate, monthRange, parseYmd } from './dates';
-import { deliveredRevenue, RevenueScope } from './revenue';
+import { deliveredRevenue, revenueScope } from './revenue';
 import { rates, ratePercent } from './rates';
-import type { KpiResult } from './types';
+import { kpiMeta, type KpiResult } from './types';
 
-export const DEFAULT_CONFIRMATION_TARGET = 70;
-export const DEFAULT_SUCCESS_TARGET = 60;
+const DEFAULT_CONFIRMATION_TARGET = 70;
+const DEFAULT_SUCCESS_TARGET = 60;
 /** The lever asks "what is +5 points of this rate worth". */
-export const LEVER_POINTS = 5;
+const LEVER_POINTS = 5;
 /** Days of delivered orders behind the default planned AOV (R12). */
-export const PLANNED_AOV_DAYS = 30;
+const PLANNED_AOV_DAYS = 30;
 
 export type Period = 'month' | 'quarter' | 'year';
 
@@ -116,7 +116,7 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
   const asOfDate = asOf ?? localDate(new Date(), zone);
   const day = parseYmd(asOfDate);
   const computedAt = new Date().toISOString();
-  const revenueScope: RevenueScope = { customerRepId: options.scope?.repId, deliveryAgentId: options.scope?.partnerId };
+  const revScope = revenueScope(options.scope ?? {});
 
   const spans = (['month', 'quarter', 'year'] as Period[]).map((period) => {
     const { startMonth, months } = periodSpan(day, period);
@@ -124,8 +124,7 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
   });
   const to = endOfDay(asOfDate, zone);
   const month = spans[0];
-  const monthDays = daysInMonth(day.year, day.month);
-  const daysGone = day.day;
+  const { daysGone, daysInPeriod: monthDays } = month.pace;
 
   const thirtyDaysFrom = addDays(to, -PLANNED_AOV_DAYS);
 
@@ -152,15 +151,15 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
       coveringTarget('confirmation_rate'),
       coveringTarget('delivery_success_rate'),
       coveringTarget('planned_aov'),
-      deliveredRevenue(tenantId, month.from, to, revenueScope),
-      deliveredRevenue(tenantId, spans[1].from, to, revenueScope),
-      deliveredRevenue(tenantId, spans[2].from, to, revenueScope),
-      deliveredRevenue(tenantId, thirtyDaysFrom, to, revenueScope),
+      deliveredRevenue(tenantId, month.from, to, revScope),
+      deliveredRevenue(tenantId, spans[1].from, to, revScope),
+      deliveredRevenue(tenantId, spans[2].from, to, revScope),
+      deliveredRevenue(tenantId, thirtyDaysFrom, to, revScope),
       rates(tenantId, month.from, to, { basis: 'cohort', repId: options.scope?.repId, partnerId: options.scope?.partnerId }),
     ]);
 
     const meta = (basis: KpiResult<unknown>['dateBasis'], from: Date, formulaId: string) =>
-      ({ dateBasis: basis, formulaId, from: from.toISOString(), to: to.toISOString(), asOf: computedAt });
+      kpiMeta(from, to, { dateBasis: basis, formulaId, asOf: computedAt });
     const money = (target: { value: Prisma.Decimal } | null) => (target ? Money.toApi(target.value) : null);
 
     const confTargetPct = confTarget ? Money.parse(confTarget.value).toNumber() : DEFAULT_CONFIRMATION_TARGET;
@@ -264,10 +263,9 @@ export async function leadership(tenantId: string, asOf?: string, options: Leade
           confirmed: monthRates.confirmationRate.detail?.confirmed ?? 0,
           placed: monthRates.confirmationRate.detail?.placed ?? 0,
           daysGone, daysInMonth: monthDays,
-          confirmationRate: monthRates.confirmationRate.value,
           successRate: monthRates.deliverySuccessRate.value,
           confirmationTarget: confTargetPct, successTarget: successTargetPct,
-          aov: plannedAovValue ? Money.toApi(plannedAovValue) : null,
+          aov: plannedAov.value,
         }),
         currency,
         ...meta('cohort', month.from, 'leadership.lever.v1'),
@@ -282,8 +280,7 @@ export interface LeverInput {
   placed: number;
   daysGone: number;
   daysInMonth: number;
-  /** Percent, null when there is no data. */
-  confirmationRate: number | null;
+  /** Delivery success rate, percent, null when there is no data. */
   successRate: number | null;
   confirmationTarget: number;
   successTarget: number;
@@ -302,9 +299,10 @@ export interface LeverInput {
  * target, no AOV, no data, or no day gone.
  */
 export function lever(input: LeverInput): Pick<Lever, 'name' | 'value' | 'unit' | 'rate' | 'points' | 'detail'> {
+  const confirmationRate = ratePercent(input.confirmed, input.placed);
   const gaps: Array<[LeverRate, number]> = [];
   if (input.successRate !== null) gaps.push(['deliverySuccessRate', input.successTarget - input.successRate]);
-  if (input.confirmationRate !== null) gaps.push(['confirmationRate', input.confirmationTarget - input.confirmationRate]);
+  if (confirmationRate !== null) gaps.push(['confirmationRate', input.confirmationTarget - confirmationRate]);
   const under = gaps.filter(([, gap]) => gap > 0).sort((a, b) => b[1] - a[1]);
   const none = { name: 'Biggest lever', value: null, unit: 'money' as const, rate: null, points: LEVER_POINTS };
   if (under.length === 0 || input.aov === null || input.daysGone <= 0) return none;

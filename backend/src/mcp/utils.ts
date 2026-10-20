@@ -116,7 +116,7 @@ export function getStoreRange(period: string, dateFrom?: string, dateTo?: string
   return { from, to: dateTo ? parseBound(dateTo, 'to', zone) : endOfDay(today, zone) };
 }
 
-/** The last instant inside [from, to), for the `dateRange` field of a tool result (the old tools showed an inclusive end). */
-export function inclusiveEnd(to: Date): Date {
-  return new Date(to.getTime() - 1);
+/** The `dateRange` field of a tool result for [from, to): ISO instants, the end as the last instant inside the range (the old tools showed an inclusive end). */
+export function dateRangeOut(from: Date, to: Date): { from: string; to: string } {
+  return { from: from.toISOString(), to: new Date(to.getTime() - 1).toISOString() };
 }

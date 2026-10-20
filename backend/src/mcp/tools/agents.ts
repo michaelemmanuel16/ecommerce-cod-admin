@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { mcpJson, mcpError, getStoreRange, inclusiveEnd } from '../utils';
+import { mcpJson, mcpError, getStoreRange, dateRangeOut } from '../utils';
 import { resolveTenantId } from '../../utils/tenantContext';
 import { partnerRates } from '../../services/kpi/partners';
 
@@ -117,7 +117,7 @@ export function registerAgentTools(
 
         return mcpJson({
           period: parsed.period,
-          dateRange: { from: from.toISOString(), to: inclusiveEnd(to).toISOString() },
+          dateRange: dateRangeOut(from, to),
           agents: agentPerf.sort((a, b) => b.delivered - a.delivered),
         });
       } catch (err) {

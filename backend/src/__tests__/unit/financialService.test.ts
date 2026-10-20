@@ -18,7 +18,11 @@ jest.mock('../../services/glAutomationService', () => ({
     voidJournalEntry: jest.fn().mockResolvedValue(null),
   },
 }));
-jest.mock('../../services/kpi/revenue');
+// Automock the KPI functions; revenueScope is a pure mapping the callers use as is.
+jest.mock('../../services/kpi/revenue', () => ({
+  ...jest.createMockFromModule<object>('../../services/kpi/revenue'),
+  revenueScope: jest.requireActual<typeof import('../../services/kpi/revenue')>('../../services/kpi/revenue').revenueScope,
+}));
 import { prismaMock } from '../mocks/prisma.mock';
 import { useTestTenant, TEST_TENANT_ID } from '../mocks/tenant.mock';
 import { revenueResult } from '../mocks/kpiResults';

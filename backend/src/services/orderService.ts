@@ -20,13 +20,13 @@ import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLoo
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
 import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
-import { transitionOrder, allowedTransitions, actorOf, TransitionActor, TransitionOptions } from './orderStateMachine';
+import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
 import { hasPermission } from '../middleware/auth';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 import * as Money from '../utils/money';
-import { revenueScope, roleScope } from '../utils/kpiRequest';
+import { roleScope } from '../utils/kpiRequest';
 import { kpiWindow } from './kpi/dates';
-import { deliveredRevenue } from './kpi/revenue';
+import { deliveredRevenue, revenueScope } from './kpi/revenue';
 
 
 
@@ -1029,10 +1029,9 @@ export class OrderService {
       hasPermission(requester, 'orders', 'force_status'),
     ]);
     // Reps and agents see only their own orders (same rule as the machine's role gate).
-    const notOwner = (requester.role === 'sales_rep' && order?.customerRepId !== requester.id)
-      || (requester.role === 'delivery_agent' && order?.deliveryAgentId !== requester.id);
-    if (!order || notOwner) throw new AppError('Order not found', 404);
-    return { status: order.status, ...allowedTransitions(order, actorOf(requester), { canForce }) };
+    const actor = actorOf(requester);
+    if (!order || !ownsOrder(order, actor)) throw new AppError('Order not found', 404);
+    return { status: order.status, ...allowedTransitions(order, actor, { canForce }) };
   }
 
   /**

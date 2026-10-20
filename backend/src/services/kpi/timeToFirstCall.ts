@@ -17,7 +17,7 @@ import { getStoreTimeZone } from './dates';
 import { medianRounded } from './median';
 import { DIGITAL } from './rates';
 import { readOperatingHours, workingMinutesBetween } from './workingTime';
-import type { KpiResult } from './types';
+import { kpiMeta, type KpiResult } from './types';
 
 export interface TimeToFirstCallOptions {
   repId?: number;
@@ -35,22 +35,23 @@ export interface TimeToFirstCall extends KpiResult<number | null> {
 export async function timeToFirstCall(tenantId: string, from: Date, to: Date, options: TimeToFirstCallOptions = {}): Promise<TimeToFirstCall> {
   const zone = getStoreTimeZone(tenantId);
   return runInTenant(tenantId, async () => {
-    const config = await prisma.systemConfig.findUnique({ where: { tenantId }, select: { operatingHours: true } });
+    const [config, orders] = await Promise.all([
+      prisma.systemConfig.findUnique({ where: { tenantId }, select: { operatingHours: true } }),
+      prisma.order.findMany({
+        where: {
+          deletedAt: null,
+          status: { notIn: DIGITAL },
+          createdAt: { gte: from, lt: to },
+          ...(options.repId !== undefined ? { customerRepId: options.repId } : {}),
+          ...(options.partnerId !== undefined ? { deliveryAgentId: options.partnerId } : {}),
+        },
+        select: {
+          id: true, createdAt: true, firstContactAt: true,
+          calls: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1, select: { source: true } },
+        },
+      }),
+    ]);
     const hours = readOperatingHours(config?.operatingHours);
-
-    const orders = await prisma.order.findMany({
-      where: {
-        deletedAt: null,
-        status: { notIn: DIGITAL },
-        createdAt: { gte: from, lt: to },
-        ...(options.repId !== undefined ? { customerRepId: options.repId } : {}),
-        ...(options.partnerId !== undefined ? { deliveryAgentId: options.partnerId } : {}),
-      },
-      select: {
-        id: true, createdAt: true, firstContactAt: true,
-        calls: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1, select: { source: true } },
-      },
-    });
 
     const minutes: number[] = [];
     let autoConfirmed = 0;
@@ -66,7 +67,7 @@ export async function timeToFirstCall(tenantId: string, from: Date, to: Date, op
       unit: 'minutes',
       dateBasis: 'createdAt',
       formulaId: 'rep.timeToFirstCall.v1',
-      from: from.toISOString(), to: to.toISOString(), asOf: new Date().toISOString(),
+      ...kpiMeta(from, to),
       detail: { measured: minutes.length, autoConfirmed, noContact, placed: orders.length },
       operatingHoursSet: hours !== null,
       targetMinutes: hours?.firstCallTargetMinutes ?? null,

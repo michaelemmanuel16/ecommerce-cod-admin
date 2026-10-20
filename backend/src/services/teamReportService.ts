@@ -17,7 +17,7 @@ import { repRates, RepRates } from './kpi/reps';
 
 const NOT_REACHABLE = ['not_reachable', 'no_answer'];
 
-export interface TeamRepRow extends RepRates {
+interface TeamRepRow extends RepRates {
   repId: number;
   name: string;
   calls: number;
@@ -25,7 +25,7 @@ export interface TeamRepRow extends RepRates {
   notReachable: number;
 }
 
-export interface TeamReport {
+interface TeamReport {
   from: string;
   to: string;
   asOf: string;

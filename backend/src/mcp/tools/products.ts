@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { mcpMoneyJson, mcpError, getStoreRange, inclusiveEnd } from '../utils';
+import { mcpMoneyJson, mcpError, getStoreRange, dateRangeOut } from '../utils';
 import { resolveTenantId } from '../../utils/tenantContext';
 import { productDeliveredUnits } from '../../services/kpi/products';
 
@@ -64,7 +64,7 @@ export function registerProductTools(
 
         return mcpMoneyJson({
           period,
-          dateRange: { from: from.toISOString(), to: inclusiveEnd(to).toISOString() },
+          dateRange: dateRangeOut(from, to),
           products: results,
           totalProducts: results.length,
           lowStockCount: results.filter((p) => p.isLowStock).length,

@@ -2,7 +2,7 @@
  * M1-T25 fixture checks (Done when 1, HTTP part), 1 to 17 October 2026. The repointed service functions the HTTP
  * endpoints call (not HTTP itself): analytics dashboard, sales trends, rep and agent performance, product performance,
  * financial summary and order stats. Each reads the KPI layer, so each reports delivered revenue 92,000.00 and 376
- * delivered orders where it reports them. `endpointsFixtureChecks` declares describe/it blocks; numbersFixture.test.ts
+ * delivered orders where it reports them. `endpointsFixtureChecks` declares describe/it blocks; kpiContract.test.ts
  * (which seeds once) calls it.
  */
 import { describe, it, expect } from '@jest/globals';

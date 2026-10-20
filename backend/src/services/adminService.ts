@@ -15,7 +15,7 @@ import {
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { tenantIdForFormSlug } from './tenantLookupService';
-import { clearCurrencyCache, currencyOfTenant, getCurrency } from '../utils/currency';
+import { currencyOfTenant, getCurrency } from '../utils/currency';
 import { changeStoreCurrency } from './fxService';
 import { parseOperatingHours } from './kpi/workingTime';
 
@@ -272,7 +272,6 @@ export const adminService = {
       where: { id: config.id },
       data,
     });
-    clearCurrencyCache();
 
     // Invalidate provider config caches when settings change
     if (data.whatsappProvider !== undefined) {

@@ -1,21 +1,17 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
-import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
-import { deliveredRevenue } from '../services/kpi/revenue';
+import { deliveredRevenue, revenueScope } from '../services/kpi/revenue';
 import { rates } from '../services/kpi/rates';
 import { leadership } from '../services/kpi/leadership';
-import { readRange, kpiScope, toInvalidRange } from '../utils/kpiRequest';
-
-const invalidRange = (message: string) => new AppError(message, 400, 'INVALID_RANGE');
+import { readRange, kpiScope, invalidRange, toInvalidRange } from '../utils/kpiRequest';
 
 /** GET /api/kpi/revenue?from&to */
 export const getRevenue = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const tenantId = resolveTenantId();
     const { from, to } = readRange(req, tenantId);
-    const { repId, partnerId } = kpiScope(req);
-    res.json(await deliveredRevenue(tenantId, from, to, { customerRepId: repId, deliveryAgentId: partnerId }));
+    res.json(await deliveredRevenue(tenantId, from, to, revenueScope(kpiScope(req))));
   } catch (error) {
     next(error);
   }

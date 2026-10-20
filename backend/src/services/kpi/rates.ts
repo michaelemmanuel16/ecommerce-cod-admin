@@ -33,11 +33,11 @@ import { runInTenant } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
 import { Prisma, OrderStatus } from '@prisma/client';
 import { addDays, endOfDay, getStoreTimeZone } from './dates';
-import type { KpiResult } from './types';
+import { kpiMeta, type KpiMeta, type KpiResult } from './types';
 
-export type RateBasis = 'cohort' | 'delivery';
+type RateBasis = 'cohort' | 'delivery';
 
-export interface RateOptions {
+interface RateOptions {
   basis?: RateBasis;
   partnerId?: number;
   repId?: number;
@@ -50,7 +50,7 @@ export interface Rates {
 }
 
 /** Days after the end of the placement day when a cohort counts as closed whatever its orders say (F-1008 GUESS). */
-export const CLOSED_COHORT_DAYS = 30;
+const CLOSED_COHORT_DAYS = 30;
 
 export const DIGITAL: OrderStatus[] = ['payment_pending', 'payment_failed', 'digital_delivered'];
 export const CONFIRMED: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'failed_delivery', 'returned'];
@@ -64,11 +64,39 @@ export function ratePercent(numerator: number, denominator: number): number | nu
   return Money.roundHalfUp(Money.mul(Money.div(numerator, denominator), 100), 1).toNumber();
 }
 
+/** A rate with its counts. */
+type CountedRate = KpiResult<number | null> & { detail: Record<string, number> };
+
+/** Confirmation rate (F-251) from its counts. One shape for the range, per-rep and any other cut. */
+export function confirmationRateResult(confirmed: number, placed: number, meta: KpiMeta): CountedRate {
+  return {
+    name: 'Confirmation rate', value: ratePercent(confirmed, placed), unit: 'percent',
+    dateBasis: 'createdAt', formulaId: 'rate.confirmation.v1', ...meta,
+    detail: { confirmed, placed },
+  };
+}
+
+/** A success rate over closed orders: delivered / (delivered + failed + returned) (F-251), with its counts. */
+export function closedOutcomeResult(
+  name: string,
+  formulaId: string,
+  dateBasis: KpiResult<unknown>['dateBasis'],
+  counts: { delivered: number; failed: number; returned: number },
+  meta: KpiMeta,
+): CountedRate {
+  const { delivered, failed, returned } = counts;
+  const closed = delivered + failed + returned;
+  return {
+    name, value: ratePercent(delivered, closed), unit: 'percent', dateBasis, formulaId, ...meta,
+    detail: { delivered, failed, returned, closed },
+  };
+}
+
 export async function rates(tenantId: string, from: Date, to: Date, options: RateOptions = {}): Promise<Rates> {
   const basis: RateBasis = options.basis ?? 'cohort';
   const zone = getStoreTimeZone(tenantId);
-  const asOf = new Date();
-  const meta = { from: from.toISOString(), to: to.toISOString(), asOf: asOf.toISOString() };
+  const meta = kpiMeta(from, to);
+  const asOf = new Date(meta.asOf);
 
   return runInTenant(tenantId, async () => {
     const scope: Prisma.OrderWhereInput = {
@@ -133,8 +161,7 @@ export async function rates(tenantId: string, from: Date, to: Date, options: Rat
     const count = (s: OrderStatus) => statusGroups.find((g) => g.status === s)?._count._all ?? 0;
     const placedCount = statusGroups.reduce((sum, g) => sum + g._count._all, 0);
     const confirmedCount = CONFIRMED.reduce((sum, s) => sum + count(s), 0);
-    const { delivered, failed, returned } = outcome ?? { delivered: count('delivered'), failed: count('failed_delivery'), returned: count('returned') };
-    const closed = delivered + failed + returned;
+    const closedCounts = outcome ?? { delivered: count('delivered'), failed: count('failed_delivery'), returned: count('returned') };
 
     let yieldDelivered = 0;
     let yieldPlaced = 0;
@@ -148,16 +175,8 @@ export async function rates(tenantId: string, from: Date, to: Date, options: Rat
     }
 
     return {
-      confirmationRate: {
-        name: 'Confirmation rate', value: ratePercent(confirmedCount, placedCount), unit: 'percent',
-        dateBasis: 'createdAt', formulaId: 'rate.confirmation.v1', ...meta,
-        detail: { confirmed: confirmedCount, placed: placedCount },
-      },
-      deliverySuccessRate: {
-        name: 'Delivery success rate', value: ratePercent(delivered, closed), unit: 'percent',
-        dateBasis: basis, formulaId: `rate.deliverySuccess.${basis}.v1`, ...meta,
-        detail: { delivered, failed, returned, closed },
-      },
+      confirmationRate: confirmationRateResult(confirmedCount, placedCount, meta),
+      deliverySuccessRate: closedOutcomeResult('Delivery success rate', `rate.deliverySuccess.${basis}.v1`, basis, closedCounts, meta),
       orderToCashYield: {
         name: 'Order-to-cash yield', value: ratePercent(yieldDelivered, yieldPlaced), unit: 'percent',
         dateBasis: 'cohort', formulaId: 'rate.orderToCashYield.v1', ...meta,

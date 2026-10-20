@@ -4,6 +4,7 @@ import { GLAccountService } from '../services/glAccountService';
 import { getLedgerHealth } from '../services/ledgerCheckService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import { addDays } from '../services/kpi/dates';
 
 /**
  * GET /api/financial/health
@@ -11,7 +12,7 @@ import logger from '../utils/logger';
  */
 export const getFinancialHealth = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const twentyFourHoursAgo = addDays(new Date(), -1);
 
     const [balanceReport, journalCount, ledgerCheck] = await Promise.all([
       GLAccountService.verifyAllAccountBalances(),

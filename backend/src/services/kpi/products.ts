@@ -26,7 +26,7 @@ import { runInTenant } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
 import { getCurrency } from '../../utils/currency';
 import type { Prisma } from '@prisma/client';
-import type { KpiResult } from './types';
+import { kpiMeta, type KpiResult } from './types';
 
 export interface ProductUnitsLine {
   productId: number;
@@ -37,7 +37,7 @@ export interface ProductUnitsLine {
   lineRevenue: string;
 }
 
-export interface ProductDeliveredUnits {
+interface ProductDeliveredUnits {
   units: KpiResult<number>;
   lineRevenue: KpiResult<string>;
   /** One row per product, most units first. Only for productId 'all'. */
@@ -87,7 +87,7 @@ export async function productDeliveredUnits(
 
     const totalUnits = groups.reduce((sum, g) => sum + (g._sum.quantity ?? 0), 0);
     const totalRevenue = Money.sum(groups.map((g) => Money.orZero(g._sum.totalPrice)));
-    const meta = { dateBasis: 'deliveryDate' as const, formulaId: FORMULA_ID, from: from.toISOString(), to: to.toISOString(), asOf: new Date().toISOString() };
+    const meta = kpiMeta(from, to, { dateBasis: 'deliveryDate' as const, formulaId: FORMULA_ID });
 
     const result: ProductDeliveredUnits = {
       units: { name: 'Delivered units', value: totalUnits, unit: 'count', ...meta },

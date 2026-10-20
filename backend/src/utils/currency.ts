@@ -5,7 +5,7 @@ import { getTenantId } from './tenantContext';
 const TTL_MS = 60_000;
 const cache = new Map<string, { code: string; at: number }>();
 
-/** Drop cached currency codes. Call after system config is saved. */
+/** Drop cached currency codes (setStoreCurrency does it after a change). */
 export function clearCurrencyCache(): void {
   cache.clear();
 }

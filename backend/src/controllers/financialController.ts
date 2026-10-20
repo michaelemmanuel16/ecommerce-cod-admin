@@ -77,7 +77,7 @@ export const getFinancialReports = async (req: AuthRequest, res: Response): Prom
   const reports = await financialService.getFinancialReports({
     period: period as string,
     startDate: readDateBound(startDate, 'from'),
-    endDate: readDateBound(endDate, 'to')
+    endDate: readDateBound(endDate, 'to', { snapToDay: true })
   });
 
   res.json({ reports });

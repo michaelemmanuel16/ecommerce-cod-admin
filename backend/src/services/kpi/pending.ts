@@ -8,7 +8,7 @@ import { runInTenant } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
 import { getCurrency } from '../../utils/currency';
 import type { OrderStatus } from '@prisma/client';
-import type { KpiResult } from './types';
+import { kpiMeta, type KpiResult } from './types';
 
 export const PENDING_STATUSES: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'];
 
@@ -27,7 +27,7 @@ export async function pendingRevenue(tenantId: string, from: Date, to: Date): Pr
         _count: { _all: true },
       }),
     ]);
-    const meta = { dateBasis: 'createdAt' as const, formulaId: 'revenue.pending.v1', from: from.toISOString(), to: to.toISOString(), asOf: new Date().toISOString() };
+    const meta = kpiMeta(from, to, { dateBasis: 'createdAt' as const, formulaId: 'revenue.pending.v1' });
     return {
       value: { name: 'Pending revenue', value: Money.toApi(Money.orZero(agg._sum.totalAmount)), unit: 'money', currency, ...meta },
       orders: { name: 'Pending orders', value: agg._count._all, unit: 'count', ...meta },

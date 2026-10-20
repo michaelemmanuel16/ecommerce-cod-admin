@@ -77,7 +77,7 @@ export interface TransitionOptions {
   tx?: TransactionClient;
 }
 
-export interface TransitionResult {
+interface TransitionResult {
   changed: boolean;
   from: OrderStatus;
   forced?: boolean;
@@ -147,6 +147,10 @@ type OrderLike = {
 /** D13: a rep owns an order when customerRepId is the rep, an agent when deliveryAgentId is the agent. */
 const ownsAsRep = (order: OrderLike, actor: TransitionActor) => actor.userId != null && order.customerRepId === actor.userId;
 const ownsAsAgent = (order: OrderLike, actor: TransitionActor) => actor.userId != null && order.deliveryAgentId === actor.userId;
+
+/** D13 ownership gate: false only for a rep or an agent who does not own the order. Other roles pass. */
+export const ownsOrder = (order: OrderLike, actor: TransitionActor) =>
+  !((actor.role === 'sales_rep' && !ownsAsRep(order, actor)) || (actor.role === 'delivery_agent' && !ownsAsAgent(order, actor)));
 
 /** Role gate for a move that is already in the table. */
 function roleAllows(order: OrderLike, actor: TransitionActor, from: OrderStatus, to: OrderStatus): boolean {
@@ -325,7 +329,7 @@ async function move(
       throw new OrderTransitionError('FORBIDDEN', 'You do not have permission to override the order status.', { from, to });
     }
     // A rep or an agent with force_status can force only an order they own (D13); other roles keep the permission check.
-    if ((actor.role === 'sales_rep' && !ownsAsRep(order, actor)) || (actor.role === 'delivery_agent' && !ownsAsAgent(order, actor))) {
+    if (!ownsOrder(order, actor)) {
       throw new OrderTransitionError('FORBIDDEN', 'You can only override the status of your own orders.', { from, to });
     }
     reason = (options.reason ?? '').trim();

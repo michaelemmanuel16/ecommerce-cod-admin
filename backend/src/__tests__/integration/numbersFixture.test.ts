@@ -9,15 +9,8 @@ import path from 'path';
 import '../mocks/logger.mock';
 import { prismaBase } from '../../utils/prisma';
 import { seedFixture, deleteFixtureRows, FIXTURE_SLUG, SeedFixtureResult } from '../fixtures/numbersFixture';
-import { deliveredRevenue } from '../../services/kpi/revenue';
-import { rates } from '../../services/kpi/rates';
 import { historyFixtureChecks } from './fixtureChecks/history';
-import { leadershipFixtureChecks } from './fixtureChecks/leadership';
-import { productsFixtureChecks } from './fixtureChecks/products';
-import { repsFixtureChecks } from './fixtureChecks/reps';
 import { partnersFixtureChecks } from './fixtureChecks/partners';
-import { endpointsFixtureChecks } from './fixtureChecks/endpoints';
-import { mcpFixtureChecks } from './fixtureChecks/mcp';
 
 jest.setTimeout(180_000);
 
@@ -201,32 +194,5 @@ describe('numbers fixture (M1-T23)', () => {
   });
 });
 
-// M1-T16 and T17 "done when": the KPI services read the fixture numbers for 1 to 17 October 2026.
-describe('KPI services on the fixture (M1-T16, T17)', () => {
-  const from = new Date('2026-10-01T00:00:00Z');
-  const to = new Date('2026-10-18T00:00:00Z');
-
-  it('delivered revenue is 92,000.00 over 376 orders', async () => {
-    const r = await deliveredRevenue(tenantId, from, to);
-    expect(r.total.value).toBe('92000.00');
-    expect(r.deliveredOrders.value).toBe(376);
-  });
-
-  it('confirmation 71% (1,026 / 1,445), delivery success 48% (376 / 778), yield about 34%', async () => {
-    const r = await rates(tenantId, from, to);
-    expect(r.confirmationRate.detail).toEqual({ confirmed: 1026, placed: 1445 });
-    expect(Math.round(r.confirmationRate.value as number)).toBe(71);
-    expect(r.deliverySuccessRate.detail).toMatchObject({ delivered: 376, closed: 778 });
-    expect(Math.round(r.deliverySuccessRate.value as number)).toBe(48);
-    expect(r.orderToCashYield.value).toBeGreaterThanOrEqual(33);
-    expect(r.orderToCashYield.value).toBeLessThanOrEqual(35);
-  });
-});
-
 historyFixtureChecks(() => tenantId);
-leadershipFixtureChecks(() => tenantId);
-productsFixtureChecks(() => tenantId);
-repsFixtureChecks(() => tenantId);
 partnersFixtureChecks(() => tenantId);
-endpointsFixtureChecks(() => tenantId);
-mcpFixtureChecks(() => tenantId);

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { encodeCursor, decodeCursor, mcpMoneyJson, mcpError, getStoreRange, inclusiveEnd } from '../utils';
+import { encodeCursor, decodeCursor, mcpMoneyJson, mcpError, getStoreRange, dateRangeOut } from '../utils';
 import { resolveTenantId } from '../../utils/tenantContext';
 import { deliveredRevenue } from '../../services/kpi/revenue';
 import { rates } from '../../services/kpi/rates';
@@ -136,7 +136,7 @@ export function registerOrderTools(
 
         return mcpMoneyJson({
           period: parsed.period,
-          dateRange: { from: from.toISOString(), to: inclusiveEnd(to).toISOString() },
+          dateRange: dateRangeOut(from, to),
           totalOrders: statusCounts.reduce((sum, s) => sum + s._count.id, 0),
           statusBreakdown: Object.fromEntries(statusCounts.map((s) => [s.status, s._count.id])),
           revenue: revenue.total.value,

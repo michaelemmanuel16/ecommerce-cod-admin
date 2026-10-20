@@ -869,9 +869,11 @@ export class GLService {
     if (sourceId) where.sourceId = sourceId;
     if (isVoided !== undefined) where.isVoided = isVoided;
     if (startDate || endDate) {
+      const zone = getStoreTimeZone(getTenantId());
+      const asString = (v: Date | string) => (v instanceof Date ? v.toISOString() : v);
       where.entryDate = {};
-      if (startDate) where.entryDate.gte = new Date(startDate);
-      if (endDate) where.entryDate.lte = new Date(endDate);
+      if (startDate) where.entryDate.gte = parseInclusiveBound(asString(startDate), 'from', zone);
+      if (endDate) where.entryDate.lte = parseInclusiveBound(asString(endDate), 'to', zone);
     }
 
 

@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { CallOutcome } from '@prisma/client';
 import callService from '../services/callService';
+import { readDateBound } from '../utils/kpiRequest';
 
 export const createCall = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -48,8 +49,8 @@ export const getCalls = async (req: AuthRequest, res: Response): Promise<void> =
       customerId: customerId ? Number(customerId) : undefined,
       orderId: orderId ? Number(orderId) : undefined,
       outcome: outcome as CallOutcome | undefined,
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
+      startDate: readDateBound(startDate, 'from'),
+      endDate: readDateBound(endDate, 'to'),
       page: Number(page),
       limit: Number(limit)
     });
@@ -92,8 +93,8 @@ export const getCallStats = async (req: AuthRequest, res: Response): Promise<voi
 
     const stats = await callService.getCallStats({
       salesRepId: effectiveSalesRepId,
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined
+      startDate: readDateBound(startDate, 'from'),
+      endDate: readDateBound(endDate, 'to')
     });
 
     res.json({ stats });

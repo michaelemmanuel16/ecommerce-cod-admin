@@ -1,6 +1,6 @@
 /**
  * Fixture checks for the MCP tools (M1-T26, "Done when" 1, MCP part): delivered revenue 92,000.00 and 376 delivered
- * orders for 1 to 17 October 2026. `mcpFixtureChecks` declares describe/it blocks; numbersFixture.test.ts (which
+ * orders for 1 to 17 October 2026. `mcpFixtureChecks` declares describe/it blocks; kpiContract.test.ts (which
  * seeds once) calls it.
  *
  * Which tool takes which window:

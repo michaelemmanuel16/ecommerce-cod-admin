@@ -17,8 +17,8 @@ import { runInTenant } from '../../utils/tenantContext';
 import { Prisma, OrderStatus } from '@prisma/client';
 import { DAY_MS } from './dates';
 import { medianRounded } from './median';
-import { DIGITAL, ratePercent } from './rates';
-import type { KpiResult } from './types';
+import { closedOutcomeResult, DIGITAL } from './rates';
+import { kpiMeta, type KpiResult } from './types';
 
 export interface PartnerRow {
   partnerId: number;
@@ -36,7 +36,7 @@ function medianDays(gapsMs: number[]): number | null {
 }
 
 export async function partnerRates(tenantId: string, from: Date, to: Date): Promise<PartnerRow[]> {
-  const meta = { from: from.toISOString(), to: to.toISOString(), asOf: new Date().toISOString() };
+  const meta = kpiMeta(from, to);
 
   return runInTenant(tenantId, async () => {
     const scope: Prisma.OrderWhereInput = {
@@ -83,7 +83,6 @@ export async function partnerRates(tenantId: string, from: Date, to: Date): Prom
       const delivered = n('delivered');
       const failed = n('failed_delivery');
       const returned = n('returned');
-      const closed = delivered + failed + returned;
       const assigned = [...counts.values()].reduce((sum, c) => sum + c, 0);
 
       const toDispatch: number[] = [];
@@ -97,11 +96,7 @@ export async function partnerRates(tenantId: string, from: Date, to: Date): Prom
         partnerId: id,
         name: names.get(id) ?? `Partner ${id}`,
         assigned,
-        deliverySuccessRate: {
-          name: 'Delivery success rate', value: ratePercent(delivered, closed), unit: 'percent',
-          dateBasis: 'cohort', formulaId: 'partner.deliverySuccess.cohort.v1', ...meta,
-          detail: { delivered, failed, returned, closed },
-        },
+        deliverySuccessRate: closedOutcomeResult('Delivery success rate', 'partner.deliverySuccess.cohort.v1', 'cohort', { delivered, failed, returned }, meta),
         confirmedToDispatchedDays: {
           name: 'Confirmed to dispatched (median)', value: medianDays(toDispatch), unit: 'days',
           dateBasis: 'cohort', formulaId: 'partner.confirmedToDispatched.v1', ...meta,

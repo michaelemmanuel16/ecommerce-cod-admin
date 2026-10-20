@@ -7,6 +7,7 @@ import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema
 import { paystackService } from '../services/paystackService';
 import { encryptString, SECRET_MASK } from '../utils/providerCrypto';
 import * as Money from '../utils/money';
+import { readDateBound } from '../utils/kpiRequest';
 
 // The Meta CAPI access token is a write-only secret: admin reads get the mask
 // sentinel (never the ciphertext), and a save that echoes the mask preserves
@@ -696,16 +697,9 @@ export const getFormStats = async (req: AuthRequest, res: Response): Promise<voi
 
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) {
-        const start = new Date(startDate as string);
-        if (isNaN(start.getTime())) { res.status(400).json({ error: 'Invalid startDate' }); return; }
-        where.createdAt.gte = start;
-      }
-      if (endDate) {
-        const end = new Date(endDate as string);
-        if (isNaN(end.getTime())) { res.status(400).json({ error: 'Invalid endDate' }); return; }
-        where.createdAt.lte = end;
-      }
+      // An invalid value is a 400 (readDateBound throws INVALID_RANGE).
+      if (startDate) where.createdAt.gte = readDateBound(startDate, 'from');
+      if (endDate) where.createdAt.lte = readDateBound(endDate, 'to');
     }
 
     const [submissions, totalRevenue] = await Promise.all([

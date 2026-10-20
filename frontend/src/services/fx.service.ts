@@ -1,6 +1,6 @@
 import { apiClient } from './api';
 
-export type FxSource = 'auto' | 'manual';
+type FxSource = 'auto' | 'manual';
 
 export interface FxCurrentRate {
   from: string;

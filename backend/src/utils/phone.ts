@@ -4,7 +4,7 @@
  * old forms (`0245550103`, `233245550103`, ...), so lookups use `phoneLookupVariants`.
  */
 
-export type PhoneCountry = 'GH' | 'NG';
+type PhoneCountry = 'GH' | 'NG';
 
 // cc = calling code, nationalLength = digits after the country code and the trunk 0.
 const COUNTRIES: Record<PhoneCountry, { cc: string; nationalLength: number }> = {

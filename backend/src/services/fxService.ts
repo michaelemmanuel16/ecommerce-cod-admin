@@ -18,7 +18,7 @@ import logger from '../utils/logger';
 import * as Money from '../utils/money';
 import { runInTenant } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
-import { getCurrency, setStoreCurrency } from '../utils/currency';
+import { currencyOfTenant, getCurrency, setStoreCurrency } from '../utils/currency';
 import { getStoreTimeZone, localDate, parseYmd, ymdOfUtc } from './kpi/dates';
 import { FxProvider, getFxProvider } from './fx/fxProvider';
 
@@ -86,25 +86,32 @@ function lookup(row: FxRate, day: Date, inverse: boolean): FxLookup {
   };
 }
 
+const pairsOf = (from: string, to: string) => [{ fromCurrency: from, toCurrency: to }, { fromCurrency: to, toCurrency: from }];
+
+/** The rate of a day from stored rows (newest first, both directions of the pair) on or before it. Null when there is none. */
+function pickEarlier(rows: FxRate[], from: string, to: string, day: Date): FxLookup | null {
+  const direct = resolveDirect(rows, from, to);
+  const opposite = resolveDirect(rows, to, from);
+  if (!direct && !opposite) return null;
+  // The newer row answers; on a tie the stored direction wins.
+  const useOpposite = !direct || (opposite !== null && opposite.date > direct.date);
+  return useOpposite ? lookup(opposite as FxRate, day, true) : lookup(direct as FxRate, day, false);
+}
+
+/** Nothing on or before the day: the nearest later row rather than fail. */
+async function laterRate(from: string, to: string, day: Date): Promise<FxLookup | null> {
+  const later = await prisma.fxRate.findFirst({
+    where: { OR: pairsOf(from, to), date: { gt: day } },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+  });
+  return later ? lookup(later, day, later.fromCurrency === to) : null;
+}
+
 async function rateOnInTenant(from: string, to: string, ymd: string): Promise<FxLookup | null> {
   if (from === to) return { rate: Money.parse(1), date: ymd, source: 'auto', exact: true, inverse: false };
   const day = dayDate(ymd);
-  const pairs = [{ fromCurrency: from, toCurrency: to }, { fromCurrency: to, toCurrency: from }];
-  const rows = await prisma.fxRate.findMany({ where: { OR: pairs, date: { lte: day } }, orderBy: newestFirst });
-  const direct = resolveDirect(rows, from, to);
-  const opposite = resolveDirect(rows, to, from);
-  if (direct || opposite) {
-    // The newer row answers; on a tie the stored direction wins.
-    const useOpposite = !direct || (opposite !== null && opposite.date > direct.date);
-    return useOpposite ? lookup(opposite as FxRate, day, true) : lookup(direct as FxRate, day, false);
-  }
-  // Nothing on or before the day: use the nearest later row rather than fail.
-  const later = await prisma.fxRate.findFirst({
-    where: { OR: pairs, date: { gt: day } },
-    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-  });
-  if (!later) return null;
-  return lookup(later, day, later.fromCurrency === to);
+  const rows = await prisma.fxRate.findMany({ where: { OR: pairsOf(from, to), date: { lte: day } }, orderBy: newestFirst });
+  return pickEarlier(rows, from, to, day) ?? laterRate(from, to, day);
 }
 
 /** The rate of `date` for 1 unit of `from` in `to`: that day, else the nearest earlier day. Null when the pair has no rate at all. */
@@ -122,16 +129,29 @@ export function makeConverter(tenantId: string, storeCurrency: string) {
   const keyOf = (currency: string, ymd: string) => `${currency}|${ymd}`;
   return {
     async warm(pairs: Iterable<{ currency: string | null | undefined; ymd: string }>): Promise<void> {
-      const wanted = new Map<string, { currency: string; ymd: string }>();
+      // One read per currency pair (every row up to its last day), then each day resolves in memory.
+      const daysByCurrency = new Map<string, Set<string>>();
       for (const { currency, ymd } of pairs) {
-        if (currency && currency !== storeCurrency) wanted.set(keyOf(currency, ymd), { currency, ymd });
+        if (!currency || currency === storeCurrency) continue;
+        const days = daysByCurrency.get(currency) ?? new Set<string>();
+        days.add(ymd);
+        daysByCurrency.set(currency, days);
       }
-      await Promise.all([...wanted].map(async ([key, { currency, ymd }]) => {
-        // Rates are stored as (store -> other); rateOn(other -> store) reads the inverse of that row.
-        const found = await rateOn(tenantId, currency, storeCurrency, ymd);
-        if (!found) throw new AppError(`No exchange rate between ${currency} and ${storeCurrency}`, 409, 'NO_FX_RATE');
-        rates.set(key, found.rate);
-      }));
+      await runInTenant(tenantId, () => Promise.all([...daysByCurrency].map(async ([currency, days]) => {
+        const maxDay = [...days].reduce((a, b) => (a > b ? a : b));
+        // Rates are stored as (store -> other); rate(other -> store) reads the inverse of that row.
+        const history = await prisma.fxRate.findMany({
+          where: { OR: pairsOf(currency, storeCurrency), date: { lte: dayDate(maxDay) } },
+          orderBy: newestFirst,
+        });
+        for (const ymd of days) {
+          const day = dayDate(ymd);
+          const found = pickEarlier(history.filter((r) => r.date <= day), currency, storeCurrency, day)
+            ?? await laterRate(currency, storeCurrency, day);
+          if (!found) throw new AppError(`No exchange rate between ${currency} and ${storeCurrency}`, 409, 'NO_FX_RATE');
+          rates.set(keyOf(currency, ymd), found.rate);
+        }
+      })));
     },
     convert(amount: Money.MoneyInput, currency: string | null | undefined, ymd: string): Money.Money {
       if (!currency || currency === storeCurrency) return Money.parse(amount);
@@ -232,7 +252,7 @@ export async function refreshAutoRates(
 ): Promise<RefreshResult> {
   const provider = opts.provider ?? getFxProvider();
   const extras = await extraCurrencies(tenantId);
-  const store = await runInTenant(tenantId, () => getCurrency());
+  const store = await currencyOfTenant(tenantId);
   if (extras.length === 0) return { pairs: 0, written: 0, skipped: [] };
 
   const rates = await ratesOf(provider, store, opts.cache);
@@ -285,7 +305,7 @@ export async function useTodaysRate(
   opts: { to?: string; provider?: FxProvider } = {},
 ): Promise<{ rates: FxRate[]; skipped: string[] }> {
   const provider = opts.provider ?? getFxProvider();
-  const store = await runInTenant(tenantId, () => getCurrency());
+  const store = await currencyOfTenant(tenantId);
   const targets = opts.to ? [assertCurrency(opts.to, 'to')] : await extraCurrencies(tenantId);
   if (targets.length === 0) return { rates: [], skipped: [] };
 
@@ -313,7 +333,7 @@ interface CurrentRate {
 
 /** Today's rate for each extra currency (store -> extra). A currency with no rate yet has `rate: null`. */
 export async function currentRates(tenantId: string): Promise<{ storeCurrency: string; today: string; rates: CurrentRate[] }> {
-  const store = await runInTenant(tenantId, () => getCurrency());
+  const store = await currencyOfTenant(tenantId);
   const today = todayYmd(tenantId);
   const extras = await extraCurrencies(tenantId);
   const rates = await Promise.all(extras.map(async (to) => {
@@ -352,7 +372,7 @@ export async function rateHistory(tenantId: string, filter: HistoryFilter = {}):
  */
 export async function changeStoreCurrency(tenantId: string, currency: string): Promise<string> {
   const code = assertCurrency(currency);
-  const current = await runInTenant(tenantId, () => getCurrency());
+  const current = await currencyOfTenant(tenantId);
   if (code === current) return code;
   await setStoreCurrency(tenantId, code);
   try {

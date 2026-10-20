@@ -14,8 +14,8 @@
 import prisma from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import { OrderStatus } from '@prisma/client';
-import { CLOSED, CONFIRMED, DIGITAL, ratePercent } from './rates';
-import type { KpiResult } from './types';
+import { CLOSED, CONFIRMED, DIGITAL, closedOutcomeResult, confirmationRateResult } from './rates';
+import { kpiMeta, type KpiResult } from './types';
 
 /** A rate that always carries its counts. */
 export type CountedRate = KpiResult<number | null> & { detail: Record<string, number> };
@@ -33,8 +33,7 @@ export interface RepRatesResult {
 }
 
 export async function repRates(tenantId: string, from: Date, to: Date): Promise<RepRatesResult> {
-  const asOf = new Date();
-  const meta = { from: from.toISOString(), to: to.toISOString(), asOf: asOf.toISOString() };
+  const meta = kpiMeta(from, to);
   const where = { deletedAt: null, createdAt: { gte: from, lt: to } };
 
   const [placedGroups, closedGroups] = await runInTenant(tenantId, () => Promise.all([
@@ -57,18 +56,9 @@ export async function repRates(tenantId: string, from: Date, to: Date): Promise<
     const delivered = n(closed, 'delivered');
     const failed = n(closed, 'failed_delivery');
     const returned = n(closed, 'returned');
-    const closedCount = delivered + failed + returned;
     return {
-      confirmationRate: {
-        name: 'Confirmation rate', value: ratePercent(confirmed, placedCount), unit: 'percent',
-        dateBasis: 'createdAt', formulaId: 'rate.confirmation.v1', ...meta,
-        detail: { confirmed, placed: placedCount },
-      },
-      deliveredFromConfirmedRate: {
-        name: 'Delivered from confirmed rate', value: ratePercent(delivered, closedCount), unit: 'percent',
-        dateBasis: 'cohort', formulaId: 'rate.deliveredFromConfirmed.v1', ...meta,
-        detail: { delivered, failed, returned, closed: closedCount },
-      },
+      confirmationRate: confirmationRateResult(confirmed, placedCount, meta),
+      deliveredFromConfirmedRate: closedOutcomeResult('Delivered from confirmed rate', 'rate.deliveredFromConfirmed.v1', 'cohort', { delivered, failed, returned }, meta),
     };
   };
 

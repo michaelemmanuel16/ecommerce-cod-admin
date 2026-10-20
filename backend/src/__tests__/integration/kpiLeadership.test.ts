@@ -176,7 +176,7 @@ describe('leadership: asOf', () => {
 });
 
 describe('lever() (F-205)', () => {
-  const base = { confirmed: 1026, placed: 1445, daysGone: 17, daysInMonth: 31, confirmationRate: 71, successRate: 48.3, confirmationTarget: 70, successTarget: 60, aov: '245.00' };
+  const base = { confirmed: 1026, placed: 1445, daysGone: 17, daysInMonth: 31, successRate: 48.3, confirmationTarget: 70, successTarget: 60, aov: '245.00' };
 
   it('names delivery success when it has the larger gap: projected confirmed x 5 points x AOV', () => {
     const r = lever(base);
@@ -187,16 +187,16 @@ describe('lever() (F-205)', () => {
   });
 
   it('names confirmation when it is the rate furthest under target: projected placed x 5 points x success rate x AOV', () => {
-    const r = lever({ ...base, confirmationRate: 50, successRate: 58 });
+    const r = lever({ ...base, confirmed: 722, successRate: 58 });
     expect(r.rate).toBe('confirmationRate');
     // placed 1445 / 17 x 31 = 2635.1 x 0.05 x 0.58 x 245
     expect(Number(r.value)).toBeCloseTo(2635.0 * 0.05 * 0.58 * 245, -1);
   });
 
   it('has no lever when every rate is at or above target, with no AOV, or with no day gone', () => {
-    expect(lever({ ...base, confirmationRate: 70, successRate: 60 }).value).toBeNull();
+    expect(lever({ ...base, confirmed: 1012, successRate: 60 }).value).toBeNull();
     expect(lever({ ...base, aov: null }).value).toBeNull();
     expect(lever({ ...base, daysGone: 0 }).value).toBeNull();
-    expect(lever({ ...base, confirmationRate: null, successRate: null }).rate).toBeNull();
+    expect(lever({ ...base, confirmed: 0, placed: 0, successRate: null }).rate).toBeNull();
   });
 });

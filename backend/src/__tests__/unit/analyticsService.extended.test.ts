@@ -9,7 +9,11 @@ jest.mock('../../utils/logger', () => ({
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-jest.mock('../../services/kpi/revenue');
+// Automock the KPI functions; revenueScope is a pure mapping the callers use as is.
+jest.mock('../../services/kpi/revenue', () => ({
+  ...jest.createMockFromModule<object>('../../services/kpi/revenue'),
+  revenueScope: jest.requireActual<typeof import('../../services/kpi/revenue')>('../../services/kpi/revenue').revenueScope,
+}));
 jest.mock('../../services/kpi/rates', () => ({ ...jest.requireActual<object>('../../services/kpi/rates'), rates: jest.fn() }));
 jest.mock('../../services/kpi/reps');
 jest.mock('../../services/kpi/partners');

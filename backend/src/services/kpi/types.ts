@@ -3,7 +3,7 @@
  * Money values are strings with 2 decimals ("92000.00", Money.toApi). Rates are percent numbers
  * rounded half up to 1 decimal (71.0), or null when the denominator is 0 (F-251: "n/a").
  */
-export type KpiUnit = 'money' | 'percent' | 'count' | 'days' | 'minutes';
+type KpiUnit = 'money' | 'percent' | 'count' | 'days' | 'minutes';
 
 /**
  * Which date an order is placed on the time line by.
@@ -12,7 +12,19 @@ export type KpiUnit = 'money' | 'percent' | 'count' | 'days' | 'minutes';
  *  - cohort:       orders placed in the range, outcome read today (F-251, F-1008)
  *  - delivery:     orders closed in the range (F-251, second basis)
  */
-export type KpiDateBasis = 'deliveryDate' | 'createdAt' | 'cohort' | 'delivery';
+type KpiDateBasis = 'deliveryDate' | 'createdAt' | 'cohort' | 'delivery';
+
+/** The range and compute time every KPI result carries (ISO instants). */
+export interface KpiMeta {
+  from: string;
+  to: string;
+  asOf: string;
+}
+
+/** `{ from, to, asOf }` of a KPI range, computed now, plus any fields of `extra` (which may also set `asOf`). */
+export function kpiMeta<E extends object = Record<never, never>>(from: Date, to: Date, extra?: E): KpiMeta & E {
+  return { from: from.toISOString(), to: to.toISOString(), asOf: new Date().toISOString(), ...extra } as KpiMeta & E;
+}
 
 export interface KpiResult<T> {
   name: string;

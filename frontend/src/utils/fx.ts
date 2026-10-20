@@ -9,7 +9,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const dayNumber = (ymd: string): number => Date.parse(`${ymd}T00:00:00Z`) / DAY_MS;
 
 /** Whole days from `fromYmd` to `toYmd` (YYYY-MM-DD). */
-export function daysBetween(fromYmd: string, toYmd: string): number {
+function daysBetween(fromYmd: string, toYmd: string): number {
   return Math.round(dayNumber(toYmd) - dayNumber(fromYmd));
 }
 

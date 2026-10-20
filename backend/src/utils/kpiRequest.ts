@@ -2,9 +2,8 @@ import { AuthRequest } from '../types';
 import { AppError } from '../middleware/errorHandler';
 import { getStoreTimeZone, parseBound, parseInclusiveBound } from '../services/kpi/dates';
 import { getTenantId } from './tenantContext';
-import type { RevenueScope } from '../services/kpi/revenue';
 
-const invalidRange = (message: string) => new AppError(message, 400, 'INVALID_RANGE');
+export const invalidRange = (message: string) => new AppError(message, 400, 'INVALID_RANGE');
 
 /** dates.ts and the KPI services throw RangeError for a value that is not a date: that is a 400. Anything else passes through. */
 export function toInvalidRange(err: unknown): unknown {
@@ -40,7 +39,7 @@ export function readDateBound(value: unknown, edge: 'from' | 'to', opts?: { snap
   }
 }
 
-export function readId(value: unknown, label: string): number | undefined {
+function readId(value: unknown, label: string): number | undefined {
   if (value === undefined) return undefined;
   const n = Number(value);
   if (!Number.isInteger(n) || n <= 0) throw invalidRange(`${label} must be a positive integer`);
@@ -55,11 +54,6 @@ export function roleScope(user?: { id?: number; role?: string } | null): { repId
   if (user?.id !== undefined && user.role === 'sales_rep') return { repId: user.id };
   if (user?.id !== undefined && user.role === 'delivery_agent') return { partnerId: user.id };
   return {};
-}
-
-/** A { repId, partnerId } scope in the shape the revenue KPIs take. */
-export function revenueScope(scope: { repId?: number; partnerId?: number }): RevenueScope {
-  return { customerRepId: scope.repId, deliveryAgentId: scope.partnerId };
 }
 
 /**

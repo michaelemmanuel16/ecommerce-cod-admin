@@ -3,6 +3,7 @@ import { AuthRequest } from '../types';
 import agentInventoryService from '../services/agentInventoryService';
 import { AppError } from '../middleware/errorHandler';
 import { TransferType } from '@prisma/client';
+import { readDateBound } from '../utils/kpiRequest';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -125,8 +126,8 @@ class AgentInventoryController {
         productId: productId ? parseInt(productId as string) : undefined,
         agentId: agentId ? parseInt(agentId as string) : undefined,
         type: type as TransferType | undefined,
-        startDate: startDate ? new Date(startDate as string) : undefined,
-        endDate: endDate ? new Date(endDate as string) : undefined,
+        startDate: readDateBound(startDate, 'from'),
+        endDate: readDateBound(endDate, 'to'),
         page: page ? parseInt(page as string) : 1,
         limit: limit ? parseInt(limit as string) : 50,
       });

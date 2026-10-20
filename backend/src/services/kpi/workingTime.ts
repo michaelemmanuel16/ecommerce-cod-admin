@@ -10,7 +10,7 @@
  * workingMinutesBetween counts only the minutes inside the windows, on the store-zone calendar. A start outside
  * hours begins at the next opening. With no hours (null) it counts every minute: the caller shows "Set operating hours".
  */
-import { addDays, startOfDay, localDate } from './dates';
+import { localDate, shiftYmd, startOfDay } from './dates';
 
 export const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 export type Weekday = (typeof WEEKDAYS)[number];
@@ -89,29 +89,19 @@ export function workingMinutesBetween(start: Date, end: Date, hours: OperatingHo
   if (end <= start) return 0;
   if (!hours) return (end.getTime() - start.getTime()) / MIN_MS;
 
-  // Day bounds are looked up per date string, so a call that crosses a few days computes each midnight once.
-  const midnights = new Map<string, number>();
-  const midnightOf = (day: string) => {
-    let m = midnights.get(day);
-    if (m === undefined) { m = startOfDay(day, timeZone).getTime(); midnights.set(day, m); }
-    return m;
-  };
   const overlapOn = (day: string): number => {
     const window = hours.days[weekdayOf(day)];
     if (!window?.enabled) return 0;
-    const midnight = midnightOf(day);
+    const midnight = startOfDay(day, timeZone).getTime();
     const open = midnight + minutesOfDay(window.open) * MIN_MS;
     const close = midnight + minutesOfDay(window.close) * MIN_MS;
     return Math.max(0, Math.min(close, end.getTime()) - Math.max(open, start.getTime()));
   };
 
-  const firstDay = localDate(start, timeZone);
+  // Walk local calendar days from the start day to the end day.
   const lastDay = localDate(end, timeZone);
-  if (firstDay === lastDay) return overlapOn(firstDay) / MIN_MS;
-
   let total = 0;
-  // Walk local days from the start day to the end day. addDays(.., 1.5) from midnight stays on the next calendar day in any zone.
-  for (let day = firstDay; day <= lastDay; day = localDate(addDays(new Date(midnightOf(day)), 1.5), timeZone)) {
+  for (let day = localDate(start, timeZone); day <= lastDay; day = shiftYmd(day, 1)) {
     total += overlapOn(day);
   }
   return total / MIN_MS;
