@@ -33,7 +33,7 @@ beforeAll(async () => {
   for (const [side, currency] of [['A', 'GHS'], ['B', 'NGN']] as const) {
     const tenant = await createTenant(`Config ${side}`, { currency });
     tenantIds.push(tenant.id);
-    await prismaBase.systemConfig.create({ data: { tenantId: tenant.id, businessName: `Biz ${side} ${SUFFIX}`, currency } });
+    await prismaBase.systemConfig.create({ data: { tenantId: tenant.id, businessName: `Biz ${side} ${SUFFIX}` } });
     const product = await prismaBase.product.create({
       data: { name: `P${side}`, sku: `CFG-${side}-${SUFFIX}`, category: 'test', price: 10, stockQuantity: 5, tenantId: tenant.id },
     });

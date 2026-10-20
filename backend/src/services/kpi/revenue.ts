@@ -21,6 +21,13 @@
  * time of the history row, not the backdated date, because the backdated date is cleared on return.
  *
  * Old rows: `delivered` or paid `digital_delivered` with a null deliveryDate use updatedAt (F-900 edge case).
+ *
+ * Currency (M1-T31, decision O6): every order keeps the currency its amount was entered in (Order.currency; null reads
+ * as the store currency). Orders in another currency convert to the store currency at the rate of their delivery day
+ * (fxService.rateOn: that day, else the nearest earlier day). A returned order converts at its delivery day's rate on
+ * both legs, so a return takes back exactly what the delivery booked. Every function here reads the same signed rows
+ * (signedRevenueRows) and converts each (currency, rate day) group once. Store-currency rows are never converted and
+ * cost no rate lookup.
  */
 import prisma from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
@@ -29,6 +36,7 @@ import type { KpiResult } from './types';
 import { getCurrency } from '../../utils/currency';
 import { Prisma } from '@prisma/client';
 import { getStoreTimeZone } from './dates';
+import { makeConverter } from '../fxService';
 
 export interface DeliveredRevenue {
   physical: KpiResult<string>;
@@ -39,10 +47,6 @@ export interface DeliveredRevenue {
 }
 
 const FORMULA_ID = 'revenue.delivered.v1';
-
-function inRange(d: Date | null | undefined, from: Date, to: Date): boolean {
-  return !!d && d >= from && d < to;
-}
 
 /** Limits revenue to one rep's or one partner's orders (role scope for sales reps and delivery agents). */
 export interface RevenueScope {
@@ -56,76 +60,29 @@ export async function deliveredRevenue(
   to: Date,
   scope: RevenueScope = {},
 ): Promise<DeliveredRevenue> {
-  return runInTenant(tenantId, async () => {
-    const dateWindow = {
-      OR: [
-        { deliveryDate: { gte: from, lt: to } },
-        { deliveryDate: null, updatedAt: { gte: from, lt: to } },
-      ],
-    };
-    const base = { deletedAt: null, ...scope, ...dateWindow };
+  const { rows, currency } = await signedRevenueRowsInStoreCurrency(tenantId, from, to, scope);
+  let physical = Money.ZERO;
+  let digital = Money.ZERO;
+  let deliveredCount = 0;
+  for (const r of rows) {
+    if (r.kind === 'physical') physical = Money.add(physical, r.amount);
+    else digital = Money.add(digital, r.amount);
+    deliveredCount += r.orders;
+  }
 
-    const [currency, physicalAgg, digitalAgg, returned] = await Promise.all([
-      getCurrency(),
-      prisma.order.aggregate({
-        where: { ...base, status: 'delivered' },
-        _sum: { totalAmount: true },
-        _count: { _all: true },
-      }),
-      prisma.order.aggregate({
-        where: { ...base, status: 'digital_delivered', paymentStatus: 'paid', totalAmount: { gt: 0 } },
-        _sum: { totalAmount: true },
-        _count: { _all: true },
-      }),
-      prisma.order.findMany({
-        where: {
-          deletedAt: null,
-          ...scope,
-          status: 'returned',
-          orderHistory: { some: { status: 'delivered' } },
-          OR: [
-            { returnedAt: { gte: from, lt: to } },
-            { orderHistory: { some: { status: 'delivered', createdAt: { gte: from, lt: to } } } },
-          ],
-        },
-        select: {
-          totalAmount: true,
-          returnedAt: true,
-          orderHistory: { where: { status: 'delivered' }, orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
-        },
-      }),
-    ]);
-
-    let physical = Money.orZero(physicalAgg._sum.totalAmount);
-    let deliveredCount = physicalAgg._count._all;
-    for (const order of returned) {
-      const bookedAt = order.orderHistory[0]?.createdAt;
-      if (inRange(bookedAt, from, to)) {
-        physical = Money.add(physical, order.totalAmount);
-        deliveredCount += 1;
-      }
-      if (inRange(order.returnedAt, from, to)) {
-        physical = Money.sub(physical, order.totalAmount);
-        deliveredCount -= 1;
-      }
-    }
-    const digital = Money.orZero(digitalAgg._sum.totalAmount);
-    deliveredCount += digitalAgg._count._all;
-
-    const meta = {
-      dateBasis: 'deliveryDate' as const,
-      formulaId: FORMULA_ID,
-      from: from.toISOString(),
-      to: to.toISOString(),
-      asOf: new Date().toISOString(),
-    };
-    return {
-      physical: { name: 'Delivered revenue, physical', value: Money.toApi(physical), unit: 'money', currency, ...meta },
-      digital: { name: 'Delivered revenue, digital', value: Money.toApi(digital), unit: 'money', currency, ...meta },
-      total: { name: 'Delivered revenue', value: Money.toApi(Money.add(physical, digital)), unit: 'money', currency, ...meta },
-      deliveredOrders: { name: 'Delivered orders', value: deliveredCount, unit: 'count', ...meta },
-    };
-  });
+  const meta = {
+    dateBasis: 'deliveryDate' as const,
+    formulaId: FORMULA_ID,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    asOf: new Date().toISOString(),
+  };
+  return {
+    physical: { name: 'Delivered revenue, physical', value: Money.toApi(physical), unit: 'money', currency, ...meta },
+    digital: { name: 'Delivered revenue, digital', value: Money.toApi(digital), unit: 'money', currency, ...meta },
+    total: { name: 'Delivered revenue', value: Money.toApi(Money.add(physical, digital)), unit: 'money', currency, ...meta },
+    deliveredOrders: { name: 'Delivered orders', value: deliveredCount, unit: 'count', ...meta },
+  };
 }
 
 export interface RevenueDay {
@@ -147,8 +104,14 @@ interface SignedRevenueRow {
   day: string;
   area: string | null;
   repId: number | null;
+  /** Physical orders (delivered, and returns of them) or paid digital orders. */
+  kind: 'physical' | 'digital';
   amount: string;
   orders: number;
+  /** Order currency; null reads as the store currency. */
+  currency: string | null;
+  /** Store-zone day whose rate converts the amount: the delivery day (a return converts at the day it was booked). */
+  rateDay: string;
 }
 
 /**
@@ -163,21 +126,23 @@ async function signedRevenueRows(tenantId: string, from: Date, to: Date, scope: 
   const agent = scope.deliveryAgentId !== undefined ? Prisma.sql`AND o.delivery_agent_id = ${scope.deliveryAgentId}` : Prisma.empty;
   return runInTenant(tenantId, () => prisma.$queryRaw<SignedRevenueRow[]>`
     WITH moves AS (
-      SELECT COALESCE(o.delivery_date, o.updated_at) AS at, o.delivery_area AS area, o.customer_rep_id AS rep_id, o.total_amount AS amount, 1 AS orders
+      SELECT COALESCE(o.delivery_date, o.updated_at) AS at, NULL::timestamp AS rate_at, o.delivery_area AS area, o.customer_rep_id AS rep_id,
+             CASE WHEN o.status::text = 'delivered' THEN 'physical' ELSE 'digital' END AS kind,
+             o.total_amount AS amount, 1 AS orders, o.currency AS currency
       FROM orders o
       WHERE o.tenant_id = ${tenantId} AND o.deleted_at IS NULL ${rep} ${agent}
         AND COALESCE(o.delivery_date, o.updated_at) >= ${from} AND COALESCE(o.delivery_date, o.updated_at) < ${to}
         AND (o.status::text = 'delivered'
              OR (o.status::text = 'digital_delivered' AND o.payment_status::text = 'paid' AND o.total_amount > 0))
       UNION ALL
-      SELECT b.booked_at, o.delivery_area, o.customer_rep_id, o.total_amount, 1
+      SELECT b.booked_at, NULL, o.delivery_area, o.customer_rep_id, 'physical', o.total_amount, 1, o.currency
       FROM orders o
       JOIN LATERAL (SELECT MAX(h.created_at) AS booked_at FROM order_history h WHERE h.order_id = o.id AND h.status::text = 'delivered') b
         ON b.booked_at IS NOT NULL
       WHERE o.tenant_id = ${tenantId} AND o.deleted_at IS NULL ${rep} ${agent} AND o.status::text = 'returned'
         AND b.booked_at >= ${from} AND b.booked_at < ${to}
       UNION ALL
-      SELECT o.returned_at, o.delivery_area, o.customer_rep_id, -o.total_amount, -1
+      SELECT o.returned_at, b.booked_at, o.delivery_area, o.customer_rep_id, 'physical', -o.total_amount, -1, o.currency
       FROM orders o
       JOIN LATERAL (SELECT MAX(h.created_at) AS booked_at FROM order_history h WHERE h.order_id = o.id AND h.status::text = 'delivered') b
         ON b.booked_at IS NOT NULL
@@ -185,13 +150,34 @@ async function signedRevenueRows(tenantId: string, from: Date, to: Date, scope: 
         AND o.returned_at >= ${from} AND o.returned_at < ${to}
     )
     SELECT TO_CHAR((at AT TIME ZONE 'UTC') AT TIME ZONE ${zone}, 'YYYY-MM-DD') AS day,
-           area, rep_id AS "repId", SUM(amount)::text AS amount, SUM(orders)::int AS orders
+           TO_CHAR((COALESCE(rate_at, at) AT TIME ZONE 'UTC') AT TIME ZONE ${zone}, 'YYYY-MM-DD') AS "rateDay",
+           currency, area, rep_id AS "repId", kind, SUM(amount)::text AS amount, SUM(orders)::int AS orders
     FROM moves
-    GROUP BY 1, 2, 3`);
+    GROUP BY 1, 2, 3, 4, 5, 6`);
+}
+
+interface StoreCurrencyRow extends Omit<SignedRevenueRow, 'amount'> {
+  amount: Money.Money;
+}
+
+/** signedRevenueRows with every amount in the store currency (rows in another currency convert at their rateDay). */
+async function signedRevenueRowsInStoreCurrency(
+  tenantId: string,
+  from: Date,
+  to: Date,
+  scope: RevenueScope,
+): Promise<{ rows: StoreCurrencyRow[]; currency: string }> {
+  const [rows, currency] = await Promise.all([
+    signedRevenueRows(tenantId, from, to, scope),
+    runInTenant(tenantId, () => getCurrency()),
+  ]);
+  const converter = makeConverter(tenantId, currency);
+  await converter.warm(rows.map((r) => ({ currency: r.currency, ymd: r.rateDay })));
+  return { currency, rows: rows.map((r) => ({ ...r, amount: converter.convert(r.amount, r.currency, r.rateDay) })) };
 }
 
 /** Sum signed rows into one bucket per key, in the order keys first appear. */
-function groupRows<K>(rows: SignedRevenueRow[], keyOf: (row: SignedRevenueRow) => K) {
+function groupRows<K>(rows: StoreCurrencyRow[], keyOf: (row: StoreCurrencyRow) => K) {
   const groups = new Map<K, { revenue: Money.Money; orders: number }>();
   for (const r of rows) {
     const key = keyOf(r);
@@ -211,7 +197,7 @@ export async function deliveredRevenueByDay(
   to: Date,
   scope: RevenueScope = {},
 ): Promise<RevenueDay[]> {
-  const rows = await signedRevenueRows(tenantId, from, to, scope);
+  const { rows } = await signedRevenueRowsInStoreCurrency(tenantId, from, to, scope);
   return [...groupRows(rows, (r) => r.day).entries()]
     .map(([date, d]) => ({ date, revenue: Money.toApi(d.revenue), deliveredOrders: d.orders }))
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -224,7 +210,7 @@ export async function deliveredRevenueByArea(
   to: Date,
   scope: RevenueScope = {},
 ): Promise<RevenueArea[]> {
-  const rows = await signedRevenueRows(tenantId, from, to, scope);
+  const { rows } = await signedRevenueRowsInStoreCurrency(tenantId, from, to, scope);
   return [...groupRows(rows, (r) => r.area).entries()]
     .map(([area, a]) => ({ area, revenue: Money.toApi(a.revenue), deliveredOrders: a.orders, value: a.revenue }))
     .sort((a, b) => Money.compare(b.value, a.value))
@@ -241,7 +227,7 @@ export async function deliveredRevenueByRep(
   to: Date,
   scope: RevenueScope = {},
 ): Promise<Map<number, { revenue: string; deliveredOrders: number }>> {
-  const rows = (await signedRevenueRows(tenantId, from, to, scope)).filter((r) => r.repId !== null);
+  const rows = (await signedRevenueRowsInStoreCurrency(tenantId, from, to, scope)).rows.filter((r) => r.repId !== null);
   const byRep = new Map<number, { revenue: string; deliveredOrders: number }>();
   for (const [repId, g] of groupRows(rows, (r) => r.repId as number)) {
     byRep.set(repId, { revenue: Money.toApi(g.revenue), deliveredOrders: g.orders });

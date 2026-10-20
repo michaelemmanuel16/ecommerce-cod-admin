@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, FileText, Puzzle, Trash2, AlertTriangle, CreditCard } from 'lucide-react';
+import { User, Bell, Lock, Building2, Save, Mail, Phone, MapPin, Users as UsersIcon, Shield, FileText, Puzzle, Trash2, AlertTriangle, CreditCard, BadgeDollarSign } from 'lucide-react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Card } from '../components/ui/Card';
@@ -9,15 +9,16 @@ import { usePermissions } from '../hooks/usePermissions';
 import { UserManagementTable } from '../components/admin/UserManagementTable';
 import { RolePermissionsMatrix } from '../components/admin/RolePermissionsMatrix';
 import { IntegrationsPanel } from '../components/settings/IntegrationsPanel';
+import { CurrenciesFxPanel } from '../components/settings/CurrenciesFxPanel';
 import { Billing } from './Billing';
 import { adminService, SystemConfig } from '../services/admin.service';
 import { authService } from '../services/auth.service';
 import { useConfigStore } from '../stores/configStore';
 import { SUPPORTED_CURRENCIES, getCurrencyOptionLabel } from '../utils/countries';
 
-type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'integrations' | 'checkout-forms' | 'billing';
+type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'integrations' | 'checkout-forms' | 'billing' | 'currencies';
 
-const VALID_TABS: SettingsTab[] = ['profile', 'notifications', 'security', 'users', 'business', 'permissions', 'integrations', 'checkout-forms', 'billing'];
+const VALID_TABS: SettingsTab[] = ['profile', 'notifications', 'security', 'users', 'business', 'permissions', 'integrations', 'checkout-forms', 'billing', 'currencies'];
 
 export const Settings: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -124,6 +125,7 @@ export const Settings: React.FC = () => {
     { id: 'notifications' as SettingsTab, label: 'My Notifications', icon: Bell, adminOnly: false },
     { id: 'users' as SettingsTab, label: 'User Management', icon: UsersIcon, adminOnly: true },
     { id: 'business' as SettingsTab, label: 'Business Settings', icon: Building2, adminOnly: true },
+    { id: 'currencies' as SettingsTab, label: 'Currencies & FX', icon: BadgeDollarSign, adminOnly: true },
     { id: 'checkout-forms' as SettingsTab, label: 'Checkout Forms', icon: FileText, adminOnly: true },
     { id: 'integrations' as SettingsTab, label: 'Integrations', icon: Puzzle, adminOnly: true },
     { id: 'permissions' as SettingsTab, label: 'Role Permissions', icon: Shield, adminOnly: true },
@@ -555,6 +557,16 @@ export const Settings: React.FC = () => {
             </form>
           </Card>
         </div>
+      )}
+
+      {/* Super Admin Only - Currencies and FX */}
+      {activeTab === 'currencies' && isSuperAdmin && (
+        <CurrenciesFxPanel
+          onStoreCurrencySaved={() => {
+            loadSystemConfig();
+            useConfigStore.getState().fetchConfig();
+          }}
+        />
       )}
 
       {/* Super Admin Only - Integrations */}

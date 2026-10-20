@@ -64,6 +64,9 @@ export function localDate(instant: Date, zone: string): string {
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
 }
 
+/** UTC calendar date 'YYYY-MM-DD' of an instant (a Postgres DATE column read as UTC midnight). */
+export const ymdOfUtc = (instant: Date): string => localDate(instant, 'UTC');
+
 const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function parseYmd(ymd: string): { year: number; month: number; day: number } {

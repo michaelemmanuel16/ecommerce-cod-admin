@@ -1,3 +1,4 @@
+import { Country } from 'country-state-city';
 import prisma from './prisma';
 import { getTenantId } from './tenantContext';
 
@@ -10,19 +11,41 @@ export function clearCurrencyCache(): void {
 }
 
 /**
- * Currency code of the current tenant (tenant-scoped through the Prisma extension), GHS by default.
+ * Store currency of a tenant (Tenant.currency, M1-T31), GHS by default.
  * Cached for 60 seconds per tenant: it is read on every email and MCP tool call.
  */
-export async function getCurrency(): Promise<string> {
-  const key = getTenantId() ?? '';
+export async function currencyOfTenant(tenantId: string | null | undefined): Promise<string> {
+  const key = tenantId ?? '';
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.code;
   try {
-    const config = await prisma.systemConfig.findFirst({ select: { currency: true } });
-    const code = config?.currency || 'GHS';
+    const tenant = tenantId ? await prisma.tenant.findUnique({ where: { id: tenantId }, select: { currency: true } }) : null;
+    const code = tenant?.currency || 'GHS';
     cache.set(key, { code, at: Date.now() });
     return code;
   } catch {
     return 'GHS';
   }
+}
+
+/** Store currency of the current tenant. */
+export function getCurrency(): Promise<string> {
+  return currencyOfTenant(getTenantId());
+}
+
+/** The one writer of Tenant.currency: saves the code and drops the cached value. */
+export async function setStoreCurrency(tenantId: string, code: string): Promise<void> {
+  await prisma.tenant.update({ where: { id: tenantId }, data: { currency: code } });
+  clearCurrencyCache();
+}
+
+/**
+ * Currency of a country, from a name ('Ghana') or an ISO2 code ('GH'). Picking a country sets the store
+ * currency (decision O6). Null when the country is not known.
+ */
+export function currencyForCountry(country: string): string | null {
+  const key = country.trim().toLowerCase();
+  if (!key) return null;
+  const found = Country.getCountryByCode(key.toUpperCase()) ?? Country.getAllCountries().find((c) => c.name.toLowerCase() === key);
+  return found?.currency || null;
 }

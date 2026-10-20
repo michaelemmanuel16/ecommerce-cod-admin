@@ -76,7 +76,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
   const mcpKey = `mcp_${randomBytes(16).toString('hex')}`;
   const downloadToken = randomBytes(16).toString('hex');
 
-  const tenant = await prismaBase.tenant.create({ data: { name: `Two ${side.toUpperCase()} ${tag}`, slug: `two-${tag}` } });
+  const tenant = await prismaBase.tenant.create({ data: { name: `Two ${side.toUpperCase()} ${tag}`, slug: `two-${tag}`, currency: side === 'a' ? 'GHS' : 'NGN' } });
   const tenantId = tenant.id;
   const ids: Record<string, number> = {};
   /** Create a row and record its id under `key`. */
@@ -119,7 +119,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
       data: { name: `Flow ${marker}`, triggerType: 'manual', triggerData: {}, actions: [], tenantId },
     })),
     prismaBase.systemConfig.create({
-      data: { tenantId, businessName: `Biz ${side.toUpperCase()} ${marker}`, currency: side === 'a' ? 'GHS' : 'NGN' },
+      data: { tenantId, businessName: `Biz ${side.toUpperCase()} ${marker}` },
     }),
     seed('smsTemplate', prismaBase.smsTemplate.create({ data: { name: `SMS ${marker}`, body: `Hello ${marker}`, tenantId } })),
     seed('webhookEvent', prismaBase.webhookEvent.create({

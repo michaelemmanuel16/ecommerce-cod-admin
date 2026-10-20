@@ -575,7 +575,7 @@ export class GLAutomationService {
     }
 
     const reversal = await this.createJournalEntryWithRetry(tx, {
-      entryDate: entryDate ?? order.updatedAt ?? new Date(),
+      entryDate: entryDate ?? order.returnedAt ?? new Date(),
       description: `Return reversal - Order #${order.id} (Original JE: ${originalEntry?.entryNumber || 'N/A'})`,
       sourceType: JournalSourceType.order_return,
       sourceId: order.id,

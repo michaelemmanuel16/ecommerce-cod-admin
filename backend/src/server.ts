@@ -76,6 +76,7 @@ import paystackRoutes from './routes/paystackRoutes';
 import communicationRoutes from './routes/communicationRoutes';
 import onboardingRoutes from './routes/onboardingRoutes';
 import referenceRoutes from './routes/referenceRoutes';
+import fxRoutes from './routes/fxRoutes';
 import billingRoutes from './routes/billingRoutes';
 import platformRoutes from './routes/platformRoutes';
 import mcpKeyRoutes from './routes/mcpKeyRoutes';
@@ -92,7 +93,9 @@ import './queues/workflowQueue';
 import './queues/emailCampaignQueue';
 
 import { setupAgingCron } from './queues/agingQueue';
+import { setupFxRateCron } from './queues/fxRateQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
+import { setupLedgerCheckCron } from './queues/ledgerCheckQueue';
 import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
 import { setupPendingCheckoutCleanupCron } from './queues/pendingCheckoutCleanupQueue';
 import * as Money from './utils/money';
@@ -257,6 +260,7 @@ app.use('/api/paystack', apiLimiter, paystackRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
 app.use('/api/onboarding', apiLimiter, onboardingRoutes);
 app.use('/api/reference', apiLimiter, referenceRoutes);
+app.use('/api/fx', apiLimiter, fxRoutes);
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/mcp-keys', apiLimiter, mcpKeyRoutes);
@@ -311,8 +315,14 @@ if (process.env.NODE_ENV !== 'test') {
     // Setup Agent Aging Cron Job
     await setupAgingCron();
 
+    // Setup daily FX rate refresh (M1-T30)
+    await setupFxRateCron();
+
     // Setup Financial Reconciliation Cron Job
     await setupFinancialReconciliationCron();
+
+    // Setup nightly order-versus-ledger check (M1-T28)
+    await setupLedgerCheckCron();
 
     // Setup Message Log Cleanup Cron Job
     await setupMessageCleanupCron();

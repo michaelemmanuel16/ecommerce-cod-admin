@@ -266,6 +266,9 @@ model Order {
   shippingCost       Decimal             @default(0) @map("shipping_cost") @db.Decimal(19, 4)
   discount           Decimal             @default(0) @db.Decimal(19, 4)
   totalAmount        Decimal             @map("total_amount") @db.Decimal(19, 4)
+  // Currency the amounts above were entered in (M1-T31). The DB trigger orders_set_currency fills it from
+  // Tenant.currency on insert; null on an old row reads as the store currency. Never rewritten on a store currency change.
+  currency           String?             @db.VarChar(3)
   codAmount          Decimal?            @map("cod_amount") @db.Decimal(19, 4)
   notes              String?
   internalNotes      String?             @map("internal_notes")
@@ -704,7 +707,6 @@ model SystemConfig {
   businessPhone         String?  @map("business_phone")
   businessAddress       String?  @map("business_address")
   taxId                 String?  @map("tax_id")
-  currency              String   @default("USD")
   operatingHours        Json?    @map("operating_hours")
   smsProvider           Json?    @map("sms_provider")
   emailProvider         Json?    @map("email_provider")

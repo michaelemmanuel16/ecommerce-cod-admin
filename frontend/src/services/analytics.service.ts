@@ -1,3 +1,4 @@
+import { format, startOfMonth } from 'date-fns';
 import apiClient from './api';
 
 export interface DashboardMetrics {
@@ -101,6 +102,17 @@ export interface AreaDistribution {
 }
 
 export const analyticsService = {
+  /**
+   * Delivered revenue of the month so far, in the store currency (the KPI layer converts other currencies).
+   * Sends calendar days; the backend reads them in the store zone (D43).
+   */
+  async getMonthRevenue(): Promise<{ value: number; currency: string }> {
+    const now = new Date();
+    const params = { from: format(startOfMonth(now), 'yyyy-MM-dd'), to: format(now, 'yyyy-MM-dd') };
+    const response = await apiClient.get('/api/kpi/revenue', { params });
+    return { value: Number(response.data.total.value), currency: response.data.total.currency };
+  },
+
   async getDashboardMetrics(params?: {
     startDate?: string;
     endDate?: string;
