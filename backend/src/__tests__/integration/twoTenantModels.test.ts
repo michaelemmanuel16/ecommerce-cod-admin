@@ -4,15 +4,11 @@
  * Seed rows come from createTwoTenants; every tenant-scoped model that the plan names
  * is covered, plus the models the harness seeds on the side.
  */
-import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import '../mocks/logger.mock';
 import prisma, { prismaBase } from '../../utils/prisma';
 import { TENANT_SCOPED_MODELS } from '../../utils/prismaExtensions';
 import { createTwoTenants, asTenant, TwoTenants } from './helpers/twoTenants';
-
-jest.mock('../../utils/logger', () => ({
-  __esModule: true,
-  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
 
 let pair: TwoTenants;
 

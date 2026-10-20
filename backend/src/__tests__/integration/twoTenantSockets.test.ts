@@ -2,7 +2,8 @@
  * M0-T29 (COD-7), socket part, on the two-tenant helper: an emit in tenant A is never
  * received by a tenant B client, whichever way it is addressed (order, user, tenant-wide).
  */
-import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import '../mocks/logger.mock';
 import http from 'http';
 import { AddressInfo } from 'net';
 import { io as connect, Socket } from 'socket.io-client';
@@ -11,12 +12,8 @@ import { prismaBase } from '../../utils/prisma';
 import {
   initializeSocket, emitOrderCreated, emitOrderUpdated, emitNotification, emitToTenant,
 } from '../../sockets';
+import { roomNames } from '../../sockets/rooms';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
-
-jest.mock('../../utils/logger', () => ({
-  __esModule: true,
-  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
 
 let server: http.Server;
 let io: SocketServer;
@@ -38,6 +35,12 @@ const collect = (s: Socket, event: string) => {
   s.on(event, (d) => got.push(d));
   return got;
 };
+/** Wait for the thing itself, up to 2 s. */
+const until = async (cond: () => boolean) => {
+  for (let waited = 0; !cond() && waited < 2000; waited += 5) await new Promise((r) => setTimeout(r, 5));
+  expect(cond()).toBe(true);
+};
+/** Only for "never received" checks: nothing to wait for, so give a stray event time to show up. */
 const settle = () => new Promise((r) => setTimeout(r, 150));
 
 beforeAll(async () => {
@@ -65,6 +68,7 @@ describe('socket rooms with two tenants', () => {
     const created = [aAdmin, aAgent, bAdmin, bAgent].map((s) => collect(s, 'order:created'));
 
     emitOrderCreated(io, { id: a.ids.order, orderNumber: 'A-1', tenantId: a.id });
+    await until(() => created[0].length === 1);
     await settle();
 
     expect(created[0]).toHaveLength(1);
@@ -81,8 +85,9 @@ describe('socket rooms with two tenants', () => {
 
     aAdmin.emit('join:order', String(a.ids.order));
     bAdmin.emit('join:order', String(a.ids.order));
-    await settle();
+    await until(() => !!io.sockets.adapter.rooms.get(roomNames.order(a.id, a.ids.order))?.has(aAdmin.id as string));
     emitOrderUpdated(io, { id: a.ids.order, tenantId: a.id });
+    await until(() => gotA.length === 1);
     await settle();
 
     expect(gotA).toHaveLength(1);
@@ -102,6 +107,7 @@ describe('socket rooms with two tenants', () => {
     // B user id addressed from tenant A: still no delivery to B
     emitNotification(io, String(b.users.admin.id), { title: 'wrong tenant', tenantId: a.id });
     emitToTenant(io, 'workflow:execution_started', { workflowId: a.ids.workflow }, a.id);
+    await until(() => noteA.length === 1 && wideA.length === 1);
     await settle();
 
     expect(noteA).toHaveLength(1);

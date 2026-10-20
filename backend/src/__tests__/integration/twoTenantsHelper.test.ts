@@ -2,25 +2,22 @@
  * M0-T27 (COD-7): the two-tenant harness builds what it promises, scopes by tenant,
  * and cleans up after itself.
  */
-import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import '../mocks/logger.mock';
 import prisma, { prismaBase } from '../../utils/prisma';
 import { TenantContextMissing } from '../../utils/tenantContext';
 import { verifyAccessToken } from '../../utils/jwt';
 import { createTwoTenants, asTenant, TwoTenants } from './helpers/twoTenants';
 
-jest.mock('../../utils/logger', () => ({
-  __esModule: true,
-  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
-
 let pair: TwoTenants;
+let cleanedUp = false;
 
 beforeAll(async () => {
   pair = await createTwoTenants('helper');
 }, 30000);
 
 afterAll(async () => {
-  await pair.cleanup();
+  if (!cleanedUp) await pair.cleanup();
   await prismaBase.$disconnect();
 });
 
@@ -74,10 +71,11 @@ describe('createTwoTenants', () => {
     await expect(prisma.order.findMany({})).rejects.toThrow(TenantContextMissing);
   });
 
+  // Keep this test last: it tears down the pair the tests above use.
   it('cleanup removes every row and both tenants', async () => {
-    const extra = await createTwoTenants('helperclean');
-    const ids = [extra.a.id, extra.b.id];
-    await extra.cleanup();
+    const ids = [pair.a.id, pair.b.id];
+    await pair.cleanup();
+    cleanedUp = true;
     const t = { tenantId: { in: ids } };
     expect(await prismaBase.tenant.count({ where: { id: { in: ids } } })).toBe(0);
     const left = await Promise.all([

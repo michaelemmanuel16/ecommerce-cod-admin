@@ -4,6 +4,8 @@
  * broad and, where it takes an id, pointed straight at a B id.
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import '../mocks/logger.mock';
+import '../mocks/socketInstance.mock';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { prismaBase } from '../../utils/prisma';
@@ -11,29 +13,21 @@ import { createMcpServer } from '../../mcp/createServer';
 import { clearAuthCache, disconnectPrisma } from '../../mcp/auth';
 import { createTwoTenants, TwoTenants, TestTenant } from './helpers/twoTenants';
 
-jest.mock('../../utils/socketInstance', () => ({
-  setSocketInstance: jest.fn(),
-  getSocketInstance: jest.fn(() => ({ to: jest.fn(() => ({ emit: jest.fn() })), emit: jest.fn() })),
-  hasSocketInstance: jest.fn(() => true),
-}));
-
-jest.mock('../../utils/logger', () => ({
-  __esModule: true,
-  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
-
 // 14 tools x several calls would trip the 30 calls per minute bucket. Plain function: resetMocks would wipe a jest.fn.
 jest.mock('../../mcp/rateLimiter', () => ({ rateLimiter: { tryConsume: () => true } }));
 
 let pair: TwoTenants;
-const clients: Client[] = [];
+const clients = new Map<string, Client>();
 
+/** One client per API key, shared by every test in the file. */
 async function connect(key: string): Promise<Client> {
+  const cached = clients.get(key);
+  if (cached) return cached;
   const server = createMcpServer(() => key);
   const client = new Client({ name: 'two-tenant-test', version: '1.0.0' });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
-  clients.push(client);
+  clients.set(key, client);
   return client;
 }
 
@@ -65,7 +59,7 @@ beforeAll(async () => {
 }, 30000);
 
 afterAll(async () => {
-  await Promise.all(clients.map((c) => c.close()));
+  await Promise.all([...clients.values()].map((c) => c.close()));
   clearAuthCache();
   await pair.cleanup();
   await disconnectPrisma();

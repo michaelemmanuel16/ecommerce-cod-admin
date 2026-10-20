@@ -3,7 +3,8 @@
  * tenant B client. join:order checks tenant and ownership. Platform admins only
  * join platform rooms. An expired token is rejected with TOKEN_EXPIRED.
  */
-import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import '../mocks/logger.mock';
 import http from 'http';
 import { AddressInfo } from 'net';
 import * as jwt from 'jsonwebtoken';
@@ -16,11 +17,6 @@ import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import {
   initializeSocket, emitOrderCreated, emitOrderUpdated, emitNotification, emitToTenant,
 } from '../../sockets';
-
-jest.mock('../../utils/logger', () => ({
-  __esModule: true,
-  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
 
 const SUFFIX = Date.now();
 let server: http.Server;
@@ -79,8 +75,8 @@ afterAll(async () => {
 
 describe('tenant-scoped socket rooms', () => {
   it('an emit in tenant A reaches the A client and not the B client or a platform admin', async () => {
-    const a = await open(tokenFor(1, 'admin', tenantA));
-    const b = await open(tokenFor(2, 'admin', tenantB));
+    const a = await open(pair.a.users.admin.token);
+    const b = await open(pair.b.users.admin.token);
     const p = await open(tokenFor(platformUserId, 'super_admin', null));
     const gotA = collect(a, 'order:created');
     const gotB = collect(b, 'order:created');
@@ -95,14 +91,15 @@ describe('tenant-scoped socket rooms', () => {
   });
 
   it('user and tenant-wide emits stay inside the tenant, even for the same user id', async () => {
-    const a = await open(tokenFor(5, 'sales_rep', tenantA));
-    const b = await open(tokenFor(5, 'sales_rep', tenantB));
+    const a = await open(pair.a.users.salesRep.token);
+    // the same user id, signed into tenant B
+    const b = await open(tokenFor(pair.a.users.salesRep.id, 'sales_rep', tenantB));
     const noteA = collect(a, 'notification');
     const noteB = collect(b, 'notification');
     const wideA = collect(a, 'workflow:execution_started');
     const wideB = collect(b, 'workflow:execution_started');
 
-    emitNotification(io, '5', { title: 'hi', tenantId: tenantA });
+    emitNotification(io, String(pair.a.users.salesRep.id), { title: 'hi', tenantId: tenantA });
     emitToTenant(io, 'workflow:execution_started', { workflowId: 1 }, tenantA);
     await settle();
 
@@ -113,7 +110,7 @@ describe('tenant-scoped socket rooms', () => {
   });
 
   it('an emit with no tenant in the data or the context is dropped', async () => {
-    const a = await open(tokenFor(6, 'admin', tenantA));
+    const a = await open(pair.a.users.admin.token);
     const got = collect(a, 'order:created');
     emitOrderCreated(io, { id: 1 });
     await settle();
@@ -121,7 +118,7 @@ describe('tenant-scoped socket rooms', () => {
   });
 
   it('the tenant context is used when the row carries no tenantId', async () => {
-    const a = await open(tokenFor(7, 'admin', tenantA));
+    const a = await open(pair.a.users.admin.token);
     const got = collect(a, 'order:created');
     tenantStorage.run({ tenantId: tenantA }, () => emitOrderCreated(io, { id: 2 }));
     await settle();
@@ -129,9 +126,10 @@ describe('tenant-scoped socket rooms', () => {
   });
 
   it('join:order is refused for another tenant and for a rep who does not own the order', async () => {
-    const b = await open(tokenFor(2, 'admin', tenantB));
-    const rep = await open(tokenFor(8, 'sales_rep', tenantA));
-    const admin = await open(tokenFor(1, 'admin', tenantA));
+    const b = await open(pair.b.users.admin.token);
+    // the real A rep owns the helper order, so sign in a rep id that does not
+    const rep = await open(tokenFor(pair.a.users.salesRep.id + 1_000_000, 'sales_rep', tenantA));
+    const admin = await open(pair.a.users.admin.token);
     const gotB = collect(b, 'order:updated');
     const gotRep = collect(rep, 'order:updated');
     const gotAdmin = collect(admin, 'order:updated');
@@ -153,7 +151,7 @@ describe('tenant-scoped socket rooms', () => {
   });
 
   it('an expired token is rejected with TOKEN_EXPIRED', async () => {
-    const expired = jwt.sign({ id: 1, email: 'e@t.test', role: 'admin', tenantId: tenantA }, process.env.JWT_SECRET as string, { expiresIn: -10 });
+    const expired = jwt.sign({ id: pair.a.users.admin.id, email: 'e@t.test', role: 'admin', tenantId: tenantA }, process.env.JWT_SECRET as string, { expiresIn: -10 });
     await expect(open(expired)).rejects.toThrow('TOKEN_EXPIRED');
   });
 });

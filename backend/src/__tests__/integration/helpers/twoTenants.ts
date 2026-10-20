@@ -18,12 +18,11 @@ import glService from '../../../services/glService';
  * "Partner" has no model of its own: a partner is a `delivery_agent` user.
  */
 
-export type SeedUser = { id: number; email: string; role: string; tenantId: string; token: string };
+export type SeedUser = { id: number; email: string; role: string; token: string };
 
 export interface TestTenant {
   id: string;
   slug: string;
-  name: string;
   /** Unique string inside names, SKU, address and notes: scan outputs for it to prove a leak. */
   marker: string;
   phone: string;
@@ -51,16 +50,32 @@ export function asTenant<T>(tenant: Pick<TestTenant, 'id'>, fn: () => T | Promis
   return runInTenant(tenant.id, fn);
 }
 
+/** Run one wave of independent creates. Waits for all of them, so a failure never leaves a write in flight behind the cleanup. */
+async function wave<T extends readonly unknown[]>(promises: readonly [...{ [K in keyof T]: Promise<T[K]> }]): Promise<T> {
+  const results = await Promise.allSettled(promises);
+  const failed = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+  if (failed) throw failed.reason;
+  return results.map((r) => (r as PromiseFulfilledResult<unknown>).value) as unknown as T;
+}
+
 async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promise<TestTenant> {
   const tag = `${label}-${side}-${suffix}`.toLowerCase();
   const marker = `mk${side}${suffix}`;
   const digits = suffix.replace(/\D/g, '').slice(-7).padStart(7, '0');
   const phone = `+23324${side === 'a' ? '1' : '2'}${digits}`;
   const amount = side === 'a' ? '111.11' : '222.22';
+  const pixelId = `${side === 'a' ? '1111' : '2222'}${digits}`;
+  const capiToken = `capi-${marker}`;
+  const formSlug = `form-${tag}`;
+  const mcpKey = `mcp_${randomBytes(16).toString('hex')}`;
+  const downloadToken = randomBytes(16).toString('hex');
 
   const tenant = await prismaBase.tenant.create({ data: { name: `Two ${side.toUpperCase()} ${tag}`, slug: `two-${tag}` } });
   const tenantId = tenant.id;
   const ids: Record<string, number> = {};
+  /** Create a row and record its id under `key`. */
+  const seed = <R extends { id: number }>(key: string, row: Promise<R>): Promise<R> =>
+    row.then((r) => { ids[key] = r.id; return r; });
 
   const mkUser = async (kind: string, role: 'admin' | 'sales_rep' | 'delivery_agent'): Promise<SeedUser> => {
     const u = await prismaBase.user.create({
@@ -74,205 +89,203 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
       },
     });
     const token = generateAccessToken({ id: u.id, email: u.email, role, tenantId });
-    return { id: u.id, email: u.email, role, tenantId, token };
+    return { id: u.id, email: u.email, role, token };
   };
-  const admin = await mkUser('admin', 'admin');
-  const salesRep = await mkUser('rep', 'sales_rep');
-  const deliveryAgent = await mkUser('agent', 'delivery_agent');
+
+  // Wave 1: rows that need only the tenant.
+  const [admin, salesRep, deliveryAgent, customer, product, webhookConfig, workflow] = await wave([
+    mkUser('admin', 'admin'),
+    mkUser('rep', 'sales_rep'),
+    mkUser('agent', 'delivery_agent'),
+    seed('customer', prismaBase.customer.create({
+      data: {
+        firstName: `Cust${marker}`, lastName: 'Buyer', phoneNumber: phone, email: `cust-${tag}@codadmin.test`,
+        address: `1 ${marker} Street`, state: 'Greater Accra', area: 'Accra', tenantId,
+      },
+    })),
+    seed('product', prismaBase.product.create({
+      data: { name: `Prod ${marker}`, sku: `SKU-${marker}`, category: 'test', price: 50, stockQuantity: 100, tenantId },
+    })),
+    seed('webhookConfig', prismaBase.webhookConfig.create({
+      data: { name: `Hook ${marker}`, url: `https://example.test/${tag}`, secret: `secret-${marker}`, fieldMapping: {}, tenantId },
+    })),
+    seed('workflow', prismaBase.workflow.create({
+      data: { name: `Flow ${marker}`, triggerType: 'manual', triggerData: {}, actions: [], tenantId },
+    })),
+    prismaBase.systemConfig.create({
+      data: { tenantId, businessName: `Biz ${side.toUpperCase()} ${marker}`, currency: side === 'a' ? 'GHS' : 'NGN' },
+    }),
+    seed('smsTemplate', prismaBase.smsTemplate.create({ data: { name: `SMS ${marker}`, body: `Hello ${marker}`, tenantId } })),
+    seed('webhookEvent', prismaBase.webhookEvent.create({
+      data: { provider: 'paystack', eventType: 'charge.success', reference: `ref-${tag}`, payloadHash: `hash-${tag}`, tenantId },
+    })),
+    prismaBase.mcpApiKey.create({
+      data: { tenantId, keyHash: hashApiKey(mcpKey), keyPrefix: mcpKey.slice(0, 8), label: `key ${marker}` },
+    }),
+    // Full chart of accounts: suites read it, and the posting in wave 2 needs it.
+    seedTenantDefaults(tenantId),
+  ]);
   ids.user = admin.id;
 
-  await prismaBase.systemConfig.create({
-    data: { tenantId, businessName: `Biz ${side.toUpperCase()} ${marker}`, currency: side === 'a' ? 'GHS' : 'NGN' },
-  });
-
-  const customer = await prismaBase.customer.create({
-    data: {
-      firstName: `Cust${marker}`, lastName: 'Buyer', phoneNumber: phone, email: `cust-${tag}@codadmin.test`,
-      address: `1 ${marker} Street`, state: 'Greater Accra', area: 'Accra', tenantId,
-    },
-  });
-  ids.customer = customer.id;
-
-  const product = await prismaBase.product.create({
-    data: { name: `Prod ${marker}`, sku: `SKU-${marker}`, category: 'test', price: 50, stockQuantity: 100, tenantId },
-  });
-  ids.product = product.id;
-
-  const pixelId = `${side === 'a' ? '1111' : '2222'}${digits}`;
-  const capiToken = `capi-${marker}`;
-  const formSlug = `form-${tag}`;
-  const form = await prismaBase.checkoutForm.create({
-    data: {
-      name: `Form ${marker}`, slug: formSlug, productId: product.id, fields: [], styling: {}, regions: [],
-      pixelConfig: { facebookPixelId: pixelId }, metaCapiAccessToken: capiToken, tenantId,
-    },
-  });
-  ids.checkoutForm = form.id;
-
-  const order = await prismaBase.order.create({
-    data: {
-      customerId: customer.id, customerRepId: salesRep.id, deliveryAgentId: deliveryAgent.id, status: 'out_for_delivery',
-      subtotal: amount, shippingCost: 0, totalAmount: amount, codAmount: amount,
-      deliveryAddress: `1 ${marker} Street`, deliveryState: 'Greater Accra', deliveryArea: 'Accra',
-      notes: `note ${marker}`, tenantId,
-      orderItems: { create: [{ productId: product.id, quantity: 1, unitPrice: amount, totalPrice: amount }] },
-    },
-  });
-  ids.order = order.id;
-
-  ids.orderHistory = (await prismaBase.orderHistory.create({
-    data: { orderId: order.id, status: 'out_for_delivery', notes: `history ${marker}`, tenantId },
-  })).id;
-  ids.delivery = (await prismaBase.delivery.create({
-    data: { orderId: order.id, agentId: deliveryAgent.id, scheduledTime: new Date(), notes: `delivery ${marker}`, tenantId },
-  })).id;
-  ids.agentCollection = (await prismaBase.agentCollection.create({
-    data: { orderId: order.id, agentId: deliveryAgent.id, amount, collectionDate: new Date(), notes: `collection ${marker}`, tenantId },
-  })).id;
-  ids.agentDeposit = (await prismaBase.agentDeposit.create({
-    data: {
-      agentId: deliveryAgent.id, amount: '50', depositDate: new Date(), depositMethod: 'cash',
-      referenceNumber: `dep-${tag}`, notes: `deposit ${marker}`, tenantId,
-    },
-  })).id;
-  ids.agentAgingBucket = (await prismaBase.agentAgingBucket.create({
-    data: { agentId: deliveryAgent.id, totalBalance: amount, bucket_8_plus: amount, tenantId },
-  })).id;
-  ids.agentBalance = (await prismaBase.agentBalance.create({
-    data: { agentId: deliveryAgent.id, totalCollected: amount, currentBalance: amount, tenantId },
-  })).id;
-  ids.payout = (await prismaBase.payout.create({
-    data: { repId: salesRep.id, amount: '20', method: 'cash', notes: `payout ${marker}`, tenantId },
-  })).id;
-  ids.call = (await prismaBase.call.create({
-    data: { orderId: order.id, customerId: customer.id, salesRepId: salesRep.id, outcome: 'confirmed', notes: `call ${marker}`, tenantId },
-  })).id;
-
-  const webhookConfig = await prismaBase.webhookConfig.create({
-    data: { name: `Hook ${marker}`, url: `https://example.test/${tag}`, secret: `secret-${marker}`, fieldMapping: {}, tenantId },
-  });
-  ids.webhookConfig = webhookConfig.id;
-  ids.webhookLog = (await prismaBase.webhookLog.create({
-    data: { webhookConfigId: webhookConfig.id, endpoint: `/hook/${marker}`, method: 'POST', headers: {}, body: { marker }, tenantId },
-  })).id;
-  ids.webhookEvent = (await prismaBase.webhookEvent.create({
-    data: { provider: 'paystack', eventType: 'charge.success', reference: `ref-${tag}`, payloadHash: `hash-${tag}`, tenantId },
-  })).id;
-  ids.smsTemplate = (await prismaBase.smsTemplate.create({
-    data: { name: `SMS ${marker}`, body: `Hello ${marker}`, tenantId },
-  })).id;
-
-  const downloadToken = randomBytes(16).toString('hex');
-  ids.downloadToken = (await prismaBase.downloadToken.create({
-    data: { orderId: order.id, token: downloadToken, expiresAt: new Date(Date.now() + 3_600_000), tenantId },
-  })).id;
-  ids.formSubmission = (await prismaBase.formSubmission.create({
-    data: {
-      formId: form.id, orderId: order.id, formData: { marker }, selectedPackage: { name: 'one' },
-      totalAmount: amount, tenantId,
-    },
-  })).id;
-  ids.productCostEntry = (await prismaBase.product_cost_entries.create({
-    data: { product_id: product.id, amount: '30', description: `cost ${marker}`, updated_at: new Date(), tenantId },
-  })).id;
-  ids.notification = (await prismaBase.notification.create({
-    data: { userId: admin.id, type: 'info', title: `Note ${marker}`, message: `message ${marker}`, tenantId },
-  })).id;
-  ids.pendingCheckout = (await prismaBase.pendingCheckout.create({
-    data: {
-      reference: `pc-${tag}`, tenantId, customerId: customer.id, formId: form.id, paymentMethod: 'paystack_full',
-      orderType: 'physical', currency: 'GHS', subtotal: amount, totalAmount: amount, paystackChargeMinor: 100,
-      orderItems: [], formData: { marker }, selectedPackage: { name: 'one' },
-    },
-  })).id;
-  const workflow = await prismaBase.workflow.create({
-    data: { name: `Flow ${marker}`, triggerType: 'manual', triggerData: {}, actions: [], tenantId },
-  });
-  ids.workflow = workflow.id;
-  ids.workflowExecution = (await prismaBase.workflowExecution.create({
-    data: { workflowId: workflow.id, status: 'completed', input: { marker }, tenantId },
-  })).id;
-
-  const mcpKey = `mcp_${randomBytes(16).toString('hex')}`;
-  await prismaBase.mcpApiKey.create({
-    data: { tenantId, keyHash: hashApiKey(mcpKey), keyPrefix: mcpKey.slice(0, 8), label: `key ${marker}` },
-  });
-
-  // Chart of accounts, then one posting: cash in hand against product revenue.
-  await seedTenantDefaults(tenantId);
-  const posting = await runInTenant(tenantId, async () => {
-    const accounts = await prisma.account.findMany({ where: { code: { in: ['1010', '4010'] } } });
-    const byCode = (code: string) => accounts.find((x) => x.code === code)!.id;
-    ids.account = byCode('4010');
-    return glService.createJournalEntry(
-      {
-        entryDate: new Date(),
-        description: `Sale ${marker}`,
-        sourceType: 'manual',
-        transactions: [
-          { accountId: byCode('1010'), debitAmount: amount, creditAmount: 0 },
-          { accountId: byCode('4010'), debitAmount: 0, creditAmount: amount },
-        ],
+  // Wave 2: rows that need a user, the customer, the product, a config or the chart.
+  const [form, order, posting] = await wave([
+    seed('checkoutForm', prismaBase.checkoutForm.create({
+      data: {
+        name: `Form ${marker}`, slug: formSlug, productId: product.id, fields: [], styling: {}, regions: [],
+        pixelConfig: { facebookPixelId: pixelId }, metaCapiAccessToken: capiToken, tenantId,
       },
-      { id: admin.id } as any
-    );
-  });
+    })),
+    seed('order', prismaBase.order.create({
+      data: {
+        customerId: customer.id, customerRepId: salesRep.id, deliveryAgentId: deliveryAgent.id, status: 'out_for_delivery',
+        subtotal: amount, shippingCost: 0, totalAmount: amount, codAmount: amount,
+        deliveryAddress: `1 ${marker} Street`, deliveryState: 'Greater Accra', deliveryArea: 'Accra',
+        notes: `note ${marker}`, tenantId,
+        orderItems: { create: [{ productId: product.id, quantity: 1, unitPrice: amount, totalPrice: amount }] },
+      },
+    })),
+    // One posting inside the tenant, like a real request: cash in hand against product revenue.
+    runInTenant(tenantId, async () => {
+      const accounts = await prisma.account.findMany({ where: { code: { in: ['1010', '4010'] } } });
+      const byCode = (code: string) => accounts.find((x) => x.code === code)!.id;
+      ids.account = byCode('4010');
+      return glService.createJournalEntry(
+        {
+          entryDate: new Date(),
+          description: `Sale ${marker}`,
+          sourceType: 'manual',
+          transactions: [
+            { accountId: byCode('1010'), debitAmount: amount, creditAmount: 0 },
+            { accountId: byCode('4010'), debitAmount: 0, creditAmount: amount },
+          ],
+        },
+        { id: admin.id } as any
+      );
+    }),
+    seed('agentDeposit', prismaBase.agentDeposit.create({
+      data: {
+        agentId: deliveryAgent.id, amount: '50', depositDate: new Date(), depositMethod: 'cash',
+        referenceNumber: `dep-${tag}`, notes: `deposit ${marker}`, tenantId,
+      },
+    })),
+    seed('agentAgingBucket', prismaBase.agentAgingBucket.create({
+      data: { agentId: deliveryAgent.id, totalBalance: amount, bucket_8_plus: amount, tenantId },
+    })),
+    seed('agentBalance', prismaBase.agentBalance.create({
+      data: { agentId: deliveryAgent.id, totalCollected: amount, currentBalance: amount, tenantId },
+    })),
+    seed('payout', prismaBase.payout.create({
+      data: { repId: salesRep.id, amount: '20', method: 'cash', notes: `payout ${marker}`, tenantId },
+    })),
+    seed('webhookLog', prismaBase.webhookLog.create({
+      data: { webhookConfigId: webhookConfig.id, endpoint: `/hook/${marker}`, method: 'POST', headers: {}, body: { marker }, tenantId },
+    })),
+    seed('workflowExecution', prismaBase.workflowExecution.create({
+      data: { workflowId: workflow.id, status: 'completed', input: { marker }, tenantId },
+    })),
+    seed('productCostEntry', prismaBase.product_cost_entries.create({
+      data: { product_id: product.id, amount: '30', description: `cost ${marker}`, updated_at: new Date(), tenantId },
+    })),
+    seed('notification', prismaBase.notification.create({
+      data: { userId: admin.id, type: 'info', title: `Note ${marker}`, message: `message ${marker}`, tenantId },
+    })),
+  ]);
+  ids.order = order.id;
   ids.journalEntry = posting.id;
   ids.accountTransaction = posting.transactions[0].id;
-  ids.auditLog = (await prismaBase.auditLog.create({
-    data: { userId: admin.id, action: 'test_seed', resource: 'order', resourceId: String(order.id), metadata: { marker }, tenantId },
-  })).id;
+
+  // Wave 3: rows that need the order or the form.
+  await wave([
+    seed('orderHistory', prismaBase.orderHistory.create({
+      data: { orderId: order.id, status: 'out_for_delivery', notes: `history ${marker}`, tenantId },
+    })),
+    seed('delivery', prismaBase.delivery.create({
+      data: { orderId: order.id, agentId: deliveryAgent.id, scheduledTime: new Date(), notes: `delivery ${marker}`, tenantId },
+    })),
+    seed('agentCollection', prismaBase.agentCollection.create({
+      data: { orderId: order.id, agentId: deliveryAgent.id, amount, collectionDate: new Date(), notes: `collection ${marker}`, tenantId },
+    })),
+    seed('call', prismaBase.call.create({
+      data: { orderId: order.id, customerId: customer.id, salesRepId: salesRep.id, outcome: 'confirmed', notes: `call ${marker}`, tenantId },
+    })),
+    seed('downloadToken', prismaBase.downloadToken.create({
+      data: { orderId: order.id, token: downloadToken, expiresAt: new Date(Date.now() + 3_600_000), tenantId },
+    })),
+    seed('formSubmission', prismaBase.formSubmission.create({
+      data: {
+        formId: form.id, orderId: order.id, formData: { marker }, selectedPackage: { name: 'one' },
+        totalAmount: amount, tenantId,
+      },
+    })),
+    seed('pendingCheckout', prismaBase.pendingCheckout.create({
+      data: {
+        reference: `pc-${tag}`, tenantId, customerId: customer.id, formId: form.id, paymentMethod: 'paystack_full',
+        orderType: 'physical', currency: 'GHS', subtotal: amount, totalAmount: amount, paystackChargeMinor: 100,
+        orderItems: [], formData: { marker }, selectedPackage: { name: 'one' },
+      },
+    })),
+    seed('auditLog', prismaBase.auditLog.create({
+      data: { userId: admin.id, action: 'test_seed', resource: 'order', resourceId: String(order.id), metadata: { marker }, tenantId },
+    })),
+  ]);
 
   return {
-    id: tenantId, slug: tenant.slug, name: tenant.name, marker, phone, amount,
+    id: tenantId, slug: tenant.slug, marker, phone, amount,
     users: { admin, salesRep, deliveryAgent },
     formSlug, pixelId, capiToken, mcpKey, downloadToken, ids,
   };
 }
 
-/** Delete every row of these tenants, children first, then the tenants. */
+/** Delete every row of these tenants, one dependency level at a time (children first), then the tenants. */
 async function deleteTenants(tenantIds: string[]): Promise<void> {
   const t = { tenantId: { in: tenantIds } };
-  await prismaBase.orderItem.deleteMany({ where: { order: t } });
-  await prismaBase.formSubmission.deleteMany({ where: t });
-  await prismaBase.downloadToken.deleteMany({ where: t });
-  await prismaBase.call.deleteMany({ where: t });
-  await prismaBase.orderHistory.deleteMany({ where: t });
-  await prismaBase.agentCollection.deleteMany({ where: t });
-  await prismaBase.delivery.deleteMany({ where: t });
-  await prismaBase.messageLog.deleteMany({ where: t });
-  await prismaBase.order.deleteMany({ where: t });
-  await prismaBase.payout.deleteMany({ where: t });
-  await prismaBase.agentDeposit.deleteMany({ where: t });
-  await prismaBase.agentAgingBucket.deleteMany({ where: t });
-  await prismaBase.agentBalance.deleteMany({ where: t });
-  await prismaBase.accountTransaction.deleteMany({ where: t });
-  await prismaBase.journalEntry.deleteMany({ where: t });
-  await prismaBase.account.deleteMany({ where: { tenantId: { in: tenantIds }, parentId: { not: null } } });
-  await prismaBase.account.deleteMany({ where: t });
-  await prismaBase.product_cost_entries.deleteMany({ where: t });
-  await prismaBase.pendingCheckout.deleteMany({ where: t });
-  await prismaBase.checkoutForm.deleteMany({ where: t });
-  await prismaBase.product.deleteMany({ where: t });
-  await prismaBase.customer.deleteMany({ where: t });
-  await prismaBase.webhookLog.deleteMany({ where: t });
-  await prismaBase.webhookConfig.deleteMany({ where: t });
-  await prismaBase.webhookEvent.deleteMany({ where: t });
-  await prismaBase.workflowExecution.deleteMany({ where: t });
-  await prismaBase.workflow.deleteMany({ where: t });
-  await prismaBase.notification.deleteMany({ where: t });
-  await prismaBase.auditLog.deleteMany({ where: t });
-  await prismaBase.smsTemplate.deleteMany({ where: t });
-  await prismaBase.emailTemplate.deleteMany({ where: t });
-  await prismaBase.mcpApiKey.deleteMany({ where: t });
-  await prismaBase.systemConfig.deleteMany({ where: t });
-  await prismaBase.user.deleteMany({ where: t });
-  await prismaBase.tenant.deleteMany({ where: { id: { in: tenantIds } } });
+  const db = prismaBase;
+  // Each level only depends on the ones above it.
+  await Promise.all([
+    db.orderItem.deleteMany({ where: { order: t } }),
+    db.formSubmission.deleteMany({ where: t }),
+    db.pendingCheckout.deleteMany({ where: t }),
+    db.downloadToken.deleteMany({ where: t }),
+    db.call.deleteMany({ where: t }),
+    db.orderHistory.deleteMany({ where: t }),
+    db.agentCollection.deleteMany({ where: t }),
+    db.delivery.deleteMany({ where: t }),
+    db.messageLog.deleteMany({ where: t }),
+    db.payout.deleteMany({ where: t }),
+    db.agentDeposit.deleteMany({ where: t }),
+    db.agentAgingBucket.deleteMany({ where: t }),
+    db.agentBalance.deleteMany({ where: t }),
+    db.accountTransaction.deleteMany({ where: t }),
+    db.product_cost_entries.deleteMany({ where: t }),
+    db.webhookLog.deleteMany({ where: t }),
+    db.webhookEvent.deleteMany({ where: t }),
+    db.workflowExecution.deleteMany({ where: t }),
+    db.notification.deleteMany({ where: t }),
+    db.auditLog.deleteMany({ where: t }),
+    db.smsTemplate.deleteMany({ where: t }),
+    db.emailTemplate.deleteMany({ where: t }),
+    db.mcpApiKey.deleteMany({ where: t }),
+    db.systemConfig.deleteMany({ where: t }),
+  ]);
+  await Promise.all([
+    db.order.deleteMany({ where: t }),
+    db.journalEntry.deleteMany({ where: t }),
+    db.checkoutForm.deleteMany({ where: t }),
+    db.workflow.deleteMany({ where: t }),
+    db.webhookConfig.deleteMany({ where: t }),
+    db.account.deleteMany({ where: { ...t, parentId: { not: null } } }),
+  ]);
+  await Promise.all([
+    db.product.deleteMany({ where: t }),
+    db.customer.deleteMany({ where: t }),
+    db.account.deleteMany({ where: t }),
+    db.user.deleteMany({ where: t }),
+  ]);
+  await db.tenant.deleteMany({ where: { id: { in: tenantIds } } });
 }
 
 export async function createTwoTenants(label: string): Promise<TwoTenants> {
   const suffix = String(Date.now());
-  const tenantIds: string[] = [];
   const results = await Promise.allSettled([seedTenant(label, 'a', suffix), seedTenant(label, 'b', suffix)]);
   const [a, b] = results.map((r) => (r.status === 'fulfilled' ? r.value : null));
   // A half-built pair must not leave rows behind: find the tenants by slug and wipe them.
@@ -282,6 +295,5 @@ export async function createTwoTenants(label: string): Promise<TwoTenants> {
     const failed = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
     throw failed.reason;
   }
-  tenantIds.push(a.id, b.id);
-  return { a, b, cleanup: () => deleteTenants(tenantIds) };
+  return { a, b, cleanup: () => deleteTenants([a.id, b.id]) };
 }

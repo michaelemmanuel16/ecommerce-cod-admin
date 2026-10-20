@@ -2,22 +2,13 @@
  * M0-T29 (COD-7), HTTP part: tenant A can never reach tenant B's deliveries, and
  * /api/admin/config answers each slug with its own business name.
  */
-import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import '../mocks/logger.mock';
+import '../mocks/socketInstance.mock';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
-
-jest.mock('../../utils/socketInstance', () => ({
-  setSocketInstance: jest.fn(),
-  getSocketInstance: jest.fn(() => ({ to: jest.fn(() => ({ emit: jest.fn() })), emit: jest.fn() })),
-  hasSocketInstance: jest.fn(() => true),
-}));
-
-jest.mock('../../utils/logger', () => ({
-  __esModule: true,
-  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
 
 let pair: TwoTenants;
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });

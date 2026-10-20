@@ -6,22 +6,13 @@
  * - an expired, revoked or used-up download token gets 410, an unknown token 404
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import '../mocks/logger.mock';
+import '../mocks/socketInstance.mock';
 import express from 'express';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
-
-jest.mock('../../utils/socketInstance', () => ({
-  setSocketInstance: jest.fn(),
-  getSocketInstance: jest.fn(() => ({ to: jest.fn(() => ({ emit: jest.fn() })), emit: jest.fn() })),
-  hasSocketInstance: jest.fn(() => true),
-}));
-
-jest.mock('../../utils/logger', () => ({
-  __esModule: true,
-  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
 
 let pair: TwoTenants;
 let digitalOrderId: number;
@@ -142,8 +133,9 @@ describe('public download', () => {
 });
 
 describe('rate limits at production values', () => {
-  /** The real public router, loaded with NODE_ENV=production so the limiter reads its production caps. */
-  const productionRouterApp = () => {
+  /** The real public router, loaded with NODE_ENV=production so the limiters read their production caps. */
+  let mini: express.Express;
+  beforeAll(() => {
     const previous = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     let router: any;
@@ -154,31 +146,20 @@ describe('rate limits at production values', () => {
     } finally {
       process.env.NODE_ENV = previous;
     }
-    const mini = express();
+    mini = express();
     mini.use(express.json());
     mini.use('/api/public', router);
-    return mini;
-  };
-
-  it('tracking: requests 1 to 30 pass, the 31st gets 429', async () => {
-    const mini = productionRouterApp();
-    const hit = () => request(mini).post('/api/public/orders/track').send({ orderId: '999999999', phoneNumber: '+233241234567' });
-    for (let i = 1; i <= 30; i += 1) {
-      const res = await hit();
-      expect({ i, status: res.status }).toEqual({ i, status: 404 });
-    }
-    const limited = await hit();
-    expect(limited.status).toBe(429);
   });
 
-  it('download: requests 1 to 30 pass, the 31st gets 429', async () => {
-    const mini = productionRouterApp();
-    const hit = () => request(mini).get('/api/public/download/not-a-real-token').redirects(0);
+  it.each([
+    ['tracking', (m: express.Express) => request(m).post('/api/public/orders/track').send({ orderId: '999999999', phoneNumber: '+233241234567' })],
+    ['download', (m: express.Express) => request(m).get('/api/public/download/not-a-real-token').redirects(0)],
+  ])('%s: requests 1 to 30 pass, the 31st gets 429', async (_name, hit) => {
     for (let i = 1; i <= 30; i += 1) {
-      const res = await hit();
+      const res = await hit(mini);
       expect({ i, status: res.status }).toEqual({ i, status: 404 });
     }
-    const limited = await hit();
+    const limited = await hit(mini);
     expect(limited.status).toBe(429);
   });
 });

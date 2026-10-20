@@ -13,30 +13,14 @@
  * so assertions stay deterministic.
  */
 
-import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import '../mocks/logger.mock';
+import '../mocks/socketInstance.mock';
 import { prismaBase } from '../../utils/prisma';
 import { updateOrderStatusTool } from '../../mcp/tools/ordersWrite';
 import { createTwoTenants, asTenant, TwoTenants } from './helpers/twoTenants';
 
-// orderService may emit socket events / log — stub both, as the other
-// integration suites do.
-jest.mock('../../utils/socketInstance', () => ({
-  setSocketInstance: jest.fn(),
-  getSocketInstance: jest.fn(() => ({
-    to: jest.fn(() => ({ emit: jest.fn() })),
-    emit: jest.fn(),
-  })),
-  hasSocketInstance: jest.fn(() => true),
-}));
-
-jest.mock('../../utils/logger', () => ({
-  __esModule: true,
-  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
-
 let pair: TwoTenants;
-let tenantAId: string;
-let tenantBId: string;
 let orderAId: number;
 let orderBId: number;
 
@@ -44,15 +28,9 @@ let orderBId: number;
 function payload(res: any) {
   return JSON.parse(res.content[0].text);
 }
-// Run a tool call inside a given tenant's context.
-function asTenantId<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
-  return asTenant({ id: tenantId }, fn);
-}
 
 beforeAll(async () => {
   pair = await createTwoTenants('mcpwrite');
-  tenantAId = pair.a.id;
-  tenantBId = pair.b.id;
   orderAId = pair.a.ids.order;
   orderBId = pair.b.ids.order;
 
@@ -68,7 +46,7 @@ afterAll(async () => {
 
 describe('orders_update_status MCP tool', () => {
   it('updates status, returns previous/new, and writes an OrderHistory row', async () => {
-    const res = await asTenantId(tenantAId, () =>
+    const res = await asTenant(pair.a, () =>
       updateOrderStatusTool({ orderId: orderAId, status: 'preparing' }),
     );
     const body = payload(res);
@@ -94,7 +72,7 @@ describe('orders_update_status MCP tool', () => {
   it('is idempotent: no change and no new history when already in target status', async () => {
     const before = await prismaBase.orderHistory.count({ where: { orderId: orderAId } });
 
-    const res = await asTenantId(tenantAId, () =>
+    const res = await asTenant(pair.a, () =>
       updateOrderStatusTool({ orderId: orderAId, status: 'preparing' }),
     );
     const body = payload(res);
@@ -108,7 +86,7 @@ describe('orders_update_status MCP tool', () => {
   });
 
   it('returns an error for an unknown order', async () => {
-    const res = await asTenantId(tenantAId, () =>
+    const res = await asTenant(pair.a, () =>
       updateOrderStatusTool({ orderId: 999_999_999, status: 'delivered' }),
     );
     expect(res.isError).toBe(true);
@@ -117,7 +95,7 @@ describe('orders_update_status MCP tool', () => {
 
   it('cannot update an order that belongs to another tenant', async () => {
     // Tenant A context, targeting Tenant B's order.
-    const res = await asTenantId(tenantAId, () =>
+    const res = await asTenant(pair.a, () =>
       updateOrderStatusTool({ orderId: orderBId, status: 'cancelled' }),
     );
     expect(res.isError).toBe(true);
@@ -132,7 +110,7 @@ describe('orders_update_status MCP tool', () => {
   // (delivered), so they must run last, after all cases above that assume
   // `confirmed -> preparing`.
   it('honours an explicit deliveryDate when marking delivered', async () => {
-    const res = await asTenantId(tenantAId, () =>
+    const res = await asTenant(pair.a, () =>
       updateOrderStatusTool({
         orderId: orderAId,
         status: 'delivered',
@@ -148,7 +126,7 @@ describe('orders_update_status MCP tool', () => {
   });
 
   it('rejects a malformed deliveryDate rather than silently using today', async () => {
-    const res = await asTenantId(tenantAId, () =>
+    const res = await asTenant(pair.a, () =>
       updateOrderStatusTool({ orderId: orderAId, status: 'returned', deliveryDate: '17/06/2026' }),
     );
 
@@ -163,7 +141,7 @@ describe('orders_update_status MCP tool', () => {
   // deliveryDate cases above, so orderAId is already 'delivered' with
   // deliveryDate '2026-06-17'.
   it('rejects a calendar-invalid deliveryDate (2026-02-30) instead of rolling it forward', async () => {
-    const res = await asTenantId(tenantAId, () =>
+    const res = await asTenant(pair.a, () =>
       updateOrderStatusTool({ orderId: orderAId, status: 'returned', deliveryDate: '2026-02-30' }),
     );
 
@@ -177,7 +155,7 @@ describe('orders_update_status MCP tool', () => {
   });
 
   it('rejects Feb 29 in a non-leap year (2026-02-29) instead of rolling it forward', async () => {
-    const res = await asTenantId(tenantAId, () =>
+    const res = await asTenant(pair.a, () =>
       updateOrderStatusTool({ orderId: orderAId, status: 'returned', deliveryDate: '2026-02-29' }),
     );
 
@@ -194,11 +172,11 @@ describe('orders_update_status MCP tool', () => {
     // Reset off 'delivered' first: the tool's idempotency guard would
     // otherwise no-op a second 'delivered' call before deliveryDate is ever
     // applied, since orderAId is already 'delivered' from the case above.
-    await asTenantId(tenantAId, () =>
+    await asTenant(pair.a, () =>
       updateOrderStatusTool({ orderId: orderAId, status: 'confirmed' }),
     );
 
-    const res = await asTenantId(tenantAId, () =>
+    const res = await asTenant(pair.a, () =>
       updateOrderStatusTool({ orderId: orderAId, status: 'delivered', deliveryDate: '2028-02-29' }),
     );
     const body = payload(res);

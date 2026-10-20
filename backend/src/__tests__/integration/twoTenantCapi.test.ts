@@ -3,18 +3,15 @@
  * tenant that owns the order or form. The HTTP call is mocked. The unit tests in
  * unit/metaCapiService.test.ts stay as they are.
  */
-import { jest, describe, it, expect, beforeAll, afterAll, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from '@jest/globals';
+import '../mocks/logger.mock';
 import { prismaBase } from '../../utils/prisma';
 import { metaCapiService } from '../../services/metaCapiService';
 import { createTwoTenants, asTenant, TwoTenants } from './helpers/twoTenants';
 
-jest.mock('../../utils/logger', () => ({
-  __esModule: true,
-  default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
-
 let pair: TwoTenants;
 const realFetch = global.fetch;
+const base = { fbp: 'fb.1.1.1', clientIpAddress: '203.0.113.9', clientUserAgent: 'jest' };
 let calls: Array<{ url: string; body: any }> = [];
 
 beforeAll(async () => {
@@ -48,16 +45,14 @@ describe('metaCapiService with two tenants', () => {
     await asTenant(b, () => metaCapiService.fireCapiPurchaseEvent(b.ids.order));
 
     expect(calls).toHaveLength(2);
-    expect(calls[0].url).toContain(`/${a.pixelId}/events`);
-    expect(calls[0].url).toContain(`access_token=${a.capiToken}`);
-    expect(calls[0].url).not.toContain(b.pixelId);
-    expect(calls[0].body.data[0].custom_data.value).toBe(Number(a.amount));
-    expect(calls[1].url).toContain(`/${b.pixelId}/events`);
-    expect(calls[1].url).toContain(`access_token=${b.capiToken}`);
-    expect(calls[1].url).not.toContain(a.capiToken);
-    expect(calls[1].body.data[0].custom_data.value).toBe(Number(b.amount));
-    expect(calls[0].body.data[0].custom_data.content_ids).toEqual([a.ids.product]);
-    expect(calls[1].body.data[0].custom_data.content_ids).toEqual([b.ids.product]);
+    for (const [i, own, other] of [[0, a, b], [1, b, a]] as const) {
+      expect(calls[i].url).toContain(`/${own.pixelId}/events`);
+      expect(calls[i].url).toContain(`access_token=${own.capiToken}`);
+      expect(calls[i].url).not.toContain(other.pixelId);
+      expect(calls[i].url).not.toContain(other.capiToken);
+      expect(calls[i].body.data[0].custom_data.value).toBe(Number(own.amount));
+      expect(calls[i].body.data[0].custom_data.content_ids).toEqual([own.ids.product]);
+    }
 
     const rows = await prismaBase.order.findMany({ where: { id: { in: [a.ids.order, b.ids.order] } }, select: { capiEventFired: true } });
     expect(rows.every((r) => r.capiEventFired)).toBe(true);
@@ -77,23 +72,22 @@ describe('metaCapiService with two tenants', () => {
   it('InitiateCheckout by form slug uses the pixel and token of the tenant that owns the form', async () => {
     const { a, b } = pair;
     mockFetch();
-    const base = { fbp: 'fb.1.1.1', clientIpAddress: '203.0.113.9', clientUserAgent: 'jest' };
     await asTenant(a, () => metaCapiService.fireCapiInitiateCheckoutEvent({ slug: a.formSlug, eventId: 'e-a', ...base }));
     await asTenant(b, () => metaCapiService.fireCapiInitiateCheckoutEvent({ slug: b.formSlug, eventId: 'e-b', ...base }));
 
     expect(calls).toHaveLength(2);
-    expect(calls[0].url).toContain(`/${a.pixelId}/events`);
-    expect(calls[0].url).toContain(`access_token=${a.capiToken}`);
+    for (const [i, own] of [[0, a], [1, b]] as const) {
+      expect(calls[i].url).toContain(`/${own.pixelId}/events`);
+      expect(calls[i].url).toContain(`access_token=${own.capiToken}`);
+    }
     expect(calls[0].body.data[0].event_id).toBe('e-a');
-    expect(calls[1].url).toContain(`/${b.pixelId}/events`);
-    expect(calls[1].url).toContain(`access_token=${b.capiToken}`);
   });
 
   it("InitiateCheckout in tenant A context with B's form slug sends nothing", async () => {
     const { a, b } = pair;
     mockFetch();
     await asTenant(a, () =>
-      metaCapiService.fireCapiInitiateCheckoutEvent({ slug: b.formSlug, eventId: 'e-x', fbp: 'fb.1.1.1', clientIpAddress: '203.0.113.9', clientUserAgent: 'jest' })
+      metaCapiService.fireCapiInitiateCheckoutEvent({ slug: b.formSlug, eventId: 'e-x', ...base })
     );
     expect(calls).toHaveLength(0);
   });
