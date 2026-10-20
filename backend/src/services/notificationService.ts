@@ -82,9 +82,10 @@ export async function notifyAdminsOverdueCollections(
 ) {
   if (agents.length === 0) return;
 
-  // Find all admin and super_admin users
+  // Admins of the current tenant only (the scoped query adds tenantId).
+  // Callers run this once per tenant; users with no tenant are skipped.
   const admins = await prisma.user.findMany({
-    where: { role: { in: ['admin', 'super_admin'] }, isActive: true },
+    where: { role: { in: ['admin', 'super_admin'] }, isActive: true, tenantId: { not: null } },
     select: { id: true }
   });
 

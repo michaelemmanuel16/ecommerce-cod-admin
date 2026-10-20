@@ -67,6 +67,20 @@ const makeOrder = (id: number) => ({
 describe('financialReconciliationQueue', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (prismaMock.tenant.findMany as any).mockResolvedValue([{ id: 'tenant-1' }]);
+  });
+
+  it('runs the processor once per tenant, inside tenantStorage.run', async () => {
+    (prismaMock.tenant.findMany as any).mockResolvedValue([{ id: 'tenant-1' }, { id: 'tenant-2' }]);
+    const seen: Array<string | null> = [];
+    (prismaMock.order.findMany as any).mockImplementation(async () => {
+      seen.push(getTenantId());
+      return [];
+    });
+
+    await processCallback();
+
+    expect(seen).toEqual(['tenant-1', 'tenant-2']);
   });
 
   it('logs no-op when zero unsynced orders found', async () => {
@@ -137,8 +151,10 @@ describe('financialReconciliationQueue', () => {
     (prismaMock.order.findMany as any).mockResolvedValue(orders);
     mockSyncOrderFinancialData.mockRejectedValue(new Error('DB down'));
 
-    await expect(processCallback()).rejects.toThrow(
-      'All 2 orders failed reconciliation'
+    await expect(processCallback()).rejects.toThrow('failed for 1/1 tenants');
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining('failed for tenant tenant-1'),
+      expect.stringContaining('All 2 orders failed reconciliation')
     );
   });
 });

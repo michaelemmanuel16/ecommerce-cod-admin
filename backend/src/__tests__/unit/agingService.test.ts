@@ -2,6 +2,7 @@ import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals
 import agingService from '../../services/agingService';
 import prisma from '../../utils/prisma';
 import { Prisma } from '@prisma/client';
+import { tenantStorage } from '../../utils/tenantContext';
 
 // Mock prisma
 jest.mock('../../utils/prisma', () => ({
@@ -79,7 +80,7 @@ describe('AgingService', () => {
             mockPrisma.agentCollection.findMany.mockResolvedValue(mockCollections);
             mockPrisma.agentAgingBucket.upsert.mockResolvedValue({});
 
-            await agingService.refreshAll();
+            await tenantStorage.run({ tenantId: 'tenant-1' }, () => agingService.refreshAll());
 
             expect(mockPrisma.agentAgingBucket.upsert).toHaveBeenCalledWith(expect.objectContaining({
                 where: { agentId: 1 },
@@ -108,11 +109,12 @@ describe('AgingService', () => {
 
             mockPrisma.agentCollection.findMany.mockResolvedValue(mockCollections);
 
-            await agingService.refreshAll();
+            await tenantStorage.run({ tenantId: 'tenant-1' }, () => agingService.refreshAll());
 
             expect(mockPrisma.agentAgingBucket.upsert).toHaveBeenCalledTimes(2);
             expect(mockPrisma.agentAgingBucket.deleteMany).toHaveBeenCalledWith({
                 where: {
+                    tenantId: 'tenant-1',
                     agentId: { notIn: [1, 2] }
                 }
             });
@@ -121,10 +123,10 @@ describe('AgingService', () => {
         it('should handle case with no collections', async () => {
             mockPrisma.agentCollection.findMany.mockResolvedValue([]);
 
-            await agingService.refreshAll();
+            await tenantStorage.run({ tenantId: 'tenant-1' }, () => agingService.refreshAll());
 
             expect(mockPrisma.agentAgingBucket.upsert).not.toHaveBeenCalled();
-            expect(mockPrisma.agentAgingBucket.deleteMany).toHaveBeenCalledWith({});
+            expect(mockPrisma.agentAgingBucket.deleteMany).toHaveBeenCalledWith({ where: { tenantId: 'tenant-1' } });
         });
     });
 

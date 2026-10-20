@@ -187,7 +187,11 @@ export async function processCampaignRecipient(
     }
   };
 
-  return data.tenantId ? tenantStorage.run({ tenantId: data.tenantId }, run) : run();
+  // Fail closed: a job without a tenant must not touch the database
+  if (!data.tenantId) {
+    throw new Error(`Campaign email job (campaign ${data.campaignId}, customer ${data.customerId}) has no tenantId; refusing to run`);
+  }
+  return tenantStorage.run({ tenantId: data.tenantId }, run);
 }
 
 // Flip the campaign to `completed` once no recipient row is still pending. Cheap

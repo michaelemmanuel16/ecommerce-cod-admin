@@ -42,6 +42,8 @@ import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
 import { validateGLAccountCodes } from './config/glAccounts';
 import { derivePlatformOrigin } from './utils/corsOrigins';
+import { withoutTenant } from './utils/tenantContext';
+import { forEachTenant } from './utils/tenantLoop';
 
 // Routes
 import authRoutes from './routes/authRoutes';
@@ -310,17 +312,21 @@ if (process.env.NODE_ENV !== 'test') {
     cron.schedule('0 2 * * *', async () => {
       logger.info('Running daily GL balance verification...');
       try {
-        const result = await GLAccountService.verifyAllAccountBalances();
-        if (result.unbalanced.length > 0) {
-          logger.error('GL balance verification found discrepancies', {
-            totalAccounts: result.totalAccounts,
-            unbalancedCount: result.unbalanced.length,
-            maxDifference: result.maxDifference.toFixed(4),
-            unbalanced: result.unbalanced.map(u => ({ code: u.code, difference: u.difference.toFixed(4) }))
-          });
-        } else {
-          logger.info(`GL balance verification passed: ${result.totalAccounts} accounts verified`);
-        }
+        // Once per tenant, each inside its own tenant context
+        await forEachTenant('GL balance verification', async (tenantId) => {
+          const result = await GLAccountService.verifyAllAccountBalances();
+          if (result.unbalanced.length > 0) {
+            logger.error('GL balance verification found discrepancies', {
+              tenantId,
+              totalAccounts: result.totalAccounts,
+              unbalancedCount: result.unbalanced.length,
+              maxDifference: result.maxDifference.toFixed(4),
+              unbalanced: result.unbalanced.map(u => ({ code: u.code, difference: u.difference.toFixed(4) }))
+            });
+          } else {
+            logger.info(`GL balance verification passed for tenant ${tenantId}: ${result.totalAccounts} accounts verified`);
+          }
+        });
       } catch (err) {
         logger.error('GL balance verification cron failed', { error: err });
       }
@@ -350,7 +356,8 @@ if (process.env.NODE_ENV !== 'test') {
     });
 
     // Verify GL Accounts (Required for financial statements correctness)
-    const glValidated = await GLAutomationService.asyncVerifyGLAccounts();
+    // Cross-tenant on purpose (replaced by per-tenant seeding in T13)
+    const glValidated = await withoutTenant('seed', () => GLAutomationService.asyncVerifyGLAccounts());
     if (!glValidated) {
       logger.error('Failed to validate/seed GL accounts. Exiting...');
       process.exit(1);

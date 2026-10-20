@@ -7,8 +7,7 @@ import { emitOrderUpdated, emitOrderAssigned } from '../sockets/index';
 import { tenantStorage, getTenantId } from '../utils/tenantContext';
 
 // Send actions read tenant-scoped provider config (SystemConfig) and write
-// tenant-scoped MessageLog rows. Running them with no tenant context would let
-// the fail-open Prisma extension read/write across tenants, so they fail closed.
+// tenant-scoped MessageLog rows. They refuse to run with no tenant context.
 const TENANT_SCOPED_SEND_ACTIONS = new Set([
   'send_email',
   'send_sms',
@@ -42,8 +41,13 @@ export const workflowQueue = process.env.NODE_ENV === 'test'
   });
 
 
-workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
+export const processExecuteWorkflow = async (job: Bull.Job) => {
   const { executionId, workflowId, actions, conditions, input, tenantId } = job.data;
+
+  // Fail closed: a job without a tenant must not touch the database
+  if (!tenantId) {
+    throw new Error(`Workflow job ${job.id} (execution ${executionId}) has no tenantId; refusing to run`);
+  }
 
   // Restore tenant context so all Prisma queries (MessageLog, SystemConfig, etc.)
   // are scoped to the correct tenant
@@ -133,16 +137,9 @@ workflowQueue.process('execute-workflow', async (job: Bull.Job) => {
     }
   };
 
-  // Run with tenant context if available, otherwise run without (backwards compat).
-  // This fork still runs untenanted jobs fail-open; tenant-scoped send actions are
-  // guarded fail-closed in executeAction (see TENANT_SCOPED_SEND_ACTIONS). Moving
-  // enforcement down to this fork (refuse untenanted DB-touching jobs) is a separate
-  // follow-up — it changes behaviour for every action type and all legacy enqueues.
-  if (tenantId) {
-    return tenantStorage.run({ tenantId }, processJob);
-  }
-  return processJob();
-});
+  return tenantStorage.run({ tenantId }, processJob);
+};
+workflowQueue.process('execute-workflow', processExecuteWorkflow);
 
 async function executeAssignUserAction(action: any, input: any, conditions?: any): Promise<any> {
   const config = action.config || {};

@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import appEvents, { AppEvent } from '../utils/appEvents';
+import { resolveTenantId } from '../utils/tenantContext';
 
 export class AgingService {
   constructor() {
@@ -48,9 +49,11 @@ export class AgingService {
   }
 
   /**
-   * Refreshes aging buckets for all agents with approved but non-deposited collections
+   * Refreshes aging buckets for all agents (of the current tenant) with approved but non-deposited collections.
+   * Runs inside a tenant context; the aging queue calls it once per tenant. It only touches that tenant's buckets.
    */
   async refreshAll(): Promise<void> {
+    const tenantId = resolveTenantId();
     logger.info('Starting agent aging refresh...');
     const now = new Date();
 
@@ -77,7 +80,7 @@ export class AgingService {
 
       if (collections.length === 0) {
         // Clear existing buckets if no approved collections exist
-        await (prisma as any).agentAgingBucket.deleteMany({});
+        await (prisma as any).agentAgingBucket.deleteMany({ where: { tenantId } });
         return;
       }
 
@@ -128,6 +131,7 @@ export class AgingService {
         const currentAgentIds = Array.from(agentAgingMap.keys());
         await extTx.agentAgingBucket.deleteMany({
           where: {
+            tenantId,
             agentId: {
               notIn: currentAgentIds
             }
