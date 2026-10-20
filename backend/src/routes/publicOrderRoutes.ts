@@ -111,6 +111,14 @@ router.get('/download/:token', publicDownloadLimiter, async (req, res) => {
       return;
     }
 
+    // The token exists but can no longer be used: 410 Gone, not a missing page
+    if ('gone' in result) {
+      res.status(410).json({
+        error: 'Download link has expired or has reached its download limit.',
+      });
+      return;
+    }
+
     // Validate URL to prevent open redirect attacks
     if (!result.fileUrl.startsWith('https://')) {
       logger.error('Download file URL is not HTTPS, blocking redirect', { fileUrl: result.fileUrl });
