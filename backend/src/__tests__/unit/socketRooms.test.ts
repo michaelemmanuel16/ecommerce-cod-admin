@@ -5,6 +5,7 @@ import { describe, it, expect } from '@jest/globals';
 import fs from 'fs';
 import path from 'path';
 import { roomNames } from '../../sockets/rooms';
+import { emitOrderCreated, emitOrderStatusChanged } from '../../sockets';
 
 describe('roomNames', () => {
   it('builds tenant-prefixed room names', () => {
@@ -23,6 +24,30 @@ describe('roomNames', () => {
   it('platform rooms carry no tenant prefix', () => {
     expect(roomNames.platform).toBe('platform');
     expect(roomNames.platformUser(3)).toBe('platform:user:3');
+  });
+});
+
+describe('role rooms', () => {
+  // Records the rooms of each emit: io.to(a).to(b).emit(event)
+  const fakeIo = () => {
+    const emits: { rooms: string[]; event: string }[] = [];
+    const chain = (rooms: string[]): any => ({
+      to: (room: string) => chain([...rooms, room]),
+      emit: (event: string) => emits.push({ rooms, event }),
+    });
+    return { io: chain([]) as any, emits };
+  };
+
+  it('super_admin (tenant owner) gets order created and status events of its own tenant', () => {
+    const { io, emits } = fakeIo();
+    emitOrderCreated(io, { id: 1, tenantId: 'a' });
+    emitOrderStatusChanged(io, { id: 1, tenantId: 'a' }, 'pending_confirmation', 'confirmed');
+    const roleEmits = emits.filter((e) => e.rooms.some((r) => r.includes(':role:')));
+    expect(roleEmits.map((e) => e.event)).toEqual(['order:created', 'order:status_changed']);
+    for (const e of roleEmits) {
+      expect(e.rooms).toContain('t:a:role:super_admin');
+      expect(e.rooms.every((r) => r.startsWith('t:a:'))).toBe(true);
+    }
   });
 });
 

@@ -51,12 +51,12 @@ export function emitToUser(io: SocketServer, userId: number | string, event: str
   if (t) safeEmit(io, roomNames.user(t, userId), event, data);
 }
 
-/** Roles that see order and call events. */
-const ORDER_ROLES = ['admin', 'manager', 'sales_rep'];
+/** Roles that see order and call events. super_admin is the tenant owner and sees what admin sees. */
+const ORDER_ROLES = ['super_admin', 'admin', 'manager', 'sales_rep'];
 /** Roles with financial permission. */
-const FINANCE_ROLES = ['admin', 'manager', 'accountant'];
+const FINANCE_ROLES = ['super_admin', 'admin', 'manager', 'accountant'];
 /** Roles that oversee the team. */
-const MANAGEMENT_ROLES = ['admin', 'manager'];
+const MANAGEMENT_ROLES = ['super_admin', 'admin', 'manager'];
 
 /** Emit to the role rooms of one tenant in a single emit. */
 export function emitToRoles(io: SocketServer, tenantId: string, roles: string[], event: string, data: any) {
