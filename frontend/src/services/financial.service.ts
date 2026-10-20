@@ -2,6 +2,10 @@ import apiClient from './api';
 
 export interface FinancialSummary {
   totalRevenue: number;
+  /** GL 4020 digital product revenue. */
+  digitalRevenue: number;
+  /** GL 5060 Paystack transaction fees. */
+  paystackFees: number;
   totalExpenses: number;
   profit: number;
   codCollected: number;
@@ -91,14 +95,6 @@ export interface PipelineRevenue {
     amount: number;
     count: number;
   }[];
-}
-
-export interface ProfitMargins {
-  totalRevenue: number;
-  totalCost: number;
-  grossProfit: number;
-  profitMargin: number;
-  orderCount: number;
 }
 
 export interface AgingSummary {
@@ -353,13 +349,6 @@ export const financialService = {
 
   async getPipelineRevenue(startDate?: string, endDate?: string): Promise<PipelineRevenue> {
     const response = await apiClient.get('/api/financial/pipeline-revenue', {
-      params: { startDate, endDate }
-    });
-    return response.data;
-  },
-
-  async getProfitMargins(startDate?: string, endDate?: string): Promise<ProfitMargins> {
-    const response = await apiClient.get('/api/financial/profit-margins', {
       params: { startDate, endDate }
     });
     return response.data;

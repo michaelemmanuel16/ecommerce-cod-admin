@@ -1,9 +1,14 @@
 import prisma from '../utils/prisma';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { Prisma } from '@prisma/client';
-import { GL_ACCOUNTS } from '../config/glAccounts';
 import * as Money from '../utils/money';
-
+import { revenueScope, roleScope } from '../utils/kpiRequest';
+import { DAY_MS, endOfDay, getStoreTimeZone, kpiWindow, localDate, monthRange, parseBound, parseInclusiveBound, parseYmd, startOfDay } from './kpi/dates';
+import { deliveredRevenue, deliveredRevenueByArea, deliveredRevenueByDay, deliveredRevenueByRep } from './kpi/revenue';
+import { OPEN, rates } from './kpi/rates';
+import { repRates } from './kpi/reps';
+import { partnerRates } from './kpi/partners';
+import { productDeliveredUnits } from './kpi/products';
 
 interface DateFilters {
   startDate?: Date;
@@ -12,19 +17,31 @@ interface DateFilters {
 
 /**
  * Helper function to build user-scoped filter for analytics queries
- * Sales reps only see orders assigned to them, admins/managers see all orders
+ * Sales reps only see orders assigned to them, delivery agents only their deliveries, others see all orders.
+ * The rule is roleScope (utils/kpiRequest), the same one the KPI routes use (D19).
  */
 function buildUserScopeFilter(userId?: number, userRole?: string) {
-  // Sales reps only see their assigned orders
-  if (userRole === 'sales_rep' && userId) {
-    return { customerRepId: userId };
-  }
-  // Delivery agents only see their assigned deliveries
-  if (userRole === 'delivery_agent' && userId) {
-    return { deliveryAgentId: userId };
-  }
-  // Admins, managers, and other roles see all data
+  return orderFilterOf(roleScope({ id: userId, role: userRole }));
+}
+
+/** The Prisma order filter of a role scope. */
+function orderFilterOf(scope: { repId?: number; partnerId?: number }) {
+  if (scope.repId !== undefined) return { customerRepId: scope.repId };
+  if (scope.partnerId !== undefined) return { deliveryAgentId: scope.partnerId };
   return {};
+}
+
+/**
+ * Store-zone range [from, to) of a request. A date-only value is a store-zone day (`to` inclusive); an ISO instant
+ * is used as given. With no value the range is the current month so far (month to date).
+ */
+function resolveRange(filters: { startDate?: string; endDate?: string } | undefined, tenantId: string, now: Date) {
+  const zone = getStoreTimeZone(tenantId);
+  const { year, month } = parseYmd(localDate(now, zone));
+  return {
+    from: filters?.startDate ? parseBound(filters.startDate, 'from', zone) : monthRange(year, month, zone).from,
+    to: filters?.endDate ? parseBound(filters.endDate, 'to', zone) : now,
+  };
 }
 
 /**
@@ -51,7 +68,8 @@ async function withTimeout<T>(
 export class AnalyticsService {
   /**
    * Get dashboard metrics
-   * Supports optional date range filtering and user-scoped filtering
+   * Revenue and delivered orders come from the KPI layer (delivery-date basis, returns leave in their return month).
+   * Rates are the three named rates. Supports optional date range filtering (default month to date) and role scope.
    */
   async getDashboardMetrics(
     filters?: {
@@ -61,123 +79,41 @@ export class AnalyticsService {
     userId?: number,
     userRole?: string
   ) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[DEBUG] analyticsService.getDashboardMetrics inputs:', { filters, userId, userRole });
-    }
-
-    const today = new Date();
-    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
-
-    // Calculate start of current month for month-to-date filtering
+    const tenantId = resolveTenantId();
+    const zone = getStoreTimeZone(tenantId);
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    // Build date filter for queries
-    // If custom date range provided, use it; otherwise default to month-to-date
-    const rangeStart = filters?.startDate ? new Date(filters.startDate) : startOfMonth;
-    const rangeEnd = filters?.endDate ? new Date(filters.endDate) : now;
-
-    const dateFilter = {
-      createdAt: {
-        gte: rangeStart,
-        lte: rangeEnd
-      }
-    };
-
-    // Revenue & delivered counts use deliveryDate to match GL entry timing
-    const deliveryDateFilter = {
-      deliveryDate: {
-        gte: rangeStart,
-        lte: rangeEnd
-      }
-    };
+    const { from, to } = resolveRange(filters, tenantId, now);
+    const today = localDate(now, zone);
+    const todayFrom = startOfDay(today, zone);
+    const todayTo = endOfDay(today, zone);
 
     // Build user scope filter (sales reps only see their assigned orders)
-    const userFilter = buildUserScopeFilter(userId, userRole);
-
-    const baseWhere: Prisma.OrderWhereInput = {
-      ...dateFilter,
-      ...userFilter,
-      deletedAt: null,
-    };
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[analyticsService.getDashboardMetrics] Date filter:', dateFilter, 'User filter:', userFilter);
-    }
+    const scope = roleScope({ id: userId, role: userRole });
+    const userFilter = orderFilterOf(scope);
+    const scopeForRevenue = revenueScope(scope);
 
     const [
       totalOrders,
       todayOrders,
       pendingOrders,
-      deliveredOrders,
-      totalRevenue,
+      revenue,
       todayRevenue,
+      orderRates,
       activeAgents,
       deliveries
     ] = await Promise.all([
       prisma.order.count({
-        where: baseWhere
+        where: { ...userFilter, deletedAt: null, createdAt: { gte: from, lt: to } }
       }),
       prisma.order.count({
-        where: {
-          ...userFilter,
-          deletedAt: null,
-          createdAt: {
-            gte: startOfDay,
-            lte: endOfDay
-          },
-            }
+        where: { ...userFilter, deletedAt: null, createdAt: { gte: todayFrom, lt: todayTo } }
       }),
       prisma.order.count({
-        where: {
-          ...userFilter,
-          deletedAt: null,
-          status: 'pending_confirmation',
-            }
+        where: { ...userFilter, deletedAt: null, status: 'pending_confirmation' }
       }),
-      prisma.order.count({
-        where: {
-          ...userFilter,
-          deletedAt: null,
-          status: 'delivered',
-          ...deliveryDateFilter,
-            }
-      }),
-      // Revenue from GL (single source of truth — matches Financial page)
-      prisma.accountTransaction.aggregate({
-        where: {
-          account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
-          journalEntry: {
-            isVoided: false,
-            entryDate: { gte: rangeStart, lte: rangeEnd },
-            ...(userRole === 'delivery_agent'
-              ? { orders: { some: { deliveryAgentId: userId } } }
-              : {}),
-            ...(userRole === 'sales_rep'
-              ? { orders: { some: { customerRepId: userId } } }
-              : {})
-          }
-        },
-        _sum: { creditAmount: true, debitAmount: true }
-      }),
-      // Today's revenue from GL
-      prisma.accountTransaction.aggregate({
-        where: {
-          account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
-          journalEntry: {
-            isVoided: false,
-            entryDate: { gte: startOfDay, lte: endOfDay },
-            ...(userRole === 'delivery_agent'
-              ? { orders: { some: { deliveryAgentId: userId } } }
-              : {}),
-            ...(userRole === 'sales_rep'
-              ? { orders: { some: { customerRepId: userId } } }
-              : {})
-          }
-        },
-        _sum: { creditAmount: true, debitAmount: true }
-      }),
+      deliveredRevenue(tenantId, from, to, scopeForRevenue),
+      deliveredRevenue(tenantId, todayFrom, todayTo, scopeForRevenue),
+      rates(tenantId, from, to, scope),
       prisma.user.count({
         where: {
           role: 'delivery_agent',
@@ -201,19 +137,6 @@ export class AnalyticsService {
       })
     ]);
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[DEBUG] analyticsService.getDashboardMetrics raw results:', {
-        totalOrders,
-        todayOrders,
-        pendingOrders,
-        deliveredOrders,
-        totalRevenue: Money.toApi(Money.sub(Money.orZero(totalRevenue._sum.creditAmount), Money.orZero(totalRevenue._sum.debitAmount))),
-        todayRevenue: Money.toApi(Money.sub(Money.orZero(todayRevenue._sum.creditAmount), Money.orZero(todayRevenue._sum.debitAmount))),
-        activeAgents,
-        deliverySamples: deliveries.length
-      });
-    }
-
     // Calculate average delivery time from recent deliveries
     let totalDeliveryTime = 0;
     let deliveryCount = 0;
@@ -231,23 +154,24 @@ export class AnalyticsService {
         ? Math.round(totalDeliveryTime / deliveryCount / (1000 * 60 * 60)) // Convert to hours
         : 0;
 
-    const metrics = {
+    return {
       totalOrders,
       todayOrders,
       pendingOrders,
-      deliveredOrders,
-      totalRevenue: Money.sub(Money.orZero(totalRevenue._sum.creditAmount), Money.orZero(totalRevenue._sum.debitAmount)),
-      todayRevenue: Money.sub(Money.orZero(todayRevenue._sum.creditAmount), Money.orZero(todayRevenue._sum.debitAmount)),
+      deliveredOrders: revenue.deliveredOrders.value,
+      totalRevenue: revenue.total.value,
+      todayRevenue: todayRevenue.total.value,
       activeAgents,
       avgDeliveryTime: avgTime,
-      deliveryRate: totalOrders > 0 ? (deliveredOrders / totalOrders) * 100 : 0
+      confirmationRate: orderRates.confirmationRate.value,
+      deliverySuccessRate: orderRates.deliverySuccessRate.value,
+      orderToCashYield: orderRates.orderToCashYield.value,
     };
-
-    return metrics;
   }
 
   /**
    * Get sales trends over time
+   * Orders are counted by placement day; revenue and delivered orders by delivery day (KPI layer, store-zone days).
    * Supports both relative (days) and absolute (startDate/endDate) date ranges
    * Supports user-scoped filtering for sales reps
    */
@@ -262,70 +186,53 @@ export class AnalyticsService {
     userRole?: string
   ) {
     const { period = 'daily', days = 30, startDate: customStart, endDate: customEnd } = filters;
+    const tenantId = resolveTenantId();
+    const zone = getStoreTimeZone(tenantId);
+    const now = new Date();
 
     // Use custom date range if provided, otherwise calculate from days
-    let startDate: Date;
-    let endDate: Date;
-
-    if (customStart && customEnd) {
-      startDate = new Date(customStart);
-      endDate = new Date(customEnd);
-    } else {
-      startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-      endDate = new Date();
-    }
+    const { from, to } = customStart && customEnd
+      ? resolveRange({ startDate: customStart, endDate: customEnd }, tenantId, now)
+      : { from: startOfDay(localDate(new Date(now.getTime() - days * DAY_MS), zone), zone), to: now };
 
     // Build user scope filter (sales reps only see their assigned orders)
     const userFilter = buildUserScopeFilter(userId, userRole);
 
+    const [placed, delivered] = await Promise.all([
+      prisma.order.findMany({
+        where: { ...userFilter, deletedAt: null, createdAt: { gte: from, lt: to } },
+        select: { createdAt: true }
+      }),
+      deliveredRevenueByDay(tenantId, from, to, revenueScope(roleScope({ id: userId, role: userRole }))),
+    ]);
 
-    const orders = await prisma.order.findMany({
-      where: {
-        ...userFilter,
-        deletedAt: null,
-        createdAt: {
-          gte: startDate,
-          lte: endDate
-        },
-        },
-      select: {
-        createdAt: true,
-        totalAmount: true,
-        status: true
+    const keyOf = (day: string) => (period === 'daily' ? day : day.slice(0, 7));
+    const trends = new Map<string, { orders: number; revenue: Money.Money; delivered: number }>();
+    const bucket = (key: string) => {
+      let b = trends.get(key);
+      if (!b) {
+        b = { orders: 0, revenue: Money.ZERO, delivered: 0 };
+        trends.set(key, b);
       }
+      return b;
+    };
+    placed.forEach((order) => {
+      bucket(keyOf(localDate(order.createdAt, zone))).orders += 1;
+    });
+    delivered.forEach((day) => {
+      const b = bucket(keyOf(day.date));
+      b.revenue = Money.add(b.revenue, day.revenue);
+      b.delivered += day.deliveredOrders;
     });
 
-    const trends: Record<string, { orders: number; revenue: Money.Money; delivered: number }> = {};
-
-    orders.forEach((order) => {
-      const key =
-        period === 'daily'
-          ? order.createdAt.toISOString().split('T')[0]
-          : `${order.createdAt.getFullYear()}-${String(order.createdAt.getMonth() + 1).padStart(2, '0')}`;
-
-      if (!trends[key]) {
-        trends[key] = { orders: 0, revenue: Money.ZERO, delivered: 0 };
-      }
-
-      trends[key].orders += 1;
-      trends[key].revenue = Money.add(trends[key].revenue, order.totalAmount);
-      if (order.status === 'delivered') {
-        trends[key].delivered += 1;
-      }
-    });
-
-    const data = Object.entries(trends)
+    return [...trends.entries()]
       .map(([date, stats]) => ({
         date,
         orders: stats.orders,
-        revenue: stats.revenue,
+        revenue: Money.toApi(stats.revenue),
         delivered: stats.delivered,
-        conversionRate: stats.orders > 0 ? (stats.delivered / stats.orders) * 100 : 0
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
-
-    return data;
   }
 
   /**
@@ -366,183 +273,133 @@ export class AnalyticsService {
 
   /**
    * Get customer representative performance
-   * Supports optional date range filtering
+   * Rates are the two rep rates (kpi/reps.ts); revenue and delivered orders are the KPI delivered revenue of the
+   * rep's orders. Supports optional date range filtering (default month to date).
    */
   async getRepPerformance(
     filters?: { startDate?: string; endDate?: string },
     userId?: number,
     userRole?: string
   ) {
-    // Calculate start of current month for month-to-date filtering
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    // Build date filter for orders
-    // If custom date range provided, use it; otherwise default to month-to-date
-    const dateFilter = filters?.startDate || filters?.endDate
-      ? {
-        createdAt: {
-          ...(filters.startDate && { gte: new Date(filters.startDate) }),
-          ...(filters.endDate && { lte: new Date(filters.endDate) })
-        },
-        deletedAt: null
-      }
-      : {
-        createdAt: {
-          gte: startOfMonth,
-          lte: now
-        },
-        deletedAt: null
-      };
+    const tenantId = resolveTenantId();
+    const { from, to } = resolveRange(filters, tenantId, new Date());
+    const { repId } = roleScope({ id: userId, role: userRole });
 
     const reps = await prisma.user.findMany({
       where: {
         role: 'sales_rep',
         isActive: true,
-        ...(userRole === 'sales_rep' && userId ? { id: userId } : {})
+        ...(repId !== undefined ? { id: repId } : {})
       },
       select: {
         id: true,
         firstName: true,
-        lastName: true,
-        assignedOrdersAsRep: {
-          where: dateFilter,
-          select: {
-            id: true,
-            status: true,
-            totalAmount: true,
-            createdAt: true,
-            updatedAt: true,
-            commissionPaid: true
-          }
-        }
+        lastName: true
       }
     });
 
-    // Fetch pending orders count separately (no date filter)
-    // Also fetch all-time unpaid delivered orders (for earnings, bypassing MTD)
-    const repStats = await Promise.all(
-      reps.map(async (rep) => {
-        // All-time pending orders
-        const pendingCount = await prisma.order.count({
-          where: {
-            customerRepId: rep.id,
-            status: {
-              notIn: ['delivered', 'cancelled', 'returned', 'failed_delivery']
-            },
-            deletedAt: null
-          }
-        });
-
-        // All-time unpaid delivered orders (for Earnings)
-        const unpaidDelivered = await prisma.order.aggregate({
-          where: {
-            customerRepId: rep.id,
-            status: 'delivered',
-            commissionPaid: false,
-            deletedAt: null
+    const repIds = reps.map((rep) => rep.id);
+    const [repKpis, revenueByRep, pendingGroups, unpaidGroups] = await Promise.all([
+      repRates(tenantId, from, to),
+      deliveredRevenueByRep(tenantId, from, to),
+      // All-time pending orders per rep
+      prisma.order.groupBy({
+        by: ['customerRepId'],
+        where: {
+          customerRepId: { in: repIds },
+          status: {
+            notIn: ['delivered', 'cancelled', 'returned', 'failed_delivery']
           },
-          _count: { id: true },
-          _sum: { totalAmount: true }
-        });
-
-        return {
-          repId: rep.id,
-          pendingCount,
-          unpaidDeliveredCount: unpaidDelivered._count.id || 0,
-          unpaidDeliveredRevenue: Money.orZero(unpaidDelivered._sum.totalAmount)
-        };
+          deletedAt: null
+        },
+        _count: { _all: true }
+      }),
+      // All-time unpaid delivered orders per rep (for Earnings, bypassing the range)
+      prisma.order.groupBy({
+        by: ['customerRepId'],
+        where: {
+          customerRepId: { in: repIds },
+          status: 'delivered',
+          commissionPaid: false,
+          deletedAt: null
+        },
+        _count: { _all: true }
       })
-    );
+    ]);
+    const pendingByRep = new Map(pendingGroups.map((g) => [g.customerRepId, g._count._all]));
+    const unpaidByRep = new Map(unpaidGroups.map((g) => [g.customerRepId, g._count._all]));
 
-    const performance = reps.map((rep) => {
-      const total = rep.assignedOrdersAsRep.length;
-      // Completed count for MTD metrics (success rate/revenue trend)
-      const completed = rep.assignedOrdersAsRep.filter((o) => o.status === 'delivered').length;
-      const revenue = Money.sum(
-        rep.assignedOrdersAsRep
-          .filter((o) => o.status === 'delivered')
-          .map((o) => o.totalAmount)
-      );
-
-      // Calculate average response time
-      let totalResponseTime = 0;
-      rep.assignedOrdersAsRep.forEach((o) => {
-        const diff = o.updatedAt.getTime() - o.createdAt.getTime();
-        totalResponseTime += diff;
-      });
-
-      const avgResponseTime =
-        total > 0
-          ? Math.round(totalResponseTime / total / (1000 * 60)) // Convert to minutes
-          : 0;
-
-      const stats = repStats.find(s => s.repId === rep.id);
+    return reps.map((rep) => {
+      const kpi = repKpis.rep(rep.id);
+      const revenue = revenueByRep.get(rep.id);
 
       return {
         userId: rep.id,
         userName: `${rep.firstName} ${rep.lastName}`,
-        totalAssigned: total,
-        completed,
-        // Use separately fetched stats (not filtered by date)
-        pending: stats?.pendingCount || 0,
-        unpaidDeliveredOrders: stats?.unpaidDeliveredCount || 0,
-        unpaidDeliveredRevenue: stats?.unpaidDeliveredRevenue ?? Money.ZERO,
-        successRate: total > 0 ? (completed / total) * 100 : 0,
-        revenue,
-        avgResponseTime
+        totalAssigned: kpi.confirmationRate.detail.placed,
+        completed: revenue?.deliveredOrders ?? 0,
+        pending: pendingByRep.get(rep.id) ?? 0,
+        unpaidDeliveredOrders: unpaidByRep.get(rep.id) ?? 0,
+        confirmationRate: kpi.confirmationRate.value,
+        revenue: revenue?.revenue ?? Money.toApi(Money.ZERO)
       };
     });
-
-    return performance;
   }
 
   /**
    * Get delivery agent performance
+   * The success rate is the partner delivery success rate (kpi/partners.ts, cohort basis).
+   * A delivery agent sees only their own row.
    */
-  async getAgentPerformance(filters?: DateFilters) {
-    const orderWhere: Prisma.OrderWhereInput = { deletedAt: null };
-    if (filters?.startDate || filters?.endDate) {
-      orderWhere.createdAt = {};
-      if (filters.startDate) (orderWhere.createdAt as Prisma.DateTimeFilter).gte = filters.startDate;
-      if (filters.endDate) (orderWhere.createdAt as Prisma.DateTimeFilter).lte = filters.endDate;
-    }
+  async getAgentPerformance(filters?: { startDate?: string; endDate?: string }, userId?: number, userRole?: string) {
+    const tenantId = resolveTenantId();
+    const { from, to } = resolveRange(filters, tenantId, new Date());
+    const { partnerId } = roleScope({ id: userId, role: userRole });
 
-    const agents = await prisma.user.findMany({
-      where: {
-        role: 'delivery_agent',
-        isActive: true
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        assignedOrdersAsAgent: {
-          where: orderWhere,
-          select: {
-            id: true,
-            status: true,
-            totalAmount: true
-          }
+    const [agents, partners, statusGroups] = await Promise.all([
+      prisma.user.findMany({
+        where: {
+          role: 'delivery_agent',
+          isActive: true,
+          ...(partnerId !== undefined ? { id: partnerId } : {})
         },
-        deliveries: {
-          select: {
-            scheduledTime: true,
-            actualDeliveryTime: true
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          deliveries: {
+            select: {
+              scheduledTime: true,
+              actualDeliveryTime: true
+            }
           }
         }
-      }
-    });
+      }),
+      partnerRates(tenantId, from, to),
+      prisma.order.groupBy({
+        by: ['deliveryAgentId', 'status'],
+        where: { deletedAt: null, deliveryAgentId: partnerId ?? { not: null }, createdAt: { gte: from, lt: to } },
+        _count: { _all: true }
+      })
+    ]);
 
-    const performance = agents.map((agent) => {
-      const total = agent.assignedOrdersAsAgent.length;
-      const delivered = agent.assignedOrdersAsAgent.filter((o) => o.status === 'delivered').length;
-      const failed = agent.assignedOrdersAsAgent.filter((o) =>
-        ['cancelled', 'returned', 'failed_delivery'].includes(o.status)
-      ).length;
-      const active = agent.assignedOrdersAsAgent.filter((o) =>
-        ['ready_for_pickup', 'out_for_delivery'].includes(o.status)
-      ).length;
+    const partnerById = new Map(partners.map((p) => [p.partnerId, p]));
+    const countsByAgent = new Map<number, Map<string, number>>();
+    for (const g of statusGroups) {
+      if (g.deliveryAgentId === null) continue;
+      const counts = countsByAgent.get(g.deliveryAgentId) ?? new Map<string, number>();
+      counts.set(g.status, g._count._all);
+      countsByAgent.set(g.deliveryAgentId, counts);
+    }
+
+    return agents.map((agent) => {
+      const partner = partnerById.get(agent.id);
+      const detail = partner?.deliverySuccessRate.detail ?? { delivered: 0, failed: 0, returned: 0, closed: 0 };
+      const mine = countsByAgent.get(agent.id);
+      const inStatus = (statuses: string[]) =>
+        statuses.reduce((sum, status) => sum + (mine?.get(status) ?? 0), 0);
+      const total = partner?.assigned ?? 0;
+      const failed = detail.failed + detail.returned;
 
       // Calculate on-time delivery rate
       let onTimeDeliveries = 0;
@@ -559,30 +416,26 @@ export class AnalyticsService {
         userId: agent.id,
         userName: `${agent.firstName} ${agent.lastName}`,
         totalAssigned: total,
-        completed: delivered,
-        pending: total - delivered - failed,
-        active,
+        completed: detail.delivered,
+        pending: inStatus(OPEN),
+        active: inStatus(['ready_for_pickup', 'out_for_delivery']),
         failed,
-        successRate: total > 0 ? (delivered / total) * 100 : 0,
+        deliverySuccessRate: partner?.deliverySuccessRate.value ?? null,
         onTimeRate,
         totalDeliveries: agent.deliveries.length
       };
     });
-
-    return performance;
   }
 
   /**
    * Get customer insights
    */
   async getCustomerInsights() {
+    const allTime = kpiWindow();
     try {
-      const [totalCustomers, activeCustomers, topCustomers, customersByArea, avgOrderValue] =
+      const [totalCustomers, topCustomers, customersByArea, delivered] =
         await withTimeout(
           Promise.all([
-            prisma.customer.count({
-              where: { isActive: true }
-            }),
             prisma.customer.count({
               where: { isActive: true }
             }),
@@ -606,10 +459,8 @@ export class AnalyticsService {
               orderBy: { _count: { area: 'desc' } },
               take: 20
             }),
-            prisma.order.aggregate({
-              where: { status: 'delivered', deletedAt: null },
-              _avg: { totalAmount: true }
-            })
+            // All-time delivered revenue and orders from the KPI layer: average order value = revenue / orders
+            deliveredRevenue(resolveTenantId(), allTime.from, allTime.to)
           ]),
           15000,
           'Customer insights query timeout'
@@ -617,13 +468,14 @@ export class AnalyticsService {
 
       const insights = {
         totalCustomers,
-        activeCustomers,
         topCustomers,
         customersByArea: customersByArea.map(group => ({
           area: group.area,
           count: group._count.area
         })),
-        avgOrderValue: Money.orZero(avgOrderValue._avg.totalAmount)
+        avgOrderValue: delivered.deliveredOrders.value > 0
+          ? Money.div(delivered.total.value, delivered.deliveredOrders.value)
+          : Money.ZERO
       };
 
       return insights;
@@ -632,7 +484,6 @@ export class AnalyticsService {
       // Return empty data instead of crashing
       return {
         totalCustomers: 0,
-        activeCustomers: 0,
         topCustomers: [],
         customersByArea: [],
         avgOrderValue: Money.ZERO
@@ -642,157 +493,46 @@ export class AnalyticsService {
 
   /**
    * Get product performance analytics
+   * Units and revenue are the KPI delivered units and line revenue (delivery-date basis, default month to date).
    */
-  async getProductPerformance(filters?: DateFilters) {
-    const where: Prisma.OrderItemWhereInput = {};
-    // OrderItem has no tenantId: scope it through the parent order.
-    const tenantId = getTenantId();
-    const tenantFilter = tenantId ? { tenantId } : {};
+  async getProductPerformance(filters?: { startDate?: string; endDate?: string }) {
+    const tenantId = resolveTenantId();
+    const { from, to } = resolveRange(filters, tenantId, new Date());
 
-    if (filters?.startDate || filters?.endDate) {
-      where.order = {
-        createdAt: {},
-        deletedAt: null,
-        ...tenantFilter
-      } as any;
-      if (filters.startDate) (where.order as any).createdAt.gte = filters.startDate;
-      if (filters.endDate) (where.order as any).createdAt.lte = filters.endDate;
-    } else {
-      where.order = { deletedAt: null, ...tenantFilter } as any;
-    }
+    const { byProduct = [] } = await productDeliveredUnits(tenantId, 'all', from, to);
 
-    const productSales = await prisma.orderItem.groupBy({
-      by: ['productId'],
-      where,
-      _sum: {
-        quantity: true,
-        totalPrice: true
-      },
-      _count: true
-    });
-
-    // Get product details
-    const productIds = productSales.map((ps) => ps.productId);
     const products = await prisma.product.findMany({
-      where: { id: { in: productIds } },
-      select: {
-        id: true,
-        name: true,
-        sku: true,
-        price: true,
-        category: true
-      }
+      where: { id: { in: byProduct.map((p) => p.productId) } },
+      select: { id: true, category: true }
     });
+    const categoryById = new Map(products.map((p) => [p.id, p.category]));
 
-    const productMap = new Map(products.map((p) => [p.id, p]));
-
-    const performance = productSales
-      .map((ps) => {
-        const product = productMap.get(ps.productId);
-        return {
-          productId: ps.productId,
-          productName: product?.name || 'Unknown',
-          sku: product?.sku || '',
-          category: product?.category || '',
-          unitsSold: ps._sum.quantity || 0,
-          revenue: Money.orZero(ps._sum.totalPrice),
-          orderCount: ps._count
-        };
-      })
-      .sort((a, b) => Money.compare(b.revenue, a.revenue));
-
-    return performance;
-  }
-
-  /**
-   * Get area-wise order distribution
-   */
-  async getAreaDistribution(filters?: DateFilters) {
-    const where: Prisma.OrderWhereInput = { deletedAt: null };
-
-    if (filters?.startDate || filters?.endDate) {
-      where.createdAt = {};
-      if (filters.startDate) where.createdAt.gte = filters.startDate;
-      if (filters.endDate) where.createdAt.lte = filters.endDate;
-    }
-
-    const areaStats = await prisma.order.groupBy({
-      by: ['deliveryArea'],
-      where,
-      _count: true,
-      _sum: {
-        totalAmount: true
-      },
-      orderBy: {
-        _count: {
-          deliveryArea: 'desc'
-        }
-      },
-      take: 20
-    });
-
-    return areaStats.map((stat) => ({
-      area: stat.deliveryArea,
-      orderCount: stat._count,
-      revenue: Money.orZero(stat._sum.totalAmount)
-    }));
-  }
-
-  /**
-   * Get time-series data for charts
-   */
-  async getTimeSeriesData(metric: string, days: number = 30) {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-
-    const orders = await prisma.order.findMany({
-      where: {
-        createdAt: {
-          gte: startDate
-        },
-        deletedAt: null
-      },
-      select: {
-        createdAt: true,
-        totalAmount: true,
-        status: true
-      }
-    });
-
-    // Counts for 'orders' and 'delivered', money (Decimal) for 'revenue'
-    const series: Record<string, number | Money.Money> = {};
-    const isMoney = metric === 'revenue';
-
-    orders.forEach((order) => {
-      const dateKey = order.createdAt.toISOString().split('T')[0];
-
-      if (series[dateKey] === undefined) {
-        series[dateKey] = isMoney ? Money.ZERO : 0;
-      }
-
-      switch (metric) {
-        case 'orders':
-          series[dateKey] = (series[dateKey] as number) + 1;
-          break;
-        case 'revenue':
-          if (order.status === 'delivered') {
-            series[dateKey] = Money.add(series[dateKey] as Money.Money, order.totalAmount);
-          }
-          break;
-        case 'delivered':
-          if (order.status === 'delivered') {
-            series[dateKey] = (series[dateKey] as number) + 1;
-          }
-          break;
-      }
-    });
-
-    return Object.entries(series)
-      .map(([date, value]) => ({
-        date,
-        value
+    return byProduct
+      .map((p) => ({
+        productId: p.productId,
+        productName: p.name || 'Unknown',
+        sku: p.sku,
+        category: categoryById.get(p.productId) || '',
+        unitsSold: p.units,
+        revenue: p.lineRevenue
       }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+      .sort((a, b) => Money.compare(b.revenue, a.revenue));
+  }
+
+  /**
+   * Get area-wise delivered revenue (KPI layer: delivered orders by delivery area, default month to date)
+   */
+  async getAreaDistribution(filters?: { startDate?: string; endDate?: string }) {
+    const tenantId = resolveTenantId();
+    const { from, to } = resolveRange(filters, tenantId, new Date());
+
+    const areas = await deliveredRevenueByArea(tenantId, from, to);
+
+    return areas.slice(0, 20).map((a) => ({
+      area: a.area,
+      orderCount: a.deliveredOrders,
+      revenue: a.revenue
+    }));
   }
 
   /**
@@ -944,13 +684,14 @@ export class AnalyticsService {
   ) {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const zone = getStoreTimeZone(getTenantId());
 
-    // Build date filter (MTD default)
+    // Build date filter (MTD default). Date-only bounds are store-zone days, the end inclusive.
     const dateFilter = filters?.startDate && filters?.endDate
       ? {
         createdAt: {
-          gte: new Date(filters.startDate),
-          lte: new Date(filters.endDate)
+          gte: parseInclusiveBound(filters.startDate, 'from', zone),
+          lte: parseInclusiveBound(filters.endDate, 'to', zone)
         }
       }
       : {

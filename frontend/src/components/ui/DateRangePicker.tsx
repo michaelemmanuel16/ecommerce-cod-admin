@@ -11,6 +11,7 @@ import {
   subYears,
   addMonths,
   subMonths,
+  parseISO,
 } from 'date-fns';
 import { Calendar, X } from 'lucide-react';
 import { CalendarGrid } from './calendar/CalendarGrid';
@@ -102,8 +103,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const [tempRange, setTempRange] = useState<{ from: Date | undefined; to: Date | undefined }>(() => {
     if (startDate && endDate) {
       return {
-        from: new Date(startDate),
-        to: new Date(endDate),
+        from: parseISO(startDate),
+        to: parseISO(endDate),
       };
     }
     return { from: undefined, to: undefined };
@@ -119,8 +120,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   useEffect(() => {
     if (startDate && endDate) {
       setTempRange({
-        from: new Date(startDate),
-        to: new Date(endDate)
+        from: parseISO(startDate),
+        to: parseISO(endDate)
       });
     }
   }, [startDate, endDate]);
@@ -154,9 +155,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const handleApply = () => {
     if (tempRange.from && tempRange.to) {
       const formattedStart = format(tempRange.from, 'yyyy-MM-dd');
-      const endOfDay = new Date(tempRange.to);
-      endOfDay.setHours(23, 59, 59, 999);
-      const formattedEnd = endOfDay.toISOString();
+      // Calendar days, not instants: the backend applies the store time zone to both bounds.
+      const formattedEnd = format(tempRange.to, 'yyyy-MM-dd');
 
       console.log('[DateRangePicker] Applying range:', {
         from: tempRange.from,
@@ -174,8 +174,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
     // Reset to current values
     if (startDate && endDate) {
       setTempRange({
-        from: new Date(startDate),
-        to: new Date(endDate)
+        from: parseISO(startDate),
+        to: parseISO(endDate)
       });
     } else {
       setTempRange({ from: undefined, to: undefined });

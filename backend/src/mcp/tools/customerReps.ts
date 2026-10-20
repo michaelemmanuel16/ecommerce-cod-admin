@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { mcpJson, mcpMoneyJson, mcpError, getDateRange } from '../utils';
+import { mcpJson, mcpMoneyJson, mcpError, getDateRange, getStoreRange } from '../utils';
 import { resolveTenantId } from '../../utils/tenantContext';
 import { repRates } from '../../services/kpi/reps';
 import { deliveredRevenue } from '../../services/kpi/revenue';
@@ -23,8 +23,7 @@ export function registerCustomerRepTools(
     repsStatusSchema.shape,
     wrapHandler(async (_args: z.infer<typeof repsStatusSchema>) => {
       try {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
+        const todayStart = getStoreRange('today').from;
 
         const [reps, createdTodayCounts, pendingCounts, activeCounts] = await Promise.all([
           prisma.user.findMany({

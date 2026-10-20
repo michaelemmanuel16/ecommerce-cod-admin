@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { format, startOfMonth } from 'date-fns';
 import { useFinancialStore } from '../../stores/financialStore';
 import { Card } from '../ui/Card';
 import { formatCurrency, formatPercentage } from '../../utils/format';
@@ -21,8 +22,8 @@ export const FinancialStatementsTab: React.FC = () => {
             fetchBalanceSheet(dateRange.endDate);
         } else {
             fetchProfitLoss(
-                dateRange.startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
-                dateRange.endDate || new Date().toISOString()
+                dateRange.startDate || format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+                dateRange.endDate || format(new Date(), 'yyyy-MM-dd')
             );
         }
     }, [activeStatement, dateRange.startDate, dateRange.endDate, fetchBalanceSheet, fetchProfitLoss]);

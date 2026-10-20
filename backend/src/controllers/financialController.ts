@@ -13,13 +13,14 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { getTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { addRowsWithMoney } from '../utils/xlsxMoney';
+import { readDateBound } from '../utils/kpiRequest';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
 
   const summary = await financialService.getFinancialSummary({
-    startDate: startDate ? new Date(startDate as string) : undefined,
-    endDate: endDate ? new Date(endDate as string) : undefined
+    startDate: readDateBound(startDate, 'from'),
+    endDate: readDateBound(endDate, 'to', { snapToDay: true })
   }, req.user);
 
   res.json({ summary });
@@ -75,22 +76,11 @@ export const getFinancialReports = async (req: AuthRequest, res: Response): Prom
 
   const reports = await financialService.getFinancialReports({
     period: period as string,
-    startDate: startDate ? new Date(startDate as string) : undefined,
-    endDate: endDate ? new Date(endDate as string) : undefined
+    startDate: readDateBound(startDate, 'from'),
+    endDate: readDateBound(endDate, 'to')
   });
 
   res.json({ reports });
-};
-
-export const getProfitMargins = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { startDate, endDate } = req.query;
-
-  const profitMargins = await financialService.calculateProfitMargins({
-    startDate: startDate ? new Date(startDate as string) : undefined,
-    endDate: endDate ? new Date(endDate as string) : undefined
-  });
-
-  res.json(profitMargins);
 };
 
 export const getPipelineRevenue = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -103,8 +93,8 @@ export const getProfitabilityAnalysis = async (req: AuthRequest, res: Response):
     const { startDate, endDate, productId } = req.query;
 
     const analysis = await financialService.getProfitabilityAnalysis({
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
+      startDate: readDateBound(startDate, 'from'),
+      endDate: readDateBound(endDate, 'to', { snapToDay: true }),
       productId: productId ? parseInt(productId as string, 10) : undefined
     });
 
@@ -120,8 +110,8 @@ export const exportProfitabilityAnalysis = async (req: AuthRequest, res: Respons
     const { startDate, endDate, productId, format = 'csv' } = req.query;
 
     const analysis = await financialService.getProfitabilityAnalysis({
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
+      startDate: readDateBound(startDate, 'from'),
+      endDate: readDateBound(endDate, 'to', { snapToDay: true }),
       productId: productId ? parseInt(productId as string, 10) : undefined
     });
 
@@ -175,8 +165,8 @@ export const getAllExpenses = async (req: AuthRequest, res: Response): Promise<v
 
   const result = await financialService.getAllExpenses({
     category: category as string | undefined,
-    startDate: startDate ? new Date(startDate as string) : undefined,
-    endDate: endDate ? new Date(endDate as string) : undefined,
+    startDate: readDateBound(startDate, 'from'),
+    endDate: readDateBound(endDate, 'to'),
     page: Number(page),
     limit: Number(limit)
   });
@@ -188,8 +178,8 @@ export const getExpenseBreakdown = async (req: AuthRequest, res: Response): Prom
   const { startDate, endDate } = req.query;
 
   const breakdown = await financialService.getExpenseBreakdown({
-    startDate: startDate ? new Date(startDate as string) : undefined,
-    endDate: endDate ? new Date(endDate as string) : undefined
+    startDate: readDateBound(startDate, 'from'),
+    endDate: readDateBound(endDate, 'to')
   });
 
   res.json({ breakdown });

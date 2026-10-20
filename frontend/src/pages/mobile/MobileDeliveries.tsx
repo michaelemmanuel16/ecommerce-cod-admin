@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { startOfMonth } from 'date-fns';
+import { format, startOfMonth } from 'date-fns';
 import { Phone, MapPin, RefreshCw, Package, Search, X, ChevronDown } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { deliveriesService, DeliveryListItem, DeliveryPagination, formatDeliveryAddress } from '../../services/deliveries.service';
@@ -45,7 +45,7 @@ export default function MobileDeliveries() {
   const isAuthenticated = !!user;
 
   // MTD date range for filtering terminal statuses
-  const mtdStartDate = useMemo(() => startOfMonth(new Date()).toISOString(), []);
+  const mtdStartDate = useMemo(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'), []);
 
   const fetchDeliveries = useCallback(async (opts: { page?: number; append?: boolean; refresh?: boolean } = {}) => {
     if (!isAuthenticated) return;

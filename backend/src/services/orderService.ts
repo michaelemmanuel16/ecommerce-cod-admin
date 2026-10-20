@@ -24,6 +24,9 @@ import { transitionOrder, allowedTransitions, actorOf, TransitionActor, Transiti
 import { hasPermission } from '../middleware/auth';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 import * as Money from '../utils/money';
+import { revenueScope, roleScope } from '../utils/kpiRequest';
+import { kpiWindow } from './kpi/dates';
+import { deliveredRevenue } from './kpi/revenue';
 
 
 
@@ -1577,17 +1580,16 @@ export class OrderService {
       if (filters.endDate) where.createdAt.lte = filters.endDate;
     }
 
-    const [totalOrders, ordersByStatus, totalRevenue, avgOrderValue] = await Promise.all([
+    // Revenue is the KPI delivered revenue (delivery-date basis); no dates means all time. The KPI range is [from, to).
+    const { from, to } = kpiWindow(filters.startDate, filters.endDate);
+    const [totalOrders, ordersByStatus, revenue, avgOrderValue] = await Promise.all([
       prisma.order.count({ where }),
       prisma.order.groupBy({
         by: ['status'],
         where,
         _count: true
       }),
-      prisma.order.aggregate({
-        where: { ...where, status: 'delivered' },
-        _sum: { totalAmount: true }
-      }),
+      deliveredRevenue(resolveTenantId(), from, to, revenueScope(roleScope(requester))),
       prisma.order.aggregate({
         where,
         _avg: { totalAmount: true }
@@ -1600,7 +1602,7 @@ export class OrderService {
         acc[item.status] = item._count;
         return acc;
       }, {} as Record<string, number>),
-      totalRevenue: Money.orZero(totalRevenue._sum.totalAmount),
+      totalRevenue: Money.parse(revenue.total.value),
       avgOrderValue: Money.orZero(avgOrderValue._avg.totalAmount)
     };
 

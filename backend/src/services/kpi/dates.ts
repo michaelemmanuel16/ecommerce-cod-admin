@@ -111,7 +111,36 @@ export function parseBound(value: string, edge: 'from' | 'to', zone: string): Da
   return d;
 }
 
+/**
+ * Like parseBound, for queries that keep an inclusive `lte` on the end: a date-only `to` is the LAST millisecond of
+ * that store day. An ISO instant is used as given. With `snapToDay`, an ISO `to` is moved to the last millisecond of
+ * its store day (for reports that always cover whole days).
+ */
+export function parseInclusiveBound(value: string, edge: 'from' | 'to', zone: string, opts?: { snapToDay?: boolean }): Date {
+  const bound = parseBound(value, edge, zone);
+  if (edge === 'from') return bound;
+  if (YMD.test(value)) return new Date(bound.getTime() - 1);
+  return opts?.snapToDay ? new Date(endOfDay(localDate(bound, zone), zone).getTime() - 1) : bound;
+}
+
 /** Add whole days to an instant (no zone arithmetic: 24 h each). For "30 days after placement". */
 export function addDays(instant: Date, days: number): Date {
   return new Date(instant.getTime() + days * DAY_MS);
+}
+
+/** Add whole calendar days to a 'YYYY-MM-DD' date (no time zone involved). */
+export function shiftYmd(ymd: string, days: number): string {
+  const { year, month, day } = parseYmd(ymd);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * KPI range [from, to) for optional filter dates. No start means all time. `end` is an INCLUSIVE bound (an end-of-day
+ * instant), so `to` is end + 1 ms. No end means "up to now": a day ahead, so nothing placed today is cut off.
+ */
+export function kpiWindow(start?: Date, end?: Date): { from: Date; to: Date } {
+  return {
+    from: start ?? new Date(0),
+    to: end ? new Date(end.getTime() + 1) : new Date(Date.now() + DAY_MS),
+  };
 }

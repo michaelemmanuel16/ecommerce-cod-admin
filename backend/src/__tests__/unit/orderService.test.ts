@@ -25,6 +25,9 @@ jest.mock('../../services/orderStateMachine', () => ({
   transitionOrder: jest.fn(),
 }));
 
+jest.mock('../../services/kpi/revenue');
+import { revenueResult } from '../mocks/kpiResults';
+import { deliveredRevenue } from '../../services/kpi/revenue';
 import { prismaMock } from '../mocks/prisma.mock';
 import orderService from '../../services/orderService';
 import { transitionOrder } from '../../services/orderStateMachine';
@@ -565,9 +568,8 @@ describe('OrderService', () => {
         { status: 'pending_confirmation' as OrderStatus, _count: 30 },
         { status: 'cancelled' as OrderStatus, _count: 20 }
       ] as any);
-      (prismaMock.order.aggregate as any)
-        .mockResolvedValueOnce({ _sum: { totalAmount: 5000 } } as any)
-        .mockResolvedValueOnce({ _avg: { totalAmount: 50 } } as any);
+      (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mockResolvedValue(revenueResult('5000.00', 50));
+      (prismaMock.order.aggregate as any).mockResolvedValueOnce({ _avg: { totalAmount: 50 } } as any);
 
       const stats = await orderService.getOrderStats({});
 
@@ -577,6 +579,23 @@ describe('OrderService', () => {
       expect(stats.ordersByStatus.delivered).toBe(50);
       expect(stats.ordersByStatus.pending_confirmation).toBe(30);
       expect(stats.ordersByStatus.cancelled).toBe(20);
+    });
+
+    it('takes revenue from the KPI layer, scoped to the requester (delivery-date basis, [from, to))', async () => {
+      (prismaMock.order.count as any).mockResolvedValue(0);
+      (prismaMock.order.groupBy as any).mockResolvedValue([]);
+      (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mockResolvedValue(revenueResult('0.00', 0));
+      (prismaMock.order.aggregate as any).mockResolvedValueOnce({ _avg: { totalAmount: null } } as any);
+
+      await orderService.getOrderStats(
+        { startDate: new Date('2024-01-01'), endDate: new Date('2024-01-31T23:59:59.999Z') },
+        { id: 4, role: 'sales_rep' } as any,
+      );
+
+      const [, from, to, scope] = (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mock.calls[0];
+      expect(from).toEqual(new Date('2024-01-01'));
+      expect(to).toEqual(new Date('2024-02-01T00:00:00.000Z'));
+      expect(scope).toEqual({ customerRepId: 4, deliveryAgentId: undefined });
     });
   });
 });

@@ -1,11 +1,17 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { mcpMoneyJson, mcpError, getDateRange } from '../utils';
+import { mcpMoneyJson, mcpError, getStoreRange, inclusiveEnd } from '../utils';
 import * as Money from '../../utils/money';
+import { resolveTenantId } from '../../utils/tenantContext';
+import { deliveredRevenue } from '../../services/kpi/revenue';
+import { pendingRevenue } from '../../services/kpi/pending';
 
 const financialSummarySchema = z.object({
-  period: z.enum(['today', 'week', 'month']).default('today'),
+  period: z.enum(['today', 'week', 'month', 'custom']).default('today'),
+  // custom only: store-zone days, dateTo inclusive
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export function registerFinancialTools(
@@ -14,31 +20,19 @@ export function registerFinancialTools(
 ) {
   server.tool(
     'financial_summary',
-    'Revenue and collection summary: total revenue, collections received, pending amounts, agent balances.',
+    'Revenue and collection summary: delivered revenue (by delivery date) and delivered count, pending amounts, expenses, agent balances. Money is a 2-decimal string. Period custom takes dateFrom and dateTo (inclusive, store-zone days).',
     financialSummarySchema.shape,
     wrapHandler(async (args: z.infer<typeof financialSummarySchema>) => {
       try {
         const parsed = financialSummarySchema.parse(args);
-        const { start, end } = getDateRange(parsed.period);
-        const dateFilter = { createdAt: { gte: start, lte: end } };
+        const { from: start, to: end } = getStoreRange(parsed.period, parsed.dateFrom, parsed.dateTo);
+        const dateFilter = { createdAt: { gte: start, lt: end } };
 
-        const [revenue, pendingRevenue, expenses, agentBalances] = await Promise.all([
-          // Revenue from delivered orders (tenant-scoped via Prisma extension)
-          prisma.order.aggregate({
-            where: { ...dateFilter, deletedAt: null, status: 'delivered' },
-            _sum: { totalAmount: true },
-            _count: { id: true },
-          }),
-          // Pending revenue from undelivered orders
-          prisma.order.aggregate({
-            where: {
-              ...dateFilter,
-              deletedAt: null,
-              status: { in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'] },
-            },
-            _sum: { totalAmount: true },
-            _count: { id: true },
-          }),
+        const [revenue, pending, expenses, agentBalances] = await Promise.all([
+          // Delivered revenue from the KPI layer (delivery date)
+          deliveredRevenue(resolveTenantId(), start, end),
+          // Pending revenue: confirmed, not yet delivered (KPI layer)
+          pendingRevenue(resolveTenantId(), start, end),
           // Expenses (tenant-scoped via Prisma extension)
           prisma.expense.aggregate({
             where: dateFilter,
@@ -63,12 +57,12 @@ export function registerFinancialTools(
 
         return mcpMoneyJson({
           period: parsed.period,
-          dateRange: { from: start.toISOString(), to: end.toISOString() },
+          dateRange: { from: start.toISOString(), to: inclusiveEnd(end).toISOString() },
           revenue: {
-            delivered: Money.orZero(revenue._sum.totalAmount),
-            deliveredOrders: revenue._count.id,
-            pending: Money.orZero(pendingRevenue._sum.totalAmount),
-            pendingOrders: pendingRevenue._count.id,
+            delivered: revenue.total.value,
+            deliveredOrders: revenue.deliveredOrders.value,
+            pending: pending.value.value,
+            pendingOrders: pending.orders.value,
           },
           expenses: {
             total: Money.orZero(expenses._sum.amount),

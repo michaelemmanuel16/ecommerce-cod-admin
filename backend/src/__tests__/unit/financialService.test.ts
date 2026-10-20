@@ -18,7 +18,11 @@ jest.mock('../../services/glAutomationService', () => ({
     voidJournalEntry: jest.fn().mockResolvedValue(null),
   },
 }));
+jest.mock('../../services/kpi/revenue');
 import { prismaMock } from '../mocks/prisma.mock';
+import { useTestTenant, TEST_TENANT_ID } from '../mocks/tenant.mock';
+import { revenueResult } from '../mocks/kpiResults';
+import { deliveredRevenue } from '../../services/kpi/revenue';
 import { FinancialService } from '../../services/financialService';
 import { AppError } from '../../middleware/errorHandler';
 import { PaymentStatus } from '@prisma/client';
@@ -26,6 +30,7 @@ import * as Money from '../../utils/money';
 
 describe('FinancialService', () => {
   let financialService: FinancialService;
+  useTestTenant();
 
   beforeEach(() => {
     financialService = new FinancialService();
@@ -36,22 +41,21 @@ describe('FinancialService', () => {
   });
 
   describe('getFinancialSummary', () => {
-    it('should calculate financial summary from GL accounts', async () => {
-      // Mock valid journal entries (excluding period_close and voided)
-      prismaMock.journalEntry.findMany.mockResolvedValue([
-        { id: 1 }, { id: 2 }, { id: 3 }
-      ] as any);
+    it('reads revenue from the KPI layer and digital revenue, Paystack fees and expenses from the GL', async () => {
+      (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mockResolvedValue(revenueResult('10000.00', 40));
 
-      // Mock GL account aggregations (revenue and expense accounts)
+      // Mock GL account aggregations (digital revenue and expense accounts)
       prismaMock.accountTransaction.groupBy.mockResolvedValue([
-        { accountId: 10, _sum: { debitAmount: 0, creditAmount: 10000 } },   // Product Revenue (credit normal)
+        { accountId: 11, _sum: { debitAmount: 0, creditAmount: 1500 } },    // Digital Revenue 4020 (credit normal)
         { accountId: 20, _sum: { debitAmount: 2000, creditAmount: 0 } },    // COGS (debit normal)
+        { accountId: 21, _sum: { debitAmount: 60, creditAmount: 0 } },      // Paystack fees 5060 (debit normal)
       ] as any);
 
       // Mock account metadata
       prismaMock.account.findMany.mockResolvedValue([
-        { id: 10, code: '4010', normalBalance: 'credit', accountType: 'revenue' },
+        { id: 11, code: '4020', normalBalance: 'credit', accountType: 'revenue' },
         { id: 20, code: '5010', normalBalance: 'debit', accountType: 'expense' },
+        { id: 21, code: '5060', normalBalance: 'debit', accountType: 'expense' },
       ] as any);
 
       // Mock AgentCollection aggregate for outstanding receivables
@@ -70,18 +74,41 @@ describe('FinancialService', () => {
 
       const summary = await financialService.getFinancialSummary({
         startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31')
+        endDate: new Date('2024-01-31T23:59:59.999Z')
       });
 
       expect(Money.toApi(summary.totalRevenue)).toBe('10000.00');
-      expect(Money.toApi(summary.totalExpenses)).toBe('2000.00');
-      expect(Money.toApi(summary.profit)).toBe('8000.00');
+      expect(Money.toApi(summary.digitalRevenue)).toBe('1500.00');
+      expect(Money.toApi(summary.paystackFees)).toBe('60.00');
+      expect(Money.toApi(summary.totalExpenses)).toBe('2060.00'); // COGS 2000 + Paystack fees 60
+      expect(Money.toApi(summary.profit)).toBe('7940.00');
       expect(Money.toApi(summary.codCollected)).toBe('9500.00');
       expect(Money.toApi(summary.outstandingReceivables)).toBe('500.00');
-      expect(summary.profitMargin).toBe(80);
+      expect(summary.profitMargin).toBe(79.4);
+
+      // The KPI range is the store day range [1 Jan, end of 31 Jan]: the end-of-day bound plus 1 ms.
+      const [tenantId, from, to, scope] = (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mock.calls[0];
+      expect(tenantId).toBe(TEST_TENANT_ID);
+      expect(from).toEqual(new Date('2024-01-01'));
+      expect(to.getTime()).toBe(new Date('2024-01-31T23:59:59.999Z').getTime() + 1);
+      expect(scope).toEqual({ customerRepId: undefined, deliveryAgentId: undefined });
+    });
+
+    it('scopes the KPI revenue to a sales rep', async () => {
+      (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mockResolvedValue(revenueResult('0.00', 0));
+      prismaMock.accountTransaction.groupBy.mockResolvedValue([] as any);
+      prismaMock.account.findMany.mockResolvedValue([] as any);
+      (prismaMock as any).agentCollection = { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) };
+      prismaMock.transaction.aggregate.mockResolvedValue({ _sum: { amount: null } } as any);
+      prismaMock.order.aggregate.mockResolvedValue({ _sum: { totalAmount: null } } as any);
+
+      await financialService.getFinancialSummary({}, { id: 9, role: 'sales_rep' } as any);
+
+      expect((deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mock.calls[0][3]).toEqual({ customerRepId: 9, deliveryAgentId: undefined });
     });
 
     it('should handle null/empty GL data', async () => {
+      (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mockResolvedValue(revenueResult('0.00', 0));
       prismaMock.journalEntry.findMany.mockResolvedValue([] as any);
       prismaMock.accountTransaction.groupBy.mockResolvedValue([] as any);
       prismaMock.account.findMany.mockResolvedValue([] as any);
@@ -98,6 +125,8 @@ describe('FinancialService', () => {
       const summary = await financialService.getFinancialSummary({});
 
       expect(Money.toApi(summary.totalRevenue)).toBe('0.00');
+      expect(Money.toApi(summary.digitalRevenue)).toBe('0.00');
+      expect(Money.toApi(summary.paystackFees)).toBe('0.00');
       expect(Money.toApi(summary.totalExpenses)).toBe('0.00');
       expect(Money.toApi(summary.profit)).toBe('0.00');
       expect(summary.profitMargin).toBe(0);
@@ -459,55 +488,6 @@ describe('FinancialService', () => {
     });
   });
 
-  describe('calculateProfitMargins', () => {
-    it('should calculate profit margins correctly', async () => {
-      const mockOrders = [
-        {
-          totalAmount: 200,
-          orderItems: [
-            {
-              quantity: 2,
-              product: { cogs: 40 }
-            }
-          ]
-        },
-        {
-          totalAmount: 300,
-          orderItems: [
-            {
-              quantity: 3,
-              product: { cogs: 50 }
-            }
-          ]
-        }
-      ];
-
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
-
-      const margins = await financialService.calculateProfitMargins({
-        startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31')
-      });
-
-      expect(Money.toApi(margins.totalRevenue)).toBe('500.00'); // 200 + 300
-      expect(Money.toApi(margins.totalCost)).toBe('230.00'); // (2*40) + (3*50)
-      expect(Money.toApi(margins.grossProfit)).toBe('270.00'); // 500 - 230
-      expect(margins.profitMargin).toBe(54); // (270 / 500) * 100
-      expect(margins.orderCount).toBe(2);
-    });
-
-    it('should handle zero revenue', async () => {
-      prismaMock.order.findMany.mockResolvedValue([]);
-
-      const margins = await financialService.calculateProfitMargins({});
-
-      expect(Money.toApi(margins.totalRevenue)).toBe('0.00');
-      expect(Money.toApi(margins.totalCost)).toBe('0.00');
-      expect(Money.toApi(margins.grossProfit)).toBe('0.00');
-      expect(margins.profitMargin).toBe(0);
-    });
-  });
-
   describe('edge cases - negative and zero amounts', () => {
     it('should reject negative expense amount', async () => {
       const expenseData = {
@@ -673,6 +653,28 @@ describe('FinancialService', () => {
       expect(Money.toApi(pl.grossProfit)).toBe('3000.00');
       expect(Money.toApi(pl.netIncome)).toBe('2500.00');
       expect(pl.grossMarginPercentage).toBe(60);
+    });
+
+    it('reads date-only bounds as store days: the end day is in up to its last millisecond; an ISO end snaps to its day', async () => {
+      prismaMock.account.findMany.mockResolvedValue([] as any);
+      prismaMock.accountTransaction.groupBy.mockResolvedValue([] as any);
+      const entryDate = () => (prismaMock.accountTransaction.groupBy.mock.calls.at(-1)![0] as any).where.journalEntry.entryDate;
+
+      await financialService.getProfitLoss('2026-10-01', '2026-10-17');
+      expect(entryDate()).toEqual({ gte: new Date('2026-10-01T00:00:00.000Z'), lte: new Date('2026-10-17T23:59:59.999Z') });
+
+      await financialService.getProfitLoss('2026-10-01', '2026-10-17T10:00:00.000Z');
+      expect(entryDate().lte).toEqual(new Date('2026-10-17T23:59:59.999Z'));
+    });
+  });
+
+  describe('getBalanceSheet date bound', () => {
+    it('a date-only as-of date is in up to the last millisecond of that store day', async () => {
+      prismaMock.account.findMany.mockResolvedValue([] as any);
+      prismaMock.accountTransaction.groupBy.mockResolvedValue([] as any);
+      await financialService.getBalanceSheet('2026-10-17');
+      const call = prismaMock.accountTransaction.groupBy.mock.calls[0][0] as any;
+      expect(call.where.journalEntry.entryDate).toEqual({ lte: new Date('2026-10-17T23:59:59.999Z') });
     });
   });
 });

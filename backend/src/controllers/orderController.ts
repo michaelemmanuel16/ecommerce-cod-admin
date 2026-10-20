@@ -3,6 +3,7 @@ import { AuthRequest } from '../types';
 import { OrderStatus } from '@prisma/client';
 import orderService from '../services/orderService';
 import { clearCache } from '../middleware/cache';
+import { readDateBound } from '../utils/kpiRequest';
 
 export const getAllOrders = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -43,8 +44,8 @@ export const getAllOrders = async (req: AuthRequest, res: Response): Promise<voi
       customerRepId: effectiveCustomerRepId,
       deliveryAgentId: effectiveDeliveryAgentId,
       area: area as string | undefined,
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
+      startDate: readDateBound(startDate, 'from'),
+      endDate: readDateBound(endDate, 'to'),
       search: search as string | undefined,
       page: Number(page),
       limit: Number(limit)
@@ -246,8 +247,8 @@ export const getOrderStats = async (req: AuthRequest, res: Response): Promise<vo
   try {
     const { startDate, endDate } = req.query;
     const stats = await orderService.getOrderStats({
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined
+      startDate: readDateBound(startDate, 'from'),
+      endDate: readDateBound(endDate, 'to')
     }, req.user);
     res.json({ stats });
   } catch (error) {

@@ -5,6 +5,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { prismaBase } from '../../../utils/prisma';
 import { repRates } from '../../../services/kpi/reps';
+import { deliveredRevenue, deliveredRevenueByRep } from '../../../services/kpi/revenue';
 import { teamReport } from '../../../services/teamReportService';
 import { endOfDay, getStoreTimeZone, startOfDay } from '../../../services/kpi/dates';
 
@@ -25,6 +26,16 @@ export function repsFixtureChecks(getTenantId: () => string): void {
       expect(pct(r.rep(await repId('Nana')).deliveredFromConfirmedRate.value)).toBe(30);
       expect(pct(r.all.deliveredFromConfirmedRate.value)).toBe(48);
       expect(r.all.deliveredFromConfirmedRate.detail).toMatchObject({ delivered: 376, closed: 778 });
+
+      // Revenue by rep (one grouped query) equals the per-rep deliveredRevenue and adds up to the company total.
+      const byRep = await deliveredRevenueByRep(getTenantId(), from, to);
+      for (const name of ['Adwoa', 'Confirm', 'Nana']) {
+        const id = await repId(name);
+        const single = await deliveredRevenue(getTenantId(), from, to, { customerRepId: id });
+        expect(byRep.get(id)).toEqual({ revenue: single.total.value, deliveredOrders: single.deliveredOrders.value });
+      }
+      const total = await deliveredRevenue(getTenantId(), from, to);
+      expect([...byRep.values()].reduce((sum, v) => sum + Number(v.revenue), 0).toFixed(2)).toBe(total.total.value);
     });
 
     it('confirmation rate: Adwoa 73%, Confirm agent 71% (NUMBERS.md 70%, see D28), Nana 58%, all 71%', async () => {

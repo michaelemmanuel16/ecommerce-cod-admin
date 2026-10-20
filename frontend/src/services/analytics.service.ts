@@ -9,7 +9,10 @@ export interface DashboardMetrics {
   todayRevenue: number;
   activeAgents: number;
   avgDeliveryTime: number;
-  deliveryRate: number;
+  /** Percent, null when there is nothing to divide (no orders, no closed orders, no closed day cohort). */
+  confirmationRate: number | null;
+  deliverySuccessRate: number | null;
+  orderToCashYield: number | null;
 }
 
 export interface SalesTrend {
@@ -17,7 +20,6 @@ export interface SalesTrend {
   orders: number;
   revenue: number;
   delivered: number;
-  conversionRate: number;
 }
 
 export interface ConversionFunnelStep {
@@ -31,9 +33,11 @@ export interface PerformanceMetrics {
   totalAssigned: number;
   completed: number;
   pending: number;
-  successRate: number;
+  /** Reps: confirmed / assigned. */
+  confirmationRate?: number | null;
+  /** Delivery agents: delivered / closed. */
+  deliverySuccessRate?: number | null;
   revenue?: number;
-  avgResponseTime?: number;
   failed?: number;
   active?: number;
   onTimeRate?: number;
@@ -43,7 +47,6 @@ export interface PerformanceMetrics {
 
 export interface CustomerInsights {
   totalCustomers: number;
-  activeCustomers: number;
   topCustomers: Array<{
     id: string;
     firstName: string;
@@ -89,7 +92,6 @@ export interface ProductPerformance {
   category: string;
   unitsSold: number;
   revenue: number;
-  orderCount: number;
 }
 
 export interface AreaDistribution {

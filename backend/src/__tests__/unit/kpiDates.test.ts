@@ -1,7 +1,7 @@
 /** M1-T15: store-zone date helpers. Written zone-agnostic: the same boundaries are checked in a UTC+0 zone (Accra), a +13 zone and a -5 zone. */
 import { describe, it, expect } from '@jest/globals';
 import {
-  DEFAULT_TIME_ZONE, daysInMonth, endOfDay, localDate, monthRange, parseBound, startOfDay, addDays,
+  DEFAULT_TIME_ZONE, daysInMonth, endOfDay, localDate, monthRange, parseBound, parseInclusiveBound, startOfDay, addDays,
 } from '../../services/kpi/dates';
 
 const ZONES = ['Africa/Accra', 'Pacific/Auckland', 'America/New_York'];
@@ -64,6 +64,15 @@ describe('kpi dates', () => {
     expect(parseBound('2026-10-01', 'from', 'Africa/Accra').toISOString()).toBe('2026-10-01T00:00:00.000Z');
     expect(parseBound('2026-10-17', 'to', 'Africa/Accra').toISOString()).toBe('2026-10-18T00:00:00.000Z');
     expect(parseBound('2026-10-17T12:30:00.000Z', 'to', 'Africa/Accra').toISOString()).toBe('2026-10-17T12:30:00.000Z');
+  });
+
+  it('parseInclusiveBound: a date-only `to` is the last millisecond of that day; ISO is as given unless snapped', () => {
+    expect(parseInclusiveBound('2026-10-01', 'from', 'Africa/Accra').toISOString()).toBe('2026-10-01T00:00:00.000Z');
+    expect(parseInclusiveBound('2026-10-17', 'to', 'Africa/Accra').toISOString()).toBe('2026-10-17T23:59:59.999Z');
+    expect(parseInclusiveBound('2026-10-17T12:30:00.000Z', 'to', 'Africa/Accra').toISOString()).toBe('2026-10-17T12:30:00.000Z');
+    expect(parseInclusiveBound('2026-10-17T12:30:00.000Z', 'to', 'Africa/Accra', { snapToDay: true }).toISOString()).toBe('2026-10-17T23:59:59.999Z');
+    // A zone east of UTC: store day 17 Oct in Lagos (UTC+1) ends at 22:59:59.999Z.
+    expect(parseInclusiveBound('2026-10-17', 'to', 'Africa/Lagos').toISOString()).toBe('2026-10-17T22:59:59.999Z');
   });
 
   it('rejects things that are not dates', () => {

@@ -70,9 +70,9 @@ export const DeliveryOperationsTab: React.FC<DeliveryOperationsTabProps> = ({
     [ordersByStatus]
   );
 
-  // Sort agents by success rate desc
+  // Sort agents by delivery success rate desc
   const sortedAgents = useMemo(
-    () => [...agentPerformance].sort((a, b) => b.successRate - a.successRate),
+    () => [...agentPerformance].sort((a, b) => (b.deliverySuccessRate ?? -1) - (a.deliverySuccessRate ?? -1)),
     [agentPerformance]
   );
 
@@ -185,7 +185,7 @@ export const DeliveryOperationsTab: React.FC<DeliveryOperationsTabProps> = ({
                         Failed
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                        Rate
+                        Delivery success rate
                       </th>
                     </tr>
                   </thead>
@@ -200,14 +200,16 @@ export const DeliveryOperationsTab: React.FC<DeliveryOperationsTabProps> = ({
                         <td className="px-3 py-2 text-sm">
                           <span
                             className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                              agent.successRate >= 80
-                                ? 'bg-green-100 text-green-800'
-                                : agent.successRate >= 60
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : 'bg-red-100 text-red-800'
+                              agent.deliverySuccessRate == null
+                                ? 'bg-gray-100 text-gray-600'
+                                : agent.deliverySuccessRate >= 80
+                                  ? 'bg-green-100 text-green-800'
+                                  : agent.deliverySuccessRate >= 60
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-red-100 text-red-800'
                             }`}
                           >
-                            {agent.successRate.toFixed(1)}%
+                            {agent.deliverySuccessRate == null ? 'n/a' : `${agent.deliverySuccessRate.toFixed(1)}%`}
                           </span>
                         </td>
                       </tr>

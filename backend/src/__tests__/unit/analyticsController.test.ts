@@ -144,19 +144,15 @@ describe('Analytics Controller Error Handling', () => {
       });
     });
 
-    it('should filter performance for sales_rep users', async () => {
-      const mockPerformance = [
-        { userId: 1, name: 'Rep 1', orders: 50 },
-        { userId: 2, name: 'Rep 2', orders: 30 },
-      ];
+    it('should pass the rep login to the service, which scopes to their own row', async () => {
+      const mockPerformance = [{ userId: 1, name: 'Rep 1', orders: 50 }];
       (analyticsService.getRepPerformance as jest.Mock).mockResolvedValue(mockPerformance);
 
       mockReq.user = { id: 1, role: 'sales_rep' } as any;
       await analyticsController.getRepPerformance(mockReq as AuthRequest, mockRes as Response);
 
-      expect(mockRes.json).toHaveBeenCalledWith({
-        performance: [mockPerformance[0]], // Only their own data
-      });
+      expect((analyticsService.getRepPerformance as jest.Mock).mock.calls.pop()?.slice(1)).toEqual([1, 'sales_rep']);
+      expect(mockRes.json).toHaveBeenCalledWith({ performance: mockPerformance });
     });
   });
 
@@ -266,8 +262,8 @@ describe('Analytics Controller Error Handling', () => {
       await analyticsController.getProductPerformance(mockReq as AuthRequest, mockRes as Response);
 
       expect(analyticsService.getProductPerformance).toHaveBeenCalledWith({
-        startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31'),
+        startDate: '2024-01-01',
+        endDate: '2024-01-31',
       });
       expect(mockRes.json).toHaveBeenCalledWith({ performance: mockData });
     });
@@ -298,8 +294,8 @@ describe('Analytics Controller Error Handling', () => {
       await analyticsController.getAreaDistribution(mockReq as AuthRequest, mockRes as Response);
 
       expect(analyticsService.getAreaDistribution).toHaveBeenCalledWith({
-        startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31'),
+        startDate: '2024-01-01',
+        endDate: '2024-01-31',
       });
       expect(mockRes.json).toHaveBeenCalledWith({ distribution: mockData });
     });
@@ -320,16 +316,17 @@ describe('Analytics Controller Error Handling', () => {
 
   describe('getAgentPerformance with date filters', () => {
     it('should pass date filters to service', async () => {
-      const mockData = [{ userId: 1, userName: 'Agent 1', successRate: 85 }];
+      const mockData = [{ userId: 1, userName: 'Agent 1', deliverySuccessRate: 85 }];
       (analyticsService.getAgentPerformance as jest.Mock).mockResolvedValue(mockData);
 
       mockReq.query = { startDate: '2024-01-01', endDate: '2024-01-31' };
       await analyticsController.getAgentPerformance(mockReq as AuthRequest, mockRes as Response);
 
-      expect(analyticsService.getAgentPerformance).toHaveBeenCalledWith({
-        startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31'),
-      });
+      expect(analyticsService.getAgentPerformance).toHaveBeenCalledWith(
+        { startDate: '2024-01-01', endDate: '2024-01-31' },
+        1,
+        'admin'
+      );
       expect(mockRes.json).toHaveBeenCalledWith({ performance: mockData });
     });
   });

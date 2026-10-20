@@ -28,15 +28,8 @@ const PATTERNS: Array<[string, RegExp]> = [
 
 /** Files outside services/kpi that still compute revenue or a rate. Entry = reason. */
 const ALLOWED: Record<string, string> = {
-  // repointed in M1-T25
-  'services/analyticsService.ts': 'repointed in M1-T25',
-  'services/financialService.ts': 'repointed in M1-T25',
-  'services/orderService.ts': 'repointed in M1-T25 (order stats totals; Opus to confirm the ticket)',
-  // repointed in M1-T26
-  'mcp/tools/analytics.ts': 'repointed in M1-T26',
-  'mcp/tools/orders.ts': 'repointed in M1-T26',
-  'mcp/tools/financial.ts': 'repointed in M1-T26',
-  'mcp/tools/agents.ts': 'repointed in M1-T26',
+  // M1-T25: analyticsService.ts and orderService.ts now read the KPI layer (entries removed).
+  'services/financialService.ts': 'not delivered revenue: sums over open orders (out-for-delivery pipeline, cash position); delivered revenue in getFinancialSummary is the KPI layer (M1-T25)',
   // Not named by any M1 ticket. Opus decides: assign a ticket or leave as non-KPI.
   'services/deliveryService.ts': 'UNASSIGNED: agent successRate (completed / total deliveries)',
   'services/webhookService.ts': 'not a KPI: webhook log success rate',

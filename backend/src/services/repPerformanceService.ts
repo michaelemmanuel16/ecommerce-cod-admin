@@ -2,7 +2,7 @@ import prisma from '../utils/prisma';
 import { OrderStatus } from '@prisma/client';
 import * as Money from '../utils/money';
 import { repRates } from './kpi/reps';
-import { addDays, getStoreTimeZone, localDate, parseBound, startOfDay } from './kpi/dates';
+import { addDays, getStoreTimeZone, localDate, monthRange, parseBound, parseInclusiveBound, parseYmd } from './kpi/dates';
 import type { KpiResult } from './kpi/types';
 
 export interface RepPerformanceDetails {
@@ -61,7 +61,8 @@ export const getRepPerformanceDetails = async (
     const now = new Date();
     const rangeFrom = startDate ? parseBound(startDate, 'from', zone) : new Date(0);
     const rangeTo = endDate ? parseBound(endDate, 'to', zone) : addDays(now, 1);
-    const mtdFrom = startOfDay(`${localDate(now, zone).slice(0, 8)}01`, zone);
+    const { year, month } = parseYmd(localDate(now, zone));
+    const mtdFrom = monthRange(year, month, zone).from;
 
     // Build where clause for filtering users
     const userWhere: any = {
@@ -78,10 +79,10 @@ export const getRepPerformanceDetails = async (
     if (startDate || endDate) {
       orderWhere.createdAt = {};
       if (startDate) {
-        orderWhere.createdAt.gte = new Date(startDate);
+        orderWhere.createdAt.gte = rangeFrom;
       }
       if (endDate) {
-        orderWhere.createdAt.lte = new Date(endDate);
+        orderWhere.createdAt.lte = parseInclusiveBound(endDate, 'to', zone);
       }
     }
 

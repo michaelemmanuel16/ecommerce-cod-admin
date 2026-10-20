@@ -1,6 +1,7 @@
 import { Prisma, DeliveryProofType, OrderStatus } from '@prisma/client';
 import { transitionOrder, actorOf } from './orderStateMachine';
-import { resolveTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import { getStoreTimeZone, parseInclusiveBound } from './kpi/dates';
 import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
@@ -726,18 +727,23 @@ export class DeliveryService {
     const TERMINAL_STATUSES: OrderStatus[] = ['delivered', 'failed_delivery'];
 
     const hasDateFilter = !!(filters?.startDate || filters?.endDate);
+    const zone = getStoreTimeZone(getTenantId());
     const dateCondition: Prisma.OrderWhereInput = {};
     if (hasDateFilter) {
       dateCondition.createdAt = {};
       if (filters!.startDate) {
-        const parsed = new Date(filters!.startDate);
-        if (isNaN(parsed.getTime())) throw new AppError('Invalid startDate', 400);
-        dateCondition.createdAt.gte = parsed;
+        try {
+          dateCondition.createdAt.gte = parseInclusiveBound(filters!.startDate, 'from', zone);
+        } catch {
+          throw new AppError('Invalid startDate', 400);
+        }
       }
       if (filters!.endDate) {
-        const parsed = new Date(filters!.endDate);
-        if (isNaN(parsed.getTime())) throw new AppError('Invalid endDate', 400);
-        dateCondition.createdAt.lte = parsed;
+        try {
+          dateCondition.createdAt.lte = parseInclusiveBound(filters!.endDate, 'to', zone);
+        } catch {
+          throw new AppError('Invalid endDate', 400);
+        }
       }
     }
 

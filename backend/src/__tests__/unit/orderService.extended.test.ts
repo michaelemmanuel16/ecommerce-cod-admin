@@ -45,6 +45,9 @@ jest.mock('../../services/orderStateMachine', () => ({
   transitionOrder: jest.fn(),
 }));
 
+jest.mock('../../services/kpi/revenue');
+import { revenueResult } from '../mocks/kpiResults';
+import { deliveredRevenue } from '../../services/kpi/revenue';
 import { prismaMock } from '../mocks/prisma.mock';
 import orderService from '../../services/orderService';
 import { transitionOrder, OrderTransitionError } from '../../services/orderStateMachine';
@@ -400,9 +403,8 @@ describe('OrderService (extended branch coverage)', () => {
     it('applies date filter when start and end dates are provided', async () => {
       (prismaMock.order.count as any).mockResolvedValue(50);
       (prismaMock.order.groupBy as any).mockResolvedValue([]);
-      (prismaMock.order.aggregate as any)
-        .mockResolvedValueOnce({ _sum: { totalAmount: 1000 } } as any)
-        .mockResolvedValueOnce({ _avg: { totalAmount: 20 } } as any);
+      (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mockResolvedValue(revenueResult('1000.00', 20));
+      (prismaMock.order.aggregate as any).mockResolvedValueOnce({ _avg: { totalAmount: 20 } } as any);
 
       const result = await orderService.getOrderStats({
         startDate: new Date('2024-01-01'),
@@ -414,9 +416,8 @@ describe('OrderService (extended branch coverage)', () => {
     it('handles null totalAmount and avgOrderValue', async () => {
       (prismaMock.order.count as any).mockResolvedValue(0);
       (prismaMock.order.groupBy as any).mockResolvedValue([]);
-      (prismaMock.order.aggregate as any)
-        .mockResolvedValueOnce({ _sum: { totalAmount: null } } as any)
-        .mockResolvedValueOnce({ _avg: { totalAmount: null } } as any);
+      (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mockResolvedValue(revenueResult('0.00', 0));
+      (prismaMock.order.aggregate as any).mockResolvedValueOnce({ _avg: { totalAmount: null } } as any);
 
       const result = await orderService.getOrderStats({});
       expect(Money.toApi(result.totalRevenue)).toBe('0.00');

@@ -9,9 +9,23 @@ jest.mock('../../utils/logger', () => ({
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
+jest.mock('../../services/kpi/revenue');
+jest.mock('../../services/kpi/rates', () => ({ ...jest.requireActual<object>('../../services/kpi/rates'), rates: jest.fn() }));
+jest.mock('../../services/kpi/reps');
+jest.mock('../../services/kpi/partners');
+jest.mock('../../services/kpi/products');
+
 import { prismaMock } from '../mocks/prisma.mock';
+import { useTestTenant } from '../mocks/tenant.mock';
+import { ratesResult, repRatesResult, repRevenueResult, revenueResult } from '../mocks/kpiResults';
 import { AnalyticsService } from '../../services/analyticsService';
-import { tenantStorage } from '../../utils/tenantContext';
+import { deliveredRevenue, deliveredRevenueByArea, deliveredRevenueByDay, deliveredRevenueByRep } from '../../services/kpi/revenue';
+import { rates } from '../../services/kpi/rates';
+import { repRates } from '../../services/kpi/reps';
+import { partnerRates } from '../../services/kpi/partners';
+import { productDeliveredUnits } from '../../services/kpi/products';
+
+const mocked = <T extends (...args: any[]) => any>(fn: T) => fn as unknown as jest.MockedFunction<T>;
 
 const makeOrder = (overrides: any = {}) => ({
   id: 1,
@@ -26,6 +40,7 @@ const makeOrder = (overrides: any = {}) => ({
 
 describe('AnalyticsService (extended branch coverage)', () => {
   let analyticsService: AnalyticsService;
+  useTestTenant();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -36,27 +51,35 @@ describe('AnalyticsService (extended branch coverage)', () => {
   describe('getDashboardMetrics - user scope filtering', () => {
     const setupMetricMocks = () => {
       (prismaMock.order.count as any).mockResolvedValue(10);
-      (prismaMock.accountTransaction.aggregate as any).mockResolvedValue({ _sum: { creditAmount: 1000, debitAmount: 0 } } as any);
+      mocked(deliveredRevenue).mockResolvedValue(revenueResult('1000.00', 4));
+      mocked(rates).mockResolvedValue(ratesResult(70, 60, 30));
       (prismaMock.user.count as any).mockResolvedValue(3);
       (prismaMock.delivery.findMany as any).mockResolvedValue([] as any);
     };
 
-    it('scopes metrics for sales_rep role', async () => {
+    it('scopes metrics for sales_rep role (orders, revenue and rates)', async () => {
       setupMetricMocks();
-      const result = await analyticsService.getDashboardMetrics(undefined, 10, 'sales_rep');
-      expect(result).toBeDefined();
+      await analyticsService.getDashboardMetrics(undefined, 10, 'sales_rep');
+      expect((prismaMock.order.count as any).mock.calls[0][0].where.customerRepId).toBe(10);
+      expect(mocked(deliveredRevenue).mock.calls[0][3]).toEqual({ customerRepId: 10, deliveryAgentId: undefined });
+      expect(mocked(rates).mock.calls[0][3]).toEqual({ repId: 10 });
     });
 
-    it('scopes metrics for delivery_agent role', async () => {
+    it('scopes metrics for delivery_agent role (orders, revenue and rates)', async () => {
       setupMetricMocks();
-      const result = await analyticsService.getDashboardMetrics(undefined, 20, 'delivery_agent');
-      expect(result).toBeDefined();
+      await analyticsService.getDashboardMetrics(undefined, 20, 'delivery_agent');
+      expect((prismaMock.order.count as any).mock.calls[0][0].where.deliveryAgentId).toBe(20);
+      expect(mocked(deliveredRevenue).mock.calls[0][3]).toEqual({ customerRepId: undefined, deliveryAgentId: 20 });
+      expect(mocked(rates).mock.calls[0][3]).toEqual({ partnerId: 20 });
     });
 
     it('shows all data for admin role', async () => {
       setupMetricMocks();
-      const result = await analyticsService.getDashboardMetrics(undefined, 1, 'admin');
-      expect(result).toBeDefined();
+      await analyticsService.getDashboardMetrics(undefined, 1, 'admin');
+      const where = (prismaMock.order.count as any).mock.calls[0][0].where;
+      expect(where.customerRepId).toBeUndefined();
+      expect(where.deliveryAgentId).toBeUndefined();
+      expect(mocked(rates).mock.calls[0][3]).toEqual({});
     });
 
     it('applies custom date range filters', async () => {
@@ -64,13 +87,16 @@ describe('AnalyticsService (extended branch coverage)', () => {
       const result = await analyticsService.getDashboardMetrics(
         { startDate: '2024-01-01', endDate: '2024-12-31' }
       );
-      expect(result).toBeDefined();
+      expect(result.totalRevenue).toBe('1000.00');
+      expect(mocked(deliveredRevenue).mock.calls[0][1]).toEqual(new Date('2024-01-01T00:00:00.000Z'));
+      expect(mocked(deliveredRevenue).mock.calls[0][2]).toEqual(new Date('2025-01-01T00:00:00.000Z'));
     });
 
     it('uses month-to-date when no date filter provided', async () => {
       setupMetricMocks();
       const result = await analyticsService.getDashboardMetrics();
-      expect(result).toBeDefined();
+      expect(result.deliveredOrders).toBe(4);
+      expect(mocked(deliveredRevenue).mock.calls[0][1].getUTCDate()).toBe(1);
     });
   });
 
@@ -78,26 +104,41 @@ describe('AnalyticsService (extended branch coverage)', () => {
   describe('getSalesTrends - user scoping', () => {
     beforeEach(() => {
       (prismaMock.order.findMany as any).mockResolvedValue([]);
+      mocked(deliveredRevenueByDay).mockResolvedValue([]);
     });
 
     it('scopes trends for sales_rep', async () => {
-      const result = await analyticsService.getSalesTrends('week', undefined, 10, 'sales_rep');
-      expect(result).toBeDefined();
+      const result = await analyticsService.getSalesTrends({ period: 'daily' }, 10, 'sales_rep');
+      expect(result).toEqual([]);
+      expect((prismaMock.order.findMany as any).mock.calls[0][0].where.customerRepId).toBe(10);
+      expect(mocked(deliveredRevenueByDay).mock.calls[0][3]).toEqual({ customerRepId: 10, deliveryAgentId: undefined });
     });
 
     it('scopes trends for delivery_agent', async () => {
-      const result = await analyticsService.getSalesTrends('week', undefined, 20, 'delivery_agent');
-      expect(result).toBeDefined();
+      const result = await analyticsService.getSalesTrends({ period: 'daily' }, 20, 'delivery_agent');
+      expect(result).toEqual([]);
+      expect((prismaMock.order.findMany as any).mock.calls[0][0].where.deliveryAgentId).toBe(20);
+      expect(mocked(deliveredRevenueByDay).mock.calls[0][3]).toEqual({ customerRepId: undefined, deliveryAgentId: 20 });
     });
 
     it('returns trends without userId (no filter)', async () => {
-      const result = await analyticsService.getSalesTrends('week');
-      expect(result).toBeDefined();
+      const result = await analyticsService.getSalesTrends({ period: 'daily' });
+      expect(result).toEqual([]);
+      expect((prismaMock.order.findMany as any).mock.calls[0][0].where.customerRepId).toBeUndefined();
     });
 
-    it('groups by month when period is month', async () => {
-      const result = await analyticsService.getSalesTrends('month');
-      expect(result).toBeDefined();
+    it('groups by month when period is monthly', async () => {
+      (prismaMock.order.findMany as any).mockResolvedValue([{ createdAt: new Date('2024-03-05T10:00:00Z') }]);
+      const result = await analyticsService.getSalesTrends({ period: 'monthly', startDate: '2024-03-01', endDate: '2024-03-31' });
+      expect(result).toEqual([{ date: '2024-03', orders: 1, revenue: '0.00', delivered: 0 }]);
+    });
+
+    it('uses the last `days` days when no range is given', async () => {
+      await analyticsService.getSalesTrends({ days: 7 });
+      const createdAt = (prismaMock.order.findMany as any).mock.calls[0][0].where.createdAt;
+      const days = (createdAt.lt.getTime() - createdAt.gte.getTime()) / 86400000;
+      expect(days).toBeGreaterThan(7);
+      expect(days).toBeLessThan(8.01);
     });
   });
 
@@ -262,22 +303,11 @@ describe('AnalyticsService (extended branch coverage)', () => {
 
   // ───────────────────────────── getRepPerformance - with date filters ─────────────────────────────
   describe('getRepPerformance - date filtering', () => {
-    const mockRep = {
-      id: 1,
-      firstName: 'Kwame',
-      lastName: 'Rep',
-      assignedOrdersAsRep: [
-        {
-          id: 1, status: 'delivered', totalAmount: 300,
-          createdAt: new Date('2024-01-01'), updatedAt: new Date('2024-01-02'), commissionPaid: false,
-        },
-      ],
-    };
-
     const setupRepMocks = () => {
-      (prismaMock.user.findMany as any).mockResolvedValue([mockRep] as any);
-      (prismaMock.order.count as any).mockResolvedValue(0);
-      (prismaMock.order.aggregate as any).mockResolvedValue({ _count: { id: 1 }, _sum: { totalAmount: 300 } } as any);
+      (prismaMock.user.findMany as any).mockResolvedValue([{ id: 1, firstName: 'Kwame', lastName: 'Rep' }] as any);
+      mocked(repRates).mockResolvedValue(repRatesResult({ 1: { placed: 4, confirmed: 3, confirmationRate: 75, deliveredFromConfirmedRate: 50 } }));
+      mocked(deliveredRevenueByRep).mockResolvedValue(repRevenueResult({ 1: { revenue: '300.00', deliveredOrders: 1 } }));
+      (prismaMock.order.groupBy as any).mockResolvedValue([]);
     };
 
     it('applies custom date range to rep performance', async () => {
@@ -285,31 +315,34 @@ describe('AnalyticsService (extended branch coverage)', () => {
       const result = await analyticsService.getRepPerformance(
         { startDate: '2024-01-01', endDate: '2024-01-31' }
       );
-      expect(result).toBeDefined();
+      expect(result[0].confirmationRate).toBe(75);
+      expect(mocked(repRates).mock.calls[0][1]).toEqual(new Date('2024-01-01T00:00:00.000Z'));
+      expect(mocked(repRates).mock.calls[0][2]).toEqual(new Date('2024-02-01T00:00:00.000Z'));
     });
 
     it('scopes rep performance for specific user (sales_rep)', async () => {
       setupRepMocks();
-      const result = await analyticsService.getRepPerformance(undefined, 1, 'sales_rep');
-      expect(result).toBeDefined();
+      await analyticsService.getRepPerformance(undefined, 1, 'sales_rep');
+      expect((prismaMock.user.findMany as any).mock.calls[0][0].where).toMatchObject({ role: 'sales_rep', id: 1 });
     });
 
     it('returns MTD performance with no filters', async () => {
       setupRepMocks();
       const result = await analyticsService.getRepPerformance();
-      expect(result).toBeDefined();
+      expect(result).toHaveLength(1);
+      expect(mocked(repRates).mock.calls[0][1].getUTCDate()).toBe(1);
     });
 
     it('applies only startDate filter', async () => {
       setupRepMocks();
-      const result = await analyticsService.getRepPerformance({ startDate: '2024-01-01' });
-      expect(result).toBeDefined();
+      await analyticsService.getRepPerformance({ startDate: '2024-01-01' });
+      expect(mocked(repRates).mock.calls[0][1]).toEqual(new Date('2024-01-01T00:00:00.000Z'));
     });
 
     it('applies only endDate filter', async () => {
       setupRepMocks();
-      const result = await analyticsService.getRepPerformance({ endDate: '2024-12-31' });
-      expect(result).toBeDefined();
+      await analyticsService.getRepPerformance({ endDate: '2024-12-31' });
+      expect(mocked(repRates).mock.calls[0][2]).toEqual(new Date('2025-01-01T00:00:00.000Z'));
     });
   });
 
@@ -317,82 +350,77 @@ describe('AnalyticsService (extended branch coverage)', () => {
   describe('getAgentPerformance - date filtering', () => {
     beforeEach(() => {
       (prismaMock.user.findMany as any).mockResolvedValue([]);
-      (prismaMock.delivery.findMany as any).mockResolvedValue([]);
+      (prismaMock.order.groupBy as any).mockResolvedValue([]);
+      mocked(partnerRates).mockResolvedValue([]);
     });
 
     it('applies date filters to agent performance', async () => {
       const result = await analyticsService.getAgentPerformance({
-        startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31'),
+        startDate: '2024-01-01',
+        endDate: '2024-01-31',
       });
-      expect(result).toBeDefined();
+      expect(result).toEqual([]);
+      expect(mocked(partnerRates).mock.calls[0][1]).toEqual(new Date('2024-01-01T00:00:00.000Z'));
+      expect(mocked(partnerRates).mock.calls[0][2]).toEqual(new Date('2024-02-01T00:00:00.000Z'));
     });
 
     it('returns performance without date filters', async () => {
       const result = await analyticsService.getAgentPerformance();
-      expect(result).toBeDefined();
+      expect(result).toEqual([]);
+      expect(mocked(partnerRates).mock.calls[0][1].getUTCDate()).toBe(1);
     });
   });
 
   // ───────────────────────────── getProductPerformance - date filters ─────────────────────────────
   describe('getProductPerformance', () => {
     beforeEach(() => {
-      (prismaMock.orderItem.groupBy as any).mockResolvedValue([]);
+      mocked(productDeliveredUnits).mockResolvedValue({ units: {} as any, lineRevenue: {} as any, byProduct: [] });
       (prismaMock.product.findMany as any).mockResolvedValue([]);
     });
 
     it('returns product performance with both date filters', async () => {
-      const result = await analyticsService.getProductPerformance({
-        startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31'),
-      });
-      expect(result).toBeDefined();
+      const result = await analyticsService.getProductPerformance({ startDate: '2024-01-01', endDate: '2024-01-31' });
+      expect(result).toEqual([]);
+      const [, , from, to] = mocked(productDeliveredUnits).mock.calls[0];
+      expect([from, to]).toEqual([new Date('2024-01-01T00:00:00.000Z'), new Date('2024-02-01T00:00:00.000Z')]);
     });
 
-    it('scopes the order item groupBy to the tenant through the parent order', async () => {
-      const spy = jest.spyOn(tenantStorage, 'getStore').mockReturnValue({ tenantId: 'tenant-1' });
+    it('asks the KPI layer for the tenant', async () => {
       await analyticsService.getProductPerformance();
-      spy.mockRestore();
-      const where = (prismaMock.orderItem.groupBy as any).mock.calls[0][0].where;
-      expect(where.order).toEqual({ deletedAt: null, tenantId: 'tenant-1' });
+      expect(mocked(productDeliveredUnits).mock.calls[0][0]).toBe('tenant-test');
     });
 
     it('returns product performance with only startDate', async () => {
-      const result = await analyticsService.getProductPerformance({ startDate: new Date('2024-01-01') });
-      expect(result).toBeDefined();
+      await analyticsService.getProductPerformance({ startDate: '2024-01-01' });
+      expect(mocked(productDeliveredUnits).mock.calls[0][2]).toEqual(new Date('2024-01-01T00:00:00.000Z'));
     });
 
     it('returns product performance with only endDate', async () => {
-      const result = await analyticsService.getProductPerformance({ endDate: new Date('2024-12-31') });
-      expect(result).toBeDefined();
+      await analyticsService.getProductPerformance({ endDate: '2024-12-31' });
+      expect(mocked(productDeliveredUnits).mock.calls[0][3]).toEqual(new Date('2025-01-01T00:00:00.000Z'));
     });
 
-    it('returns product performance without date filter', async () => {
-      const result = await analyticsService.getProductPerformance();
-      expect(result).toBeDefined();
+    it('returns product performance without date filter (month to date)', async () => {
+      await analyticsService.getProductPerformance();
+      expect(mocked(productDeliveredUnits).mock.calls[0][2].getUTCDate()).toBe(1);
     });
   });
 
   // ───────────────────────────── getAreaDistribution - date filters ─────────────────────────────
   describe('getAreaDistribution', () => {
     beforeEach(() => {
-      (prismaMock.order.groupBy as any).mockResolvedValue([
-        { deliveryArea: 'Accra', _count: { deliveryArea: 30 }, _sum: { totalAmount: 6000 } },
-      ] as any);
-      (prismaMock.order.count as any).mockResolvedValue(30);
+      mocked(deliveredRevenueByArea).mockResolvedValue([{ area: 'Accra', revenue: '6000.00', deliveredOrders: 30 }]);
     });
 
     it('returns area distribution with date filter', async () => {
-      const result = await analyticsService.getAreaDistribution({
-        startDate: new Date('2024-01-01'),
-        endDate: new Date('2024-01-31'),
-      });
-      expect(result).toBeDefined();
+      const result = await analyticsService.getAreaDistribution({ startDate: '2024-01-01', endDate: '2024-01-31' });
+      expect(result).toEqual([{ area: 'Accra', orderCount: 30, revenue: '6000.00' }]);
+      expect(mocked(deliveredRevenueByArea).mock.calls[0][2]).toEqual(new Date('2024-02-01T00:00:00.000Z'));
     });
 
     it('returns area distribution without date filter', async () => {
       const result = await analyticsService.getAreaDistribution();
-      expect(result).toBeDefined();
+      expect(result).toHaveLength(1);
     });
   });
 });

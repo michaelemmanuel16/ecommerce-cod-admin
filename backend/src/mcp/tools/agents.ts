@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { mcpJson, mcpError, getDateRange } from '../utils';
+import { mcpJson, mcpError, getStoreRange, inclusiveEnd } from '../utils';
+import { resolveTenantId } from '../../utils/tenantContext';
+import { partnerRates } from '../../services/kpi/partners';
 
 const agentsStatusSchema = z.object({});
 
@@ -20,8 +22,7 @@ export function registerAgentTools(
     agentsStatusSchema.shape,
     wrapHandler(async (_args: z.infer<typeof agentsStatusSchema>) => {
       try {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
+        const today = getStoreRange('today');
 
         // Batch queries: 3 groupBy queries instead of N*3 per-agent queries
         const [agents, pendingCounts, activeCounts, completedTodayCounts] = await Promise.all([
@@ -41,7 +42,7 @@ export function registerAgentTools(
           }),
           prisma.order.groupBy({
             by: ['deliveryAgentId'],
-            where: { status: 'delivered', deletedAt: null, updatedAt: { gte: todayStart } },
+            where: { status: 'delivered', deletedAt: null, deliveryDate: { gte: today.from, lt: today.to } },
             _count: { id: true },
           }),
         ]);
@@ -78,59 +79,45 @@ export function registerAgentTools(
 
   server.tool(
     'agents_performance',
-    'Agent performance metrics: deliveries completed, success rate, average delivery time for a period.',
+    'Delivery agent performance for orders placed in a period (store-zone days): assigned, delivered, failed, returned, closed, and deliverySuccessRate (delivered / closed, a percent, null when the agent has no closed order).',
     agentsPerformanceSchema.shape,
     wrapHandler(async (args: z.infer<typeof agentsPerformanceSchema>) => {
       try {
         const parsed = agentsPerformanceSchema.parse(args);
-        const { start, end } = getDateRange(parsed.period);
-
-        const dateFilter = { updatedAt: { gte: start, lte: end } };
+        const { from, to } = getStoreRange(parsed.period);
 
         // Get agents to report on
         const agentWhere: any = { role: 'delivery_agent', isActive: true };
         if (parsed.agentId) agentWhere.id = parsed.agentId;
 
-        const agents = await prisma.user.findMany({
-          where: agentWhere,
-          select: { id: true, firstName: true, lastName: true },
-        });
-
-        const agentPerf = await Promise.all(
-          agents.map(async (agent) => {
-            const baseWhere = { deliveryAgentId: agent.id, deletedAt: null, ...dateFilter };
-
-            const [delivered, failed, returned, total] = await Promise.all([
-              prisma.order.count({ where: { ...baseWhere, status: 'delivered' } }),
-              prisma.order.count({ where: { ...baseWhere, status: 'failed_delivery' } }),
-              prisma.order.count({ where: { ...baseWhere, status: 'returned' } }),
-              prisma.order.count({
-                where: {
-                  deliveryAgentId: agent.id,
-                  deletedAt: null,
-                  status: { in: ['delivered', 'failed_delivery', 'returned'] },
-                  ...dateFilter,
-                },
-              }),
-            ]);
-
-            const successRate = total > 0 ? parseFloat(((delivered / total) * 100).toFixed(1)) : 0;
-
-            return {
-              id: agent.id,
-              name: `${agent.firstName} ${agent.lastName}`,
-              delivered,
-              failed,
-              returned,
-              total,
-              successRate: `${successRate}%`,
-            };
+        const [agents, partners] = await Promise.all([
+          prisma.user.findMany({
+            where: agentWhere,
+            select: { id: true, firstName: true, lastName: true },
           }),
-        );
+          // Delivery success rate from the KPI layer: orders placed in the range, outcome by current status (D21)
+          partnerRates(resolveTenantId(), from, to),
+        ]);
+        const byPartner = new Map(partners.map((p) => [p.partnerId, p]));
+
+        const agentPerf = agents.map((agent) => {
+          const row = byPartner.get(agent.id);
+          const detail = row?.deliverySuccessRate.detail ?? {};
+          return {
+            id: agent.id,
+            name: `${agent.firstName} ${agent.lastName}`,
+            assigned: row?.assigned ?? 0,
+            delivered: detail.delivered ?? 0,
+            failed: detail.failed ?? 0,
+            returned: detail.returned ?? 0,
+            closed: detail.closed ?? 0,
+            deliverySuccessRate: row?.deliverySuccessRate.value ?? null,
+          };
+        });
 
         return mcpJson({
           period: parsed.period,
-          dateRange: { from: start.toISOString(), to: end.toISOString() },
+          dateRange: { from: from.toISOString(), to: inclusiveEnd(to).toISOString() },
           agents: agentPerf.sort((a, b) => b.delivered - a.delivered),
         });
       } catch (err) {

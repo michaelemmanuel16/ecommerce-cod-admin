@@ -16,6 +16,8 @@ import { leadershipFixtureChecks } from './fixtureChecks/leadership';
 import { productsFixtureChecks } from './fixtureChecks/products';
 import { repsFixtureChecks } from './fixtureChecks/reps';
 import { partnersFixtureChecks } from './fixtureChecks/partners';
+import { endpointsFixtureChecks } from './fixtureChecks/endpoints';
+import { mcpFixtureChecks } from './fixtureChecks/mcp';
 
 jest.setTimeout(180_000);
 
@@ -226,3 +228,5 @@ leadershipFixtureChecks(() => tenantId);
 productsFixtureChecks(() => tenantId);
 repsFixtureChecks(() => tenantId);
 partnersFixtureChecks(() => tenantId);
+endpointsFixtureChecks(() => tenantId);
+mcpFixtureChecks(() => tenantId);

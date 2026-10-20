@@ -1,10 +1,12 @@
 import { z } from 'zod';
-import { getTenantId } from '../../utils/tenantContext';
+import { resolveTenantId } from '../../utils/tenantContext';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { GL_ACCOUNTS } from '../../config/glAccounts';
 import { mcpMoneyJson, mcpError } from '../utils';
 import * as Money from '../../utils/money';
+import { deliveredRevenue } from '../../services/kpi/revenue';
+import { rates } from '../../services/kpi/rates';
+import { endOfDay, getStoreTimeZone, localDate, monthRange, parseYmd, shiftYmd, startOfDay } from '../../services/kpi/dates';
 
 const dailySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -24,57 +26,29 @@ export function registerAnalyticsTools(
 ) {
   server.tool(
     'analytics_daily',
-    'Daily business summary: orders, revenue, deliveries, returns, top products. Defaults to today.',
+    'Daily business summary for a store-zone day: orders placed, delivered revenue (2-decimal string) and delivered count (by delivery date), confirmationRate, deliverySuccessRate, orderToCashYield (percents, null when nothing to divide), status counts, top products. Defaults to today.',
     dailySchema.shape,
     wrapHandler(async (args: z.infer<typeof dailySchema>) => {
       try {
         const parsed = dailySchema.parse(args);
-        const date = parsed.date ? new Date(parsed.date) : new Date();
-        const start = new Date(date);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(date);
-        end.setHours(23, 59, 59, 999);
+        const zone = getStoreTimeZone();
+        const day = parsed.date ?? localDate(new Date(), zone);
+        const start = startOfDay(day, zone);
+        const end = endOfDay(day, zone); // exclusive
 
-        const dateFilter = { createdAt: { gte: start, lte: end } };
-        const tenantId = getTenantId();
+        const tenantId = resolveTenantId();
 
-        const [orders, glRevenue, deliveredCount, statusCounts, topProducts] = await Promise.all([
-          prisma.order.count({ where: { ...dateFilter, deletedAt: null } }),
-          // Revenue from GL (matches dashboard)
-          prisma.accountTransaction.aggregate({
-            where: {
-              account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
-              journalEntry: {
-                isVoided: false,
-                entryDate: { gte: start, lte: end },
-              },
-            },
-            _sum: { creditAmount: true, debitAmount: true },
-          }),
-          // Delivered count by deliveryDate (matches dashboard)
-          prisma.order.count({
-            where: {
-              deletedAt: null,
-              status: 'delivered',
-              deliveryDate: { gte: start, lte: end },
-            },
-          }),
-          prisma.order.groupBy({
-            by: ['status'],
-            where: { ...dateFilter, deletedAt: null },
-            _count: { id: true },
-          }),
+        const [{ stats, statusCounts }, topProducts] = await Promise.all([
+          periodStats(tenantId, start, end),
           prisma.orderItem.groupBy({
             by: ['productId'],
             // OrderItem has no tenantId: scope it through the parent order.
-            where: { order: { ...dateFilter, deletedAt: null, ...(tenantId ? { tenantId } : {}) } },
+            where: { order: { createdAt: { gte: start, lt: end }, deletedAt: null, tenantId } },
             _sum: { quantity: true },
             orderBy: { _sum: { quantity: 'desc' } },
             take: 5,
           }),
         ]);
-
-        const revenue = Money.sub(Money.orZero(glRevenue._sum.creditAmount), Money.orZero(glRevenue._sum.debitAmount));
 
         // Resolve product names for top products
         const productIds = topProducts.map((p) => p.productId);
@@ -87,11 +61,9 @@ export function registerAnalyticsTools(
         const productMap = new Map(products.map((p) => [p.id, p.name]));
 
         return mcpMoneyJson({
-          date: start.toISOString().split('T')[0],
-          totalOrders: orders,
-          revenue,
+          date: day,
+          ...stats,
           statusBreakdown: Object.fromEntries(statusCounts.map((s) => [s.status, s._count.id])),
-          delivered: deliveredCount,
           returned: statusCounts.find((s) => s.status === 'returned')?._count.id ?? 0,
           cancelled: statusCounts.find((s) => s.status === 'cancelled')?._count.id ?? 0,
           failedDelivery: statusCounts.find((s) => s.status === 'failed_delivery')?._count.id ?? 0,
@@ -108,41 +80,37 @@ export function registerAnalyticsTools(
 
   server.tool(
     'analytics_weekly',
-    'Weekly business summary with comparison to prior week. Defaults to current week.',
+    'Weekly business summary (Monday to Sunday, store-zone days) with comparison to prior week: orders placed, delivered revenue (2-decimal string), delivered count, confirmationRate, deliverySuccessRate, orderToCashYield. Changes in the three rates are in percentage points ("pp"), null when either week has no value. Defaults to current week.',
     weeklySchema.shape,
     wrapHandler(async (args: z.infer<typeof weeklySchema>) => {
       try {
         const parsed = weeklySchema.parse(args);
-        const refDate = parsed.weekOf ? new Date(parsed.weekOf) : new Date();
+        const zone = getStoreTimeZone();
+        const tenantId = resolveTenantId();
+        const ref = parsed.weekOf ?? localDate(new Date(), zone);
 
-        // Current week: Mon-Sun
-        const dayOfWeek = refDate.getDay();
-        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        const thisWeekStart = new Date(refDate);
-        thisWeekStart.setDate(thisWeekStart.getDate() + mondayOffset);
-        thisWeekStart.setHours(0, 0, 0, 0);
-        const thisWeekEnd = new Date(thisWeekStart);
-        thisWeekEnd.setDate(thisWeekEnd.getDate() + 6);
-        thisWeekEnd.setHours(23, 59, 59, 999);
+        // Current week: Mon-Sun, in store-zone days
+        const { year, month, day } = parseYmd(ref);
+        const dayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+        const thisMonday = shiftYmd(ref, dayOfWeek === 0 ? -6 : 1 - dayOfWeek);
+        const thisSunday = shiftYmd(thisMonday, 6);
+        const lastMonday = shiftYmd(thisMonday, -7);
+        const lastSunday = shiftYmd(thisMonday, -1);
 
-        // Prior week
-        const lastWeekStart = new Date(thisWeekStart);
-        lastWeekStart.setDate(lastWeekStart.getDate() - 7);
-        const lastWeekEnd = new Date(thisWeekStart);
-        lastWeekEnd.setMilliseconds(-1);
-
-        const [thisWeek, lastWeek] = await Promise.all([
-          getWeekStats(thisWeekStart, thisWeekEnd),
-          getWeekStats(lastWeekStart, lastWeekEnd),
+        const [{ stats: thisWeek }, { stats: lastWeek }] = await Promise.all([
+          periodStats(tenantId, startOfDay(thisMonday, zone), endOfDay(thisSunday, zone)),
+          periodStats(tenantId, startOfDay(lastMonday, zone), endOfDay(lastSunday, zone)),
         ]);
 
         return mcpMoneyJson({
-          currentWeek: { from: thisWeekStart.toISOString().split('T')[0], to: thisWeekEnd.toISOString().split('T')[0], ...thisWeek },
-          priorWeek: { from: lastWeekStart.toISOString().split('T')[0], to: lastWeekEnd.toISOString().split('T')[0], ...lastWeek },
+          currentWeek: { from: thisMonday, to: thisSunday, ...thisWeek },
+          priorWeek: { from: lastMonday, to: lastSunday, ...lastWeek },
           change: {
             orders: thisWeek.totalOrders - lastWeek.totalOrders,
-            revenue: Money.sub(thisWeek.revenue, lastWeek.revenue),
-            deliveryRate: `${(thisWeek.deliveryRate - lastWeek.deliveryRate).toFixed(1)}pp`,
+            revenue: Money.toApi(Money.sub(thisWeek.revenue, lastWeek.revenue)),
+            confirmationRate: pointsChange(thisWeek.confirmationRate, lastWeek.confirmationRate),
+            deliverySuccessRate: pointsChange(thisWeek.deliverySuccessRate, lastWeek.deliverySuccessRate),
+            orderToCashYield: pointsChange(thisWeek.orderToCashYield, lastWeek.orderToCashYield),
           },
         });
       } catch (err) {
@@ -153,46 +121,42 @@ export function registerAnalyticsTools(
 
   server.tool(
     'analytics_monthly',
-    'Monthly business summary with growth metrics. Defaults to current month.',
+    'Monthly business summary with growth metrics (store-zone calendar month): orders placed, delivered revenue (2-decimal string), delivered count, confirmationRate, deliverySuccessRate, orderToCashYield. Defaults to current month.',
     monthlySchema.shape,
     wrapHandler(async (args: z.infer<typeof monthlySchema>) => {
       try {
         const parsed = monthlySchema.parse(args);
+        const zone = getStoreTimeZone();
+        const tenantId = resolveTenantId();
         let year: number, month: number;
         if (parsed.month) {
           [year, month] = parsed.month.split('-').map(Number);
         } else {
-          const now = new Date();
-          year = now.getFullYear();
-          month = now.getMonth() + 1;
+          ({ year, month } = parseYmd(localDate(new Date(), zone)));
         }
 
-        const start = new Date(year, month - 1, 1);
-        const end = new Date(year, month, 0, 23, 59, 59, 999);
+        const { from: start, to: end } = monthRange(year, month, zone);
+        const prior = monthRange(year, month - 1, zone); // month 0 rolls back to December
 
-        // Prior month
-        const priorStart = new Date(year, month - 2, 1);
-        const priorEnd = new Date(year, month - 1, 0, 23, 59, 59, 999);
-
-        const [current, prior, newCustomers] = await Promise.all([
-          getWeekStats(start, end),
-          getWeekStats(priorStart, priorEnd),
-          prisma.customer.count({ where: { createdAt: { gte: start, lte: end } } }),
+        const [{ stats: current }, { stats: priorStats }, newCustomers] = await Promise.all([
+          periodStats(tenantId, start, end),
+          periodStats(tenantId, prior.from, prior.to),
+          prisma.customer.count({ where: { createdAt: { gte: start, lt: end } } }),
         ]);
 
-        const orderGrowth = prior.totalOrders > 0
-          ? (((current.totalOrders - prior.totalOrders) / prior.totalOrders) * 100).toFixed(1)
+        const orderGrowth = priorStats.totalOrders > 0
+          ? (((current.totalOrders - priorStats.totalOrders) / priorStats.totalOrders) * 100).toFixed(1)
           : 'N/A';
 
         return mcpMoneyJson({
           month: `${year}-${String(month).padStart(2, '0')}`,
           ...current,
           newCustomers,
-          priorMonth: prior,
+          priorMonth: priorStats,
           growth: {
             orders: `${orderGrowth}%`,
-            revenue: prior.revenue.gt(0)
-              ? `${Money.percent(Money.sub(current.revenue, prior.revenue), prior.revenue).toFixed(1)}%`
+            revenue: Money.gt(priorStats.revenue, 0)
+              ? `${Money.percent(Money.sub(current.revenue, priorStats.revenue), priorStats.revenue).toFixed(1)}%`
               : 'N/A',
           },
         });
@@ -203,38 +167,33 @@ export function registerAnalyticsTools(
   );
 }
 
-async function getWeekStats(start: Date, end: Date) {
-  const dateFilter = { createdAt: { gte: start, lte: end } };
-
-  const [total, delivered, glRevenue] = await Promise.all([
-    prisma.order.count({ where: { ...dateFilter, deletedAt: null } }),
-    // Count delivered orders by deliveryDate (matches dashboard)
-    prisma.order.count({
-      where: {
-        deletedAt: null,
-        status: 'delivered',
-        deliveryDate: { gte: start, lte: end },
-      },
+/**
+ * Numbers for one store-zone range [from, to): orders placed, delivered revenue and count, and the three rates (KPI layer).
+ * `statusCounts` is the placed-order status groupBy the total is summed from.
+ */
+async function periodStats(tenantId: string, from: Date, to: Date) {
+  const [statusCounts, revenue, rangeRates] = await Promise.all([
+    prisma.order.groupBy({
+      by: ['status'],
+      where: { createdAt: { gte: from, lt: to }, deletedAt: null },
+      _count: { id: true },
     }),
-    // Revenue from GL (matches dashboard)
-    prisma.accountTransaction.aggregate({
-      where: {
-        account: { code: GL_ACCOUNTS.PRODUCT_REVENUE },
-        journalEntry: {
-          isVoided: false,
-          entryDate: { gte: start, lte: end },
-        },
-      },
-      _sum: { creditAmount: true, debitAmount: true },
-    }),
+    deliveredRevenue(tenantId, from, to),
+    rates(tenantId, from, to),
   ]);
-
-  const revenue = Money.sub(Money.orZero(glRevenue._sum.creditAmount), Money.orZero(glRevenue._sum.debitAmount));
-
   return {
-    totalOrders: total,
-    delivered,
-    revenue,
-    deliveryRate: total > 0 ? parseFloat(((delivered / total) * 100).toFixed(1)) : 0,
+    statusCounts,
+    stats: {
+      totalOrders: statusCounts.reduce((sum, s) => sum + s._count.id, 0),
+      delivered: revenue.deliveredOrders.value,
+      revenue: revenue.total.value,
+      confirmationRate: rangeRates.confirmationRate.value,
+      deliverySuccessRate: rangeRates.deliverySuccessRate.value,
+      orderToCashYield: rangeRates.orderToCashYield.value,
+    },
   };
+}
+
+function pointsChange(current: number | null, prior: number | null): string | null {
+  return current === null || prior === null ? null : `${(current - prior).toFixed(1)}pp`;
 }

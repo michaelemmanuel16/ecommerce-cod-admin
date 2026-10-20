@@ -6,7 +6,7 @@ import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { prismaBase } from '../../utils/prisma';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { makeCustomer, makeOrder } from './helpers/kpiOrders';
-import { deliveredRevenue } from '../../services/kpi/revenue';
+import { deliveredRevenue, deliveredRevenueByArea, deliveredRevenueByDay } from '../../services/kpi/revenue';
 import { getStoreTimeZone, monthRange } from '../../services/kpi/dates';
 
 jest.mock('../../utils/logger', () => ({
@@ -120,5 +120,45 @@ describe('deliveredRevenue (F-250, F-900, F-901)', () => {
     const other = await revenue(oct, otherTenantId);
     expect(other.total).toBe('99999.00');
     expect((await revenue()).total).not.toBe('99999.00');
+  });
+});
+
+describe('deliveredRevenueByDay and deliveredRevenueByArea (same rules, one grouped query)', () => {
+  it('October by store-zone day: deliveries add on their day, a return subtracts on the return day', async () => {
+    const days = await deliveredRevenueByDay(tenantId, oct.from, oct.to);
+    expect(days).toEqual([
+      { date: '2026-10-04', revenue: '-249.00', deliveredOrders: -1 }, // September delivery returned
+      { date: '2026-10-05', revenue: '249.00', deliveredOrders: 1 },
+      { date: '2026-10-06', revenue: '59.00', deliveredOrders: 1 }, // paid digital
+      { date: '2026-10-08', revenue: '400.00', deliveredOrders: 1 }, // booked, returned on the 12th
+      { date: '2026-10-10', revenue: '11.00', deliveredOrders: 1 }, // updatedAt fallback
+      { date: '2026-10-12', revenue: '-400.00', deliveredOrders: -1 },
+      { date: '2026-10-17', revenue: '100.50', deliveredOrders: 1 },
+    ]);
+  });
+
+  it('the days and the areas add up to deliveredRevenue for the same range', async () => {
+    const total = await deliveredRevenue(tenantId, oct.from, oct.to);
+    const days = await deliveredRevenueByDay(tenantId, oct.from, oct.to);
+    const areas = await deliveredRevenueByArea(tenantId, oct.from, oct.to);
+    expect(days.reduce((s, x) => s + Number(x.revenue), 0).toFixed(2)).toBe(total.total.value);
+    expect(days.reduce((s, x) => s + x.deliveredOrders, 0)).toBe(total.deliveredOrders.value);
+    expect(areas).toEqual([{ area: 'Accra', revenue: total.total.value, deliveredOrders: total.deliveredOrders.value }]);
+  });
+
+  it('September keeps the order returned in October on its booked day', async () => {
+    const days = await deliveredRevenueByDay(tenantId, sep.from, sep.to);
+    expect(days).toEqual([
+      { date: '2026-09-20', revenue: '249.00', deliveredOrders: 1 },
+      { date: '2026-09-30', revenue: '7.00', deliveredOrders: 1 },
+    ]);
+  });
+
+  it('is scoped to the tenant and to a rep or partner', async () => {
+    expect(await deliveredRevenueByDay(tenantId, oct.from, oct.to, { customerRepId: 999999 })).toEqual([]);
+    expect(await deliveredRevenueByArea(tenantId, oct.from, oct.to, { deliveryAgentId: 999999 })).toEqual([]);
+    expect(await deliveredRevenueByDay(otherTenantId, oct.from, oct.to)).toEqual([
+      { date: '2026-10-05', revenue: '99999.00', deliveredOrders: 1 },
+    ]);
   });
 });

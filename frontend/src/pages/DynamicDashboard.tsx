@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { startOfMonth } from 'date-fns';
+import { format, startOfMonth } from 'date-fns';
 import { useAuthStore } from '../stores/authStore';
 import { dashboardConfigs } from '../config/dashboards';
 import { DashboardLayout } from '../components/dashboard/DashboardLayout';
@@ -28,8 +28,8 @@ export const DynamicDashboard: React.FC = () => {
     const now = new Date();
     return {
       preset: 'this_month',
-      startDate: startOfMonth(now).toISOString(),
-      endDate: now.toISOString(),
+      startDate: format(startOfMonth(now), 'yyyy-MM-dd'),
+      endDate: format(now, 'yyyy-MM-dd'),
     };
   });
 

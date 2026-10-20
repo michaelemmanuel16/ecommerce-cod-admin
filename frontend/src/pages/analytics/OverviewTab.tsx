@@ -40,11 +40,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ startDate, endDate }) 
       : 0;
 
   const topRep = repPerformance.length > 0
-    ? [...repPerformance].sort((a, b) => b.successRate - a.successRate)[0]
+    ? [...repPerformance].sort((a, b) => (b.confirmationRate ?? -1) - (a.confirmationRate ?? -1))[0]
     : null;
 
   const topAgent = agentPerformance.length > 0
-    ? [...agentPerformance].sort((a, b) => b.successRate - a.successRate)[0]
+    ? [...agentPerformance].sort((a, b) => (b.deliverySuccessRate ?? -1) - (a.deliverySuccessRate ?? -1))[0]
     : null;
 
   return (
@@ -69,9 +69,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ startDate, endDate }) 
             iconBgColor="bg-green-100"
           />
           <MetricCard
-            title="Delivery Rate"
-            value={`${metrics.deliveryRate.toFixed(1)}%`}
-            subtitle={`${metrics.deliveredOrders} / ${metrics.totalOrders}`}
+            title="Delivery success rate"
+            value={metrics.deliverySuccessRate === null ? 'n/a' : `${metrics.deliverySuccessRate.toFixed(1)}%`}
+            subtitle={`${metrics.deliveredOrders} delivered`}
             icon={Target}
             iconColor="text-purple-600"
             iconBgColor="bg-purple-100"
@@ -105,8 +105,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ startDate, endDate }) 
                 <p className="text-lg font-bold text-gray-900">{topRep.userName}</p>
                 <div className="mt-3 grid grid-cols-3 gap-4 text-sm">
                   <div>
-                    <p className="text-gray-500">Success Rate</p>
-                    <p className="font-semibold text-blue-600">{topRep.successRate.toFixed(1)}%</p>
+                    <p className="text-gray-500">Confirmation rate</p>
+                    <p className="font-semibold text-blue-600">{topRep.confirmationRate == null ? 'n/a' : `${topRep.confirmationRate.toFixed(1)}%`}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Assigned</p>
@@ -127,8 +127,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ startDate, endDate }) 
                 <p className="text-lg font-bold text-gray-900">{topAgent.userName}</p>
                 <div className="mt-3 grid grid-cols-3 gap-4 text-sm">
                   <div>
-                    <p className="text-gray-500">Success Rate</p>
-                    <p className="font-semibold text-green-600">{topAgent.successRate.toFixed(1)}%</p>
+                    <p className="text-gray-500">Delivery success rate</p>
+                    <p className="font-semibold text-green-600">{topAgent.deliverySuccessRate == null ? 'n/a' : `${topAgent.deliverySuccessRate.toFixed(1)}%`}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Delivered</p>

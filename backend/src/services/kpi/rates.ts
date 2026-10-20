@@ -56,7 +56,7 @@ export const DIGITAL: OrderStatus[] = ['payment_pending', 'payment_failed', 'dig
 export const CONFIRMED: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'failed_delivery', 'returned'];
 /** Orders with an outcome: the delivery success rate counts these only (F-251). */
 export const CLOSED: OrderStatus[] = ['delivered', 'failed_delivery', 'returned'];
-const OPEN: OrderStatus[] = ['pending_confirmation', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'];
+export const OPEN: OrderStatus[] = ['pending_confirmation', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'];
 
 /** Percent to 1 decimal (half up), null when the denominator is 0. */
 export function ratePercent(numerator: number, denominator: number): number | null {

@@ -11,7 +11,6 @@ import {
   AgentAgingBucket,
   AgentAgingReport,
   PipelineRevenue,
-  ProfitMargins,
   ProfitabilityAnalysis,
   CashFlowReport,
   BalanceSheetData,
@@ -46,7 +45,6 @@ interface FinancialState {
   expenseBreakdown: ExpenseCategory[];
   agentCashHoldings: AgentCashHolding[];
   pipelineRevenue: PipelineRevenue | null;
-  profitMargins: ProfitMargins | null;
   profitabilityAnalysis: ProfitabilityAnalysis | null;
   agentAging: AgentAgingReport | null;
   cashFlowReport: CashFlowReport | null;
@@ -98,7 +96,6 @@ interface FinancialState {
   fetchExpenseBreakdown: (startDate?: string, endDate?: string) => Promise<void>;
   fetchAgentCashHoldings: () => Promise<void>;
   fetchPipelineRevenue: (startDate?: string, endDate?: string) => Promise<void>;
-  fetchProfitMargins: (startDate?: string, endDate?: string) => Promise<void>;
   fetchProfitabilityAnalysis: (params: { startDate?: string; endDate?: string; productId?: number }) => Promise<void>;
   exportProfitability: (params: { startDate?: string; endDate?: string; productId?: number; format: 'csv' | 'xlsx' }) => Promise<void>;
   fetchAgentAging: () => Promise<void>;
@@ -203,7 +200,6 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
     expenseBreakdown: [],
     agentCashHoldings: [],
     pipelineRevenue: null,
-    profitMargins: null,
     profitabilityAnalysis: null,
     agentAging: null,
     cashFlowReport: null,
@@ -398,17 +394,6 @@ export const useFinancialStore = create<FinancialState>((set, get) => {
         set({ pipelineRevenue });
       } catch (error: any) {
         const errorMessage = error.response?.data?.message || 'Failed to fetch pipeline revenue';
-        toast.error(errorMessage);
-        throw error;
-      }
-    },
-
-    fetchProfitMargins: async (startDate?: string, endDate?: string) => {
-      try {
-        const profitMargins = await financialService.getProfitMargins(startDate, endDate);
-        set({ profitMargins });
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.message || 'Failed to fetch profit margins';
         toast.error(errorMessage);
         throw error;
       }

@@ -38,8 +38,14 @@ export const TeamPerformanceTab: React.FC<TeamPerformanceTabProps> = ({
     fetchCallStats({ startDate, endDate });
   }, [startDate, endDate, fetchRepPerformance, fetchAgentPerformance, fetchCallStats]);
 
-  const sortedReps = [...repPerformance].sort((a, b) => b.successRate - a.successRate);
-  const sortedAgents = [...agentPerformance].sort((a, b) => b.successRate - a.successRate);
+  const sortedReps = [...repPerformance].sort((a, b) => (b.confirmationRate ?? -1) - (a.confirmationRate ?? -1));
+  const sortedAgents = [...agentPerformance].sort((a, b) => (b.deliverySuccessRate ?? -1) - (a.deliverySuccessRate ?? -1));
+  const rateBadge = (rate: number | null | undefined) =>
+    rate == null ? 'bg-gray-100 text-gray-600' :
+    rate >= 80 ? 'bg-green-100 text-green-800' :
+    rate >= 60 ? 'bg-yellow-100 text-yellow-800' :
+    'bg-red-100 text-red-800';
+  const ratePercent = (rate: number | null | undefined) => (rate == null ? 'n/a' : `${rate.toFixed(1)}%`);
 
   const callOutcomesData = [
     {
@@ -87,7 +93,7 @@ export const TeamPerformanceTab: React.FC<TeamPerformanceTabProps> = ({
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rep</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Assigned</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Completed</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Confirmation rate</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
                     </tr>
                   </thead>
@@ -98,12 +104,8 @@ export const TeamPerformanceTab: React.FC<TeamPerformanceTabProps> = ({
                         <td className="px-3 py-2 text-sm text-gray-700">{rep.totalAssigned}</td>
                         <td className="px-3 py-2 text-sm text-green-600">{rep.completed}</td>
                         <td className="px-3 py-2 text-sm">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            rep.successRate >= 80 ? 'bg-green-100 text-green-800' :
-                            rep.successRate >= 60 ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {rep.successRate.toFixed(1)}%
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${rateBadge(rep.confirmationRate)}`}>
+                            {ratePercent(rep.confirmationRate)}
                           </span>
                         </td>
                         <td className="px-3 py-2 text-sm text-gray-900">
@@ -133,7 +135,7 @@ export const TeamPerformanceTab: React.FC<TeamPerformanceTabProps> = ({
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Assigned</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Delivered</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Failed</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Delivery success rate</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -144,12 +146,8 @@ export const TeamPerformanceTab: React.FC<TeamPerformanceTabProps> = ({
                         <td className="px-3 py-2 text-sm text-green-600">{agent.completed}</td>
                         <td className="px-3 py-2 text-sm text-red-600">{agent.failed || 0}</td>
                         <td className="px-3 py-2 text-sm">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            agent.successRate >= 80 ? 'bg-green-100 text-green-800' :
-                            agent.successRate >= 60 ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {agent.successRate.toFixed(1)}%
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${rateBadge(agent.deliverySuccessRate)}`}>
+                            {ratePercent(agent.deliverySuccessRate)}
                           </span>
                         </td>
                       </tr>
