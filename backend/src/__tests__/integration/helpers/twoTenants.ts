@@ -296,12 +296,13 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
   ]);
   await Promise.all([
     db.order.deleteMany({ where: t }),
-    db.journalEntry.deleteMany({ where: t }),
     db.checkoutForm.deleteMany({ where: t }),
     db.workflow.deleteMany({ where: t }),
     db.webhookConfig.deleteMany({ where: t }),
     db.account.deleteMany({ where: { ...t, parentId: { not: null } } }),
   ]);
+  // Orders reference journal entries; deleting both at once deadlocks (COD-130).
+  await db.journalEntry.deleteMany({ where: t });
   await Promise.all([
     db.product.deleteMany({ where: t }),
     db.customer.deleteMany({ where: t }),
