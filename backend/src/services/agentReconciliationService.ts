@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import appEvents, { AppEvent } from '../utils/appEvents';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 export class AgentReconciliationService {
     /**
@@ -15,7 +16,7 @@ export class AgentReconciliationService {
         tx: any,
         orderId: number,
         agentId: number,
-        amount: number,
+        amount: Prisma.Decimal.Value,
         collectionDate: Date
     ) {
         const order = await tx.order.findUnique({ where: { id: orderId }, select: { tenantId: true } });
@@ -169,15 +170,16 @@ export class AgentReconciliationService {
     /**
      * Create a new deposit record
      */
-    async createDeposit(agentId: number, amount: number, depositMethod: string, referenceNumber: string, notes?: string, receiptUrl?: string): Promise<any> {
-        if (amount <= 0) {
+    async createDeposit(agentId: number, amount: Prisma.Decimal.Value, depositMethod: string, referenceNumber: string, notes?: string, receiptUrl?: string): Promise<any> {
+        const depositAmount = Money.tryParse(amount);
+        if (!depositAmount || depositAmount.lte(0)) {
             throw new AppError('Deposit amount must be greater than zero', 400);
         }
 
         return await prisma.$transaction(async (tx) => {
             const extTx = tx as any;
             const balance = await this.getOrCreateBalance(agentId, extTx);
-            if (new Prisma.Decimal(balance.currentBalance.toString()).lessThan(amount)) {
+            if (Money.lt(balance.currentBalance, depositAmount)) {
                 throw new AppError('Deposit amount cannot exceed your current outstanding balance', 400);
             }
 
@@ -186,7 +188,7 @@ export class AgentReconciliationService {
                 data: {
                     tenantId: resolveTenantId(agent?.tenantId),
                     agentId,
-                    amount,
+                    amount: depositAmount,
                     depositMethod,
                     depositDate: new Date(),
                     referenceNumber,
@@ -196,7 +198,7 @@ export class AgentReconciliationService {
                 },
             });
 
-            logger.info(`New deposit created for agent ${agentId}`, { depositId: deposit.id, amount });
+            logger.info(`New deposit created for agent ${agentId}`, { depositId: deposit.id, amount: Money.toApi(depositAmount) });
             return deposit;
         }, TRANSACTION_CONFIG);
     }
@@ -321,7 +323,7 @@ export class AgentReconciliationService {
      */
     async bulkVerifyDeposits(depositIds: number[], verifierId: number): Promise<{
         verified: number;
-        totalAmount: number;
+        totalAmount: Prisma.Decimal;
     }> {
         if (depositIds.length === 0) {
             throw new AppError('No deposit IDs provided', 400);
@@ -409,8 +411,8 @@ export class AgentReconciliationService {
                 await extTx.agentBalance.update({
                     where: { id: balance.id },
                     data: {
-                        totalDeposited: { increment: agentTotalDeposit.toNumber() },
-                        currentBalance: { decrement: agentTotalDeposit.toNumber() },
+                        totalDeposited: { increment: agentTotalDeposit },
+                        currentBalance: { decrement: agentTotalDeposit },
                         lastSettlementDate: new Date(),
                     },
                 });
@@ -426,7 +428,7 @@ export class AgentReconciliationService {
 
             return {
                 verified: deposits.length,
-                totalAmount: totalAmount.toNumber()
+                totalAmount
             };
         }, TRANSACTION_CONFIG);
         // Emit AFTER transaction commits so aging refresh reads committed data

@@ -4,6 +4,7 @@ import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { GLAutomationService } from '../services/glAutomationService';
 import logger from '../utils/logger';
+import * as Money from '../utils/money';
 
 
 const SHIPMENT_INCLUDE = {
@@ -11,8 +12,13 @@ const SHIPMENT_INCLUDE = {
   createdBy: { select: { id: true, firstName: true, lastName: true } },
 } as const;
 
-function computeTotalCost(unitCost: number, quantity: number, shippingCost: number, customsDuties: number, otherCosts: number): number {
-  return (unitCost * quantity) + shippingCost + customsDuties + otherCosts;
+function computeTotalCost(unitCost: Money.Money, quantity: number, shippingCost: Money.Money, customsDuties: Money.Money, otherCosts: Money.Money): Money.Money {
+  return Money.roundHalfUp(Money.sum([Money.mul(unitCost, quantity), shippingCost, customsDuties, otherCosts]), 4);
+}
+
+/** Money from request input. Empty or invalid input is zero. */
+function moneyInput(value: unknown): Money.Money {
+  return Money.tryParse(value) ?? Money.ZERO;
 }
 
 export const listShipments = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -63,10 +69,10 @@ export const createShipment = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    const uc = parseFloat(unitCost) || 0;
-    const sc = parseFloat(shippingCost) || 0;
-    const cd = parseFloat(customsDuties) || 0;
-    const oc = parseFloat(otherCosts) || 0;
+    const uc = moneyInput(unitCost);
+    const sc = moneyInput(shippingCost);
+    const cd = moneyInput(customsDuties);
+    const oc = moneyInput(otherCosts);
     const totalCost = computeTotalCost(uc, quantity, sc, cd, oc);
 
     const shipment = await prisma.inventoryShipment.create({
@@ -150,10 +156,10 @@ export const updateShipment = async (req: AuthRequest, res: Response): Promise<v
     const { supplier, quantity, unitCost, shippingCost, customsDuties, otherCosts, expectedArrivalDate, notes } = req.body;
 
     const qty = quantity !== undefined ? quantity : shipment.quantity;
-    const uc = unitCost !== undefined ? parseFloat(unitCost) : Number(shipment.unitCost);
-    const sc = shippingCost !== undefined ? parseFloat(shippingCost) : Number(shipment.shippingCost);
-    const cd = customsDuties !== undefined ? parseFloat(customsDuties) : Number(shipment.customsDuties);
-    const oc = otherCosts !== undefined ? parseFloat(otherCosts) : Number(shipment.otherCosts);
+    const uc = unitCost !== undefined ? moneyInput(unitCost) : Money.parse(shipment.unitCost);
+    const sc = shippingCost !== undefined ? moneyInput(shippingCost) : Money.parse(shipment.shippingCost);
+    const cd = customsDuties !== undefined ? moneyInput(customsDuties) : Money.parse(shipment.customsDuties);
+    const oc = otherCosts !== undefined ? moneyInput(otherCosts) : Money.parse(shipment.otherCosts);
     const totalCost = computeTotalCost(uc, qty, sc, cd, oc);
 
     const updated = await prisma.inventoryShipment.update({
@@ -234,12 +240,18 @@ export const markArrived = async (req: AuthRequest, res: Response): Promise<void
 
       // 1. Increment product stock + update COGS using weighted average
       const currentStock = shipment.product.stockQuantity;
-      const currentCogs = Number(shipment.product.cogs) || 0;
+      const currentCogs = Money.orZero(shipment.product.cogs);
       const newQty = shipment.quantity;
-      const landedCostPerUnit = Number(shipment.totalCost) / newQty;
-      const weightedCogs = currentStock + newQty > 0
-        ? ((currentStock * currentCogs) + (newQty * landedCostPerUnit)) / (currentStock + newQty)
-        : landedCostPerUnit;
+      const landedCostPerUnit = Money.div(shipment.totalCost, newQty);
+      const weightedCogs = Money.roundHalfUp(
+        currentStock + newQty > 0
+          ? Money.div(
+              Money.add(Money.mul(currentStock, currentCogs), Money.mul(newQty, landedCostPerUnit)),
+              currentStock + newQty
+            )
+          : landedCostPerUnit,
+        4
+      );
 
       await tx.product.update({
         where: {

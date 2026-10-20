@@ -4,6 +4,7 @@ import { Prisma, AccountType, NormalBalance, JournalSourceType } from '@prisma/c
 import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 
 interface AccountFilters {
@@ -384,7 +385,7 @@ export class GLService {
     ]);
 
     // Compute period activity per account when a date range is provided
-    let periodActivityMap: Map<number, { debits: number; credits: number }> | null = null;
+    let periodActivityMap: Map<number, { debits: Money.Money; credits: Money.Money }> | null = null;
     if (startDate || endDate) {
       const dateFilter: Prisma.DateTimeFilter = {};
       if (startDate) dateFilter.gte = new Date(startDate);
@@ -405,8 +406,8 @@ export class GLService {
       periodActivityMap = new Map();
       for (const txn of txns) {
         periodActivityMap.set(txn.accountId, {
-          debits: Number(txn._sum.debitAmount ?? 0),
-          credits: Number(txn._sum.creditAmount ?? 0)
+          debits: Money.orZero(txn._sum.debitAmount),
+          credits: Money.orZero(txn._sum.creditAmount)
         });
       }
     }
@@ -414,7 +415,7 @@ export class GLService {
     const accountsWithActivity = accounts.map(acc => ({
       ...acc,
       periodActivity: periodActivityMap
-        ? (periodActivityMap.get(acc.id) ?? { debits: 0, credits: 0 })
+        ? (periodActivityMap.get(acc.id) ?? { debits: Money.ZERO, credits: Money.ZERO })
         : null
     }));
 
@@ -1339,9 +1340,9 @@ export class GLService {
           EntryNumber: t.journalEntry.entryNumber,
           Description: t.description || t.journalEntry.description,
           Source: t.journalEntry.sourceType,
-          Debit: t.debitAmount.toNumber(),
-          Credit: t.creditAmount.toNumber(),
-          RunningBalance: t.runningBalance.toNumber()
+          Debit: Money.toApi(t.debitAmount),
+          Credit: Money.toApi(t.creditAmount),
+          RunningBalance: Money.toApi(t.runningBalance)
         }));
 
         allData = allData.concat(mappedChunk);

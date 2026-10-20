@@ -3,6 +3,7 @@ import agingService from '../../services/agingService';
 import prisma from '../../utils/prisma';
 import { Prisma } from '@prisma/client';
 import { tenantStorage } from '../../utils/tenantContext';
+import * as Money from '../../utils/money';
 
 // Mock prisma
 jest.mock('../../utils/prisma', () => ({
@@ -157,8 +158,8 @@ describe('AgingService', () => {
 
             expect(result.summary).toBeDefined();
             expect(result.buckets[0].isBlocked).toBe(false);
-            expect(result.summary.totalOutstandingAmount).toBe(10000);
-            expect(result.summary.bucketTotals.bucket_8_plus).toBe(4000);
+            expect(Money.toApi(result.summary.totalOutstandingAmount)).toBe('10000.00');
+            expect(Money.toApi(result.summary.bucketTotals.bucket_8_plus)).toBe('4000.00');
             expect(mockPrisma.agentAgingBucket.findMany).toHaveBeenCalledWith({
                 include: expect.any(Object),
                 orderBy: {
@@ -180,8 +181,8 @@ describe('AgingService', () => {
             const result = await agingService.getOverdueAgents();
 
             expect(result).toHaveLength(2);
-            expect(result[0]).toEqual({ agentId: 1, agentName: 'Agent One', totalBalance: 500, warningAmount: 500, criticalAmount: 0 });
-            expect(result[1]).toEqual({ agentId: 2, agentName: 'Agent Two', totalBalance: 1000, warningAmount: 0, criticalAmount: 1000 });
+            expect(result[0]).toEqual({ agentId: 1, agentName: 'Agent One', totalBalance: Money.parse(500), warningAmount: Money.parse(500), criticalAmount: Money.ZERO });
+            expect(result[1]).toEqual({ agentId: 2, agentName: 'Agent Two', totalBalance: Money.parse(1000), warningAmount: Money.ZERO, criticalAmount: Money.parse(1000) });
         });
     });
 });

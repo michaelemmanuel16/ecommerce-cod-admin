@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitNotification } from '../sockets';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 
 export async function createNotification(
@@ -78,7 +79,7 @@ export async function notifyDeliveryScheduled(
 }
 
 export async function notifyAdminsOverdueCollections(
-  agents: { agentId: number; agentName: string; totalBalance: number; warningAmount: number; criticalAmount: number }[]
+  agents: { agentId: number; agentName: string; totalBalance: Money.Money; warningAmount: Money.Money; criticalAmount: Money.Money }[]
 ) {
   if (agents.length === 0) return;
 
@@ -90,18 +91,26 @@ export async function notifyAdminsOverdueCollections(
   });
 
   const agentSummary = agents
-    .map(a => `${a.agentName}: GHS ${a.totalBalance.toFixed(2)} (${a.criticalAmount > 0 ? '8+ days' : '4-7 days'})`)
+    .map(a => `${a.agentName}: GHS ${Money.toApi(a.totalBalance)} (${a.criticalAmount.gt(0) ? '8+ days' : '4-7 days'})`)
     .join(', ');
 
-  const totalOverdue = agents.reduce((sum, a) => sum + a.totalBalance, 0);
+  const totalOverdue = Money.sum(agents.map(a => a.totalBalance));
 
   for (const admin of admins) {
     await createNotification(
       admin.id.toString(),
       'overdue_collections',
       'Overdue Agent Collections',
-      `${agents.length} agent(s) have overdue collections totaling GHS ${totalOverdue.toFixed(2)}: ${agentSummary}`,
-      { agents, totalOverdue }
+      `${agents.length} agent(s) have overdue collections totaling GHS ${Money.toApi(totalOverdue)}: ${agentSummary}`,
+      {
+        agents: agents.map(a => ({
+          ...a,
+          totalBalance: Money.toApi(a.totalBalance),
+          warningAmount: Money.toApi(a.warningAmount),
+          criticalAmount: Money.toApi(a.criticalAmount)
+        })),
+        totalOverdue: Money.toApi(totalOverdue)
+      }
     );
   }
 }

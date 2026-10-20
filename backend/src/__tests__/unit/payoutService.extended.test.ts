@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { prismaMock } from '../mocks/prisma.mock';
 import payoutService from '../../services/payoutService';
 import { OrderStatus } from '@prisma/client';
+import * as Money from '../../utils/money';
 
 jest.mock('../../services/glAutomationService', () => ({
   GLAutomationService: {
@@ -31,7 +32,7 @@ describe('PayoutService (extended branch coverage)', () => {
       (prismaMock.order.findMany as any).mockResolvedValue(mockOrders as any);
 
       const result = await payoutService.getPendingPayments(1);
-      expect(result[0].commissionAmount).toBe(0);
+      expect(Money.toApi(result[0].commissionAmount)).toBe('0.00');
     });
 
     it('defaults commissionAmount to 0 when rep has 0 commission', async () => {
@@ -46,7 +47,7 @@ describe('PayoutService (extended branch coverage)', () => {
       (prismaMock.order.findMany as any).mockResolvedValue(mockOrders as any);
 
       const result = await payoutService.getPendingPayments(1);
-      expect(result[0].commissionAmount).toBe(0);
+      expect(Money.toApi(result[0].commissionAmount)).toBe('0.00');
     });
   });
 });

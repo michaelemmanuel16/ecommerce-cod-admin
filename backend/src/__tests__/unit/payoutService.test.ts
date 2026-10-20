@@ -4,6 +4,7 @@ import payoutService from '../../services/payoutService';
 import { OrderStatus } from '@prisma/client';
 import { GLAutomationService } from '../../services/glAutomationService';
 import { useTestTenant } from '../mocks/tenant.mock';
+import * as Money from '../../utils/money';
 
 jest.mock('../../services/glAutomationService', () => ({
     GLAutomationService: {
@@ -35,7 +36,7 @@ describe('PayoutService', () => {
 
             expect(result).toHaveLength(1);
             expect(result[0].customerName).toBe('John Doe');
-            expect(result[0].commissionAmount).toBe(10);
+            expect(Money.toApi(result[0].commissionAmount)).toBe('10.00');
             expect(prismaMock.order.findMany).toHaveBeenCalledWith(expect.objectContaining({
                 where: {
                     customerRepId: repId,

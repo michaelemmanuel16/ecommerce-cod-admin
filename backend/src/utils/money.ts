@@ -52,6 +52,11 @@ export function parse(v: MoneyInput): Money {
   throw new TypeError(`Money cannot be built from ${String(v)}`);
 }
 
+/** Null-safe parse: null and undefined are zero. Use it on `_sum` aggregates and optional columns. */
+export function orZero(v: MoneyInput | null | undefined): Money {
+  return v === null || v === undefined ? ZERO : parse(v);
+}
+
 /** Like parse, but returns null for empty, invalid or out-of-range input. For form input. */
 export function tryParse(v: unknown): Money | null {
   if (v === null || v === undefined || v === '') return null;

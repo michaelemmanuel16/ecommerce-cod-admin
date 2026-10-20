@@ -10,6 +10,7 @@ import { GLAutomationService } from './glAutomationService';
 import agentReconciliationService from './agentReconciliationService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitGLEntryCreated } from '../sockets/index';
+import * as Money from '../utils/money';
 
 
 interface CreateDeliveryData {
@@ -27,7 +28,7 @@ interface DeliveryFilters {
 }
 
 interface CompleteDeliveryData {
-  codAmount?: number;
+  codAmount?: Decimal.Value;
   proofType: DeliveryProofType;
   proofData?: string;
   proofImageUrl?: string;
@@ -308,6 +309,11 @@ export class DeliveryService {
     // Store order data before transaction
     const orderCodAmount = delivery.order.codAmount;
     const orderId = delivery.order.id;
+    // A Decimal is always truthy: an empty or zero amount from the agent falls back to the order's COD amount
+    const reportedAmount = Money.tryParse(data.codAmount);
+    const collectedAmount = reportedAmount && !reportedAmount.isZero()
+      ? reportedAmount
+      : (orderCodAmount ?? Money.ZERO);
 
     // Complete delivery and update order in transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -361,7 +367,7 @@ export class DeliveryService {
         data: {
           orderId: delivery.orderId,
           type: 'cod_collection',
-          amount: data.codAmount || orderCodAmount || 0,
+          amount: collectedAmount,
           paymentMethod: 'cash',
           status: 'collected',
           description: 'COD payment collected on delivery',
@@ -425,19 +431,17 @@ export class DeliveryService {
       logger.info(`GL entry created for order ${orderWithItems.id}: ${glEntry.entryNumber}`);
 
       // Create draft agent collection record with net amount (gross - agent commission)
-      if (orderWithItems.deliveryAgentId && orderWithItems.codAmount) {
-        const grossAmount = new Decimal(orderWithItems.codAmount.toString());
+      if (orderWithItems.deliveryAgentId && orderWithItems.codAmount && !orderWithItems.codAmount.isZero()) {
+        const grossAmount = Money.parse(orderWithItems.codAmount);
         // Uses profile flat rate — must match createRevenueRecognitionEntry in glAutomationService
-        const agentCommission = orderWithItems.deliveryAgent?.commissionAmount
-          ? new Decimal(orderWithItems.deliveryAgent.commissionAmount.toString())
-          : new Decimal(0);
-        const netAmount = grossAmount.minus(agentCommission);
+        const agentCommission = Money.parse(orderWithItems.deliveryAgent?.commissionAmount ?? 0);
+        const netAmount = Money.sub(grossAmount, agentCommission);
 
         await agentReconciliationService.createDraftCollection(
           tx,
           orderWithItems.id,
           orderWithItems.deliveryAgentId,
-          netAmount.toNumber(),
+          netAmount,
           updatedDelivery.actualDeliveryTime || new Date()
         );
       }
@@ -719,7 +723,7 @@ export class DeliveryService {
       order: {
         id: order.id,
         status: order.status,
-        totalAmount: order.totalAmount ? Number(order.totalAmount) : 0,
+        totalAmount: Money.parse(order.totalAmount ?? 0),
         paymentStatus: order.paymentStatus,
         deliveryAddress: order.deliveryAddress ?? '',
         deliveryState: order.deliveryState ?? '',
@@ -933,8 +937,8 @@ export class DeliveryService {
       orderItems: order.orderItems.map((item) => ({
         id: item.id,
         quantity: item.quantity,
-        unitPrice: Number(item.unitPrice),
-        totalPrice: Number(item.totalPrice),
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice,
         product: { id: item.product.id, name: item.product.name },
       })),
     });

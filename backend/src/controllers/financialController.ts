@@ -11,6 +11,7 @@ import { GL_ACCOUNTS } from '../config/glAccounts';
 import prisma from '../utils/prisma';
 import { Decimal } from '@prisma/client/runtime/library';
 import { getTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -127,9 +128,9 @@ export const exportProfitabilityAnalysis = async (req: AuthRequest, res: Respons
       'Product Name': p.name,
       'SKU': p.sku,
       'Quantity Sold': p.quantity,
-      'Total Revenue': p.revenue,
-      'Total COGS': p.cogs,
-      'Gross Profit': p.grossProfit,
+      'Total Revenue': Money.toApi(p.revenue),
+      'Total COGS': Money.toApi(p.cogs),
+      'Gross Profit': Money.toApi(p.grossProfit),
       'Gross Margin %': p.grossMargin.toFixed(2)
     }));
 
@@ -408,15 +409,15 @@ export const backfillMissingCollections = async (_req: AuthRequest, res: Respons
     }
 
     // Group by agent for balance updates
-    const byAgent = new Map<number, { orders: any[], total: number }>();
+    const byAgent = new Map<number, { orders: any[], total: Money.Money }>();
     for (const order of orphanedOrders) {
       const agentId = order.delivery_agent_id;
       if (!byAgent.has(agentId)) {
-        byAgent.set(agentId, { orders: [], total: 0 });
+        byAgent.set(agentId, { orders: [], total: Money.ZERO });
       }
       const group = byAgent.get(agentId)!;
       group.orders.push(order);
-      group.total += parseFloat(order.total_amount);
+      group.total = Money.add(group.total, order.total_amount);
     }
 
     await prisma.$transaction(async (tx) => {
@@ -430,7 +431,7 @@ export const backfillMissingCollections = async (_req: AuthRequest, res: Respons
               tenantId,
               orderId: order.id,
               agentId,
-              amount: parseFloat(order.total_amount),
+              amount: Money.parse(order.total_amount),
               status: 'draft',
               collectionDate: order.created_at,
             },
@@ -460,7 +461,7 @@ export const backfillMissingCollections = async (_req: AuthRequest, res: Respons
     const summary = Array.from(byAgent.entries()).map(([agentId, { orders, total }]) => ({
       agentId,
       ordersBackfilled: orders.length,
-      totalAmount: total,
+      totalAmount: Money.toApi(total),
     }));
 
     logger.info('Backfilled missing agent collections', { summary });
@@ -590,12 +591,8 @@ export const backfillCommissions = async (_req: AuthRequest, res: Response): Pro
         continue;
       }
 
-      const agentComm = order.deliveryAgent?.commissionAmount
-        ? new Decimal(order.deliveryAgent.commissionAmount.toString())
-        : new Decimal(0);
-      const repComm = order.customerRep?.commissionAmount
-        ? new Decimal(order.customerRep.commissionAmount.toString())
-        : new Decimal(0);
+      const agentComm = Money.orZero(order.deliveryAgent?.commissionAmount);
+      const repComm = Money.orZero(order.customerRep?.commissionAmount);
 
       if (agentComm.equals(0) && repComm.equals(0)) {
         skipped++;

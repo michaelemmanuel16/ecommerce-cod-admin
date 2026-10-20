@@ -17,6 +17,7 @@ import { GLAccountService } from './glAccountService';
 import logger from '../utils/logger';
 import { GLUtils } from '../utils/glUtils';
 import { getTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 // import { SYSTEM_USER_ID } from '../config/constants'; // Commented out unused variable to resolve lint error
 
 // Define JournalSourceType locally if not correctly imported or use string literal
@@ -230,7 +231,7 @@ export class GLAutomationService {
     let totalCOGS = new Decimal(0);
 
     for (const item of orderItems) {
-      const productCOGS = new Decimal(item.product.cogs || 0);
+      const productCOGS = new Decimal(item.product.cogs ?? 0);
       const itemCOGS = productCOGS.times(item.quantity);
       totalCOGS = totalCOGS.plus(itemCOGS);
     }
@@ -251,7 +252,7 @@ export class GLAutomationService {
     const missingProducts: string[] = [];
 
     for (const item of orderItems) {
-      const cogs = new Decimal(item.product.cogs || 0);
+      const cogs = new Decimal(item.product.cogs ?? 0);
       if (cogs.equals(0)) {
         missingProducts.push(item.product.name);
       }
@@ -312,12 +313,8 @@ export class GLAutomationService {
     const salesRep = order.customerRep;
 
     // Uses profile flat rate — must match draft collection creation in deliveryService
-    const deliveryCommission: Decimal = deliveryAgent?.commissionAmount
-      ? new Decimal(deliveryAgent.commissionAmount.toString())
-      : new Decimal(0);
-    const salesRepCommission: Decimal = salesRep?.commissionAmount
-      ? new Decimal(salesRep.commissionAmount.toString())
-      : new Decimal(0);
+    const deliveryCommission = Money.parse(deliveryAgent?.commissionAmount ?? 0);
+    const salesRepCommission = Money.parse(salesRep?.commissionAmount ?? 0);
 
     // Build journal entry transactions
     // Note: Cash in Transit = Gross Amount - Agent Commission
@@ -487,7 +484,7 @@ export class GLAutomationService {
     order: OrderWithItems,
     originalEntry: JournalEntryWithTransactions,
     userId: number,
-    returnProcessingFee?: number
+    returnProcessingFee?: Decimal.Value
   ): Promise<JournalEntryWithTransactions> {
     // Idempotency guard — prevent duplicate return reversal GL entries for the same order
     const existingEntry = await tx.journalEntry.findFirst({
@@ -509,12 +506,8 @@ export class GLAutomationService {
     const salesRep = order.customerRep;
 
     // Uses profile flat rate — must match draft collection creation in deliveryService
-    const deliveryCommission: Decimal = deliveryAgent?.commissionAmount
-      ? new Decimal(deliveryAgent.commissionAmount.toString())
-      : new Decimal(0);
-    const salesRepCommission: Decimal = salesRep?.commissionAmount
-      ? new Decimal(salesRep.commissionAmount.toString())
-      : new Decimal(0);
+    const deliveryCommission = Money.parse(deliveryAgent?.commissionAmount ?? 0);
+    const salesRepCommission = Money.parse(salesRep?.commissionAmount ?? 0);
 
     // Calculate total COGS to determine if we need to reverse COGS/inventory
     const totalCOGS = this.calculateTotalCOGS(order.orderItems);
@@ -581,8 +574,8 @@ export class GLAutomationService {
       );
     }
 
-    if (returnProcessingFee && returnProcessingFee > 0) {
-      const processingFee = new Decimal(returnProcessingFee);
+    const processingFee = Money.tryParse(returnProcessingFee);
+    if (processingFee && processingFee.gt(0)) {
       transactions.push(
         {
           accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE),
@@ -738,7 +731,7 @@ export class GLAutomationService {
   static async createExpenseGLEntry(
     tx: Prisma.TransactionClient,
     expenseId: number,
-    amount: number,
+    amount: Decimal.Value,
     description: string,
     userId: number
   ): Promise<JournalEntryWithTransactions> {
@@ -756,7 +749,7 @@ export class GLAutomationService {
       return existingEntry as JournalEntryWithTransactions;
     }
 
-    const expenseAmount = new Decimal(amount.toString());
+    const expenseAmount = Money.parse(amount);
 
     const transactions: TransactionCreateData[] = [
       {
@@ -799,7 +792,7 @@ export class GLAutomationService {
    */
   static async createDepositGLEntry(
     tx: Prisma.TransactionClient,
-    amount: number,
+    amount: Decimal.Value,
     sourceId: number,
     userId: number
   ): Promise<JournalEntryWithTransactions> {
@@ -817,7 +810,7 @@ export class GLAutomationService {
       return existingEntry as JournalEntryWithTransactions;
     }
 
-    const depositAmount = new Decimal(amount.toString());
+    const depositAmount = Money.parse(amount);
 
     const transactions: TransactionCreateData[] = [
       {

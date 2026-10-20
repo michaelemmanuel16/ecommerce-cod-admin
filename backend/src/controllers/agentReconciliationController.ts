@@ -4,6 +4,7 @@ import agingService from '../services/agingService';
 import { AppError } from '../middleware/errorHandler';
 import prisma from '../utils/prisma';
 import { getSocketInstance } from '../utils/socketInstance';
+import * as Money from '../utils/money';
 import { emitCollectionVerified, emitCollectionApproved, emitToTenant, emitToUser } from '../sockets/index';
 
 export class AgentReconciliationController {
@@ -226,7 +227,7 @@ export class AgentReconciliationController {
         try {
             const result = await agentReconciliationService.createDeposit(
                 targetAgentId,
-                parseFloat(amount),
+                amount,
                 depositMethod,
                 referenceNumber,
                 notes,
@@ -332,7 +333,7 @@ export class AgentReconciliationController {
         if (io) {
             emitToTenant(io, 'agent:deposits-bulk-verified', {
                 count: result.verified,
-                totalAmount: result.totalAmount
+                totalAmount: Money.toApi(result.totalAmount)
             });
         }
 

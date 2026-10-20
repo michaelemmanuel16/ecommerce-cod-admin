@@ -22,6 +22,7 @@ import { prismaMock } from '../mocks/prisma.mock';
 import { FinancialService } from '../../services/financialService';
 import { AppError } from '../../middleware/errorHandler';
 import { PaymentStatus } from '@prisma/client';
+import * as Money from '../../utils/money';
 
 describe('FinancialService', () => {
   let financialService: FinancialService;
@@ -72,11 +73,11 @@ describe('FinancialService', () => {
         endDate: new Date('2024-01-31')
       });
 
-      expect(summary.totalRevenue).toBe(10000);
-      expect(summary.totalExpenses).toBe(2000);
-      expect(summary.profit).toBe(8000);
-      expect(summary.codCollected).toBe(9500);
-      expect(summary.outstandingReceivables).toBe(500);
+      expect(Money.toApi(summary.totalRevenue)).toBe('10000.00');
+      expect(Money.toApi(summary.totalExpenses)).toBe('2000.00');
+      expect(Money.toApi(summary.profit)).toBe('8000.00');
+      expect(Money.toApi(summary.codCollected)).toBe('9500.00');
+      expect(Money.toApi(summary.outstandingReceivables)).toBe('500.00');
       expect(summary.profitMargin).toBe(80);
     });
 
@@ -96,9 +97,9 @@ describe('FinancialService', () => {
 
       const summary = await financialService.getFinancialSummary({});
 
-      expect(summary.totalRevenue).toBe(0);
-      expect(summary.totalExpenses).toBe(0);
-      expect(summary.profit).toBe(0);
+      expect(Money.toApi(summary.totalRevenue)).toBe('0.00');
+      expect(Money.toApi(summary.totalExpenses)).toBe('0.00');
+      expect(Money.toApi(summary.profit)).toBe('0.00');
       expect(summary.profitMargin).toBe(0);
     });
   });
@@ -174,7 +175,7 @@ describe('FinancialService', () => {
       const result = await financialService.getCODCollectionsByAgent('1', undefined, requester as any);
 
       expect(result.collections).toHaveLength(2);
-      expect(result.summary.totalCollected).toBe(300);
+      expect(Money.toApi(result.summary.totalCollected)).toBe('300.00');
       expect(result.summary.totalCount).toBe(2);
     });
 
@@ -341,9 +342,9 @@ describe('FinancialService', () => {
 
       expect(reports).toBeDefined();
       const jan1Report = reports.find((r) => r.date === '2024-01-01');
-      expect(jan1Report?.revenue).toBe(300);
-      expect(jan1Report?.expenses).toBe(50);
-      expect(jan1Report?.profit).toBe(250);
+      expect(Money.toApi(jan1Report!.revenue)).toBe('300.00');
+      expect(Money.toApi(jan1Report!.expenses)).toBe('50.00');
+      expect(Money.toApi(jan1Report!.profit)).toBe('250.00');
       expect(jan1Report?.orders).toBe(2);
     });
 
@@ -372,9 +373,9 @@ describe('FinancialService', () => {
       });
 
       const jan2024 = reports.find((r) => r.date === '2024-01');
-      expect(jan2024?.revenue).toBe(100);
-      expect(jan2024?.expenses).toBe(30);
-      expect(jan2024?.profit).toBe(70);
+      expect(Money.toApi(jan2024!.revenue)).toBe('100.00');
+      expect(Money.toApi(jan2024!.expenses)).toBe('30.00');
+      expect(Money.toApi(jan2024!.profit)).toBe('70.00');
     });
   });
 
@@ -395,13 +396,37 @@ describe('FinancialService', () => {
       });
 
       expect(breakdown).toHaveLength(3);
-      expect(breakdown.find(b => b.category === 'Delivery')?.totalAmount).toBe(1000);
-      expect(breakdown.find(b => b.category === 'Marketing')?.totalAmount).toBe(500);
-      expect(breakdown.find(b => b.category === 'Operations')?.totalAmount).toBe(800);
+      expect(Money.toApi(breakdown.find(b => b.category === 'Delivery')!.totalAmount)).toBe('1000.00');
+      expect(Money.toApi(breakdown.find(b => b.category === 'Marketing')!.totalAmount)).toBe('500.00');
+      expect(Money.toApi(breakdown.find(b => b.category === 'Operations')!.totalAmount)).toBe('800.00');
 
       // Should be sorted by amount (descending)
-      expect(breakdown[0].totalAmount).toBe(1000);
-      expect(breakdown[1].totalAmount).toBe(800);
+      expect(Money.toApi(breakdown[0].totalAmount)).toBe('1000.00');
+      expect(Money.toApi(breakdown[1].totalAmount)).toBe('800.00');
+    });
+  });
+
+  describe('expense totals use exact money arithmetic (F-932)', () => {
+    it('sums 0.1 x 1000 in an expense total to "100.00"', async () => {
+      // 0.1 summed 1000 times as a float is 99.9999999999986
+      const mockExpenses = Array.from({ length: 1000 }, () => ({ category: 'Delivery', amount: 0.1 }));
+      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
+
+      const breakdown = await financialService.getExpenseBreakdown({});
+
+      expect(Money.toApi(breakdown[0].totalAmount)).toBe('100.00');
+      expect(mockExpenses.reduce((sum, e) => sum + e.amount, 0)).not.toBe(100);
+    });
+
+    it('sums 0.1 x 1000 in a daily financial report to "100.00"', async () => {
+      const mockExpenses = Array.from({ length: 1000 }, () => ({ expenseDate: new Date('2024-01-01T10:00:00Z'), amount: 0.1 }));
+      prismaMock.expense.findMany.mockResolvedValue(mockExpenses as any);
+      prismaMock.order.findMany.mockResolvedValue([] as any);
+
+      const reports = await financialService.getFinancialReports({ startDate: new Date('2024-01-01'), endDate: new Date('2024-01-31') }, 'daily');
+
+      expect(Money.toApi(reports[0].expenses)).toBe('100.00');
+      expect(Money.toApi(reports[0].profit)).toBe('-100.00');
     });
   });
 
@@ -427,9 +452,9 @@ describe('FinancialService', () => {
       const settlement = await financialService.getAgentSettlement('agent-1');
 
       expect(settlement.agentId).toBe('agent-1');
-      expect(settlement.totalCollected).toBe(1000);
-      expect(settlement.totalDeposited).toBe(600);
-      expect(settlement.pendingSettlement).toBe(400); // 1000 - 600
+      expect(Money.toApi(settlement.totalCollected)).toBe('1000.00');
+      expect(Money.toApi(settlement.totalDeposited)).toBe('600.00');
+      expect(Money.toApi(settlement.pendingSettlement)).toBe('400.00'); // 1000 - 600
       expect(settlement.collections).toHaveLength(1);
     });
   });
@@ -464,9 +489,9 @@ describe('FinancialService', () => {
         endDate: new Date('2024-01-31')
       });
 
-      expect(margins.totalRevenue).toBe(500); // 200 + 300
-      expect(margins.totalCost).toBe(230); // (2*40) + (3*50)
-      expect(margins.grossProfit).toBe(270); // 500 - 230
+      expect(Money.toApi(margins.totalRevenue)).toBe('500.00'); // 200 + 300
+      expect(Money.toApi(margins.totalCost)).toBe('230.00'); // (2*40) + (3*50)
+      expect(Money.toApi(margins.grossProfit)).toBe('270.00'); // 500 - 230
       expect(margins.profitMargin).toBe(54); // (270 / 500) * 100
       expect(margins.orderCount).toBe(2);
     });
@@ -476,9 +501,9 @@ describe('FinancialService', () => {
 
       const margins = await financialService.calculateProfitMargins({});
 
-      expect(margins.totalRevenue).toBe(0);
-      expect(margins.totalCost).toBe(0);
-      expect(margins.grossProfit).toBe(0);
+      expect(Money.toApi(margins.totalRevenue)).toBe('0.00');
+      expect(Money.toApi(margins.totalCost)).toBe('0.00');
+      expect(Money.toApi(margins.grossProfit)).toBe('0.00');
       expect(margins.profitMargin).toBe(0);
     });
   });
@@ -593,11 +618,11 @@ describe('FinancialService', () => {
 
       const bs = await financialService.getBalanceSheet();
 
-      expect(bs.assets.total).toBe(10000);
-      expect(bs.liabilities.total).toBe(2000);
-      expect(bs.equity.retainedEarnings).toBe(3000); // 4000 - 1000
-      expect(bs.equity.total).toBe(8000); // 5000 + 3000
-      expect(bs.totalLiabilitiesAndEquity).toBe(10000);
+      expect(Money.toApi(bs.assets.total)).toBe('10000.00');
+      expect(Money.toApi(bs.liabilities.total)).toBe('2000.00');
+      expect(Money.toApi(bs.equity.retainedEarnings)).toBe('3000.00'); // 4000 - 1000
+      expect(Money.toApi(bs.equity.total)).toBe('8000.00'); // 5000 + 3000
+      expect(Money.toApi(bs.totalLiabilitiesAndEquity)).toBe('10000.00');
       expect(bs.isBalanced).toBe(true);
     });
 
@@ -616,7 +641,7 @@ describe('FinancialService', () => {
 
       const bs = await financialService.getBalanceSheet(new Date());
 
-      expect(bs.assets.total).toBe(1300); // 1500 - 200
+      expect(Money.toApi(bs.assets.total)).toBe('1300.00'); // 1500 - 200
     });
   });
 
@@ -642,11 +667,11 @@ describe('FinancialService', () => {
 
       const pl = await financialService.getProfitLoss(new Date(), new Date());
 
-      expect(pl.revenue.total).toBe(5000);
-      expect(pl.cogs.total).toBe(2000);
-      expect(pl.expenses.total).toBe(500);
-      expect(pl.grossProfit).toBe(3000);
-      expect(pl.netIncome).toBe(2500);
+      expect(Money.toApi(pl.revenue.total)).toBe('5000.00');
+      expect(Money.toApi(pl.cogs.total)).toBe('2000.00');
+      expect(Money.toApi(pl.expenses.total)).toBe('500.00');
+      expect(Money.toApi(pl.grossProfit)).toBe('3000.00');
+      expect(Money.toApi(pl.netIncome)).toBe('2500.00');
       expect(pl.grossMarginPercentage).toBe(60);
     });
   });

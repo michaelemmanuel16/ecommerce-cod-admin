@@ -18,6 +18,7 @@ jest.mock('../../utils/appEvents', () => ({
 }));
 import appEvents, { AppEvent } from '../../utils/appEvents';
 import { useTestTenant } from '../mocks/tenant.mock';
+import * as Money from '../../utils/money';
 
 // Mock prisma and dependecies
 jest.mock('../../utils/prisma', () => ({
@@ -252,7 +253,7 @@ describe('AgentReconciliationService', () => {
 
             expect(mockTx.agentDeposit.create).toHaveBeenCalledWith(expect.objectContaining({
                 data: expect.objectContaining({
-                    amount,
+                    amount: Money.parse(amount),
                     depositMethod: 'bank_transfer',
                     referenceNumber: 'REF123'
                 })
@@ -592,7 +593,7 @@ describe('AgentReconciliationService', () => {
             const result = await agentReconciliationService.bulkVerifyDeposits(depositIds, verifierId);
 
             expect(result.verified).toBe(3);
-            expect(result.totalAmount).toBe(3000);
+            expect(Money.toApi(result.totalAmount)).toBe('3000.00');
             expect(mockTx.agentDeposit.update).toHaveBeenCalledTimes(3);
             expect(mockTx.agentBalance.update).toHaveBeenCalledTimes(1); // One update per agent
         });

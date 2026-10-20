@@ -3,11 +3,12 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { OrderStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GLAutomationService } from './glAutomationService';
+import * as Money from '../utils/money';
 
 export interface PendingPayment {
     orderId: number;
-    totalAmount: number;
-    commissionAmount: number;
+    totalAmount: Money.Money;
+    commissionAmount: Money.Money;
     customerName: string;
     deliveredAt: Date;
 }
@@ -22,7 +23,7 @@ class PayoutService {
     async getPendingPayments(repId: number) {
         const rep = await prisma.user.findUnique({
             where: { id: repId },
-            select: { commissionAmount: true } as any
+            select: { commissionAmount: true }
         });
 
         if (!rep) throw new Error('Representative not found');
@@ -48,7 +49,7 @@ class PayoutService {
             }
         });
 
-        const commissionAmount = rep.commissionAmount || 0;
+        const commissionAmount = Money.orZero(rep.commissionAmount);
 
         return pendingOrders.map(order => ({
             orderId: order.id,
@@ -81,13 +82,15 @@ class PayoutService {
      */
     async processPayout(data: {
         repId: number;
-        amount: number;
+        amount: Decimal.Value;
         method: string;
         orderIds: number[];
         notes?: string;
         processedBy: number;
     }) {
         const { repId, amount, method, orderIds, notes, processedBy } = data;
+
+        const payoutAmount = Money.parse(amount);
 
         return prisma.$transaction(async (tx) => {
             // 1. Create the Payout record
@@ -96,7 +99,7 @@ class PayoutService {
                 data: {
                     tenantId: resolveTenantId(rep?.tenantId),
                     repId,
-                    amount,
+                    amount: payoutAmount,
                     method,
                     notes,
                     status: 'completed'
@@ -120,7 +123,7 @@ class PayoutService {
                 tx as any,
                 payout.id,
                 repId,
-                new Decimal(amount.toString()),
+                payoutAmount,
                 processedBy
             );
 

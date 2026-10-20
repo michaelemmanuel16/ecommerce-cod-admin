@@ -8,6 +8,7 @@ import prisma, { prismaBase } from '../../utils/prisma';
 import { tenantStorage, withoutTenant } from '../../utils/tenantContext';
 import agingService from '../../services/agingService';
 import { notifyAdminsOverdueCollections } from '../../services/notificationService';
+import * as Money from '../../utils/money';
 
 jest.mock('../../utils/logger', () => ({
   __esModule: true,
@@ -98,7 +99,7 @@ describe('overdue notifications are per tenant', () => {
   it('notifies only the admins of the current tenant, never the platform admin', async () => {
     await asTenant(tenantAId, () =>
       notifyAdminsOverdueCollections([
-        { agentId: agentAId, agentName: 'Agent A', totalBalance: 500, warningAmount: 0, criticalAmount: 500 },
+        { agentId: agentAId, agentName: 'Agent A', totalBalance: Money.parse(500), warningAmount: Money.ZERO, criticalAmount: Money.parse(500) },
       ])
     );
 

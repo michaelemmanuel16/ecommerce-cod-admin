@@ -65,4 +65,10 @@ describe('Money helper', () => {
     expect(Money.tryParse(1e16)).toBeNull();
     expect(Money.toApi(Money.tryParse('12.5')!)).toBe('12.50');
   });
+
+  it('orZero treats null and undefined as zero', () => {
+    expect(Money.toApi(Money.orZero(null))).toBe('0.00');
+    expect(Money.toApi(Money.orZero(undefined))).toBe('0.00');
+    expect(Money.toApi(Money.orZero(new Prisma.Decimal('12.5')))).toBe('12.50');
+  });
 });

@@ -2,6 +2,7 @@ import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, TransferType } from '@prisma/client';
 import logger from '../utils/logger';
+import * as Money from '../utils/money';
 
 
 export class AgentInventoryService {
@@ -561,10 +562,10 @@ export class AgentInventoryService {
         totalReturned: as.totalReturned,
         totalTransferIn: as.totalTransferIn,
         totalTransferOut: as.totalTransferOut,
-        value: as.quantity * product.price,
+        value: Money.mul(as.quantity, product.price),
       })),
       totalWithAgents: agentStocks.reduce((sum, as) => sum + as.quantity, 0),
-      totalValue: agentStocks.reduce((sum, as) => sum + as.quantity * product.price, 0),
+      totalValue: Money.sum(agentStocks.map((as) => Money.mul(as.quantity, product.price))),
     };
   }
 
@@ -609,9 +610,9 @@ export class AgentInventoryService {
         totalTransferIn: s.totalTransferIn,
         totalTransferOut: s.totalTransferOut,
         unitPrice: s.product.price,
-        value: s.quantity * s.product.price,
+        value: Money.mul(s.quantity, s.product.price),
       })),
-      totalValue: stocks.reduce((sum, s) => sum + s.quantity * s.product.price, 0),
+      totalValue: Money.sum(stocks.map((s) => Money.mul(s.quantity, s.product.price))),
     };
   }
 
@@ -689,8 +690,8 @@ export class AgentInventoryService {
     });
 
     // Group by agent
-    const byAgent: Record<number, { name: string; items: number; totalQuantity: number; totalValue: number }> = {};
-    let grandTotalValue = 0;
+    const byAgent: Record<number, { name: string; items: number; totalQuantity: number; totalValue: Money.Money }> = {};
+    let grandTotalValue = Money.ZERO;
     let grandTotalQuantity = 0;
 
     for (const stock of agentStocks) {
@@ -700,14 +701,14 @@ export class AgentInventoryService {
           name: `${stock.agent.firstName} ${stock.agent.lastName}`,
           items: 0,
           totalQuantity: 0,
-          totalValue: 0,
+          totalValue: Money.ZERO,
         };
       }
-      const value = stock.quantity * stock.product.price;
+      const value = Money.mul(stock.quantity, stock.product.price);
       byAgent[agentId].items += 1;
       byAgent[agentId].totalQuantity += stock.quantity;
-      byAgent[agentId].totalValue += value;
-      grandTotalValue += value;
+      byAgent[agentId].totalValue = Money.add(byAgent[agentId].totalValue, value);
+      grandTotalValue = Money.add(grandTotalValue, value);
       grandTotalQuantity += stock.quantity;
     }
 
