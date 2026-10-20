@@ -162,6 +162,15 @@ describe('error body and transitions', () => {
     expect(res.body.forced).not.toContain('returned');
   });
 
+  it('GET transitions hides another rep\'s order from a sales rep (404) and shows the rep their own', async () => {
+    const other = await mkOrder('pending_confirmation');
+    expect((await request(app).get(`/api/orders/${other}/transitions`).set(auth(U.rep))).status).toBe(404);
+    const own = await mkOrder('pending_confirmation', { customerRepId: U.rep.id });
+    const res = await request(app).get(`/api/orders/${own}/transitions`).set(auth(U.rep));
+    expect(res.status).toBe(200);
+    expect(res.body.normal).toEqual(expect.arrayContaining(['confirmed', 'cancelled']));
+  });
+
   it('GET transitions of a missing order is 404', async () => {
     expect((await request(app).get('/api/orders/99999999/transitions').set(auth(U.admin))).status).toBe(404);
   });

@@ -1025,7 +1025,10 @@ export class OrderService {
       }),
       hasPermission(requester, 'orders', 'force_status'),
     ]);
-    if (!order) throw new AppError('Order not found', 404);
+    // Reps and agents see only their own orders (same rule as the machine's role gate).
+    const notOwner = (requester.role === 'sales_rep' && order?.customerRepId !== requester.id)
+      || (requester.role === 'delivery_agent' && order?.deliveryAgentId !== requester.id);
+    if (!order || notOwner) throw new AppError('Order not found', 404);
     return { status: order.status, ...allowedTransitions(order, actorOf(requester), { canForce }) };
   }
 

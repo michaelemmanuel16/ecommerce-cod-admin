@@ -65,6 +65,25 @@ describe('CallService', () => {
       order: mockOrder
     };
 
+    it('clamps a future startedAt to now and an early one to the order creation time', async () => {
+      prismaMock.user.findUnique.mockResolvedValue(mockSalesRep as any);
+      prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);
+      const createdAt = new Date('2026-10-01T10:00:00Z');
+      prismaMock.order.findUnique.mockResolvedValue({ ...mockOrder, createdAt } as any);
+      prismaMock.call.create.mockResolvedValue(mockCreatedCall as any);
+      prismaMock.order.updateMany.mockResolvedValue({ count: 1 } as any);
+
+      const before = Date.now();
+      await callService.createCall({ ...validCallData, startedAt: new Date(Date.now() + 86_400_000) });
+      const future = (prismaMock.call.create.mock.calls[0][0] as any).data.startedAt as Date;
+      expect(future.getTime()).toBeGreaterThanOrEqual(before);
+      expect(future.getTime()).toBeLessThanOrEqual(Date.now());
+
+      await callService.createCall({ ...validCallData, startedAt: new Date('2026-09-01T00:00:00Z') });
+      expect((prismaMock.call.create.mock.calls[1][0] as any).data.startedAt).toEqual(createdAt);
+      expect((prismaMock.order.updateMany.mock.calls[1][0] as any).data.firstContactAt).toEqual(createdAt);
+    });
+
     it('sets firstContactAt on the first call and not on the second (race-safe updateMany)', async () => {
       prismaMock.user.findUnique.mockResolvedValue(mockSalesRep as any);
       prismaMock.customer.findUnique.mockResolvedValue(mockCustomer as any);

@@ -20,3 +20,9 @@ The owner asked Claude to run through M1 without stopping (2026-10-20). Where a 
 | D12 | Can the `system` actor make integration jumps? | No. Only `integration` and `ai` actors jump. System actors (checkout, settlement) make normal table moves only. | No system path needs a jump today. |
 | D13 | Sales rep ownership | A rep owns an order when `customerRepId` is the rep. An agent owns it when `deliveryAgentId` is the agent. The old helper `checkResourceOwnership` reads a field that does not exist (`assignedRepId`); the machine does not use it. | Found by job A. |
 | D14 | Revenue entry for prepaid physical orders (codAmount 0) | Keep today's rule for each path in COD-10: the status path posts revenue only when `codAmount > 0`; agent completion posts as it does today. COD-14 (order-versus-ledger job) measures the gap and fixes the rule with evidence. | Changing what posts to the ledger without data could double count Paystack money. |
+
+## COD-11 — KPI base, revenue and rates
+
+| # | Question | Decision | Why |
+|---|---|---|---|
+| D15 | COD-11's checks use the fixture, but the fixture (T23) is in COD-12 | Build T23 (fixture part 1) inside COD-11, before the KPI tests that need it. T24 (fixture part 2) stays in COD-12. The fixture lives in its own tenant `fixture-numbers`, so it never mixes with real data on the local copy. | The plan's "done when" numbers (92,000, 71%, 48%) cannot be checked without it. |

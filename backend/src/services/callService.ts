@@ -49,8 +49,9 @@ export class CallService {
     }
 
     // Validate order exists if provided
+    let order: { createdAt: Date; customerId: number } | null = null;
     if (data.orderId) {
-      const order = await prisma.order.findUnique({
+      order = await prisma.order.findUnique({
         where: { id: data.orderId }
       });
 
@@ -79,7 +80,11 @@ export class CallService {
       throw new AppError('User does not have permission to log calls', 403);
     }
 
-    const startedAt = data.startedAt ?? new Date();
+    // A client-sent start time may not be in the future or before the order existed:
+    // it feeds firstContactAt and so the time-to-first-call KPI.
+    const now = new Date();
+    let startedAt = data.startedAt && data.startedAt <= now ? data.startedAt : now;
+    if (order && startedAt < order.createdAt) startedAt = order.createdAt;
 
     // Create call log
     const call = await prisma.call.create({
