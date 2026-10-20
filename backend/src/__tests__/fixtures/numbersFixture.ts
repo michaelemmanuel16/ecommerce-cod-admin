@@ -8,6 +8,11 @@
  *
  * How each NUMBERS.md number is read is written in docs/plan/M1-fixture-notes.md.
  *
+ * Part 2 (M1-T24, F-114) adds, in the same tenant: delivered orders for January to September 2026 (revenue by
+ * delivery month exact), seeded expenses for margin history, `Target` rows, cash held by partners (`AgentBalance`)
+ * and, in `meta-spend.json` next to this file, the five Meta campaigns (no spend model exists before M8).
+ * They come from their own random seed (FIXTURE_SEED + 1), so the October plan is unchanged.
+ *
  * `buildFixturePlan()` is pure (no database): it makes every row in memory from a fixed random seed.
  * `seedFixture(prisma, opts)` writes the plan. Integration tests call it in beforeAll; the script
  * `backend/scripts/seed-fixture.ts` calls it from the command line.
@@ -438,6 +443,120 @@ export function summarizePlan(orders: PlannedOrder[]) {
 }
 
 // ---------------------------------------------------------------------------------------------------------
+// Part 2: January to September history (M1-T24)
+// ---------------------------------------------------------------------------------------------------------
+
+/** Delivered revenue by delivery month, January to September 2026, in GH₵ (the Targets mockup). Exact. */
+export const HISTORY_MONTH_REVENUE = [118_000, 121_000, 133_000, 131_000, 142_000, 148_000, 158_000, 166_000, 173_000];
+/** Net margin of each month (Q1 11%, Q2 12%, Q3 12%), made by the seeded expenses. */
+export const HISTORY_MONTH_MARGIN = [0.11, 0.11, 0.11, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12];
+/**
+ * Average order value of the history orders. January to August are a few large synthetic orders (F-114 allows it);
+ * September is ordinary (about GH₵245) so the "last 30 days" AOV on 17 October stays 245 (R12): 18 to 30 September
+ * orders are in that window together with October's.
+ */
+const HISTORY_AVG_ORDER = [2450, 2450, 2450, 2450, 2450, 2450, 2450, 2450, 245];
+const HISTORY_FIRST_ORDER_NUMBER = 10001;
+const HISTORY_CUSTOMERS = 300;
+const COPYBOOK_PRICE = 249;
+const COPYBOOK_COGS = 30;
+/** Cash held by partners, net of fees (NUMBERS.md): Logiswift 17,300, Kofi 2,900, Esi 2,100, Kwesi 1,100, Kasapa 0. */
+export const PARTNER_CASH_HELD: Record<PartnerKey, number> = { logiswift: 17300, kofi: 2900, esi: 2100, kwesi: 1100, kasapa: 0 };
+/** How each month's expense pool is split. */
+const EXPENSE_SHARES: Array<[string, number]> = [['Meta ads', 0.62], ['Delivery fees', 0.2], ['Rep commission', 0.06], ['Other expenses', 0.12]];
+
+export interface HistoryOrder {
+  orderNumber: string;
+  /** 0 = January. */
+  monthIndex: number;
+  total: number;
+  /** Copybook sets on the order; the discount makes the total exact. */
+  sets: number;
+  discount: number;
+  area: string;
+  createdAt: number;
+  firstContactAt: number;
+  confirmedAt: number;
+  dispatchedAt: number;
+  deliveryDate: number;
+}
+
+export interface HistoryExpense { monthIndex: number; category: string; amount: number; expenseDate: number }
+
+/** Delivered orders of January to September 2026, from their own seed. Revenue per delivery month is HISTORY_MONTH_REVENUE exactly. */
+export function buildHistoryPlan(): { orders: HistoryOrder[]; expenses: HistoryExpense[] } {
+  const rng = makeRng(FIXTURE_SEED + 1);
+  const orders: HistoryOrder[] = [];
+  const areas = PARTNER_KEYS.flatMap((key) => PARTNERS[key].areas);
+
+  HISTORY_MONTH_REVENUE.forEach((revenue, monthIndex) => {
+    const n = Math.round(revenue / HISTORY_AVG_ORDER[monthIndex]);
+    const base = Math.floor(revenue / n);
+    const totals = Array.from({ length: n }, (_, i) => base + (i < revenue - base * n ? 1 : 0));
+    // Spread the totals: move an amount from one order to another, so the month still adds up to the dot.
+    const spread = Math.floor(HISTORY_AVG_ORDER[monthIndex] * (monthIndex === 8 ? 0.16 : 0.3));
+    for (let i = 0; i + 1 < n; i += 2) {
+      const delta = rng.int(2 * spread + 1) - spread;
+      totals[i] += delta;
+      totals[i + 1] -= delta;
+    }
+    const days = new Date(Date.UTC(2026, monthIndex + 1, 0)).getUTCDate();
+    for (const total of totals) {
+      const deliveryDate = Date.UTC(2026, monthIndex, 1 + rng.int(days)) + 8 * HOUR + Math.floor(rng.next() * 10 * HOUR);
+      const createdAt = deliveryDate - Math.round(rng.between(3, 5) * DAY);
+      const sets = Math.ceil(total / COPYBOOK_PRICE);
+      orders.push({
+        orderNumber: '', monthIndex, total, sets, discount: sets * COPYBOOK_PRICE - total,
+        area: areas[rng.int(areas.length)],
+        createdAt,
+        firstContactAt: createdAt + Math.round(rng.between(2, 9) * MIN),
+        confirmedAt: createdAt + Math.round(rng.between(10, 180) * MIN),
+        dispatchedAt: deliveryDate - Math.round(rng.between(0.8, 2) * DAY),
+        deliveryDate,
+      });
+    }
+  });
+  orders
+    .map((o, i) => ({ o, i }))
+    .sort((a, b) => a.o.createdAt - b.o.createdAt || a.i - b.i)
+    .forEach(({ o }, n) => { o.orderNumber = String(HISTORY_FIRST_ORDER_NUMBER + n); });
+
+  // Expenses: each month's pool = revenue x (1 - margin) - product cost of that month's orders, so the month's net
+  // margin (revenue - product cost - expenses) / revenue is the margin above. Whole GH₵; the last share takes the rest.
+  const expenses: HistoryExpense[] = [];
+  HISTORY_MONTH_REVENUE.forEach((revenue, monthIndex) => {
+    const cogs = orders.filter((o) => o.monthIndex === monthIndex).reduce((sum, o) => sum + o.sets * COPYBOOK_COGS, 0);
+    const pool = Math.round(revenue * (1 - HISTORY_MONTH_MARGIN[monthIndex])) - cogs;
+    let left = pool;
+    EXPENSE_SHARES.forEach(([category, share], k) => {
+      const amount = k === EXPENSE_SHARES.length - 1 ? left : Math.round(pool * share);
+      left -= amount;
+      expenses.push({ monthIndex, category, amount, expenseDate: Date.UTC(2026, monthIndex, 25, 12) });
+    });
+  });
+  return { orders, expenses };
+}
+
+/** Targets of the fixture (NUMBERS.md North Star: GH₵1.8M a year, 180k in October, 70% confirmation, 60% success). */
+function fixtureTargets() {
+  const date = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
+  const year = { periodStart: date(2026, 1, 1), periodEnd: date(2026, 12, 31) };
+  return {
+    northStar: { scope: 'north_star' as const, metric: 'revenue', unit: 'money', ...year, value: '1800000.0000' },
+    // "Grow each quarter" (F-1112): Q1 360k, Q2 420k, Q3 480k, Q4 540k.
+    quarters: [360_000, 420_000, 480_000, 540_000].map((v, q) => ({
+      scope: 'quarter' as const, metric: 'revenue', unit: 'money',
+      periodStart: date(2026, q * 3 + 1, 1), periodEnd: date(2026, q * 3 + 4, 0), value: `${v}.0000`,
+    })),
+    october: { scope: 'month' as const, metric: 'revenue', unit: 'money', periodStart: date(2026, 10, 1), periodEnd: date(2026, 10, 31), value: '180000.0000' },
+    rates: [
+      { scope: 'north_star' as const, metric: 'confirmation_rate', unit: 'percent', ...year, value: '70.0000' },
+      { scope: 'north_star' as const, metric: 'delivery_success_rate', unit: 'percent', ...year, value: '60.0000' },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------------------------------------
 
@@ -449,8 +568,13 @@ interface SeedFixtureOptions {
 export interface SeedFixtureResult {
   tenantId: string;
   hash: string;
+  /** October orders (placed 1 to 17 October). */
   orders: number;
+  /** Delivered revenue of those October orders. */
   deliveredRevenue: string;
+  /** Delivered orders of January to September (part 2). */
+  historyOrders: number;
+  expenses: number;
 }
 
 const money = (n: number) => n.toFixed(4);
@@ -464,6 +588,11 @@ const chunks = <T>(items: T[], size: number): T[][] => {
 /** Deletes every row of the fixture tenant (children first). Touches no other tenant. Keeps the tenant row. */
 export async function deleteFixtureRows(prisma: PrismaClient, tenantId: string): Promise<void> {
   const t = { tenantId };
+  await prisma.target.deleteMany({ where: { ...t, parentId: { not: null } } });
+  await prisma.target.deleteMany({ where: t });
+  await prisma.expense.deleteMany({ where: t });
+  await prisma.agentBalance.deleteMany({ where: t });
+  await prisma.agentCollection.deleteMany({ where: t }); // something else may have written drafts for fixture orders
   await prisma.orderItem.deleteMany({ where: { order: t } });
   await prisma.orderHistory.deleteMany({ where: t });
   await prisma.call.deleteMany({ where: t });
@@ -502,6 +631,15 @@ async function fixtureHash(prisma: PrismaClient, tenantId: string): Promise<stri
     if (r.status === 'delivered') { delivered++; revenue += Number(r.totalAmount); }
   }
   hash.update(`totals|${rows.length}|${delivered}|${revenue.toFixed(2)}`);
+  // Part 2 rows: expenses, targets and partner cash (no ids).
+  const [expenses, targets, balances] = await Promise.all([
+    prisma.expense.findMany({ where: { tenantId }, orderBy: [{ expenseDate: 'asc' }, { category: 'asc' }], select: { category: true, amount: true, expenseDate: true } }),
+    prisma.target.findMany({ where: { tenantId }, orderBy: [{ scope: 'asc' }, { metric: 'asc' }, { periodStart: 'asc' }], select: { scope: true, metric: true, periodStart: true, value: true } }),
+    prisma.agentBalance.findMany({ where: { tenantId }, orderBy: { currentBalance: 'desc' }, select: { currentBalance: true, agent: { select: { email: true } } } }),
+  ]);
+  for (const e of expenses) hash.update(`expense|${e.category}|${e.amount.toFixed(4)}|${e.expenseDate.toISOString()}\n`);
+  for (const t of targets) hash.update(`target|${t.scope}|${t.metric}|${t.periodStart.toISOString()}|${t.value.toFixed(4)}\n`);
+  for (const b of balances) hash.update(`balance|${b.agent.email}|${b.currentBalance.toFixed(4)}\n`);
   return hash.digest('hex');
 }
 
@@ -632,12 +770,90 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
   })));
   for (const part of chunks(callRows, 1000)) await prisma.call.createMany({ data: part });
 
+  // Part 2: January to September delivered orders (own customers, no rep, no partner, no calls), their items and
+  // history rows, expenses, targets and cash held by partners.
+  log('Creating the January to September history, expenses, targets and partner cash');
+  const history = buildHistoryPlan();
+  await prisma.customer.createMany({
+    data: Array.from({ length: HISTORY_CUSTOMERS }, (_, i) => ({
+      firstName: FIRST_NAMES[i % FIRST_NAMES.length],
+      lastName: LAST_NAMES[Math.floor(i / FIRST_NAMES.length) % LAST_NAMES.length],
+      phoneNumber: `+23325${String(1_000_000 + i).padStart(7, '0')}`,
+      address: `${(i % 90) + 1} Old Road`, state: 'Greater Accra', area: 'Accra', tenantId,
+    })),
+  });
+  const historyCustomerIds = (await prisma.customer.findMany({ where: { tenantId, phoneNumber: { startsWith: '+23325' } }, select: { id: true, phoneNumber: true }, orderBy: { phoneNumber: 'asc' } })).map((c) => c.id);
+  const historyOrderData = history.orders.map((o, i) => ({
+    customerId: historyCustomerIds[i % HISTORY_CUSTOMERS],
+    customerRepId: null,
+    deliveryAgentId: null,
+    status: 'delivered' as const,
+    paymentStatus: 'collected' as const,
+    subtotal: money(o.sets * COPYBOOK_PRICE),
+    shippingCost: money(0),
+    discount: money(o.discount),
+    totalAmount: money(o.total),
+    codAmount: money(o.total),
+    paymentMethod: 'cod',
+    source: 'fixture',
+    externalOrderId: o.orderNumber,
+    deliveryAddress: `${(i % 90) + 1} ${o.area} Road`,
+    deliveryState: 'Greater Accra',
+    deliveryArea: o.area,
+    createdAt: new Date(o.createdAt),
+    firstContactAt: new Date(o.firstContactAt),
+    confirmedAt: new Date(o.confirmedAt),
+    dispatchedAt: new Date(o.dispatchedAt),
+    deliveryDate: new Date(o.deliveryDate),
+    tenantId,
+  }));
+  for (const part of chunks(historyOrderData, 400)) await prisma.order.createMany({ data: part });
+  const historyIdByNumber = new Map(
+    (await prisma.order.findMany({ where: { tenantId, externalOrderId: { in: history.orders.map((o) => o.orderNumber) } }, select: { id: true, externalOrderId: true } }))
+      .map((o) => [o.externalOrderId as string, o.id]),
+  );
+  const historyId = (o: HistoryOrder) => historyIdByNumber.get(o.orderNumber) as number;
+  const historyItemRows = history.orders.map((o) => ({
+    orderId: historyId(o), productId: productId['MG-COPYBOOK-SET'], quantity: o.sets, unitPrice: money(COPYBOOK_PRICE), totalPrice: money(o.sets * COPYBOOK_PRICE),
+  }));
+  for (const part of chunks(historyItemRows, 1000)) await prisma.orderItem.createMany({ data: part });
+  const historyStatusRows = history.orders.flatMap((o) => {
+    const id = historyId(o);
+    return [
+      { orderId: id, status: 'pending_confirmation' as const, fromStatus: null, createdAt: new Date(o.createdAt), tenantId, changedBy: null, actorKind: 'system' as const },
+      { orderId: id, status: 'confirmed' as const, fromStatus: 'pending_confirmation' as const, createdAt: new Date(o.confirmedAt), tenantId, changedBy: admin.id, actorKind: 'user' as const },
+      { orderId: id, status: 'out_for_delivery' as const, fromStatus: 'confirmed' as const, createdAt: new Date(o.dispatchedAt), tenantId, changedBy: admin.id, actorKind: 'user' as const },
+      { orderId: id, status: 'delivered' as const, fromStatus: 'out_for_delivery' as const, createdAt: new Date(o.deliveryDate), tenantId, changedBy: admin.id, actorKind: 'user' as const },
+    ];
+  });
+  for (const part of chunks(historyStatusRows, 1000)) await prisma.orderHistory.createMany({ data: part });
+
+  await prisma.expense.createMany({
+    data: history.expenses.map((e) => ({
+      category: e.category, amount: money(e.amount), description: `${e.category}, ${new Date(e.expenseDate).toISOString().slice(0, 7)} (fixture)`,
+      recordedBy: admin.id, expenseDate: new Date(e.expenseDate), tenantId,
+    })),
+  });
+
+  const targets = fixtureTargets();
+  const northStar = await prisma.target.create({ data: { ...targets.northStar, tenantId } });
+  const quarters = await Promise.all(targets.quarters.map((q) => prisma.target.create({ data: { ...q, parentId: northStar.id, tenantId } })));
+  await prisma.target.create({ data: { ...targets.october, parentId: quarters[3].id, tenantId } });
+  await prisma.target.createMany({ data: targets.rates.map((r) => ({ ...r, tenantId })) });
+
+  // Cash held by each partner, net of fees. The app keeps it on AgentBalance (collected less deposited).
+  await prisma.agentBalance.createMany({
+    data: PARTNER_KEYS.map((key) => ({
+      agentId: partnerIds[key], totalCollected: money(PARTNER_CASH_HELD[key]), totalDeposited: money(0), currentBalance: money(PARTNER_CASH_HELD[key]), tenantId,
+    })),
+  });
+
   // One revenue journal entry per delivered order, posted by the same function the delivery path calls
   // (dated deliveryDate). The order links to its entry, as the status path does.
   log('Posting revenue entries for the delivered orders');
   const delivered = plan.filter((o) => o.status === 'delivered');
   await runInTenant(tenantId, async () => {
-    const deliveredIds = delivered.map(idOf);
+    const deliveredIds = [...delivered.map(idOf), ...history.orders.map(historyId)];
     const loaded = new Map((await prisma.order.findMany({ where: { id: { in: deliveredIds } }, include: ORDER_GL_INCLUDE })).map((o) => [o.id, o]));
     const orders = deliveredIds.map((id) => loaded.get(id) as NonNullable<ReturnType<typeof loaded.get>>); // plan order, so entry numbers are stable
     for (const part of chunks(orders, 50)) {
@@ -653,27 +869,30 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
   });
 
   const hash = await fixtureHash(prisma, tenantId);
-  return { tenantId, hash, orders: plan.length, deliveredRevenue: delivered.reduce((s, o) => s + o.total, 0).toFixed(2) };
+  return {
+    tenantId, hash, orders: plan.length, deliveredRevenue: delivered.reduce((s, o) => s + o.total, 0).toFixed(2),
+    historyOrders: history.orders.length, expenses: history.expenses.length,
+  };
 }
 
-/** Counts read from the database with SQL, for the script's final print. Tests run their own queries. */
+/** October order counts (placed from 1 October) read from the database with SQL, for the script's final print. Tests run their own queries. */
 export async function fixtureCounts(prisma: PrismaClient, tenantId: string) {
   const [status, partner, rep, units, totals, calls] = await Promise.all([
-    prisma.$queryRaw<Array<{ k: string; n: bigint }>>`SELECT status::text AS k, COUNT(*) AS n FROM orders WHERE tenant_id = ${tenantId} GROUP BY 1 ORDER BY 1`,
+    prisma.$queryRaw<Array<{ k: string; n: bigint }>>`SELECT status::text AS k, COUNT(*) AS n FROM orders WHERE tenant_id = ${tenantId} AND created_at >= '2026-10-01' GROUP BY 1 ORDER BY 1`,
     prisma.$queryRaw<Array<{ k: string; assigned: bigint; delivered: bigint }>>`
       SELECT u.first_name AS k, COUNT(*) AS assigned, COUNT(*) FILTER (WHERE o.status = 'delivered') AS delivered
-      FROM orders o JOIN users u ON u.id = o.delivery_agent_id WHERE o.tenant_id = ${tenantId} GROUP BY 1 ORDER BY 1`,
+      FROM orders o JOIN users u ON u.id = o.delivery_agent_id WHERE o.tenant_id = ${tenantId} AND o.created_at >= '2026-10-01' GROUP BY 1 ORDER BY 1`,
     prisma.$queryRaw<Array<{ k: string; confirmed: bigint; delivered: bigint }>>`
       SELECT u.first_name AS k, COUNT(*) FILTER (WHERE o.confirmed_at IS NOT NULL) AS confirmed,
              COUNT(*) FILTER (WHERE o.status = 'delivered') AS delivered
-      FROM orders o JOIN users u ON u.id = o.customer_rep_id WHERE o.tenant_id = ${tenantId} GROUP BY 1 ORDER BY 1`,
+      FROM orders o JOIN users u ON u.id = o.customer_rep_id WHERE o.tenant_id = ${tenantId} AND o.created_at >= '2026-10-01' GROUP BY 1 ORDER BY 1`,
     prisma.$queryRaw<Array<{ k: string; units: bigint }>>`
       SELECT p.sku AS k, SUM(i.quantity) AS units FROM order_items i JOIN orders o ON o.id = i.order_id JOIN products p ON p.id = i.product_id
-      WHERE o.tenant_id = ${tenantId} AND o.status = 'delivered' GROUP BY 1 ORDER BY 1`,
+      WHERE o.tenant_id = ${tenantId} AND o.status = 'delivered' AND o.created_at >= '2026-10-01' GROUP BY 1 ORDER BY 1`,
     prisma.$queryRaw<Array<{ confirmed: bigint; revenue: string }>>`
       SELECT COUNT(*) FILTER (WHERE confirmed_at IS NOT NULL) AS confirmed,
              TO_CHAR(COALESCE(SUM(total_amount) FILTER (WHERE status = 'delivered'), 0), 'FM999999990.00') AS revenue
-      FROM orders WHERE tenant_id = ${tenantId}`,
+      FROM orders WHERE tenant_id = ${tenantId} AND created_at >= '2026-10-01'`,
     prisma.$queryRaw<Array<{ n: bigint }>>`SELECT COUNT(*) AS n FROM calls WHERE tenant_id = ${tenantId}`,
   ]);
   const plain = (list: Array<Record<string, unknown>>) => list.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === 'bigint' ? Number(v) : v])));

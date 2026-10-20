@@ -4,49 +4,17 @@ import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
 import { deliveredRevenue } from '../services/kpi/revenue';
 import { rates } from '../services/kpi/rates';
-import { getStoreTimeZone, parseBound } from '../services/kpi/dates';
+import { leadership } from '../services/kpi/leadership';
+import { readRange, kpiScope, toInvalidRange } from '../utils/kpiRequest';
 
 const invalidRange = (message: string) => new AppError(message, 400, 'INVALID_RANGE');
-
-/** Range from `from` and `to` query values. Date-only values are store-zone days, `to` inclusive (see parseBound). */
-function readRange(req: AuthRequest, tenantId: string): { from: Date; to: Date } {
-  const zone = getStoreTimeZone(tenantId);
-  const { from, to } = req.query;
-  if (typeof from !== 'string' || typeof to !== 'string') throw invalidRange('from and to are required');
-  let range: { from: Date; to: Date };
-  try {
-    range = { from: parseBound(from, 'from', zone), to: parseBound(to, 'to', zone) };
-  } catch (error) {
-    // dates.ts throws RangeError for a value that is not a date
-    throw error instanceof RangeError ? invalidRange(error.message) : error;
-  }
-  if (range.to <= range.from) throw invalidRange('to must be after from');
-  return range;
-}
-
-function readId(value: unknown, label: string): number | undefined {
-  if (value === undefined) return undefined;
-  const n = Number(value);
-  if (!Number.isInteger(n) || n <= 0) throw invalidRange(`${label} must be a positive integer`);
-  return n;
-}
-
-/**
- * Role scope, the same rule as analyticsService: a sales rep sees only orders assigned to them, a delivery
- * agent only their own deliveries. It overrides any repId or partnerId in the query.
- */
-function roleScope(req: AuthRequest): { repId?: number; partnerId?: number } {
-  if (req.user?.role === 'sales_rep') return { repId: req.user.id };
-  if (req.user?.role === 'delivery_agent') return { partnerId: req.user.id };
-  return {};
-}
 
 /** GET /api/kpi/revenue?from&to */
 export const getRevenue = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const tenantId = resolveTenantId();
     const { from, to } = readRange(req, tenantId);
-    const { repId, partnerId } = roleScope(req);
+    const { repId, partnerId } = kpiScope(req);
     res.json(await deliveredRevenue(tenantId, from, to, { customerRepId: repId, deliveryAgentId: partnerId }));
   } catch (error) {
     next(error);
@@ -62,10 +30,29 @@ export const getRates = async (req: AuthRequest, res: Response, next: NextFuncti
     if (basis !== 'cohort' && basis !== 'delivery') throw invalidRange('basis must be cohort or delivery');
     res.json(await rates(tenantId, from, to, {
       basis,
-      partnerId: readId(req.query.partnerId, 'partnerId'),
-      repId: readId(req.query.repId, 'repId'),
-      ...roleScope(req),
+      ...kpiScope(req),
     }));
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/kpi/leadership?asOf=YYYY-MM-DD
+ * asOf is a store-zone day (default today). A rep or an agent gets numbers from their own orders only; the
+ * period targets are the store's.
+ */
+export const getLeadership = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const tenantId = resolveTenantId();
+    const asOf = req.query.asOf;
+    if (asOf !== undefined && typeof asOf !== 'string') throw invalidRange('asOf must be a date as YYYY-MM-DD');
+    try {
+      res.json(await leadership(tenantId, asOf, { scope: kpiScope(req) }));
+    } catch (error) {
+      // leadership throws RangeError for a day that is not a date (2026-02-30, 17-10-2026)
+      throw toInvalidRange(error);
+    }
   } catch (error) {
     next(error);
   }

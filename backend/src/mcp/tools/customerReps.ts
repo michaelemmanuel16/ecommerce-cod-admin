@@ -2,7 +2,9 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
 import { mcpJson, mcpMoneyJson, mcpError, getDateRange } from '../utils';
-import * as Money from '../../utils/money';
+import { resolveTenantId } from '../../utils/tenantContext';
+import { repRates } from '../../services/kpi/reps';
+import { deliveredRevenue } from '../../services/kpi/revenue';
 
 const repsStatusSchema = z.object({});
 
@@ -79,7 +81,7 @@ export function registerCustomerRepTools(
 
   server.tool(
     'reps_performance',
-    'Customer rep performance: orders created, confirmed rate, total revenue generated, for a given period.',
+    'Customer rep performance for a period: orders assigned, confirmationRate (confirmed / assigned), deliveredFromConfirmedRate (delivered / closed among the orders the rep confirmed), delivered revenue. Rates are percents, null when there is nothing to divide.',
     repsPerformanceSchema.shape,
     wrapHandler(async (args: z.infer<typeof repsPerformanceSchema>) => {
       try {
@@ -94,52 +96,26 @@ export function registerCustomerRepTools(
           select: { id: true, firstName: true, lastName: true },
         });
 
-        const dateFilter = { createdAt: { gte: start, lte: end } };
+        // Rates and revenue come from the KPI layer: confirmationRate by customerRepId, deliveredFromConfirmedRate by confirmedById.
+        const tenantId = resolveTenantId();
+        const to = new Date(end.getTime() + 1); // end is inclusive
+        const rangeRates = await repRates(tenantId, start, to);
 
-        const [totalCounts, deliveredCounts, cancelledCounts, revenueSums] = await Promise.all([
-          prisma.order.groupBy({
-            by: ['customerRepId'],
-            where: { ...dateFilter, deletedAt: null },
-            _count: { id: true },
-          }),
-          prisma.order.groupBy({
-            by: ['customerRepId'],
-            where: { ...dateFilter, deletedAt: null, status: 'delivered' },
-            _count: { id: true },
-          }),
-          prisma.order.groupBy({
-            by: ['customerRepId'],
-            where: { ...dateFilter, deletedAt: null, status: { in: ['cancelled', 'returned', 'failed_delivery'] } },
-            _count: { id: true },
-          }),
-          prisma.order.groupBy({
-            by: ['customerRepId'],
-            where: { ...dateFilter, deletedAt: null, status: 'delivered' },
-            _sum: { totalAmount: true },
-          }),
-        ]);
-
-        const totalMap = new Map(totalCounts.map((c) => [c.customerRepId, c._count.id]));
-        const deliveredMap = new Map(deliveredCounts.map((c) => [c.customerRepId, c._count.id]));
-        const cancelledMap = new Map(cancelledCounts.map((c) => [c.customerRepId, c._count.id]));
-        const revenueMap = new Map(revenueSums.map((c) => [c.customerRepId, c._sum.totalAmount]));
-
-        const repPerf = reps.map((rep) => {
-          const total = totalMap.get(rep.id) ?? 0;
-          const delivered = deliveredMap.get(rep.id) ?? 0;
-          const cancelled = cancelledMap.get(rep.id) ?? 0;
-          const successRate = total > 0 ? parseFloat(((delivered / total) * 100).toFixed(1)) : 0;
-
+        const repPerf = await Promise.all(reps.map(async (rep) => {
+          const { confirmationRate, deliveredFromConfirmedRate } = rangeRates.rep(rep.id);
+          const revenue = await deliveredRevenue(tenantId, start, to, { customerRepId: rep.id });
           return {
             id: rep.id,
             name: `${rep.firstName} ${rep.lastName}`,
-            ordersCreated: total,
-            delivered,
-            cancelled,
-            successRate: `${successRate}%`,
-            revenue: Money.orZero(revenueMap.get(rep.id)),
+            ordersCreated: confirmationRate.detail.placed,
+            confirmed: confirmationRate.detail.confirmed,
+            confirmationRate: confirmationRate.value,
+            closed: deliveredFromConfirmedRate.detail.closed,
+            delivered: deliveredFromConfirmedRate.detail.delivered,
+            deliveredFromConfirmedRate: deliveredFromConfirmedRate.value,
+            revenue: revenue.total.value,
           };
-        });
+        }));
 
         return mcpMoneyJson({
           period: parsed.period,

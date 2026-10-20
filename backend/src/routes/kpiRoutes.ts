@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getRevenue, getRates } from '../controllers/kpiController';
+import { getRevenue, getRates, getLeadership } from '../controllers/kpiController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 
@@ -11,5 +11,6 @@ router.use(tenantRateLimiter);
 
 router.get('/revenue', requireResourcePermission('analytics', 'view'), getRevenue);
 router.get('/rates', requireResourcePermission('analytics', 'view'), getRates);
+router.get('/leadership', requireResourcePermission('analytics', 'view'), getLeadership);
 
 export default router;

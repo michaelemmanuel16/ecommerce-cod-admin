@@ -37,9 +37,6 @@ const ALLOWED: Record<string, string> = {
   'mcp/tools/orders.ts': 'repointed in M1-T26',
   'mcp/tools/financial.ts': 'repointed in M1-T26',
   'mcp/tools/agents.ts': 'repointed in M1-T26',
-  'mcp/tools/customerReps.ts': 'repointed in M1-T26',
-  // repointed in M1-T18
-  'services/repPerformanceService.ts': 'repointed in M1-T18 (rep rates)',
   // Not named by any M1 ticket. Opus decides: assign a ticket or leave as non-KPI.
   'services/deliveryService.ts': 'UNASSIGNED: agent successRate (completed / total deliveries)',
   'services/webhookService.ts': 'not a KPI: webhook log success rate',

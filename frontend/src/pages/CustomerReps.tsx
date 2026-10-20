@@ -7,6 +7,14 @@ import { RepTable, RepTableData } from '../components/reps/RepTable';
 import { EditRepModal } from '../components/reps/EditRepModal';
 import { RepPayoutModal } from '../components/reps/RepPayoutModal';
 import { DateRangePicker } from '../components/ui/DateRangePicker';
+import type { RepPerformanceFigures } from '../services/customer-reps.service';
+
+// A rep with no performance row yet: no orders, no rates.
+const NO_PERFORMANCE: RepPerformanceFigures = {
+  totalOrders: 0, deliveredOrders: 0, confirmationRate: null, confirmed: 0, deliveredFromConfirmedRate: null,
+  closedOrders: 0, totalEarnings: 0, monthlyEarnings: 0, pendingOrders: 0,
+  mtdConfirmationRate: null, mtdDeliveredFromConfirmedRate: null, mtdDelivered: 0, mtdClosed: 0,
+};
 
 export const CustomerReps: React.FC = () => {
   const {
@@ -38,6 +46,7 @@ export const CustomerReps: React.FC = () => {
   const repsWithPerformance: RepTableData[] = reps.map((rep) => {
     const perfData = performance.find((p) => p.repId === rep.id);
     return {
+      ...(perfData ?? NO_PERFORMANCE),
       id: rep.id,
       name: rep.name,
       firstName: rep.firstName,
@@ -46,15 +55,6 @@ export const CustomerReps: React.FC = () => {
       phoneNumber: rep.phoneNumber,
       country: rep.country || 'N/A',
       commissionAmount: rep.commissionAmount || 0,
-      totalEarnings: perfData?.totalEarnings || 0,
-      monthlyEarnings: perfData?.monthlyEarnings || 0,
-      successRate: perfData?.successRate || 0,
-      totalOrders: perfData?.totalOrders || 0,
-      deliveredOrders: perfData?.deliveredOrders || 0,
-      pendingOrders: perfData?.pendingOrders || 0,
-      mtdDelivered: perfData?.mtdDelivered || 0,
-      mtdTotalAssigned: perfData?.mtdTotalAssigned || 0,
-      mtdSuccessRate: perfData?.mtdSuccessRate || 0,
       isActive: rep.isActive,
       createdAt: rep.createdAt,
     };

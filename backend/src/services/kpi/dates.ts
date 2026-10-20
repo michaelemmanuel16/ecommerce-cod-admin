@@ -12,7 +12,7 @@
  */
 export const DEFAULT_TIME_ZONE = 'Africa/Accra';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Time zone of a tenant. Constant today (see the file comment). */
 /* _tenantId is the seam for the per-tenant setting: callers already pass it. */
@@ -66,7 +66,7 @@ export function localDate(instant: Date, zone: string): string {
 
 const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-function parseYmd(ymd: string): { year: number; month: number; day: number } {
+export function parseYmd(ymd: string): { year: number; month: number; day: number } {
   const m = YMD.exec(ymd);
   if (!m) throw new RangeError(`Expected a date as YYYY-MM-DD, got ${JSON.stringify(ymd)}`);
   const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];

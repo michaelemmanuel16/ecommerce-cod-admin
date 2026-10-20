@@ -16,6 +16,7 @@ import {
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { tenantIdForFormSlug } from './tenantLookupService';
 import { clearCurrencyCache } from '../utils/currency';
+import { parseOperatingHours } from './kpi/workingTime';
 
 export const adminService = {
   /**
@@ -196,6 +197,16 @@ export const adminService = {
       ? await prisma.systemConfig.findUnique({ where: { tenantId } })
       : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
     if (!config) throw new Error('System config not found');
+
+    // Operating hours drive the time-to-first-call clock (M1-T22, F-755): reject a bad shape now, not at read time.
+    if (data.operatingHours !== undefined && data.operatingHours !== null) {
+      try {
+        data.operatingHours = parseOperatingHours(data.operatingHours);
+      } catch (error) {
+        if (error instanceof RangeError) throw new AppError(error.message, 400, 'INVALID_OPERATING_HOURS');
+        throw error;
+      }
+    }
 
     // Strip masked placeholders, preserve OAuth state, then encrypt — keyed off
     // SENSITIVE_FIELDS so adding a new integration is a one-line map update.

@@ -5,6 +5,8 @@ import { AppError } from '../middleware/errorHandler';
 import { getRepPerformanceDetails } from '../services/repPerformanceService';
 import { adminService } from '../services/adminService';
 import * as Money from '../utils/money';
+import { resolveTenantId } from '../utils/tenantContext';
+import { toInvalidRange } from '../utils/kpiRequest';
 
 export const getAllUsers = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -248,6 +250,7 @@ export const getRepPerformance = async (req: AuthRequest, res: Response, next: N
     }
 
     const performance = await getRepPerformanceDetails(
+      resolveTenantId(),
       repId as string | undefined,
       startDate as string | undefined,
       endDate as string | undefined
@@ -255,7 +258,7 @@ export const getRepPerformance = async (req: AuthRequest, res: Response, next: N
 
     res.json({ performance });
   } catch (error) {
-    next(error);
+    next(toInvalidRange(error));
   }
 };
 

@@ -49,6 +49,7 @@ async function main() {
     const result = await fixture.seedFixture(prisma, { log: (line) => console.log(line) });
     console.log(JSON.stringify(await fixture.fixtureCounts(prisma, result.tenantId), null, 2));
     console.log(`Tenant ${fixture.FIXTURE_SLUG} (${result.tenantId}): ${result.orders} orders, delivered revenue GH₵${result.deliveredRevenue}`);
+    console.log(`History: ${result.historyOrders} delivered orders January to September, ${result.expenses} expenses`);
     console.log(`Hash: ${result.hash}`);
   } finally {
     await prisma.$disconnect();

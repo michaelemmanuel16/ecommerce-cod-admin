@@ -52,8 +52,10 @@ export interface Rates {
 /** Days after the end of the placement day when a cohort counts as closed whatever its orders say (F-1008 GUESS). */
 export const CLOSED_COHORT_DAYS = 30;
 
-const DIGITAL: OrderStatus[] = ['payment_pending', 'payment_failed', 'digital_delivered'];
-const CONFIRMED: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'failed_delivery', 'returned'];
+export const DIGITAL: OrderStatus[] = ['payment_pending', 'payment_failed', 'digital_delivered'];
+export const CONFIRMED: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'failed_delivery', 'returned'];
+/** Orders with an outcome: the delivery success rate counts these only (F-251). */
+export const CLOSED: OrderStatus[] = ['delivered', 'failed_delivery', 'returned'];
 const OPEN: OrderStatus[] = ['pending_confirmation', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'];
 
 /** Percent to 1 decimal (half up), null when the denominator is 0. */
@@ -88,7 +90,7 @@ export async function rates(tenantId: string, from: Date, to: Date, options: Rat
         if (options.repId === undefined) return null;
         const groups = await prisma.order.groupBy({
           by: ['status'],
-          where: { ...placed, ...rep, status: { in: ['delivered', 'failed_delivery', 'returned'] } },
+          where: { ...placed, ...rep, status: { in: CLOSED } },
           _count: { _all: true },
         });
         const n = (s: OrderStatus) => groups.find((g) => g.status === s)?._count._all ?? 0;

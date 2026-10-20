@@ -11,6 +11,11 @@ import { prismaBase } from '../../utils/prisma';
 import { seedFixture, deleteFixtureRows, FIXTURE_SLUG, SeedFixtureResult } from '../fixtures/numbersFixture';
 import { deliveredRevenue } from '../../services/kpi/revenue';
 import { rates } from '../../services/kpi/rates';
+import { historyFixtureChecks } from './fixtureChecks/history';
+import { leadershipFixtureChecks } from './fixtureChecks/leadership';
+import { productsFixtureChecks } from './fixtureChecks/products';
+import { repsFixtureChecks } from './fixtureChecks/reps';
+import { partnersFixtureChecks } from './fixtureChecks/partners';
 
 jest.setTimeout(180_000);
 
@@ -36,7 +41,7 @@ afterAll(async () => {
 
 describe('numbers fixture (M1-T23)', () => {
   it('has the order counts by status and 1,026 confirmed', async () => {
-    const byStatus = await counts(`SELECT status::text AS k, COUNT(*) AS n FROM orders WHERE tenant_id = $1 GROUP BY 1`);
+    const byStatus = await counts(`SELECT status::text AS k, COUNT(*) AS n FROM orders WHERE tenant_id = $1 AND created_at >= '2026-10-01' GROUP BY 1`);
     expect(byStatus.pending_confirmation).toBe(64);
     expect(byStatus.cancelled).toBe(355);
     expect((byStatus.confirmed ?? 0) + (byStatus.preparing ?? 0) + (byStatus.ready_for_pickup ?? 0)).toBe(100);
@@ -66,7 +71,7 @@ describe('numbers fixture (M1-T23)', () => {
          COUNT(*) FILTER (WHERE status = 'returned' AND returned_at IS NULL) AS no_return,
          COUNT(*) FILTER (WHERE status <> 'returned' AND returned_at IS NOT NULL) AS stray_return,
          COUNT(*) FILTER (WHERE confirmed_at IS NOT NULL AND first_contact_at > confirmed_at) AS contact_after_confirm
-       FROM orders WHERE tenant_id = $1`, tenantId);
+       FROM orders WHERE tenant_id = $1 AND created_at >= '2026-10-01'`, tenantId);
     for (const [key, value] of Object.entries(row)) expect([key, Number(value)]).toEqual([key, 0]);
   });
 
@@ -74,7 +79,7 @@ describe('numbers fixture (M1-T23)', () => {
     const [row] = await prismaBase.$queryRawUnsafe<Array<{ bad: bigint; rows: bigint }>>(
       `SELECT COUNT(*) FILTER (WHERE last.status <> o.status) AS bad, COUNT(*) AS rows
        FROM orders o JOIN LATERAL (SELECT status FROM order_history h WHERE h.order_id = o.id ORDER BY h.created_at DESC, h.id DESC LIMIT 1) last ON true
-       WHERE o.tenant_id = $1`, tenantId);
+       WHERE o.tenant_id = $1 AND o.created_at >= '2026-10-01'`, tenantId);
     expect(Number(row.rows)).toBe(1445);
     expect(Number(row.bad)).toBe(0);
   });
@@ -114,7 +119,7 @@ describe('numbers fixture (M1-T23)', () => {
   it('has the delivered units by product, 635 units and revenue GH₵92,000.00', async () => {
     const units = await counts(
       `SELECT p.sku AS k, SUM(i.quantity) AS n FROM order_items i JOIN orders o ON o.id = i.order_id JOIN products p ON p.id = i.product_id
-       WHERE o.tenant_id = $1 AND o.status = 'delivered' GROUP BY 1`);
+       WHERE o.tenant_id = $1 AND o.status = 'delivered' AND o.created_at >= '2026-10-01' GROUP BY 1`);
     expect(units).toEqual({ 'MG-COPYBOOK-SET': 306, 'MG-REFILL-PENS': 172, 'MG-GRIP-TRAINER': 89, 'MG-PARENT-GUIDE': 58, 'DT-CREAM': 10 });
     expect(Object.values(units).reduce((a, b) => a + b, 0)).toBe(635);
 
@@ -122,7 +127,7 @@ describe('numbers fixture (M1-T23)', () => {
       `SELECT TO_CHAR(SUM(total_amount), 'FM999999990.0000') AS revenue, COUNT(*) AS orders,
               TO_CHAR(ROUND(SUM(total_amount) / COUNT(*)), 'FM999990') AS aov,
               (SELECT COUNT(*) FROM products WHERE tenant_id = $1) AS products
-       FROM orders WHERE tenant_id = $1 AND status = 'delivered'`, tenantId);
+       FROM orders WHERE tenant_id = $1 AND status = 'delivered' AND created_at >= '2026-10-01'`, tenantId);
     expect(row.revenue).toBe('92000.0000');
     expect(Number(row.orders)).toBe(376);
     expect(row.aov).toBe('245'); // 92,000 / 376 = 244.68
@@ -143,12 +148,13 @@ describe('numbers fixture (M1-T23)', () => {
                                OR (j.id IS NOT NULL AND (SELECT COALESCE(SUM(t.credit_amount), 0) FROM account_transactions t JOIN accounts a ON a.id = t.account_id
                                     WHERE t.journal_entry_id = j.id AND a.code = '4010') <> o.total_amount)) AS gaps,
               TO_CHAR((SELECT SUM(t.credit_amount) FROM account_transactions t JOIN accounts a ON a.id = t.account_id
+                       JOIN journal_entries jj ON jj.id = t.journal_entry_id AND jj.entry_date >= '2026-10-01'
                        WHERE t.tenant_id = $1 AND a.code = '4010'), 'FM999999990.00') AS revenue,
               COUNT(*) FILTER (WHERE j.id IS NOT NULL AND j.entry_date <> o.delivery_date) AS undated,
               (SELECT COUNT(*) FROM (SELECT journal_entry_id FROM account_transactions WHERE tenant_id = $1 GROUP BY 1
                                      HAVING SUM(debit_amount) <> SUM(credit_amount)) x) AS unbalanced
        FROM orders o LEFT JOIN journal_entries j ON j.source_type = 'order_delivery' AND j.source_id = o.id AND j.tenant_id = o.tenant_id AND NOT j.is_voided
-       WHERE o.tenant_id = $1`, tenantId);
+       WHERE o.tenant_id = $1 AND o.created_at >= '2026-10-01'`, tenantId);
     expect(Number(row.entries)).toBe(376);
     expect(Number(row.gaps)).toBe(0);
     expect(row.revenue).toBe('92000.00');
@@ -168,7 +174,7 @@ describe('numbers fixture (M1-T23)', () => {
     expect(second.hash).toBe(first.hash);
     expect(second.deliveredRevenue).toBe('92000.00');
     const [row] = await prismaBase.$queryRawUnsafe<Array<{ n: bigint; je: bigint }>>(
-      `SELECT COUNT(*) AS n, (SELECT COUNT(*) FROM journal_entries WHERE tenant_id = $1) AS je FROM orders WHERE tenant_id = $1`, tenantId);
+      `SELECT COUNT(*) AS n, (SELECT COUNT(*) FROM journal_entries WHERE tenant_id = $1 AND entry_date >= '2026-10-01') AS je FROM orders WHERE tenant_id = $1 AND created_at >= '2026-10-01'`, tenantId);
     expect(Number(row.n)).toBe(1445); // the re-run replaced the rows, it did not add to them
     expect(Number(row.je)).toBe(376);
   });
@@ -214,3 +220,9 @@ describe('KPI services on the fixture (M1-T16, T17)', () => {
     expect(r.orderToCashYield.value).toBeLessThanOrEqual(35);
   });
 });
+
+historyFixtureChecks(() => tenantId);
+leadershipFixtureChecks(() => tenantId);
+productsFixtureChecks(() => tenantId);
+repsFixtureChecks(() => tenantId);
+partnersFixtureChecks(() => tenantId);

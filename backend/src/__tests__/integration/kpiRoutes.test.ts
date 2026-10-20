@@ -93,4 +93,10 @@ describe('/api/kpi role scope', () => {
     expect(await placed(pair.a.users.salesRep.token, '')).toBe(1);
     expect(await placed(pair.a.users.deliveryAgent.token, '&partnerId=999999')).toBe(1);
   });
+
+  it('an agent passing repId gets the same result as without it', async () => {
+    const own = (await request(app).get(`/api/kpi/revenue?${RANGE}`).set(auth(pair.a.users.deliveryAgent.token))).body.total.value;
+    const withRepId = (await request(app).get(`/api/kpi/revenue?${RANGE}&repId=${pair.a.users.admin.id}`).set(auth(pair.a.users.deliveryAgent.token))).body.total.value;
+    expect(withRepId).toBe(own);
+  });
 });

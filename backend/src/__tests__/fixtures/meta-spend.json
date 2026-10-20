@@ -1,0 +1,14 @@
+{
+  "source": "docs/mockups/v2/NUMBERS.md, Marketing funnel (1-17 Oct 2026). No spend model exists before M8; M8 loads this file.",
+  "period": { "from": "2026-10-01", "to": "2026-10-17" },
+  "currency": "NGN",
+  "fxRateNgnPerGhs": 112,
+  "campaigns": [
+    { "name": "MG_Oct_Teacher_UGC", "product": "MG-COPYBOOK-SET", "mapped": true, "status": "Winning", "spend": 4370000, "impressions": 2000000, "linkClicks": 33000, "landingPageViews": 23400, "checkoutsStarted": 2300, "orders": 777 },
+    { "name": "MG_Oct_Mom_POV", "product": "MG-COPYBOOK-SET", "mapped": true, "status": "On track", "spend": 2350000, "impressions": 1150000, "linkClicks": 16500, "landingPageViews": 11500, "checkoutsStarted": 1170, "orders": 387 },
+    { "name": "MG_Oct_Benefit_Stack", "product": "MG-COPYBOOK-SET", "mapped": true, "status": "Over max CPA", "spend": 1529000, "impressions": 820000, "linkClicks": 10800, "landingPageViews": 7300, "checkoutsStarted": 700, "orders": 234 },
+    { "name": "MG_Oct_Retarget", "product": null, "mapped": false, "status": "Not mapped", "spend": 41000, "impressions": 30000, "linkClicks": 600, "landingPageViews": 450, "checkoutsStarted": 30, "orders": 7 },
+    { "name": "DT_Oct_Dignity", "product": "DT-CREAM", "mapped": true, "status": "Paused", "spend": 240000, "impressions": 100000, "linkClicks": 600, "landingPageViews": 350, "checkoutsStarted": 100, "orders": 40 }
+  ],
+  "totals": { "spend": 8530000, "impressions": 4100000, "linkClicks": 61500, "landingPageViews": 43000, "checkoutsStarted": 4300, "orders": 1445 }
+}
