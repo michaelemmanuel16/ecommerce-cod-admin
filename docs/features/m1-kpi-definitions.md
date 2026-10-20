@@ -76,3 +76,27 @@ The KPI layer starts here. Every KPI number now comes from `services/kpi`, with 
 - `backend/src/services/kpi/` (new), `backend/src/controllers/kpiController.ts`, `backend/src/routes/kpiRoutes.ts` (new), `backend/src/server.ts`
 - `backend/scripts/seed-fixture.ts`, `backend/src/__tests__/fixtures/numbersFixture.ts` (new)
 - Tests: `kpiDates`, `kpiGrep`, `kpiRevenue`, `kpiRates`, `kpiRoutes`, `numbersFixture`
+
+---
+
+## COD-12 — M1-I04 Rep, leadership, product and partner KPIs, plus fixture
+**Date:** 2026-10-20 | **Type:** feat | **Branch:** feature/m1-kpi-definitions | **Commit:** 2e98c40
+
+### Summary
+Rep, leadership, product and delivery partner KPIs now come from the KPI layer. The numbers fixture gets part 2 (January to September history, targets, expenses, partner cash), and every area has its own fixture checks. Plan tasks: M1-T18 to T22 and T24 (T23 shipped in COD-11). Decisions: D20–D34 in `docs/plan/M1-decisions.md`.
+
+### Changes
+- **Backend:** `kpi/reps.ts` (`repRates`): confirmation rate and delivered-from-confirmed rate per rep and for all reps. `repPerformanceService` and the MCP tool `reps_performance` use it; month-to-date uses the store time zone.
+- **API:** `GET /api/reports/team?from&to` (tiles, rep table, decline reasons; super_admin, admin and manager only, D24). `GET /api/users/reps/performance` renames `successRate` to `confirmationRate` and `deliveredFromConfirmedRate` (KPI objects).
+- **Backend:** `kpi/leadership.ts`: pace markers, month projection, revenue needed a day, orders needed a day, planned AOV, attainment and `lever()` (D29, D30). `GET /api/kpi/leadership?asOf`.
+- **Backend:** `kpi/products.ts` delivered units (returns left out, D31); `kpi/partners.ts` partner rates on the cohort basis and median timings (D21); `kpi/timeToFirstCall.ts` with `kpi/workingTime.ts` (operating hours, D20, D22, D23). `GET /api/rep/stats/time-to-first-call`.
+- **Settings:** `SystemConfig.operatingHours` JSON, checked in `PUT /api/admin/settings`; `npm run set:operating-hours` (dry by default).
+- **Access:** one rule, `kpiScope` in `utils/kpiRequest.ts`, for every KPI route: a rep sees own orders, an agent own deliveries; admins may filter by rep or partner (D19, D32, D34).
+- **Frontend:** reps page shows delivered-from-confirmed and confirmation rates with their counts.
+- **Fixture:** part 2 plus `fixtureChecks/` for history, leadership, products, reps and partners (39 checks). Confirm agent's confirmation rate is 70.5% (shown 71%), not NUMBERS.md's 70% (D28).
+
+### Key Files
+- `backend/src/services/kpi/{reps,leadership,products,partners,timeToFirstCall,workingTime,median}.ts` (new)
+- `backend/src/utils/kpiRequest.ts`, `controllers/{reportController,repStatsController}.ts`, `routes/{reportRoutes,repRoutes}.ts` (new); `services/teamReportService.ts` (new)
+- `backend/src/services/repPerformanceService.ts`, `mcp/tools/customerReps.ts`, `services/adminService.ts`, `scripts/set-operating-hours.ts`
+- `frontend/src/pages/CustomerReps.tsx`, `components/reps/RepTable.tsx`, `services/customer-reps.service.ts`
