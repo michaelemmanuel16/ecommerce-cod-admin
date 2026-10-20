@@ -383,11 +383,10 @@ describe('Scenario 8 — Per-tenant currency config', () => {
     expect(res.body.currency).toBe('NGN');
   });
 
-  it('unauthenticated public config stays tenant-blind (no tenant currency leak)', async () => {
+  it('unauthenticated public config without a slug is 404 (no tenant currency leak)', async () => {
     const res = await request(app).get('/api/admin/config');
 
-    expect(res.status).toBe(200);
-    // Falls back to the global/legacy row — never a specific tenant's currency.
-    expect(res.body.currency).not.toBe('NGN');
+    expect(res.status).toBe(404);
+    expect(res.body.currency).toBeUndefined();
   });
 });
