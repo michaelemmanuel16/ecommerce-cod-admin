@@ -3,7 +3,7 @@ import { getTenantId } from '../../utils/tenantContext';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
-import { mcpJson, mcpError, getCurrency } from '../utils';
+import { mcpMoneyJson, mcpError } from '../utils';
 import * as Money from '../../utils/money';
 
 const dailySchema = z.object({
@@ -86,9 +86,8 @@ export function registerAnalyticsTools(
           : [];
         const productMap = new Map(products.map((p) => [p.id, p.name]));
 
-        return mcpJson({
+        return mcpMoneyJson({
           date: start.toISOString().split('T')[0],
-          currency: await getCurrency(),
           totalOrders: orders,
           revenue,
           statusBreakdown: Object.fromEntries(statusCounts.map((s) => [s.status, s._count.id])),
@@ -137,8 +136,7 @@ export function registerAnalyticsTools(
           getWeekStats(lastWeekStart, lastWeekEnd),
         ]);
 
-        return mcpJson({
-          currency: await getCurrency(),
+        return mcpMoneyJson({
           currentWeek: { from: thisWeekStart.toISOString().split('T')[0], to: thisWeekEnd.toISOString().split('T')[0], ...thisWeek },
           priorWeek: { from: lastWeekStart.toISOString().split('T')[0], to: lastWeekEnd.toISOString().split('T')[0], ...lastWeek },
           change: {
@@ -186,16 +184,15 @@ export function registerAnalyticsTools(
           ? (((current.totalOrders - prior.totalOrders) / prior.totalOrders) * 100).toFixed(1)
           : 'N/A';
 
-        return mcpJson({
+        return mcpMoneyJson({
           month: `${year}-${String(month).padStart(2, '0')}`,
-          currency: await getCurrency(),
           ...current,
           newCustomers,
           priorMonth: prior,
           growth: {
             orders: `${orderGrowth}%`,
             revenue: prior.revenue.gt(0)
-              ? `${Money.mul(Money.div(Money.sub(current.revenue, prior.revenue), prior.revenue), 100).toFixed(1)}%`
+              ? `${Money.percent(Money.sub(current.revenue, prior.revenue), prior.revenue).toFixed(1)}%`
               : 'N/A',
           },
         });

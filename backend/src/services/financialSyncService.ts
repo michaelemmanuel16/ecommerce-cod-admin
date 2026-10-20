@@ -10,7 +10,6 @@
  */
 
 import { Prisma, Order, OrderItem, Product, Customer, User } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
 import { GLAutomationService, OrderWithItems } from './glAutomationService';
 import logger from '../utils/logger';
 import { SYSTEM_USER_ID } from '../config/constants';
@@ -49,7 +48,7 @@ export class FinancialSyncService {
     }
 
     // A Decimal is always truthy: a zero COD amount is not a COD order
-    if (!order.codAmount || Money.parse(order.codAmount).isZero()) {
+    if (!Money.isNonZero(order.codAmount)) {
       logger.info(`Skipping financial sync for order ${order.id} - not a COD order`);
       return { transaction: null, journalEntry: null };
     }
@@ -97,11 +96,7 @@ export class FinancialSyncService {
       logger.info(`Created Transaction record for order ${order.id} (Transaction ID: ${transaction.id})`);
 
       // Step 2: Calculate COGS
-      let totalCOGS = new Decimal(0);
-      for (const item of order.orderItems) {
-        const cogs = Money.orZero(item.product.cogs);
-        totalCOGS = totalCOGS.plus(cogs.times(item.quantity));
-      }
+      const totalCOGS = Money.sum(order.orderItems.map((item) => Money.mul(Money.orZero(item.product.cogs), item.quantity)));
 
       // Step 3: Create GL entries using GLAutomationService
       const journalEntry = await GLAutomationService.createRevenueRecognitionEntry(
@@ -267,7 +262,7 @@ export class FinancialSyncService {
       }
     });
 
-    if (!order || order.status !== 'delivered' || !order.codAmount || Money.parse(order.codAmount).isZero()) {
+    if (!order || order.status !== 'delivered' || !Money.isNonZero(order.codAmount)) {
       return false;
     }
 

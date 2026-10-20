@@ -219,7 +219,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     expect(Money.toApi(data.depositPaid)).toBe('74.70');
     expect(Money.toApi(data.balanceDue)).toBe('174.30');
     expect(Money.toApi(data.totalAmount)).toBe('249.00');
-    expect(Money.eq(Money.add(data.depositPaid, data.balanceDue), data.totalAmount)).toBe(true);
+    expect(Money.compare(Money.add(data.depositPaid, data.balanceDue), data.totalAmount)).toBe(0);
     const txn = (prismaMock.transaction.create as any).mock.calls[0][0].data;
     expect(Money.toApi(txn.amount)).toBe('74.70');
     expect(txn.metadata.fees).toBe('1.12');

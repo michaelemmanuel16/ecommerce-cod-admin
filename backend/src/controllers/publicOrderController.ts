@@ -645,15 +645,15 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
       order: {
         id: order.id,
         status: order.status,
-        totalAmount: Money.toApi(order.totalAmount),
+        totalAmount: order.totalAmount,
         createdAt: order.createdAt,
         estimatedDelivery: order.estimatedDelivery,
         customer: order.customer,
         items: order.orderItems.map(item => ({
           name: item.product.name,
           quantity: item.quantity,
-          price: Money.toApi(item.unitPrice),
-          total: Money.toApi(item.totalPrice),
+          price: item.unitPrice,
+          total: item.totalPrice,
           imageUrl: item.product.imageUrl
         })),
         history: order.orderHistory.map(h => ({

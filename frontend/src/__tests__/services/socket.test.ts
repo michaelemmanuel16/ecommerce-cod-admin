@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuthStore } from '../../stores/authStore';
 
 const handlers: Record<string, (arg?: any) => any> = {};
-const fakeSocket = { on: vi.fn((e: string, h: any) => { handlers[e] = h; }), connect: vi.fn(), off: vi.fn(), disconnect: vi.fn() };
+const fakeSocket = { prependAny: vi.fn(), on: vi.fn((e: string, h: any) => { handlers[e] = h; }), connect: vi.fn(), off: vi.fn(), disconnect: vi.fn() };
 vi.mock('socket.io-client', () => ({ io: vi.fn(() => fakeSocket) }));
 
 const refreshAccessToken = vi.fn();

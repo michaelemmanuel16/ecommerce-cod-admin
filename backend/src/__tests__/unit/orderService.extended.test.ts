@@ -1,3 +1,4 @@
+import * as Money from '../../utils/money';
 /**
  * Extended OrderService tests to boost branch coverage
  * Focused on branches not covered in the main orderService.test.ts
@@ -410,8 +411,8 @@ describe('OrderService (extended branch coverage)', () => {
         .mockResolvedValueOnce({ _avg: { totalAmount: null } } as any);
 
       const result = await orderService.getOrderStats({});
-      expect(result.totalRevenue).toBe('0.00');
-      expect(result.avgOrderValue).toBe('0.00');
+      expect(Money.toApi(result.totalRevenue)).toBe('0.00');
+      expect(Money.toApi(result.avgOrderValue)).toBe('0.00');
     });
   });
 

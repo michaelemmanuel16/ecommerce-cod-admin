@@ -103,7 +103,7 @@ interface CreateCheckoutFormData {
   packages: Array<{
     name: string;
     description?: string;
-    price: Prisma.Decimal.Value;
+    price: Money.MoneyInput;
     quantity: number;
     isPopular?: boolean;
     sortOrder?: number;
@@ -112,7 +112,7 @@ interface CreateCheckoutFormData {
     name: string;
     description?: string;
     imageUrl?: string;
-    price: Prisma.Decimal.Value;
+    price: Money.MoneyInput;
     items: any;
     sortOrder?: number;
     productId?: number;
@@ -133,7 +133,7 @@ interface UpdateCheckoutFormData {
     id?: number;
     name: string;
     description?: string;
-    price: Prisma.Decimal.Value;
+    price: Money.MoneyInput;
     quantity: number;
     isPopular?: boolean;
     sortOrder?: number;
@@ -143,7 +143,7 @@ interface UpdateCheckoutFormData {
     name: string;
     description?: string;
     imageUrl?: string;
-    price: Prisma.Decimal.Value;
+    price: Money.MoneyInput;
     items: any;
     sortOrder?: number;
     productId?: number;

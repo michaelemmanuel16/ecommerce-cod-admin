@@ -109,7 +109,7 @@ async function settleInTenant(
   // SECURITY: the amount actually paid must cover the expected charge (deposit
   // portion or full total). Stops an underpaid/tampered initialize from
   // fulfilling — digital products auto-deliver. Paystack amounts are minor units.
-  const paidMinor = Money.parse(verification.data.amount ?? 0);
+  const paidMinor = Money.orZero(verification.data.amount);
   if (Money.lt(paidMinor, pending.paystackChargeMinor)) {
     logger.warn('Paystack underpayment — not creating order', {
       reference,

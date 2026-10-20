@@ -12,6 +12,7 @@ import prisma from '../utils/prisma';
 import { Decimal } from '@prisma/client/runtime/library';
 import { getTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
+import { addRowsWithMoney } from '../utils/xlsxMoney';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -148,13 +149,7 @@ export const exportProfitabilityAnalysis = async (req: AuthRequest, res: Respons
         { header: 'Gross Margin %', key: 'Gross Margin %', width: 15 }
       ];
 
-      // Money was formatted to "x.xx" text for CSV; Excel needs real numbers
-      const moneyColumns = ['Total Revenue', 'Total COGS', 'Gross Profit'] as const;
-      moneyColumns.forEach(key => { worksheet.getColumn(key).numFmt = '0.00'; });
-      worksheet.addRows(exportData.map(row => ({
-        ...row,
-        ...Object.fromEntries(moneyColumns.map(key => [key, Number(row[key])]))
-      })));
+      addRowsWithMoney(worksheet, exportData, ['Total Revenue', 'Total COGS', 'Gross Profit']);
 
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename=profitability_report_${Date.now()}.xlsx`);

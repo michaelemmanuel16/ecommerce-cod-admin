@@ -21,6 +21,11 @@ function moneyInput(value: unknown): Money.Money {
   return Money.tryParse(value) ?? Money.ZERO;
 }
 
+/** Request input when sent, else the stored value. */
+function moneyOr(value: unknown, stored: Money.MoneyInput): Money.Money {
+  return value !== undefined ? moneyInput(value) : Money.parse(stored);
+}
+
 export const listShipments = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
 
@@ -156,10 +161,10 @@ export const updateShipment = async (req: AuthRequest, res: Response): Promise<v
     const { supplier, quantity, unitCost, shippingCost, customsDuties, otherCosts, expectedArrivalDate, notes } = req.body;
 
     const qty = quantity !== undefined ? quantity : shipment.quantity;
-    const uc = unitCost !== undefined ? moneyInput(unitCost) : Money.parse(shipment.unitCost);
-    const sc = shippingCost !== undefined ? moneyInput(shippingCost) : Money.parse(shipment.shippingCost);
-    const cd = customsDuties !== undefined ? moneyInput(customsDuties) : Money.parse(shipment.customsDuties);
-    const oc = otherCosts !== undefined ? moneyInput(otherCosts) : Money.parse(shipment.otherCosts);
+    const uc = moneyOr(unitCost, shipment.unitCost);
+    const sc = moneyOr(shippingCost, shipment.shippingCost);
+    const cd = moneyOr(customsDuties, shipment.customsDuties);
+    const oc = moneyOr(otherCosts, shipment.otherCosts);
     const totalCost = computeTotalCost(uc, qty, sc, cd, oc);
 
     const updated = await prisma.inventoryShipment.update({

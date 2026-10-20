@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
+import { clearCurrencyCache } from '../utils/currency';
 import { AppError } from '../middleware/errorHandler';
 
 export const setupOnboarding = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
@@ -63,6 +64,7 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
           },
         });
       }
+      clearCurrencyCache();
     }
 
     // Mark onboarding as complete in user preferences (using data from initial read)

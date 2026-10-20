@@ -13,6 +13,7 @@ import { sanitizeName, sanitizePhoneNumber, sanitizeAddress, sanitizeString } fr
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import prisma from '../utils/prisma';
 import * as Money from '../utils/money';
+import { addRowsWithMoney } from '../utils/xlsxMoney';
 
 export const exportOrders = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
@@ -115,9 +116,7 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
                 width: 20
             }));
 
-            // Money was formatted to "x.xx" text for CSV; Excel needs a real number
-            worksheet.getColumn('Total Amount').numFmt = '0.00';
-            worksheet.addRows(orders.map(o => ({ ...o, 'Total Amount': Number(o['Total Amount']) })));
+            addRowsWithMoney(worksheet, orders, ['Total Amount']);
 
             const buffer = await workbook.xlsx.writeBuffer();
 
@@ -379,10 +378,10 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
         const validOrders = sanitizedOrders.filter((order: BulkImportOrderData) => {
             // Basic presence check
             const orderAmount = Money.tryParse(order.totalAmount);
-            if (!order.customerPhone || !orderAmount || orderAmount.isZero() || !order.deliveryAddress) {
+            if (!order.customerPhone || !Money.isNonZero(orderAmount) || !order.deliveryAddress) {
                 logger.warn('Order filtered: missing required fields', {
                     hasPhone: !!order.customerPhone,
-                    hasAmount: !!orderAmount && !orderAmount.isZero(),
+                    hasAmount: Money.isNonZero(orderAmount),
                     hasAddress: !!order.deliveryAddress,
                     order
                 });
@@ -413,7 +412,7 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             }
 
             // 3. Amount validation (already in schema but good to catch early)
-            if (!Money.gt(orderAmount, 0)) {
+            if (!Money.gt(Money.orZero(orderAmount), 0)) {
                 logger.warn('Order filtered: invalid amount', {
                     amount: order.totalAmount,
                     order

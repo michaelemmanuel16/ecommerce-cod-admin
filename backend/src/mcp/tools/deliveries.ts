@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { encodeCursor, decodeCursor, mcpJson, mcpError, getCurrency } from '../utils';
+import { encodeCursor, decodeCursor, mcpMoneyJson, mcpError } from '../utils';
 
 const deliveriesActiveSchema = z.object({
   agentId: z.number().int().optional(),
@@ -51,8 +51,7 @@ export function registerDeliveryTools(
         const results = hasMore ? orders.slice(0, limit) : orders;
         const nextCursor = hasMore ? encodeCursor(results[results.length - 1].id) : undefined;
 
-        return mcpJson({
-          currency: await getCurrency(),
+        return mcpMoneyJson({
           deliveries: results.map((o) => ({
             orderId: o.id,
             status: o.status,

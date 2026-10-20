@@ -25,6 +25,10 @@ export const connectSocket = () => {
     auth: (cb) => cb({ token: useAuthStore.getState().accessToken }),
   });
 
+  // Money arrives as "x.xx" strings. Parse every payload in place before any listener
+  // (including financialStore's) sees it.
+  socket.prependAny((_event, payload) => normalizeMoney(payload));
+
   let refreshedAfterReject = false;
 
   // The server rejects an expired or invalid access token. Ask the shared refresh (the same
@@ -52,8 +56,7 @@ export const connectSocket = () => {
     console.log('Socket disconnected');
   });
 
-  socket.on('order:created', (raw) => {
-    const data = normalizeMoney(raw);
+  socket.on('order:created', (data) => {
     toast.success(`New order received: ${data.orderNumber}`);
     useNotificationsStore.getState().addNotification({
       id: Date.now(), // Use number instead of string
@@ -66,8 +69,7 @@ export const connectSocket = () => {
     });
   });
 
-  socket.on('order:updated', (raw) => {
-    const data = normalizeMoney(raw);
+  socket.on('order:updated', (data) => {
     useNotificationsStore.getState().addNotification({
       id: Date.now(), // Use number instead of string
       type: 'order:updated',
@@ -79,8 +81,7 @@ export const connectSocket = () => {
     });
   });
 
-  socket.on('order:status_changed', (raw) => {
-    const data = normalizeMoney(raw);
+  socket.on('order:status_changed', (data) => {
     const statusText = data.status.split('_').join(' ');
     toast.success(`Order ${data.orderNumber} status changed to ${statusText}`);
     useNotificationsStore.getState().addNotification({

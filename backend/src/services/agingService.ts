@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import appEvents, { AppEvent } from '../utils/appEvents';
@@ -93,18 +92,18 @@ export class AgingService {
         if (!agentAgingMap.has(agentId)) {
           agentAgingMap.set(agentId, {
             agentId,
-            bucket_0_1: new Prisma.Decimal(0),
-            bucket_2_3: new Prisma.Decimal(0),
-            bucket_4_7: new Prisma.Decimal(0),
-            bucket_8_plus: new Prisma.Decimal(0),
-            totalBalance: new Prisma.Decimal(0),
+            bucket_0_1: Money.ZERO,
+            bucket_2_3: Money.ZERO,
+            bucket_4_7: Money.ZERO,
+            bucket_8_plus: Money.ZERO,
+            totalBalance: Money.ZERO,
             oldestCollectionDate: col.collectionDate,
             tenantId: col.tenantId,
           });
         }
 
         const data = agentAgingMap.get(agentId);
-        const amount = new Prisma.Decimal(col.amount.toString());
+        const amount = Money.parse(col.amount);
         data.totalBalance = data.totalBalance.add(amount);
 
         if (col.collectionDate < data.oldestCollectionDate) {
@@ -238,21 +237,21 @@ export class AgingService {
    */
   private async getAgingSummary(buckets: any[]) {
     const totalAgentsWithBalance = buckets.length;
-    let totalOutstandingAmount = new Prisma.Decimal(0);
+    let totalOutstandingAmount = Money.ZERO;
     let overdueAgentsCount = 0;
-    let criticalOverdueAmount = new Prisma.Decimal(0);
-    let warningOverdueAmount = new Prisma.Decimal(0);
-    let bucket_0_1_total = new Prisma.Decimal(0);
-    let bucket_2_3_total = new Prisma.Decimal(0);
+    let criticalOverdueAmount = Money.ZERO;
+    let warningOverdueAmount = Money.ZERO;
+    let bucket_0_1_total = Money.ZERO;
+    let bucket_2_3_total = Money.ZERO;
 
     for (const bucket of buckets) {
-      const balance = new Prisma.Decimal(bucket.totalBalance.toString());
+      const balance = Money.parse(bucket.totalBalance);
       totalOutstandingAmount = totalOutstandingAmount.add(balance);
 
-      const b01 = new Prisma.Decimal(bucket.bucket_0_1.toString());
-      const b23 = new Prisma.Decimal(bucket.bucket_2_3.toString());
-      const critical = new Prisma.Decimal(bucket.bucket_8_plus.toString());
-      const warning = new Prisma.Decimal(bucket.bucket_4_7.toString());
+      const b01 = Money.parse(bucket.bucket_0_1);
+      const b23 = Money.parse(bucket.bucket_2_3);
+      const critical = Money.parse(bucket.bucket_8_plus);
+      const warning = Money.parse(bucket.bucket_4_7);
 
       bucket_0_1_total = bucket_0_1_total.add(b01);
       bucket_2_3_total = bucket_2_3_total.add(b23);

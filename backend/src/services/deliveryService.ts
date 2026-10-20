@@ -431,10 +431,10 @@ export class DeliveryService {
       logger.info(`GL entry created for order ${orderWithItems.id}: ${glEntry.entryNumber}`);
 
       // Create draft agent collection record with net amount (gross - agent commission)
-      if (orderWithItems.deliveryAgentId && orderWithItems.codAmount && !orderWithItems.codAmount.isZero()) {
-        const grossAmount = Money.parse(orderWithItems.codAmount);
+      if (orderWithItems.deliveryAgentId && Money.isNonZero(orderWithItems.codAmount)) {
+        const grossAmount = Money.orZero(orderWithItems.codAmount);
         // Uses profile flat rate — must match createRevenueRecognitionEntry in glAutomationService
-        const agentCommission = Money.parse(orderWithItems.deliveryAgent?.commissionAmount ?? 0);
+        const agentCommission = Money.orZero(orderWithItems.deliveryAgent?.commissionAmount);
         const netAmount = Money.sub(grossAmount, agentCommission);
 
         await agentReconciliationService.createDraftCollection(
@@ -723,7 +723,7 @@ export class DeliveryService {
       order: {
         id: order.id,
         status: order.status,
-        totalAmount: Money.parse(order.totalAmount ?? 0),
+        totalAmount: Money.orZero(order.totalAmount),
         paymentStatus: order.paymentStatus,
         deliveryAddress: order.deliveryAddress ?? '',
         deliveryState: order.deliveryState ?? '',

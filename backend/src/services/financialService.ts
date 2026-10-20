@@ -26,7 +26,7 @@ interface DateFilters {
 
 interface CreateExpenseData {
   category: string;
-  amount: Prisma.Decimal.Value;
+  amount: Money.MoneyInput;
   description: string;
   expenseDate: Date;
   recordedBy: string;
@@ -116,11 +116,6 @@ interface ProfitLossData {
 export class FinancialService {
   private forecastCache = new Map<string, { data: CashFlowForecast[]; timestamp: number }>();
   private readonly FORECAST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
-
-  /** a / b as a percentage number. Zero when b is not positive. */
-  private percent(a: Money.MoneyInput, b: Money.MoneyInput): number {
-    return Money.gt(b, 0) ? Money.mul(Money.div(a, b), 100).toNumber() : 0;
-  }
 
   /**
    * Get financial summary — GL is the single source of truth for Revenue, Expenses, and Profit.
@@ -276,7 +271,7 @@ export class FinancialService {
       codCollected: totalCOD,
       codPending: pendingCODAmount,
       outstandingReceivables,
-      profitMargin: this.percent(Money.sub(totalRevenue, totalExpenses), totalRevenue)
+      profitMargin: Money.percent(Money.sub(totalRevenue, totalExpenses), totalRevenue)
     };
   }
 
@@ -1008,7 +1003,7 @@ export class FinancialService {
     });
 
     const grossProfit = Money.sub(totalRevenue, totalCost);
-    const profitMargin = this.percent(grossProfit, totalRevenue);
+    const profitMargin = Money.percent(grossProfit, totalRevenue);
 
     return {
       totalRevenue,
@@ -1219,10 +1214,10 @@ export class FinancialService {
 
     // Use GL revenue + GL COGS for summary totals (matches Overview exactly)
     const grossProfit = Money.sub(glRevenue, glCOGS);
-    const grossMargin = this.percent(grossProfit, glRevenue);
+    const grossMargin = Money.percent(grossProfit, glRevenue);
 
     const netProfit = Money.sub(Money.sub(grossProfit, totalCommissions), totalOperatingExpenses);
-    const netMargin = this.percent(netProfit, glRevenue);
+    const netMargin = Money.percent(netProfit, glRevenue);
 
     // Format product profitability
     const products = Object.values(productProfitability).map(p => ({
@@ -1234,14 +1229,14 @@ export class FinancialService {
       quantity: p.quantity,
       commission: p.commission,
       grossProfit: Money.sub(p.revenue, p.cogs),
-      grossMargin: this.percent(Money.sub(p.revenue, p.cogs), p.revenue)
+      grossMargin: Money.percent(Money.sub(p.revenue, p.cogs), p.revenue)
     })).sort((a, b) => Money.compare(b.grossProfit, a.grossProfit));
 
     // Format daily profitability
     const daily = Object.values(dailyProfitability).map(d => ({
       ...d,
       grossProfit: Money.sub(d.revenue, d.cogs),
-      grossMargin: this.percent(Money.sub(d.revenue, d.cogs), d.revenue)
+      grossMargin: Money.percent(Money.sub(d.revenue, d.cogs), d.revenue)
     })).sort((a, b) => a.date.localeCompare(b.date));
 
     return {
@@ -1276,7 +1271,7 @@ export class FinancialService {
     expenseId: string,
     data: {
       category?: string;
-      amount?: Prisma.Decimal.Value;
+      amount?: Money.MoneyInput;
       description?: string;
       expenseDate?: Date;
     }
@@ -1417,32 +1412,19 @@ export class FinancialService {
       where.deliveryAgentId = requester.id;
     }
 
-    const orders = await prisma.order.findMany({
+    const groups = await prisma.order.groupBy({
+      by: ['status'],
       where,
-      select: {
-        totalAmount: true,
-        status: true
-      }
+      _sum: { totalAmount: true },
+      _count: { _all: true },
     });
 
-    // Calculate total expected revenue
-    const totalExpected = Money.sum(orders.map(order => order.totalAmount));
-
-    // Group by status
-    const byStatus = orders.reduce((acc, order) => {
-      const existing = acc.find((item) => item.status === order.status);
-      if (existing) {
-        existing.amount = Money.add(existing.amount, order.totalAmount);
-        existing.count += 1;
-      } else {
-        acc.push({
-          status: order.status,
-          amount: order.totalAmount,
-          count: 1
-        });
-      }
-      return acc;
-    }, [] as { status: string; amount: Money.Money; count: number }[]);
+    const byStatus = groups.map((g) => ({
+      status: g.status as string,
+      amount: Money.orZero(g._sum.totalAmount),
+      count: g._count._all,
+    }));
+    const totalExpected = Money.sum(byStatus.map((g) => g.amount));
 
     return {
       totalExpected,
@@ -1856,9 +1838,9 @@ export class FinancialService {
     });
 
     result.grossProfit = Money.sub(result.revenue.total, result.cogs.total);
-    result.grossMarginPercentage = this.percent(result.grossProfit, result.revenue.total);
+    result.grossMarginPercentage = Money.percent(result.grossProfit, result.revenue.total);
     result.netIncome = Money.sub(result.grossProfit, result.expenses.total);
-    result.netMarginPercentage = this.percent(result.netIncome, result.revenue.total);
+    result.netMarginPercentage = Money.percent(result.netIncome, result.revenue.total);
 
     return result;
   }

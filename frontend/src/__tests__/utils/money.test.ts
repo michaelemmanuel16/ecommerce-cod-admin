@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { parseMoney, sumMoney, normalizeMoney } from '../../utils/money';
+import { parseMoney, normalizeMoney } from '../../utils/money';
 import { formatCurrency } from '../../utils/format';
 import { useConfigStore } from '../../stores/configStore';
 
@@ -19,13 +19,6 @@ describe('parseMoney', () => {
     expect(parseMoney('')).toBe(0);
     expect(parseMoney('abc')).toBe(0);
     expect(parseMoney(NaN)).toBe(0);
-  });
-});
-
-describe('sumMoney', () => {
-  it('adds strings as numbers instead of concatenating', () => {
-    expect(sumMoney(['249.00', '100.50', 50, null])).toBe(399.5);
-    expect(sumMoney([])).toBe(0);
   });
 });
 

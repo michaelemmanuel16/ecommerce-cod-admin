@@ -8,15 +8,17 @@ import { isPlatformAdmin } from '../utils/platformAdmin';
 import { checkResourceOwnership } from '../utils/authUtils';
 import { JWTPayload } from '../types';
 import { roomNames } from './rooms';
+import * as Money from '../utils/money';
 
 /**
  * Helper to safely emit to a room. Handles cases where io.to() returns undefined (e.g., in tests).
+ * Money in the payload goes out as "x.xx" strings, like the REST API (Money.jsonReplacer).
  */
 function safeEmit(io: SocketServer | undefined, room: string, event: string, data: any): void {
   if (!io || typeof io.to !== 'function') return;
   const roomObj = io.to(room);
   if (roomObj && typeof roomObj.emit === 'function') {
-    roomObj.emit(event, data);
+    roomObj.emit(event, data === undefined ? data : JSON.parse(JSON.stringify(data, Money.jsonReplacer)));
   }
 }
 

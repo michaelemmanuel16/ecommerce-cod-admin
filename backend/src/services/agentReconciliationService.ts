@@ -16,7 +16,7 @@ export class AgentReconciliationService {
         tx: any,
         orderId: number,
         agentId: number,
-        amount: Prisma.Decimal.Value,
+        amount: Money.MoneyInput,
         collectionDate: Date
     ) {
         const order = await tx.order.findUnique({ where: { id: orderId }, select: { tenantId: true } });
@@ -135,7 +135,7 @@ export class AgentReconciliationService {
         });
 
         const pendingMatches = approvedCollections.filter((coll: any) => {
-            const amount = new Prisma.Decimal(coll.amount.toString());
+            const amount = Money.parse(coll.amount);
             const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
             return allocated.lessThan(amount);
         });
@@ -143,7 +143,7 @@ export class AgentReconciliationService {
         for (const coll of pendingMatches) {
             if (remainingAmount.isZero()) break;
 
-            const collAmount = new Prisma.Decimal(coll.amount.toString());
+            const collAmount = Money.parse(coll.amount);
             const allocated = new Prisma.Decimal(coll.allocatedAmount?.toString() || '0');
             const outstanding = collAmount.minus(allocated);
 
@@ -160,7 +160,7 @@ export class AgentReconciliationService {
                     where: { id: coll.id },
                     data: { allocatedAmount: allocated.plus(remainingAmount) }
                 });
-                remainingAmount = new Prisma.Decimal(0);
+                remainingAmount = Money.ZERO;
             }
         }
 
@@ -170,7 +170,7 @@ export class AgentReconciliationService {
     /**
      * Create a new deposit record
      */
-    async createDeposit(agentId: number, amount: Prisma.Decimal.Value, depositMethod: string, referenceNumber: string, notes?: string, receiptUrl?: string): Promise<any> {
+    async createDeposit(agentId: number, amount: Money.MoneyInput, depositMethod: string, referenceNumber: string, notes?: string, receiptUrl?: string): Promise<any> {
         const depositAmount = Money.tryParse(amount);
         if (!depositAmount || depositAmount.lte(0)) {
             throw new AppError('Deposit amount must be greater than zero', 400);
@@ -262,8 +262,8 @@ export class AgentReconciliationService {
             const balance = await this.getOrCreateBalance(deposit.agentId, extTx);
 
             // Use bank-friendly decimal for comparison
-            const depAmt = new Prisma.Decimal(deposit.amount.toString());
-            const currBal = new Prisma.Decimal(balance.currentBalance.toString());
+            const depAmt = Money.parse(deposit.amount);
+            const currBal = Money.parse(balance.currentBalance);
 
             if (currBal.lessThan(depAmt)) {
                 throw new AppError('Verification failed: Deposit amount exceeds current agent balance', 400);
@@ -335,7 +335,7 @@ export class AgentReconciliationService {
 
         const result = await prisma.$transaction(async (tx) => {
             const extTx = tx as any;
-            let totalAmount = new Prisma.Decimal(0);
+            let totalAmount = Money.ZERO;
 
             // Fetch all deposits first to validate
             const deposits = await extTx.agentDeposit.findMany({
@@ -370,12 +370,12 @@ export class AgentReconciliationService {
                 // $queryRaw with FOR UPDATE can self-deadlock in Prisma interactive transactions.
                 const balance = await this.getOrCreateBalance(agentId, extTx);
 
-                const currBal = new Prisma.Decimal(balance.currentBalance.toString());
+                const currBal = Money.parse(balance.currentBalance);
 
                 // Calculate total deposit amount for this agent
                 const agentTotalDeposit = agentDeposits.reduce(
-                    (sum, d) => sum.plus(new Prisma.Decimal(d.amount.toString())),
-                    new Prisma.Decimal(0)
+                    (sum, d) => sum.plus(Money.parse(d.amount)),
+                    Money.ZERO
                 );
 
                 // Validate agent has sufficient balance
@@ -404,7 +404,7 @@ export class AgentReconciliationService {
                     // Create GL Entry for each deposit
                     await GLAutomationService.createAgentDepositEntry(extTx, deposit, verifierId);
 
-                    totalAmount = totalAmount.plus(new Prisma.Decimal(deposit.amount.toString()));
+                    totalAmount = totalAmount.plus(Money.parse(deposit.amount));
                 }
 
                 // Update agent balance once per agent

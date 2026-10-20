@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import logger from './logger';
+import * as Money from './money';
 
 /**
  * Supported comparison operators for condition evaluation
@@ -53,14 +54,6 @@ export type Conditions = ConditionGroup;
  */
 
 /**
- * Evaluate a single rule against actual value
- *
- * @param actual - Actual value from context
- * @param operator - Comparison operator
- * @param expected - Expected value to compare against
- * @returns True if condition is met, false otherwise
- */
-/**
  * Compare two numeric values. Money fields from Prisma are Decimal, not number
  * (a Decimal fails `typeof x === 'number'`), so both kinds are accepted.
  * Returns null when either side is not a number or a Decimal.
@@ -68,13 +61,19 @@ export type Conditions = ConditionGroup;
 function compareNumeric(actual: any, expected: any): number | null {
   const isNumeric = (v: any) => typeof v === 'number' || Prisma.Decimal.isDecimal(v);
   if (!isNumeric(actual) || !isNumeric(expected)) return null;
-  const a = new Prisma.Decimal(actual);
-  const e = new Prisma.Decimal(expected);
-  // NaN is never greater, less or equal
-  if (a.isNaN() || e.isNaN()) return null;
-  return a.comparedTo(e);
+  // NaN is never greater, less or equal (Money.parse throws on it)
+  if (Number.isNaN(Number(actual)) || Number.isNaN(Number(expected))) return null;
+  return Money.compare(actual, expected);
 }
 
+/**
+ * Evaluate a single rule against actual value
+ *
+ * @param actual - Actual value from context
+ * @param operator - Comparison operator
+ * @param expected - Expected value to compare against
+ * @returns True if condition is met, false otherwise
+ */
 export function evaluateRule(actual: any, operator: ConditionOperator, expected?: any): boolean {
   try {
     switch (operator) {

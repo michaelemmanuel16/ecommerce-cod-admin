@@ -1,3 +1,5 @@
+import type { AxiosInstance } from 'axios';
+
 // Money crosses the API as strings ("249.00"), so `a + b` on a raw field
 // concatenates and recharts needs numbers. All parsing lives here:
 // responses are normalized once at the network edge (axios interceptors,
@@ -13,13 +15,6 @@ export const parseMoney = (value: string | number | null | undefined): number =>
   return Number.isFinite(n) ? n : 0;
 };
 
-/** Sum money values; string-safe and rounded to 2dp to drop float noise. */
-export const sumMoney = (values: Iterable<string | number | null | undefined>): number => {
-  let total = 0;
-  for (const v of values) total += parseMoney(v);
-  return Math.round(total * 100) / 100;
-};
-
 // Keys that carry money in API payloads and socket events. Phone numbers, ids,
 // codes and references are numeric strings too, so those are excluded.
 const MONEY_KEY =
@@ -28,7 +23,16 @@ const MONEY_KEY =
 const NOT_MONEY_KEY = /code|phone|reference|name|address/i;
 const ID_KEY = /^id$|Id$|_id$/;
 
-const isMoneyKey = (key: string): boolean => MONEY_KEY.test(key) && !NOT_MONEY_KEY.test(key) && !ID_KEY.test(key);
+// Payloads repeat the same few hundred keys thousands of times: decide each key once.
+const moneyKeyCache = new Map<string, boolean>();
+const isMoneyKey = (key: string): boolean => {
+  let isMoney = moneyKeyCache.get(key);
+  if (isMoney === undefined) {
+    isMoney = MONEY_KEY.test(key) && !NOT_MONEY_KEY.test(key) && !ID_KEY.test(key);
+    moneyKeyCache.set(key, isMoney);
+  }
+  return isMoney;
+};
 
 /**
  * Walks a JSON payload and turns numeric strings under money keys into numbers,
@@ -52,4 +56,12 @@ export const normalizeMoney = <T>(data: T): T => {
   };
   walk(data);
   return data;
+};
+
+/** Normalize every response of an axios client at the edge. */
+export const normalizeResponses = (client: AxiosInstance): void => {
+  client.interceptors.response.use((response) => {
+    normalizeMoney(response.data);
+    return response;
+  });
 };

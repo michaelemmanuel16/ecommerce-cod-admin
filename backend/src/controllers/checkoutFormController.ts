@@ -733,8 +733,8 @@ export const getFormStats = async (req: AuthRequest, res: Response): Promise<voi
         totalSubmissions: submissions,
         conversions: submissionsWithOrders,
         conversionRate: Math.round(conversionRate * 100) / 100,
-        totalRevenue: Money.toApi(revenue),
-        averageOrderValue: submissions > 0 ? Money.toApi(Money.div(revenue, submissions)) : Money.toApi(0)
+        totalRevenue: revenue,
+        averageOrderValue: submissions > 0 ? Money.div(revenue, submissions) : Money.ZERO
       }
     });
   } catch (error) {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { MCP_CONFIG } from './config';
 import * as Money from '../utils/money';
-import prisma from '../utils/prisma';
+import { getCurrency } from '../utils/currency';
 
 // Cursor pagination utilities
 export function encodeCursor(id: number): string {
@@ -43,21 +43,13 @@ export function mcpJson(data: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(data, Money.jsonReplacer, 2) }] };
 }
 
-export function mcpError(message: string) {
-  return { content: [{ type: 'text' as const, text: `Error: ${message}` }], isError: true };
+/** mcpJson with the tenant currency added as `currency`: tool money values are 2-decimal strings in that unit. */
+export async function mcpMoneyJson(data: Record<string, unknown>) {
+  return mcpJson({ currency: await getCurrency(), ...data });
 }
 
-/**
- * Currency code for money in tool output (tenant-scoped through the Prisma extension).
- * Tool money values are 2-decimal strings (Money.jsonReplacer in mcpJson); this code names their unit.
- */
-export async function getCurrency(): Promise<string> {
-  try {
-    const config = await prisma.systemConfig.findFirst({ select: { currency: true } });
-    return config?.currency || 'GHS';
-  } catch {
-    return 'GHS';
-  }
+export function mcpError(message: string) {
+  return { content: [{ type: 'text' as const, text: `Error: ${message}` }], isError: true };
 }
 
 // Date helpers

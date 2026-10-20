@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
  * Never do money arithmetic on `number`. Units are major units (GH₵ 249 = 249).
  *
  * API rule: money in a response is a string with 2 decimals, for example "249.00".
- * Use toApi() to write it and fromApi() to read it. Wiring into responses is M0-T24.
+ * Use toApi() to write it and parse() to read it.
  *
  * Rounding is half up (decimal.js ROUND_HALF_UP: a tie goes away from zero).
  */
@@ -16,7 +16,7 @@ export type MoneyInput = Prisma.Decimal | string | number;
 const Decimal = Prisma.Decimal;
 
 /** Any value at or above this size is a bug, not money. */
-export const MAX_MONEY = new Decimal('1e15');
+const MAX_MONEY = new Decimal('1e15');
 export const ZERO: Money = new Decimal(0);
 
 const API_FORMAT = /^-?\d+(\.\d+)?$/;
@@ -37,7 +37,7 @@ export function fromNumber(n: number): Money {
 }
 
 /** Convert an API string such as "249.00". Throws on anything that is not a plain decimal. */
-export function fromApi(s: string): Money {
+function fromApi(s: string): Money {
   if (typeof s !== 'string' || !API_FORMAT.test(s.trim())) {
     throw new TypeError(`Money cannot be built from ${JSON.stringify(s)}`);
   }
@@ -48,7 +48,7 @@ export function fromApi(s: string): Money {
 export function parse(v: MoneyInput): Money {
   if (typeof v === 'number') return fromNumber(v);
   if (typeof v === 'string') return fromApi(v);
-  if (Decimal.isDecimal(v)) return guard(new Decimal(v));
+  if (Decimal.isDecimal(v)) return guard(v);
   throw new TypeError(`Money cannot be built from ${String(v)}`);
 }
 
@@ -88,8 +88,8 @@ export function div(a: MoneyInput, b: MoneyInput): Money {
 
 export function sum(values: Iterable<MoneyInput>): Money {
   let total: Money = ZERO;
-  for (const v of values) total = add(total, v);
-  return total;
+  for (const v of values) total = total.plus(parse(v));
+  return guard(total);
 }
 
 /** Round half up to `dp` decimal places. */
@@ -101,13 +101,28 @@ export function roundHalfUp(a: MoneyInput, dp = 2): Money {
 export function compare(a: MoneyInput, b: MoneyInput): number {
   return parse(a).comparedTo(parse(b));
 }
-export const eq = (a: MoneyInput, b: MoneyInput): boolean => parse(a).eq(parse(b));
 export const gt = (a: MoneyInput, b: MoneyInput): boolean => parse(a).gt(parse(b));
 export const lt = (a: MoneyInput, b: MoneyInput): boolean => parse(a).lt(parse(b));
 
 /** API form: string with 2 decimals, rounded half up. */
 export function toApi(a: MoneyInput): string {
-  return parse(a).toFixed(2, Decimal.ROUND_HALF_UP);
+  return (Decimal.isDecimal(a) ? a : parse(a)).toFixed(2, Decimal.ROUND_HALF_UP);
+}
+
+/** True for a non-zero value; null and undefined count as zero. */
+export function isNonZero(v: MoneyInput | null | undefined): boolean {
+  return !orZero(v).isZero();
+}
+
+/** a / b as a percentage number. Zero when b is not positive. */
+export function percent(a: MoneyInput, b: MoneyInput): number {
+  return gt(b, 0) ? mul(div(a, b), 100).toNumber() : 0;
+}
+
+/** "GHS 1,234.50": 2 decimals and thousands separators, no float conversion. */
+export function format(a: MoneyInput, currency: string): string {
+  const [whole, decimals] = toApi(a).split('.');
+  return `${currency} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${decimals}`;
 }
 
 /**

@@ -131,8 +131,8 @@ export class GLAutomationService {
    * Throws if the imbalance exceeds 0.01 tolerance.
    */
   private static validateJournalEntryBalance(transactions: Array<{ debitAmount: number | Decimal; creditAmount: number | Decimal }>): void {
-    const totalDebits = transactions.reduce((sum, t) => sum.plus(new Decimal(t.debitAmount.toString())), new Decimal(0));
-    const totalCredits = transactions.reduce((sum, t) => sum.plus(new Decimal(t.creditAmount.toString())), new Decimal(0));
+    const totalDebits = Money.sum(transactions.map((t) => t.debitAmount));
+    const totalCredits = Money.sum(transactions.map((t) => t.creditAmount));
     const imbalance = totalDebits.minus(totalCredits).abs();
     if (imbalance.greaterThan(new Decimal('0.01'))) {
       throw new Error(`Journal entry is unbalanced: debits=${totalDebits.toFixed(4)}, credits=${totalCredits.toFixed(4)}, difference=${imbalance.toFixed(4)}`);
@@ -228,15 +228,7 @@ export class GLAutomationService {
    * @returns Total COGS as Decimal
    */
   static calculateTotalCOGS(orderItems: OrderItemWithProduct[]): Decimal {
-    let totalCOGS = new Decimal(0);
-
-    for (const item of orderItems) {
-      const productCOGS = new Decimal(item.product.cogs ?? 0);
-      const itemCOGS = productCOGS.times(item.quantity);
-      totalCOGS = totalCOGS.plus(itemCOGS);
-    }
-
-    return totalCOGS;
+    return Money.sum(orderItems.map((item) => Money.mul(Money.orZero(item.product.cogs), item.quantity)));
   }
 
   /**
@@ -252,8 +244,7 @@ export class GLAutomationService {
     const missingProducts: string[] = [];
 
     for (const item of orderItems) {
-      const cogs = new Decimal(item.product.cogs ?? 0);
-      if (cogs.equals(0)) {
+      if (!Money.isNonZero(item.product.cogs)) {
         missingProducts.push(item.product.name);
       }
     }
@@ -307,14 +298,14 @@ export class GLAutomationService {
       return existingEntry as JournalEntryWithTransactions;
     }
 
-    const orderAmount = new Decimal(order.totalAmount.toString());
+    const orderAmount = Money.parse(order.totalAmount);
 
     const deliveryAgent = order.deliveryAgent;
     const salesRep = order.customerRep;
 
     // Uses profile flat rate — must match draft collection creation in deliveryService
-    const deliveryCommission = Money.parse(deliveryAgent?.commissionAmount ?? 0);
-    const salesRepCommission = Money.parse(salesRep?.commissionAmount ?? 0);
+    const deliveryCommission = Money.orZero(deliveryAgent?.commissionAmount);
+    const salesRepCommission = Money.orZero(salesRep?.commissionAmount);
 
     // Build journal entry transactions
     // Note: Cash in Transit = Gross Amount - Agent Commission
@@ -327,12 +318,12 @@ export class GLAutomationService {
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
         debitAmount: netCashInTransit,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: `Net collection held by agent for order ${order.id} (Gross ${orderAmount} - Agent Comm ${agentComm})`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PRODUCT_REVENUE),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: orderAmount,
         description: 'Product sales revenue (Gross)',
       },
@@ -342,7 +333,7 @@ export class GLAutomationService {
       transactions.push({
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
         debitAmount: agentComm,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: 'Delivery agent commission expense',
       });
     }
@@ -351,13 +342,13 @@ export class GLAutomationService {
       transactions.push({
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION),
         debitAmount: repComm,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: 'Sales representative commission expense',
       });
 
       transactions.push({
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: repComm,
         description: 'Accrued commissions payable to sales rep',
       });
@@ -368,12 +359,12 @@ export class GLAutomationService {
         {
           accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COGS),
           debitAmount: totalCOGS,
-          creditAmount: new Decimal(0),
+          creditAmount: Money.ZERO,
           description: 'Cost of goods sold',
         },
         {
           accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.INVENTORY),
-          debitAmount: new Decimal(0),
+          debitAmount: Money.ZERO,
           creditAmount: totalCOGS,
           description: 'Inventory reduction',
         }
@@ -435,12 +426,12 @@ export class GLAutomationService {
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.FAILED_DELIVERY_EXPENSE),
         debitAmount: expenseAmount,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: `Failed delivery - Order #${order.id}`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: expenseAmount,
         description: 'Cash impact of failed delivery',
       },
@@ -484,7 +475,7 @@ export class GLAutomationService {
     order: OrderWithItems,
     originalEntry: JournalEntryWithTransactions,
     userId: number,
-    returnProcessingFee?: Decimal.Value
+    returnProcessingFee?: Money.MoneyInput
   ): Promise<JournalEntryWithTransactions> {
     // Idempotency guard — prevent duplicate return reversal GL entries for the same order
     const existingEntry = await tx.journalEntry.findFirst({
@@ -500,14 +491,14 @@ export class GLAutomationService {
       return existingEntry as JournalEntryWithTransactions;
     }
 
-    const orderAmount = new Decimal(order.totalAmount.toString());
+    const orderAmount = Money.parse(order.totalAmount);
 
     const deliveryAgent = order.deliveryAgent;
     const salesRep = order.customerRep;
 
     // Uses profile flat rate — must match draft collection creation in deliveryService
-    const deliveryCommission = Money.parse(deliveryAgent?.commissionAmount ?? 0);
-    const salesRepCommission = Money.parse(salesRep?.commissionAmount ?? 0);
+    const deliveryCommission = Money.orZero(deliveryAgent?.commissionAmount);
+    const salesRepCommission = Money.orZero(salesRep?.commissionAmount);
 
     // Calculate total COGS to determine if we need to reverse COGS/inventory
     const totalCOGS = this.calculateTotalCOGS(order.orderItems);
@@ -520,14 +511,14 @@ export class GLAutomationService {
     const transactions: TransactionCreateData[] = [
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: netCashInTransit,
         description: 'Cash in transit reversal (Net)',
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PRODUCT_REVENUE),
         debitAmount: orderAmount,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: 'Product revenue reversal',
       },
     ];
@@ -535,7 +526,7 @@ export class GLAutomationService {
     if (agentComm.greaterThan(0)) {
       transactions.push({
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: agentComm,
         description: 'Delivery agent commission reversal',
       });
@@ -544,7 +535,7 @@ export class GLAutomationService {
     if (repComm.greaterThan(0)) {
       transactions.push({
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.SALES_REP_COMMISSION),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: repComm,
         description: 'Sales representative commission reversal',
       });
@@ -552,7 +543,7 @@ export class GLAutomationService {
       transactions.push({
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE),
         debitAmount: repComm,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: 'Accrued commissions payable reversal',
       });
     }
@@ -562,12 +553,12 @@ export class GLAutomationService {
         {
           accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.INVENTORY),
           debitAmount: totalCOGS,
-          creditAmount: new Decimal(0),
+          creditAmount: Money.ZERO,
           description: 'Inventory restoration',
         },
         {
           accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COGS),
-          debitAmount: new Decimal(0),
+          debitAmount: Money.ZERO,
           creditAmount: totalCOGS,
           description: 'COGS reversal',
         }
@@ -580,12 +571,12 @@ export class GLAutomationService {
         {
           accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE),
           debitAmount: processingFee,
-          creditAmount: new Decimal(0),
+          creditAmount: Money.ZERO,
           description: 'Return processing cost',
         },
         {
           accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.REFUND_LIABILITY),
-          debitAmount: new Decimal(0),
+          debitAmount: Money.ZERO,
           creditAmount: processingFee,
           description: 'Customer refund pending',
         }
@@ -686,18 +677,18 @@ export class GLAutomationService {
       return existingEntry as JournalEntryWithTransactions;
     }
 
-    const amount = new Decimal(collection.amount.toString());
+    const amount = Money.parse(collection.amount);
 
     const transactions: TransactionCreateData[] = [
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND),
         debitAmount: amount,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: `Collection reconciled - Order #${collection.orderId}`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: amount,
         description: `Movement from transit to hand - Order #${collection.orderId}`,
       },
@@ -731,7 +722,7 @@ export class GLAutomationService {
   static async createExpenseGLEntry(
     tx: Prisma.TransactionClient,
     expenseId: number,
-    amount: Decimal.Value,
+    amount: Money.MoneyInput,
     description: string,
     userId: number
   ): Promise<JournalEntryWithTransactions> {
@@ -755,12 +746,12 @@ export class GLAutomationService {
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.OPERATING_EXPENSE, tx),
         debitAmount: expenseAmount,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: `Expense recorded: ${description}`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: expenseAmount,
         description: `Cash reduction for expense: ${description}`,
       },
@@ -792,7 +783,7 @@ export class GLAutomationService {
    */
   static async createDepositGLEntry(
     tx: Prisma.TransactionClient,
-    amount: Decimal.Value,
+    amount: Money.MoneyInput,
     sourceId: number,
     userId: number
   ): Promise<JournalEntryWithTransactions> {
@@ -816,12 +807,12 @@ export class GLAutomationService {
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
         debitAmount: depositAmount,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: 'Cash in hand from COD deposit',
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_TRANSIT, tx),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: depositAmount,
         description: 'Cash in transit cleared on deposit',
       },
@@ -870,18 +861,18 @@ export class GLAutomationService {
       return existingEntry as JournalEntryWithTransactions;
     }
 
-    const depositAmount = new Decimal(deposit.amount.toString());
+    const depositAmount = Money.parse(deposit.amount);
 
     const transactions: TransactionCreateData[] = [
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
         debitAmount: depositAmount,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: `Deposit verification - Agent #${deposit.agentId} (Ref: ${deposit.referenceNumber})`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.AR_AGENTS, tx),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: depositAmount,
         description: `Deposit matching - Agent #${deposit.agentId}`,
       },
@@ -938,12 +929,12 @@ export class GLAutomationService {
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.COMMISSIONS_PAYABLE, tx),
         debitAmount: amount,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: `Commission payout to Rep #${repId}`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: amount,
         description: `Cash disbursed for commission payout to Rep #${repId}`,
       },
@@ -1060,18 +1051,18 @@ export class GLAutomationService {
       return existingEntry as JournalEntryWithTransactions;
     }
 
-    const totalCost = new Decimal(shipment.totalCost.toString());
+    const totalCost = Money.parse(shipment.totalCost);
 
     const transactions: TransactionCreateData[] = [
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.INVENTORY, tx),
         debitAmount: totalCost,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: `Inventory purchase - ${shipment.product.name} (${shipment.quantity} units)`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: totalCost,
         description: `Payment for inventory - ${shipment.supplier || 'Unknown supplier'}`,
       },
@@ -1103,8 +1094,8 @@ export class GLAutomationService {
   async createDigitalSaleEntry(
     tx: Prisma.TransactionClient,
     orderId: number,
-    totalAmount: Decimal.Value,
-    paystackFee: Decimal.Value,
+    totalAmount: Money.MoneyInput,
+    paystackFee: Money.MoneyInput,
     userId: number,
   ): Promise<JournalEntry> {
     const paystackReceivableId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PAYSTACK_RECEIVABLE);
@@ -1115,12 +1106,12 @@ export class GLAutomationService {
       {
         accountId: paystackReceivableId,
         debitAmount: totalAmountDec,
-        creditAmount: new Decimal(0),
+        creditAmount: Money.ZERO,
         description: `Paystack payment received for digital order #${orderId}`,
       },
       {
         accountId: digitalRevenueId,
-        debitAmount: new Decimal(0),
+        debitAmount: Money.ZERO,
         creditAmount: totalAmountDec,
         description: `Digital product revenue - order #${orderId}`,
       },
@@ -1134,12 +1125,12 @@ export class GLAutomationService {
         {
           accountId: paystackFeesId,
           debitAmount: feeDec,
-          creditAmount: new Decimal(0),
+          creditAmount: Money.ZERO,
           description: `Paystack fee for order #${orderId}`,
         },
         {
           accountId: paystackReceivableId,
-          debitAmount: new Decimal(0),
+          debitAmount: Money.ZERO,
           creditAmount: feeDec,
           description: `Paystack fee deduction - order #${orderId}`,
         },

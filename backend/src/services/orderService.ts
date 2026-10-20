@@ -35,14 +35,14 @@ interface CreateOrderData {
   orderItems: Array<{
     productId: number;
     quantity: number;
-    unitPrice: Prisma.Decimal.Value;
+    unitPrice: Money.MoneyInput;
     itemType?: 'package' | 'upsell';
     metadata?: any;
   }>;
-  subtotal: Prisma.Decimal.Value;
-  shippingCost?: Prisma.Decimal.Value;
-  discount?: Prisma.Decimal.Value;
-  totalAmount: Prisma.Decimal.Value;
+  subtotal: Money.MoneyInput;
+  shippingCost?: Money.MoneyInput;
+  discount?: Money.MoneyInput;
+  totalAmount: Money.MoneyInput;
   deliveryAddress: string;
   deliveryState: string;
   deliveryArea: string;
@@ -56,15 +56,15 @@ export interface BulkImportOrderData {
   customerFirstName?: string;
   customerLastName?: string;
   customerAlternatePhone?: string;
-  subtotal: Prisma.Decimal.Value;
-  totalAmount: Prisma.Decimal.Value;
+  subtotal: Money.MoneyInput;
+  totalAmount: Money.MoneyInput;
   deliveryAddress: string;
   deliveryState: string;
   deliveryArea: string;
   notes?: string;
   productName?: string;
   quantity?: number;
-  unitPrice?: Prisma.Decimal.Value;
+  unitPrice?: Money.MoneyInput;
   status?: OrderStatus;
   // User assignments from CSV
   assignedRepName?: string;
@@ -501,7 +501,7 @@ export class OrderService {
                     where: { id: matchingExisting.id },
                     include: { orderItems: { include: { product: true } }, customer: true, deliveryAgent: true, customerRep: true },
                   });
-                  if (updatedOrder?.codAmount && !updatedOrder.codAmount.isZero()) {
+                  if (Money.isNonZero(updatedOrder?.codAmount)) {
                     await FinancialSyncService.syncOrderFinancialData(tx as any, updatedOrder as any, createdById || SYSTEM_USER_ID).catch(err => {
                       logger.warn(`Financial sync skipped for re-imported order ${matchingExisting.id}`, { error: err.message });
                     });
@@ -624,7 +624,7 @@ export class OrderService {
             });
 
             // 6. Auto-sync financial data if order is imported as delivered
-            if (newOrder.status === 'delivered' && newOrder.codAmount && !newOrder.codAmount.isZero()) {
+            if (newOrder.status === 'delivered' && Money.isNonZero(newOrder.codAmount)) {
               try {
                 const syncResult = await FinancialSyncService.syncOrderFinancialData(
                   tx as any,
@@ -1235,7 +1235,7 @@ export class OrderService {
     // the order will be marked 'delivered' but GL entries won't be created.
     // syncOrderFinancialData is idempotent (checks revenueRecognized + existing transaction),
     // and the financialReconciliationQueue runs every 15 min to catch any missed orders.
-    if (data.status === 'delivered' && updated.codAmount && !updated.codAmount.isZero()) {
+    if (data.status === 'delivered' && Money.isNonZero(updated.codAmount)) {
       setImmediate(() => {
         FinancialSyncService.syncOrderFinancialData(
           prisma as any,
@@ -1888,8 +1888,8 @@ export class OrderService {
         acc[item.status] = item._count;
         return acc;
       }, {} as Record<string, number>),
-      totalRevenue: Money.toApi(totalRevenue._sum.totalAmount ?? Money.ZERO),
-      avgOrderValue: Money.toApi(avgOrderValue._avg.totalAmount ?? Money.ZERO)
+      totalRevenue: Money.orZero(totalRevenue._sum.totalAmount),
+      avgOrderValue: Money.orZero(avgOrderValue._avg.totalAmount)
     };
 
     return stats;
