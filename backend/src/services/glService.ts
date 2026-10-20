@@ -476,7 +476,7 @@ export class GLService {
 
     // Check if code already exists
     const existing = await prisma.account.findUnique({
-      where: { code }
+      where: { tenantId_code: { tenantId: resolveTenantId(), code } }
     });
 
     if (existing) {

@@ -54,7 +54,7 @@ describe('Agent Balance and Deposit Integration', () => {
         ];
         for (const a of accounts) {
             await prisma.account.upsert({
-                where: { code: a.code }, // Use code as key for upsert if id is not reliable
+                where: { tenantId_code: { tenantId: testTenantId, code: a.code } }, // Use code as key for upsert if id is not reliable
                 update: a as Prisma.AccountUpdateInput,
                 create: a
             });

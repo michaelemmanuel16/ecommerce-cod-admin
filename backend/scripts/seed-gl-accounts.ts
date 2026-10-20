@@ -3,6 +3,13 @@ import { GL_ACCOUNTS } from '../src/config/glAccounts';
 
 const prisma = new PrismaClient();
 
+// Account codes and SKUs are unique per tenant: say which tenant to work on.
+const TENANT_ID = process.env.TENANT_ID;
+if (!TENANT_ID) {
+  console.error('Set TENANT_ID to the tenant id, for example: TENANT_ID=<uuid> ...');
+  process.exit(1);
+}
+
 async function main() {
     console.log('Seeding required GL accounts...');
 
@@ -22,12 +29,13 @@ async function main() {
 
     for (const account of accounts) {
         const existing = await prisma.account.findUnique({
-            where: { code: account.code },
+            where: { tenantId_code: { tenantId: TENANT_ID!, code: account.code } },
         });
 
         if (!existing) {
             await prisma.account.create({
                 data: {
+                    tenantId: TENANT_ID,
                     code: account.code,
                     name: account.name,
                     accountType: account.accountType,

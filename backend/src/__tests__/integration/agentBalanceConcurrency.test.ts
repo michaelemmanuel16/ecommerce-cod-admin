@@ -33,7 +33,7 @@ describe('Agent Balance Concurrency Integration Test', () => {
         ];
         for (const a of accounts) {
             await prisma.account.upsert({
-                where: { code: a.code },
+                where: { tenantId_code: { tenantId: testTenantId, code: a.code } },
                 update: a as Prisma.AccountUpdateInput,
                 create: a
             });

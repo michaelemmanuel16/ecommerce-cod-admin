@@ -3,6 +3,13 @@ import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+// Account codes and SKUs are unique per tenant: say which tenant to work on.
+const TENANT_ID = process.env.TENANT_ID;
+if (!TENANT_ID) {
+  console.error('Set TENANT_ID to the tenant id, for example: TENANT_ID=<uuid> ...');
+  process.exit(1);
+}
+
 async function seedTestData() {
     try {
         console.log('🌱 Seeding test data...\n');
@@ -64,9 +71,10 @@ async function seedTestData() {
         // 3. Create Product (Magic Copybook)
         console.log('📦 Creating Product...');
         const product = await prisma.product.upsert({
-            where: { sku: 'MCB-001' },
+            where: { tenantId_sku: { tenantId: TENANT_ID!, sku: 'MCB-001' } },
             update: {},
             create: {
+                tenantId: TENANT_ID,
                 name: 'Magic Copybook',
                 description: 'Reusable magic copybook for children - write, erase, repeat!',
                 price: 45.00,

@@ -15,6 +15,7 @@ import * as tenantContext from '../../../utils/tenantContext';
  */
 export async function withGlTestTenant(cleanup: () => Promise<void>): Promise<string> {
   jest.spyOn(tenantContext, 'getTenantId').mockReturnValue(null);
+  jest.spyOn(tenantContext.tenantStorage, 'getStore').mockReturnValue(undefined);
   await cleanup();
 
   const tenant = await prisma.tenant.upsert({
@@ -23,5 +24,7 @@ export async function withGlTestTenant(cleanup: () => Promise<void>): Promise<st
     create: { name: 'GL Integration Test', slug: 'gl-integration-test' },
   });
   jest.spyOn(tenantContext, 'getTenantId').mockReturnValue(tenant.id);
+  // resolveTenantId and the GL account lookup read the store directly, not the spied getTenantId.
+  jest.spyOn(tenantContext.tenantStorage, 'getStore').mockReturnValue({ tenantId: tenant.id });
   return tenant.id;
 }

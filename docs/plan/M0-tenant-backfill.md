@@ -76,3 +76,23 @@ Webhook logs: the log row is now written after the webhook config is found, beca
 ## Not done
 
 Old seed scripts `seed-comprehensive-data.ts`, `seed-sample-data.ts` and `seed-additional-data.ts` do not set a tenant. They were already broken for other reasons and are not in the build. They are left as they are.
+
+# M0-T11: Per-tenant uniques check
+
+Migration `20261020130000_per_tenant_uniques`. It drops the 4 global unique indexes and adds `(tenant_id, code)` on `accounts`, `(tenant_id, entry_number)` on `journal_entries`, `(tenant_id, sku)` on `products` and `(tenant_id, name)` on `sms_templates`. `checkout_forms.slug` and `message_logs.provider_message_id` stay global.
+
+Checked on `m0_rehearsal` (prod dump) before the migration:
+
+| Check | Result |
+|---|---|
+| Duplicate `(tenant_id, code)` in accounts | 0 |
+| Duplicate `(tenant_id, entry_number)` in journal_entries | 0 |
+| Duplicate `(tenant_id, sku)` in products | 0 |
+| Duplicate `(tenant_id, name)` in sms_templates | 0 |
+| Accounts with NULL `tenant_id` | 0 (also 0 in the local dev and test databases) |
+
+Migration time: 0.10 seconds. Parity check: same result as T09 (only the `webhook_configs` drift on the prod copy, no difference on a fresh database).
+
+A unique index treats NULL tenants as different. Account rows with NULL `tenant_id` are not blocked by it. There are none today. T13 moves any that appear.
+
+Journal entry numbers have 5 digits: `JE-YYYYMMDD-00001`. The next number was already counted per tenant. The old global unique made the second tenant collide. Now both tenants get `-00001` on the same day (integration test `perTenantUniques`).

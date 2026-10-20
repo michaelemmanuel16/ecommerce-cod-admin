@@ -13,8 +13,10 @@ jest.mock('../../server', () => {
 import { prismaMock } from '../mocks/prisma.mock';
 import { FinancialService } from '../../services/financialService';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
+import { useTestTenant } from '../mocks/tenant.mock';
 
 describe('FinancialService Cash Flow Report', () => {
+    useTestTenant();
     let financialService: FinancialService;
 
     beforeEach(() => {
@@ -26,13 +28,13 @@ describe('FinancialService Cash Flow Report', () => {
         it('should calculate cash flow report correctly', async () => {
             // Mock GL Account lookups
             prismaMock.account.findUnique.mockImplementation(({ where }: any) => {
-                if (where.code === GL_ACCOUNTS.CASH_IN_HAND) {
+                if (where.tenantId_code.code === GL_ACCOUNTS.CASH_IN_HAND) {
                     return Promise.resolve({ code: GL_ACCOUNTS.CASH_IN_HAND, currentBalance: 1000 }) as any;
                 }
-                if (where.code === GL_ACCOUNTS.CASH_IN_TRANSIT) {
+                if (where.tenantId_code.code === GL_ACCOUNTS.CASH_IN_TRANSIT) {
                     return Promise.resolve({ code: GL_ACCOUNTS.CASH_IN_TRANSIT, currentBalance: 2000 }) as any;
                 }
-                if (where.code === GL_ACCOUNTS.AR_AGENTS) {
+                if (where.tenantId_code.code === GL_ACCOUNTS.AR_AGENTS) {
                     return Promise.resolve({ code: GL_ACCOUNTS.AR_AGENTS, currentBalance: 3000 }) as any;
                 }
                 return Promise.resolve(null);
@@ -95,8 +97,8 @@ describe('FinancialService Cash Flow Report', () => {
 
             // Starting liquidity (In Hand + In Transit) = 1000 + 2000 = 3000
             prismaMock.account.findUnique.mockImplementation(({ where }: any) => {
-                if (where.code === GL_ACCOUNTS.CASH_IN_HAND) return Promise.resolve({ currentBalance: 1000 }) as any;
-                if (where.code === GL_ACCOUNTS.CASH_IN_TRANSIT) return Promise.resolve({ currentBalance: 2000 }) as any;
+                if (where.tenantId_code.code === GL_ACCOUNTS.CASH_IN_HAND) return Promise.resolve({ currentBalance: 1000 }) as any;
+                if (where.tenantId_code.code === GL_ACCOUNTS.CASH_IN_TRANSIT) return Promise.resolve({ currentBalance: 2000 }) as any;
                 return Promise.resolve(null);
             });
 

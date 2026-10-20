@@ -16,7 +16,7 @@ import { GL_ACCOUNTS } from '../config/glAccounts';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { GLAutomationService } from './glAutomationService';
 import { SYSTEM_USER_ID } from '../config/constants';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 
 interface DateFilters {
   startDate?: Date;
@@ -1528,10 +1528,11 @@ export class FinancialService {
    */
   async getCashFlowReport(requester?: Requester) {
     // 1. Get current cash position KPIs from GL
+    const tenantId = resolveTenantId();
     const [cashInHand, , arAgents] = await Promise.all([
-      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_HAND } }),
-      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT } }),
-      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.AR_AGENTS } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.CASH_IN_TRANSIT } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId, code: GL_ACCOUNTS.AR_AGENTS } } }),
     ]);
 
     // 2. Calculate operational figures from actual order status
@@ -1619,9 +1620,10 @@ export class FinancialService {
 
     // Start with current liquidity (Cash in Hand + Bank if existed)
     // For this implementation, we'll use Total Cash Position as starting balance
+    const accountTenantId = resolveTenantId(tenantId);
     const [cashInHand, cashInTransit] = await Promise.all([
-      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_HAND } }),
-      prisma.account.findUnique({ where: { code: GL_ACCOUNTS.CASH_IN_TRANSIT } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: accountTenantId, code: GL_ACCOUNTS.CASH_IN_HAND } } }),
+      prisma.account.findUnique({ where: { tenantId_code: { tenantId: accountTenantId, code: GL_ACCOUNTS.CASH_IN_TRANSIT } } }),
     ]);
 
     let runningBalance = this.toNumber(cashInHand?.currentBalance) + this.toNumber(cashInTransit?.currentBalance);

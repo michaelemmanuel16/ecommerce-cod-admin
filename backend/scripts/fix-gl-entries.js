@@ -2,6 +2,13 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
+// Account codes are unique per tenant: say which tenant to work on.
+const TENANT_ID = process.env.TENANT_ID;
+if (!TENANT_ID) {
+    console.error('Set TENANT_ID to the tenant id, for example: TENANT_ID=<uuid> node scripts/fix-gl-entries.js');
+    process.exit(1);
+}
+
 // GL Account Codes
 const AR_AGENTS_CODE = '1020';
 const CASH_IN_HAND_CODE = '1010';
@@ -10,8 +17,8 @@ async function fixGLEntries() {
     console.log('Starting GL Entry Fix...');
 
     // 1. Get Account IDs
-    const arAgentsAccount = await prisma.account.findUnique({ where: { code: AR_AGENTS_CODE } });
-    const cashInHandAccount = await prisma.account.findUnique({ where: { code: CASH_IN_HAND_CODE } });
+    const arAgentsAccount = await prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID, code: AR_AGENTS_CODE } } });
+    const cashInHandAccount = await prisma.account.findUnique({ where: { tenantId_code: { tenantId: TENANT_ID, code: CASH_IN_HAND_CODE } } });
 
     if (!arAgentsAccount || !cashInHandAccount) {
         console.error('Could not find GL Accounts.');

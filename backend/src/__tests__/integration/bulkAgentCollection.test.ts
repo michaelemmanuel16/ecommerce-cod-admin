@@ -51,7 +51,7 @@ describe('Bulk Agent Collection Reconciliation Integration', () => {
         ];
         for (const a of accounts) {
             await prisma.account.upsert({
-                where: { code: a.code },
+                where: { tenantId_code: { tenantId: testTenantId, code: a.code } },
                 update: a as Prisma.AccountUpdateInput,
                 create: a
             });

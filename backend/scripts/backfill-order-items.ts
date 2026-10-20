@@ -20,6 +20,13 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// Account codes and SKUs are unique per tenant: say which tenant to work on.
+const TENANT_ID = process.env.TENANT_ID;
+if (!TENANT_ID) {
+  console.error('Set TENANT_ID to the tenant id, for example: TENANT_ID=<uuid> ...');
+  process.exit(1);
+}
+
 interface ProductMapping {
   sku: string;
   quantity: number;
@@ -39,7 +46,7 @@ async function main(dryRun: boolean) {
   // 1. Look up products by SKU
   const skus = Object.values(AMOUNT_TO_PRODUCT).map((m) => m.sku);
   const products = await prisma.product.findMany({
-    where: { sku: { in: skus } },
+    where: { tenantId: TENANT_ID, sku: { in: skus } },
     select: { id: true, sku: true, name: true },
   });
 

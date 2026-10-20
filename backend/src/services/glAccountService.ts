@@ -1,6 +1,7 @@
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { Decimal } from '@prisma/client/runtime/library';
+import { resolveTenantId } from '../utils/tenantContext';
 
 /**
  * Service for resolving General Ledger account IDs from codes.
@@ -20,14 +21,17 @@ export class GLAccountService {
      * @throws Error if account does not exist
      */
     static async getAccountIdByCode(code: string, tx?: any): Promise<number> {
-        const cached = this.idCache.get(code);
+        // Account codes are unique per tenant, so the tenant is part of the cache key.
+        const tenantId = resolveTenantId();
+        const cacheKey = `${tenantId}:${code}`;
+        const cached = this.idCache.get(cacheKey);
         if (cached && Date.now() - cached.cachedAt < this.CACHE_TTL_MS) {
             return cached.id;
         }
 
         const client = tx || prisma;
         const account = await client.account.findUnique({
-            where: { code },
+            where: { tenantId_code: { tenantId, code } },
             select: { id: true }
         });
 
@@ -36,7 +40,7 @@ export class GLAccountService {
             throw new Error(`Critical Error: GL Account ${code} not found. Please ensure Chart of Accounts is seeded.`);
         }
 
-        this.idCache.set(code, { id: account.id, cachedAt: Date.now() });
+        this.idCache.set(cacheKey, { id: account.id, cachedAt: Date.now() });
         return account.id;
     }
 
