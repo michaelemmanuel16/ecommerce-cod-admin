@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Finance]**: Nightly ledger check with one `ledger_gap` finding per day, `GET /api/financial/health`, daily FX rates (ExchangeRate-API) with `/api/fx` and a Currencies & FX settings tab, store currency on the tenant with `orders.currency`, and return GL entries dated by `returnedAt`. (COD-14)
 - **[KPI]**: Every analytics, financial and order-stats endpoint and every MCP tool reads revenue and rates from the KPI layer (fixture-proven GH₵92,000.00 / 376 delivered); financial summary adds digital revenue and Paystack fees; `profit-margins` and dead analytics routes removed; date ranges are store-zone days end to end. (COD-13)
 - **[KPI]**: Rep, leadership, product and partner KPIs — per-rep confirmation and delivered-from-confirmed rates, `/api/reports/team` (admin/manager), `/api/kpi/leadership` (pace, projection, needed a day, lever), delivered units, partner rates and timings, time to first call with operating hours, one role-scope rule on every KPI route, and numbers fixture part 2 with per-area checks. (COD-12)
 - **[KPI]**: KPI layer — `KpiResult` and store-zone dates, delivered revenue (return leaves in its return month), confirmation rate, delivery success rate (cohort or delivery basis) and order-to-cash yield on closed cohorts, `GET /api/kpi/revenue` and `/api/kpi/rates`, a grep guard that keeps KPI maths in one place, and the `seed:fixture` numbers fixture (GH₵92,000.00, 71%, 48%). (COD-11)

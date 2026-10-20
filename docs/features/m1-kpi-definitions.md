@@ -124,3 +124,27 @@ Every HTTP endpoint and MCP tool that shows revenue or a rate now reads it from 
 - `backend/src/mcp/tools/*`, `mcp/utils.ts`
 - `backend/src/__tests__/integration/{dateBounds.test.ts,fixtureChecks/endpoints.ts,fixtureChecks/mcp.ts}` (new)
 - `frontend/src/components/ui/DateRangePicker.tsx`, `pages/DynamicDashboard.tsx`, `hooks/useDashboardData.ts`, `stores/financialStore.ts`
+
+---
+
+## COD-14 — M1-I06 Ledger check, health endpoint, FX and store currency
+**Date:** 2026-10-20 | **Type:** feat | **Branch:** feature/m1-kpi-definitions | **Commit:** 7acc01e
+
+### Summary
+A nightly job checks that delivered revenue matches the ledger for each day. A health endpoint shows the result. The app now keeps daily FX rates and the store currency lives on the tenant. Plan tasks: M1-T28 to T32. Decisions: D44–D48 in `docs/plan/M1-decisions.md`.
+
+### Changes
+- **Ledger check:** `ledgerCheckService` runs at 02:00 Accra for each tenant. It compares `deliveredRevenueByDay` with net GL 4010+4020 credits. Each day with a gap gets one open `ledger_gap` Finding (opened or updated). No posting rule changes in M1 (D44).
+- **Health:** `GET /api/financial/health` (financial:view, D45) returns balance integrity, journal activity and `ledgerCheck { lastRunAt, openGaps }`.
+- **FX:** ExchangeRate-API provider behind an adapter (D47), daily rate job at 06:00 Accra, `/api/fx` (rates and history: settings:view; manual rate and use-today: settings:update). Revenue converts at read time.
+- **Store currency:** migration `20261021130000_store_currency_on_tenant` moves the currency to `tenants.currency`, adds `orders.currency` (filled by a trigger, D46) and drops `system_config.currency`. Onboarding returns 400 for a bad currency code.
+- **GL:** the return entry date uses `returnedAt` (was `updatedAt`).
+- **Frontend:** new **Currencies & FX** settings tab (month revenue, rates, manual rate, use today, history).
+- **Tests:** backend test scripts use a 4 GB heap (D48).
+
+### Key Files
+- `backend/src/services/{ledgerCheckService,fxService}.ts`, `services/fx/` (new)
+- `backend/src/queues/{ledgerCheckQueue,fxRateQueue}.ts`, `controllers/{ledgerHealthController,fxController}.ts`, `routes/fxRoutes.ts` (new)
+- `backend/src/utils/currency.ts`, `services/kpi/{revenue,dates}.ts`, `services/glAutomationService.ts`, `controllers/onboardingController.ts`
+- `backend/prisma/migrations/20261021130000_store_currency_on_tenant/` (new)
+- `frontend/src/components/settings/CurrenciesFxPanel.tsx`, `services/fx.service.ts`, `utils/fx.ts` (new), `pages/Settings.tsx`
