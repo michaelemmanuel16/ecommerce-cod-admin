@@ -27,22 +27,23 @@ const TEST_TENANT = {
  * Avoids writing to a real database during E2E tests.
  */
 async function mockRegistrationAPIs(page: Page) {
-  // POST /api/auth/register → return access token + user
-  await page.route('**/api/auth/register', async (route) => {
+  // POST /api/auth/register-tenant → return tenant, user and tokens
+  await page.route('**/api/auth/register-tenant', async (route) => {
     await route.fulfill({
       status: 201,
       contentType: 'application/json',
       body: JSON.stringify({
-        accessToken: 'mock-access-token-e2e',
+        tenant: { id: 'e2e-tenant', name: TEST_TENANT.companyName, slug: 'e2e-tenant' },
         user: {
           id: 9999,
           email: TEST_TENANT.adminEmail,
           firstName: 'Jane',
           lastName: 'Doe',
-          role: 'ADMIN',
-          tenantId: 1,
+          role: 'admin',
+          tenantId: 'e2e-tenant',
           onboardingCompleted: false,
         },
+        tokens: { accessToken: 'mock-access-token-e2e', refreshToken: 'mock-refresh-token-e2e' },
       }),
     });
   });
