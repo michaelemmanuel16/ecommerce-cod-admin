@@ -13,6 +13,7 @@ import { Billing } from './Billing';
 import { adminService, SystemConfig } from '../services/admin.service';
 import { authService } from '../services/auth.service';
 import { useConfigStore } from '../stores/configStore';
+import { SUPPORTED_CURRENCIES, getCurrencyOptionLabel } from '../utils/countries';
 
 type SettingsTab = 'profile' | 'notifications' | 'security' | 'users' | 'business' | 'permissions' | 'integrations' | 'checkout-forms' | 'billing';
 
@@ -523,16 +524,9 @@ export const Settings: React.FC = () => {
                       onChange={(e) => setBusinessForm({ ...businessForm, currency: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="USD">USD - US Dollar ($)</option>
-                      <option value="GHS">GHS - Ghanaian Cedi (₵)</option>
-                      <option value="NGN">NGN - Nigerian Naira (₦)</option>
-                      <option value="KES">KES - Kenyan Shilling (KSh)</option>
-                      <option value="EUR">EUR - Euro (€)</option>
-                      <option value="GBP">GBP - British Pound (£)</option>
-                      <option value="INR">INR - Indian Rupee (₹)</option>
-                      <option value="CAD">CAD - Canadian Dollar ($)</option>
-                      <option value="AUD">AUD - Australian Dollar ($)</option>
-                      <option value="JPY">JPY - Japanese Yen (¥)</option>
+                      {SUPPORTED_CURRENCIES.map((c) => (
+                        <option key={c} value={c}>{getCurrencyOptionLabel(c)}</option>
+                      ))}
                     </select>
                   </div>
                   <div className="md:col-span-2">

@@ -18,22 +18,12 @@ import { ordersService } from '../services/orders.service';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '../utils/format';
 import { getSocket } from '../services/socket';
+import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 
 type ViewMode = 'kanban' | 'list';
 type SortField = 'id' | 'customerName' | 'totalAmount' | 'createdAt' | 'status';
 type SortDirection = 'asc' | 'desc';
 
-const statusLabels: Record<OrderStatus, string> = {
-  pending_confirmation: 'Pending Confirmation',
-  confirmed: 'Confirmed',
-  preparing: 'Preparing',
-  ready_for_pickup: 'Ready for Pickup',
-  out_for_delivery: 'Out for Delivery',
-  delivered: 'Delivered',
-  cancelled: 'Cancelled',
-  returned: 'Returned',
-  failed_delivery: 'Failed Delivery',
-};
 
 const statusColors: Record<OrderStatus, string> = {
   pending_confirmation: 'bg-yellow-100 text-yellow-800',
@@ -45,6 +35,9 @@ const statusColors: Record<OrderStatus, string> = {
   cancelled: 'bg-red-100 text-red-800',
   returned: 'bg-orange-100 text-orange-800',
   failed_delivery: 'bg-red-100 text-red-800',
+  payment_pending: 'bg-yellow-100 text-yellow-800',
+  digital_delivered: 'bg-green-100 text-green-800',
+  payment_failed: 'bg-red-100 text-red-800',
 };
 
 const statusOptions: { value: OrderStatus; label: string }[] = [

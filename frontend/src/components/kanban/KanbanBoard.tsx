@@ -15,15 +15,16 @@ import { useOrdersStore } from '../../stores/ordersStore';
 import { Order, OrderStatus } from '../../types';
 import { Loading } from '../ui/Loading';
 import toast from 'react-hot-toast';
+import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 
-const columns: { status: OrderStatus; title: string; color: string }[] = [
-  { status: 'pending_confirmation', title: 'Pending Confirmation', color: 'bg-yellow-500' },
-  { status: 'confirmed', title: 'Confirmed', color: 'bg-blue-500' },
-  { status: 'preparing', title: 'Preparing', color: 'bg-orange-500' },
-  { status: 'ready_for_pickup', title: 'Ready for Pickup', color: 'bg-cyan-500' },
-  { status: 'out_for_delivery', title: 'Out for Delivery', color: 'bg-indigo-500' },
-  { status: 'delivered', title: 'Delivered', color: 'bg-green-500' },
-  { status: 'returned', title: 'Returned', color: 'bg-red-500' },
+const columns: { status: OrderStatus; color: string }[] = [
+  { status: 'pending_confirmation', color: 'bg-yellow-500' },
+  { status: 'confirmed', color: 'bg-blue-500' },
+  { status: 'preparing', color: 'bg-orange-500' },
+  { status: 'ready_for_pickup', color: 'bg-cyan-500' },
+  { status: 'out_for_delivery', color: 'bg-indigo-500' },
+  { status: 'delivered', color: 'bg-green-500' },
+  { status: 'returned', color: 'bg-red-500' },
 ];
 
 export const KanbanBoard: React.FC = () => {
@@ -106,7 +107,7 @@ export const KanbanBoard: React.FC = () => {
           <KanbanColumn
             key={column.status}
             status={column.status}
-            title={column.title}
+            title={ORDER_STATUS_LABELS[column.status]}
             orders={getOrdersByStatus(column.status)}
             color={column.color}
           />

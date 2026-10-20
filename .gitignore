@@ -150,3 +150,6 @@ docker-compose.*.override.yml
 docs/research/competitors/*/screens/
 docs/research/competitors/*/evidence/
 docs/research/competitors/*/raw/
+
+# Script reports (phone collision CSVs etc.)
+backend/scripts/output/

@@ -11,6 +11,7 @@ import agentReconciliationService from './agentReconciliationService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitGLEntryCreated } from '../sockets/index';
 import * as Money from '../utils/money';
+import { customerPhoneSearch } from '../utils/phone';
 
 
 interface CreateDeliveryData {
@@ -820,14 +821,15 @@ export class DeliveryService {
     if (filters?.search) {
       const term = filters.search.trim();
       const numericId = parseInt(term, 10);
+      const phoneSearch = customerPhoneSearch(term);
       // When we already have OR (from date filtering), wrap in AND
       const searchOr: Prisma.OrderWhereInput[] = [
         { customer: { firstName: { contains: term, mode: 'insensitive' } } },
         { customer: { lastName: { contains: term, mode: 'insensitive' } } },
-        { customer: { phoneNumber: { contains: term } } },
+        ...(phoneSearch ? [phoneSearch] : []),
         { deliveryAddress: { contains: term, mode: 'insensitive' } },
         { deliveryArea: { contains: term, mode: 'insensitive' } },
-        ...(Number.isFinite(numericId) ? [{ id: numericId }] : []),
+        ...(Number.isFinite(numericId) && numericId <= 2147483647 ? [{ id: numericId }] : []),
       ];
       if (where.OR) {
         // Combine existing OR (date/status) with search OR via AND
@@ -858,13 +860,14 @@ export class DeliveryService {
     if (filters?.search) {
       const term = filters.search.trim();
       const numericId = parseInt(term, 10);
+      const phoneSearch = customerPhoneSearch(term);
       const searchOr: Prisma.OrderWhereInput[] = [
         { customer: { firstName: { contains: term, mode: 'insensitive' } } },
         { customer: { lastName: { contains: term, mode: 'insensitive' } } },
-        { customer: { phoneNumber: { contains: term } } },
+        ...(phoneSearch ? [phoneSearch] : []),
         { deliveryAddress: { contains: term, mode: 'insensitive' } },
         { deliveryArea: { contains: term, mode: 'insensitive' } },
-        ...(Number.isFinite(numericId) ? [{ id: numericId }] : []),
+        ...(Number.isFinite(numericId) && numericId <= 2147483647 ? [{ id: numericId }] : []),
       ];
       if (countWhere.OR) {
         const existingOr = countWhere.OR;

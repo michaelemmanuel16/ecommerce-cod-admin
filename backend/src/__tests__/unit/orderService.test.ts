@@ -185,7 +185,7 @@ describe('OrderService', () => {
 
     it('updates a repeat customer email on a manual order when a new one is provided (MAN-82)', async () => {
       const existingCustomer = { ...mockCustomer, email: 'old@example.com', alternatePhone: null };
-      (prismaMock.customer.findFirst as any).mockResolvedValue(existingCustomer);
+      (prismaMock.customer.findMany as any).mockResolvedValue([existingCustomer]);
       (prismaMock.customer.update as any).mockResolvedValue({ ...existingCustomer, email: 'new@example.com' });
       mockOrderCreationTx();
 
@@ -201,7 +201,7 @@ describe('OrderService', () => {
 
     it('does not update a repeat customer when the email is unchanged (MAN-82)', async () => {
       const existingCustomer = { ...mockCustomer, email: 'same@example.com', alternatePhone: null };
-      (prismaMock.customer.findFirst as any).mockResolvedValue(existingCustomer);
+      (prismaMock.customer.findMany as any).mockResolvedValue([existingCustomer]);
       mockOrderCreationTx();
 
       await orderService.createOrder({ ...phoneOrderData, customerEmail: 'same@example.com' } as any);

@@ -6,6 +6,7 @@ import { Requester } from '../utils/authUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
 import * as Money from '../utils/money';
+import { looksLikePhone, normalizePhoneForStorage, phoneLookupVariants, phonePartialDigits, phoneSearchConditions } from '../utils/phone';
 
 interface CreateCustomerData {
   firstName: string;
@@ -59,7 +60,7 @@ export class CustomerService {
       where.OR = [
         { firstName: { contains: search, mode: 'insensitive' } },
         { lastName: { contains: search, mode: 'insensitive' } },
-        { phoneNumber: { contains: search } },
+        ...phoneSearchConditions(search),
         { email: { contains: search, mode: 'insensitive' } }
       ];
     }
@@ -75,7 +76,7 @@ export class CustomerService {
     // to sort and paginate at the database level instead of loading all records
     if (sortBy) {
       // Build WHERE conditions for raw SQL
-      const conditions: string[] = ['c.is_active = true', 'c.deleted_at IS NULL'];
+      const conditions: string[] = ['c.is_active = true'];
       const params: any[] = [];
       let paramIdx = 1;
 
@@ -88,9 +89,13 @@ export class CustomerService {
       }
 
       if (search) {
-        conditions.push(`(c.first_name ILIKE $${paramIdx} OR c.last_name ILIKE $${paramIdx} OR c.phone_number LIKE $${paramIdx + 1} OR c.email ILIKE $${paramIdx})`);
-        params.push(`%${search}%`, `%${search}%`);
-        paramIdx += 2;
+        // A phone-like term also matches every stored format of the number (normalized or old).
+        // A partly typed local number (024 55) also matches the normalized form.
+        const partial = phonePartialDigits(search);
+        const phoneLike = partial ? `%${partial}%` : `%${search}%`;
+        conditions.push(`(c.first_name ILIKE $${paramIdx} OR c.last_name ILIKE $${paramIdx} OR c.phone_number LIKE $${paramIdx + 1} OR c.phone_number = ANY($${paramIdx + 2}::text[]) OR c.email ILIKE $${paramIdx})`);
+        params.push(`%${search}%`, phoneLike, looksLikePhone(search) ? phoneLookupVariants(search) : []);
+        paramIdx += 3;
       }
       if (area) {
         conditions.push(`c.area = $${paramIdx}`);
@@ -109,7 +114,8 @@ export class CustomerService {
       }
 
       const whereClause = conditions.join(' AND ');
-      const orderCol = sortBy === 'totalOrders' ? 'total_orders' : 'total_spent';
+      // Aggregate expressions, not the aliases: customers has its own total_orders / total_spent columns (c.*), so the alias is ambiguous in ORDER BY.
+      const orderCol = sortBy === 'totalOrders' ? 'COUNT(o.id)' : 'COALESCE(SUM(o.total_amount), 0)';
       const orderDir = sortOrder === 'asc' ? 'ASC' : 'DESC';
 
       // Count total
@@ -198,7 +204,9 @@ export class CustomerService {
     // Check if customer with phone number already exists. Archived customers
     // count: they still hold the number in the unique index, so missing one here
     // turns a clean 400 into a constraint-violation 500.
-    const existingCustomer = await findCustomerByPhoneIncludingArchived(prisma, data.phoneNumber);
+    const phoneNumber = normalizePhoneForStorage(data.phoneNumber);
+    const alternatePhone = normalizePhoneForStorage(data.alternatePhone);
+    const existingCustomer = await findCustomerByPhoneIncludingArchived(prisma, phoneNumber);
 
     if (existingCustomer) {
       throw new AppError(
@@ -212,6 +220,8 @@ export class CustomerService {
     const customer = await prisma.customer.create({
       data: {
         ...data,
+        phoneNumber,
+        alternatePhone,
         firstName: data.firstName || 'Unknown',
         lastName: data.lastName || '',
       }
@@ -298,7 +308,7 @@ export class CustomerService {
    */
   async getCustomerByPhone(phoneNumber: string, requester?: Requester) {
     const customer = await prisma.customer.findFirst({
-      where: { phoneNumber },
+      where: { phoneNumber: { in: phoneLookupVariants(phoneNumber) } },
       include: {
         orders: {
           where: { deletedAt: null },
@@ -361,6 +371,10 @@ export class CustomerService {
       }
     }
 
+    // Store phones normalized (unparseable input stays as typed).
+    if (updateData.phoneNumber) updateData = { ...updateData, phoneNumber: normalizePhoneForStorage(updateData.phoneNumber) };
+    if (updateData.alternatePhone) updateData = { ...updateData, alternatePhone: normalizePhoneForStorage(updateData.alternatePhone) };
+
     // If updating phone number, check for duplicates
     if (updateData.phoneNumber && updateData.phoneNumber !== customer.phoneNumber) {
       // Archived customers included — see createCustomer.
@@ -369,7 +383,8 @@ export class CustomerService {
         updateData.phoneNumber
       );
 
-      if (existingCustomer) {
+      // The customer's own old-format number matches too; that is not a duplicate.
+      if (existingCustomer && existingCustomer.id !== id) {
         throw new AppError(
           existingCustomer.isActive === false
             ? 'Phone number already in use by an archived customer'
@@ -693,7 +708,7 @@ export class CustomerService {
       OR: [
         { firstName: { contains: query, mode: 'insensitive' } },
         { lastName: { contains: query, mode: 'insensitive' } },
-        { phoneNumber: { contains: query } },
+        ...phoneSearchConditions(query),
         { email: { contains: query, mode: 'insensitive' } }
       ]
     };

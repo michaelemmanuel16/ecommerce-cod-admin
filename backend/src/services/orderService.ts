@@ -18,6 +18,7 @@ import {
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { SYSTEM_USER_ID } from '../config/constants';
+import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
@@ -142,9 +143,11 @@ export class OrderService {
     if (search) {
       // Try to parse as number for ID search
       const searchNum = parseInt(search);
+      const phoneSearch = customerPhoneSearch(search);
       where.OR = [
-        ...(isNaN(searchNum) ? [] : [{ id: searchNum }]),
-        { customer: { phoneNumber: { contains: search, mode: 'insensitive' } } },
+        // A phone typed as +233... parses to a number beyond Int4; it is not an order id.
+        ...(isNaN(searchNum) || searchNum > 2147483647 ? [] : [{ id: searchNum }]),
+        ...(phoneSearch ? [phoneSearch] : []),
         { customer: { firstName: { contains: search, mode: 'insensitive' } } },
         { customer: { lastName: { contains: search, mode: 'insensitive' } } }
       ];
@@ -226,8 +229,10 @@ export class OrderService {
         throw new AppError('Customer not found', 404);
       }
     } else if (data.customerPhone) {
-      // Find customer by phone or create new one.
-      customer = await findAndReactivateCustomerByPhone(prisma, data.customerPhone, 'manual order');
+      // Find customer by phone or create new one. Unparseable input is stored as typed (orders never fail on it).
+      const customerPhone = normalizePhoneForStorage(data.customerPhone);
+      const alternatePhone = normalizePhoneForStorage(data.alternatePhone) || undefined;
+      customer = await findAndReactivateCustomerByPhone(prisma, customerPhone, 'manual order');
 
       if (!customer) {
         // Parse customer name
@@ -240,9 +245,9 @@ export class OrderService {
           data: {
             firstName,
             lastName,
-            phoneNumber: data.customerPhone,
+            phoneNumber: customerPhone,
             email: data.customerEmail || null,
-            alternatePhone: data.alternatePhone || null,
+            alternatePhone: alternatePhone || null,
             address: data.deliveryAddress,
             state: data.deliveryState,
             area: data.deliveryArea,
@@ -256,8 +261,8 @@ export class OrderService {
         if (data.customerEmail && data.customerEmail !== customer.email) {
           customerUpdateData.email = data.customerEmail;
         }
-        if (data.alternatePhone && data.alternatePhone !== customer.alternatePhone) {
-          customerUpdateData.alternatePhone = data.alternatePhone;
+        if (alternatePhone && alternatePhone !== customer.alternatePhone) {
+          customerUpdateData.alternatePhone = alternatePhone;
         }
         if (Object.keys(customerUpdateData).length > 0) {
           customer = await prisma.customer.update({
@@ -397,9 +402,11 @@ export class OrderService {
     const normalize = (val: string | number | null | undefined) =>
       String(val || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
 
-    // Aggressive phone normalization: Take last 9 digits for comparison
-    // This handles 055... vs +23355... vs 23355...
-    const normalizePhone = (phone: string | null | undefined) => {
+    // Phone key for in-import duplicate detection: the shared E.164 form; unparseable input
+    // falls back to its last 9 digits so odd values still dedupe against themselves.
+    const phoneKey = (phone: string | null | undefined) => {
+      const e164 = normalizePhone(phone);
+      if (e164) return e164;
       const digits = String(phone || '').replace(/[^0-9]/g, '');
       return digits.length >= 9 ? digits.slice(-9) : digits;
     };
@@ -412,7 +419,7 @@ export class OrderService {
       for (const orderData of batch) {
         try {
           // 1. Check for duplicates within the SAME import first
-          const normalizedPhone = normalizePhone(orderData.customerPhone);
+          const normalizedPhone = phoneKey(orderData.customerPhone);
           const orderDateValue = orderData.orderDate || new Date();
           const orderDateString = orderDateValue.toDateString();
           const orderFingerprint = `${normalizedPhone}| ${Money.toApi(orderData.totalAmount)}| ${normalize(orderData.deliveryAddress)}| ${orderDateString} `;
@@ -436,12 +443,8 @@ export class OrderService {
           // Use prismaBase to include soft-deleted orders in duplicate check
           const existingOrders = await prismaBase.order.findMany({
             where: {
-              customer: {
-                OR: [
-                  { phoneNumber: orderData.customerPhone },
-                  { phoneNumber: { endsWith: normalizedPhone } }
-                ]
-              },
+              // Matches the number in the normalized or any old stored format.
+              customer: { phoneNumber: { in: phoneLookupVariants(orderData.customerPhone) } },
               createdAt: {
                 gte: startOfCurrentDay,
                 lte: endOfCurrentDay
@@ -529,16 +532,18 @@ export class OrderService {
 
           const createdOrder = await prisma.$transaction(async (tx) => {
             // 3. Find or create customer by phone (tenant-scoped via Prisma extension).
+            const customerPhone = normalizePhoneForStorage(orderData.customerPhone);
+            const alternatePhone = normalizePhoneForStorage(orderData.customerAlternatePhone) || undefined;
             let customer = await findAndReactivateCustomerByPhone(
               tx,
-              orderData.customerPhone,
+              customerPhone,
               'bulk import'
             );
             if (customer) {
               customer = await tx.customer.update({
                 where: { id: customer.id },
                 data: {
-                  ...(orderData.customerAlternatePhone && { alternatePhone: orderData.customerAlternatePhone }),
+                  ...(alternatePhone && { alternatePhone }),
                   ...(orderData.deliveryAddress && { address: orderData.deliveryAddress }),
                   ...(orderData.deliveryState && { state: orderData.deliveryState }),
                   ...(orderData.deliveryArea && { area: orderData.deliveryArea }),
@@ -549,8 +554,8 @@ export class OrderService {
                 data: {
                   firstName: orderData.customerFirstName || 'Unknown',
                   lastName: orderData.customerLastName || '',
-                  phoneNumber: orderData.customerPhone,
-                  alternatePhone: orderData.customerAlternatePhone,
+                  phoneNumber: customerPhone,
+                  alternatePhone,
                   address: orderData.deliveryAddress,
                   state: orderData.deliveryState,
                   area: orderData.deliveryArea,
@@ -878,12 +883,12 @@ export class OrderService {
 
         // Handle customer phone number
         if (customerPhone !== undefined) {
-          customerUpdateData.phoneNumber = customerPhone;
+          customerUpdateData.phoneNumber = normalizePhoneForStorage(customerPhone);
         }
 
         // Handle alternate phone
         if (alternatePhone !== undefined) {
-          customerUpdateData.alternatePhone = alternatePhone;
+          customerUpdateData.alternatePhone = normalizePhoneForStorage(alternatePhone);
         }
 
         // Only update if there are fields to update

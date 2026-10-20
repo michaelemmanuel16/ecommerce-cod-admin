@@ -54,10 +54,36 @@ export function getCurrencyForCountry(countryName: string): string {
 }
 
 /**
- * Get currency symbol for a given currency code
- * Note: country-state-city doesn't provide symbols, so we maintain a small map
+ * The one currency list (F-1232). Onboarding and Settings both render from it.
  */
-export const SUPPORTED_CURRENCIES = ['GHS', 'NGN', 'KES', 'ZAR', 'UGX', 'TZS', 'RWF', 'ETB'] as const;
+export const SUPPORTED_CURRENCIES = [
+  'USD', 'GHS', 'NGN', 'KES', 'ZAR', 'UGX', 'TZS', 'RWF', 'ETB', 'EUR', 'GBP', 'INR', 'CAD', 'AUD', 'JPY',
+] as const;
+
+export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
+
+const CURRENCY_NAMES: Record<SupportedCurrency, string> = {
+  USD: 'US Dollar',
+  GHS: 'Ghanaian Cedi',
+  NGN: 'Nigerian Naira',
+  KES: 'Kenyan Shilling',
+  ZAR: 'South African Rand',
+  UGX: 'Ugandan Shilling',
+  TZS: 'Tanzanian Shilling',
+  RWF: 'Rwandan Franc',
+  ETB: 'Ethiopian Birr',
+  EUR: 'Euro',
+  GBP: 'British Pound',
+  INR: 'Indian Rupee',
+  CAD: 'Canadian Dollar',
+  AUD: 'Australian Dollar',
+  JPY: 'Japanese Yen',
+};
+
+/** Label for a currency picker option, e.g. "NGN - Nigerian Naira (₦)". */
+export function getCurrencyOptionLabel(code: SupportedCurrency): string {
+  return `${code} - ${CURRENCY_NAMES[code]} (${getCurrencySymbol(code)})`;
+}
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   'GHS': 'GH₵',
@@ -73,6 +99,10 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   'USD': '$',
   'EUR': '€',
   'GBP': '£',
+  'INR': '₹',
+  'CAD': '$',
+  'AUD': '$',
+  'JPY': '¥',
 };
 
 /**

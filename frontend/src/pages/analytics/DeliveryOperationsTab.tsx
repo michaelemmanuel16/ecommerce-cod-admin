@@ -14,6 +14,8 @@ import {
 import { useAnalyticsStore } from '../../stores/analyticsStore';
 import { DeliveryFunnelChart } from '../../components/analytics/DeliveryFunnelChart';
 import { Card } from '../../components/ui/Card';
+import { OrderStatus } from '../../types';
+import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 
 interface DeliveryOperationsTabProps {
   startDate?: string;
@@ -24,12 +26,6 @@ const FAILURE_COLORS: Record<string, string> = {
   cancelled: '#ef4444',
   returned: '#ec4899',
   failed_delivery: '#dc2626',
-};
-
-const FAILURE_LABELS: Record<string, string> = {
-  cancelled: 'Cancelled',
-  returned: 'Returned',
-  failed_delivery: 'Failed Delivery',
 };
 
 export const DeliveryOperationsTab: React.FC<DeliveryOperationsTabProps> = ({
@@ -67,7 +63,7 @@ export const DeliveryOperationsTab: React.FC<DeliveryOperationsTabProps> = ({
       ordersByStatus
         .filter((d) => ['cancelled', 'returned', 'failed_delivery'].includes(d.status))
         .map((d) => ({
-          name: FAILURE_LABELS[d.status] || d.status,
+          name: ORDER_STATUS_LABELS[d.status as OrderStatus] || d.status,
           count: d.count,
           status: d.status,
         })),

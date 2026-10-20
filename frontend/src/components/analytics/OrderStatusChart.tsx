@@ -2,6 +2,8 @@ import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Card } from '../ui/Card';
 import { ConversionFunnelStep } from '../../services/analytics.service';
+import { OrderStatus } from '../../types';
+import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 
 interface OrderStatusChartProps {
   data: ConversionFunnelStep[];
@@ -20,24 +22,13 @@ const STATUS_COLORS: Record<string, string> = {
   failed_delivery: '#dc2626',
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  pending_confirmation: 'Pending',
-  confirmed: 'Confirmed',
-  preparing: 'Preparing',
-  ready_for_pickup: 'Ready',
-  out_for_delivery: 'Out for Delivery',
-  delivered: 'Delivered',
-  cancelled: 'Cancelled',
-  returned: 'Returned',
-  failed_delivery: 'Failed',
-};
 
 const CustomTooltip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null;
   const { name, value } = payload[0];
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
-      <p className="text-sm font-medium text-gray-900">{STATUS_LABELS[name] || name}</p>
+      <p className="text-sm font-medium text-gray-900">{ORDER_STATUS_LABELS[name as OrderStatus] || name}</p>
       <p className="text-sm text-gray-600">{value} orders</p>
     </div>
   );
@@ -85,7 +76,7 @@ export const OrderStatusChart: React.FC<OrderStatusChartProps> = ({
               <Legend
                 formatter={(value: string) => (
                   <span className="text-xs text-gray-600">
-                    {STATUS_LABELS[value] || value}
+                    {ORDER_STATUS_LABELS[value as OrderStatus] || value}
                   </span>
                 )}
               />

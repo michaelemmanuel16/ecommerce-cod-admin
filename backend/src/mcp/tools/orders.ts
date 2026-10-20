@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
 import { encodeCursor, decodeCursor, mcpMoneyJson, mcpError, getDateRange } from '../utils';
 import * as Money from '../../utils/money';
+import { customerPhoneSearch } from '../../utils/phone';
 
 const ordersSearchSchema = z.object({
   status: z.enum([
@@ -49,9 +50,10 @@ export function registerOrderTools(
         }
         if (parsed.search) {
           const searchNum = parseInt(parsed.search);
+          const phoneSearch = customerPhoneSearch(parsed.search);
           where.OR = [
             ...(isNaN(searchNum) ? [] : [{ id: searchNum }]),
-            { customer: { phoneNumber: { contains: parsed.search, mode: 'insensitive' } } },
+            ...(phoneSearch ? [phoneSearch] : []),
             { customer: { firstName: { contains: parsed.search, mode: 'insensitive' } } },
           ];
         }

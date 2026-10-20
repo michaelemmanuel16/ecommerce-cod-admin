@@ -27,6 +27,9 @@ export const Badge: React.FC<BadgeProps> = ({
     cancelled: 'bg-gray-100 text-gray-800',
     returned: 'bg-red-100 text-red-800',
     failed_delivery: 'bg-red-100 text-red-800',
+    payment_pending: 'bg-yellow-100 text-yellow-800',
+    digital_delivered: 'bg-green-100 text-green-800',
+    payment_failed: 'bg-red-100 text-red-800',
   };
 
   const priorityColors: Record<OrderPriority, string> = {

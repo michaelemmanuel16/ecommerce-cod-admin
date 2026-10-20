@@ -194,6 +194,22 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     seed('notification', prismaBase.notification.create({
       data: { userId: admin.id, type: 'info', title: `Note ${marker}`, message: `message ${marker}`, tenantId },
     })),
+    // M1 models
+    seed('target', prismaBase.target.create({
+      data: {
+        scope: 'month', metric: `revenue-${marker}`, unit: 'currency', periodStart: new Date('2026-10-01'),
+        periodEnd: new Date('2026-10-31'), value: amount, userId: admin.id, tenantId,
+      },
+    })),
+    seed('finding', prismaBase.finding.create({
+      data: { type: 'ledger_gap', subjectType: 'day', subjectId: `2026-10-01-${marker}`, amount, note: `finding ${marker}`, tenantId },
+    })),
+    seed('feeRule', prismaBase.feeRule.create({
+      data: { partnerUserId: deliveryAgent.id, outcome: 'delivered', amount: '25', tenantId },
+    })),
+    seed('fxRate', prismaBase.fxRate.create({
+      data: { fromCurrency: 'GHS', toCurrency: 'NGN', rate: '112', date: new Date('2026-10-01'), source: 'auto', createdById: admin.id, tenantId },
+    })),
   ]);
   ids.order = order.id;
   ids.journalEntry = posting.id;
@@ -272,6 +288,10 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.emailTemplate.deleteMany({ where: t }),
     db.mcpApiKey.deleteMany({ where: t }),
     db.systemConfig.deleteMany({ where: t }),
+    db.target.deleteMany({ where: t }),
+    db.finding.deleteMany({ where: t }),
+    db.feeRule.deleteMany({ where: t }),
+    db.fxRate.deleteMany({ where: t }),
   ]);
   await Promise.all([
     db.order.deleteMany({ where: t }),

@@ -132,7 +132,7 @@ describe('publicOrderController.createPublicOrder — deferred Paystack creation
       physicalForm({ codEnabled: false, paystackFullEnabled: true }),
     );
     // New customer
-    (prismaMock.customer.findFirst as any).mockResolvedValue(null);
+    (prismaMock.customer.findMany as any).mockResolvedValue([]);
     (prismaMock.customer.create as any).mockResolvedValue({
       id: 7, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber, email: null,
     });
@@ -191,7 +191,7 @@ describe('publicOrderController.createPublicOrder — deferred Paystack creation
         packages: [{ id: 10, name: 'Single', price: 249, quantity: 1, originalPrice: null, discountType: 'none', discountValue: 0 }],
       }),
     );
-    (prismaMock.customer.findFirst as any).mockResolvedValue(null);
+    (prismaMock.customer.findMany as any).mockResolvedValue([]);
     (prismaMock.customer.create as any).mockResolvedValue({
       id: 7, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber, email: null,
     });
@@ -225,7 +225,7 @@ describe('publicOrderController.createPublicOrder — deferred Paystack creation
     (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(
       physicalForm({ codEnabled: false, paystackFullEnabled: true }),
     );
-    (prismaMock.customer.findFirst as any).mockResolvedValue(null); // new customer
+    (prismaMock.customer.findMany as any).mockResolvedValue([]); // new customer
     (prismaMock.customer.create as any).mockResolvedValue({
       id: 8, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber, email: null,
     });
@@ -265,9 +265,9 @@ describe('publicOrderController.createPublicOrder — email linking (issue #1)',
 
   it('updates a returning customer with the email typed at checkout, even when they already had a different one', async () => {
     (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(physicalForm()); // COD
-    (prismaMock.customer.findFirst as any).mockResolvedValue({
+    (prismaMock.customer.findMany as any).mockResolvedValue([{
       id: 7, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber, email: 'old@x.com', alternatePhone: null,
-    });
+    }]);
     (prismaMock.customer.update as any).mockResolvedValue({
       id: 7, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber, email: 'new@x.com',
     });
@@ -326,7 +326,7 @@ describe('publicOrderController.createPublicOrder — archived customers', () =>
       id: 7, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber,
       email: null, alternatePhone: null, isActive: false,
     };
-    (prismaMock.customer.findFirst as any).mockResolvedValue(archived);
+    (prismaMock.customer.findMany as any).mockResolvedValue([archived]);
     (prismaMock.customer.update as any).mockResolvedValue({ ...archived, isActive: true });
 
     const res = buildRes();
@@ -348,10 +348,10 @@ describe('publicOrderController.createPublicOrder — archived customers', () =>
 
   it('leaves an active customer untouched', async () => {
     codOrderMocks();
-    (prismaMock.customer.findFirst as any).mockResolvedValue({
+    (prismaMock.customer.findMany as any).mockResolvedValue([{
       id: 7, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber,
       email: null, alternatePhone: null, isActive: true,
-    });
+    }]);
 
     await createPublicOrder(
       buildReq({ formData: buyer, selectedPackage: { id: 10 }, paymentMethod: 'cod', totalAmount: 250 }),

@@ -271,7 +271,8 @@ async function settleInTenant(
       await digitalDeliveryService.sendDownloadLinks(order.id, token, order);
       await prisma.order.update({
         where: { id: order.id },
-        data: { status: 'digital_delivered' },
+        // deliveryDate is the revenue date (F-901): the settle time. M1-T11 later routes this through transitionOrder.
+        data: { status: 'digital_delivered', deliveryDate: new Date() },
       });
       order.status = 'digital_delivered';
       await prisma.orderHistory.create({
