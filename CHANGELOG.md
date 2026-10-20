@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[KPI]**: Order lifecycle fields (confirmed, dispatched, first contact, returned, status version trigger, decline and failure reasons), tenant-scoped Target, Finding, FeeRule and FxRate models, E.164 phone normalization with old-format and partial lookups, `/api/reference/regions`, one currency list and one status label map, and dry-by-default backfill scripts. Fixes the customers list `sortBy` 500. (COD-9)
 - **[Tenancy]**: Fail-closed tenant scope — required `tenant_id` on 12 more tables (and `notifications`, `workflow_executions`), per-tenant uniques for account code, journal entry number, SKU and SMS template name, and a Prisma extension that throws `TenantContextMissing` when a scoped model is queried with no tenant. Jobs, crons, public routes, webhooks and socket rooms now set the tenant first; `seedTenantDefaults` seeds each new tenant. One shared token refresh for axios and socket. (COD-4)
 - **[Money]**: `Money` helper on `Prisma.Decimal` (2-decimal API strings) and migration of 31 money columns to `Decimal(19,4)`, with `verify-money-migration.ts` (zero-difference proof) and a tested rollback script. (COD-5)
 - **[CI]**: Migration parity check — the backend test job fails when `schema.prisma` differs from the migrated database; the lint job runs `scripts/tests/deploy-guard.sh`. (COD-2)

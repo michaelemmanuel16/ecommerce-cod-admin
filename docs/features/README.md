@@ -13,7 +13,8 @@ Each file documents one feature area. Related Linear issues are appended as work
 | Financial Module | [financial-module-prd.md](financial-module-prd.md) | PRD |
 | Paystack Checkout & Webhook Infrastructure | [paystack-checkout.md](paystack-checkout.md) | In Progress |
 | Email Channel | [email-channel.md](email-channel.md) | In Progress |
-| M0 Correctness Base | [m0-correctness-base.md](m0-correctness-base.md) | In Progress |
+| M0 Correctness Base | [m0-correctness-base.md](m0-correctness-base.md) | Done |
+| M1 KPI Definitions | [m1-kpi-definitions.md](m1-kpi-definitions.md) | In Progress |
 
 ## Adding a new feature doc
 
