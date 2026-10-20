@@ -148,3 +148,23 @@ A nightly job checks that delivered revenue matches the ledger for each day. A h
 - `backend/src/utils/currency.ts`, `services/kpi/{revenue,dates}.ts`, `services/glAutomationService.ts`, `controllers/onboardingController.ts`
 - `backend/prisma/migrations/20261021130000_store_currency_on_tenant/` (new)
 - `frontend/src/components/settings/CurrenciesFxPanel.tsx`, `services/fx.service.ts`, `utils/fx.ts` (new), `pages/Settings.tsx`
+
+---
+
+## COD-15 — M1-I07 Wording guard, KPI contract test and M1 cleanup
+**Date:** 2026-10-20 | **Type:** feat | **Branch:** feature/m1-kpi-definitions | **Commit:** c0e738b
+
+### Summary
+Two guard tests stop old wording and wrong numbers from coming back. A /simplify pass over the whole M1 diff removed repeated code and fixed one date bug. Plan tasks: M1-T33 to T37. Decision: D49 in `docs/plan/M1-decisions.md`.
+
+### Changes
+- **Wording guard (T33):** backend and frontend tests fail on "airtime", "delivery rate" or "6,400" in source. `wording-allowlist.json` holds the banned list and 12 allowed lines, each with a reason. A stale entry fails the test (D49). No UI text changed.
+- **KPI contract (T34):** `kpiContract.test.ts` seeds the fixture once. It checks GH₵92,000.00 and 376 delivered on every endpoint and MCP tool, the 71/48/34 rates and leadership numbers, rep rates (a payout does not change them), product units, and zero `ledger_gap` findings. `numbersFixture.test.ts` keeps its SQL, history and partner checks.
+- **End-day fix (T35):** a `yyyy-MM-dd` end date now includes the whole store day on calls, agent inventory, agent reconciliation, checkout form submissions, GL journal entries, WhatsApp messages and financial reports. Before, the last day was dropped.
+- **Cleanup (T35):** one revenue query for `reps_performance`; FX history read once per currency pair; shared `revenueScope`, `ownsOrder`, `kpiMeta`, `confirmationRateResult`, `dateRangeOut`, `currencyOfTenant`; one frontend currency table; `kpiGrep` also checks `_avg`, with a per-line allow-list.
+
+### Key Files
+- `wording-allowlist.json`, `backend/src/__tests__/unit/wordingGuard.test.ts`, `frontend/src/__tests__/wordingGuard.test.ts`, `backend/src/__tests__/integration/kpiContract.test.ts` (new)
+- `backend/src/controllers/{callController,agentInventoryController,agentReconciliationController,checkoutFormController,financialController}.ts`
+- `backend/src/services/{glService,whatsappService,fxService,orderService,orderStateMachine}.ts`, `services/kpi/*`, `mcp/tools/*`, `mcp/utils.ts`
+- `frontend/src/utils/countries.ts`

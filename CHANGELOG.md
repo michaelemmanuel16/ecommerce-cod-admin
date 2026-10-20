@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **[Finance]**: Nightly ledger check with one `ledger_gap` finding per day, `GET /api/financial/health`, daily FX rates (ExchangeRate-API) with `/api/fx` and a Currencies & FX settings tab, store currency on the tenant with `orders.currency`, and return GL entries dated by `returnedAt`. (COD-14)
+- **[Analytics]**: Wording guard tests with one allow-list, and a KPI contract test that checks GH₵92,000.00 on every endpoint and MCP tool. (COD-15)
 - **[KPI]**: Every analytics, financial and order-stats endpoint and every MCP tool reads revenue and rates from the KPI layer (fixture-proven GH₵92,000.00 / 376 delivered); financial summary adds digital revenue and Paystack fees; `profit-margins` and dead analytics routes removed; date ranges are store-zone days end to end. (COD-13)
 - **[KPI]**: Rep, leadership, product and partner KPIs — per-rep confirmation and delivered-from-confirmed rates, `/api/reports/team` (admin/manager), `/api/kpi/leadership` (pace, projection, needed a day, lever), delivered units, partner rates and timings, time to first call with operating hours, one role-scope rule on every KPI route, and numbers fixture part 2 with per-area checks. (COD-12)
 - **[KPI]**: KPI layer — `KpiResult` and store-zone dates, delivered revenue (return leaves in its return month), confirmation rate, delivery success rate (cohort or delivery basis) and order-to-cash yield on closed cohorts, `GET /api/kpi/revenue` and `/api/kpi/rates`, a grep guard that keeps KPI maths in one place, and the `seed:fixture` numbers fixture (GH₵92,000.00, 71%, 48%). (COD-11)
@@ -68,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **[CI/CD]**: Sentry DSN injected into staging and production deployments (MAN-16)
 
 ### Fixed
+- **[Analytics]**: A `yyyy-MM-dd` end date now includes the whole store day on calls, agent inventory and reconciliation, checkout form submissions, GL journal entries, WhatsApp messages and financial reports. (COD-15)
 - **[Security]**: Public `POST /api/auth/register` removed (it made users with no tenant and a body-chosen role); delivery routes check role and ownership; `GET /api/admin/config` needs a tenant or form slug; `/metrics` and `/health/detailed` need `METRICS_TOKEN`; legacy Paystack webhook route removed. (COD-3)
 - **[Security]**: Two-tenant test harness and suites for models, HTTP, sockets, MCP, CAPI and public tracking. Public tracking no longer returns the customer phone, public downloads are limited to 30 per 15 minutes per IP, and an expired, revoked or used-up download token returns 410. (COD-7)
 - **[Sockets]**: The tenant owner (`super_admin`) now receives order, finance and team events live. (COD-8)
