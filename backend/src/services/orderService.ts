@@ -13,6 +13,7 @@ import {
   emitOrderStatusChanged,
   emitOrdersDeleted,
   emitGLEntryCreated,
+  emitToTenant,
 } from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
@@ -714,7 +715,7 @@ export class OrderService {
       const processedCount = Math.min(i + BULK_ORDER_CONFIG.IMPORT_BATCH_SIZE, orders.length);
       const progress = Math.round((processedCount / orders.length) * 100);
 
-      getSocketInstance()?.emit('bulk_import_progress', {
+      emitToTenant(getSocketInstance() as any, 'bulk_import_progress', {
         progress,
         processed: processedCount,
         total: orders.length,
@@ -740,7 +741,7 @@ export class OrderService {
     });
 
     // Always emit completion event for dashboard refreshing
-    getSocketInstance()?.emit('bulk_import_completed', {
+    emitToTenant(getSocketInstance() as any, 'bulk_import_completed', {
       success: results.success,
       failed: results.failed,
       duplicates: results.duplicates,

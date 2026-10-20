@@ -3,7 +3,7 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { evaluateConditions } from '../utils/conditionEvaluator';
 import { getSocketInstance } from '../utils/socketInstance';
-import { emitOrderUpdated, emitOrderAssigned } from '../sockets/index';
+import { emitOrderUpdated, emitOrderAssigned, emitToTenant } from '../sockets/index';
 import { tenantStorage, getTenantId } from '../utils/tenantContext';
 
 // Send actions read tenant-scoped provider config (SystemConfig) and write
@@ -56,7 +56,7 @@ export const processExecuteWorkflow = async (job: Bull.Job) => {
 
     const io = getSocketInstance();
     if (io) {
-      io.emit('workflow:execution_started', { workflowId, executionId });
+      emitToTenant(io, 'workflow:execution_started', { workflowId, executionId }, tenantId);
     }
 
     try {
@@ -105,23 +105,23 @@ export const processExecuteWorkflow = async (job: Bull.Job) => {
       logger.info('Workflow execution completed', { executionId });
 
       if (io) {
-        io.emit('workflow:execution_completed', {
+        emitToTenant(io, 'workflow:execution_completed', {
           workflowId,
           executionId,
           status: 'completed',
           completedAt: new Date()
-        });
+        }, tenantId);
       }
     } catch (error: any) {
       logger.error('Workflow execution failed', { executionId, error: error.message });
 
       if (io) {
-        io.emit('workflow:execution_completed', {
+        emitToTenant(io, 'workflow:execution_completed', {
           workflowId,
           executionId,
           status: 'failed',
           error: error.message
-        });
+        }, tenantId);
       }
 
       await prisma.workflowExecution.update({

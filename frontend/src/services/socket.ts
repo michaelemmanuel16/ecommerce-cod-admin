@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/authStore';
 import { useNotificationsStore } from '../stores/notificationsStore';
@@ -7,6 +8,11 @@ import toast from 'react-hot-toast';
 const WS_URL = import.meta.env.VITE_WS_URL === 'relative'
   ? '' // Empty string for relative URLs - will connect to same origin
   : import.meta.env.VITE_WS_URL || 'http://localhost:3000';
+
+// Same base URL as services/api.ts (not imported: api -> authStore -> socket would be a cycle)
+const API_URL = import.meta.env.VITE_API_URL === 'relative'
+  ? ''
+  : import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 let socket: Socket | null = null;
 
@@ -19,9 +25,22 @@ export const connectSocket = () => {
   }
 
   socket = io(WS_URL, {
-    auth: {
-      token,
-    },
+    // A function, so every reconnect sends the current access token
+    auth: (cb) => cb({ token: useAuthStore.getState().accessToken }),
+  });
+
+  // The server rejects an expired access token with TOKEN_EXPIRED: refresh it and reconnect
+  socket.on('connect_error', async (err) => {
+    if (err.message !== 'TOKEN_EXPIRED') return;
+    try {
+      const refreshToken = useAuthStore.getState().refreshToken;
+      if (!refreshToken) return;
+      const response = await axios.post(`${API_URL}/api/auth/refresh`, { refreshToken });
+      useAuthStore.getState().setAccessToken(response.data.accessToken);
+      socket?.connect();
+    } catch (refreshError) {
+      console.error('Socket token refresh failed:', refreshError);
+    }
   });
 
   socket.on('connect', () => {

@@ -4,7 +4,7 @@ import agingService from '../services/agingService';
 import { AppError } from '../middleware/errorHandler';
 import prisma from '../utils/prisma';
 import { getSocketInstance } from '../utils/socketInstance';
-import { emitCollectionVerified, emitCollectionApproved } from '../sockets/index';
+import { emitCollectionVerified, emitCollectionApproved, emitToTenant, emitToUser } from '../sockets/index';
 
 export class AgentReconciliationController {
     /**
@@ -122,7 +122,7 @@ export class AgentReconciliationController {
             emitCollectionVerified(io, result);
             // Also emit balance update
             const balance = await agentReconciliationService.getAgentBalance(result.agentId);
-            io.emit(`agent:balance-updated`, { agentId: result.agentId, balance });
+            emitToTenant(io, `agent:balance-updated`, { agentId: result.agentId, balance });
         }
 
         res.json(result);
@@ -144,7 +144,7 @@ export class AgentReconciliationController {
         // Emit socket event for the whole batch
         const io = getSocketInstance();
         if (io) {
-            io.emit('collections:bulkVerified', { count: results.length });
+            emitToTenant(io, 'collections:bulkVerified', { count: results.length });
         }
 
         res.json(results);
@@ -168,7 +168,7 @@ export class AgentReconciliationController {
             emitCollectionApproved(io, result);
             // Also emit balance update
             const balance = await agentReconciliationService.getAgentBalance(result.agentId);
-            io.emit(`agent:balance-updated`, { agentId: result.agentId, balance });
+            emitToTenant(io, `agent:balance-updated`, { agentId: result.agentId, balance });
         }
 
         res.json(result);
@@ -236,7 +236,7 @@ export class AgentReconciliationController {
             // Emit socket event for accountants to see the new pending deposit
             const io = getSocketInstance();
             if (io) {
-                io.emit('agent:deposit-submitted', result);
+                emitToTenant(io, 'agent:deposit-submitted', result);
             }
 
             res.status(201).json(result);
@@ -265,8 +265,8 @@ export class AgentReconciliationController {
         const io = getSocketInstance();
         if (io) {
             const balance = await agentReconciliationService.getAgentBalance(result.agentId);
-            io.emit(`agent:balance-updated`, { agentId: result.agentId, balance });
-            io.emit('agent:deposit-verified', result);
+            emitToTenant(io, `agent:balance-updated`, { agentId: result.agentId, balance });
+            emitToTenant(io, 'agent:deposit-verified', result);
         }
 
         res.json(result);
@@ -288,7 +288,7 @@ export class AgentReconciliationController {
         // Emit socket event (optional for rejection, but good for real-time status)
         const io = getSocketInstance();
         if (io) {
-            io.emit('agent:deposit-rejected', result);
+            emitToTenant(io, 'agent:deposit-rejected', result);
         }
 
         res.json(result);
@@ -330,7 +330,7 @@ export class AgentReconciliationController {
         // Emit socket event for the whole batch
         const io = getSocketInstance();
         if (io) {
-            io.emit('agent:deposits-bulk-verified', {
+            emitToTenant(io, 'agent:deposits-bulk-verified', {
                 count: result.verified,
                 totalAmount: result.totalAmount
             });
@@ -379,14 +379,14 @@ export class AgentReconciliationController {
         // Emit socket event
         const io = getSocketInstance();
         if (io) {
-            io.emit('agent:blocked', {
+            emitToTenant(io, 'agent:blocked', {
                 agentId: parsedId,
                 reason,
                 blockedAt: result.blockedAt,
                 blockedBy: userId
             });
             // Also notify the specific agent
-            io.to(`user:${parsedId}`).emit('notification', {
+            emitToUser(io, parsedId, 'notification', {
                 type: 'agent_blocked',
                 title: 'Account Blocked',
                 message: `Your account has been blocked: ${reason}`,
@@ -412,9 +412,9 @@ export class AgentReconciliationController {
         // Emit socket event
         const io = getSocketInstance();
         if (io) {
-            io.emit('agent:unblocked', { agentId: parsedId, unblockedBy: userId });
+            emitToTenant(io, 'agent:unblocked', { agentId: parsedId, unblockedBy: userId });
             // Also notify the specific agent
-            io.to(`user:${parsedId}`).emit('notification', {
+            emitToUser(io, parsedId, 'notification', {
                 type: 'agent_unblocked',
                 title: 'Account Unblocked',
                 message: 'Your account has been unblocked. You can now receive new deliveries.',
