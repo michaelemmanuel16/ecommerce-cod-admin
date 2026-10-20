@@ -7,7 +7,8 @@ import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import crypto from 'crypto';
 import request from 'supertest';
 import app from '../../server';
-import { prismaBase } from '../../utils/prisma';
+import prisma, { prismaBase } from '../../utils/prisma';
+import { runInTenant, withoutTenant } from '../../utils/tenantContext';
 
 jest.mock('../../utils/socketInstance', () => ({
   setSocketInstance: jest.fn(),
@@ -112,6 +113,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const tenantIds = [ids.A.tenantId, ids.B.tenantId];
+  await prismaBase.webhookEvent.deleteMany({ where: { tenantId: { in: tenantIds } } });
   await prismaBase.pendingCheckout.deleteMany({ where: { tenantId: { in: tenantIds } } });
   await prismaBase.webhookLog.deleteMany({ where: { tenantId: { in: tenantIds } } });
   await prismaBase.webhookConfig.deleteMany({ where: { tenantId: { in: tenantIds } } });
@@ -288,5 +290,50 @@ describe('order import webhook', () => {
     expect(missing.status).toBe(404);
     const noKey = await request(app).post('/api/webhooks/import').send({ orders: [] });
     expect(noKey.status).toBe(401);
+  });
+});
+
+describe('Paystack webhook routes', () => {
+  it('legacy POST /api/paystack/webhook (no slug) is gone: 404', async () => {
+    const res = await request(app).post('/api/paystack/webhook').send({ event: 'charge.success' });
+    expect(res.status).toBe(404);
+  });
+
+  it('the per-tenant slug route still resolves (unknown slug is not a 410)', async () => {
+    const res = await request(app).post('/api/paystack/webhook/no-such-tenant-slug').send({ event: 'charge.success' });
+    expect(res.status).not.toBe(410);
+    expect(res.status).not.toBe(500);
+  });
+});
+
+describe('PendingCheckout and WebhookEvent two-tenant scope', () => {
+  const eventRef = (side: string) => `evt-ref-${side}-${SUFFIX}`;
+
+  it('tenant A cannot read tenant B pending checkout or webhook event', async () => {
+    for (const side of sides) {
+      await prismaBase.webhookEvent.create({
+        data: { tenantId: ids[side].tenantId, provider: 'paystack', eventType: 'charge.success', reference: eventRef(side), payloadHash: `h-${side}` },
+      });
+    }
+
+    await runInTenant(ids.A.tenantId, async () => {
+      expect(await prisma.pendingCheckout.findUnique({ where: { reference: `ref-A-${SUFFIX}` } })).not.toBeNull();
+      expect(await prisma.pendingCheckout.findUnique({ where: { reference: `ref-B-${SUFFIX}` } })).toBeNull();
+      const events = await prisma.webhookEvent.findMany({ where: { reference: { in: [eventRef('A'), eventRef('B')] } } });
+      expect(events.map((e) => e.reference)).toEqual([eventRef('A')]);
+      expect(await prisma.pendingCheckout.findMany({ where: { reference: { in: [`ref-A-${SUFFIX}`, `ref-B-${SUFFIX}`] } } })).toHaveLength(1);
+    });
+
+    await runInTenant(ids.B.tenantId, async () => {
+      expect(await prisma.pendingCheckout.findUnique({ where: { reference: `ref-A-${SUFFIX}` } })).toBeNull();
+      const events = await prisma.webhookEvent.findMany({ where: { reference: { in: [eventRef('A'), eventRef('B')] } } });
+      expect(events.map((e) => e.reference)).toEqual([eventRef('B')]);
+    });
+
+    // Fail closed: no tenant context at all is an error, not a cross-tenant read
+    await expect(prisma.pendingCheckout.findMany({})).rejects.toThrow(/TenantContextMissing/);
+    await expect(prisma.webhookEvent.findMany({})).rejects.toThrow(/TenantContextMissing/);
+    const all = await withoutTenant('test: unscoped read', () => prisma.webhookEvent.findMany({ where: { reference: { in: [eventRef('A'), eventRef('B')] } } }));
+    expect(all).toHaveLength(2);
   });
 });

@@ -82,23 +82,6 @@ async function processTenantWebhook(req: Request, res: Response, tenantId: strin
 }
 
 /**
- * Legacy unscoped webhook — pointed at by tenants who haven't updated their
- * Paystack dashboard yet. Returns 410 so the failure is loud.
- *
- * TODO(MAN-66 cleanup, sunset 2026-09-01): delete this handler + its route
- * after Phase 6 migrations are done (all live tenants pointed at the
- * per-tenant URL). Log volume to /api/paystack/webhook should be zero before
- * removal; until then this stays as a visible 410 rather than a 404.
- */
-export function handleLegacyWebhook(_req: Request, res: Response): void {
-  logger.warn('Paystack webhook hit legacy unscoped URL — tenant Paystack dashboard still misconfigured');
-  res.status(410).json({
-    error: 'Webhook URL has moved.',
-    hint: 'Use the per-tenant URL from Settings → Integrations → Paystack: /api/paystack/webhook/<tenant-slug>',
-  });
-}
-
-/**
  * Webhook charge.success handler. Settlement is delegated to the shared
  * settlement service (deferred-creation model): the order is created from the
  * pending checkout the first time a confirmed payment arrives — here or via the
