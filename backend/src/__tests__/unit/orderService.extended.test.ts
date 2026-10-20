@@ -410,8 +410,8 @@ describe('OrderService (extended branch coverage)', () => {
         .mockResolvedValueOnce({ _avg: { totalAmount: null } } as any);
 
       const result = await orderService.getOrderStats({});
-      expect(result.totalRevenue).toBe(0);
-      expect(result.avgOrderValue).toBe(0);
+      expect(result.totalRevenue).toBe('0.00');
+      expect(result.avgOrderValue).toBe('0.00');
     });
   });
 

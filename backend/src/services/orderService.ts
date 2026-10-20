@@ -22,6 +22,7 @@ import { GLAutomationService, JournalEntryWithTransactions } from './glAutomatio
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
+import * as Money from '../utils/money';
 
 
 
@@ -34,14 +35,14 @@ interface CreateOrderData {
   orderItems: Array<{
     productId: number;
     quantity: number;
-    unitPrice: number;
+    unitPrice: Prisma.Decimal.Value;
     itemType?: 'package' | 'upsell';
     metadata?: any;
   }>;
-  subtotal: number;
-  shippingCost?: number;
-  discount?: number;
-  totalAmount: number;
+  subtotal: Prisma.Decimal.Value;
+  shippingCost?: Prisma.Decimal.Value;
+  discount?: Prisma.Decimal.Value;
+  totalAmount: Prisma.Decimal.Value;
   deliveryAddress: string;
   deliveryState: string;
   deliveryArea: string;
@@ -55,15 +56,15 @@ export interface BulkImportOrderData {
   customerFirstName?: string;
   customerLastName?: string;
   customerAlternatePhone?: string;
-  subtotal: number;
-  totalAmount: number;
+  subtotal: Prisma.Decimal.Value;
+  totalAmount: Prisma.Decimal.Value;
   deliveryAddress: string;
   deliveryState: string;
   deliveryArea: string;
   notes?: string;
   productName?: string;
   quantity?: number;
-  unitPrice?: number;
+  unitPrice?: Prisma.Decimal.Value;
   status?: OrderStatus;
   // User assignments from CSV
   assignedRepName?: string;
@@ -315,7 +316,7 @@ export class OrderService {
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
-              totalPrice: item.quantity * item.unitPrice,
+              totalPrice: Money.roundHalfUp(Money.mul(item.quantity, item.unitPrice), 4),
               itemType: item.itemType || 'package',
               metadata: item.metadata || null
             }))
@@ -414,7 +415,7 @@ export class OrderService {
           const normalizedPhone = normalizePhone(orderData.customerPhone);
           const orderDateValue = orderData.orderDate || new Date();
           const orderDateString = orderDateValue.toDateString();
-          const orderFingerprint = `${normalizedPhone}| ${orderData.totalAmount}| ${normalize(orderData.deliveryAddress)}| ${orderDateString} `;
+          const orderFingerprint = `${normalizedPhone}| ${Money.toApi(orderData.totalAmount)}| ${normalize(orderData.deliveryAddress)}| ${orderDateString} `;
 
           if (processedInImport.has(orderFingerprint)) {
             logger.warn('🚫 CANARY: DUPLICATE FOUND IN SAME BATCH', {
@@ -500,7 +501,7 @@ export class OrderService {
                     where: { id: matchingExisting.id },
                     include: { orderItems: { include: { product: true } }, customer: true, deliveryAgent: true, customerRep: true },
                   });
-                  if (updatedOrder?.codAmount) {
+                  if (updatedOrder?.codAmount && !updatedOrder.codAmount.isZero()) {
                     await FinancialSyncService.syncOrderFinancialData(tx as any, updatedOrder as any, createdById || SYSTEM_USER_ID).catch(err => {
                       logger.warn(`Financial sync skipped for re-imported order ${matchingExisting.id}`, { error: err.message });
                     });
@@ -570,11 +571,15 @@ export class OrderService {
               });
 
               if (product) {
+                // A missing or zero unit price in the CSV falls back to the product price.
+                const csvUnitPrice = Money.tryParse(orderData.unitPrice);
+                const unitPrice = csvUnitPrice && !csvUnitPrice.isZero() ? csvUnitPrice : Money.parse(product.price);
+                const quantity = orderData.quantity || 1;
                 orderItemsData = [{
                   productId: product.id,
-                  quantity: orderData.quantity || 1,
-                  unitPrice: orderData.unitPrice || product.price,
-                  totalPrice: (orderData.quantity || 1) * (orderData.unitPrice || product.price)
+                  quantity,
+                  unitPrice,
+                  totalPrice: Money.roundHalfUp(Money.mul(quantity, unitPrice), 4)
                 }];
               }
             }
@@ -619,7 +624,7 @@ export class OrderService {
             });
 
             // 6. Auto-sync financial data if order is imported as delivered
-            if (newOrder.status === 'delivered' && newOrder.codAmount) {
+            if (newOrder.status === 'delivered' && newOrder.codAmount && !newOrder.codAmount.isZero()) {
               try {
                 const syncResult = await FinancialSyncService.syncOrderFinancialData(
                   tx as any,
@@ -938,7 +943,7 @@ export class OrderService {
             productId: item.productId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-            totalPrice: item.unitPrice * item.quantity,
+            totalPrice: Money.roundHalfUp(Money.mul(item.unitPrice, item.quantity), 4),
             itemType: item.itemType || 'package',
             metadata: item.metadata || null
           }))
@@ -1230,7 +1235,7 @@ export class OrderService {
     // the order will be marked 'delivered' but GL entries won't be created.
     // syncOrderFinancialData is idempotent (checks revenueRecognized + existing transaction),
     // and the financialReconciliationQueue runs every 15 min to catch any missed orders.
-    if (data.status === 'delivered' && updated.codAmount) {
+    if (data.status === 'delivered' && updated.codAmount && !updated.codAmount.isZero()) {
       setImmediate(() => {
         FinancialSyncService.syncOrderFinancialData(
           prisma as any,
@@ -1515,16 +1520,16 @@ export class OrderService {
     }
 
     // Aggregate updates for performance
-    const customerUpdates = new Map<number, { count: number, total: number }>();
+    const customerUpdates = new Map<number, { count: number, total: Prisma.Decimal }>();
     const historyData: Prisma.OrderHistoryCreateManyInput[] = [];
     const actualOrderIds = orders.map(o => o.id);
 
     for (const order of orders) {
       // Aggregate customer stats
-      const currentCust = customerUpdates.get(order.customerId) || { count: 0, total: 0 };
+      const currentCust = customerUpdates.get(order.customerId) || { count: 0, total: Money.ZERO };
       customerUpdates.set(order.customerId, {
         count: currentCust.count + 1,
-        total: currentCust.total + order.totalAmount
+        total: Money.add(currentCust.total, order.totalAmount)
       });
 
       // Prepare history data
@@ -1883,8 +1888,8 @@ export class OrderService {
         acc[item.status] = item._count;
         return acc;
       }, {} as Record<string, number>),
-      totalRevenue: totalRevenue._sum.totalAmount || 0,
-      avgOrderValue: avgOrderValue._avg.totalAmount || 0
+      totalRevenue: Money.toApi(totalRevenue._sum.totalAmount ?? Money.ZERO),
+      avgOrderValue: Money.toApi(avgOrderValue._avg.totalAmount ?? Money.ZERO)
     };
 
     return stats;

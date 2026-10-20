@@ -52,6 +52,16 @@ export function parse(v: MoneyInput): Money {
   throw new TypeError(`Money cannot be built from ${String(v)}`);
 }
 
+/** Like parse, but returns null for empty, invalid or out-of-range input. For form input. */
+export function tryParse(v: unknown): Money | null {
+  if (v === null || v === undefined || v === '') return null;
+  try {
+    return parse(v as MoneyInput);
+  } catch {
+    return null;
+  }
+}
+
 export function add(a: MoneyInput, b: MoneyInput): Money {
   return guard(parse(a).plus(parse(b)));
 }
@@ -93,4 +103,14 @@ export const lt = (a: MoneyInput, b: MoneyInput): boolean => parse(a).lt(parse(b
 /** API form: string with 2 decimals, rounded half up. */
 export function toApi(a: MoneyInput): string {
   return parse(a).toFixed(2, Decimal.ROUND_HALF_UP);
+}
+
+/** Paystack boundary: major units to integer minor units (pesewas/kobo), half up. */
+export function toMinor(a: MoneyInput): number {
+  return roundHalfUp(mul(a, 100), 0).toNumber();
+}
+
+/** Paystack boundary: minor units (an integer from Paystack) to major units. */
+export function fromMinor(minor: MoneyInput): Money {
+  return div(minor, 100);
 }

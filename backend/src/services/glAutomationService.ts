@@ -1110,8 +1110,8 @@ export class GLAutomationService {
   async createDigitalSaleEntry(
     tx: Prisma.TransactionClient,
     orderId: number,
-    totalAmount: number,
-    paystackFee: number,
+    totalAmount: Decimal.Value,
+    paystackFee: Decimal.Value,
     userId: number,
   ): Promise<JournalEntry> {
     const paystackReceivableId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PAYSTACK_RECEIVABLE);
@@ -1134,9 +1134,9 @@ export class GLAutomationService {
     ];
 
     // Add Paystack fee entries if fee > 0
-    if (paystackFee > 0) {
+    const feeDec = new Decimal(paystackFee);
+    if (feeDec.gt(0)) {
       const paystackFeesId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PAYSTACK_FEES);
-      const feeDec = new Decimal(paystackFee);
       transactions.push(
         {
           accountId: paystackFeesId,

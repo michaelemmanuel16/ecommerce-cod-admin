@@ -383,7 +383,7 @@ describe('CheckoutFormService', () => {
 
       const result = await checkoutFormService.getFormStats('1');
       expect(result.totalSubmissions).toBe(0);
-      expect(result.totalRevenue).toBe(0);
+      expect(result.totalRevenue).toBe('0.00');
     });
   });
 });

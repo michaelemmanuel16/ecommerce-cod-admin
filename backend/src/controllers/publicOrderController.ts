@@ -10,6 +10,7 @@ import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 import logger from '../utils/logger';
 import { paystackService } from '../services/paystackService';
 import { metaCapiService } from '../services/metaCapiService';
+import * as Money from '../utils/money';
 
 /**
  * Buyer-selectable payment methods. `cod` settles on delivery; the two Paystack
@@ -283,7 +284,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           orderId: existingOrder.id,
           order: {
             id: existingOrder.id,
-            totalAmount: existingOrder.totalAmount,
+            totalAmount: Money.toApi(existingOrder.totalAmount),
             status: existingOrder.status
           },
           message: 'Order created successfully',
@@ -298,8 +299,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // compute the total from those — otherwise a tampered request body could set
     // price:1 and buy full-price goods (and digital products auto-fulfil on payment).
     const dbPackages = (form as any).packages as Array<{
-      id: number; name: string; price: number; quantity: number;
-      originalPrice: number | null; discountType: string; discountValue: number;
+      id: number; name: string; price: Prisma.Decimal; quantity: number;
+      originalPrice: Prisma.Decimal | null; discountType: string; discountValue: Prisma.Decimal;
     }>;
     const selectedDbPackage =
       dbPackages.find((p) => p.id === Number(selectedPackage?.id)) ||
@@ -312,16 +313,16 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // Package price is the total bundle price (what customer pays); quantity is
     // what they receive. unitPrice is the effective per-item price.
     const packageQuantity = selectedDbPackage.quantity || 1;
-    const packagePrice = selectedDbPackage.price;
+    const packagePrice = Money.parse(selectedDbPackage.price);
     const packageTotal = packagePrice; // NOT price * quantity
-    const unitPrice = packagePrice / packageQuantity;
+    const unitPrice = Money.roundHalfUp(Money.div(packagePrice, packageQuantity), 4);
 
     // Resolve each selected upsell against the form's DB upsells (by id) and sum
     // their server-side prices.
     const dbUpsells = (form as any).upsells as Array<{
-      id: number; name: string; description: string | null; price: number;
-      productId: number | null; items: any; originalPrice: number | null;
-      discountType: string; discountValue: number;
+      id: number; name: string; description: string | null; price: Prisma.Decimal;
+      productId: number | null; items: any; originalPrice: Prisma.Decimal | null;
+      discountType: string; discountValue: Prisma.Decimal;
     }>;
     const resolvedUpsells: typeof dbUpsells = [];
     if (selectedUpsells && Array.isArray(selectedUpsells)) {
@@ -334,25 +335,26 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         resolvedUpsells.push(dbUpsell);
       }
     }
-    const upsellsTotal = resolvedUpsells.reduce((sum, u) => sum + u.price, 0);
+    const upsellsTotal = Money.sum(resolvedUpsells.map((u) => u.price));
 
-    const subtotal = packageTotal + upsellsTotal;
-    const shippingCost = 0; // Can be calculated based on region
-    const discount = 0;
-    const finalTotal = subtotal + shippingCost - discount;
+    const subtotal = Money.add(packageTotal, upsellsTotal);
+    const shippingCost = Money.ZERO; // Can be calculated based on region
+    const discount = Money.ZERO;
+    const finalTotal = Money.sub(Money.add(subtotal, shippingCost), discount);
 
-    // Payment amounts in minor units (pesewas/kobo) — Paystack charges in minor
-    // units, and Order.depositPaid/balanceDue are stored the same way. For a
-    // deposit, the buyer pays `depositPercent` of the total online now and the
-    // remaining balance is collected on delivery (COD-style).
-    const totalMinorUnits = Math.round(finalTotal * 100);
-    let balanceDueMinor = 0;
-    let paystackChargeMinor = totalMinorUnits;
+    // Money is in major units (GH₵) everywhere in the database, including
+    // Order.depositPaid/balanceDue (F-405). Only Paystack's own charge is in minor
+    // units (pesewas/kobo): PendingCheckout.paystackChargeMinor, converted at this
+    // boundary. For a deposit, the buyer pays `depositPercent` of the total online
+    // now and the remaining balance is collected on delivery (COD-style).
+    let paystackCharge = finalTotal;
+    let balanceDue = Money.ZERO;
     if (paymentMethod === 'paystack_deposit') {
       const pct = form.depositPercent ?? 0;
-      paystackChargeMinor = Math.round((totalMinorUnits * pct) / 100);
-      balanceDueMinor = totalMinorUnits - paystackChargeMinor;
+      paystackCharge = Money.roundHalfUp(Money.div(Money.mul(finalTotal, pct), 100), 2);
+      balanceDue = Money.sub(finalTotal, paystackCharge);
     }
+    const paystackChargeMinor = Money.toMinor(paystackCharge);
 
     // Prepare order items array: main package + upsells
     const orderItemsData = [];
@@ -366,9 +368,10 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       itemType: 'package',
       metadata: {
         packageName: selectedDbPackage.name,
-        originalPrice: selectedDbPackage.originalPrice,
+        originalPrice: selectedDbPackage.originalPrice ? Money.toApi(selectedDbPackage.originalPrice) : null,
         discountType: selectedDbPackage.discountType,
-        discountValue: selectedDbPackage.discountValue
+        // money for 'fixed', a percent for 'percentage': read discountType first
+        discountValue: Money.toApi(selectedDbPackage.discountValue)
       }
     });
 
@@ -381,15 +384,16 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       orderItemsData.push({
         productId: upsellProductId,
         quantity: upsellQuantity,
-        unitPrice: dbUpsell.price / upsellQuantity,
+        unitPrice: Money.roundHalfUp(Money.div(dbUpsell.price, upsellQuantity), 4),
         totalPrice: dbUpsell.price,
         itemType: 'upsell',
         metadata: {
           upsellName: dbUpsell.name,
           upsellDescription: dbUpsell.description,
-          originalPrice: dbUpsell.originalPrice,
+          originalPrice: dbUpsell.originalPrice ? Money.toApi(dbUpsell.originalPrice) : null,
           discountType: dbUpsell.discountType,
-          discountValue: dbUpsell.discountValue
+          // money for 'fixed', a percent for 'percentage': read discountType first
+          discountValue: Money.toApi(dbUpsell.discountValue)
         }
       });
     }
@@ -435,10 +439,15 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           discount,
           totalAmount: finalTotal,
           // What the agent collects on delivery: the balance for a deposit, 0 for full.
-          codAmount: paymentMethod === 'paystack_deposit' ? balanceDueMinor / 100 : 0,
-          balanceDue: balanceDueMinor,
+          codAmount: paymentMethod === 'paystack_deposit' ? balanceDue : Money.ZERO,
+          balanceDue,
           paystackChargeMinor,
-          orderItems: orderItemsData,
+          // JSON column: money goes in as exact strings; Decimal accepts them back on settlement.
+          orderItems: orderItemsData.map((item) => ({
+            ...item,
+            unitPrice: item.unitPrice.toString(),
+            totalPrice: item.totalPrice.toString(),
+          })),
           formData,
           selectedPackage,
           selectedUpsells: selectedUpsells ?? Prisma.JsonNull,
@@ -542,7 +551,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       orderId: order.id,
       order: {
         id: order.id,
-        totalAmount: order.totalAmount,
+        totalAmount: Money.toApi(order.totalAmount),
         status: order.status
       },
       message: 'Order created successfully'
@@ -636,15 +645,15 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
       order: {
         id: order.id,
         status: order.status,
-        totalAmount: order.totalAmount,
+        totalAmount: Money.toApi(order.totalAmount),
         createdAt: order.createdAt,
         estimatedDelivery: order.estimatedDelivery,
         customer: order.customer,
         items: order.orderItems.map(item => ({
           name: item.product.name,
           quantity: item.quantity,
-          price: item.unitPrice,
-          total: item.totalPrice,
+          price: Money.toApi(item.unitPrice),
+          total: Money.toApi(item.totalPrice),
           imageUrl: item.product.imageUrl
         })),
         history: order.orderHistory.map(h => ({

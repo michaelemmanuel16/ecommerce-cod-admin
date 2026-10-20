@@ -9,6 +9,7 @@ import { metaCapiService } from './metaCapiService';
 import workflowService from './workflowService';
 import { emitOrderCreated } from '../sockets';
 import { getSocketInstance } from '../utils/socketInstance';
+import * as Money from '../utils/money';
 
 export type SettlementStatus = 'success' | 'failed' | 'pending' | 'not_found';
 
@@ -108,11 +109,11 @@ async function settleInTenant(
   // SECURITY: the amount actually paid must cover the expected charge (deposit
   // portion or full total). Stops an underpaid/tampered initialize from
   // fulfilling — digital products auto-deliver. Paystack amounts are minor units.
-  const paidMinor = Number(verification.data.amount ?? 0);
-  if (paidMinor < pending.paystackChargeMinor) {
+  const paidMinor = Money.parse(verification.data.amount ?? 0);
+  if (Money.lt(paidMinor, pending.paystackChargeMinor)) {
     logger.warn('Paystack underpayment — not creating order', {
       reference,
-      paidMinor,
+      paidMinor: paidMinor.toString(),
       expectedMinor: pending.paystackChargeMinor,
     });
     return { status: 'failed' };
@@ -132,6 +133,9 @@ async function settleInTenant(
     throw err;
   }
 
+  // Order money is in major units (F-405). Paystack's amount is minor units: convert once here.
+  const paid = Money.fromMinor(paidMinor);
+  const paystackFee = Money.fromMinor(verification.data.fees ?? 0);
   const isDeposit = pending.paymentMethod === 'paystack_deposit';
   const formData = pending.formData as Record<string, any>;
 
@@ -150,7 +154,7 @@ async function settleInTenant(
       totalAmount: pending.totalAmount,
       codAmount: pending.codAmount,
       balanceDue: pending.balanceDue,
-      depositPaid: paidMinor,
+      depositPaid: paid,
       paymentReference: reference,
       deliveryAddress: formData.address || null,
       deliveryState: formData.state || null,
@@ -196,13 +200,13 @@ async function settleInTenant(
       data: {
         orderId: order.id,
         type: 'payment',
-        amount: paidMinor / 100,
+        amount: paid,
         paymentMethod: 'paystack',
         status: 'paid',
         reference,
         metadata: {
           currency: verification.data.currency,
-          fees: Number(verification.data.fees ?? 0) / 100,
+          fees: Money.toApi(paystackFee),
           paystackReference: reference,
         },
       },
@@ -220,11 +224,10 @@ async function settleInTenant(
     if (order.orderType === 'digital') {
       try {
         const glService = new GLAutomationService();
-        const paystackFee = Number(verification.data.fees ?? 0) / 100;
         await glService.createDigitalSaleEntry(
           tx as any,
           order.id,
-          paidMinor / 100,
+          paid,
           paystackFee,
           order.customer?.id || 1,
         );
@@ -241,7 +244,7 @@ async function settleInTenant(
     tenantId: pending.tenantId,
     orderId: order.id,
     reference,
-    amount: paidMinor / 100,
+    amount: Money.toApi(paid),
   });
 
   // Workflows + realtime, now that the order exists.

@@ -12,6 +12,7 @@ import fileType from 'file-type';
 import { sanitizeName, sanitizePhoneNumber, sanitizeAddress, sanitizeString } from '../utils/sanitizer';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import prisma from '../utils/prisma';
+import * as Money from '../utils/money';
 
 export const exportOrders = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
@@ -88,7 +89,7 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
                 'State': order.deliveryState,
                 'Product Name': order.orderItems?.[0]?.product?.name || '',
                 'Quantity': order.orderItems?.[0]?.quantity || 0,
-                'Total Amount': order.totalAmount,
+                'Total Amount': Money.toApi(order.totalAmount),
                 'Status': order.status,
                 'Customer Rep': order.customerRep ? `${order.customerRep.firstName} ${order.customerRep.lastName}` : 'Unassigned',
                 'Delivery Agent': order.deliveryAgent ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}` : 'Unassigned',
@@ -267,12 +268,15 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             const sanitizedName = sanitizeName(customerNameInput, BULK_ORDER_CONFIG.NAME.MAX_LENGTH);
             const nameParts = sanitizedName.split(' ');
 
-            const totalAmountDirect = Number(getColumnValue(row, 'TOTAL AMOUNT', 'Total Amount', 'total')) || 0;
-            const price = Number(getColumnValue(row, 'PRICE', 'Price', 'UNIT PRICE', 'Unit Price')) || 0;
+            // CSV cells are text: Money.tryParse reads them exactly. A bad or empty cell counts as 0.
+            const totalAmountDirect = Money.tryParse(getColumnValue(row, 'TOTAL AMOUNT', 'Total Amount', 'total')) ?? Money.ZERO;
+            const price = Money.tryParse(getColumnValue(row, 'PRICE', 'Price', 'UNIT PRICE', 'Unit Price')) ?? Money.ZERO;
             const quantity = Number(getColumnValue(row, 'QUANTITY', 'Quantity', 'qty')) || 1;
             // Prefer the explicit Total Amount column; fall back to price × qty
-            const totalAmount = totalAmountDirect || price * quantity;
-            const unitPrice = price || (quantity > 0 ? totalAmount / quantity : totalAmount);
+            const totalAmount = !totalAmountDirect.isZero() ? totalAmountDirect : Money.roundHalfUp(Money.mul(price, quantity), 4);
+            const unitPrice = !price.isZero()
+                ? price
+                : (quantity > 0 ? Money.roundHalfUp(Money.div(totalAmount, quantity), 4) : totalAmount);
 
             // Validate status
             let status: OrderStatus | undefined;
@@ -373,10 +377,11 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
 
         const validOrders = sanitizedOrders.filter((order: BulkImportOrderData) => {
             // Basic presence check
-            if (!order.customerPhone || !order.totalAmount || !order.deliveryAddress) {
+            const orderAmount = Money.tryParse(order.totalAmount);
+            if (!order.customerPhone || !orderAmount || orderAmount.isZero() || !order.deliveryAddress) {
                 logger.warn('Order filtered: missing required fields', {
                     hasPhone: !!order.customerPhone,
-                    hasAmount: !!order.totalAmount,
+                    hasAmount: !!orderAmount && !orderAmount.isZero(),
                     hasAddress: !!order.deliveryAddress,
                     order
                 });
@@ -407,7 +412,7 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             }
 
             // 3. Amount validation (already in schema but good to catch early)
-            if (isNaN(Number(order.totalAmount)) || Number(order.totalAmount) <= 0) {
+            if (!Money.gt(orderAmount, 0)) {
                 logger.warn('Order filtered: invalid amount', {
                     amount: order.totalAmount,
                     order

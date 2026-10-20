@@ -6,6 +6,7 @@ import checkoutFormService, { clearCheckoutFormConfigCache } from '../services/c
 import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
 import { paystackService } from '../services/paystackService';
 import { encryptString, SECRET_MASK } from '../utils/providerCrypto';
+import * as Money from '../utils/money';
 
 // The Meta CAPI access token is a write-only secret: admin reads get the mask
 // sentinel (never the ciphertext), and a save that echoes the mask preserves
@@ -313,11 +314,11 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
     const normalizedPackages = packages?.map((pkg: any, index: number) => ({
       name: pkg.name || '',
       description: pkg.description || null,
-      price: parseFloat(pkg.price) || 0,
+      price: Money.tryParse(pkg.price) ?? Money.ZERO,
       quantity: parseInt(pkg.quantity) || 1,
       discountType: pkg.discountType || 'none',
-      discountValue: parseFloat(pkg.discountValue) || 0,
-      originalPrice: pkg.originalPrice ? parseFloat(pkg.originalPrice) : null,
+      discountValue: Money.tryParse(pkg.discountValue) ?? Money.ZERO,
+      originalPrice: Money.tryParse(pkg.originalPrice),
       isPopular: Boolean(pkg.isPopular),
       isDefault: Boolean(pkg.isDefault),
       showHighlight: Boolean(pkg.showHighlight),
@@ -330,7 +331,7 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       name: upsell.name || '',
       description: upsell.description || null,
       imageUrl: upsell.imageUrl || null,
-      price: parseFloat(upsell.price) || 0,
+      price: Money.tryParse(upsell.price) ?? Money.ZERO,
       items: upsell.items || null,
       sortOrder: upsell.sortOrder !== undefined ? parseInt(upsell.sortOrder) : index
     }));
@@ -725,14 +726,15 @@ export const getFormStats = async (req: AuthRequest, res: Response): Promise<voi
     });
 
     const conversionRate = submissions > 0 ? (submissionsWithOrders / submissions) * 100 : 0;
+    const revenue = totalRevenue._sum.totalAmount ?? Money.ZERO;
 
     res.json({
       stats: {
         totalSubmissions: submissions,
         conversions: submissionsWithOrders,
-        conversionRate: parseFloat(conversionRate.toFixed(2)),
-        totalRevenue: totalRevenue._sum.totalAmount || 0,
-        averageOrderValue: submissions > 0 ? (totalRevenue._sum.totalAmount || 0) / submissions : 0
+        conversionRate: Math.round(conversionRate * 100) / 100,
+        totalRevenue: Money.toApi(revenue),
+        averageOrderValue: submissions > 0 ? Money.toApi(Money.div(revenue, submissions)) : Money.toApi(0)
       }
     });
   } catch (error) {

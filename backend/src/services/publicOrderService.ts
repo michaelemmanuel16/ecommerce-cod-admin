@@ -2,6 +2,8 @@ import prisma from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
+import { Prisma } from '@prisma/client';
+import * as Money from '../utils/money';
 
 interface PublicOrderData {
   // Customer info
@@ -68,8 +70,8 @@ export class PublicOrderService {
     }
 
     // Validate and calculate upsells
-    let selectedUpsells: Array<{ id: string; name: string; price: number; items: any; productId: number | null }> = [];
-    let upsellsTotal = 0;
+    let selectedUpsells: Array<{ id: string; name: string; price: Prisma.Decimal; items: any; productId: number | null }> = [];
+    let upsellsTotal: Prisma.Decimal = Money.ZERO;
 
     if (orderData.selectedUpsellIds && orderData.selectedUpsellIds.length > 0) {
       for (const upsellId of orderData.selectedUpsellIds) {
@@ -84,13 +86,13 @@ export class PublicOrderService {
           items: upsell.items,
           productId: upsell.productId
         });
-        upsellsTotal += upsell.price;
+        upsellsTotal = Money.add(upsellsTotal, upsell.price);
       }
     }
 
     // Calculate total
     const subtotal = selectedPackage.price;
-    const totalAmount = Math.round((subtotal + upsellsTotal) * 100) / 100;
+    const totalAmount = Money.roundHalfUp(Money.add(subtotal, upsellsTotal), 2);
 
     // Dedup guard: prevent double-submits within 30 minutes (same phone + package + total)
     // Run before any customer mutations so side-effects don't occur on duplicate requests
@@ -118,11 +120,11 @@ export class PublicOrderService {
           existingOrderId: existingOrder.id,
           phone: orderData.phoneNumber,
           packageId: orderData.selectedPackageId,
-          totalAmount
+          totalAmount: Money.toApi(totalAmount)
         });
         return {
           orderId: existingOrder.id,
-          totalAmount,
+          totalAmount: Money.toApi(totalAmount),
           customer: {
             firstName: orderData.firstName,
             lastName: orderData.lastName,
@@ -131,7 +133,7 @@ export class PublicOrderService {
           package: {
             name: selectedPackage.name,
             quantity: selectedPackage.quantity,
-            price: selectedPackage.price
+            price: Money.toApi(selectedPackage.price)
           },
           upsells: []
         };
@@ -263,7 +265,7 @@ export class PublicOrderService {
           selectedPackage: {
             id: selectedPackage.id,
             name: selectedPackage.name,
-            price: selectedPackage.price,
+            price: Money.toApi(selectedPackage.price),
             quantity: selectedPackage.quantity
           },
           selectedUpsells:
@@ -271,7 +273,7 @@ export class PublicOrderService {
               ? selectedUpsells.map((u) => ({
                   id: u.id,
                   name: u.name,
-                  price: u.price
+                  price: Money.toApi(u.price)
                 }))
               : undefined,
           totalAmount,
@@ -306,14 +308,14 @@ export class PublicOrderService {
       orderId: result.id,
       formSlug,
       customerId: customer.id,
-      totalAmount,
+      totalAmount: Money.toApi(totalAmount),
       packageName: selectedPackage.name,
       upsellsCount: selectedUpsells.length
     });
 
     return {
       orderId: result.id,
-      totalAmount,
+      totalAmount: Money.toApi(totalAmount),
       customer: {
         firstName: customer.firstName,
         lastName: customer.lastName,
@@ -322,11 +324,11 @@ export class PublicOrderService {
       package: {
         name: selectedPackage.name,
         quantity: selectedPackage.quantity,
-        price: selectedPackage.price
+        price: Money.toApi(selectedPackage.price)
       },
       upsells: selectedUpsells.map((u) => ({
         name: u.name,
-        price: u.price
+        price: Money.toApi(u.price)
       }))
     };
   }

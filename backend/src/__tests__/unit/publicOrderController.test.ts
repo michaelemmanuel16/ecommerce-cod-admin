@@ -33,6 +33,7 @@ import { prismaMock } from '../mocks/prisma.mock';
 import * as paystackServiceModule from '../../services/paystackService';
 import { createPublicOrder } from '../../controllers/publicOrderController';
 import logger from '../../utils/logger';
+import * as Money from '../../utils/money';
 import workflowService from '../../services/workflowService';
 import { metaCapiService } from '../../services/metaCapiService';
 
@@ -178,6 +179,42 @@ describe('publicOrderController.createPublicOrder — deferred Paystack creation
         paymentReference: 'ref_abc123',
       }),
     );
+  });
+
+  // F-405 / M0-T22: order money is major units. Only the Paystack charge is minor units.
+  it('deposit checkout of 249.00 at 30% charges 7470 minor units and stores balanceDue 174.30 in major units', async () => {
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(
+      physicalForm({
+        codEnabled: false,
+        paystackDepositEnabled: true,
+        depositPercent: 30,
+        packages: [{ id: 10, name: 'Single', price: 249, quantity: 1, originalPrice: null, discountType: 'none', discountValue: 0 }],
+      }),
+    );
+    (prismaMock.customer.findFirst as any).mockResolvedValue(null);
+    (prismaMock.customer.create as any).mockResolvedValue({
+      id: 7, firstName: 'Ama', lastName: 'Mensah', phoneNumber: buyer.phoneNumber, email: null,
+    });
+    (prismaMock.formSubmission.findFirst as any).mockResolvedValue(null);
+    (prismaMock.order.findFirst as any).mockResolvedValue(null);
+    (prismaMock.pendingCheckout.create as any).mockResolvedValue({ id: 1 });
+    (mockedPaystack.initializeTransaction as any).mockResolvedValue({
+      authorization_url: 'https://paystack.co/pay/abc',
+      reference: 'ref_dep',
+    });
+
+    await createPublicOrder(
+      buildReq({ formData: buyer, selectedPackage: { id: 10 }, paymentMethod: 'paystack_deposit', totalAmount: 249 }),
+      buildRes(),
+      jest.fn(),
+    );
+
+    const data = (prismaMock.pendingCheckout.create as any).mock.calls[0][0].data;
+    expect(data.paystackChargeMinor).toBe(7470);
+    expect(Money.toApi(data.totalAmount)).toBe('249.00');
+    expect(Money.toApi(data.balanceDue)).toBe('174.30');
+    expect(Money.toApi(data.codAmount)).toBe('174.30');
+    expect((mockedPaystack.initializeTransaction as any).mock.calls[0][2]).toBe(7470);
   });
 
   // MAN-82 synthesized-address guard: Paystack needs an email, so a blank one is

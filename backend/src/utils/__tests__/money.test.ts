@@ -50,4 +50,19 @@ describe('Money helper', () => {
     expect(Money.toApi('-1350')).toBe('-1350.00');
     expect(Money.toApi(0)).toBe('0.00');
   });
+
+  it('converts at the Paystack boundary (minor units)', () => {
+    expect(Money.toMinor('74.70')).toBe(7470);
+    expect(Money.toMinor(249)).toBe(24900);
+    expect(Money.toMinor('0.285')).toBe(29);
+    expect(Money.toApi(Money.fromMinor(7470))).toBe('74.70');
+  });
+
+  it('tryParse returns null for empty or bad input', () => {
+    expect(Money.tryParse('')).toBeNull();
+    expect(Money.tryParse(undefined)).toBeNull();
+    expect(Money.tryParse('abc')).toBeNull();
+    expect(Money.tryParse(1e16)).toBeNull();
+    expect(Money.toApi(Money.tryParse('12.5')!)).toBe('12.50');
+  });
 });
