@@ -113,6 +113,7 @@ describe('Webhook Controller', () => {
       prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
       prismaMock.webhookConfig.findFirst.mockResolvedValue({
         id: 'webhook-1',
+        tenantId: 'tenant-1',
         apiKey: 'test-api-key',
         secret: 'test-secret',
         requireSignature: true,

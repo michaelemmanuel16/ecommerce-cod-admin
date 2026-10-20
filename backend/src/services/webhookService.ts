@@ -234,6 +234,10 @@ export class WebhookService {
       logger.warn('Webhook rejected: invalid API key', { endpoint });
       throw new AppError('Invalid API key', 401);
     }
+    if (!webhookConfig.tenantId) {
+      logger.warn('Webhook rejected: config has no tenant', { endpoint, webhookConfigId: webhookConfig.id });
+      throw new AppError('Invalid API key', 401);
+    }
 
     return this.processForConfig(webhookConfig, { signature, body, headers, endpoint, method });
   }
@@ -256,6 +260,10 @@ export class WebhookService {
 
     if (!webhookConfig) {
       logger.warn('Webhook rejected: invalid webhook URL', { endpoint });
+      throw new AppError('Webhook not found', 404);
+    }
+    if (!webhookConfig.tenantId) {
+      logger.warn('Webhook rejected: config has no tenant', { endpoint, webhookConfigId: webhookConfig.id });
       throw new AppError('Webhook not found', 404);
     }
 
