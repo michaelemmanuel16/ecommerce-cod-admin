@@ -10,6 +10,8 @@ import { AppError } from '../middleware/errorHandler';
 import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
 import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
+import { seedTenantDefaults } from '../services/tenantDefaultsService';
+import logger from '../utils/logger';
 
 export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -358,6 +360,9 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
 
       return { tenant, user };
     });
+
+    // A failed seed is logged, not fatal: the startup seed fills any gap
+    await seedTenantDefaults(tenant.id).catch((err) => logger.error(`Seeding defaults failed for tenant ${tenant.id}:`, err));
 
     const accessToken = generateAccessToken({
       id: user.id,

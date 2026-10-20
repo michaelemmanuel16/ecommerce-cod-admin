@@ -42,7 +42,6 @@ import { validateEnvironment } from './config/validateEnv';
 import { setSocketInstance } from './utils/socketInstance';
 import { validateGLAccountCodes } from './config/glAccounts';
 import { derivePlatformOrigin } from './utils/corsOrigins';
-import { withoutTenant } from './utils/tenantContext';
 import { forEachTenant } from './utils/tenantLoop';
 
 // Routes
@@ -80,7 +79,7 @@ import mcpHttpTransport from './mcp/httpTransport';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
-import { GLAutomationService } from './services/glAutomationService';
+import { seedTenantDefaults } from './services/tenantDefaultsService';
 import { GLAccountService } from './services/glAccountService';
 import cron from 'node-cron';
 
@@ -355,12 +354,15 @@ if (process.env.NODE_ENV !== 'test') {
       }
     });
 
-    // Verify GL Accounts (Required for financial statements correctness)
-    // Cross-tenant on purpose (replaced by per-tenant seeding in T13)
-    const glValidated = await withoutTenant('seed', () => GLAutomationService.asyncVerifyGLAccounts());
-    if (!glValidated) {
-      logger.error('Failed to validate/seed GL accounts. Exiting...');
-      process.exit(1);
+    // Seed each tenant's defaults (chart of accounts, email templates).
+    // One tenant failing is logged; the others still run and the server stays up.
+    try {
+      await forEachTenant('startup seed', async (tenantId) => {
+        const seeded = await seedTenantDefaults(tenantId);
+        logger.info(`Startup seed for tenant ${tenantId}: ${seeded.accounts} accounts, ${seeded.emailTemplates} email templates created`);
+      });
+    } catch (error: any) {
+      logger.error('Startup seed finished with failures:', error?.message ?? error);
     }
 
     // Schedule WhatsApp OAuth token refresh (daily at 01:00)

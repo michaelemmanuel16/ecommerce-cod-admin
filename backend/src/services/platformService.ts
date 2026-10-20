@@ -2,6 +2,8 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { redis } from '../middleware/cache.middleware';
 import { SUBSCRIPTION_STATUS, PLAN_NAMES } from '../config/billing';
+import { seedTenantDefaults } from './tenantDefaultsService';
+import logger from '../utils/logger';
 
 // ── Metrics ──────────────────────────────────────────────
 
@@ -172,6 +174,9 @@ export async function createTenant(data: {
     },
     include: { currentPlan: true },
   });
+
+  // A failed seed is logged, not fatal: the startup seed fills any gap
+  await seedTenantDefaults(tenant.id).catch((err) => logger.error(`Seeding defaults failed for tenant ${tenant.id}:`, err));
 
   return tenant;
 }
