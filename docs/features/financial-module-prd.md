@@ -1303,6 +1303,7 @@ PostgreSQL Database
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-13 | Product Manager | Initial PRD creation |
+| 1.1 | 2026-10-20 | Engineering | MAN-56 and the multi-store branches are reference only. They are not the base for this module. |
 
 ---
 

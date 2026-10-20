@@ -525,7 +525,7 @@ tr.sel td{background:var(--pine-soft)}
       <div class="row2"><div class="fld"><label for="eCat">Category</label><select id="eCat"><option>Packaging</option><option>Software</option><option>Office and internet</option><option>Transport</option><option>Photography</option><option>Bank charges</option><option>Other</option></select></div><div class="fld"><label for="ePaid">Paid from</label><select id="ePaid"><option>MoMo</option><option>Bank</option><option>Cash</option></select></div></div>
       <div class="fld"><label for="eDesc">Description</label><input type="text" id="eDesc" placeholder="What was it for?"></div>
     </div>
-    <div class="mf"><span class="ink3" style="font-size:12.5px">Posts to account 5100 Other expenses.</span><div class="r2"><button class="btn" data-close>Cancel</button><button class="btn pri" id="eSave">Save expense</button></div></div>
+    <div class="mf"><span class="ink3" style="font-size:12.5px">Posts to account 5100 Operating Expenses.</span><div class="r2"><button class="btn" data-close>Cancel</button><button class="btn pri" id="eSave">Save expense</button></div></div>
   </div>
 </div>
 
@@ -845,19 +845,19 @@ $('#lgExposure').innerHTML = legend([{ name: '0–3 days', color: 'var(--mint)' 
 $('#chExposure').innerHTML = stackH({ rows: [{ label: 'Logiswift', parts: [3500, 4700, 6600, 2500] }, { label: 'Kofi Appiah', parts: [2900, 0, 0, 0] }, { label: 'Esi Badu', parts: [1200, 900, 0, 0] }, { label: 'Kwesi Amoah', parts: [500, 600, 0, 0] }, { label: 'Kasapa Express', parts: [0, 0, 0, 0] }], colors: ['var(--mint)', 'var(--gold)', 'var(--coral)', 'var(--violet)'], fmt: v => 'GH₵' + fmt(v), label: 'Cash held by each partner, split by age' });
 /* ---------- accounting: ledger ---------- */
 const ACC = [
-  { c: '1010', n: 'Cash at bank and MoMo', t: 'Asset', b: 41900, d: 1, e: [['16 Oct', 'JE-0411', 'Deposit from Kofi Appiah, net of fees', 3136, 0], ['12 Oct', 'JE-0402', 'Logiswift payout', 9880, 0], ['9 Oct', 'JE-0398', 'Meta ad top-up', 0, 12000], ['4 Oct', 'JE-0385', 'Logiswift payout', 9844, 0]] },
-  { c: '1015', n: 'Cash held by delivery partners', t: 'Asset', b: 23400, d: 1, e: [['17 Oct', 'JE-0412', 'Delivered orders, all partners', 6200, 0], ['16 Oct', 'JE-0411', 'Kofi Appiah deposit, net of fees', 0, 3136], ['12 Oct', 'JE-0402', 'Logiswift paid in', 0, 9880]] },
+  { c: '1010', n: 'Cash in Hand', t: 'Asset', b: 41900, d: 1, e: [['16 Oct', 'JE-0411', 'Deposit from Kofi Appiah, net of fees', 3136, 0], ['12 Oct', 'JE-0402', 'Logiswift payout', 9880, 0], ['9 Oct', 'JE-0398', 'Meta ad top-up', 0, 12000], ['4 Oct', 'JE-0385', 'Logiswift payout', 9844, 0]] },
+  { c: '1015', n: 'Cash in Transit', t: 'Asset', b: 23400, d: 1, e: [['17 Oct', 'JE-0412', 'Delivered orders, all partners', 6200, 0], ['16 Oct', 'JE-0411', 'Kofi Appiah deposit, net of fees', 0, 3136], ['12 Oct', 'JE-0402', 'Logiswift paid in', 0, 9880]] },
   { c: '1200', n: 'Inventory', t: 'Asset', b: 41600, d: 1, e: [['14 Oct', 'JE-0407', 'Copybook sets received, Tema', 8800, 0], ['10 Oct', 'JE-0400', 'Cost of goods delivered', 0, 4200]] },
   { c: '2040', n: 'Unapplied partner receipts', t: 'Liability', b: 0, d: 0, e: [] },
   { c: '2050', n: 'Supplier payables', t: 'Liability', b: 9800, d: 0, e: [['14 Oct', 'JE-0407', 'Copybook sets, supplier invoice', 0, 8800], ['6 Oct', 'JE-0392', 'Pen supplier payment', 3000, 0]] },
-  { c: '2020', n: 'Commissions payable', t: 'Liability', b: 2168, d: 0, e: [['17 Oct', 'JE-0410', 'October commissions and upsell rewards earned', 0, 2768], ['9 Oct', 'JE-0399', 'Paid Adwoa Darko, October commission', 600, 0], ['1 Oct', 'JE-0381', 'Paid Adwoa Darko, September balance', 840, 0]] },
+  { c: '2020', n: 'Commissions Payable', t: 'Liability', b: 2168, d: 0, e: [['17 Oct', 'JE-0410', 'October commissions and upsell rewards earned', 0, 2768], ['9 Oct', 'JE-0399', 'Paid Adwoa Darko, October commission', 600, 0], ['1 Oct', 'JE-0381', 'Paid Adwoa Darko, September balance', 840, 0]] },
   { c: '3010', n: "Owner's equity", t: 'Equity', b: 109200, d: 0, e: [['1 Oct', 'JE-0380', 'Opening balance, set so the books balance with the 5050 rep commission', 0, 109200]] },
-  { c: '4010', n: 'Sales revenue', t: 'Revenue', b: 92000, d: 0, e: [['17 Oct', 'JE-0412', 'Delivered orders, 17 Oct', 0, 6100], ['16 Oct', 'JE-0409', 'Delivered orders, 16 Oct', 0, 5900], ['15 Oct', 'JE-0406', 'Delivered orders, 15 Oct', 0, 5600]] },
-  { c: '5010', n: 'Cost of goods sold', t: 'Expense', b: 12000, d: 1, e: [['17 Oct', 'JE-0412', 'Stock cost of 25 delivered orders', 800, 0], ['16 Oct', 'JE-0409', 'Stock cost of 24 delivered orders', 770, 0]] },
-  { c: '5050', n: 'Rep commission and rewards', t: 'Expense', b: 2768, d: 1, e: [['17 Oct', 'JE-0410', 'October commissions and upsell rewards earned', 2768, 0]] },
+  { c: '4010', n: 'Product Sales Revenue', t: 'Revenue', b: 92000, d: 0, e: [['17 Oct', 'JE-0412', 'Delivered orders, 17 Oct', 0, 6100], ['16 Oct', 'JE-0409', 'Delivered orders, 16 Oct', 0, 5900], ['15 Oct', 'JE-0406', 'Delivered orders, 15 Oct', 0, 5600]] },
+  { c: '5010', n: 'Cost of Goods Sold', t: 'Expense', b: 12000, d: 1, e: [['17 Oct', 'JE-0412', 'Stock cost of 25 delivered orders', 800, 0], ['16 Oct', 'JE-0409', 'Stock cost of 24 delivered orders', 770, 0]] },
+  { c: '5050', n: 'Sales Rep Commission', t: 'Expense', b: 2768, d: 1, e: [['17 Oct', 'JE-0410', 'October commissions and upsell rewards earned', 2768, 0]] },
   { c: '5070', n: 'Delivery fees', t: 'Expense', b: 12200, d: 1, e: [['17 Oct', 'JE-0412', 'Delivery fees, 17 Oct', 740, 0], ['16 Oct', 'JE-0409', 'Delivery fees, 16 Oct', 700, 0]] },
   { c: '5080', n: 'Meta ad spend', t: 'Expense', b: 76200, d: 1, e: [['16 Oct', 'JE-0408', 'Meta daily spend, ₦530k at ₦112', 4730, 0], ['15 Oct', 'JE-0405', 'Meta daily spend, ₦540k', 4820, 0], ['14 Oct', 'JE-0403', 'Meta daily spend, ₦500k', 4460, 0]] },
-  { c: '5100', n: 'Other expenses', t: 'Expense', b: 3100, d: 1, e: [['15 Oct', 'EXP-021', 'Bank charges', 310, 0], ['12 Oct', 'EXP-020', 'Product photos, refill pens', 700, 0]] }
+  { c: '5100', n: 'Operating Expenses', t: 'Expense', b: 3100, d: 1, e: [['15 Oct', 'EXP-021', 'Bank charges', 310, 0], ['12 Oct', 'EXP-020', 'Product photos, refill pens', 700, 0]] }
 ];
 let curAcc = '5080';
 function drawCoa() {
