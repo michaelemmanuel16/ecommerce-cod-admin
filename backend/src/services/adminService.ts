@@ -13,7 +13,7 @@ import {
   preserveMaskedSecrets,
   SENSITIVE_FIELDS,
 } from '../utils/providerCrypto';
-import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 
 export const adminService = {
   /**
@@ -148,6 +148,36 @@ export const adminService = {
       businessName: config.businessName,
       currency: config.currency,
     };
+  },
+
+  /**
+   * Public config for the checkout form: business name and currency of ONE tenant, found by
+   * tenant slug or form slug. Read-only (never seeds a row). 404 for no slug or an unknown slug.
+   */
+  async getPublicConfigBySlug(slugs: { tenant?: string; form?: string }) {
+    const tenantId = await withoutTenant('public-config-slug', async () => {
+      if (slugs.tenant) {
+        const tenant = await prisma.tenant.findUnique({ where: { slug: slugs.tenant }, select: { id: true } });
+        return tenant?.id ?? null;
+      }
+      if (slugs.form) {
+        const form = await prisma.checkoutForm.findUnique({ where: { slug: slugs.form, isActive: true }, select: { tenantId: true } });
+        return form?.tenantId ?? null;
+      }
+      return null;
+    });
+    if (!tenantId) throw new AppError('Not found', 404);
+
+    return runInTenant(tenantId, async () => {
+      const [config, tenant] = await Promise.all([
+        prisma.systemConfig.findUnique({ where: { tenantId }, select: { businessName: true, currency: true } }),
+        prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true, currency: true } }),
+      ]);
+      return {
+        businessName: config?.businessName ?? tenant?.name ?? null,
+        currency: config?.currency ?? tenant?.currency ?? 'USD',
+      };
+    });
   },
 
   async updateSystemConfig(requester: Requester, data: {

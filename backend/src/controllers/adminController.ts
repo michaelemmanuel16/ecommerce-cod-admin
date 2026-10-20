@@ -22,6 +22,17 @@ export const getPublicConfig = async (_req: AuthRequest, res: Response, next: Ne
   }
 };
 
+// Public form config: the tenant comes from ?tenant=<slug> or ?form=<form slug>, never from a default.
+export const getPublicConfigBySlug = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+    const config = await adminService.getPublicConfigBySlug({ tenant: str(req.query.tenant), form: str(req.query.form) });
+    res.json(config);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const updateSystemConfig = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const config = await adminService.updateSystemConfig(req.user!, req.body);
