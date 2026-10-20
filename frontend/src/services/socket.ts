@@ -1,19 +1,14 @@
-import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/authStore';
 import { useNotificationsStore } from '../stores/notificationsStore';
 import toast from 'react-hot-toast';
 import { normalizeMoney } from '../utils/money';
+import { refreshAccessToken, handleSessionExpired } from './tokenRefresh';
 
 // Use relative URLs in production (when served by Nginx), absolute URLs in development
 const WS_URL = import.meta.env.VITE_WS_URL === 'relative'
   ? '' // Empty string for relative URLs - will connect to same origin
   : import.meta.env.VITE_WS_URL || 'http://localhost:3000';
-
-// Same base URL as services/api.ts (not imported: api -> authStore -> socket would be a cycle)
-const API_URL = import.meta.env.VITE_API_URL === 'relative'
-  ? ''
-  : import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 let socket: Socket | null = null;
 
@@ -30,21 +25,26 @@ export const connectSocket = () => {
     auth: (cb) => cb({ token: useAuthStore.getState().accessToken }),
   });
 
-  // The server rejects an expired access token with TOKEN_EXPIRED: refresh it and reconnect
+  let refreshedAfterReject = false;
+
+  // The server rejects an expired or invalid access token. Ask the shared refresh (the same
+  // single in-flight call axios uses) and reconnect. Only a 401 from the refresh itself ends the session.
   socket.on('connect_error', async (err) => {
-    if (err.message !== 'TOKEN_EXPIRED') return;
+    if (err.message !== 'TOKEN_EXPIRED' && err.message !== 'Authentication error') return;
+    // One refresh-and-reconnect per failed connect: a token that is still refused after a refresh is not a token problem
+    if (refreshedAfterReject) return;
+    refreshedAfterReject = true;
     try {
-      const refreshToken = useAuthStore.getState().refreshToken;
-      if (!refreshToken) return;
-      const response = await axios.post(`${API_URL}/api/auth/refresh`, { refreshToken });
-      useAuthStore.getState().setAccessToken(response.data.accessToken);
+      await refreshAccessToken();
       socket?.connect();
-    } catch (refreshError) {
+    } catch (refreshError: any) {
       console.error('Socket token refresh failed:', refreshError);
+      if (refreshError?.response?.status === 401) handleSessionExpired();
     }
   });
 
   socket.on('connect', () => {
+    refreshedAfterReject = false;
     console.log('Socket connected:', socket?.id);
   });
 

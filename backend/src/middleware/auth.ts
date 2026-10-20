@@ -187,6 +187,12 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
         return;
       }
 
+      // Same status and message as before; the code lets clients tell "expired" from "bad signature"
+      if (jwtError.name === 'TokenExpiredError') {
+        res.status(401).json({ error: 'Invalid token', code: 'TOKEN_EXPIRED' });
+        return;
+      }
+
       res.status(401).json({ error: 'Invalid token' });
     }
   } catch (error: any) {
