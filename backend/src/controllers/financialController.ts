@@ -148,7 +148,13 @@ export const exportProfitabilityAnalysis = async (req: AuthRequest, res: Respons
         { header: 'Gross Margin %', key: 'Gross Margin %', width: 15 }
       ];
 
-      worksheet.addRows(exportData);
+      // Money was formatted to "x.xx" text for CSV; Excel needs real numbers
+      const moneyColumns = ['Total Revenue', 'Total COGS', 'Gross Profit'] as const;
+      moneyColumns.forEach(key => { worksheet.getColumn(key).numFmt = '0.00'; });
+      worksheet.addRows(exportData.map(row => ({
+        ...row,
+        ...Object.fromEntries(moneyColumns.map(key => [key, Number(row[key])]))
+      })));
 
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename=profitability_report_${Date.now()}.xlsx`);

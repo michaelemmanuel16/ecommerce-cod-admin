@@ -115,8 +115,9 @@ export const exportOrders = async (req: AuthRequest, res: Response): Promise<voi
                 width: 20
             }));
 
-            // Add rows
-            worksheet.addRows(orders);
+            // Money was formatted to "x.xx" text for CSV; Excel needs a real number
+            worksheet.getColumn('Total Amount').numFmt = '0.00';
+            worksheet.addRows(orders.map(o => ({ ...o, 'Total Amount': Number(o['Total Amount']) })));
 
             const buffer = await workbook.xlsx.writeBuffer();
 
