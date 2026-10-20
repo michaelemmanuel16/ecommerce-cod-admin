@@ -1,5 +1,5 @@
 import { Response, Request, NextFunction } from 'express';
-import { resolveTenantId } from '../utils/tenantContext';
+import { resolveTenantId, tenantStorage, withoutTenant } from '../utils/tenantContext';
 import { OrderStatus, Prisma } from '@prisma/client';
 import workflowService from '../services/workflowService';
 import checkoutFormService from '../services/checkoutFormService';
@@ -591,13 +591,24 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    const order = await prisma.order.findFirst({
-      where: {
-        id: parseInt(orderId as string),
-        customer: {
-          phoneNumber: phoneNumber as string
-        }
-      },
+    // The order id is global: find its tenant with a minimal lookup (unscoped on
+    // purpose), then run the full query scoped to that tenant.
+    const orderWhere = {
+      id: parseInt(orderId as string),
+      customer: {
+        phoneNumber: phoneNumber as string
+      }
+    };
+    const found = await withoutTenant('public-tracking', () =>
+      prisma.order.findFirst({ where: orderWhere, select: { tenantId: true } })
+    );
+    if (!found) {
+      res.status(404).json({ error: 'Order not found' });
+      return;
+    }
+
+    const order = await tenantStorage.run({ tenantId: found.tenantId }, async () => prisma.order.findFirst({
+      where: orderWhere,
       include: {
         customer: {
           select: {
@@ -621,7 +632,7 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
           take: 10
         }
       }
-    });
+    }));
 
     if (!order) {
       res.status(404).json({ error: 'Order not found' });

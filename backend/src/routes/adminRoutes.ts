@@ -2,10 +2,14 @@ import { Router } from 'express';
 import * as adminController from '../controllers/adminController';
 import { authenticate, requireSuperAdmin, requirePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
+import { withoutTenant } from '../utils/tenantContext';
 const router = Router();
 
-// Public Configuration (No auth required)
-router.get('/config', adminController.getPublicConfig);
+// Public Configuration (No auth required). Tenant-blind on purpose: reads the global
+// (null-tenant) row; T18 replaces this with a slug-resolved lookup.
+router.get('/config', (req, res, next) =>
+  withoutTenant('public-config-global', () => adminController.getPublicConfig(req, res, next))
+);
 
 router.use(authenticate);
 router.use(tenantRateLimiter);

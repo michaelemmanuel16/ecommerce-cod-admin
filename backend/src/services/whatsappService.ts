@@ -3,7 +3,7 @@ import logger from '../utils/logger';
 import { MessageChannel, MessageDirection, MessageStatus, Prisma } from '@prisma/client';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { refreshTokenIfNeeded } from './whatsappTokenRefreshService';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, withoutTenant } from '../utils/tenantContext';
 
 // WhatsApp Business Cloud API configuration
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
@@ -43,6 +43,63 @@ export async function getDbWhatsappConfig(): Promise<any | null> {
     logger.warn('Failed to read WhatsApp config from DB, falling back to env vars', { error: error.message });
     return null;
   }
+}
+
+/**
+ * Every tenant's decrypted WhatsApp config, read unscoped on purpose: the Meta
+ * webhook carries no tenant, so we match it to a tenant by its stored config.
+ */
+async function listTenantWhatsappConfigs(): Promise<Array<{ tenantId: string; config: any }>> {
+  const rows = await withoutTenant('whatsapp-webhook-tenant', () =>
+    prisma.systemConfig.findMany({
+      where: { tenantId: { not: null } },
+      select: { tenantId: true, whatsappProvider: true },
+    })
+  );
+  const result: Array<{ tenantId: string; config: any }> = [];
+  for (const row of rows) {
+    if (!row.tenantId || !row.whatsappProvider) continue;
+    try {
+      result.push({ tenantId: row.tenantId, config: decryptProviderSecrets('whatsappProvider', row.whatsappProvider as any) });
+    } catch (error: any) {
+      logger.warn('Skipping unreadable WhatsApp config while resolving webhook tenant', { tenantId: row.tenantId, error: error.message });
+    }
+  }
+  return result;
+}
+
+/**
+ * Find the tenant that owns an inbound Meta webhook payload: phone_number_id first,
+ * then the WABA id (entry.id), matched against each tenant's stored WhatsApp config.
+ * Returns null when no tenant matches.
+ */
+export async function resolveWhatsappTenantFromPayload(
+  body: any,
+): Promise<{ tenantId: string; config: any } | null> {
+  const phoneIds = new Set<string>();
+  const wabaIds = new Set<string>();
+  for (const entry of body?.entry || []) {
+    if (entry?.id) wabaIds.add(String(entry.id));
+    for (const change of entry?.changes || []) {
+      const phoneId = change?.value?.metadata?.phone_number_id;
+      if (phoneId) phoneIds.add(String(phoneId));
+    }
+  }
+  if (phoneIds.size === 0 && wabaIds.size === 0) return null;
+
+  const configs = await listTenantWhatsappConfigs();
+  const byPhone = configs.find((c) => c.config?.phoneNumberId && phoneIds.has(String(c.config.phoneNumberId)));
+  if (byPhone) return byPhone;
+  return configs.find((c) => c.config?.wabaId && wabaIds.has(String(c.config.wabaId))) ?? null;
+}
+
+/** Find the tenant whose stored webhook verify token matches (Meta's GET handshake). */
+export async function findWhatsappConfigByVerifyToken(
+  token: string,
+): Promise<{ tenantId: string; config: any } | null> {
+  if (!token) return null;
+  const configs = await listTenantWhatsappConfigs();
+  return configs.find((c) => c.config?.webhookVerifyToken && c.config.webhookVerifyToken === token) ?? null;
 }
 
 /** Clear cached DB config (call after admin saves new settings). */

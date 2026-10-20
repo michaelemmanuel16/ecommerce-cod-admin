@@ -6,7 +6,7 @@ import { parsePackageField } from '../utils/packageParser';
 import workflowService from './workflowService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
-import { tenantStorage, resolveTenantId } from '../utils/tenantContext';
+import { resolveTenantId, runInTenantOf, withoutTenant } from '../utils/tenantContext';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 
 
@@ -221,55 +221,21 @@ export class WebhookService {
   async processWebhook(data: ProcessWebhookData) {
     const { signature, apiKey, body, headers, endpoint, method } = data;
 
-    // Find the config first: the log row needs its tenant
-    let webhookConfig = null;
-    if (apiKey) {
-      webhookConfig = await prisma.webhookConfig.findFirst({
-        where: { apiKey, isActive: true }
-      });
+    // Find the config first: the tenant comes from it. No key, no tenant, no import.
+    const webhookConfig = apiKey
+      ? await withoutTenant('webhook-import-api-key', () =>
+        prisma.webhookConfig.findFirst({
+          where: { apiKey, isActive: true }
+        })
+      )
+      : null;
 
-      if (!webhookConfig) {
-        logger.warn('Webhook rejected: invalid API key', { endpoint });
-        throw new AppError('Invalid API key', 401);
-      }
+    if (!webhookConfig) {
+      logger.warn('Webhook rejected: invalid API key', { endpoint });
+      throw new AppError('Invalid API key', 401);
     }
 
-    const webhookLog = await this.createWebhookLog(webhookConfig, { endpoint, method, headers, body });
-
-    try {
-      await this.enforceSignature(webhookLog?.id ?? null, webhookConfig, signature, body);
-
-      // Process orders within tenant context derived from webhook config
-      const tenantId = webhookConfig?.tenantId as string | null;
-      const results = tenantId
-        ? await tenantStorage.run({ tenantId }, () => this.processOrdersFromWebhook(body, webhookConfig))
-        : await this.processOrdersFromWebhook(body, webhookConfig);
-
-      // Update webhook log as successful
-      await this.updateWebhookLog(webhookLog?.id ?? null, {
-        success: true,
-        response: results,
-        statusCode: 200
-      });
-
-      return {
-        message: 'Webhook processed',
-        results
-      };
-    } catch (error: any) {
-      logger.error('Webhook processing error', {
-        error: error.message,
-        webhookLogId: webhookLog?.id
-      });
-
-      await this.updateWebhookLog(webhookLog?.id ?? null, {
-        success: false,
-        errorMessage: error.message,
-        statusCode: error.statusCode || 500
-      });
-
-      throw error;
-    }
+    return this.processForConfig(webhookConfig, { signature, body, headers, endpoint, method });
   }
 
   /**
@@ -279,54 +245,66 @@ export class WebhookService {
     const { uniqueUrl, signature, body, headers, endpoint, method } = data;
 
     // Find webhook config by unique URL (include product relation). The log row needs its tenant.
-    const webhookConfig = await prisma.webhookConfig.findUnique({
-      where: { uniqueUrl, isActive: true },
-      include: {
-        product: true
-      }
-    });
+    const webhookConfig = await withoutTenant('webhook-import-unique-url', () =>
+      prisma.webhookConfig.findUnique({
+        where: { uniqueUrl, isActive: true },
+        include: {
+          product: true
+        }
+      })
+    );
 
     if (!webhookConfig) {
       logger.warn('Webhook rejected: invalid webhook URL', { endpoint });
       throw new AppError('Webhook not found', 404);
     }
 
-    const webhookLog = await this.createWebhookLog(webhookConfig, { endpoint, method, headers, body });
+    return this.processForConfig(webhookConfig, { signature, body, headers, endpoint, method });
+  }
 
-    try {
-      await this.enforceSignature(webhookLog?.id ?? null, webhookConfig, signature, body);
+  /**
+   * Shared tail of both webhook entry paths. The config was found by an unscoped
+   * lookup (API key / unique URL); from here everything runs inside its tenant.
+   */
+  private async processForConfig(
+    webhookConfig: any,
+    data: { signature: string | undefined; body: any; headers: unknown; endpoint: string; method: string }
+  ) {
+    const { signature, body, headers, endpoint, method } = data;
+    return runInTenantOf(webhookConfig?.tenantId as string | null, 'webhook-import', async () => {
+      const webhookLog = await this.createWebhookLog(webhookConfig, { endpoint, method, headers, body });
 
-      // Process orders within tenant context derived from webhook config
-      const tenantId = webhookConfig?.tenantId as string | null;
-      const results = tenantId
-        ? await tenantStorage.run({ tenantId }, () => this.processOrdersFromWebhook(body, webhookConfig))
-        : await this.processOrdersFromWebhook(body, webhookConfig);
+      try {
+        await this.enforceSignature(webhookLog?.id ?? null, webhookConfig, signature, body);
 
-      // Update webhook log as successful
-      await this.updateWebhookLog(webhookLog?.id ?? null, {
-        success: true,
-        response: results,
-        statusCode: 200
-      });
+        const results = await this.processOrdersFromWebhook(body, webhookConfig);
 
-      return {
-        message: 'Webhook processed',
-        results
-      };
-    } catch (error: any) {
-      logger.error('Webhook processing error', {
-        error: error.message,
-        webhookLogId: webhookLog?.id
-      });
+        // Update webhook log as successful
+        await this.updateWebhookLog(webhookLog?.id ?? null, {
+          success: true,
+          response: results,
+          statusCode: 200
+        });
 
-      await this.updateWebhookLog(webhookLog?.id ?? null, {
-        success: false,
-        errorMessage: error.message,
-        statusCode: error.statusCode || 500
-      });
+        return {
+          message: 'Webhook processed',
+          results
+        };
+      } catch (error: any) {
+        logger.error('Webhook processing error', {
+          error: error.message,
+          webhookLogId: webhookLog?.id
+        });
 
-      throw error;
-    }
+        await this.updateWebhookLog(webhookLog?.id ?? null, {
+          success: false,
+          errorMessage: error.message,
+          statusCode: error.statusCode || 500
+        });
+
+        throw error;
+      }
+    });
   }
 
   /**

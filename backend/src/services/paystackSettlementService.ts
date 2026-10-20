@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { resolveTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId, tenantStorage, withoutTenant } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { paystackService } from './paystackService';
@@ -40,10 +40,30 @@ export async function settlePaystackPayment(
   reference: string,
   opts: { webhookTenantId?: string } = {},
 ): Promise<SettlementResult> {
+  // Settlement always runs scoped to one tenant: the webhook's tenant, the signed-in
+  // caller's tenant, or (public verify, no context) the tenant that owns the
+  // reference, found by a minimal unscoped lookup of the pending checkout / order.
+  let tenantId = opts.webhookTenantId ?? getTenantId();
+  if (!tenantId) {
+    tenantId = await withoutTenant('paystack-verify', async () => {
+      const pendingRow = await prisma.pendingCheckout.findUnique({ where: { reference }, select: { tenantId: true } });
+      if (pendingRow) return pendingRow.tenantId;
+      const orderRow = await prisma.order.findFirst({ where: { paymentReference: reference }, select: { tenantId: true } });
+      return orderRow?.tenantId ?? null;
+    });
+    if (!tenantId) {
+      return { status: 'not_found' };
+    }
+  }
+  return tenantStorage.run({ tenantId }, async () => settleInTenant(reference, opts));
+}
+
+async function settleInTenant(
+  reference: string,
+  opts: { webhookTenantId?: string },
+): Promise<SettlementResult> {
   // Reference lookups are scoped to the webhook's tenant when we have one, so a
   // cross-account reference collision can never resolve another tenant's order.
-  // The public/admin verify paths carry no tenant context and fall back to the
-  // (Paystack-globally-unique) reference alone.
   const orderWhere: Prisma.OrderWhereInput = {
     paymentReference: reference,
     ...(opts.webhookTenantId ? { tenantId: opts.webhookTenantId } : {}),

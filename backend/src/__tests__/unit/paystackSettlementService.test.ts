@@ -24,6 +24,7 @@ import * as paystackServiceModule from '../../services/paystackService';
 import workflowService from '../../services/workflowService';
 import { metaCapiService } from '../../services/metaCapiService';
 import { settlePaystackPayment } from '../../services/paystackSettlementService';
+import { tenantStorage, getTenantId } from '../../utils/tenantContext';
 
 const mockedPaystack = paystackServiceModule.paystackService as jest.Mocked<
   typeof paystackServiceModule.paystackService
@@ -107,11 +108,36 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     const existing = { id: 55, status: 'confirmed', paymentStatus: 'paid' };
     (prismaMock.order.findFirst as any).mockResolvedValue(existing);
 
-    const result = await settlePaystackPayment('ref_ok');
+    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('ref_ok'));
 
     expect(result.status).toBe('success');
     expect(result.order).toBe(existing);
     expect(prismaMock.pendingCheckout.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.order.create).not.toHaveBeenCalled();
+  });
+
+  it('public verify (no context) resolves the tenant from the pending checkout before settling (T15)', async () => {
+    (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(pending);
+    const seen: Array<string | null> = [];
+    (prismaMock.order.findFirst as any).mockImplementation(async () => {
+      seen.push(getTenantId());
+      return { id: 55, status: 'confirmed', paymentStatus: 'paid' };
+    });
+
+    const result = await settlePaystackPayment('ref_ok');
+
+    expect(result.status).toBe('success');
+    // the tenant is the pending checkout's tenant for the settlement lookup
+    expect(seen[seen.length - 1]).toBe(pending.tenantId);
+  });
+
+  it('public verify (no context) with an unknown reference is not_found and settles nothing (T15)', async () => {
+    (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(null);
+    (prismaMock.order.findFirst as any).mockResolvedValue(null);
+
+    const result = await settlePaystackPayment('ref_nope');
+
+    expect(result.status).toBe('not_found');
     expect(prismaMock.order.create).not.toHaveBeenCalled();
   });
 

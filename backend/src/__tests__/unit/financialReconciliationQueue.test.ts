@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import { getTenantId } from '../../utils/tenantContext';
 
 // Mock server module
 jest.mock('../../server', () => ({
@@ -41,11 +40,15 @@ const mockLogger = {
   info: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
+  debug: jest.fn(),
 };
 jest.mock('../../utils/logger', () => ({
   __esModule: true,
   default: mockLogger,
 }));
+
+// tenantContext imports the logger, so it must load after the logger mock exists
+import { getTenantId } from '../../utils/tenantContext';
 
 // Now import the queue — this triggers process() registration
 import '../../queues/financialReconciliationQueue';

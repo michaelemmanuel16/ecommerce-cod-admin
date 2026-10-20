@@ -5,11 +5,15 @@ import { validate } from '../middleware/validation';
 import { body, param } from 'express-validator';
 import { digitalDeliveryService } from '../services/digitalDeliveryService';
 import logger from '../utils/logger';
+import { resolveFormSlugTenant } from '../middleware/publicTenant';
 
 const router = Router();
 
 // Apply rate limiting to all public routes
 router.use(webhookLimiter);
+
+// Every /forms/:slug route resolves its tenant from the slug before any other query
+router.param('slug', resolveFormSlugTenant);
 
 // Validation rules
 const getFormValidation = [

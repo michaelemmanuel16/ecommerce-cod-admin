@@ -3,7 +3,7 @@ import logger from '../utils/logger';
 import { MessageChannel, MessageDirection, MessageStatus } from '@prisma/client';
 import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { formatPhoneNumber, OrderContext } from './whatsappService';
-import { getTenantId } from '../utils/tenantContext';
+import { getTenantId, runInTenantOf, withoutTenant } from '../utils/tenantContext';
 
 // Arkesel SMS API
 const ARKESEL_API_URL = 'https://sms.arkesel.com/api/v2/sms/send';
@@ -166,9 +166,13 @@ class SmsService {
   }
 
   async processStatusUpdate(providerMessageId: string, status: string): Promise<void> {
-    const messageLog = await prisma.messageLog.findFirst({
-      where: { providerMessageId, channel: MessageChannel.sms },
-    });
+    // The Arkesel webhook carries no tenant: find the MessageLog by provider id
+    // (unscoped on purpose), then do the update inside that row's tenant.
+    const messageLog = await withoutTenant('sms-webhook', () =>
+      prisma.messageLog.findFirst({
+        where: { providerMessageId, channel: MessageChannel.sms },
+      })
+    );
 
     if (!messageLog) {
       logger.warn('SMS status update for unknown message', { providerMessageId, status });
@@ -192,10 +196,12 @@ class SmsService {
       updateData.deliveredAt = new Date();
     }
 
-    await prisma.messageLog.update({
-      where: { id: messageLog.id },
-      data: updateData,
-    });
+    await runInTenantOf(messageLog.tenantId, 'sms-webhook', () =>
+      prisma.messageLog.update({
+        where: { id: messageLog.id },
+        data: updateData,
+      })
+    );
 
     logger.info('SMS delivery status updated', { messageLogId: messageLog.id, status: mappedStatus });
   }

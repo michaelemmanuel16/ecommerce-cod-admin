@@ -38,6 +38,20 @@ export function withoutTenant<T>(reason: string, fn: () => T | Promise<T>): Prom
 }
 
 /**
+ * Continue inside the tenant of a row that a public lookup (token, provider id, slug)
+ * just found. A legacy row with a NULL tenant runs unscoped, with a log line, so
+ * the request is still served.
+ */
+export function runInTenantOf<T>(
+  tenantId: string | null | undefined,
+  reason: string,
+  fn: () => T | Promise<T>
+): Promise<T> {
+  if (tenantId) return tenantStorage.run({ tenantId }, async () => fn());
+  return withoutTenant(`${reason} (row has no tenant)`, fn);
+}
+
+/**
  * Tenant for a new row in a tenant-scoped table. Prefer the parent row's tenant,
  * then the request tenant context. Throws instead of writing a row with no tenant.
  */

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { resolveTenantId } from '../utils/tenantContext';
+import { resolveTenantId, tenantStorage, withoutTenant } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { escapeHtml } from '../utils/sanitizer';
@@ -46,17 +46,33 @@ export const digitalDeliveryService = {
    * Validate a download token and return the file URL if valid.
    */
   async validateAndGetDownloadUrl(token: string): Promise<{ fileUrl: string; productName: string } | null> {
+    // The token is global: find its tenant first (minimal lookup), then run the rest scoped to it.
+    const tokenRow = await withoutTenant('download-token', () =>
+      prisma.downloadToken.findUnique({ where: { token }, select: { tenantId: true } })
+    );
+    if (!tokenRow) {
+      logger.warn('Download token not found', { token: token.substring(0, 8) + '...' });
+      return null;
+    }
+    return tenantStorage.run({ tenantId: tokenRow.tenantId }, async () =>
+      this.consumeDownloadToken(token, tokenRow.tenantId)
+    );
+  },
+
+  async consumeDownloadToken(token: string, tenantId: string): Promise<{ fileUrl: string; productName: string } | null> {
     // Atomic check-and-increment: prevents TOCTOU race condition where concurrent
     // requests could exceed maxDownloads. Uses raw SQL because Prisma updateMany
-    // doesn't support comparing two columns in a WHERE clause.
+    // doesn't support comparing two columns in a WHERE clause. Raw SQL bypasses the
+    // tenant extension, so the tenant is part of the WHERE clause.
     const updated: { id: number; orderId: number }[] = await prisma.$queryRaw`
-      UPDATE "DownloadToken"
-      SET "downloadCount" = "downloadCount" + 1
+      UPDATE "download_tokens"
+      SET "download_count" = "download_count" + 1
       WHERE "token" = ${token}
-        AND "isRevoked" = false
-        AND "expiresAt" > NOW()
-        AND "downloadCount" < "maxDownloads"
-      RETURNING "id", "orderId"
+        AND "tenant_id" = ${tenantId}
+        AND "is_revoked" = false
+        AND "expires_at" > NOW()
+        AND "download_count" < "max_downloads"
+      RETURNING "id", "order_id" AS "orderId"
     `;
 
     if (!updated || updated.length === 0) {
