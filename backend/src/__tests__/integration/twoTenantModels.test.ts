@@ -91,6 +91,22 @@ describe('tenant B data never shows for tenant A', () => {
     expect(await runInTenant(a.id, () => db.count({ where: { id: bId } }))).toBe(0);
   });
 
+  // write: tenant A cannot change or delete B's row, and B's row stays exactly as it was
+  it.each(MODELS)('%s: no cross-tenant write', async (_label, delegate, idKey) => {
+    const { a, b } = pair;
+    const bId = b.ids[idKey];
+    const db = (prisma as any)[delegate];
+    const base = (prismaBase as any)[delegate];
+    const before = await base.findUnique({ where: { id: bId } });
+
+    await expect(runInTenant(a.id, () => db.update({ where: { id: bId }, data: {} }))).rejects.toThrow();
+    expect(await runInTenant(a.id, () => db.updateMany({ where: { id: bId }, data: {} }))).toEqual({ count: 0 });
+    await expect(runInTenant(a.id, () => db.delete({ where: { id: bId } }))).rejects.toThrow();
+    expect(await runInTenant(a.id, () => db.deleteMany({ where: { id: bId } }))).toEqual({ count: 0 });
+
+    expect(await base.findUnique({ where: { id: bId } })).toEqual(before);
+  });
+
   it('every model the plan names is in the table', () => {
     const planned = [
       'Order', 'Customer', 'Product', 'Delivery', 'AgentCollection', 'AgentDeposit', 'AgentAgingBucket', 'Payout', 'Call',
