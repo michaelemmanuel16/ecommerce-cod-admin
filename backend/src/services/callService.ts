@@ -1,7 +1,7 @@
 import prisma from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
-import { CallOutcome, Prisma } from '@prisma/client';
+import { CallOutcome, CallSource, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitCallLogged } from '../sockets/index';
@@ -13,6 +13,8 @@ interface CreateCallData {
   duration?: number;
   notes?: string;
   salesRepId: number;
+  startedAt?: Date;
+  source?: CallSource;
 }
 
 interface CallFilters {
@@ -47,8 +49,9 @@ export class CallService {
     }
 
     // Validate order exists if provided
+    let order: { createdAt: Date; customerId: number } | null = null;
     if (data.orderId) {
-      const order = await prisma.order.findUnique({
+      order = await prisma.order.findUnique({
         where: { id: data.orderId }
       });
 
@@ -77,6 +80,12 @@ export class CallService {
       throw new AppError('User does not have permission to log calls', 403);
     }
 
+    // A client-sent start time may not be in the future or before the order existed:
+    // it feeds firstContactAt and so the time-to-first-call KPI.
+    const now = new Date();
+    let startedAt = data.startedAt && data.startedAt <= now ? data.startedAt : now;
+    if (order && startedAt < order.createdAt) startedAt = order.createdAt;
+
     // Create call log
     const call = await prisma.call.create({
       data: {
@@ -86,7 +95,9 @@ export class CallService {
         salesRepId: data.salesRepId,
         outcome: data.outcome,
         duration: data.duration,
-        notes: data.notes
+        notes: data.notes,
+        startedAt,
+        source: data.source ?? CallSource.manual
       },
       include: {
         customer: {
@@ -112,6 +123,15 @@ export class CallService {
         }
       }
     });
+
+    // First contact: every call has a rep (same rule as backfill-order-timestamps.ts).
+    // updateMany with firstContactAt: null is race-safe and never overwrites.
+    if (data.orderId) {
+      await prisma.order.updateMany({
+        where: { id: data.orderId, firstContactAt: null },
+        data: { firstContactAt: startedAt }
+      });
+    }
 
     logger.info('Call logged', {
       callId: call.id,

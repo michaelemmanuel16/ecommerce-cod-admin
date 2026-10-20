@@ -1,8 +1,11 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { encodeCursor, decodeCursor, mcpMoneyJson, mcpError, getDateRange } from '../utils';
-import * as Money from '../../utils/money';
+import { encodeCursor, decodeCursor, mcpMoneyJson, mcpError, getStoreRange, dateRangeOut } from '../utils';
+import { resolveTenantId } from '../../utils/tenantContext';
+import { deliveredRevenue } from '../../services/kpi/revenue';
+import { rates } from '../../services/kpi/rates';
+import { customerPhoneSearch } from '../../utils/phone';
 
 const ordersSearchSchema = z.object({
   status: z.enum([
@@ -49,9 +52,10 @@ export function registerOrderTools(
         }
         if (parsed.search) {
           const searchNum = parseInt(parsed.search);
+          const phoneSearch = customerPhoneSearch(parsed.search);
           where.OR = [
             ...(isNaN(searchNum) ? [] : [{ id: searchNum }]),
-            { customer: { phoneNumber: { contains: parsed.search, mode: 'insensitive' } } },
+            ...(phoneSearch ? [phoneSearch] : []),
             { customer: { firstName: { contains: parsed.search, mode: 'insensitive' } } },
           ];
         }
@@ -112,41 +116,34 @@ export function registerOrderTools(
 
   server.tool(
     'orders_summary',
-    'Get order statistics for a period: count by status, total revenue, fulfillment rate.',
+    'Order statistics for a period: orders placed and count by status (by order date), delivered revenue and delivered count (by delivery date), confirmationRate, deliverySuccessRate and orderToCashYield (percents, null when there is nothing to divide). Revenue is a 2-decimal string. dateTo is inclusive.',
     ordersSummarySchema.shape,
     wrapHandler(async (args: z.infer<typeof ordersSummarySchema>) => {
       try {
         const parsed = ordersSummarySchema.parse(args);
-        const { start, end } = getDateRange(parsed.period, parsed.dateFrom, parsed.dateTo);
+        const { from, to } = getStoreRange(parsed.period, parsed.dateFrom, parsed.dateTo);
+        const tenantId = resolveTenantId();
 
-        const dateFilter = { createdAt: { gte: start, lte: end } };
-
-        const [statusCounts, totalRevenue, totalOrders] = await Promise.all([
+        const [statusCounts, revenue, rangeRates] = await Promise.all([
           prisma.order.groupBy({
             by: ['status'],
-            where: { ...dateFilter, deletedAt: null },
+            where: { createdAt: { gte: from, lt: to }, deletedAt: null },
             _count: { id: true },
           }),
-          prisma.order.aggregate({
-            where: { ...dateFilter, deletedAt: null, status: 'delivered' },
-            _sum: { totalAmount: true },
-          }),
-          prisma.order.count({
-            where: { ...dateFilter, deletedAt: null },
-          }),
+          deliveredRevenue(tenantId, from, to),
+          rates(tenantId, from, to),
         ]);
-
-        const delivered = statusCounts.find((s) => s.status === 'delivered')?._count.id ?? 0;
-        const fulfillmentRate = totalOrders > 0 ? ((delivered / totalOrders) * 100).toFixed(1) : '0.0';
 
         return mcpMoneyJson({
           period: parsed.period,
-          dateRange: { from: start.toISOString(), to: end.toISOString() },
-          totalOrders,
+          dateRange: dateRangeOut(from, to),
+          totalOrders: statusCounts.reduce((sum, s) => sum + s._count.id, 0),
           statusBreakdown: Object.fromEntries(statusCounts.map((s) => [s.status, s._count.id])),
-          revenue: Money.orZero(totalRevenue._sum.totalAmount),
-          deliveredCount: delivered,
-          fulfillmentRate: `${fulfillmentRate}%`,
+          revenue: revenue.total.value,
+          deliveredCount: revenue.deliveredOrders.value,
+          confirmationRate: rangeRates.confirmationRate.value,
+          deliverySuccessRate: rangeRates.deliverySuccessRate.value,
+          orderToCashYield: rangeRates.orderToCashYield.value,
         });
       } catch (err) {
         return mcpError((err as Error).message);

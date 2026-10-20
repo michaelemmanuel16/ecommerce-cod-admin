@@ -54,26 +54,38 @@ export function getCurrencyForCountry(countryName: string): string {
 }
 
 /**
- * Get currency symbol for a given currency code
- * Note: country-state-city doesn't provide symbols, so we maintain a small map
+ * The one currency list (F-1232). Onboarding and Settings both render from it.
  */
-export const SUPPORTED_CURRENCIES = ['GHS', 'NGN', 'KES', 'ZAR', 'UGX', 'TZS', 'RWF', 'ETB'] as const;
+export const SUPPORTED_CURRENCIES = [
+  'USD', 'GHS', 'NGN', 'KES', 'ZAR', 'UGX', 'TZS', 'RWF', 'ETB', 'EUR', 'GBP', 'INR', 'CAD', 'AUD', 'JPY',
+] as const;
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  'GHS': 'GH₵',
-  'NGN': '₦',
-  'KES': 'KSh',
-  'ZAR': 'R',
-  'UGX': 'USh',
-  'TZS': 'TSh',
-  'RWF': 'FRw',
-  'ETB': 'Br',
-  'ZMW': 'ZK',
-  'ZWL': 'Z$',
-  'USD': '$',
-  'EUR': '€',
-  'GBP': '£',
+type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
+
+const CURRENCIES: Record<string, { symbol: string; name: string }> = {
+  GHS: { symbol: 'GH₵', name: 'Ghanaian Cedi' },
+  NGN: { symbol: '₦', name: 'Nigerian Naira' },
+  KES: { symbol: 'KSh', name: 'Kenyan Shilling' },
+  ZAR: { symbol: 'R', name: 'South African Rand' },
+  UGX: { symbol: 'USh', name: 'Ugandan Shilling' },
+  TZS: { symbol: 'TSh', name: 'Tanzanian Shilling' },
+  RWF: { symbol: 'FRw', name: 'Rwandan Franc' },
+  ETB: { symbol: 'Br', name: 'Ethiopian Birr' },
+  ZMW: { symbol: 'ZK', name: 'Zambian Kwacha' },
+  ZWL: { symbol: 'Z$', name: 'Zimbabwean Dollar' },
+  USD: { symbol: '$', name: 'US Dollar' },
+  EUR: { symbol: '€', name: 'Euro' },
+  GBP: { symbol: '£', name: 'British Pound' },
+  INR: { symbol: '₹', name: 'Indian Rupee' },
+  CAD: { symbol: '$', name: 'Canadian Dollar' },
+  AUD: { symbol: '$', name: 'Australian Dollar' },
+  JPY: { symbol: '¥', name: 'Japanese Yen' },
 };
+
+/** Label for a currency picker option, e.g. "NGN - Nigerian Naira (₦)". */
+export function getCurrencyOptionLabel(code: SupportedCurrency): string {
+  return `${code} - ${CURRENCIES[code].name} (${CURRENCIES[code].symbol})`;
+}
 
 /**
  * Get the currency symbol for a given currency code
@@ -81,7 +93,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
  * @returns Currency symbol (e.g., 'GH₵', '₦')
  */
 export function getCurrencySymbol(currency: string): string {
-  return CURRENCY_SYMBOLS[currency] || currency;
+  return CURRENCIES[currency]?.symbol || currency;
 }
 
 /**

@@ -16,8 +16,9 @@
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { prismaBase } from '../../utils/prisma';
-import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { createTenant, deleteTenantRows, ensureSystemUser } from './helpers/twoTenants';
 import { runInTenant } from '../../utils/tenantContext';
+import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import orderService from '../../services/orderService';
 import publicOrderService from '../../services/publicOrderService';
 
@@ -42,6 +43,7 @@ let tenantId: string;
 let productId: number;
 let formId: number;
 let formSlug: string;
+let agentId: number;
 let threeSetPackageId: number;
 let twoUnitPackageId: number;
 const orderIds: number[] = [];
@@ -69,6 +71,8 @@ async function runPublicOrderToDelivered(packageId: number) {
     }),
   );
   orderIds.push(created.orderId);
+  // out_for_delivery needs a delivery agent (state machine). The agent holds no allocated stock.
+  await prismaBase.order.update({ where: { id: created.orderId }, data: { deliveryAgentId: agentId } });
   const afterCreate = await getStock();
 
   await inTenant(() => orderService.updateOrderStatus(created.orderId, { status: 'confirmed' }));
@@ -88,6 +92,11 @@ async function runPublicOrderToDelivered(packageId: number) {
 beforeAll(async () => {
   const tenant = await createTenant('DDec Tenant');
   tenantId = tenant.id;
+  await seedTenantDefaults(tenantId); // chart of accounts: delivered posts revenue
+  await ensureSystemUser(tenantId); // delivered posts revenue; a call with no actor user uses the system user
+  agentId = (await prismaBase.user.create({
+    data: { email: `ddec-agent-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'Kofi', lastName: 'Agent', role: 'delivery_agent', tenantId },
+  })).id;
 
   const product = await prismaBase.product.create({
     data: {

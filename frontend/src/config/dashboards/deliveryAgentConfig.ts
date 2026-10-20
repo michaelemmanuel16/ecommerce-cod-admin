@@ -86,7 +86,7 @@ export const deliveryAgentConfig: DashboardConfig = {
     {
       id: 'my-success-rate',
       type: 'stat',
-      title: 'My Success Rate',
+      title: 'My Delivery Success Rate',
       icon: 'Award',
       iconColor: 'text-orange-600',
       dataSource: 'calculated.mySuccessRate',

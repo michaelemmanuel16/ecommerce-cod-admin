@@ -5,6 +5,7 @@ import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { refreshTokenIfNeeded } from './whatsappTokenRefreshService';
 import { getTenantId, withoutTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
+import { getStoreTimeZone, parseInclusiveBound } from './kpi/dates';
 
 // WhatsApp Business Cloud API configuration
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
@@ -551,8 +552,9 @@ class WhatsAppService {
     if (customerId) where.customerId = customerId;
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
+      const zone = getStoreTimeZone(getTenantId());
+      if (startDate) where.createdAt.gte = parseInclusiveBound(startDate, 'from', zone);
+      if (endDate) where.createdAt.lte = parseInclusiveBound(endDate, 'to', zone);
     }
 
     const [messages, total] = await Promise.all([
@@ -600,8 +602,9 @@ class WhatsAppService {
     const where: Prisma.MessageLogWhereInput = {};
     if (startDate || endDate) {
       where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
+      const zone = getStoreTimeZone(getTenantId());
+      if (startDate) where.createdAt.gte = parseInclusiveBound(startDate, 'from', zone);
+      if (endDate) where.createdAt.lte = parseInclusiveBound(endDate, 'to', zone);
     }
 
     const [byStatus, byChannel] = await Promise.all([

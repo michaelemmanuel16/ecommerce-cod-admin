@@ -110,10 +110,10 @@ describe('WebhookService', () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findFirst.mockResolvedValue({
+      prismaMock.customer.findMany.mockResolvedValue([{
         id: 'customer-1',
         phoneNumber: '+1234567890'
-      } as any);
+      } as any]);
 
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.create.mockResolvedValue({
@@ -161,7 +161,7 @@ describe('WebhookService', () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue({ ...webhookConfig, requireSignature: false } as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findFirst.mockResolvedValue({ id: 'customer-1', phoneNumber: '+1234567890' } as any);
+      prismaMock.customer.findMany.mockResolvedValue([{ id: 'customer-1', phoneNumber: '+1234567890' } as any]);
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.create.mockResolvedValue({ id: 'order-1', orderNumber: '1001' } as any);
 
@@ -176,7 +176,7 @@ describe('WebhookService', () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findFirst.mockResolvedValue(null);
+      prismaMock.customer.findMany.mockResolvedValue([]);
       prismaMock.customer.create.mockResolvedValue({
         id: 'customer-new',
         phoneNumber: '+1234567890'
@@ -211,7 +211,7 @@ describe('WebhookService', () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findFirst.mockResolvedValue(null);
+      prismaMock.customer.findMany.mockResolvedValue([]);
       // Return different phone numbers so fingerprints are distinct
       prismaMock.customer.create
         .mockResolvedValueOnce({ id: 'customer-1', phoneNumber: '+1234567890' } as any)
@@ -234,7 +234,7 @@ describe('WebhookService', () => {
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findFirst.mockResolvedValue(null);
+      prismaMock.customer.findMany.mockResolvedValue([]);
       prismaMock.customer.create.mockRejectedValue(new Error('Database error'));
 
       const result = await webhookService.processWebhook(webhookData);
@@ -283,7 +283,7 @@ describe('WebhookService', () => {
       prismaMock.webhookLog.create.mockResolvedValue({ id: 'log-1' } as any);
       prismaMock.webhookConfig.findFirst.mockResolvedValue(webhookConfig as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
-      prismaMock.customer.findFirst.mockResolvedValue(null);
+      prismaMock.customer.findMany.mockResolvedValue([]);
       prismaMock.customer.create.mockRejectedValue(new Error('Database error'));
 
       await webhookService.processWebhook(webhookData);
@@ -392,9 +392,9 @@ describe('WebhookService', () => {
       } as any);
       prismaMock.webhookLog.update.mockResolvedValue({} as any);
 
-      prismaMock.customer.findFirst.mockResolvedValue({
+      prismaMock.customer.findMany.mockResolvedValue([{
         id: 'customer-1'
-      } as any);
+      } as any]);
       prismaMock.order.count.mockResolvedValue(0);
       prismaMock.order.create.mockResolvedValue({} as any);
 

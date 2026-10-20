@@ -1,6 +1,8 @@
 import React from 'react';
 import { Card } from '../ui/Card';
 import { ConversionFunnelStep } from '../../services/analytics.service';
+import { OrderStatus } from '../../types';
+import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 
 interface DeliveryFunnelChartProps {
   data: ConversionFunnelStep[];
@@ -16,14 +18,6 @@ const PIPELINE_ORDER = [
   'delivered',
 ];
 
-const STAGE_LABELS: Record<string, string> = {
-  pending_confirmation: 'Pending Confirmation',
-  confirmed: 'Confirmed',
-  preparing: 'Preparing',
-  ready_for_pickup: 'Ready for Pickup',
-  out_for_delivery: 'Out for Delivery',
-  delivered: 'Delivered',
-};
 
 const STAGE_COLORS: Record<string, string> = {
   pending_confirmation: 'bg-amber-500',
@@ -41,7 +35,7 @@ export const DeliveryFunnelChart: React.FC<DeliveryFunnelChartProps> = ({
   const statusMap = new Map(data.map((d) => [d.status, d.count]));
   const stages = PIPELINE_ORDER.map((status) => ({
     status,
-    label: STAGE_LABELS[status] || status,
+    label: ORDER_STATUS_LABELS[status as OrderStatus] || status,
     count: statusMap.get(status) || 0,
     color: STAGE_COLORS[status] || 'bg-gray-500',
   }));

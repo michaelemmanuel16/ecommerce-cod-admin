@@ -3,6 +3,7 @@ import agentReconciliationService from '../services/agentReconciliationService';
 import agingService from '../services/agingService';
 import { AppError } from '../middleware/errorHandler';
 import prisma from '../utils/prisma';
+import { readDateBound } from '../utils/kpiRequest';
 import { getSocketInstance } from '../utils/socketInstance';
 import * as Money from '../utils/money';
 import { emitCollectionVerified, emitCollectionApproved, emitToTenant, emitToUser } from '../sockets/index';
@@ -27,8 +28,8 @@ export class AgentReconciliationController {
         if (status) where.status = status;
         if (startDate || endDate) {
             where.collectionDate = {};
-            if (startDate) where.collectionDate.gte = new Date(startDate as string);
-            if (endDate) where.collectionDate.lte = new Date(endDate as string);
+            if (startDate) where.collectionDate.gte = readDateBound(startDate, 'from');
+            if (endDate) where.collectionDate.lte = readDateBound(endDate, 'to');
         }
 
         const collections = await (prisma as any).agentCollection.findMany({
@@ -66,8 +67,8 @@ export class AgentReconciliationController {
         if (status) where.status = status;
         if (startDate || endDate) {
             where.depositDate = {};
-            if (startDate) where.depositDate.gte = new Date(startDate as string);
-            if (endDate) where.depositDate.lte = new Date(endDate as string);
+            if (startDate) where.depositDate.gte = readDateBound(startDate, 'from');
+            if (endDate) where.depositDate.lte = readDateBound(endDate, 'to');
         }
 
         const deposits = await (prisma as any).agentDeposit.findMany({

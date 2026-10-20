@@ -71,6 +71,10 @@ model Tenant {
   downloadTokens      DownloadToken[]
   formSubmissions     FormSubmission[]
   productCostEntries  product_cost_entries[]
+  targets             Target[]
+  findings            Finding[]
+  feeRules            FeeRule[]
+  fxRates             FxRate[]
 
   @@index([paystackCustomerCode])
   @@index([paystackSubscriptionCode])
@@ -159,6 +163,10 @@ model User {
   transfersTo           InventoryTransfer[] @relation("TransferTo")
   transfersCreated      InventoryTransfer[] @relation("TransferCreator")
   shipmentsCreated      InventoryShipment[] @relation("ShipmentCreator")
+  confirmedOrders       Order[]             @relation("OrderConfirmedBy")
+  targetsAsOwner        Target[]            @relation("TargetUser")
+  feeRules              FeeRule[]           @relation("FeeRulePartner")
+  fxRatesCreated        FxRate[]            @relation("FxRateCreator")
   tenantId              String?             @map("tenant_id")
   tenant                Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -258,6 +266,9 @@ model Order {
   shippingCost       Decimal             @default(0) @map("shipping_cost") @db.Decimal(19, 4)
   discount           Decimal             @default(0) @db.Decimal(19, 4)
   totalAmount        Decimal             @map("total_amount") @db.Decimal(19, 4)
+  // Currency the amounts above were entered in (M1-T31). The DB trigger orders_set_currency fills it from
+  // Tenant.currency on insert; null on an old row reads as the store currency. Never rewritten on a store currency change.
+  currency           String?             @db.VarChar(3)
   codAmount          Decimal?            @map("cod_amount") @db.Decimal(19, 4)
   notes              String?
   internalNotes      String?             @map("internal_notes")
@@ -292,6 +303,17 @@ model Order {
   revenueRecognized  Boolean             @default(false) @map("revenue_recognized")
   glJournalEntryId   Int?                @map("gl_journal_entry_id")
   deliveryDate       DateTime?           @map("delivery_date")
+  // M1: lifecycle timestamps, set only if empty by the order state machine.
+  confirmedAt        DateTime?           @map("confirmed_at")
+  confirmedById      Int?                @map("confirmed_by_id")
+  dispatchedAt       DateTime?           @map("dispatched_at")
+  firstContactAt     DateTime?           @map("first_contact_at")
+  returnedAt         DateTime?           @map("returned_at")
+  // Optimistic lock. The DB trigger orders_status_version_bump raises it on every status change.
+  statusVersion      Int                 @default(0) @map("status_version")
+  declineReason      DeclineReason?      @map("decline_reason")
+  failureReason      FailureReason?      @map("failure_reason")
+  nextAttemptDate    DateTime?           @map("next_attempt_date")
   calls              Call[]
   delivery           Delivery?
   formSubmissions    FormSubmission[]
@@ -301,6 +323,7 @@ model Order {
   customer           Customer            @relation(fields: [customerId], references: [id])
   customerRep        User?               @relation("OrderCustomerRep", fields: [customerRepId], references: [id])
   deliveryAgent      User?               @relation("OrderDeliveryAgent", fields: [deliveryAgentId], references: [id])
+  confirmedBy        User?               @relation("OrderConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   transaction        Transaction?
   payout             Payout?             @relation(fields: [payoutId], references: [id])
   glJournalEntry     JournalEntry?       @relation(fields: [glJournalEntryId], references: [id])
@@ -338,6 +361,10 @@ model Order {
   @@index([status, deliveryDate])
   @@index([orderType])
   @@index([tenantId])
+  @@index([tenantId, confirmedAt])
+  @@index([tenantId, dispatchedAt])
+  @@index([tenantId, status, deliveryDate])
+  @@index([tenantId, deliveryDate])
   @@map("orders")
 }
 
@@ -360,16 +387,19 @@ model OrderItem {
 }
 
 model OrderHistory {
-  id        Int         @id @default(autoincrement())
-  orderId   Int         @map("order_id")
-  status    OrderStatus
-  notes     String?
-  metadata  Json?
-  createdAt DateTime    @default(now()) @map("created_at")
-  changedBy Int?        @map("changed_by")
-  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  tenantId  String      @map("tenant_id")
-  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id         Int          @id @default(autoincrement())
+  orderId    Int          @map("order_id")
+  status     OrderStatus
+  notes      String?
+  metadata   Json?
+  createdAt  DateTime     @default(now()) @map("created_at")
+  changedBy  Int?         @map("changed_by")
+  fromStatus OrderStatus? @map("from_status")
+  actorKind  ActorKind?   @map("actor_kind")
+  forced     Boolean      @default(false)
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  tenantId   String       @map("tenant_id")
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([tenantId])
   @@index([orderId])
@@ -677,7 +707,6 @@ model SystemConfig {
   businessPhone         String?  @map("business_phone")
   businessAddress       String?  @map("business_address")
   taxId                 String?  @map("tax_id")
-  currency              String   @default("USD")
   operatingHours        Json?    @map("operating_hours")
   smsProvider           Json?    @map("sms_provider")
   emailProvider         Json?    @map("email_provider")
@@ -840,19 +869,23 @@ model PendingCheckout {
 }
 
 model Call {
-  id         Int         @id @default(autoincrement())
-  orderId    Int?        @map("order_id")
-  customerId Int         @map("customer_id")
-  salesRepId Int         @map("sales_rep_id")
-  outcome    CallOutcome
-  duration   Int?
-  notes      String?
-  createdAt  DateTime    @default(now()) @map("created_at")
-  customer   Customer    @relation(fields: [customerId], references: [id])
-  order      Order?      @relation(fields: [orderId], references: [id])
-  salesRep   User        @relation("CallSalesRep", fields: [salesRepId], references: [id])
-  tenantId   String      @map("tenant_id")
-  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id            Int            @id @default(autoincrement())
+  orderId       Int?           @map("order_id")
+  customerId    Int            @map("customer_id")
+  salesRepId    Int            @map("sales_rep_id")
+  outcome       CallOutcome
+  duration      Int?
+  notes         String?
+  createdAt     DateTime       @default(now()) @map("created_at")
+  startedAt     DateTime?      @map("started_at")
+  source        CallSource     @default(manual)
+  declineReason DeclineReason? @map("decline_reason")
+  callbackAt    DateTime?      @map("callback_at")
+  customer      Customer       @relation(fields: [customerId], references: [id])
+  order         Order?         @relation(fields: [orderId], references: [id])
+  salesRep      User           @relation("CallSalesRep", fields: [salesRepId], references: [id])
+  tenantId      String         @map("tenant_id")
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([tenantId])
   @@index([salesRepId])
@@ -1131,6 +1164,75 @@ enum CallOutcome {
   no_answer
   cancelled
   other
+  // M1: values only. The rename of the old values and wrong_number land in M7.
+  not_reachable
+  declined
+}
+
+enum DeclineReason {
+  price_too_high
+  prank_or_mistake
+  changed_mind
+  bought_elsewhere
+  wrong_number
+  other
+}
+
+enum FailureReason {
+  not_reachable
+  refused
+  wrong_address
+  rescheduled
+  other
+}
+
+// Who made a status move. Values from PRD F-302 (system actor includes workflows) and file 13 (ai).
+enum ActorKind {
+  user
+  system
+  integration
+  ai
+}
+
+enum CallSource {
+  manual
+  auto_confirm
+  tap_to_call
+}
+
+enum TargetScope {
+  north_star
+  quarter
+  month
+  role
+  person
+  daily
+}
+
+enum FindingType {
+  ledger_gap
+  stock_gap
+  short_pay
+  cash_gap
+  unpaid_term
+  repeat_refuser
+}
+
+enum FindingStatus {
+  open
+  explained
+  closed
+}
+
+enum FeeOutcome {
+  delivered
+  failed
+  returned
+}
+
+enum FxSource {
+  auto
+  manual
 }
 
 enum AccountType {
@@ -1169,6 +1271,7 @@ enum JournalSourceType {
   manual
   reversal
   order_return
+  order_failed_delivery
   agent_collection
   inventory_purchase
   period_close
@@ -1407,4 +1510,87 @@ model M0TenantBackfillOrphan {
   createdAt        DateTime @default(now()) @map("created_at")
 
   @@map("m0_tenant_backfill_orphans")
+}
+
+/// Minimal shape from M1; extended in M5/M6. One table for the North Star, quarters, months, roles, people and daily targets (F-1100).
+model Target {
+  id          Int         @id @default(autoincrement())
+  scope       TargetScope
+  metric      String
+  unit        String
+  periodStart DateTime    @map("period_start") @db.Date
+  periodEnd   DateTime    @map("period_end") @db.Date
+  value       Decimal     @db.Decimal(19, 4)
+  parentId    Int?        @map("parent_id")
+  roleId      Int?        @map("role_id")
+  userId      Int?        @map("user_id")
+  closedAt    DateTime?   @map("closed_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+  parent      Target?     @relation("TargetHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Target[]    @relation("TargetHierarchy")
+  user        User?       @relation("TargetUser", fields: [userId], references: [id], onDelete: SetNull)
+  tenantId    String      @map("tenant_id")
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId])
+  @@index([tenantId, scope, periodStart])
+  @@map("targets")
+}
+
+/// Minimal shape from M1; extended in M5/M6. Money or stock gaps found by the nightly jobs (F-905).
+/// subjectId is text because subjects are not all integer rows (a ledger gap is a day, a cash gap a partner).
+model Finding {
+  id          Int           @id @default(autoincrement())
+  type        FindingType
+  status      FindingStatus @default(open)
+  subjectType String        @map("subject_type")
+  subjectId   String        @map("subject_id")
+  amount      Decimal?      @db.Decimal(19, 4)
+  note        String?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  tenantId    String        @map("tenant_id")
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId])
+  @@index([tenantId, type, status])
+  @@index([tenantId, type, subjectType, subjectId])
+  @@map("findings")
+}
+
+/// Minimal shape from M1; extended in M5/M6. Fee a delivery partner keeps per outcome (F-935, F-936). No rule means fee 0.
+model FeeRule {
+  id            Int        @id @default(autoincrement())
+  partnerUserId Int        @map("partner_user_id")
+  outcome       FeeOutcome
+  amount        Decimal    @db.Decimal(19, 4)
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  partner       User       @relation("FeeRulePartner", fields: [partnerUserId], references: [id], onDelete: Cascade)
+  tenantId      String     @map("tenant_id")
+  tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenantId, partnerUserId, outcome])
+  @@index([tenantId])
+  @@map("fee_rules")
+}
+
+/// Minimal shape from M1; extended in M5/M6. Per-day FX rate history (F-1232).
+/// source is in the unique key so a manual override and the automatic rate of the same day both stay stored (manual wins on lookup; "use today's rate" ends the override).
+model FxRate {
+  id           Int      @id @default(autoincrement())
+  fromCurrency String   @map("from_currency") @db.VarChar(3)
+  toCurrency   String   @map("to_currency") @db.VarChar(3)
+  rate         Decimal  @db.Decimal(19, 8)
+  date         DateTime @db.Date
+  source       FxSource
+  createdById  Int?     @map("created_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  createdBy    User?    @relation("FxRateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  tenantId     String   @map("tenant_id")
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenantId, fromCurrency, toCurrency, date, source])
+  @@index([tenantId])
+  @@map("fx_rates")
 }

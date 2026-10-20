@@ -6,6 +6,7 @@ import { Requester } from '../utils/authUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { BALANCE_TOLERANCE } from '../config/glAccounts';
+import { getStoreTimeZone, parseInclusiveBound } from './kpi/dates';
 
 
 interface AccountFilters {
@@ -389,12 +390,9 @@ export class GLService {
     let periodActivityMap: Map<number, { debits: Money.Money; credits: Money.Money }> | null = null;
     if (startDate || endDate) {
       const dateFilter: Prisma.DateTimeFilter = {};
-      if (startDate) dateFilter.gte = new Date(startDate);
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        dateFilter.lte = end;
-      }
+      const zone = getStoreTimeZone(getTenantId());
+      if (startDate) dateFilter.gte = parseInclusiveBound(startDate, 'from', zone);
+      if (endDate) dateFilter.lte = parseInclusiveBound(endDate, 'to', zone, { snapToDay: true });
       const accountIds = accounts.map(a => a.id);
       const txns = await prisma.accountTransaction.groupBy({
         by: ['accountId'],
@@ -871,9 +869,11 @@ export class GLService {
     if (sourceId) where.sourceId = sourceId;
     if (isVoided !== undefined) where.isVoided = isVoided;
     if (startDate || endDate) {
+      const zone = getStoreTimeZone(getTenantId());
+      const asString = (v: Date | string) => (v instanceof Date ? v.toISOString() : v);
       where.entryDate = {};
-      if (startDate) where.entryDate.gte = new Date(startDate);
-      if (endDate) where.entryDate.lte = new Date(endDate);
+      if (startDate) where.entryDate.gte = parseInclusiveBound(asString(startDate), 'from', zone);
+      if (endDate) where.entryDate.lte = parseInclusiveBound(asString(endDate), 'to', zone);
     }
 
 
@@ -1164,8 +1164,9 @@ export class GLService {
     // Filter by journal entry date if provided
     if (startDate || endDate) {
       const dateFilter: Prisma.DateTimeFilter = {};
-      if (startDate) dateFilter.gte = new Date(startDate);
-      if (endDate) dateFilter.lte = new Date(endDate);
+      const zone = getStoreTimeZone(getTenantId());
+      if (startDate) dateFilter.gte = parseInclusiveBound(startDate instanceof Date ? startDate.toISOString() : startDate, 'from', zone);
+      if (endDate) dateFilter.lte = parseInclusiveBound(endDate instanceof Date ? endDate.toISOString() : endDate, 'to', zone);
       where.journalEntry = { entryDate: dateFilter };
     }
 
@@ -1304,8 +1305,9 @@ export class GLService {
 
     if (startDate || endDate) {
       const dateFilter: Prisma.DateTimeFilter = {};
-      if (startDate) dateFilter.gte = new Date(startDate);
-      if (endDate) dateFilter.lte = new Date(endDate);
+      const zone = getStoreTimeZone(getTenantId());
+      if (startDate) dateFilter.gte = parseInclusiveBound(startDate instanceof Date ? startDate.toISOString() : startDate, 'from', zone);
+      if (endDate) dateFilter.lte = parseInclusiveBound(endDate instanceof Date ? endDate.toISOString() : endDate, 'to', zone);
       where.journalEntry = { entryDate: dateFilter };
     }
 

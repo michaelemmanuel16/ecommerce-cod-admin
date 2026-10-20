@@ -18,22 +18,12 @@ import { ordersService } from '../services/orders.service';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '../utils/format';
 import { getSocket } from '../services/socket';
+import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 
 type ViewMode = 'kanban' | 'list';
 type SortField = 'id' | 'customerName' | 'totalAmount' | 'createdAt' | 'status';
 type SortDirection = 'asc' | 'desc';
 
-const statusLabels: Record<OrderStatus, string> = {
-  pending_confirmation: 'Pending Confirmation',
-  confirmed: 'Confirmed',
-  preparing: 'Preparing',
-  ready_for_pickup: 'Ready for Pickup',
-  out_for_delivery: 'Out for Delivery',
-  delivered: 'Delivered',
-  cancelled: 'Cancelled',
-  returned: 'Returned',
-  failed_delivery: 'Failed Delivery',
-};
 
 const statusColors: Record<OrderStatus, string> = {
   pending_confirmation: 'bg-yellow-100 text-yellow-800',
@@ -45,6 +35,9 @@ const statusColors: Record<OrderStatus, string> = {
   cancelled: 'bg-red-100 text-red-800',
   returned: 'bg-orange-100 text-orange-800',
   failed_delivery: 'bg-red-100 text-red-800',
+  payment_pending: 'bg-yellow-100 text-yellow-800',
+  digital_delivered: 'bg-green-100 text-green-800',
+  payment_failed: 'bg-red-100 text-red-800',
 };
 
 const statusOptions: { value: OrderStatus; label: string }[] = [
@@ -249,8 +242,10 @@ export const Orders: React.FC = () => {
     } catch (error: any) {
       console.error('Error updating order status:', error);
 
-      // Handle different error types
-      if (error.code === 'ECONNABORTED') {
+      // Handle different error types. A refused status move (409 / 403 / 400 with a code) carries its own message.
+      if (error.response?.data?.code && [400, 403, 409].includes(error.response.status) && error.response.data.error) {
+        toast.error(error.response.data.error);
+      } else if (error.code === 'ECONNABORTED') {
         toast.error('Request timeout. The server took too long to respond. Please try again.');
       } else if (error.response?.status === 401) {
         toast.error('Authentication failed. Please log in again.');
@@ -341,17 +336,24 @@ export const Orders: React.FC = () => {
   const handleBulkStatusChange = async (newStatus: OrderStatus) => {
     if (selectedOrderIds.size === 0) return;
 
-    try {
-      const updatePromises = Array.from(selectedOrderIds).map(id =>
-        updateOrderStatus(id, newStatus)
-      );
-      await Promise.all(updatePromises);
-      toast.success(`Successfully updated ${selectedOrderIds.size} order(s)`);
+    // Every order gets its own request; one refused move (state machine) must not stop the others.
+    const ids = Array.from(selectedOrderIds);
+    const results = await Promise.allSettled(ids.map(id => updateOrderStatus(id, newStatus)));
+    const failures = results.flatMap((result, i) =>
+      result.status === 'rejected' ? [{ id: ids[i], reason: result.reason }] : []
+    );
+
+    if (failures.length === 0) {
+      toast.success(`Successfully updated ${ids.length} order(s)`);
       setSelectedOrderIds(new Set());
-    } catch (error: any) {
-      console.error('Failed to bulk update orders:', error);
-      toast.error('Failed to update some orders');
+      return;
     }
+
+    console.error('Failed to bulk update orders:', failures);
+    const first = failures[0].reason?.response?.data?.error || failures[0].reason?.message || 'Unknown error';
+    toast.error(`${failures.length} of ${ids.length} order(s) not updated. #${failures[0].id}: ${first}`);
+    // keep only the failed orders selected so they can be reviewed
+    setSelectedOrderIds(new Set(failures.map(f => f.id)));
   };
 
   const handleMouseDown = (columnKey: string, e: React.MouseEvent) => {

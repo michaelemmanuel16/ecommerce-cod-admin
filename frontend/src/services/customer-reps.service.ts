@@ -29,15 +29,24 @@ export interface RepPerformance {
   repName: string;
   totalOrders: number;
   deliveredOrders: number;
-  successRate: number;
+  /** Percent, null when there is nothing to divide. Confirmed / assigned. */
+  confirmationRate: number | null;
+  confirmed: number;
+  /** Percent, null when the rep has no closed orders. Delivered / closed among the orders the rep confirmed. */
+  deliveredFromConfirmedRate: number | null;
+  closedOrders: number;
   totalEarnings: number;
   monthlyEarnings: number;
   country: string | null;
   pendingOrders: number;
+  mtdConfirmationRate: number | null;
+  mtdDeliveredFromConfirmedRate: number | null;
   mtdDelivered: number;
-  mtdTotalAssigned: number;
-  mtdSuccessRate: number;
+  mtdClosed: number;
 }
+
+/** The numbers of a RepPerformance row, without the rep's identity. */
+export type RepPerformanceFigures = Omit<RepPerformance, 'repId' | 'repName' | 'country'>;
 
 export interface UpdateRepData {
   firstName?: string;
@@ -139,15 +148,19 @@ export const customerRepsService = {
         repId: p.repId,
         repName: p.repName,
         totalOrders: p.metrics?.totalAssigned || 0,
-        deliveredOrders: p.metrics?.deliveredCount || 0,
-        successRate: p.metrics?.successRate || 0,
+        deliveredOrders: p.metrics?.deliveredFromConfirmedRate?.detail?.delivered || 0,
+        confirmationRate: p.metrics?.confirmationRate?.value ?? null,
+        confirmed: p.metrics?.confirmationRate?.detail?.confirmed || 0,
+        deliveredFromConfirmedRate: p.metrics?.deliveredFromConfirmedRate?.value ?? null,
+        closedOrders: p.metrics?.deliveredFromConfirmedRate?.detail?.closed || 0,
         totalEarnings: p.metrics?.totalEarnings || 0,
         monthlyEarnings: p.metrics?.monthlyEarnings || 0,
         country: p.country || null,
         pendingOrders,
-        mtdDelivered: p.metrics?.mtdDelivered || 0,
-        mtdTotalAssigned: p.metrics?.mtdTotalAssigned || 0,
-        mtdSuccessRate: p.metrics?.mtdSuccessRate || 0,
+        mtdConfirmationRate: p.metrics?.mtdConfirmationRate?.value ?? null,
+        mtdDeliveredFromConfirmedRate: p.metrics?.mtdDeliveredFromConfirmedRate?.value ?? null,
+        mtdDelivered: p.metrics?.mtdDeliveredFromConfirmedRate?.detail?.delivered || 0,
+        mtdClosed: p.metrics?.mtdDeliveredFromConfirmedRate?.detail?.closed || 0,
       };
     });
   },

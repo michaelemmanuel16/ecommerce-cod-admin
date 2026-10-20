@@ -18,7 +18,7 @@ import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
 import { prismaBase } from '../../utils/prisma';
 import { updateOrderStatusTool } from '../../mcp/tools/ordersWrite';
-import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
+import { createTwoTenants, ensureSystemUser, TwoTenants } from './helpers/twoTenants';
 import { runInTenant } from '../../utils/tenantContext';
 
 let pair: TwoTenants;
@@ -32,6 +32,7 @@ function payload(res: any) {
 
 beforeAll(async () => {
   pair = await createTwoTenants('mcpwrite');
+  await ensureSystemUser(pair.a.id); // the MCP actor has no user: GL entries are created by the system user
   orderAId = pair.a.ids.order;
   orderBId = pair.b.ids.order;
 
@@ -173,9 +174,8 @@ describe('orders_update_status MCP tool', () => {
     // Reset off 'delivered' first: the tool's idempotency guard would
     // otherwise no-op a second 'delivered' call before deliveryDate is ever
     // applied, since orderAId is already 'delivered' from the case above.
-    await runInTenant(pair.a.id, () =>
-      updateOrderStatusTool({ orderId: orderAId, status: 'confirmed' }),
-    );
+    // (The state machine allows only delivered -> returned, so the reset is a direct write.)
+    await prismaBase.order.update({ where: { id: orderAId }, data: { status: 'confirmed' } });
 
     const res = await runInTenant(pair.a.id, () =>
       updateOrderStatusTool({ orderId: orderAId, status: 'delivered', deliveryDate: '2028-02-29' }),

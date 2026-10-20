@@ -64,10 +64,10 @@ export const adminDashboardConfig: DashboardConfig = {
     {
       id: 'delivery-rate',
       type: 'stat',
-      title: 'Delivery Rate',
+      title: 'Delivery success rate',
       icon: 'TrendingUp',
       iconColor: 'text-indigo-600',
-      dataSource: 'metrics.deliveryRate',
+      dataSource: 'metrics.deliverySuccessRate',
       format: 'percentage',
       trend: {
         enabled: true,

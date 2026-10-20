@@ -16,6 +16,7 @@ jest.mock('../../services/workflowService', () => ({
   __esModule: true,
   default: { triggerOrderCreatedWorkflows: jest.fn(() => Promise.resolve()) },
 }));
+jest.mock('../../services/orderStateMachine', () => ({ transitionOrder: jest.fn(() => Promise.resolve({ changed: true })) }));
 jest.mock('../../sockets', () => ({ emitOrderCreated: jest.fn() }));
 jest.mock('../../utils/socketInstance', () => ({ getSocketInstance: jest.fn() }));
 
@@ -23,7 +24,9 @@ import { prismaMock } from '../mocks/prisma.mock';
 import * as paystackServiceModule from '../../services/paystackService';
 import workflowService from '../../services/workflowService';
 import { metaCapiService } from '../../services/metaCapiService';
+import { digitalDeliveryService } from '../../services/digitalDeliveryService';
 import { settlePaystackPayment } from '../../services/paystackSettlementService';
+import { transitionOrder } from '../../services/orderStateMachine';
 import { tenantStorage, getTenantId } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
 
@@ -234,5 +237,33 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     expect(result.status).toBe('not_found');
     expect(mockedPaystack.verifyTransaction).not.toHaveBeenCalled();
     expect(prismaMock.order.create).not.toHaveBeenCalled();
+  });
+
+  // M1-T07 / F-901
+  it('a digital order set to digital_delivered gets deliveryDate = the settle time', async () => {
+    const settleTime = new Date('2026-10-17T09:30:00.000Z');
+    jest.useFakeTimers({ now: settleTime });
+    try {
+      const digitalPending = { ...pending, orderType: 'digital', orderItems: [] };
+      (prismaMock.order.findFirst as any).mockResolvedValue(null);
+      (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(digitalPending);
+      (mockedPaystack.verifyTransaction as any).mockResolvedValue({
+        data: { status: 'success', reference: 'ref_ok', amount: 25000, currency: 'GHS', fees: 375 },
+      });
+      (prismaMock.pendingCheckout.delete as any).mockResolvedValue(digitalPending);
+      const createdOrder = { id: 57, tenantId: 'tenant-1', orderType: 'digital', status: 'confirmed', paymentStatus: 'paid', customer: { id: 7 } };
+      (prismaMock.order.create as any).mockResolvedValue(createdOrder);
+      (prismaMock.order.findUnique as any).mockResolvedValue({ ...createdOrder });
+      (digitalDeliveryService.generateDownloadToken as any).mockResolvedValue('tok');
+      (digitalDeliveryService.sendDownloadLinks as any).mockResolvedValue(undefined);
+
+      await settlePaystackPayment('ref_ok');
+
+      // M1-T11: the move goes through the state machine as the system actor, dated the settle time
+      expect(transitionOrder).toHaveBeenCalledWith(57, 'digital_delivered', { kind: 'system' },
+        expect.objectContaining({ deliveryDate: settleTime }));
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

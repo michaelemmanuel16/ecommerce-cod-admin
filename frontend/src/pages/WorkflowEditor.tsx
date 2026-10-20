@@ -11,6 +11,8 @@ import { AssignUserAction, UserAssignment } from '../components/workflows/action
 import { WorkflowTemplateGallery } from '../components/workflows/WorkflowTemplateGallery';
 import { ExecutionHistory } from '../components/workflows/ExecutionHistory';
 import { WHATSAPP_TEMPLATE_OPTIONS } from '../constants/workflow';
+import { OrderStatus } from '../types';
+import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 
 interface WorkflowAction {
   id: string;
@@ -18,6 +20,8 @@ interface WorkflowAction {
   config: any;
   conditions?: ConditionGroup;
 }
+
+const STATUS_OPTIONS: OrderStatus[] = ['pending_confirmation', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'cancelled', 'returned', 'failed_delivery'];
 
 export const WorkflowEditor: React.FC = () => {
   const navigate = useNavigate();
@@ -470,15 +474,9 @@ export const WorkflowEditor: React.FC = () => {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">Select status...</option>
-                        <option value="pending_confirmation">Pending Confirmation</option>
-                        <option value="confirmed">Confirmed</option>
-                        <option value="preparing">Preparing</option>
-                        <option value="ready_for_pickup">Ready for Pickup</option>
-                        <option value="out_for_delivery">Out for Delivery</option>
-                        <option value="delivered">Delivered</option>
-                        <option value="cancelled">Cancelled</option>
-                        <option value="returned">Returned</option>
-                        <option value="failed_delivery">Failed Delivery</option>
+                        {STATUS_OPTIONS.map((status) => (
+                          <option key={status} value={status}>{ORDER_STATUS_LABELS[status]}</option>
+                        ))}
                       </select>
                     </div>
                   </div>

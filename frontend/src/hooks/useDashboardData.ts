@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
+import { differenceInCalendarDays, parseISO } from 'date-fns';
 import { DashboardConfig, DashboardData, DateRangePreset } from '../config/types/dashboard';
 import { useAnalyticsStore } from '../stores/analyticsStore';
 import { useAuthStore } from '../stores/authStore';
@@ -142,15 +143,6 @@ export function useDashboardData(
           ).toFixed(1);
         }
 
-        // Active customer percentage
-        if (dashboardData.customerInsights) {
-          const total = dashboardData.customerInsights.totalCustomers || 0;
-          const active = dashboardData.customerInsights.activeCustomers || 0;
-          if (total > 0) {
-            calculated.activeCustomerPercentage = ((active / total) * 100).toFixed(1);
-          }
-        }
-
         // Earnings (for sales reps)
         if (dashboardData.repPerformance && (user as any)?.commissionAmount) {
           const unpaidCount = (dashboardData.repPerformance as any).unpaidDeliveredOrders || 0;
@@ -178,7 +170,7 @@ export function useDashboardData(
 
         // Success rate (for delivery agents)
         if (dashboardData.myPerformance) {
-          calculated.mySuccessRate = dashboardData.myPerformance.successRate?.toFixed(1);
+          calculated.mySuccessRate = dashboardData.myPerformance.deliverySuccessRate?.toFixed(1);
         }
 
         dashboardData.calculated = calculated;
@@ -334,8 +326,7 @@ async function executeFetcher(
             deliveredOrders: myPerf.completed || 0,
             pendingOrders: myPerf.pending || 0,
             totalRevenue: myPerf.revenue || 0,
-            avgResponseTime: myPerf.avgResponseTime || 0,
-            successRate: myPerf.successRate || 0,
+            confirmationRate: myPerf.confirmationRate ?? null,
             userId: myPerf.userId,
             userName: myPerf.userName,
             unpaidDeliveredOrders: myPerf.unpaidDeliveredOrders || 0,
@@ -347,8 +338,7 @@ async function executeFetcher(
             deliveredOrders: 0,
             pendingOrders: 0,
             totalRevenue: 0,
-            avgResponseTime: 0,
-            successRate: 0,
+            confirmationRate: null,
           };
         }
       } else {
@@ -376,13 +366,13 @@ async function executeFetcher(
             successfulDeliveries: myPerf.completed || 0,
             failedDeliveries: myPerf.failed || 0,
             totalAssigned: myPerf.totalAssigned || 0,
-            successRate: myPerf.successRate || 0,
+            deliverySuccessRate: myPerf.deliverySuccessRate ?? null,
           };
         } else {
           dashboardData.agentPerformance = {
             completedDeliveries: 0, activeDeliveries: 0,
             successfulDeliveries: 0, failedDeliveries: 0,
-            totalAssigned: 0, successRate: 0,
+            totalAssigned: 0, deliverySuccessRate: null,
           };
         }
       } else {
@@ -399,7 +389,6 @@ async function executeFetcher(
         // Provide fallback data so dashboard still renders
         dashboardData.customerInsights = {
           totalCustomers: 0,
-          activeCustomers: 0,
           topCustomers: [],
           customersByArea: [],
           avgOrderValue: 0
@@ -531,9 +520,7 @@ function parseDateRangeToDays(dateRange?: DateRangePreset): number {
  * Calculate number of days between two date strings
  */
 function calculateDaysBetween(startDate: string, endDate: string): number {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const diffTime = Math.abs(end.getTime() - start.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays || 1; // Return at least 1 day
+  // Inclusive of both calendar days (the range bounds are YYYY-MM-DD days)
+  const diffDays = Math.abs(differenceInCalendarDays(parseISO(endDate), parseISO(startDate))) + 1;
+  return diffDays;
 }

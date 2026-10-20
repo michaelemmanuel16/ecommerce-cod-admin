@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
+import { phoneSearchConditions } from '../../utils/phone';
 import { encodeCursor, decodeCursor, mcpJson, mcpError } from '../utils';
 
 const customersLookupSchema = z.object({
@@ -28,13 +29,22 @@ export function registerCustomerTools(
         }
 
         const where: any = { isActive: true };
-        if (parsed.phone) where.phoneNumber = { contains: parsed.phone };
-        if (parsed.name) {
-          where.OR = [
-            { firstName: { contains: parsed.name, mode: 'insensitive' } },
-            { lastName: { contains: parsed.name, mode: 'insensitive' } },
-          ];
+        // A phone also matches every stored format of the number (normalized or old); phone and name must both match.
+        const and: any[] = [];
+        if (parsed.phone) {
+          // No digit in the term gives no phone conditions; fall back to a plain contains so it still filters.
+          const phoneConditions = phoneSearchConditions(parsed.phone);
+          and.push({ OR: phoneConditions.length ? phoneConditions : [{ phoneNumber: { contains: parsed.phone } }] });
         }
+        if (parsed.name) {
+          and.push({
+            OR: [
+              { firstName: { contains: parsed.name, mode: 'insensitive' } },
+              { lastName: { contains: parsed.name, mode: 'insensitive' } },
+            ],
+          });
+        }
+        where.AND = and;
 
         const cursorOption = parsed.cursor
           ? { cursor: { id: decodeCursor(parsed.cursor) }, skip: 1 }

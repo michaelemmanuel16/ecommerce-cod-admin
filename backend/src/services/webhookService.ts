@@ -9,6 +9,7 @@ import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
+import { normalizePhoneForStorage } from '../utils/phone';
 import * as Money from '../utils/money';
 
 
@@ -579,11 +580,14 @@ export class WebhookService {
    * Find or create customer from webhook data
    */
   private async findOrCreateCustomer(mappedData: any, externalOrder: any) {
-    const customerPhone = mappedData.customerPhone || externalOrder.customer_phone || externalOrder.phone;
+    const rawPhone = mappedData.customerPhone || externalOrder.customer_phone || externalOrder.phone;
 
-    if (!customerPhone) {
+    if (!rawPhone) {
       throw new Error('Customer phone number is required');
     }
+    // Stored normalized; unparseable input stays as sent (a real order must not fail on it).
+    const customerPhone = normalizePhoneForStorage(String(rawPhone));
+    const rawAlternate = mappedData.alternativePhone || externalOrder.alternative_phone_number;
 
 
     let customer = await findAndReactivateCustomerByPhone(prisma, customerPhone, 'webhook intake');
@@ -594,7 +598,7 @@ export class WebhookService {
           firstName: mappedData.customerFirstName || externalOrder.customer_name || 'Unknown',
           lastName: mappedData.customerLastName || '',
           phoneNumber: customerPhone,
-          alternatePhone: mappedData.alternativePhone || externalOrder.alternative_phone_number || undefined,
+          alternatePhone: rawAlternate ? normalizePhoneForStorage(String(rawAlternate)) : undefined,
           email: mappedData.customerEmail || externalOrder.email || undefined,
           address: mappedData.deliveryAddress || externalOrder.address || '',
           state: mappedData.deliveryState || externalOrder.state || '',

@@ -11,7 +11,7 @@ let processCallback: (...args: any[]) => Promise<void>;
 jest.mock('bull', () => {
   return jest.fn().mockImplementation(() => ({
     process: jest.fn((name: string, cb: any) => {
-      processCallback = cb;
+      if (name === 'reconcile-delivered-orders') processCallback = cb;
     }),
     on: jest.fn(),
     add: jest.fn(),

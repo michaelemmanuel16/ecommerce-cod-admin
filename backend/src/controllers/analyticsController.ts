@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import analyticsService from '../services/analyticsService';
+import { readDateBound } from '../utils/kpiRequest';
 
 export const getDashboardMetrics = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -59,8 +60,8 @@ export const getConversionFunnel = async (req: AuthRequest, res: Response): Prom
 
     const funnel = await analyticsService.getConversionFunnel(
       {
-        startDate: startDate ? new Date(startDate as string) : undefined,
-        endDate: endDate ? new Date(endDate as string) : undefined
+        startDate: readDateBound(startDate, 'from'),
+        endDate: readDateBound(endDate, 'to')
       },
       req.user?.id,
       req.user?.role
@@ -80,21 +81,16 @@ export const getRepPerformance = async (req: AuthRequest, res: Response): Promis
   try {
     const { startDate, endDate } = req.query;
 
-    const performance = await analyticsService.getRepPerformance({
-      startDate: startDate as string,
-      endDate: endDate as string
-    });
+    const performance = await analyticsService.getRepPerformance(
+      {
+        startDate: startDate as string,
+        endDate: endDate as string
+      },
+      req.user?.id,
+      req.user?.role
+    );
 
-    // Filter data for sales reps - they can only see their own performance
-    if (req.user?.role === 'sales_rep') {
-      const myPerformance = performance.filter(
-        (rep: any) => rep.userId === req.user?.id || rep.id === req.user?.id
-      );
-      res.json({ performance: myPerformance });
-    } else {
-      // Admins/managers see all reps' performance
-      res.json({ performance });
-    }
+    res.json({ performance });
   } catch (error) {
     console.error('[analyticsController] getRepPerformance error:', error);
     res.status(500).json({
@@ -107,10 +103,14 @@ export const getRepPerformance = async (req: AuthRequest, res: Response): Promis
 export const getAgentPerformance = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { startDate, endDate } = req.query;
-    const performance = await analyticsService.getAgentPerformance({
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
-    });
+    const performance = await analyticsService.getAgentPerformance(
+      {
+        startDate: startDate as string,
+        endDate: endDate as string,
+      },
+      req.user?.id,
+      req.user?.role
+    );
     res.json({ performance });
   } catch (error) {
     console.error('[analyticsController] getAgentPerformance error:', error);
@@ -164,8 +164,8 @@ export const getProductPerformance = async (req: AuthRequest, res: Response): Pr
   try {
     const { startDate, endDate } = req.query;
     const performance = await analyticsService.getProductPerformance({
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
+      startDate: startDate as string,
+      endDate: endDate as string,
     });
     res.json({ performance });
   } catch (error) {
@@ -181,8 +181,8 @@ export const getAreaDistribution = async (req: AuthRequest, res: Response): Prom
   try {
     const { startDate, endDate } = req.query;
     const distribution = await analyticsService.getAreaDistribution({
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
+      startDate: startDate as string,
+      endDate: endDate as string,
     });
     res.json({ distribution });
   } catch (error) {

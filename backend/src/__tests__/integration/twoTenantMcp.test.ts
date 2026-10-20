@@ -130,3 +130,31 @@ describe('MCP tools never return another tenant data', () => {
     expect(textOf(own)).toContain(b.marker);
   });
 });
+
+describe('MCP phone lookups find a number in any stored format (M1-T04)', () => {
+  // Stored +233 number, queried in the local 0... form. Digits are unique per run.
+  const tail = String(Date.now()).slice(-6);
+  const stored = `+233205${tail}`.slice(0, 13);
+  const local = `0${stored.slice(4)}`;
+
+  it('customers_lookup: stored +233..., query 0... finds the customer', async () => {
+    const customer = await prismaBase.customer.create({
+      data: { firstName: 'McpPhone', lastName: 'Lookup', phoneNumber: stored, address: 'x', state: 'x', area: 'x', tenantId: pair.a.id },
+    });
+    const client = await connect(pair.a.mcpKey);
+    const res: any = await client.callTool({ name: 'customers_lookup', arguments: { phone: local } });
+    expect(res.isError).toBeFalsy();
+    expect(JSON.parse(textOf(res)).customers.map((c: any) => c.id)).toContain(customer.id);
+  });
+
+  it('orders_search: stored +233..., search 0... finds the order of that customer', async () => {
+    const customer = await prismaBase.customer.findFirstOrThrow({ where: { tenantId: pair.a.id, phoneNumber: stored } });
+    const order = await prismaBase.order.create({
+      data: { customerId: customer.id, subtotal: 10, totalAmount: 10, tenantId: pair.a.id } as any,
+    });
+    const client = await connect(pair.a.mcpKey);
+    const res: any = await client.callTool({ name: 'orders_search', arguments: { search: local } });
+    expect(res.isError).toBeFalsy();
+    expect(JSON.parse(textOf(res)).orders.map((o: any) => o.id)).toContain(order.id);
+  });
+});

@@ -33,6 +33,9 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
   cancelled: '#EF4444', // red-500
   returned: '#F97316', // orange-500
   failed_delivery: '#DC2626', // red-600
+  payment_pending: '#EAB308', // yellow-500
+  digital_delivered: '#22C55E', // green-500
+  payment_failed: '#DC2626', // red-600
 };
 
 export const DonutChartWidget: React.FC<DonutChartWidgetProps> = ({

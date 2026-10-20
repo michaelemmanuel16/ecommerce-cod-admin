@@ -4,6 +4,8 @@ import { Card } from '../../ui/Card';
 import { Button } from '../../ui/Button';
 import { TriggerSelector } from '../TriggerSelector';
 import { WorkflowFormData } from '../../../pages/WorkflowWizard';
+import { OrderStatus } from '../../../types';
+import { ORDER_STATUS_LABELS } from '../../../utils/orderStatus';
 
 interface TriggerStepProps {
   formData: WorkflowFormData;
@@ -57,6 +59,8 @@ const triggerDescriptions: Record<string, string> = {
   manual: 'This workflow runs only when manually triggered by an admin or via API call.',
   webhook: 'This workflow triggers when an external system sends a webhook notification to your API.',
 };
+
+const TRIGGER_STATUS_OPTIONS: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'cancelled'];
 
 export const TriggerStep: React.FC<TriggerStepProps> = ({
   formData,
@@ -197,12 +201,9 @@ export const TriggerStep: React.FC<TriggerStepProps> = ({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Any status change</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="preparing">Preparing</option>
-                <option value="ready_for_pickup">Ready for Pickup</option>
-                <option value="out_for_delivery">Out for Delivery</option>
-                <option value="delivered">Delivered</option>
-                <option value="cancelled">Cancelled</option>
+                {TRIGGER_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>{ORDER_STATUS_LABELS[status]}</option>
+                ))}
               </select>
               <p className="text-xs text-gray-500 mt-2">
                 Leave empty to trigger on any status change

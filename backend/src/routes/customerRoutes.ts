@@ -15,7 +15,5 @@ router.post('/', createCustomerValidation, validate, requireResourcePermission('
 router.get('/:id', requireResourcePermission('customers', 'view'), customerController.getCustomer);
 router.put('/:id', requireResourcePermission('customers', 'update'), customerController.updateCustomer);
 router.delete('/:id', requireResourcePermission('customers', 'delete'), customerController.deleteCustomer);
-router.patch('/:id/tags', requireResourcePermission('customers', 'update'), customerController.updateCustomerTags);
-router.get('/:id/analytics', requireResourcePermission('customers', 'view'), customerController.getCustomerAnalytics);
 
 export default router;

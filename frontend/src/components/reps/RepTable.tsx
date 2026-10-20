@@ -4,8 +4,9 @@ import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { cn } from '../../utils/cn';
 import { formatCurrency } from '../../utils/format';
+import type { RepPerformanceFigures } from '../../services/customer-reps.service';
 
-export interface RepTableData {
+export interface RepTableData extends RepPerformanceFigures {
   id: string;
   name: string;
   firstName: string;
@@ -14,15 +15,6 @@ export interface RepTableData {
   phoneNumber: string;
   country: string;
   commissionAmount: number;
-  totalEarnings: number;
-  monthlyEarnings: number;
-  successRate: number;
-  totalOrders: number;
-  deliveredOrders: number;
-  pendingOrders: number;
-  mtdDelivered: number;
-  mtdTotalAssigned: number;
-  mtdSuccessRate: number;
   isActive: boolean;
   createdAt: string;
 }
@@ -34,7 +26,7 @@ interface RepTableProps {
   isLoading?: boolean;
 }
 
-type SortField = 'name' | 'successRate' | 'totalEarnings' | 'createdAt';
+type SortField = 'name' | 'deliveredFromConfirmedRate' | 'totalEarnings' | 'createdAt';
 type SortDirection = 'asc' | 'desc';
 
 export const RepTable: React.FC<RepTableProps> = ({
@@ -66,19 +58,22 @@ export const RepTable: React.FC<RepTableProps> = ({
     );
   };
 
+  // A rep with no closed orders has no rate: sort below every real rate.
+  const sortKey = (rep: RepTableData) => {
+    if (sortField === 'name') return rep.name.toLowerCase();
+    if (sortField === 'deliveredFromConfirmedRate') return rep.deliveredFromConfirmedRate ?? -1;
+    return rep[sortField];
+  };
+
   const sortedReps = [...reps].sort((a, b) => {
-    let aValue: any = a[sortField];
-    let bValue: any = b[sortField];
-
-    if (sortField === 'name') {
-      aValue = a.name.toLowerCase();
-      bValue = b.name.toLowerCase();
-    }
-
+    const aValue = sortKey(a);
+    const bValue = sortKey(b);
     if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
     if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
     return 0;
   });
+
+  const formatRate = (rate: number | null) => (rate === null ? '—' : `${rate.toFixed(1)}%`);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -138,11 +133,11 @@ export const RepTable: React.FC<RepTableProps> = ({
               </th>
               <th
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                onClick={() => handleSort('successRate')}
+                onClick={() => handleSort('deliveredFromConfirmedRate')}
               >
                 <div className="flex items-center space-x-1">
                   <span>Performance</span>
-                  {getSortIcon('successRate')}
+                  {getSortIcon('deliveredFromConfirmedRate')}
                 </div>
               </th>
               <th
@@ -190,13 +185,16 @@ export const RepTable: React.FC<RepTableProps> = ({
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm font-semibold text-gray-900">
-                    {rep.mtdSuccessRate.toFixed(1)}%
+                    {formatRate(rep.mtdDeliveredFromConfirmedRate)} delivered from confirmed
                   </div>
                   <div className="text-xs text-gray-500">
-                    {rep.mtdDelivered} of {rep.mtdTotalAssigned} MTD
+                    {rep.mtdDelivered} of {rep.mtdClosed} closed MTD
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {formatRate(rep.mtdConfirmationRate)} confirmation MTD
                   </div>
                   <div className="text-xs text-gray-400">
-                    {rep.deliveredOrders} of {rep.totalOrders} all-time
+                    All-time: {formatRate(rep.deliveredFromConfirmedRate)} delivered from confirmed ({rep.deliveredOrders} of {rep.closedOrders}), {formatRate(rep.confirmationRate)} confirmation ({rep.confirmed} of {rep.totalOrders})
                   </div>
                   {rep.pendingOrders > 0 && (
                     <div className="text-xs text-amber-600 font-medium">{rep.pendingOrders} pending</div>

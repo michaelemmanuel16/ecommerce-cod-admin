@@ -40,8 +40,17 @@ jest.mock('../../sockets', () => ({
   emitOrdersDeleted: jest.fn(),
 }));
 
+jest.mock('../../services/orderStateMachine', () => ({
+  ...(jest.requireActual('../../services/orderStateMachine') as object),
+  transitionOrder: jest.fn(),
+}));
+
+jest.mock('../../services/kpi/revenue');
+import { revenueResult } from '../mocks/kpiResults';
+import { deliveredRevenue } from '../../services/kpi/revenue';
 import { prismaMock } from '../mocks/prisma.mock';
 import orderService from '../../services/orderService';
+import { transitionOrder, OrderTransitionError } from '../../services/orderStateMachine';
 import { AppError } from '../../middleware/errorHandler';
 import { OrderStatus } from '@prisma/client';
 import { useTestTenant } from '../mocks/tenant.mock';
@@ -327,18 +336,20 @@ describe('OrderService (extended branch coverage)', () => {
     };
 
     it('throws 404 when order not found for status update', async () => {
-      (prismaMock.order.findUnique as any).mockResolvedValue(null);
+      (transitionOrder as any).mockRejectedValue(new AppError('Order not found', 404));
       await expect(
         orderService.updateOrderStatus(999, { status: 'confirmed' as OrderStatus }, adminRequester as any)
       ).rejects.toThrow(AppError);
     });
 
-    it('throws 403 for sales_rep updating order not assigned to them', async () => {
-      const orderWithOtherRep = { ...baseOrder, customerRepId: 999 };
-      (prismaMock.order.findUnique as any).mockResolvedValue(orderWithOtherRep as any);
+    it('passes a sales_rep as a user actor and returns the machine refusal (403)', async () => {
+      const refusal = new OrderTransitionError('FORBIDDEN', 'You cannot make this status change.', { from: 'confirmed', to: 'preparing' });
+      (transitionOrder as any).mockRejectedValue(refusal);
       await expect(
-        orderService.updateOrderStatus(1, { status: 'dispatched' as OrderStatus }, salesRepRequester as any)
-      ).rejects.toThrow(AppError);
+        orderService.updateOrderStatus(1, { status: 'preparing' as OrderStatus }, salesRepRequester as any)
+      ).rejects.toBe(refusal);
+      expect(transitionOrder).toHaveBeenCalledWith(1, 'preparing', { kind: 'user', userId: 10, role: 'sales_rep' }, expect.anything());
+      expect(refusal.statusCode).toBe(403);
     });
   });
 
@@ -392,9 +403,8 @@ describe('OrderService (extended branch coverage)', () => {
     it('applies date filter when start and end dates are provided', async () => {
       (prismaMock.order.count as any).mockResolvedValue(50);
       (prismaMock.order.groupBy as any).mockResolvedValue([]);
-      (prismaMock.order.aggregate as any)
-        .mockResolvedValueOnce({ _sum: { totalAmount: 1000 } } as any)
-        .mockResolvedValueOnce({ _avg: { totalAmount: 20 } } as any);
+      (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mockResolvedValue(revenueResult('1000.00', 20));
+      (prismaMock.order.aggregate as any).mockResolvedValueOnce({ _avg: { totalAmount: 20 } } as any);
 
       const result = await orderService.getOrderStats({
         startDate: new Date('2024-01-01'),
@@ -406,9 +416,8 @@ describe('OrderService (extended branch coverage)', () => {
     it('handles null totalAmount and avgOrderValue', async () => {
       (prismaMock.order.count as any).mockResolvedValue(0);
       (prismaMock.order.groupBy as any).mockResolvedValue([]);
-      (prismaMock.order.aggregate as any)
-        .mockResolvedValueOnce({ _sum: { totalAmount: null } } as any)
-        .mockResolvedValueOnce({ _avg: { totalAmount: null } } as any);
+      (deliveredRevenue as jest.MockedFunction<typeof deliveredRevenue>).mockResolvedValue(revenueResult('0.00', 0));
+      (prismaMock.order.aggregate as any).mockResolvedValueOnce({ _avg: { totalAmount: null } } as any);
 
       const result = await orderService.getOrderStats({});
       expect(Money.toApi(result.totalRevenue)).toBe('0.00');

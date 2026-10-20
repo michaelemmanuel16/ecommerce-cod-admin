@@ -361,6 +361,7 @@ export async function executeAction(action: any, input: any, conditions?: any): 
     }
 
     case 'update_order':
+      // Writes status from config.updates, outside the state machine. // removed in M2-T15
       const order = await prisma.order.update({
         where: { id: action.config.orderId },
         data: action.config.updates

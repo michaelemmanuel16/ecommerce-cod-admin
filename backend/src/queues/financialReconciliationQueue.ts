@@ -1,5 +1,6 @@
 import Bull from 'bull';
 import { FinancialSyncService } from '../services/financialSyncService';
+import { ORDER_GL_INCLUDE } from '../services/glAutomationService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { SYSTEM_USER_ID } from '../config/constants';
@@ -30,6 +31,40 @@ export const financialReconciliationQueue = process.env.NODE_ENV === 'test'
         }
     });
 
+// One idempotent sync for both the post-delivery job and the 15-minute reconcile: both end in
+// FinancialSyncService.syncOrderFinancialData, whose GL posting skips an order that already has an
+// active revenue entry, so the two can never double post.
+// Order.tenantId is nullable, so continue inside the order's own tenant (a NULL-tenant legacy row
+// runs unscoped, with a log line) — otherwise every financial row is tagged tenant_id = NULL.
+const syncOrderFinancials = (order: any, userId: number = SYSTEM_USER_ID) =>
+    runInTenantOf(
+        order.tenantId,
+        'financial-reconciliation',
+        () => FinancialSyncService.syncOrderFinancialData(prisma as any, order, userId)
+    );
+
+// Post-delivery sync: queued after the move commits (M1-T10). Bull retries (3 attempts, backoff).
+export const processOrderFinancialSync = async (job: { data: { orderId: number; tenantId?: string | null; userId?: number } }) => {
+    const { orderId, tenantId, userId } = job.data;
+    await runInTenantOf(tenantId, 'order-financial-sync', async () => {
+        const order = await prisma.order.findFirst({
+            where: { id: orderId, deletedAt: null },
+            include: ORDER_GL_INCLUDE,
+        });
+        if (!order) return;
+        await syncOrderFinancials(order, userId);
+    });
+};
+
+/** Queue the post-delivery financial sync. A queue failure is logged; the reconcile job is the safety net. */
+export const enqueueOrderFinancialSync = async (orderId: number, tenantId: string | null | undefined, userId?: number) => {
+    try {
+        await financialReconciliationQueue.add('sync-order-financials', { orderId, tenantId, userId });
+    } catch (error: any) {
+        logger.error(`Could not queue financial sync for order ${orderId}; reconcile will catch it:`, error.message);
+    }
+};
+
 // Find delivered orders missing financial records and retry sync
 export const processReconcileDeliveredOrders = async () => {
     logger.info('Processing financial reconciliation job...');
@@ -46,12 +81,7 @@ async function reconcileTenantOrders() {
             codAmount: { gt: 0 },
             deletedAt: null,
         },
-        include: {
-            orderItems: { include: { product: true } },
-            customer: true,
-            deliveryAgent: true,
-            customerRep: true,
-        },
+        include: ORDER_GL_INCLUDE,
         take: 50, // Process in bounded batches to limit job duration
         orderBy: { updatedAt: 'asc' }, // Oldest first
     });
@@ -68,18 +98,7 @@ async function reconcileTenantOrders() {
 
     for (const order of unsynced) {
         try {
-            // Order.tenantId is nullable, so continue inside the order's own tenant
-            // (a NULL-tenant legacy row runs unscoped, with a log line) — otherwise
-            // every financial row this job writes is tagged tenant_id = NULL.
-            const result = await runInTenantOf(
-                order.tenantId,
-                'financial-reconciliation',
-                () => FinancialSyncService.syncOrderFinancialData(
-                    prisma as any,
-                    order as any,
-                    SYSTEM_USER_ID
-                )
-            );
+            const result = await syncOrderFinancials(order);
 
             if (result.transaction || result.journalEntry) {
                 synced++;
@@ -103,6 +122,7 @@ async function reconcileTenantOrders() {
     }
 }
 financialReconciliationQueue.process('reconcile-delivered-orders', processReconcileDeliveredOrders);
+financialReconciliationQueue.process('sync-order-financials', processOrderFinancialSync);
 
 // Setup the daily cron
 export const setupFinancialReconciliationCron = async () => {

@@ -36,14 +36,22 @@ export interface LoginCredentials {
 
 export type OrderStatus =
   | 'pending_confirmation'
+  | 'payment_pending'
   | 'confirmed'
   | 'preparing'
   | 'ready_for_pickup'
   | 'out_for_delivery'
   | 'delivered'
+  | 'digital_delivered'
   | 'cancelled'
   | 'returned'
-  | 'failed_delivery';
+  | 'failed_delivery'
+  | 'payment_failed';
+
+export type FailureReason = 'not_reachable' | 'refused' | 'wrong_address' | 'rescheduled' | 'other';
+
+export type DeclineReason =
+  | 'price_too_high' | 'prank_or_mistake' | 'changed_mind' | 'bought_elsewhere' | 'wrong_number' | 'other';
 
 export type OrderPriority = 'low' | 'medium' | 'high' | 'urgent';
 

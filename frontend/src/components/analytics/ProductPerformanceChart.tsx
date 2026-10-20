@@ -26,7 +26,6 @@ const CustomTooltip = ({ active, payload }: any) => {
       <p className="text-sm font-medium text-gray-900">{item.name}</p>
       <p className="text-sm text-gray-600">Revenue: {formatCurrency(item.revenue)}</p>
       <p className="text-sm text-gray-600">Units Sold: {item.unitsSold}</p>
-      <p className="text-sm text-gray-600">Orders: {item.orderCount}</p>
     </div>
   );
 };
@@ -40,7 +39,6 @@ export const ProductPerformanceChart: React.FC<ProductPerformanceChartProps> = (
     name: p.productName.length > 20 ? p.productName.substring(0, 20) + '...' : p.productName,
     revenue: p.revenue,
     unitsSold: p.unitsSold,
-    orderCount: p.orderCount,
   }));
 
   return (

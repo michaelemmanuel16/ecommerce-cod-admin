@@ -40,8 +40,7 @@ describe('sendWorkflowEmail (MAN-79)', () => {
 
     // Defaults shared by the happy-path tests; individual tests override.
     (prismaMock.order.findUnique as any).mockResolvedValue(ORDER);
-    (prismaMock.tenant.findUnique as any).mockResolvedValue({ name: 'Spur Shop' });
-    (prismaMock.systemConfig.findFirst as any).mockResolvedValue({ currency: 'GHS' });
+    (prismaMock.tenant.findUnique as any).mockResolvedValue({ name: 'Spur Shop', currency: 'GHS' });
     (prismaMock.messageLog.findFirst as any).mockResolvedValue(null);
     (prismaMock.messageLog.create as any).mockResolvedValue({ id: 100 });
     (prismaMock.messageLog.update as any).mockResolvedValue({});

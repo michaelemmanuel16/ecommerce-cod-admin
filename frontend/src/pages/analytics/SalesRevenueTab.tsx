@@ -51,7 +51,6 @@ export const SalesRevenueTab: React.FC<SalesRevenueTabProps> = ({ startDate, end
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Orders</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Delivered</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Revenue</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conversion</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -66,19 +65,6 @@ export const SalesRevenueTab: React.FC<SalesRevenueTabProps> = ({ startDate, end
                       <td className="px-4 py-3 text-sm text-gray-600">{trend.delivered}</td>
                       <td className="px-4 py-3 text-sm font-semibold text-gray-900">
                         {formatCurrency(trend.revenue)}
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            trend.conversionRate >= 70
-                              ? 'bg-green-100 text-green-800'
-                              : trend.conversionRate >= 50
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {trend.conversionRate.toFixed(1)}%
-                        </span>
                       </td>
                     </tr>
                   ))}

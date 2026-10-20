@@ -1,16 +1,18 @@
 import { Prisma, DeliveryProofType, OrderStatus } from '@prisma/client';
-import { resolveTenantId } from '../utils/tenantContext';
+import { transitionOrder, actorOf } from './orderStateMachine';
+import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import { getStoreTimeZone, parseInclusiveBound } from './kpi/dates';
 import { Decimal } from '@prisma/client/runtime/library';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Requester } from '../utils/authUtils';
 import logger from '../utils/logger';
-import { SYSTEM_USER_ID } from '../config/constants';
 import { GLAutomationService } from './glAutomationService';
 import agentReconciliationService from './agentReconciliationService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitGLEntryCreated } from '../sockets/index';
 import * as Money from '../utils/money';
+import { customerPhoneSearch } from '../utils/phone';
 
 
 interface CreateDeliveryData {
@@ -180,39 +182,51 @@ export class DeliveryService {
       throw new AppError('Delivery agent is not available', 400);
     }
 
-    const delivery = await prisma.delivery.create({
-      data: {
-        orderId: data.orderId,
-        agentId: data.agentId,
-        scheduledTime: data.scheduledTime || new Date(),
-        notes: data.notes,
-      },
-      include: {
-        order: {
-          include: {
-            customer: true
-          }
+    // Delivery row, agent on the order and (from ready_for_pickup) the move to out_for_delivery in one transaction.
+    // D8: this writer never did stock work; skipLegacyStock keeps it that way.
+    const { delivery, moved } = await prisma.$transaction(async (tx) => {
+      const created = await tx.delivery.create({
+        data: {
+          orderId: data.orderId,
+          agentId: data.agentId,
+          scheduledTime: data.scheduledTime || new Date(),
+          notes: data.notes,
         },
-        agent: true
-      }
-    });
-
-    // Update order with delivery agent
-    await prisma.order.update({
-      where: { id: data.orderId },
-      data: {
-        deliveryAgentId: data.agentId,
-        status: order.status === 'ready_for_pickup' ? 'out_for_delivery' : order.status,
-        orderHistory: {
-          create: {
-            tenantId: resolveTenantId(order.tenantId),
-            status: order.status === 'ready_for_pickup' ? 'out_for_delivery' : order.status,
-            notes: 'Delivery assigned',
-            metadata: { deliveryId: delivery.id, agentId: data.agentId }
-          }
+        include: {
+          order: {
+            include: {
+              customer: true
+            }
+          },
+          agent: true
         }
+      });
+
+      const dispatch = order.status === 'ready_for_pickup';
+      await tx.order.update({ where: { id: data.orderId }, data: { deliveryAgentId: data.agentId } });
+
+      if (dispatch) {
+        const moved = await transitionOrder(data.orderId, 'out_for_delivery', actorOf(), {
+          note: 'Delivery assigned',
+          metadata: { deliveryId: created.id, agentId: data.agentId },
+          skipLegacyStock: true,
+          tx,
+        });
+        return { delivery: created, moved };
       }
+      // no move: the order keeps its status and a history row records the assignment
+      await tx.orderHistory.create({
+        data: {
+          tenantId: resolveTenantId(order.tenantId),
+          orderId: data.orderId,
+          status: order.status,
+          notes: 'Delivery assigned',
+          metadata: { deliveryId: created.id, agentId: data.agentId },
+        },
+      });
+      return { delivery: created, moved: undefined };
     });
+    moved?.afterCommit?.();
 
     logger.info(`Delivery created for order: ${order.id}`, {
       deliveryId: delivery.id,
@@ -315,6 +329,9 @@ export class DeliveryService {
       ? reportedAmount
       : (orderCodAmount ?? Money.ZERO);
 
+    // The agent (or an admin completing for them) is the actor of the move
+    const actor = actorOf(requester, userId ? parseInt(userId, 10) : undefined);
+
     // Complete delivery and update order in transaction
     const result = await prisma.$transaction(async (tx) => {
       // Update delivery
@@ -344,22 +361,15 @@ export class DeliveryService {
         });
       }
 
-      // Update order status
-      await tx.order.update({
-        where: { id: delivery.orderId },
-        data: {
-          status: 'delivered',
-          deliveryDate: new Date(),
-          paymentStatus: 'collected',
-          orderHistory: {
-            create: {
-              tenantId: resolveTenantId(delivery.tenantId),
-              status: 'delivered',
-              notes: 'Order delivered successfully',
-              changedBy: userId ? parseInt(userId, 10) : null
-            }
-          }
-        }
+      // Move the order to delivered through the state machine. D8: this writer does no stock work.
+      // D14: it posts revenue whatever the codAmount. The posting is the machine's shared one and
+      // idempotent (active-entry guard), so a repeat or an earlier status-path post leaves one entry.
+      const moved = await transitionOrder(delivery.orderId, 'delivered', actor, {
+        note: 'Order delivered successfully',
+        paymentStatus: 'collected',
+        postRevenueAlways: true,
+        skipLegacyStock: true,
+        tx,
       });
 
       // Create transaction for COD collection
@@ -378,55 +388,20 @@ export class DeliveryService {
         }
       });
 
-      // Fetch order with items and products for GL entry creation
-      const orderWithItems = await tx.order.findUnique({
-        where: { id: delivery.orderId },
-        include: {
-          customer: true,
-          deliveryAgent: true,
-          customerRep: true,
-          orderItems: {
-            include: {
-              product: true
-            }
-          }
-        }
-      });
-
-      if (!orderWithItems) {
-        throw new AppError('Order not found for GL entry creation', 404);
+      // The machine posted the revenue entry (and set the flag and the order link) in the move's transaction.
+      // A move that changed nothing (already delivered) posts nothing.
+      const glEntry = moved.gl?.revenue ?? null;
+      const orderWithItems = moved.gl?.revenueOrder;
+      if (!glEntry || !orderWithItems) {
+        logger.warn(`Order ${delivery.orderId} revenue already recognized. Skipping GL entry.`);
+        return { delivery: updatedDelivery, glEntry: null, moved };
       }
-
-      // Check if revenue already recognized (prevent duplicate GL entries)
-      if (GLAutomationService.isRevenueAlreadyRecognized(orderWithItems)) {
-        logger.warn(`Order ${orderWithItems.id} revenue already recognized. Skipping GL entry.`);
-        return { delivery: updatedDelivery, glEntry: null };
-      }
-
-      // Calculate total COGS
-      const totalCOGS = GLAutomationService.calculateTotalCOGS(orderWithItems.orderItems);
 
       // Validate COGS and log warnings for missing values
       const cogsValidation = GLAutomationService.validateCOGS(orderWithItems.orderItems);
       if (!cogsValidation.valid) {
         GLAutomationService.logMissingCOGS(orderWithItems.id, cogsValidation.missingProducts);
       }
-
-      const glEntry = await GLAutomationService.createRevenueRecognitionEntry(
-        tx as any,
-        orderWithItems as any,
-        totalCOGS,
-        userId ? parseInt(userId, 10) : SYSTEM_USER_ID
-      );
-
-      // Update order with revenue recognized flag and GL entry link
-      await tx.order.update({
-        where: { id: delivery.orderId },
-        data: {
-          revenueRecognized: true,
-          glJournalEntryId: glEntry.id
-        }
-      });
 
       logger.info(`GL entry created for order ${orderWithItems.id}: ${glEntry.entryNumber}`);
 
@@ -446,8 +421,9 @@ export class DeliveryService {
         );
       }
 
-      return { delivery: updatedDelivery, glEntry };
+      return { delivery: updatedDelivery, glEntry, moved };
     });
+    result.moved.afterCommit?.();
 
     logger.info(`Delivery completed for order: ${orderId}`, {
       deliveryId,
@@ -506,7 +482,7 @@ export class DeliveryService {
 
     const result = await prisma.$transaction(async (tx) => {
       // Increment delivery attempts
-      const updatedDelivery = await tx.delivery.update({
+      await tx.delivery.update({
         where: { id: parseInt(deliveryId, 10) },
         data: {
           deliveryAttempts: { increment: 1 },
@@ -514,38 +490,28 @@ export class DeliveryService {
         }
       });
 
-      // Update order status
-      const newStatus = reschedule ? 'ready_for_pickup' : 'failed_delivery';
-      await tx.order.update({
-        where: { id: delivery.orderId },
-        data: {
-          status: newStatus,
-          orderHistory: {
-            create: {
-              tenantId: resolveTenantId(delivery.tenantId),
-              status: newStatus,
-              notes: `Delivery failed: ${reason}`,
-              changedBy: userId ? parseInt(userId, 10) : null,
-              metadata: { deliveryId: parseInt(deliveryId, 10), reason, reschedule }
-            }
-          }
-        }
-      });
+      // D3: a reschedule is a failed attempt with failureReason `rescheduled` and a next attempt date.
+      // The machine posts the fee once per move, keyed on the history row (D6). D8: no stock work here.
+      const moved = await transitionOrder(
+        delivery.orderId,
+        'failed_delivery',
+        actorOf(undefined, userId ? parseInt(userId, 10) : undefined),
+        {
+          note: `Delivery failed: ${reason}`,
+          // A reschedule with no date: the machine sets the next attempt to tomorrow.
+          failureReason: reschedule ? 'rescheduled' : 'other',
+          metadata: { deliveryId: parseInt(deliveryId, 10), reason, reschedule },
+          skipLegacyStock: true,
+          tx,
+        },
+      );
 
-      // Create GL entry for failed delivery expense (only if not rescheduling)
-      let glEntry = null;
-      if (!reschedule) {
-        glEntry = await GLAutomationService.createFailedDeliveryEntry(
-          tx as any,
-          updatedDelivery,
-          delivery.order as any, // Cast as any because of potential include mismatches
-          userId ? parseInt(userId, 10) : SYSTEM_USER_ID
-        );
-        logger.info(`GL entry created for failed delivery ${deliveryId}: ${glEntry.entryNumber}`);
-      }
+      const glEntry = moved.gl?.failedFee ?? null;
+      if (glEntry) logger.info(`GL entry created for failed delivery ${deliveryId}: ${glEntry.entryNumber}`);
 
-      return { glEntry };
+      return { glEntry, moved };
     });
+    result.moved.afterCommit?.();
 
     logger.warn(`Delivery failed for order: ${orderId}`, {
       deliveryId,
@@ -761,18 +727,23 @@ export class DeliveryService {
     const TERMINAL_STATUSES: OrderStatus[] = ['delivered', 'failed_delivery'];
 
     const hasDateFilter = !!(filters?.startDate || filters?.endDate);
+    const zone = getStoreTimeZone(getTenantId());
     const dateCondition: Prisma.OrderWhereInput = {};
     if (hasDateFilter) {
       dateCondition.createdAt = {};
       if (filters!.startDate) {
-        const parsed = new Date(filters!.startDate);
-        if (isNaN(parsed.getTime())) throw new AppError('Invalid startDate', 400);
-        dateCondition.createdAt.gte = parsed;
+        try {
+          dateCondition.createdAt.gte = parseInclusiveBound(filters!.startDate, 'from', zone);
+        } catch {
+          throw new AppError('Invalid startDate', 400);
+        }
       }
       if (filters!.endDate) {
-        const parsed = new Date(filters!.endDate);
-        if (isNaN(parsed.getTime())) throw new AppError('Invalid endDate', 400);
-        dateCondition.createdAt.lte = parsed;
+        try {
+          dateCondition.createdAt.lte = parseInclusiveBound(filters!.endDate, 'to', zone);
+        } catch {
+          throw new AppError('Invalid endDate', 400);
+        }
       }
     }
 
@@ -820,14 +791,15 @@ export class DeliveryService {
     if (filters?.search) {
       const term = filters.search.trim();
       const numericId = parseInt(term, 10);
+      const phoneSearch = customerPhoneSearch(term);
       // When we already have OR (from date filtering), wrap in AND
       const searchOr: Prisma.OrderWhereInput[] = [
         { customer: { firstName: { contains: term, mode: 'insensitive' } } },
         { customer: { lastName: { contains: term, mode: 'insensitive' } } },
-        { customer: { phoneNumber: { contains: term } } },
+        ...(phoneSearch ? [phoneSearch] : []),
         { deliveryAddress: { contains: term, mode: 'insensitive' } },
         { deliveryArea: { contains: term, mode: 'insensitive' } },
-        ...(Number.isFinite(numericId) ? [{ id: numericId }] : []),
+        ...(Number.isFinite(numericId) && numericId <= 2147483647 ? [{ id: numericId }] : []),
       ];
       if (where.OR) {
         // Combine existing OR (date/status) with search OR via AND
@@ -858,13 +830,14 @@ export class DeliveryService {
     if (filters?.search) {
       const term = filters.search.trim();
       const numericId = parseInt(term, 10);
+      const phoneSearch = customerPhoneSearch(term);
       const searchOr: Prisma.OrderWhereInput[] = [
         { customer: { firstName: { contains: term, mode: 'insensitive' } } },
         { customer: { lastName: { contains: term, mode: 'insensitive' } } },
-        { customer: { phoneNumber: { contains: term } } },
+        ...(phoneSearch ? [phoneSearch] : []),
         { deliveryAddress: { contains: term, mode: 'insensitive' } },
         { deliveryArea: { contains: term, mode: 'insensitive' } },
-        ...(Number.isFinite(numericId) ? [{ id: numericId }] : []),
+        ...(Number.isFinite(numericId) && numericId <= 2147483647 ? [{ id: numericId }] : []),
       ];
       if (countWhere.OR) {
         const existingOr = countWhere.OR;

@@ -7,6 +7,7 @@ import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 import prisma from '../utils/prisma';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
+import { normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import logger from '../utils/logger';
 import { paystackService } from '../services/paystackService';
 import { metaCapiService } from '../services/metaCapiService';
@@ -193,10 +194,14 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       return;
     }
 
+    // Store phones normalized; unparseable input stays as typed (a real order must not fail on it).
+    const customerPhone = normalizePhoneForStorage(formData.phoneNumber);
+    const alternatePhone = normalizePhoneForStorage(formData.alternatePhone) || null;
+
     // Check if customer exists or create new one (scoped to tenant).
     let customer = await findAndReactivateCustomerByPhone(
       prisma,
-      formData.phoneNumber,
+      customerPhone,
       'public checkout',
       formTenantId
     );
@@ -210,9 +215,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         data: {
           firstName,
           lastName,
-          phoneNumber: formData.phoneNumber,
+          phoneNumber: customerPhone,
           email: formData.email || null,
-          alternatePhone: formData.alternatePhone || null,
+          alternatePhone,
           address: formData.address || '',
           state: formData.state || '',
           area: formData.state || '',
@@ -228,8 +233,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       // — so it shows on the order and customer details. (Previously this only
       // wrote when the field was empty, silently dropping repeat-buyer emails.)
       if (formData.email && formData.email !== customer.email) updateData.email = formData.email;
-      if (formData.alternatePhone && formData.alternatePhone !== customer.alternatePhone) {
-        updateData.alternatePhone = formData.alternatePhone;
+      if (alternatePhone && alternatePhone !== customer.alternatePhone) {
+        updateData.alternatePhone = alternatePhone;
       }
       if (Object.keys(updateData).length > 0) {
         customer = await prisma.customer.update({
@@ -270,7 +275,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           totalAmount: totalAmount,
           deletedAt: null,
           createdAt: { gte: dedupeFrom },
-          customer: { phoneNumber: formData.phoneNumber },
+          customer: { phoneNumber: { in: phoneLookupVariants(formData.phoneNumber) } },
           orderItems: {
             some: { productId: form.productId, itemType: 'package' }
           }
@@ -607,7 +612,7 @@ export const trackOrder = async (req: Request, res: Response, next: NextFunction
         where: {
           id: parseInt(orderId as string),
           customer: {
-            phoneNumber: phoneNumber as string
+            phoneNumber: { in: phoneLookupVariants(phoneNumber as string) }
           }
         },
         include: {

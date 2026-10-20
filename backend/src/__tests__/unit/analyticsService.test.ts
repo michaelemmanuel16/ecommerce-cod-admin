@@ -1,483 +1,342 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+
+// Automock the KPI functions; revenueScope is a pure mapping the callers use as is.
+jest.mock('../../services/kpi/revenue', () => ({
+  ...jest.createMockFromModule<object>('../../services/kpi/revenue'),
+  revenueScope: jest.requireActual<typeof import('../../services/kpi/revenue')>('../../services/kpi/revenue').revenueScope,
+}));
+jest.mock('../../services/kpi/rates', () => ({ ...jest.requireActual<object>('../../services/kpi/rates'), rates: jest.fn() }));
+jest.mock('../../services/kpi/reps');
+jest.mock('../../services/kpi/partners');
+jest.mock('../../services/kpi/products');
+
 import { prismaMock } from '../mocks/prisma.mock';
+import { useTestTenant, TEST_TENANT_ID } from '../mocks/tenant.mock';
+import { partnerRow, ratesResult, repRatesResult, repRevenueResult, revenueResult } from '../mocks/kpiResults';
 import { AnalyticsService } from '../../services/analyticsService';
+import { deliveredRevenue, deliveredRevenueByArea, deliveredRevenueByDay, deliveredRevenueByRep } from '../../services/kpi/revenue';
+import { rates } from '../../services/kpi/rates';
+import { repRates } from '../../services/kpi/reps';
+import { partnerRates } from '../../services/kpi/partners';
+import { productDeliveredUnits } from '../../services/kpi/products';
 import * as Money from '../../utils/money';
+
+const mocked = <T extends (...args: any[]) => any>(fn: T) => fn as unknown as jest.MockedFunction<T>;
 
 describe('AnalyticsService', () => {
   let analyticsService: AnalyticsService;
+  useTestTenant();
 
   beforeEach(() => {
     analyticsService = new AnalyticsService();
   });
 
   describe('getDashboardMetrics', () => {
-    it('should calculate dashboard metrics correctly', async () => {
+    it('reads revenue, delivered orders and the three rates from the KPI layer', async () => {
       prismaMock.order.count
         .mockResolvedValueOnce(100) // totalOrders
         .mockResolvedValueOnce(10) // todayOrders
-        .mockResolvedValueOnce(30) // pendingOrders
-        .mockResolvedValueOnce(60); // deliveredOrders
-
-      prismaMock.accountTransaction.aggregate
-        .mockResolvedValueOnce({ _sum: { creditAmount: 10000, debitAmount: 0 } } as any) // totalRevenue (GL)
-        .mockResolvedValueOnce({ _sum: { creditAmount: 500, debitAmount: 0 } } as any); // todayRevenue (GL)
-
+        .mockResolvedValueOnce(30); // pendingOrders
+      mocked(deliveredRevenue)
+        .mockResolvedValueOnce(revenueResult('92000.00', 376)) // range
+        .mockResolvedValueOnce(revenueResult('500.00', 2)); // today
+      mocked(rates).mockResolvedValue(ratesResult(71, 48, 34.2));
       prismaMock.user.count.mockResolvedValue(5); // activeAgents
 
-      // Mock delivery findMany for average delivery time calculation
       const now = new Date();
       const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
       prismaMock.delivery.findMany.mockResolvedValue([
         { scheduledTime: twoHoursAgo, actualDeliveryTime: now }
       ] as any);
 
-      const metrics = await analyticsService.getDashboardMetrics();
+      const metrics = await analyticsService.getDashboardMetrics({ startDate: '2026-10-01', endDate: '2026-10-17' });
 
       expect(metrics.totalOrders).toBe(100);
       expect(metrics.todayOrders).toBe(10);
       expect(metrics.pendingOrders).toBe(30);
-      expect(metrics.deliveredOrders).toBe(60);
-      expect(Money.toApi(metrics.totalRevenue)).toBe('10000.00');
-      expect(Money.toApi(metrics.todayRevenue)).toBe('500.00');
+      expect(metrics.deliveredOrders).toBe(376);
+      expect(metrics.totalRevenue).toBe('92000.00');
+      expect(metrics.todayRevenue).toBe('500.00');
       expect(metrics.activeAgents).toBe(5);
-      expect(metrics.deliveryRate).toBe(60); // 60/100 * 100
+      expect(metrics.confirmationRate).toBe(71);
+      expect(metrics.deliverySuccessRate).toBe(48);
+      expect(metrics.orderToCashYield).toBe(34.2);
       expect(metrics.avgDeliveryTime).toBeGreaterThan(0);
+      expect(metrics).not.toHaveProperty('deliveryRate');
     });
 
-    it('should handle zero orders gracefully', async () => {
+    it('passes the store-zone range [1 Oct, end of 17 Oct) to the KPI layer', async () => {
       prismaMock.order.count.mockResolvedValue(0);
-      prismaMock.accountTransaction.aggregate.mockResolvedValue({ _sum: { creditAmount: null, debitAmount: null } } as any);
+      mocked(deliveredRevenue).mockResolvedValue(revenueResult('0.00'));
+      mocked(rates).mockResolvedValue(ratesResult(null, null, null));
+      prismaMock.user.count.mockResolvedValue(0);
+      prismaMock.delivery.findMany.mockResolvedValue([] as any);
+
+      await analyticsService.getDashboardMetrics({ startDate: '2026-10-01', endDate: '2026-10-17' });
+
+      const [tenantId, from, to] = mocked(deliveredRevenue).mock.calls[0];
+      expect(tenantId).toBe(TEST_TENANT_ID);
+      expect(from).toEqual(new Date('2026-10-01T00:00:00.000Z')); // Accra is UTC+0
+      expect(to).toEqual(new Date('2026-10-18T00:00:00.000Z'));
+      expect(mocked(rates).mock.calls[0].slice(1, 3)).toEqual([from, to]);
+    });
+
+    it('handles zero orders: null rates, zero revenue', async () => {
+      prismaMock.order.count.mockResolvedValue(0);
+      mocked(deliveredRevenue).mockResolvedValue(revenueResult('0.00', 0));
+      mocked(rates).mockResolvedValue(ratesResult(null, null, null));
       prismaMock.user.count.mockResolvedValue(0);
       prismaMock.delivery.findMany.mockResolvedValue([] as any);
 
       const metrics = await analyticsService.getDashboardMetrics();
 
       expect(metrics.totalOrders).toBe(0);
-      expect(Money.toApi(metrics.totalRevenue)).toBe('0.00');
-      expect(metrics.deliveryRate).toBe(0);
+      expect(metrics.totalRevenue).toBe('0.00');
+      expect(metrics.deliverySuccessRate).toBeNull();
       expect(metrics.avgDeliveryTime).toBe(0);
     });
   });
 
   describe('getSalesTrends', () => {
-    it('should group sales data by day', async () => {
-      const mockOrders = [
-        {
-          createdAt: new Date('2024-01-01'),
-          totalAmount: 100,
-          status: 'delivered'
-        },
-        {
-          createdAt: new Date('2024-01-01'),
-          totalAmount: 200,
-          status: 'delivered'
-        },
-        {
-          createdAt: new Date('2024-01-02'),
-          totalAmount: 150,
-          status: 'pending_confirmation'
-        }
-      ];
+    it('counts orders by placement day and revenue by delivery day', async () => {
+      prismaMock.order.findMany.mockResolvedValue([
+        { createdAt: new Date('2024-01-01T10:00:00Z') },
+        { createdAt: new Date('2024-01-01T11:00:00Z') },
+        { createdAt: new Date('2024-01-02T09:00:00Z') },
+      ] as any);
+      mocked(deliveredRevenueByDay).mockResolvedValue([
+        { date: '2024-01-01', revenue: '300.00', deliveredOrders: 2 },
+        { date: '2024-01-03', revenue: '150.00', deliveredOrders: 1 },
+      ]);
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
+      const trends = await analyticsService.getSalesTrends({ period: 'daily', startDate: '2024-01-01', endDate: '2024-01-07' });
 
-      const trends = await analyticsService.getSalesTrends({ period: 'daily', days: 7 });
-
-      expect(trends).toBeDefined();
-      expect(trends.length).toBeGreaterThan(0);
-
-      const jan1Data = trends.find((t) => t.date === '2024-01-01');
-      expect(jan1Data?.orders).toBe(2);
-      expect(Money.toApi(jan1Data!.revenue)).toBe('300.00');
-      expect(jan1Data?.delivered).toBe(2);
+      expect(trends).toEqual([
+        { date: '2024-01-01', orders: 2, revenue: '300.00', delivered: 2 },
+        { date: '2024-01-02', orders: 1, revenue: '0.00', delivered: 0 },
+        { date: '2024-01-03', orders: 0, revenue: '150.00', delivered: 1 },
+      ]);
+      expect(trends[0]).not.toHaveProperty('conversionRate');
     });
 
-    it('should group sales data by month', async () => {
-      const mockOrders = [
-        {
-          createdAt: new Date('2024-01-15'),
-          totalAmount: 100,
-          status: 'delivered'
-        },
-        {
-          createdAt: new Date('2024-01-20'),
-          totalAmount: 200,
-          status: 'delivered'
-        },
-        {
-          createdAt: new Date('2024-02-05'),
-          totalAmount: 150,
-          status: 'delivered'
-        }
-      ];
+    it('groups by month', async () => {
+      prismaMock.order.findMany.mockResolvedValue([
+        { createdAt: new Date('2024-01-15T10:00:00Z') },
+        { createdAt: new Date('2024-01-20T10:00:00Z') },
+        { createdAt: new Date('2024-02-05T10:00:00Z') },
+      ] as any);
+      mocked(deliveredRevenueByDay).mockResolvedValue([
+        { date: '2024-01-15', revenue: '100.00', deliveredOrders: 1 },
+        { date: '2024-01-20', revenue: '200.00', deliveredOrders: 1 },
+        { date: '2024-02-05', revenue: '150.00', deliveredOrders: 1 },
+      ]);
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
+      const trends = await analyticsService.getSalesTrends({ period: 'monthly', startDate: '2024-01-01', endDate: '2024-02-29' });
 
-      const trends = await analyticsService.getSalesTrends({ period: 'monthly', days: 60 });
-
-      expect(trends).toBeDefined();
-      const jan2024 = trends.find((t) => t.date === '2024-01');
-      const feb2024 = trends.find((t) => t.date === '2024-02');
-
-      expect(jan2024?.orders).toBe(2);
-      expect(Money.toApi(jan2024!.revenue)).toBe('300.00');
-      expect(feb2024?.orders).toBe(1);
-      expect(Money.toApi(feb2024!.revenue)).toBe('150.00');
+      const jan = trends.find((t) => t.date === '2024-01');
+      const feb = trends.find((t) => t.date === '2024-02');
+      expect(jan).toEqual({ date: '2024-01', orders: 2, revenue: '300.00', delivered: 2 });
+      expect(feb).toEqual({ date: '2024-02', orders: 1, revenue: '150.00', delivered: 1 });
     });
 
-    it('should calculate conversion rate correctly', async () => {
-      const mockOrders = [
-        {
-          createdAt: new Date('2024-01-01'),
-          totalAmount: 100,
-          status: 'delivered'
-        },
-        {
-          createdAt: new Date('2024-01-01'),
-          totalAmount: 200,
-          status: 'pending_confirmation'
-        }
-      ];
+    it('bins an order placed at 23:30 UTC on the store day (UTC+0) it belongs to', async () => {
+      prismaMock.order.findMany.mockResolvedValue([{ createdAt: new Date('2024-01-01T23:30:00Z') }] as any);
+      mocked(deliveredRevenueByDay).mockResolvedValue([]);
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
+      const trends = await analyticsService.getSalesTrends({ startDate: '2024-01-01', endDate: '2024-01-02' });
 
-      const trends = await analyticsService.getSalesTrends({ period: 'daily', days: 7 });
-
-      const jan1Data = trends.find((t) => t.date === '2024-01-01');
-      expect(jan1Data?.conversionRate).toBe(50); // 1 delivered out of 2 total
+      expect(trends).toEqual([{ date: '2024-01-01', orders: 1, revenue: '0.00', delivered: 0 }]);
     });
   });
 
   describe('getRepPerformance', () => {
-    it('should calculate rep performance metrics correctly', async () => {
-      const mockReps = [
-        {
-          id: 'rep-1',
-          firstName: 'John',
-          lastName: 'Doe',
-          assignedOrdersAsRep: [
-            {
-              id: 'order-1',
-              status: 'delivered',
-              totalAmount: 100,
-              createdAt: new Date('2024-01-01T10:00:00'),
-              updatedAt: new Date('2024-01-01T10:30:00')
-            },
-            {
-              id: 'order-2',
-              status: 'delivered',
-              totalAmount: 200,
-              createdAt: new Date('2024-01-01T11:00:00'),
-              updatedAt: new Date('2024-01-01T11:15:00')
-            },
-            {
-              id: 'order-3',
-              status: 'pending_confirmation',
-              totalAmount: 150,
-              createdAt: new Date('2024-01-01T12:00:00'),
-              updatedAt: new Date('2024-01-01T12:00:00')
-            }
-          ]
-        }
-      ];
+    it('reads the two rep rates and delivered revenue from the KPI layer', async () => {
+      prismaMock.user.findMany.mockResolvedValue([{ id: 7, firstName: 'John', lastName: 'Doe' }] as any);
+      mocked(repRates).mockResolvedValue(repRatesResult({
+        7: { placed: 871, confirmed: 640, confirmationRate: 73.5, deliveredFromConfirmedRate: 52.1 },
+      }));
+      mocked(deliveredRevenueByRep).mockResolvedValue(repRevenueResult({ 7: { revenue: '45000.00', deliveredOrders: 180 } }));
+      prismaMock.order.groupBy
+        .mockResolvedValueOnce([{ customerRepId: 7, _count: { _all: 4 } }] as any) // pending (all time)
+        .mockResolvedValueOnce([{ customerRepId: 7, _count: { _all: 2 } }] as any); // unpaid delivered (all time)
 
-      prismaMock.user.findMany.mockResolvedValue(mockReps as any);
-      // Mock the separate pending orders count query
-      prismaMock.order.count.mockResolvedValue(1);
-      prismaMock.order.aggregate.mockResolvedValue({
-        _count: { id: 1 },
-        _sum: { totalAmount: 100 }
-      } as any);
+      const performance = await analyticsService.getRepPerformance({ startDate: '2026-10-01', endDate: '2026-10-17' });
 
-      const performance = await analyticsService.getRepPerformance();
-
-      expect(performance).toHaveLength(1);
-      expect(performance[0].userId).toBe('rep-1');
-      expect(performance[0].userName).toBe('John Doe');
-      expect(performance[0].totalAssigned).toBe(3);
-      expect(performance[0].completed).toBe(2);
-      expect(performance[0].pending).toBe(1);
-      expect(performance[0].successRate).toBe(66.66666666666666); // 2/3 * 100
-      expect(Money.toApi(performance[0].revenue)).toBe('300.00');
-      expect(performance[0].avgResponseTime).toBeGreaterThan(0);
+      expect(performance).toEqual([{
+        userId: 7,
+        userName: 'John Doe',
+        totalAssigned: 871,
+        completed: 180,
+        pending: 4,
+        unpaidDeliveredOrders: 2,
+        confirmationRate: 73.5,
+        revenue: '45000.00',
+      }]);
+      expect(performance[0]).not.toHaveProperty('deliveredFromConfirmedRate');
+      expect(mocked(deliveredRevenueByRep).mock.calls[0].slice(1, 3)).toEqual([new Date('2026-10-01T00:00:00.000Z'), new Date('2026-10-18T00:00:00.000Z')]);
     });
 
-    it('should handle reps with no orders', async () => {
-      const mockReps = [
-        {
-          id: 'rep-1',
-          firstName: 'Jane',
-          lastName: 'Doe',
-          assignedOrdersAsRep: []
-        }
-      ];
+    it('gives a rep with no orders null rates and zero counts', async () => {
+      prismaMock.user.findMany.mockResolvedValue([{ id: 8, firstName: 'Jane', lastName: 'Doe' }] as any);
+      mocked(repRates).mockResolvedValue(repRatesResult({}));
+      mocked(deliveredRevenueByRep).mockResolvedValue(repRevenueResult({}));
+      prismaMock.order.groupBy.mockResolvedValue([] as any);
 
-      prismaMock.user.findMany.mockResolvedValue(mockReps as any);
-      // Mock pending and unpaid orders
-      prismaMock.order.count.mockResolvedValue(0);
-      prismaMock.order.aggregate.mockResolvedValue({
-        _count: { id: 0 },
-        _sum: { totalAmount: null }
-      } as any);
+      const [row] = await analyticsService.getRepPerformance();
 
-      const performance = await analyticsService.getRepPerformance();
-
-      expect(performance).toHaveLength(1);
-      expect(performance[0].totalAssigned).toBe(0);
-      expect(performance[0].completed).toBe(0);
-      expect(Money.toApi(performance[0].revenue)).toBe('0.00');
-      expect(performance[0].successRate).toBe(0);
-      expect(performance[0].avgResponseTime).toBe(0);
+      expect(row.totalAssigned).toBe(0);
+      expect(row.completed).toBe(0);
+      expect(row.revenue).toBe('0.00');
+      expect(row.confirmationRate).toBeNull();
     });
   });
 
   describe('getAgentPerformance', () => {
-    it('should calculate agent performance metrics correctly', async () => {
-      const mockAgents = [
-        {
-          id: 'agent-1',
-          firstName: 'Agent',
-          lastName: 'One',
-          assignedOrdersAsAgent: [
-            { id: 'order-1', status: 'delivered', totalAmount: 100 },
-            { id: 'order-2', status: 'delivered', totalAmount: 200 },
-            { id: 'order-3', status: 'cancelled', totalAmount: 150 }
-          ],
-          deliveries: [
-            {
-              scheduledTime: new Date('2024-01-01T10:00:00'),
-              actualDeliveryTime: new Date('2024-01-01T09:50:00')
-            },
-            {
-              scheduledTime: new Date('2024-01-01T11:00:00'),
-              actualDeliveryTime: new Date('2024-01-01T11:30:00')
-            }
-          ]
-        }
-      ];
+    it('reads the partner delivery success rate from the KPI layer', async () => {
+      prismaMock.user.findMany.mockResolvedValue([{
+        id: 3,
+        firstName: 'Agent',
+        lastName: 'One',
+        deliveries: [
+          { scheduledTime: new Date('2024-01-01T10:00:00'), actualDeliveryTime: new Date('2024-01-01T09:50:00') },
+          { scheduledTime: new Date('2024-01-01T11:00:00'), actualDeliveryTime: new Date('2024-01-01T11:30:00') },
+        ],
+      }] as any);
+      mocked(partnerRates).mockResolvedValue([partnerRow(3, 10, 6, 2, 1, 66.7)]);
+      prismaMock.order.groupBy.mockResolvedValue([
+        { deliveryAgentId: 3, status: 'delivered', _count: { _all: 6 } },
+        { deliveryAgentId: 3, status: 'out_for_delivery', _count: { _all: 1 } },
+        { deliveryAgentId: 3, status: 'ready_for_pickup', _count: { _all: 1 } },
+        { deliveryAgentId: 4, status: 'out_for_delivery', _count: { _all: 9 } },
+      ] as any);
 
-      prismaMock.user.findMany.mockResolvedValue(mockAgents as any);
+      const [row] = await analyticsService.getAgentPerformance();
 
-      const performance = await analyticsService.getAgentPerformance();
+      expect(row).toMatchObject({
+        userId: 3,
+        userName: 'Agent One',
+        totalAssigned: 10,
+        completed: 6,
+        failed: 3,
+        active: 2,
+        pending: 2,
+        deliverySuccessRate: 66.7,
+        onTimeRate: 50,
+        totalDeliveries: 2,
+      });
+      expect(row).not.toHaveProperty('successRate');
+    });
 
-      expect(performance).toHaveLength(1);
-      expect(performance[0].userId).toBe('agent-1');
-      expect(performance[0].userName).toBe('Agent One');
-      expect(performance[0].totalAssigned).toBe(3);
-      expect(performance[0].completed).toBe(2);
-      expect(performance[0].failed).toBe(1);
-      expect(performance[0].successRate).toBe(66.66666666666666); // 2/3 * 100
-      expect(performance[0].onTimeRate).toBe(50); // 1 on-time out of 2
-      expect(performance[0].totalDeliveries).toBe(2);
+    it('gives an agent with no orders in the range a null rate', async () => {
+      prismaMock.user.findMany.mockResolvedValue([{ id: 5, firstName: 'New', lastName: 'Agent', deliveries: [] }] as any);
+      mocked(partnerRates).mockResolvedValue([]);
+      prismaMock.order.groupBy.mockResolvedValue([] as any);
+
+      const [row] = await analyticsService.getAgentPerformance();
+
+      expect(row.totalAssigned).toBe(0);
+      expect(row.deliverySuccessRate).toBeNull();
+    });
+
+    it('shows a delivery agent only their own row', async () => {
+      prismaMock.user.findMany.mockResolvedValue([] as any);
+      mocked(partnerRates).mockResolvedValue([]);
+      prismaMock.order.groupBy.mockResolvedValue([] as any);
+
+      await analyticsService.getAgentPerformance(undefined, 3, 'delivery_agent');
+
+      expect((prismaMock.user.findMany as any).mock.calls[0][0].where).toMatchObject({ role: 'delivery_agent', id: 3 });
+      expect((prismaMock.order.groupBy as any).mock.calls[0][0].where.deliveryAgentId).toBe(3);
     });
   });
 
   describe('getCustomerInsights', () => {
-    it('should calculate customer insights correctly', async () => {
-      prismaMock.customer.count
-        .mockResolvedValueOnce(100) // totalCustomers
-        .mockResolvedValueOnce(90); // activeCustomers
-
+    it('has no activeCustomers; average order value is KPI revenue over KPI delivered orders', async () => {
+      prismaMock.customer.count.mockResolvedValue(100);
       prismaMock.customer.findMany.mockResolvedValue([
-        {
-          id: 'c1',
-          firstName: 'Alice',
-          lastName: 'Smith',
-          phoneNumber: '+1111111111',
-          totalOrders: 10,
-          totalSpent: 1000
-        },
-        {
-          id: 'c2',
-          firstName: 'Bob',
-          lastName: 'Jones',
-          phoneNumber: '+2222222222',
-          totalOrders: 8,
-          totalSpent: 800
-        }
+        { id: 'c1', firstName: 'Alice', lastName: 'Smith', phoneNumber: '+1111111111', totalOrders: 10, totalSpent: 1000 },
+        { id: 'c2', firstName: 'Bob', lastName: 'Jones', phoneNumber: '+2222222222', totalOrders: 8, totalSpent: 800 },
       ] as any);
-
       prismaMock.customer.groupBy.mockResolvedValue([
         { area: 'New York', _count: { area: 50 } },
         { area: 'Los Angeles', _count: { area: 30 } }
       ] as any);
-
-      prismaMock.order.aggregate.mockResolvedValue({
-        _avg: { totalAmount: 150 }
-      } as any);
+      mocked(deliveredRevenue).mockResolvedValue(revenueResult('3000.00', 20));
 
       const insights = await analyticsService.getCustomerInsights();
 
       expect(insights.totalCustomers).toBe(100);
-      expect(insights.activeCustomers).toBe(90);
+      expect(insights).not.toHaveProperty('activeCustomers');
       expect(insights.topCustomers).toHaveLength(2);
-      expect(Money.toApi(insights.topCustomers[0].totalSpent)).toBe('1000.00');
       expect(insights.customersByArea).toHaveLength(2);
       expect(Money.toApi(insights.avgOrderValue)).toBe('150.00');
+    });
+
+    it('gives an average order value of 0.00 when nothing was delivered', async () => {
+      prismaMock.customer.count.mockResolvedValue(0);
+      prismaMock.customer.findMany.mockResolvedValue([] as any);
+      prismaMock.customer.groupBy.mockResolvedValue([] as any);
+      mocked(deliveredRevenue).mockResolvedValue(revenueResult('0.00', 0));
+
+      const insights = await analyticsService.getCustomerInsights();
+
+      expect(Money.toApi(insights.avgOrderValue)).toBe('0.00');
     });
   });
 
   describe('getProductPerformance', () => {
-    it('should calculate product sales performance', async () => {
-      const mockProductSales = [
-        {
-          productId: 'product-1',
-          _sum: { quantity: 50, totalPrice: 5000 },
-          _count: 25
-        },
-        {
-          productId: 'product-2',
-          _sum: { quantity: 30, totalPrice: 3000 },
-          _count: 15
-        }
-      ];
+    it('reads units and line revenue from the KPI layer, sorted by revenue', async () => {
+      mocked(productDeliveredUnits).mockResolvedValue({
+        units: {} as any,
+        lineRevenue: {} as any,
+        byProduct: [
+          { productId: 1, sku: 'SKU-001', name: 'Product A', units: 50, lineRevenue: '5000.00' },
+          { productId: 2, sku: 'SKU-002', name: 'Product B', units: 90, lineRevenue: '9000.00' },
+        ],
+      });
+      prismaMock.product.findMany.mockResolvedValue([
+        { id: 1, category: 'Electronics' },
+        { id: 2, category: 'Accessories' },
+      ] as any);
 
-      const mockProducts = [
-        {
-          id: 'product-1',
-          name: 'Product A',
-          sku: 'SKU-001',
-          price: 100,
-          category: 'Electronics'
-        },
-        {
-          id: 'product-2',
-          name: 'Product B',
-          sku: 'SKU-002',
-          price: 100,
-          category: 'Accessories'
-        }
-      ];
+      const performance = await analyticsService.getProductPerformance({ startDate: '2026-10-01', endDate: '2026-10-17' });
 
-      prismaMock.orderItem.groupBy.mockResolvedValue(mockProductSales as any);
-      prismaMock.product.findMany.mockResolvedValue(mockProducts as any);
-
-      const performance = await analyticsService.getProductPerformance();
-
-      expect(performance).toHaveLength(2);
-      expect(performance[0].productId).toBe('product-1');
-      expect(performance[0].productName).toBe('Product A');
-      expect(performance[0].unitsSold).toBe(50);
-      expect(Money.toApi(performance[0].revenue)).toBe('5000.00');
-      expect(performance[0].orderCount).toBe(25);
-
-      // Should be sorted by revenue (descending)
-      expect(Money.gt(performance[0].revenue, performance[1].revenue)).toBe(true);
+      expect(performance).toEqual([
+        { productId: 2, productName: 'Product B', sku: 'SKU-002', category: 'Accessories', unitsSold: 90, revenue: '9000.00' },
+        { productId: 1, productName: 'Product A', sku: 'SKU-001', category: 'Electronics', unitsSold: 50, revenue: '5000.00' },
+      ]);
+      expect(mocked(productDeliveredUnits).mock.calls[0].slice(0, 2)).toEqual([TEST_TENANT_ID, 'all']);
     });
 
-    it('should handle products with no sales', async () => {
-      prismaMock.orderItem.groupBy.mockResolvedValue([]);
+    it('handles products with no sales', async () => {
+      mocked(productDeliveredUnits).mockResolvedValue({ units: {} as any, lineRevenue: {} as any, byProduct: [] });
       prismaMock.product.findMany.mockResolvedValue([]);
 
-      const performance = await analyticsService.getProductPerformance();
-
-      expect(performance).toHaveLength(0);
+      expect(await analyticsService.getProductPerformance()).toHaveLength(0);
     });
   });
 
   describe('getAreaDistribution', () => {
-    it('should calculate area-wise order distribution', async () => {
-      const mockAreaStats = [
-        {
-          deliveryArea: 'Manhattan',
-          _count: 50,
-          _sum: { totalAmount: 10000 }
-        },
-        {
-          deliveryArea: 'Brooklyn',
-          _count: 30,
-          _sum: { totalAmount: 6000 }
-        }
-      ];
-
-      prismaMock.order.groupBy.mockResolvedValue(mockAreaStats as any);
+    it('reads delivered revenue by area from the KPI layer', async () => {
+      mocked(deliveredRevenueByArea).mockResolvedValue([
+        { area: 'Manhattan', revenue: '10000.00', deliveredOrders: 50 },
+        { area: 'Brooklyn', revenue: '6000.00', deliveredOrders: 30 },
+      ]);
 
       const distribution = await analyticsService.getAreaDistribution();
 
-      expect(distribution).toHaveLength(2);
-      expect(distribution[0].area).toBe('Manhattan');
-      expect(distribution[0].orderCount).toBe(50);
-      expect(Money.toApi(distribution[0].revenue)).toBe('10000.00');
-      expect(distribution[1].area).toBe('Brooklyn');
-      expect(distribution[1].orderCount).toBe(30);
-      expect(Money.toApi(distribution[1].revenue)).toBe('6000.00');
-    });
-  });
-
-  describe('getTimeSeriesData', () => {
-    it('should generate time series for orders metric', async () => {
-      const mockOrders = [
-        {
-          createdAt: new Date('2024-01-01'),
-          totalAmount: 100,
-          status: 'delivered'
-        },
-        {
-          createdAt: new Date('2024-01-01'),
-          totalAmount: 200,
-          status: 'delivered'
-        },
-        {
-          createdAt: new Date('2024-01-02'),
-          totalAmount: 150,
-          status: 'delivered'
-        }
-      ];
-
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
-
-      const series = await analyticsService.getTimeSeriesData('orders', 7);
-
-      expect(series).toBeDefined();
-      const jan1 = series.find((s) => s.date === '2024-01-01');
-      const jan2 = series.find((s) => s.date === '2024-01-02');
-
-      expect(jan1?.value).toBe(2);
-      expect(jan2?.value).toBe(1);
+      expect(distribution).toEqual([
+        { area: 'Manhattan', orderCount: 50, revenue: '10000.00' },
+        { area: 'Brooklyn', orderCount: 30, revenue: '6000.00' },
+      ]);
     });
 
-    it('should generate time series for revenue metric', async () => {
-      const mockOrders = [
-        {
-          createdAt: new Date('2024-01-01'),
-          totalAmount: 100,
-          status: 'delivered'
-        },
-        {
-          createdAt: new Date('2024-01-01'),
-          totalAmount: 200,
-          status: 'delivered'
-        }
-      ];
+    it('keeps the top 20 areas', async () => {
+      mocked(deliveredRevenueByArea).mockResolvedValue(
+        Array.from({ length: 25 }, (_, i) => ({ area: `A${i}`, revenue: '1.00', deliveredOrders: 1 })),
+      );
 
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
-
-      const series = await analyticsService.getTimeSeriesData('revenue', 7);
-
-      const jan1 = series.find((s) => s.date === '2024-01-01');
-      expect(Money.toApi(jan1!.value)).toBe('300.00');
-    });
-
-    it('should only count delivered orders for revenue', async () => {
-      const mockOrders = [
-        {
-          createdAt: new Date('2024-01-01'),
-          totalAmount: 100,
-          status: 'delivered'
-        },
-        {
-          createdAt: new Date('2024-01-01'),
-          totalAmount: 200,
-          status: 'pending_confirmation'
-        }
-      ];
-
-      prismaMock.order.findMany.mockResolvedValue(mockOrders as any);
-
-      const series = await analyticsService.getTimeSeriesData('revenue', 7);
-
-      const jan1 = series.find((s) => s.date === '2024-01-01');
-      expect(Money.toApi(jan1!.value)).toBe('100.00'); // Only delivered order counts
+      expect(await analyticsService.getAreaDistribution()).toHaveLength(20);
     });
   });
 

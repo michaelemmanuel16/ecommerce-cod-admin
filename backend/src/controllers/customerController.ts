@@ -68,24 +68,3 @@ export const deleteCustomer = async (req: AuthRequest, res: Response): Promise<v
     throw error;
   }
 };
-
-export const updateCustomerTags = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const { tags } = req.body;
-    const customer = await customerService.updateCustomerTags(id, tags, req.user);
-    res.json({ customer });
-  } catch (error) {
-    throw error;
-  }
-};
-
-export const getCustomerAnalytics = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const analytics = await customerService.getCustomerAnalytics(id, req.user);
-    res.json({ analytics });
-  } catch (error) {
-    throw error;
-  }
-};

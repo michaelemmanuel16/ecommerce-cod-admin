@@ -55,7 +55,7 @@ describe('Analytics Store', () => {
             todayRevenue: 500,
             activeAgents: 10,
             avgDeliveryTime: 24,
-            deliveryRate: 0.8,
+            deliverySuccessRate: 80, confirmationRate: 71, orderToCashYield: 34,
         };
         vi.mocked(analyticsService.getDashboardMetrics).mockResolvedValue(mockMetrics);
 
@@ -82,7 +82,7 @@ describe('Analytics Store', () => {
     });
 
     it('should fetch sales trends successfully', async () => {
-        const mockTrends = [{ date: '2024-01-01', orders: 10, revenue: 100, delivered: 8, conversionRate: 0.8 }];
+        const mockTrends = [{ date: '2024-01-01', orders: 10, revenue: 100, delivered: 8 }];
         vi.mocked(analyticsService.getSalesTrends).mockResolvedValue(mockTrends);
 
         const { fetchSalesTrends } = useAnalyticsStore.getState();
@@ -105,8 +105,8 @@ describe('Analytics Store', () => {
 
     it('should fetch product performance successfully', async () => {
         const mockProducts = [
-            { productId: 1, productName: 'Widget A', sku: 'W-A', category: 'Widgets', unitsSold: 100, revenue: 5000, orderCount: 50 },
-            { productId: 2, productName: 'Widget B', sku: 'W-B', category: 'Widgets', unitsSold: 60, revenue: 3000, orderCount: 30 },
+            { productId: 1, productName: 'Widget A', sku: 'W-A', category: 'Widgets', unitsSold: 100, revenue: 5000 },
+            { productId: 2, productName: 'Widget B', sku: 'W-B', category: 'Widgets', unitsSold: 60, revenue: 3000 },
         ];
         vi.mocked(analyticsService.getProductPerformance).mockResolvedValue(mockProducts);
 

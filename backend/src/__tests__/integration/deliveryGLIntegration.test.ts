@@ -66,6 +66,7 @@ describe('Delivery GL Integration', () => {
       await prisma.product.deleteMany({});
       await prisma.customer.deleteMany({});
       await prisma.account.deleteMany({});
+      await prisma.feeRule.deleteMany({});
       await prisma.user.deleteMany({
         where: { email: { in: ['testuser@example.com', 'testagent@example.com'] } },
       });
@@ -280,6 +281,10 @@ describe('Delivery GL Integration', () => {
 
   describe('Failed Delivery', () => {
     it('should create GL entry for failed delivery expense', async () => {
+      // The fee comes from the agent's FeeRule (M1-T10); with no rule nothing posts
+      await prisma.feeRule.create({
+        data: { partnerUserId: testOrder.deliveryAgentId, outcome: 'failed', amount: 50 },
+      });
       await deliveryService.markDeliveryFailed(
         testDelivery.id.toString(),
         'Customer not home',
@@ -296,10 +301,14 @@ describe('Delivery GL Integration', () => {
       expect(updatedOrder!.status).toBe('failed_delivery');
 
       // Verify GL entry was created
+      // M1-T11: the fee is keyed on the OrderHistory row of the failed_delivery move (D6)
+      const failedMove = await prisma.orderHistory.findFirstOrThrow({
+        where: { orderId: testOrder.id, status: 'failed_delivery' },
+      });
       const glEntries = await prisma.journalEntry.findMany({
         where: {
-          sourceType: 'failed_delivery',
-          sourceId: testDelivery.id,
+          sourceType: 'order_failed_delivery',
+          sourceId: failedMove.id,
         },
         include: { transactions: true },
       });

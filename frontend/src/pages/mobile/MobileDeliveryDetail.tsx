@@ -5,7 +5,14 @@ import { deliveriesService, DeliveryListItem, formatDeliveryAddress } from '../.
 import { ordersService } from '../../services/orders.service';
 import { resizeImage } from '../../utils/imageResize';
 import { Skeleton } from '../../components/ui/Skeleton';
-import { OrderStatus } from '../../types';
+import { OrderStatus, FailureReason } from '../../types';
+
+const FAILURE_REASONS: { value: FailureReason; label: string }[] = [
+  { value: 'not_reachable', label: 'Customer not reachable' },
+  { value: 'refused', label: 'Customer refused' },
+  { value: 'wrong_address', label: 'Wrong address' },
+  { value: 'other', label: 'Other' },
+];
 import toast from 'react-hot-toast';
 
 const STEPS = ['Pickup', 'In Transit', 'Delivered'] as const;
@@ -81,6 +88,7 @@ export default function MobileDeliveryDetail() {
   const [showFailedSheet, setShowFailedSheet] = useState(false);
   const [failReason, setFailReason] = useState('');
   const [reschedule, setReschedule] = useState(false);
+  const [failureReason, setFailureReason] = useState<FailureReason>('not_reachable');
 
   const fetchDelivery = useCallback(async () => {
     if (!id && !orderId) return;
@@ -184,15 +192,18 @@ export default function MobileDeliveryDetail() {
     }
     setActionLoading(true);
     try {
-      const newStatus: OrderStatus = reschedule ? 'ready_for_pickup' : 'failed_delivery';
-      await ordersService.updateOrderStatus(delivery.order.id, newStatus, failReason.trim());
+      // D3: a reschedule is a failed attempt with reason `rescheduled`. The server sets the next attempt (tomorrow).
+      await ordersService.updateOrderStatus(delivery.order.id, 'failed_delivery', failReason.trim(), {
+        failureReason: reschedule ? 'rescheduled' : failureReason,
+      });
       toast.success(reschedule ? 'Rescheduled for tomorrow' : 'Marked as failed');
       setShowFailedSheet(false);
       setFailReason('');
       setReschedule(false);
+      setFailureReason('not_reachable');
       await fetchDelivery();
-    } catch {
-      toast.error('Failed to update delivery');
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Failed to update delivery');
     } finally {
       setActionLoading(false);
     }
@@ -468,6 +479,21 @@ export default function MobileDeliveryDetail() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               placeholder="Why couldn't the delivery be completed?"
             />
+
+            {!reschedule && (
+              <>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Failure type</label>
+                <select
+                  value={failureReason}
+                  onChange={e => setFailureReason(e.target.value as FailureReason)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  {FAILURE_REASONS.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              </>
+            )}
 
             <button
               type="button"

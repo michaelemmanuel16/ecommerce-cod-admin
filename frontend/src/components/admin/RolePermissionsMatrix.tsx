@@ -45,6 +45,8 @@ const RESOURCE_ACTIONS: Record<string, Array<{key: string; label: string; descri
     { key: 'delete', label: 'DELETE', description: 'Cancel or delete orders' },
     { key: 'bulk_import', label: 'BULK_IMPORT', description: 'Import multiple orders at once' },
     { key: 'assign', label: 'ASSIGN', description: 'Assign orders to agents' },
+    { key: 'update_status', label: 'UPDATE_STATUS', description: 'Change an order status only, without editing the order' },
+    { key: 'force_status', label: 'FORCE_STATUS', description: 'Move an order outside the normal status flow' },
   ],
   customers: [
     { key: 'create', label: 'CREATE', description: 'Add new customers' },

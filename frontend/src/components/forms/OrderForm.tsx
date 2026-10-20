@@ -10,6 +10,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useConfigStore } from '../../stores/configStore';
 import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
+import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
 
 interface OrderFormProps {
   isOpen: boolean;
@@ -18,17 +19,9 @@ interface OrderFormProps {
   onSuccess?: () => void;
 }
 
-const statusOptions: { value: OrderStatus; label: string }[] = [
-  { value: 'pending_confirmation', label: 'Pending Confirmation' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'preparing', label: 'Preparing' },
-  { value: 'ready_for_pickup', label: 'Ready for Pickup' },
-  { value: 'out_for_delivery', label: 'Out for Delivery' },
-  { value: 'delivered', label: 'Delivered' },
-  { value: 'cancelled', label: 'Cancelled' },
-  { value: 'returned', label: 'Returned' },
-  { value: 'failed_delivery', label: 'Failed Delivery' },
-];
+const statusOptions: { value: OrderStatus; label: string }[] = (
+  ['pending_confirmation', 'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'cancelled', 'returned', 'failed_delivery'] as OrderStatus[]
+).map((value) => ({ value, label: ORDER_STATUS_LABELS[value] }));
 
 interface OrderItemForm {
   productId: number;

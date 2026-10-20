@@ -1,7 +1,8 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
-import { clearCurrencyCache } from '../utils/currency';
+import { currencyForCountry } from '../utils/currency';
+import { changeStoreCurrency } from '../services/fxService';
 import { AppError } from '../middleware/errorHandler';
 
 export const setupOnboarding = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
@@ -28,13 +29,16 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
 
     const { country, currency, businessEmail, businessPhone, businessAddress, taxId } = req.body;
 
+    // Picking a country sets the store currency (O3, O6). An explicit currency wins.
+    const storeCurrency = currency ?? (typeof country === 'string' ? currencyForCountry(country) : undefined) ?? undefined;
     const updatedTenant = await prisma.tenant.update({
       where: { id: tenantId },
       data: {
         ...(country !== undefined && { region: country }),
-        ...(currency !== undefined && { currency }),
       }
     });
+    // Saves the code and fetches rates for the new pairs; a provider outage does not fail onboarding.
+    if (storeCurrency !== undefined) updatedTenant.currency = await changeStoreCurrency(tenantId, storeCurrency);
 
     // Save business details to SystemConfig (create if needed)
     if (businessEmail || businessPhone || businessAddress || taxId) {
@@ -48,14 +52,12 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
             ...(businessAddress && { businessAddress }),
             ...(taxId && { taxId }),
             businessName: updatedTenant.name,
-            currency: updatedTenant.currency,
           },
         });
       } else {
         await prisma.systemConfig.create({
           data: {
             businessName: updatedTenant.name,
-            currency: updatedTenant.currency,
             ...(businessEmail && { businessEmail }),
             ...(businessPhone && { businessPhone }),
             ...(businessAddress && { businessAddress }),
@@ -64,7 +66,6 @@ export const setupOnboarding = async (req: AuthRequest, res: Response, next: Nex
           },
         });
       }
-      clearCurrencyCache();
     }
 
     // Mark onboarding as complete in user preferences (using data from initial read)

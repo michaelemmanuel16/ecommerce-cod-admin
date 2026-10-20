@@ -15,7 +15,9 @@ import {
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { tenantIdForFormSlug } from './tenantLookupService';
-import { clearCurrencyCache } from '../utils/currency';
+import { currencyOfTenant, getCurrency } from '../utils/currency';
+import { changeStoreCurrency } from './fxService';
+import { parseOperatingHours } from './kpi/workingTime';
 
 export const adminService = {
   /**
@@ -101,17 +103,16 @@ export const adminService = {
     let tenantSlug: string | null = config?.tenant?.slug ?? null;
 
     if (!config) {
-      // Seed from tenant data if available (business name, currency, tenantId)
-      let tenantDefaults: { businessName?: string; currency?: string } = {};
+      // Seed from tenant data if available (business name, tenantId)
+      let tenantDefaults: { businessName?: string } = {};
       if (tenantId) {
         const tenant = await prisma.tenant.findUnique({
           where: { id: tenantId },
-          select: { name: true, currency: true, slug: true },
+          select: { name: true, slug: true },
         });
         if (tenant) {
           tenantDefaults = {
             businessName: tenant.name,
-            currency: tenant.currency || 'USD',
           };
           tenantSlug = tenant.slug;
         }
@@ -119,7 +120,6 @@ export const adminService = {
 
       config = await prisma.systemConfig.create({
         data: {
-          currency: tenantDefaults.currency || 'USD',
           businessName: tenantDefaults.businessName || null,
           rolePermissions: this.getDefaultPermissions(),
           tenantId: tenantId ?? null,
@@ -141,6 +141,8 @@ export const adminService = {
     // tenantSlug travels with the config so the admin UI can render the
     // per-tenant Paystack webhook URL without an extra round-trip.
     result.tenantSlug = tenantSlug;
+    // The store currency lives on the tenant (M1-T31), not in SystemConfig.
+    result.currency = await getCurrency();
     return result;
   },
 
@@ -158,9 +160,9 @@ export const adminService = {
    */
   async getPublicConfigBySlug(slugs: { tenant?: string; form?: string }) {
     const select = {
+      id: true,
       name: true,
-      currency: true,
-      systemConfigs: { select: { businessName: true, currency: true }, take: 1 },
+      systemConfigs: { select: { businessName: true }, take: 1 },
     } as const;
     const tenant = await withoutTenant('public-config-slug', async () => {
       if (slugs.tenant) return prisma.tenant.findUnique({ where: { slug: slugs.tenant }, select });
@@ -172,7 +174,7 @@ export const adminService = {
     const config = tenant.systemConfigs[0];
     return {
       businessName: config?.businessName ?? tenant.name ?? null,
-      currency: config?.currency ?? tenant.currency ?? 'USD',
+      currency: await currencyOfTenant(tenant.id),
     };
   },
 
@@ -196,6 +198,21 @@ export const adminService = {
       ? await prisma.systemConfig.findUnique({ where: { tenantId } })
       : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
     if (!config) throw new Error('System config not found');
+
+    // The store currency is Tenant.currency, not a SystemConfig column (M1-T31). The owner can change it at any time.
+    const { currency, ...configData } = data;
+    data = configData;
+    if (currency !== undefined && tenantId) await changeStoreCurrency(tenantId, currency);
+
+    // Operating hours drive the time-to-first-call clock (M1-T22, F-755): reject a bad shape now, not at read time.
+    if (data.operatingHours !== undefined && data.operatingHours !== null) {
+      try {
+        data.operatingHours = parseOperatingHours(data.operatingHours);
+      } catch (error) {
+        if (error instanceof RangeError) throw new AppError(error.message, 400, 'INVALID_OPERATING_HOURS');
+        throw error;
+      }
+    }
 
     // Strip masked placeholders, preserve OAuth state, then encrypt — keyed off
     // SENSITIVE_FIELDS so adding a new integration is a one-line map update.
@@ -255,7 +272,6 @@ export const adminService = {
       where: { id: config.id },
       data,
     });
-    clearCurrencyCache();
 
     // Invalidate provider config caches when settings change
     if (data.whatsappProvider !== undefined) {
@@ -309,7 +325,7 @@ export const adminService = {
     return {
       super_admin: {
         users: ['create', 'view', 'update', 'delete'],
-        orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign'],
+        orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status'],
         customers: ['create', 'view', 'update', 'delete'],
         products: ['create', 'view', 'update', 'delete', 'update_stock'],
         financial: ['view', 'create', 'update', 'delete'],
@@ -349,7 +365,7 @@ export const adminService = {
       },
       inventory_manager: {
         users: [],
-        orders: ['view'],
+        orders: ['view', 'update_status'],
         customers: ['view'],
         products: ['create', 'view', 'update', 'delete', 'update_stock'],
         financial: [],

@@ -384,6 +384,19 @@ describe('DeliveryService (extended branch coverage)', () => {
       expect(result).toBeDefined();
     });
 
+    it('reads a date-only endDate as the whole store day; an ISO endDate as the instant', async () => {
+      (prismaMock.order.findMany as any).mockResolvedValue([] as any);
+      (prismaMock.order.count as any).mockResolvedValue(0);
+      (prismaMock.order.groupBy as any).mockResolvedValue([] as any);
+      const createdAt = () => (prismaMock.order.findMany as any).mock.calls.at(-1)[0].where.OR[1].createdAt;
+
+      await deliveryService.getAgentOrders(2, { startDate: '2024-12-01', endDate: '2024-12-31' });
+      expect(createdAt()).toEqual({ gte: new Date('2024-12-01T00:00:00.000Z'), lte: new Date('2024-12-31T23:59:59.999Z') });
+
+      await deliveryService.getAgentOrders(2, { startDate: '2024-12-01', endDate: '2024-12-31T10:00:00.000Z' });
+      expect(createdAt().lte).toEqual(new Date('2024-12-31T10:00:00.000Z'));
+    });
+
     it('handles text search for agent orders', async () => {
       (prismaMock.order.findMany as any).mockResolvedValue([] as any);
       (prismaMock.order.count as any).mockResolvedValue(0);

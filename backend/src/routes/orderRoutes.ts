@@ -25,7 +25,8 @@ router.post('/', createOrderValidation, validate, requireResourcePermission('ord
 router.get('/:id', requireResourcePermission('orders', 'view'), orderController.getOrder);
 router.put('/:id', requireResourcePermission('orders', 'update'), orderController.updateOrder);
 router.delete('/:id', requireResourcePermission('orders', 'delete'), orderController.deleteOrder);
-router.patch('/:id/status', validateRequest(updateOrderStatusValidation), requireResourcePermission('orders', 'update'), orderController.updateOrderStatus);
+router.get('/:id/transitions', requireResourcePermission('orders', 'view'), orderController.getOrderTransitions);
+router.patch('/:id/status', validateRequest(updateOrderStatusValidation), requireResourcePermission('orders', 'update', 'update_status'), orderController.updateOrderStatus);
 router.patch('/:id/assign-rep', requireResourcePermission('orders', 'assign'), orderController.assignCustomerRep);
 router.patch('/:id/assign-agent', requireResourcePermission('orders', 'assign'), orderController.assignDeliveryAgent);
 

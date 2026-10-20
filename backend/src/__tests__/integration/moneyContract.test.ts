@@ -74,7 +74,7 @@ describe('money contract', () => {
     const res = await request(app).get('/api/financial/summary').set(auth());
     expect(res.status).toBe(200);
     const { summary } = res.body;
-    for (const field of ['totalRevenue', 'totalExpenses', 'profit', 'codCollected', 'codPending', 'outstandingReceivables']) {
+    for (const field of ['totalRevenue', 'digitalRevenue', 'paystackFees', 'totalExpenses', 'profit', 'codCollected', 'codPending', 'outstandingReceivables']) {
       expect(summary[field]).toMatch(TWO_DECIMALS);
     }
     expect(summary.codCollected).toBe('249.00');

@@ -6,6 +6,7 @@ import { Requester } from '../utils/authUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
 import * as Money from '../utils/money';
+import { looksLikePhone, normalizePhoneForStorage, phoneLookupVariants, phonePartialDigits, phoneSearchConditions } from '../utils/phone';
 
 interface CreateCustomerData {
   firstName: string;
@@ -59,7 +60,7 @@ export class CustomerService {
       where.OR = [
         { firstName: { contains: search, mode: 'insensitive' } },
         { lastName: { contains: search, mode: 'insensitive' } },
-        { phoneNumber: { contains: search } },
+        ...phoneSearchConditions(search),
         { email: { contains: search, mode: 'insensitive' } }
       ];
     }
@@ -75,7 +76,7 @@ export class CustomerService {
     // to sort and paginate at the database level instead of loading all records
     if (sortBy) {
       // Build WHERE conditions for raw SQL
-      const conditions: string[] = ['c.is_active = true', 'c.deleted_at IS NULL'];
+      const conditions: string[] = ['c.is_active = true'];
       const params: any[] = [];
       let paramIdx = 1;
 
@@ -88,9 +89,13 @@ export class CustomerService {
       }
 
       if (search) {
-        conditions.push(`(c.first_name ILIKE $${paramIdx} OR c.last_name ILIKE $${paramIdx} OR c.phone_number LIKE $${paramIdx + 1} OR c.email ILIKE $${paramIdx})`);
-        params.push(`%${search}%`, `%${search}%`);
-        paramIdx += 2;
+        // A phone-like term also matches every stored format of the number (normalized or old).
+        // A partly typed local number (024 55) also matches the normalized form.
+        const partial = phonePartialDigits(search);
+        const phoneLike = partial ? `%${partial}%` : `%${search}%`;
+        conditions.push(`(c.first_name ILIKE $${paramIdx} OR c.last_name ILIKE $${paramIdx} OR c.phone_number LIKE $${paramIdx + 1} OR c.phone_number = ANY($${paramIdx + 2}::text[]) OR c.email ILIKE $${paramIdx})`);
+        params.push(`%${search}%`, phoneLike, looksLikePhone(search) ? phoneLookupVariants(search) : []);
+        paramIdx += 3;
       }
       if (area) {
         conditions.push(`c.area = $${paramIdx}`);
@@ -109,7 +114,8 @@ export class CustomerService {
       }
 
       const whereClause = conditions.join(' AND ');
-      const orderCol = sortBy === 'totalOrders' ? 'total_orders' : 'total_spent';
+      // Aggregate expressions, not the aliases: customers has its own total_orders / total_spent columns (c.*), so the alias is ambiguous in ORDER BY.
+      const orderCol = sortBy === 'totalOrders' ? 'COUNT(o.id)' : 'COALESCE(SUM(o.total_amount), 0)';
       const orderDir = sortOrder === 'asc' ? 'ASC' : 'DESC';
 
       // Count total
@@ -198,7 +204,9 @@ export class CustomerService {
     // Check if customer with phone number already exists. Archived customers
     // count: they still hold the number in the unique index, so missing one here
     // turns a clean 400 into a constraint-violation 500.
-    const existingCustomer = await findCustomerByPhoneIncludingArchived(prisma, data.phoneNumber);
+    const phoneNumber = normalizePhoneForStorage(data.phoneNumber);
+    const alternatePhone = normalizePhoneForStorage(data.alternatePhone);
+    const existingCustomer = await findCustomerByPhoneIncludingArchived(prisma, phoneNumber);
 
     if (existingCustomer) {
       throw new AppError(
@@ -212,6 +220,8 @@ export class CustomerService {
     const customer = await prisma.customer.create({
       data: {
         ...data,
+        phoneNumber,
+        alternatePhone,
         firstName: data.firstName || 'Unknown',
         lastName: data.lastName || '',
       }
@@ -298,7 +308,7 @@ export class CustomerService {
    */
   async getCustomerByPhone(phoneNumber: string, requester?: Requester) {
     const customer = await prisma.customer.findFirst({
-      where: { phoneNumber },
+      where: { phoneNumber: { in: phoneLookupVariants(phoneNumber) } },
       include: {
         orders: {
           where: { deletedAt: null },
@@ -361,6 +371,10 @@ export class CustomerService {
       }
     }
 
+    // Store phones normalized (unparseable input stays as typed).
+    if (updateData.phoneNumber) updateData = { ...updateData, phoneNumber: normalizePhoneForStorage(updateData.phoneNumber) };
+    if (updateData.alternatePhone) updateData = { ...updateData, alternatePhone: normalizePhoneForStorage(updateData.alternatePhone) };
+
     // If updating phone number, check for duplicates
     if (updateData.phoneNumber && updateData.phoneNumber !== customer.phoneNumber) {
       // Archived customers included — see createCustomer.
@@ -369,7 +383,8 @@ export class CustomerService {
         updateData.phoneNumber
       );
 
-      if (existingCustomer) {
+      // The customer's own old-format number matches too; that is not a duplicate.
+      if (existingCustomer && existingCustomer.id !== id) {
         throw new AppError(
           existingCustomer.isActive === false
             ? 'Phone number already in use by an archived customer'
@@ -442,431 +457,6 @@ export class CustomerService {
 
     logger.info('Customer deactivated', { customerId: id });
     return { message: 'Customer deactivated successfully' };
-  }
-
-  /**
-   * Update customer tags
-   */
-  async updateCustomerTags(customerId: string, tags: string[], requester?: Requester) {
-    const id = parseInt(customerId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid customer ID', 400);
-    }
-
-    const customer = await prisma.customer.findUnique({
-      where: { id }
-    });
-
-    if (!customer) {
-      throw new AppError('Customer not found', 404);
-    }
-
-    // Role-based ownership check for updating tags
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      const hasOrder = await prisma.order.findFirst({
-        where: {
-          customerId: customer.id,
-          OR: [
-            { customerRepId: requester.id },
-            { deliveryAgentId: requester.id }
-          ],
-          deletedAt: null
-        }
-      });
-
-      if (!hasOrder) {
-        throw new AppError('You do not have permission to update tags for this customer', 403);
-      }
-    }
-
-    const updated = await prisma.customer.update({
-      where: { id },
-      data: { tags }
-    });
-
-    logger.info('Customer tags updated', { customerId: id, tags });
-    return updated;
-  }
-
-  /**
-   * Add tags to customer (merge with existing)
-   */
-  async addCustomerTags(customerId: string, newTags: string[]) {
-    const id = parseInt(customerId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid customer ID', 400);
-    }
-
-    const customer = await prisma.customer.findUnique({
-      where: { id }
-    });
-
-    if (!customer) {
-      throw new AppError('Customer not found', 404);
-    }
-
-    const uniqueTags = Array.from(new Set([...customer.tags, ...newTags]));
-
-    const updated = await prisma.customer.update({
-      where: { id },
-      data: { tags: uniqueTags }
-    });
-
-    logger.info('Customer tags added', { customerId: id, newTags });
-    return updated;
-  }
-
-  /**
-   * Remove tags from customer
-   */
-  async removeCustomerTags(customerId: string, tagsToRemove: string[]) {
-    const id = parseInt(customerId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid customer ID', 400);
-    }
-
-    const customer = await prisma.customer.findUnique({
-      where: { id }
-    });
-
-    if (!customer) {
-      throw new AppError('Customer not found', 404);
-    }
-
-    const updatedTags = customer.tags.filter((tag) => !tagsToRemove.includes(tag));
-
-    const updated = await prisma.customer.update({
-      where: { id },
-      data: { tags: updatedTags }
-    });
-
-    logger.info('Customer tags removed', { customerId: id, tagsToRemove });
-    return updated;
-  }
-
-  /**
-   * Get customer analytics
-   */
-  async getCustomerAnalytics(customerId: string, requester?: Requester) {
-    const id = parseInt(customerId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid customer ID', 400);
-    }
-
-    const customer = await prisma.customer.findUnique({
-      where: { id },
-      include: {
-        orders: {
-          where: { deletedAt: null },
-          select: {
-            id: true,
-            totalAmount: true,
-            status: true,
-            createdAt: true
-          }
-        }
-      }
-    });
-
-    if (!customer) {
-      throw new AppError('Customer not found', 404);
-    }
-
-    // Role-based ownership check for analytics
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      const hasOrder = await prisma.order.findFirst({
-        where: {
-          customerId: customer.id,
-          OR: [
-            { customerRepId: requester.id },
-            { deliveryAgentId: requester.id }
-          ],
-          deletedAt: null
-        }
-      });
-
-      if (!hasOrder) {
-        throw new AppError('You do not have permission to view analytics for this customer', 403);
-      }
-    }
-
-    const totalSpent = Money.sum(customer.orders.map(order => order.totalAmount));
-    const analytics = {
-      totalOrders: customer.orders.length,
-      totalSpent,
-      avgOrderValue:
-        customer.orders.length > 0
-          ? Money.div(totalSpent, customer.orders.length)
-          : Money.ZERO,
-      ordersByStatus: customer.orders.reduce((acc: Record<string, number>, order) => {
-        acc[order.status] = (acc[order.status] || 0) + 1;
-        return acc;
-      }, {}),
-      lastOrderDate:
-        customer.orders.length > 0
-          ? customer.orders.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0].createdAt
-          : null,
-      firstOrderDate:
-        customer.orders.length > 0
-          ? customer.orders.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0].createdAt
-          : null
-    };
-
-    return analytics;
-  }
-
-  /**
-   * Get customer order history with full details
-   */
-  async getCustomerOrderHistory(customerId: string, requester?: Requester, filters?: { page?: number; limit?: number }) {
-    const id = parseInt(customerId, 10);
-    if (isNaN(id)) {
-      throw new AppError('Invalid customer ID', 400);
-    }
-
-    const customer = await prisma.customer.findUnique({
-      where: { id }
-    });
-
-    if (!customer) {
-      throw new AppError('Customer not found', 404);
-    }
-
-    const { page = 1, limit = 20 } = filters || {};
-    const skip = (page - 1) * limit;
-
-    const where: Prisma.OrderWhereInput = { customerId: id };
-
-    // Role-based filtering of order history
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      where.OR = [
-        { customerRepId: requester.id },
-        { deliveryAgentId: requester.id }
-      ];
-    }
-
-    const [orders, total] = await Promise.all([
-      prisma.order.findMany({
-        where: { customerId: id, deletedAt: null },
-        skip,
-        take: limit,
-        include: {
-          orderItems: {
-            include: {
-              product: {
-                select: {
-                  name: true,
-                  sku: true
-                }
-              }
-            }
-          },
-          deliveryAgent: {
-            select: {
-              firstName: true,
-              lastName: true
-            }
-          }
-        },
-        orderBy: { createdAt: 'desc' }
-      }),
-      prisma.order.count({ where: { customerId: id, deletedAt: null } })
-    ]);
-
-    return {
-      orders,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    };
-  }
-
-  /**
-   * Search customers by multiple criteria
-   */
-  async searchCustomers(query: string, requester?: Requester, filters?: { area?: string; limit?: number }) {
-    const where: Prisma.CustomerWhereInput = {
-      isActive: true,
-      OR: [
-        { firstName: { contains: query, mode: 'insensitive' } },
-        { lastName: { contains: query, mode: 'insensitive' } },
-        { phoneNumber: { contains: query } },
-        { email: { contains: query, mode: 'insensitive' } }
-      ]
-    };
-
-    // Role-based filtering for customer search
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      where.orders = {
-        some: {
-          OR: [
-            { customerRepId: requester.id },
-            { deliveryAgentId: requester.id }
-          ],
-          deletedAt: null
-        }
-      };
-    }
-
-    if (filters?.area) where.area = filters.area;
-
-    const customers = await prisma.customer.findMany({
-      where,
-      take: filters?.limit || 10,
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        phoneNumber: true,
-        email: true,
-        area: true,
-        totalOrders: true,
-        totalSpent: true
-      },
-      orderBy: { totalSpent: 'desc' }
-    });
-
-    return customers;
-  }
-
-  /**
-   * Get top customers by spending
-   */
-  async getTopCustomers(limit: number = 10, requester?: Requester, filters?: { area?: string }) {
-    const where: Prisma.CustomerWhereInput = { isActive: true };
-
-    // Role-based filtering for top customers
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      where.orders = {
-        some: {
-          OR: [
-            { customerRepId: requester.id },
-            { deliveryAgentId: requester.id }
-          ],
-          deletedAt: null
-        }
-      };
-    }
-    if (filters?.area) where.area = filters.area;
-
-    const topCustomers = await prisma.customer.findMany({
-      where,
-      take: limit,
-      orderBy: { totalSpent: 'desc' },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        phoneNumber: true,
-        email: true,
-        area: true,
-        totalOrders: true,
-        totalSpent: true,
-        createdAt: true
-      }
-    });
-
-    return topCustomers;
-  }
-
-  /**
-   * Get customers by area distribution
-   */
-  async getCustomerDistribution() {
-    const byArea = await prisma.customer.groupBy({
-      by: ['area'],
-      where: { isActive: true },
-      _count: true,
-      orderBy: {
-        _count: {
-          area: 'desc'
-        }
-      },
-      take: 20
-    });
-
-    return {
-      byArea: byArea.map((a) => ({
-        area: a.area,
-        count: a._count
-      }))
-    };
-  }
-
-  /**
-   * Merge duplicate customers
-   */
-  async mergeCustomers(primaryCustomerId: string, secondaryCustomerId: string, requester?: Requester) {
-    const primaryId = parseInt(primaryCustomerId, 10);
-    const secondaryId = parseInt(secondaryCustomerId, 10);
-
-    if (isNaN(primaryId) || isNaN(secondaryId)) {
-      throw new AppError('Invalid customer ID(s)', 400);
-    }
-
-    // Strict admin restriction for merging customers
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      throw new AppError('You do not have permission to merge customers', 403);
-    }
-
-    const [primaryCustomer, secondaryCustomer] = await Promise.all([
-      prisma.customer.findUnique({ where: { id: primaryId } }),
-      prisma.customer.findUnique({
-        where: { id: secondaryId },
-        include: { orders: true }
-      })
-    ]);
-
-    if (!primaryCustomer || !secondaryCustomer) {
-      throw new AppError('One or both customers not found', 404);
-    }
-
-    await prisma.$transaction(async (tx) => {
-      // Transfer all orders from secondary to primary
-      await tx.order.updateMany({
-        where: { customerId: secondaryId },
-        data: { customerId: primaryId }
-      });
-
-      // Update primary customer stats
-      await tx.customer.update({
-        where: { id: primaryId },
-        data: {
-          totalOrders: primaryCustomer.totalOrders + secondaryCustomer.totalOrders,
-          totalSpent: Money.add(primaryCustomer.totalSpent, secondaryCustomer.totalSpent),
-          tags: Array.from(new Set([...primaryCustomer.tags, ...secondaryCustomer.tags]))
-        }
-      });
-
-      // Deactivate secondary customer
-      await tx.customer.update({
-        where: { id: secondaryId },
-        data: { isActive: false }
-      });
-    });
-
-    if (requester) {
-      await prisma.auditLog.create({
-        data: {
-          tenantId: resolveTenantId(primaryCustomer.tenantId),
-          userId: requester.id,
-          action: 'merge',
-          resource: 'customer',
-          resourceId: primaryCustomerId,
-          metadata: { secondaryCustomerId: secondaryCustomerId }
-        }
-      });
-    }
-
-    logger.info('Customers merged', {
-      primaryCustomerId: primaryId,
-      secondaryCustomerId: secondaryId
-    });
-
-    return { message: 'Customers merged successfully' };
   }
 }
 

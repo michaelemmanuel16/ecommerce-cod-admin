@@ -1,7 +1,7 @@
 import prisma, { prismaBase } from '../utils/prisma';
 import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
-import { Prisma, OrderStatus, JournalSourceType } from '@prisma/client';
+import { Prisma, OrderStatus, DeclineReason, FailureReason } from '@prisma/client';
 import logger from '../utils/logger';
 import appEvents, { AppEvent } from '../utils/appEvents';
 import workflowService from './workflowService';
@@ -10,19 +10,23 @@ import {
   emitOrderAssigned,
   emitOrderCreated,
   emitOrderUpdated,
-  emitOrderStatusChanged,
   emitOrdersDeleted,
-  emitGLEntryCreated,
   emitToTenant,
 } from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { SYSTEM_USER_ID } from '../config/constants';
-import { GLAutomationService, JournalEntryWithTransactions } from './glAutomationService';
+import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
+import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
+import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
+import { hasPermission } from '../middleware/auth';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 import * as Money from '../utils/money';
+import { roleScope } from '../utils/kpiRequest';
+import { kpiWindow } from './kpi/dates';
+import { deliveredRevenue, revenueScope } from './kpi/revenue';
 
 
 
@@ -94,7 +98,15 @@ interface UpdateOrderStatusData {
   // happened days ago. Omitted => now. financialSyncService uses this as the
   // GL collection date, so a wrong value posts revenue into the wrong period.
   deliveryDate?: Date;
+  // State machine inputs (M1-T11/T12). No actor: the requester decides; no requester: system.
+  actor?: TransitionActor;
+  force?: boolean;
+  reason?: string;
+  declineReason?: DeclineReason;
+  failureReason?: FailureReason;
+  nextAttemptDate?: Date | null;
 }
+
 
 export class OrderService {
   /**
@@ -142,9 +154,11 @@ export class OrderService {
     if (search) {
       // Try to parse as number for ID search
       const searchNum = parseInt(search);
+      const phoneSearch = customerPhoneSearch(search);
       where.OR = [
-        ...(isNaN(searchNum) ? [] : [{ id: searchNum }]),
-        { customer: { phoneNumber: { contains: search, mode: 'insensitive' } } },
+        // A phone typed as +233... parses to a number beyond Int4; it is not an order id.
+        ...(isNaN(searchNum) || searchNum > 2147483647 ? [] : [{ id: searchNum }]),
+        ...(phoneSearch ? [phoneSearch] : []),
         { customer: { firstName: { contains: search, mode: 'insensitive' } } },
         { customer: { lastName: { contains: search, mode: 'insensitive' } } }
       ];
@@ -226,8 +240,10 @@ export class OrderService {
         throw new AppError('Customer not found', 404);
       }
     } else if (data.customerPhone) {
-      // Find customer by phone or create new one.
-      customer = await findAndReactivateCustomerByPhone(prisma, data.customerPhone, 'manual order');
+      // Find customer by phone or create new one. Unparseable input is stored as typed (orders never fail on it).
+      const customerPhone = normalizePhoneForStorage(data.customerPhone);
+      const alternatePhone = normalizePhoneForStorage(data.alternatePhone) || undefined;
+      customer = await findAndReactivateCustomerByPhone(prisma, customerPhone, 'manual order');
 
       if (!customer) {
         // Parse customer name
@@ -240,9 +256,9 @@ export class OrderService {
           data: {
             firstName,
             lastName,
-            phoneNumber: data.customerPhone,
+            phoneNumber: customerPhone,
             email: data.customerEmail || null,
-            alternatePhone: data.alternatePhone || null,
+            alternatePhone: alternatePhone || null,
             address: data.deliveryAddress,
             state: data.deliveryState,
             area: data.deliveryArea,
@@ -256,8 +272,8 @@ export class OrderService {
         if (data.customerEmail && data.customerEmail !== customer.email) {
           customerUpdateData.email = data.customerEmail;
         }
-        if (data.alternatePhone && data.alternatePhone !== customer.alternatePhone) {
-          customerUpdateData.alternatePhone = data.alternatePhone;
+        if (alternatePhone && alternatePhone !== customer.alternatePhone) {
+          customerUpdateData.alternatePhone = alternatePhone;
         }
         if (Object.keys(customerUpdateData).length > 0) {
           customer = await prisma.customer.update({
@@ -397,9 +413,11 @@ export class OrderService {
     const normalize = (val: string | number | null | undefined) =>
       String(val || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
 
-    // Aggressive phone normalization: Take last 9 digits for comparison
-    // This handles 055... vs +23355... vs 23355...
-    const normalizePhone = (phone: string | null | undefined) => {
+    // Phone key for in-import duplicate detection: the shared E.164 form; unparseable input
+    // falls back to its last 9 digits so odd values still dedupe against themselves.
+    const phoneKey = (phone: string | null | undefined) => {
+      const e164 = normalizePhone(phone);
+      if (e164) return e164;
       const digits = String(phone || '').replace(/[^0-9]/g, '');
       return digits.length >= 9 ? digits.slice(-9) : digits;
     };
@@ -412,7 +430,7 @@ export class OrderService {
       for (const orderData of batch) {
         try {
           // 1. Check for duplicates within the SAME import first
-          const normalizedPhone = normalizePhone(orderData.customerPhone);
+          const normalizedPhone = phoneKey(orderData.customerPhone);
           const orderDateValue = orderData.orderDate || new Date();
           const orderDateString = orderDateValue.toDateString();
           const orderFingerprint = `${normalizedPhone}| ${Money.toApi(orderData.totalAmount)}| ${normalize(orderData.deliveryAddress)}| ${orderDateString} `;
@@ -436,12 +454,8 @@ export class OrderService {
           // Use prismaBase to include soft-deleted orders in duplicate check
           const existingOrders = await prismaBase.order.findMany({
             where: {
-              customer: {
-                OR: [
-                  { phoneNumber: orderData.customerPhone },
-                  { phoneNumber: { endsWith: normalizedPhone } }
-                ]
-              },
+              // Matches the number in the normalized or any old stored format.
+              customer: { phoneNumber: { in: phoneLookupVariants(orderData.customerPhone) } },
               createdAt: {
                 gte: startOfCurrentDay,
                 lte: endOfCurrentDay
@@ -477,37 +491,12 @@ export class OrderService {
           if (matchingExisting) {
             const newStatus = (orderData.status || 'pending_confirmation') as OrderStatus;
             if (isForwardStatus(matchingExisting.status as OrderStatus, newStatus)) {
-              // Update the existing order's status instead of creating a duplicate
-              await prisma.$transaction(async (tx) => {
-                await tx.order.update({
-                  where: { id: matchingExisting.id },
-                  data: {
-                    status: newStatus,
-                    ...(newStatus === 'delivered' && { deliveryDate: orderDateValue }),
-                  },
-                });
-                await tx.orderHistory.create({
-                  data: {
-                    tenantId: resolveTenantId(matchingExisting.tenantId),
-                    orderId: matchingExisting.id,
-                    status: newStatus,
-                    notes: 'Status updated via bulk CSV re-import',
-                    changedBy: createdById,
-                  },
-                });
-                // Auto-sync financials if progressing to delivered
-                if (newStatus === 'delivered') {
-                  const updatedOrder = await tx.order.findUnique({
-                    where: { id: matchingExisting.id },
-                    include: { orderItems: { include: { product: true } }, customer: true, deliveryAgent: true, customerRep: true },
-                  });
-                  if (Money.isNonZero(updatedOrder?.codAmount)) {
-                    await FinancialSyncService.syncOrderFinancialData(tx as any, updatedOrder as any, createdById || SYSTEM_USER_ID).catch(err => {
-                      logger.warn(`Financial sync skipped for re-imported order ${matchingExisting.id}`, { error: err.message });
-                    });
-                  }
-                }
-              }, { maxWait: 10000, timeout: 15000 });
+              // Update the existing order's status instead of creating a duplicate. Import is an
+              // integration actor (D4); the history row keeps the importing user id.
+              await transitionOrder(matchingExisting.id, newStatus, { kind: 'integration', userId: createdById }, {
+                note: 'Status updated via bulk CSV re-import',
+                deliveryDate: newStatus === 'delivered' ? orderDateValue : undefined,
+              });
               logger.info('✅ CANARY: DUPLICATE — status updated forward', {
                 orderId: matchingExisting.id,
                 from: matchingExisting.status,
@@ -529,16 +518,18 @@ export class OrderService {
 
           const createdOrder = await prisma.$transaction(async (tx) => {
             // 3. Find or create customer by phone (tenant-scoped via Prisma extension).
+            const customerPhone = normalizePhoneForStorage(orderData.customerPhone);
+            const alternatePhone = normalizePhoneForStorage(orderData.customerAlternatePhone) || undefined;
             let customer = await findAndReactivateCustomerByPhone(
               tx,
-              orderData.customerPhone,
+              customerPhone,
               'bulk import'
             );
             if (customer) {
               customer = await tx.customer.update({
                 where: { id: customer.id },
                 data: {
-                  ...(orderData.customerAlternatePhone && { alternatePhone: orderData.customerAlternatePhone }),
+                  ...(alternatePhone && { alternatePhone }),
                   ...(orderData.deliveryAddress && { address: orderData.deliveryAddress }),
                   ...(orderData.deliveryState && { state: orderData.deliveryState }),
                   ...(orderData.deliveryArea && { area: orderData.deliveryArea }),
@@ -549,8 +540,8 @@ export class OrderService {
                 data: {
                   firstName: orderData.customerFirstName || 'Unknown',
                   lastName: orderData.customerLastName || '',
-                  phoneNumber: orderData.customerPhone,
-                  alternatePhone: orderData.customerAlternatePhone,
+                  phoneNumber: customerPhone,
+                  alternatePhone,
                   address: orderData.deliveryAddress,
                   state: orderData.deliveryState,
                   area: orderData.deliveryArea,
@@ -855,8 +846,28 @@ export class OrderService {
       customerName,
       customerEmail,
       customerPhone,
+      // D9: a status in this body is a move; it goes through the state machine and never into the generic update
+      status: requestedStatus,
+      force,
+      reason,
+      declineReason,
+      failureReason,
+      nextAttemptDate,
       ...orderUpdateData
     } = updateData;
+
+    // First the move (its own transaction, so a refused move changes nothing), then the other fields.
+    if (requestedStatus && requestedStatus !== order.status) {
+      const actor = actorOf(requester);
+      await transitionOrder(orderId, requestedStatus, actor, this.moveOptions({
+        force,
+        reason,
+        declineReason,
+        failureReason,
+        nextAttemptDate: nextAttemptDate ? new Date(nextAttemptDate) : undefined,
+      }));
+      order.status = requestedStatus; // the item stock adjustment below depends on the current status
+    }
 
     // Update order and customer in a transaction
     const updated = await prisma.$transaction(async (tx) => {
@@ -878,12 +889,12 @@ export class OrderService {
 
         // Handle customer phone number
         if (customerPhone !== undefined) {
-          customerUpdateData.phoneNumber = customerPhone;
+          customerUpdateData.phoneNumber = normalizePhoneForStorage(customerPhone);
         }
 
         // Handle alternate phone
         if (alternatePhone !== undefined) {
-          customerUpdateData.alternatePhone = alternatePhone;
+          customerUpdateData.alternatePhone = normalizePhoneForStorage(alternatePhone);
         }
 
         // Only update if there are fields to update
@@ -970,325 +981,57 @@ export class OrderService {
   }
 
   /**
-   * Update order status with history tracking
+   * Update order status with history tracking. A thin wrapper over `transitionOrder` (M1-T11): the
+   * state machine owns the rules, history row, stock seam, GL posting, sockets and workflows.
+   * API callers (a signed-in user) must give the reasons the state machine asks for.
    */
   async updateOrderStatus(orderId: number, data: UpdateOrderStatusData, requester?: Requester) {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId, deletedAt: null },
+    const actor = data.actor ?? actorOf(requester, data.changedBy);
+    const result = await transitionOrder(orderId, data.status, actor, {
+      ...this.moveOptions(data),
+      note: data.notes,
+      deliveryDate: data.deliveryDate,
+      // Both used to be written by this method on delivered; kept as is
+      paymentStatus: data.status === 'delivered' ? 'collected' : undefined,
     });
 
-    if (!order) {
-      throw new AppError('Order not found', 404);
-    }
-
-    // Enforce ownership
-    if (requester) {
-      const isOwner = checkResourceOwnership(requester, {
-        assignedRepId: order.customerRepId,
-        deliveryAgentId: order.deliveryAgentId,
-        customerId: order.customerId
-      }, 'order');
-
-      if (!isOwner) {
-        throw new AppError('You do not have permission to update the status of this order', 403);
-      }
-    }
-
-    // Status validation removed - allow any status transition for admin flexibility
-    // this.validateStatusTransition(order.status, data.status);
-
-    // Handle return status with GL reversal and inventory restoration
-    const isReturnStatus = data.status === 'returned';
-    let glEntry: any = null;
-
-    const updated = await prisma.$transaction(async (tx) => {
-      // Handle inventory based on status change.
-      // All three transition types are handled in one block to keep the logic explicit:
-      //   A. entering deducted zone  (e.g. confirmed → out_for_delivery, or any → delivered)
-      //   B. leaving deducted zone   (e.g. out_for_delivery → cancelled)
-      //   C. out_for_delivery → delivered (stock already deducted; agent delivery confirmed)
-      const deductedStatuses = ['out_for_delivery', 'delivered'];
-      const isOldDeducted = deductedStatuses.includes(order.status);
-      const isNewDeducted = deductedStatuses.includes(data.status);
-      const isConfirmingDelivery =
-        order.status === 'out_for_delivery' && data.status === 'delivered' && !!order.deliveryAgentId;
-
-      if (isOldDeducted !== isNewDeducted || isConfirmingDelivery) {
-        const orderWithItems = await tx.order.findUnique({
-          where: { id: orderId },
-          include: { orderItems: true }
-        });
-
-        if (orderWithItems) {
-          if (!isOldDeducted && isNewDeducted) {
-            // Transition A: entering deducted zone — deduct stock
-            // Check if delivery agent has allocated stock for any items
-            let fulfilledFromAgent: number[] = [];
-            if (order.deliveryAgentId) {
-              fulfilledFromAgent = await agentInventoryService.recordOrderFulfillment(
-                tx,
-                orderId,
-                order.deliveryAgentId,
-                orderWithItems.orderItems.map(item => ({
-                  productId: item.productId,
-                  quantity: item.quantity,
-                })),
-                data.changedBy ?? order.deliveryAgentId
-              );
-            }
-
-            // If jumping directly to delivered (skipping out_for_delivery), also confirm delivery
-            if (data.status === 'delivered' && order.deliveryAgentId && fulfilledFromAgent.length > 0) {
-              await agentInventoryService.confirmOrderDelivery(
-                tx,
-                orderId,
-                order.deliveryAgentId,
-                orderWithItems.orderItems
-                  .filter(item => fulfilledFromAgent.includes(item.productId))
-                  .map(item => ({ productId: item.productId, quantity: item.quantity })),
-                data.changedBy ?? order.deliveryAgentId
-              );
-            }
-
-            // Deduct warehouse stock only for items NOT fulfilled from agent stock
-            for (const item of orderWithItems.orderItems) {
-              if (fulfilledFromAgent.includes(item.productId)) continue;
-
-              const result = await tx.product.updateMany({
-                where: {
-                  id: item.productId,
-                  stockQuantity: { gte: item.quantity }
-                },
-                data: {
-                  stockQuantity: { decrement: item.quantity }
-                }
-              });
-
-              if (result.count === 0) {
-                const product = await tx.product.findUnique({
-                  where: { id: item.productId },
-                  select: { name: true, stockQuantity: true }
-                });
-                throw new AppError(
-                  `"${product?.name ?? 'A product'}" is out of stock (${product?.stockQuantity ?? 0} units available). Please restock before marking this order as delivered.`,
-                  400
-                );
-              }
-            }
-          } else if (isOldDeducted && !isNewDeducted) {
-            // Transition B: leaving deducted zone — restore stock
-            // Restore stock - check agent stock first, then warehouse for remaining
-            let reversedFromAgent: number[] = [];
-            if (order.deliveryAgentId) {
-              reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
-                tx,
-                orderId,
-                order.deliveryAgentId,
-                data.changedBy ?? order.deliveryAgentId,
-                order.status === 'delivered'
-              );
-            }
-            for (const item of orderWithItems.orderItems) {
-              if (reversedFromAgent.includes(item.productId)) continue;
-              await tx.product.update({
-                where: { id: item.productId },
-                data: { stockQuantity: { increment: item.quantity } }
-              });
-            }
-          } else if (isConfirmingDelivery) {
-            // Transition C: out_for_delivery → delivered — stock already deducted; confirm agent delivery.
-            // NOTE: This is the sole call site for confirmOrderDelivery on the normal delivery path.
-            // A duplicate block that ran the same logic was removed — it matched the same condition
-            // (out_for_delivery → delivered + deliveryAgentId) and called confirmOrderDelivery identically.
-            await agentInventoryService.confirmOrderDelivery(
-              tx,
-              orderId,
-              order.deliveryAgentId!,
-              orderWithItems.orderItems.map(item => ({ productId: item.productId, quantity: item.quantity })),
-              data.changedBy ?? order.deliveryAgentId!
-            );
-          }
-        }
-      }
-
-      // Handle return reversal if status changed to 'returned' and revenue was recognized
-      if ((order as any).revenueRecognized && isReturnStatus) {
-        // Find the latest non-reversed order_delivery GL entry for this order
-        const latestEntry = await tx.journalEntry.findFirst({
-          where: {
-            sourceId: (orderId as any),
-            sourceType: JournalSourceType.order_delivery,
-            reversedBy: null,
-            voidedBy: null
-          },
-          include: {
-            transactions: {
-              include: {
-                account: true
-              }
-            }
-          },
-          orderBy: { createdAt: 'desc' }
-        });
-
-        if (!latestEntry) {
-          logger.warn(`Order ${orderId} marked as revenue recognized but no active GL entry found.`);
-        }
-
-        // Fetch order with items and products for inventory restoration
-        const orderWithItems = await tx.order.findUnique({
-          where: { id: orderId },
-          include: {
-            customer: true,
-            deliveryAgent: true,
-            customerRep: true,
-            orderItems: {
-              include: { product: true }
-            }
-          }
-        });
-
-        if (orderWithItems && latestEntry) {
-          glEntry = await GLAutomationService.createReturnReversalEntry(
-            tx as any,
-            orderWithItems as any,
-            latestEntry as JournalEntryWithTransactions,
-            data.changedBy || SYSTEM_USER_ID
-          );
-
-          // GL Automation handles the reversal entry, skip redundant inventory restoration here
-          // as it's now handled by the generic restoration logic above
-
-          logger.info(`GL reversal entry created for returned order ${orderId}: ${glEntry.entryNumber} `);
-        }
-      }
-
-      // Update order status
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: {
-          status: data.status,
-          deliveryDate: data.status === 'delivered' ? (data.deliveryDate ?? new Date()) : undefined,
-          paymentStatus: data.status === 'delivered' ? 'collected' : order.paymentStatus,
-          ...(isReturnStatus && order.revenueRecognized ? { revenueRecognized: false } : {}),
-          orderHistory: {
-            create: {
-              tenantId: resolveTenantId(order.tenantId),
-              status: data.status,
-              notes: data.notes || `Status changed to ${data.status} `,
-              changedBy: data.changedBy
-            }
-          }
-        },
-        include: {
-          customer: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              phoneNumber: true,
-              alternatePhone: true,
-              email: true
-            }
-          },
-          customerRep: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-              role: true,
-              commissionAmount: true
-            }
-          },
-          deliveryAgent: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              phoneNumber: true,
-              role: true,
-              commissionAmount: true
-            }
-          },
-          orderItems: {
-            include: {
-              product: {
-                select: {
-                  id: true,
-                  name: true,
-                  sku: true,
-                  cogs: true
-                }
-              }
-            }
-          }
-        }
-      });
-
-      return updatedOrder;
-    });
-
-    // Auto-sync financial data when order is delivered.
-    // Runs OUTSIDE the status-update transaction to avoid 30s+ timeout on large orders.
-    // Trade-off: if the process crashes between transaction commit and this callback,
-    // the order will be marked 'delivered' but GL entries won't be created.
-    // syncOrderFinancialData is idempotent (checks revenueRecognized + existing transaction),
-    // and the financialReconciliationQueue runs every 15 min to catch any missed orders.
-    if (data.status === 'delivered' && Money.isNonZero(updated.codAmount)) {
-      setImmediate(() => {
-        FinancialSyncService.syncOrderFinancialData(
-          prisma as any,
-          updated as any,
-          data.changedBy || SYSTEM_USER_ID
-        ).then(syncResult => {
-          if (syncResult.transaction || syncResult.journalEntry) {
-            logger.info(`Financial data auto-synced for order ${orderId}`, {
-              transactionId: syncResult.transaction?.id,
-              journalEntryNumber: syncResult.journalEntry?.entryNumber
-            });
-          }
-        }).catch(syncError => {
-          logger.error(`Failed to auto-sync financial data for order ${orderId}:`, syncError);
-        });
-      });
-    }
-
-    logger.info(`Order status updated: ${order.id} `, {
+    logger.info(`Order status updated: ${orderId} `, {
       orderId,
-      oldStatus: order.status,
+      oldStatus: result.from,
       newStatus: data.status,
-      glReversalCreated: !!glEntry
+      changed: result.changed,
+      glReversalCreated: !!result.gl?.reversal,
     });
 
-    // Emit socket events for real-time updates (non-blocking)
-    setImmediate(() => {
-      try {
-        const ioInstance = getSocketInstance() as any;
-        emitOrderUpdated(ioInstance, updated);
-        emitOrderStatusChanged(ioInstance, updated, order.status, data.status);
+    return prisma.order.findFirst({ where: { id: orderId, deletedAt: null }, include: ORDER_EVENT_INCLUDE });
+  }
 
-        // Emit GL entry created event for return reversal
-        if (glEntry) {
-          emitGLEntryCreated(ioInstance, glEntry, {
-            orderId: order.id,
-            orderNumber: order.id.toString(),
-            type: 'return_reversal'
-          });
-        }
-      } catch (error) {
-        logger.error('Failed to emit socket events', { orderId, error });
-      }
-    });
+  /** Options common to every status move that comes from a request body. */
+  private moveOptions(
+    data: Pick<UpdateOrderStatusData, 'force' | 'reason' | 'declineReason' | 'failureReason' | 'nextAttemptDate'>,
+  ): TransitionOptions {
+    return {
+      force: data.force,
+      reason: data.reason,
+      declineReason: data.declineReason,
+      failureReason: data.failureReason,
+      nextAttemptDate: data.nextAttemptDate,
+    };
+  }
 
-    // Trigger status change workflows (non-blocking)
-    setImmediate(() => {
-      workflowService.triggerStatusChangeWorkflows(orderId, order.status, data.status).catch(error => {
-        logger.error('Failed to trigger status change workflows', { orderId, error: error.message });
-      });
-    });
-
-    return updated;
+  /** Moves the requester can make on this order now (GET /orders/:id/transitions). */
+  async getTransitions(orderId: number, requester: Requester) {
+    const [order, canForce] = await Promise.all([
+      prisma.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        select: { status: true, orderType: true, customerRepId: true, deliveryAgentId: true },
+      }),
+      hasPermission(requester, 'orders', 'force_status'),
+    ]);
+    // Reps and agents see only their own orders (same rule as the machine's role gate).
+    const actor = actorOf(requester);
+    if (!order || !ownsOrder(order, actor)) throw new AppError('Order not found', 404);
+    return { status: order.status, ...allowedTransitions(order, actor, { canForce }) };
   }
 
   /**
@@ -1325,42 +1068,11 @@ export class OrderService {
       throw new AppError('Cannot cancel a deleted order', 400);
     }
 
-    // Restock products and update order
-    await prisma.$transaction(async (tx) => {
-      // Restock products ONLY if they were deducted (out_for_delivery, delivered)
-      if (["out_for_delivery", "delivered"].includes(order.status)) {
-        let reversedFromAgent: number[] = [];
-        if (order.deliveryAgentId) {
-          reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
-            tx,
-            orderId,
-            order.deliveryAgentId,
-            changedBy ?? order.deliveryAgentId,
-            order.status === 'delivered'
-          );
-        }
-        for (const item of order.orderItems) {
-          if (reversedFromAgent.includes(item.productId)) continue;
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stockQuantity: { increment: item.quantity } }
-          });
-        }
-      }
-      // Update order status
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          status: 'cancelled',
-          orderHistory: {
-            create: {
-              tenantId: resolveTenantId(order.tenantId),
-              status: 'cancelled',
-              notes: notes || 'Order cancelled',
-              changedBy
-            }
-          }
-        }
+    // The state machine restocks (legacy stock seam) and writes the history row
+    const result = await prisma.$transaction(async (tx) => {
+      const moved = await transitionOrder(orderId, 'cancelled', actorOf(requester, changedBy), {
+        note: notes || 'Order cancelled',
+        tx,
       });
 
       // Update customer stats
@@ -1371,7 +1083,9 @@ export class OrderService {
           totalSpent: { decrement: order.totalAmount }
         }
       });
+      return moved;
     });
+    result.afterCommit?.();
 
     logger.info(`Order cancelled: ${order.id} `, { orderId });
     return { message: 'Order cancelled successfully' };
@@ -1865,17 +1579,16 @@ export class OrderService {
       if (filters.endDate) where.createdAt.lte = filters.endDate;
     }
 
-    const [totalOrders, ordersByStatus, totalRevenue, avgOrderValue] = await Promise.all([
+    // Revenue is the KPI delivered revenue (delivery-date basis); no dates means all time. The KPI range is [from, to).
+    const { from, to } = kpiWindow(filters.startDate, filters.endDate);
+    const [totalOrders, ordersByStatus, revenue, avgOrderValue] = await Promise.all([
       prisma.order.count({ where }),
       prisma.order.groupBy({
         by: ['status'],
         where,
         _count: true
       }),
-      prisma.order.aggregate({
-        where: { ...where, status: 'delivered' },
-        _sum: { totalAmount: true }
-      }),
+      deliveredRevenue(resolveTenantId(), from, to, revenueScope(roleScope(requester))),
       prisma.order.aggregate({
         where,
         _avg: { totalAmount: true }
@@ -1888,7 +1601,7 @@ export class OrderService {
         acc[item.status] = item._count;
         return acc;
       }, {} as Record<string, number>),
-      totalRevenue: Money.orZero(totalRevenue._sum.totalAmount),
+      totalRevenue: Money.parse(revenue.total.value),
       avgOrderValue: Money.orZero(avgOrderValue._avg.totalAmount)
     };
 

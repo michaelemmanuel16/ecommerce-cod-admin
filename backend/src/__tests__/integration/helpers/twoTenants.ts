@@ -5,6 +5,7 @@ import { generateAccessToken } from '../../../utils/jwt';
 import { hashApiKey } from '../../../mcp/auth';
 import { seedTenantDefaults } from '../../../services/tenantDefaultsService';
 import glService from '../../../services/glService';
+import { SYSTEM_USER_ID } from '../../../config/constants';
 
 /**
  * Two-tenant test harness (M0-T27). `createTwoTenants(label)` builds tenants A and B
@@ -75,7 +76,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
   const mcpKey = `mcp_${randomBytes(16).toString('hex')}`;
   const downloadToken = randomBytes(16).toString('hex');
 
-  const tenant = await prismaBase.tenant.create({ data: { name: `Two ${side.toUpperCase()} ${tag}`, slug: `two-${tag}` } });
+  const tenant = await prismaBase.tenant.create({ data: { name: `Two ${side.toUpperCase()} ${tag}`, slug: `two-${tag}`, currency: side === 'a' ? 'GHS' : 'NGN' } });
   const tenantId = tenant.id;
   const ids: Record<string, number> = {};
   /** Create a row and record its id under `key`. */
@@ -118,7 +119,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
       data: { name: `Flow ${marker}`, triggerType: 'manual', triggerData: {}, actions: [], tenantId },
     })),
     prismaBase.systemConfig.create({
-      data: { tenantId, businessName: `Biz ${side.toUpperCase()} ${marker}`, currency: side === 'a' ? 'GHS' : 'NGN' },
+      data: { tenantId, businessName: `Biz ${side.toUpperCase()} ${marker}` },
     }),
     seed('smsTemplate', prismaBase.smsTemplate.create({ data: { name: `SMS ${marker}`, body: `Hello ${marker}`, tenantId } })),
     seed('webhookEvent', prismaBase.webhookEvent.create({
@@ -193,6 +194,22 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     })),
     seed('notification', prismaBase.notification.create({
       data: { userId: admin.id, type: 'info', title: `Note ${marker}`, message: `message ${marker}`, tenantId },
+    })),
+    // M1 models
+    seed('target', prismaBase.target.create({
+      data: {
+        scope: 'month', metric: `revenue-${marker}`, unit: 'currency', periodStart: new Date('2026-10-01'),
+        periodEnd: new Date('2026-10-31'), value: amount, userId: admin.id, tenantId,
+      },
+    })),
+    seed('finding', prismaBase.finding.create({
+      data: { type: 'ledger_gap', subjectType: 'day', subjectId: `2026-10-01-${marker}`, amount, note: `finding ${marker}`, tenantId },
+    })),
+    seed('feeRule', prismaBase.feeRule.create({
+      data: { partnerUserId: deliveryAgent.id, outcome: 'delivered', amount: '25', tenantId },
+    })),
+    seed('fxRate', prismaBase.fxRate.create({
+      data: { fromCurrency: 'GHS', toCurrency: 'NGN', rate: '112', date: new Date('2026-10-01'), source: 'auto', createdById: admin.id, tenantId },
     })),
   ]);
   ids.order = order.id;
@@ -272,6 +289,10 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.emailTemplate.deleteMany({ where: t }),
     db.mcpApiKey.deleteMany({ where: t }),
     db.systemConfig.deleteMany({ where: t }),
+    db.target.deleteMany({ where: t }),
+    db.finding.deleteMany({ where: t }),
+    db.feeRule.deleteMany({ where: t }),
+    db.fxRate.deleteMany({ where: t }),
   ]);
   await Promise.all([
     db.order.deleteMany({ where: t }),
@@ -302,4 +323,19 @@ export async function createTwoTenants(label: string): Promise<TwoTenants> {
     throw failed.reason;
   }
   return { a, b, cleanup: () => deleteTenantRows([a.id, b.id]) };
+}
+
+/**
+ * A status move by an `integration` or `system` actor has no user id, so the GL entries it posts are
+ * created by SYSTEM_USER_ID (journal_entries.created_by has a foreign key). The test DB has no such
+ * user: this adds one under `tenantId`, so `deleteTenantRows([tenantId])` removes it. No-op if it exists.
+ */
+export async function ensureSystemUser(tenantId: string): Promise<void> {
+  if (await prismaBase.user.findUnique({ where: { id: SYSTEM_USER_ID } })) return;
+  await prismaBase.user.create({
+    data: {
+      id: SYSTEM_USER_ID, email: `system-user-${Date.now()}@codadmin.test`, password: 'x',
+      firstName: 'System', lastName: 'User', role: 'admin', tenantId,
+    },
+  });
 }

@@ -1,6 +1,9 @@
 import prisma from '../utils/prisma';
 import { OrderStatus } from '@prisma/client';
 import * as Money from '../utils/money';
+import { repRates } from './kpi/reps';
+import { addDays, getStoreTimeZone, localDate, monthRange, parseBound, parseInclusiveBound, parseYmd } from './kpi/dates';
+import type { KpiResult } from './kpi/types';
 
 export interface RepPerformanceDetails {
   repId: number;
@@ -13,13 +16,15 @@ export interface RepPerformanceDetails {
   country: string | null;
   metrics: {
     totalAssigned: number;
-    deliveredCount: number;
-    successRate: number;
+    /** Confirmed / assigned, orders placed in the range (F-767). Detail has the counts. */
+    confirmationRate: KpiResult<number | null>;
+    /** Delivered / closed among the orders this rep confirmed (F-252). Pay state is never read. */
+    deliveredFromConfirmedRate: KpiResult<number | null>;
+    mtdConfirmationRate: KpiResult<number | null>;
+    mtdDeliveredFromConfirmedRate: KpiResult<number | null>;
+    /** Unpaid delivered orders x commission. Money, not a rate. Moves to CommissionEntry in F-769. */
     totalEarnings: Money.Money;
     monthlyEarnings: Money.Money;
-    mtdDelivered: number;
-    mtdTotalAssigned: number;
-    mtdSuccessRate: number;
   };
   ordersByStatus: {
     pending_confirmation: number;
@@ -36,19 +41,29 @@ export interface RepPerformanceDetails {
 
 /**
  * Get detailed performance metrics for customer representatives
- * Calculates success rates, earnings, and order statistics
+ * Rates come from the KPI layer (services/kpi/reps.ts); earnings and order statistics are computed here.
  *
+ * @param tenantId - Store the numbers belong to (KPI functions take it explicitly)
  * @param repId - Optional specific rep ID to filter by
  * @param startDate - Optional start date for metric calculation
  * @param endDate - Optional end date for metric calculation
  * @returns Array of rep performance details with commission calculations
  */
 export const getRepPerformanceDetails = async (
+  tenantId: string,
   repId?: string,
   startDate?: string,
   endDate?: string
 ): Promise<RepPerformanceDetails[]> => {
   try {
+    // Parse the range first: a bad date throws RangeError before any query runs.
+    const zone = getStoreTimeZone(tenantId);
+    const now = new Date();
+    const rangeFrom = startDate ? parseBound(startDate, 'from', zone) : new Date(0);
+    const rangeTo = endDate ? parseBound(endDate, 'to', zone) : addDays(now, 1);
+    const { year, month } = parseYmd(localDate(now, zone));
+    const mtdFrom = monthRange(year, month, zone).from;
+
     // Build where clause for filtering users
     const userWhere: any = {
       role: 'sales_rep',
@@ -64,14 +79,13 @@ export const getRepPerformanceDetails = async (
     if (startDate || endDate) {
       orderWhere.createdAt = {};
       if (startDate) {
-        orderWhere.createdAt.gte = new Date(startDate);
+        orderWhere.createdAt.gte = rangeFrom;
       }
       if (endDate) {
-        orderWhere.createdAt.lte = new Date(endDate);
+        orderWhere.createdAt.lte = parseInclusiveBound(endDate, 'to', zone);
       }
     }
 
-    // Get all sales reps with their assigned orders
     const reps = await prisma.user.findMany({
       where: userWhere,
       select: {
@@ -84,57 +98,43 @@ export const getRepPerformanceDetails = async (
         isActive: true,
         isAvailable: true,
         country: true,
-        assignedOrdersAsRep: {
-          where: orderWhere,
-          select: {
-            id: true,
-            status: true,
-            totalAmount: true,
-            createdAt: true,
-            commissionPaid: true
-          }
-        }
       },
       orderBy: {
         createdAt: 'desc'
       }
     });
 
-    // Calculate performance metrics for each rep
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Order counts per rep, status and pay state in one query; the month-to-date unpaid delivered orders in another.
+    const repIds = reps.map(rep => rep.id);
+    const mtdCreatedAt = { ...orderWhere.createdAt, gte: orderWhere.createdAt?.gte && orderWhere.createdAt.gte > mtdFrom ? orderWhere.createdAt.gte : mtdFrom };
+    const [orderGroups, mtdUnpaidGroups] = await Promise.all([
+      prisma.order.groupBy({
+        by: ['customerRepId', 'status', 'commissionPaid'],
+        where: { ...orderWhere, customerRepId: { in: repIds } },
+        _count: { _all: true },
+      }),
+      prisma.order.groupBy({
+        by: ['customerRepId'],
+        where: {
+          ...orderWhere,
+          createdAt: mtdCreatedAt,
+          customerRepId: { in: repIds },
+          status: OrderStatus.delivered,
+          commissionPaid: false,
+        },
+        _count: { _all: true },
+      }),
+    ]);
+    const mtdUnpaid = new Map(mtdUnpaidGroups.map(g => [g.customerRepId, g._count._all]));
+
+    // Rates: all-time unless a range is given; month to date in the store zone.
+    const [rangeRates, mtdRates] = await Promise.all([
+      repRates(tenantId, rangeFrom, rangeTo),
+      repRates(tenantId, mtdFrom, addDays(now, 1)),
+    ]);
 
     const performanceData: RepPerformanceDetails[] = reps.map(rep => {
-      const totalAssigned = rep.assignedOrdersAsRep.length;
-
-      // Filter for delivered orders that haven't been paid yet
-      const deliveredOrders = rep.assignedOrdersAsRep.filter(
-        order => order.status === OrderStatus.delivered && !order.commissionPaid
-      );
-      const deliveredCount = deliveredOrders.length;
-
-      // Calculate success rate
-      const successRate = totalAssigned > 0
-        ? parseFloat(((deliveredCount / totalAssigned) * 100).toFixed(2))
-        : 0;
-
-      const commissionAmountValue = Money.orZero(rep.commissionAmount);
-      const totalEarnings = Money.mul(deliveredCount, commissionAmountValue);
-
-      // All orders created this month (MTD)
-      const mtdOrders = rep.assignedOrdersAsRep.filter(o => new Date(o.createdAt) >= startOfMonth);
-      // MTD delivered = delivered+unpaid orders created this month (same predicate as monthlyDeliveredOrders)
-      const monthlyDeliveredOrders = deliveredOrders.filter(o => new Date(o.createdAt) >= startOfMonth);
-      const mtdDelivered = monthlyDeliveredOrders.length;
-      const monthlyEarnings = Money.mul(mtdDelivered, commissionAmountValue);
-      const mtdSuccessRate = mtdOrders.length > 0
-        ? parseFloat(((mtdDelivered / mtdOrders.length) * 100).toFixed(2)) : 0;
-
-      // Count orders by status
-      const ordersByStatus = rep.assignedOrdersAsRep.reduce((acc, order) => {
-        acc[order.status] = (acc[order.status] || 0) + 1;
-        return acc;
-      }, {
+      const ordersByStatus = {
         pending_confirmation: 0,
         confirmed: 0,
         preparing: 0,
@@ -144,7 +144,21 @@ export const getRepPerformanceDetails = async (
         cancelled: 0,
         returned: 0,
         failed_delivery: 0
-      } as Record<OrderStatus, number>);
+      } as Record<OrderStatus, number>;
+      let totalAssigned = 0;
+      let unpaidDelivered = 0;
+      for (const g of orderGroups) {
+        if (g.customerRepId !== rep.id) continue;
+        const count = g._count._all;
+        totalAssigned += count;
+        ordersByStatus[g.status] = (ordersByStatus[g.status] || 0) + count;
+        // Earnings only: delivered orders whose commission is not paid yet. Rates never read this.
+        if (g.status === OrderStatus.delivered && !g.commissionPaid) unpaidDelivered += count;
+      }
+
+      const commissionAmountValue = Money.orZero(rep.commissionAmount);
+      const repRange = rangeRates.rep(rep.id);
+      const repMtd = mtdRates.rep(rep.id);
 
       return {
         repId: rep.id,
@@ -157,13 +171,12 @@ export const getRepPerformanceDetails = async (
         country: rep.country,
         metrics: {
           totalAssigned,
-          deliveredCount,
-          successRate,
-          totalEarnings: Money.roundHalfUp(totalEarnings),
-          monthlyEarnings: Money.roundHalfUp(monthlyEarnings),
-          mtdDelivered,
-          mtdTotalAssigned: mtdOrders.length,
-          mtdSuccessRate
+          confirmationRate: repRange.confirmationRate,
+          deliveredFromConfirmedRate: repRange.deliveredFromConfirmedRate,
+          mtdConfirmationRate: repMtd.confirmationRate,
+          mtdDeliveredFromConfirmedRate: repMtd.deliveredFromConfirmedRate,
+          totalEarnings: Money.roundHalfUp(Money.mul(unpaidDelivered, commissionAmountValue)),
+          monthlyEarnings: Money.roundHalfUp(Money.mul(mtdUnpaid.get(rep.id) ?? 0, commissionAmountValue))
         },
         ordersByStatus
       };

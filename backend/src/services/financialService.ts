@@ -18,6 +18,10 @@ import { GLAutomationService } from './glAutomationService';
 import { SYSTEM_USER_ID } from '../config/constants';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
+import { roleScope } from '../utils/kpiRequest';
+import { getStoreTimeZone, kpiWindow, parseInclusiveBound } from './kpi/dates';
+import { deliveredRevenue, revenueScope } from './kpi/revenue';
+import { PENDING_STATUSES } from './kpi/pending';
 
 interface DateFilters {
   startDate?: Date;
@@ -118,20 +122,21 @@ export class FinancialService {
   private readonly FORECAST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
   /**
-   * Get financial summary — GL is the single source of truth for Revenue, Expenses, and Profit.
+   * Get financial summary. Revenue is the KPI delivered revenue (delivery-date basis, physical plus paid digital,
+   * returns leave in their return month). Expenses, digital revenue (GL 4020) and Paystack fees (GL 5060) come from the GL.
    * COD collected and pipeline revenue remain operational metrics from Order/Transaction tables.
    */
   async getFinancialSummary(filters: DateFilters, requester?: Requester) {
-    let { startDate, endDate } = filters;
-    // Normalise endDate to end-of-day so it aligns with P&L / Profitability
-    if (endDate) {
-      endDate = new Date(endDate);
-      endDate.setHours(23, 59, 59, 999);
-    }
+    // The controller hands over store-day bounds: endDate is already the last millisecond of its store day.
+    const { startDate, endDate } = filters;
+
+    // --- Revenue (KPI layer) ---
+    // No dates means all time. The KPI range is [from, to): the end-of-day bound above is inclusive (see kpiWindow).
+    const { from, to } = kpiWindow(startDate, endDate);
 
     // --- GL-based accounting metrics ---
-    // Revenue account codes
-    const revenueAccountCodes = [GL_ACCOUNTS.PRODUCT_REVENUE];
+    // Revenue account codes (digital revenue only: physical revenue is the KPI above)
+    const revenueAccountCodes = [GL_ACCOUNTS.DIGITAL_REVENUE];
     // Expense account codes (all 5xxx accounts)
     const expenseAccountCodes = [
       GL_ACCOUNTS.COGS,
@@ -139,12 +144,15 @@ export class FinancialService {
       GL_ACCOUNTS.RETURN_PROCESSING_EXPENSE,
       GL_ACCOUNTS.DELIVERY_AGENT_COMMISSION,
       GL_ACCOUNTS.SALES_REP_COMMISSION,
+      GL_ACCOUNTS.PAYSTACK_FEES,
       GL_ACCOUNTS.OPERATING_EXPENSE
     ];
 
     // Query GL account balances using a single nested relation filter (avoids large IN clause)
     // Role-based scoping: delivery_agent and sales_rep see only their own orders' GL entries
-    const glAggregations = await prisma.accountTransaction.groupBy({
+    const [kpiRevenue, glAggregations, accounts] = await Promise.all([
+      deliveredRevenue(resolveTenantId(), from, to, revenueScope(roleScope(requester))),
+      prisma.accountTransaction.groupBy({
       by: ['accountId'],
       where: {
                 journalEntry: {
@@ -170,18 +178,20 @@ export class FinancialService {
         debitAmount: true,
         creditAmount: true
       }
-    });
-
-    // Get account metadata to map IDs to codes and normal balances
-    const accounts = await prisma.account.findMany({
-      where: {
-        code: { in: [...revenueAccountCodes, ...expenseAccountCodes] }
-      },
-      select: { id: true, code: true, normalBalance: true, accountType: true }
-    });
+    }),
+      // Account metadata to map IDs to codes and normal balances
+      prisma.account.findMany({
+        where: {
+          code: { in: [...revenueAccountCodes, ...expenseAccountCodes] }
+        },
+        select: { id: true, code: true, normalBalance: true, accountType: true }
+      }),
+    ]);
+    const totalRevenue = Money.parse(kpiRevenue.total.value);
     const accountMap = new Map(accounts.map(a => [a.id, a]));
 
-    let totalRevenue = Money.ZERO;
+    let digitalRevenue = Money.ZERO;
+    let paystackFees = Money.ZERO;
     let totalExpenses = Money.ZERO;
 
     for (const agg of glAggregations) {
@@ -194,10 +204,11 @@ export class FinancialService {
         ? Money.sub(debit, credit)
         : Money.sub(credit, debit);
 
-      if (account.accountType === 'revenue') {
-        totalRevenue = Money.add(totalRevenue, balance);
+      if (account.code === GL_ACCOUNTS.DIGITAL_REVENUE) {
+        digitalRevenue = Money.add(digitalRevenue, balance);
       } else if (account.accountType === 'expense') {
         totalExpenses = Money.add(totalExpenses, balance);
+        if (account.code === GL_ACCOUNTS.PAYSTACK_FEES) paystackFees = Money.add(paystackFees, balance);
       }
     }
 
@@ -266,6 +277,8 @@ export class FinancialService {
 
     return {
       totalRevenue,
+      digitalRevenue,
+      paystackFees,
       totalExpenses,
       profit: Money.sub(totalRevenue, totalExpenses),
       codCollected: totalCOD,
@@ -957,74 +970,11 @@ export class FinancialService {
   }
 
   /**
-   * Calculate profit margins
-   */
-  async calculateProfitMargins(filters: DateFilters, requester?: Requester) {
-    const where: Prisma.OrderWhereInput = {
-      status: 'delivered',
-    };
-
-    if (filters.startDate || filters.endDate) {
-      where.updatedAt = {};
-      if (filters.startDate) where.updatedAt.gte = filters.startDate;
-      if (filters.endDate) where.updatedAt.lte = filters.endDate;
-    }
-
-    // Role-based filtering for profit margins
-    if (requester && requester.role === 'sales_rep') {
-      where.customerRepId = requester.id;
-    } else if (requester && requester.role === 'delivery_agent') {
-      where.deliveryAgentId = requester.id;
-    }
-
-    const orders = await prisma.order.findMany({
-      where,
-      include: {
-        orderItems: {
-          include: {
-            product: {
-              select: {
-                cogs: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    let totalRevenue = Money.ZERO;
-    let totalCost = Money.ZERO;
-
-    orders.forEach((order) => {
-      totalRevenue = Money.add(totalRevenue, order.totalAmount);
-      order.orderItems.forEach((item) => {
-        totalCost = Money.add(totalCost, Money.mul(Money.orZero(item.product.cogs), item.quantity));
-      });
-    });
-
-    const grossProfit = Money.sub(totalRevenue, totalCost);
-    const profitMargin = Money.percent(grossProfit, totalRevenue);
-
-    return {
-      totalRevenue,
-      totalCost,
-      grossProfit,
-      profitMargin,
-      orderCount: orders.length
-    };
-  }
-
-  /**
    * Get comprehensive profitability analysis
    */
   async getProfitabilityAnalysis(filters: { startDate?: Date; endDate?: Date; productId?: number }) {
-    const { startDate, productId } = filters;
-    // Normalise endDate to end-of-day so it aligns with P&L / GL entryDate filtering
-    let endDate = filters.endDate;
-    if (endDate) {
-      endDate = new Date(endDate);
-      endDate.setHours(23, 59, 59, 999);
-    }
+    // The controller hands over store-day bounds: endDate is already the last millisecond of its store day.
+    const { startDate, endDate, productId } = filters;
 
     // Filter orders by GL journal entry date (not deliveryDate) so breakdowns
     // align with the GL-based summary KPIs. deliveryDate and GL entryDate can
@@ -1400,7 +1350,7 @@ export class FinancialService {
   async getPipelineRevenue(requester?: Requester) {
     const where: Prisma.OrderWhereInput = {
       status: {
-        in: ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery']
+        in: PENDING_STATUSES
       },
       deletedAt: null,
     };
@@ -1666,9 +1616,11 @@ export class FinancialService {
    * Get Balance Sheet as of a specific date
    */
   async getBalanceSheet(asOfDateValue?: string | Date) {
-    const asOfDate = asOfDateValue ? new Date(asOfDateValue) : new Date();
-    // Ensure asOfDate includes the entire day
-    asOfDate.setHours(23, 59, 59, 999);
+    // The whole store day is included: a date-only value or any instant moves to the last millisecond of its store day.
+    const zone = getStoreTimeZone(getTenantId());
+    const asOfDate = parseInclusiveBound(
+      asOfDateValue instanceof Date ? asOfDateValue.toISOString() : asOfDateValue || new Date().toISOString(),
+      'to', zone, { snapToDay: true });
 
     // Query all active accounts
     const accounts = await prisma.account.findMany({
@@ -1758,10 +1710,11 @@ export class FinancialService {
    * Get Profit and Loss Statement for a specific period
    */
   async getProfitLoss(startDateValue: string | Date, endDateValue: string | Date) {
-    const startDate = new Date(startDateValue);
-    const endDate = new Date(endDateValue);
-    // Ensure endDate includes the entire day
-    endDate.setHours(23, 59, 59, 999);
+    // Store-zone days: the start is the start of its store day, the end the last millisecond of its store day.
+    const zone = getStoreTimeZone(getTenantId());
+    const asString = (v: string | Date) => (v instanceof Date ? v.toISOString() : v);
+    const startDate = parseInclusiveBound(asString(startDateValue), 'from', zone);
+    const endDate = parseInclusiveBound(asString(endDateValue), 'to', zone, { snapToDay: true });
 
     // Query all revenue and expense accounts
     const accounts = await prisma.account.findMany({

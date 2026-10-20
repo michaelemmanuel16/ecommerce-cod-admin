@@ -80,6 +80,19 @@ describe('GLService', () => {
       );
     });
 
+    it('reads date-only bounds as store days for the period activity; an ISO end snaps to the end of its day', async () => {
+      (prismaMock.account.findMany as any).mockResolvedValue([{ id: 1, code: '1010', name: 'Cash', parent: null, children: [] }]);
+      (prismaMock.account.count as any).mockResolvedValue(1);
+      (prismaMock.accountTransaction.groupBy as any).mockResolvedValue([]);
+      const entryDate = () => (prismaMock.accountTransaction.groupBy as any).mock.calls.at(-1)[0].where.journalEntry.entryDate;
+
+      await glService.getAllAccounts({ startDate: '2026-01-01', endDate: '2026-01-31' });
+      expect(entryDate()).toEqual({ gte: new Date('2026-01-01T00:00:00.000Z'), lte: new Date('2026-01-31T23:59:59.999Z') });
+
+      await glService.getAllAccounts({ startDate: '2026-01-01', endDate: '2026-01-31T10:00:00.000Z' });
+      expect(entryDate().lte).toEqual(new Date('2026-01-31T23:59:59.999Z'));
+    });
+
     it('should return all accounts without filters', async () => {
       const mockAccounts = [
         {
@@ -820,9 +833,25 @@ describe('GLService', () => {
             journalEntry: {
               entryDate: {
                 gte: new Date(filters.startDate),
-                lte: new Date(filters.endDate)
+                lte: new Date('2026-01-31T23:59:59.999Z')
               }
             }
+          })
+        })
+      );
+    });
+
+    it('reads an ISO endDate as the instant, as before', async () => {
+      (prismaMock.account.findUnique as any).mockResolvedValue({ id: 1, name: 'Cash' });
+      (prismaMock.accountTransaction.findMany as any).mockResolvedValue([]);
+      (prismaMock.accountTransaction.count as any).mockResolvedValue(0);
+
+      await glService.getAccountLedger('1', { startDate: '2026-01-01', endDate: '2026-01-31T10:00:00.000Z' });
+
+      expect(prismaMock.accountTransaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            journalEntry: { entryDate: { gte: new Date('2026-01-01T00:00:00.000Z'), lte: new Date('2026-01-31T10:00:00.000Z') } }
           })
         })
       );

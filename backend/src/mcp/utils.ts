@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { MCP_CONFIG } from './config';
 import * as Money from '../utils/money';
 import { getCurrency } from '../utils/currency';
+import { endOfDay, getStoreTimeZone, localDate, monthRange, parseBound, parseYmd, shiftYmd, startOfDay } from '../services/kpi/dates';
 
 // Cursor pagination utilities
 export function encodeCursor(id: number): string {
@@ -82,4 +83,40 @@ export function getDateRange(period: string, dateFrom?: string, dateTo?: string)
     default:
       throw new Error(`Invalid period: ${period}`);
   }
+}
+
+/**
+ * Store-zone range [from, to) for the KPI layer (kpi/dates.ts). `to` is exclusive: a date-only `dateTo` is the END of
+ * that day, so dateFrom 2026-10-01 and dateTo 2026-10-17 means 1 to 17 October. Periods end at the end of today.
+ *   today  = today; week = the last 7 days and today; month = the 1st of this month to today.
+ */
+export function getStoreRange(period: string, dateFrom?: string, dateTo?: string): { from: Date; to: Date } {
+  const zone = getStoreTimeZone();
+  const today = localDate(new Date(), zone);
+  let from: Date;
+  switch (period) {
+    case 'today':
+      from = startOfDay(today, zone);
+      break;
+    case 'week':
+      from = startOfDay(shiftYmd(today, -7), zone);
+      break;
+    case 'month': {
+      const { year, month } = parseYmd(today);
+      from = monthRange(year, month, zone).from;
+      break;
+    }
+    case 'custom':
+      if (!dateFrom) throw new Error('dateFrom is required for custom period');
+      from = parseBound(dateFrom, 'from', zone);
+      break;
+    default:
+      throw new Error(`Invalid period: ${period}`);
+  }
+  return { from, to: dateTo ? parseBound(dateTo, 'to', zone) : endOfDay(today, zone) };
+}
+
+/** The `dateRange` field of a tool result for [from, to): ISO instants, the end as the last instant inside the range (the old tools showed an inclusive end). */
+export function dateRangeOut(from: Date, to: Date): { from: string; to: string } {
+  return { from: from.toISOString(), to: new Date(to.getTime() - 1).toISOString() };
 }

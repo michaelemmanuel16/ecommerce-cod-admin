@@ -1,25 +1,16 @@
 import { z } from 'zod';
+import { OrderStatus } from '@prisma/client';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
 import orderService from '../../services/orderService';
 import { mcpJson, mcpError } from '../utils';
 
-// Mirror of the app's own dashboard whitelist (see utils/validators.ts
-// updateOrderStatusValidation): the MCP tool grants exactly the status
-// transitions a human admin can make from the UI — no more, no less.
+// All statuses of the OrderStatus enum (same list as utils/validators.ts updateOrderStatusValidation).
+// The caller is an `integration` actor (D1): the state machine allows its normal moves and the
+// F-302 jumps, and refuses anything else with an error message the tool returns.
 const ordersUpdateStatusSchema = z.object({
   orderId: z.number().int().positive(),
-  status: z.enum([
-    'pending_confirmation',
-    'confirmed',
-    'preparing',
-    'ready_for_pickup',
-    'out_for_delivery',
-    'delivered',
-    'cancelled',
-    'returned',
-    'failed_delivery',
-  ]),
+  status: z.enum(Object.values(OrderStatus) as [OrderStatus, ...OrderStatus[]]),
   notes: z.string().max(500).optional(),
   // The real delivery date, for 3PL reconciliation where delivery happened days
   // ago. Only meaningful with status "delivered". Omitted => now.
@@ -85,14 +76,16 @@ export async function updateOrderStatusTool(args: z.infer<typeof ordersUpdateSta
 
     const previousStatus = existing.status;
 
-    // Delegate to the shared service so inventory, delivery date,
+    // Delegate to the shared service (state machine) so inventory, delivery date,
     // paymentStatus, GL journal reversal, and the OrderHistory audit row are
-    // all handled consistently with the normal app flow. No `requester` is
-    // passed: the MCP key is tenant-scoped, not user-scoped.
+    // all handled consistently with the normal app flow. The MCP key is
+    // tenant-scoped, not user-scoped: the actor is `integration` (D1). An
+    // INVALID_TRANSITION / STALE_ORDER error reaches the caller as the tool error.
     await orderService.updateOrderStatus(parsed.orderId, {
       status: parsed.status,
       notes: parsed.notes ?? 'Status updated via MCP',
       deliveryDate,
+      actor: { kind: 'integration' },
     });
 
     return mcpJson({
@@ -114,7 +107,7 @@ export function registerOrderWriteTools(
 ) {
   server.tool(
     'orders_update_status',
-    'Update an order\'s fulfillment status. Writes an order-history audit row and, via the shared order service, adjusts inventory and (on delivered/returned) payment status and accounting entries. Idempotent: makes no change if the order is already in the requested status. Valid statuses: pending_confirmation, confirmed, preparing, ready_for_pickup, out_for_delivery, delivered, cancelled, returned, failed_delivery. Optionally accepts deliveryDate (YYYY-MM-DD) to record when a delivery actually happened — use it when reconciling past deliveries from a 3PL, otherwise the delivery date defaults to now.',
+    'Update an order\'s fulfillment status. Writes an order-history audit row and, via the shared order service, adjusts inventory and (on delivered/returned) payment status and accounting entries. Idempotent: makes no change if the order is already in the requested status. Valid statuses: pending_confirmation, payment_pending, payment_failed, confirmed, preparing, ready_for_pickup, out_for_delivery, delivered, digital_delivered, failed_delivery, returned, cancelled. The order state machine applies: an invalid move returns an error with the moves that are allowed. Optionally accepts deliveryDate (YYYY-MM-DD) to record when a delivery actually happened — use it when reconciling past deliveries from a 3PL, otherwise the delivery date defaults to now.',
     ordersUpdateStatusSchema.shape,
     wrapHandler(updateOrderStatusTool),
   );

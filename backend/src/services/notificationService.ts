@@ -48,36 +48,6 @@ export async function notifyOrderAssigned(
   );
 }
 
-export async function notifyOrderStatusChanged(
-  userId: string,
-  orderId: string,
-  orderNumber: string,
-  newStatus: string
-) {
-  return createNotification(
-    userId,
-    'order',
-    'Order Status Updated',
-    `Order ${orderNumber} status changed to ${newStatus}`,
-    { orderId, orderNumber, status: newStatus }
-  );
-}
-
-export async function notifyDeliveryScheduled(
-  userId: string,
-  orderId: string,
-  orderNumber: string,
-  scheduledTime: Date
-) {
-  return createNotification(
-    userId,
-    'delivery',
-    'Delivery Scheduled',
-    `Delivery for order ${orderNumber} scheduled for ${scheduledTime.toLocaleString()}`,
-    { orderId, orderNumber, scheduledTime }
-  );
-}
-
 export async function notifyAdminsOverdueCollections(
   agents: { agentId: number; agentName: string; totalBalance: Money.Money; warningAmount: Money.Money; criticalAmount: Money.Money }[]
 ) {

@@ -14,6 +14,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'AgentCollection', 'AgentDeposit', 'AgentAgingBucket', 'Payout', 'Call',
   'OrderHistory', 'AuditLog', 'WebhookLog', 'SmsTemplate', 'DownloadToken',
   'FormSubmission', 'product_cost_entries', 'PendingCheckout', 'WebhookEvent',
+  'Target', 'Finding', 'FeeRule', 'FxRate',
 ]);
 
 /**

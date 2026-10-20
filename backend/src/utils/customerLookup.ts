@@ -2,6 +2,7 @@ import { Customer } from '@prisma/client';
 import type { TransactionClient } from './prisma';
 import { withSoftDeleted } from './prismaExtensions';
 import logger from './logger';
+import { normalizePhone, phoneLookupVariants } from './phone';
 
 /**
  * Customer find-or-create, archive-aware.
@@ -32,11 +33,16 @@ export async function findCustomerByPhoneIncludingArchived(
   phoneNumber: string,
   tenantId?: string | null
 ): Promise<Customer | null> {
-  return withSoftDeleted(() =>
-    db.customer.findFirst({
-      where: { phoneNumber, ...(tenantId ? { tenantId } : {}) },
-    })
-  );
+  const tenantFilter = tenantId ? { tenantId } : {};
+  // Customers saved before phone normalization hold old formats (0245550103, 233245550103, ...),
+  // so match every stored format of the number. The normalized row wins when both exist.
+  const normalized = normalizePhone(phoneNumber);
+  return withSoftDeleted(async () => {
+    const rows = await db.customer.findMany({
+      where: { phoneNumber: { in: phoneLookupVariants(phoneNumber) }, ...tenantFilter },
+    });
+    return rows.find((row) => row.phoneNumber === normalized) ?? rows[0] ?? null;
+  });
 }
 
 /**

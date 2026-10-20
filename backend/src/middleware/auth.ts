@@ -60,7 +60,7 @@ function getDefaultPermissions() {
   return {
     super_admin: {
       users: ['create', 'view', 'update', 'delete'],
-      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign'],
+      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status'],
       customers: ['create', 'view', 'update', 'delete'],
       products: ['create', 'view', 'update', 'delete', 'update_stock'],
       financial: ['view', 'create', 'update', 'delete'],
@@ -108,7 +108,7 @@ function getDefaultPermissions() {
     },
     inventory_manager: {
       users: [],
-      orders: ['view'],
+      orders: ['view', 'update_status'],
       customers: ['view'],
       products: ['create', 'view', 'update', 'delete', 'update_stock'],
       financial: [],
@@ -236,63 +236,48 @@ export const requirePermission = (allowedRoles: UserRole[]) => {
   };
 };
 
-// New: Resource-action permission middleware that checks SystemConfig.rolePermissions
-export const requireResourcePermission = (resource: string, action: string) => {
+/**
+ * Permission check used by requireResourcePermission and the services:
+ * super_admin always passes, other roles need the action in their (merged) role permissions.
+ */
+export async function hasPermission(
+  user: { id?: number; role: UserRole | string },
+  resource: string,
+  action: string
+): Promise<boolean> {
+  if (user.role === 'super_admin') return true;
+  const permissions = await getPermissionsFromDatabase();
+  const list = permissions[user.role]?.[resource];
+  return Array.isArray(list) && list.includes(action);
+}
+
+// Resource-action permission middleware (SystemConfig.rolePermissions). Several actions mean "any of them".
+export const requireResourcePermission = (resource: string, ...actions: string[]) => {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.user) {
-        logger.info(`[AuthMiddleware] requireResourcePermission(${resource}, ${action}) failed: req.user is missing for ${req.method} ${req.path}`);
+        logger.info(`[AuthMiddleware] requireResourcePermission(${resource}, ${actions.join('|')}) failed: req.user is missing for ${req.method} ${req.path}`);
         res.status(401).json({ error: 'Unauthorized' });
         return;
       }
 
-      // Check permissions from database (or cache)
-      const permissions = await getPermissionsFromDatabase();
-      logger.info(`[AuthMiddleware] Checking ${action} on ${resource} for user ${req.user.id} (${req.user.role})`);
-
-      // Super admin always has all permissions
-      if (req.user.role === 'super_admin') {
-        next();
-        return;
+      for (const action of actions) {
+        if (await hasPermission(req.user, resource, action)) {
+          // Individual ownership checks are handled at the service/controller layer
+          // for efficiency to avoid double-querying.
+          next();
+          return;
+        }
       }
 
-      const rolePermissions = permissions[req.user.role];
-
-      if (!rolePermissions) {
-        logger.info(`[AuthMiddleware] No permissions found for role: ${req.user.role}`);
-        res.status(403).json({
-          error: 'Forbidden: No permissions configured for your role',
-          code: 'NO_ROLE_PERMISSIONS'
-        });
-        return;
-      }
-
-      const resourcePermissions = rolePermissions[resource];
-
-      if (!resourcePermissions || !Array.isArray(resourcePermissions)) {
-        logger.info(`[AuthMiddleware] No resource permissions for: ${resource} for role: ${req.user.role}`);
-        res.status(403).json({
-          error: `Forbidden: No access to ${resource}`,
-          code: 'NO_RESOURCE_ACCESS'
-        });
-        return;
-      }
-
-      if (!resourcePermissions.includes(action)) {
-        logger.info(`[AuthMiddleware] User ${req.user.id} (${req.user.role}) lacks ${action} on ${resource}`);
-        res.status(403).json({
-          error: `Forbidden: Cannot ${action} ${resource}`,
-          code: 'INSUFFICIENT_PERMISSION',
-          required: { resource, action },
-          userRole: req.user.role
-        });
-        return;
-      }
-
-      // User has the base permission. 
-      // Individual ownership checks are handled at the service/controller layer 
-      // for efficiency to avoid double-querying.
-      next();
+      const action = actions.join(' or ');
+      logger.info(`[AuthMiddleware] User ${req.user.id} (${req.user.role}) lacks ${action} on ${resource}`);
+      res.status(403).json({
+        error: `Forbidden: Cannot ${action} ${resource}`,
+        code: 'INSUFFICIENT_PERMISSION',
+        required: { resource, action },
+        userRole: req.user.role
+      });
     } catch (error) {
       logger.error('Error checking permissions:', error);
       res.status(500).json({ error: 'Failed to check permissions' });

@@ -53,6 +53,11 @@ const MODELS: Array<[string, string, string, string]> = [
   ['webhook configs', 'webhookConfig', 'webhookConfig', 'WebhookConfig'],
   ['checkout forms', 'checkoutForm', 'checkoutForm', 'CheckoutForm'],
   ['agent balances', 'agentBalance', 'agentBalance', 'AgentBalance'],
+  // M1 models
+  ['targets', 'target', 'target', 'Target'],
+  ['findings', 'finding', 'finding', 'Finding'],
+  ['fee rules', 'feeRule', 'feeRule', 'FeeRule'],
+  ['FX rates', 'fxRate', 'fxRate', 'FxRate'],
 ];
 
 describe('tenant B data never shows for tenant A', () => {
