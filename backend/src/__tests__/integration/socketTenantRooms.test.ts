@@ -12,6 +12,7 @@ import { Server as SocketServer } from 'socket.io';
 import { prismaBase } from '../../utils/prisma';
 import { tenantStorage } from '../../utils/tenantContext';
 import { generateAccessToken } from '../../utils/jwt';
+import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import {
   initializeSocket, emitOrderCreated, emitOrderUpdated, emitNotification, emitToTenant,
 } from '../../sockets';
@@ -29,6 +30,7 @@ let tenantA: string;
 let tenantB: string;
 let platformUserId: number;
 let orderA: number;
+let pair: TwoTenants;
 const clients: Socket[] = [];
 
 const tokenFor = (id: number, role: string, tenantId: string | null) =>
@@ -58,31 +60,20 @@ beforeAll(async () => {
   await new Promise<void>((r) => server.listen(0, r));
   url = `http://localhost:${(server.address() as AddressInfo).port}`;
 
-  tenantA = (await prismaBase.tenant.create({ data: { name: `Sock A ${SUFFIX}`, slug: `sock-a-${SUFFIX}` } })).id;
-  tenantB = (await prismaBase.tenant.create({ data: { name: `Sock B ${SUFFIX}`, slug: `sock-b-${SUFFIX}` } })).id;
+  pair = await createTwoTenants('sockrooms');
+  tenantA = pair.a.id;
+  tenantB = pair.b.id;
+  orderA = pair.a.ids.order;
   platformUserId = (await prismaBase.user.create({
     data: { email: `sock-platform-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'P', lastName: 'A', role: 'super_admin', isPlatformAdmin: true, tenantId: null },
   })).id;
-  orderA = await tenantStorage.run({ tenantId: tenantA }, async () => {
-    const customer = await prismaBase.customer.create({
-      data: { firstName: 'C', lastName: 'A', phoneNumber: `0${SUFFIX}`, address: 'x', state: 's', area: 'a', tenantId: tenantA },
-    });
-    const order = await prismaBase.order.create({
-      data: {
-        customerId: customer.id, totalAmount: 10, subtotal: 10, shippingCost: 0,
-        deliveryAddress: 'x', deliveryState: 's', deliveryArea: 'a', tenantId: tenantA,
-      },
-    });
-    return order.id;
-  });
-});
+}, 30000);
 
 afterAll(async () => {
   clients.forEach((c) => c.close());
   io.close();
-  await prismaBase.order.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
+  await pair.cleanup();
   await prismaBase.user.deleteMany({ where: { id: platformUserId } });
-  await prismaBase.tenant.deleteMany({ where: { id: { in: [tenantA, tenantB] } } });
   await prismaBase.$disconnect();
 });
 
