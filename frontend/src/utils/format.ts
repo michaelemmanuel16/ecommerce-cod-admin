@@ -1,7 +1,8 @@
 import { format, formatDistance, formatRelative } from 'date-fns';
 import { useConfigStore } from '../stores/configStore';
+import { parseMoney } from './money';
 
-export const formatCurrency = (amount: number, currency?: string): string => {
+export const formatCurrency = (amount: string | number | null | undefined, currency?: string): string => {
   const globalCurrency = useConfigStore.getState().currency;
   const targetCurrency = currency || globalCurrency || 'USD';
 
@@ -11,7 +12,7 @@ export const formatCurrency = (amount: number, currency?: string): string => {
     // narrowSymbol renders the local glyph (GH₵5,680.00) instead of the ISO
     // code prefix (GHS 5,680.00) that 'symbol' falls back to for GHS/NGN.
     currencyDisplay: 'narrowSymbol',
-  }).format(amount);
+  }).format(parseMoney(amount));
 };
 
 export const formatNumber = (value: number): string => {

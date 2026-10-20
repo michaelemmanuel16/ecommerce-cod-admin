@@ -3,6 +3,7 @@
 // page via src/lib/orderPayload so the two paths post identical shapes.
 import type { PublicCheckoutForm } from '../src/services/public-orders.service';
 import { buildOrderPayload } from '../src/lib/orderPayload';
+import { normalizeMoney } from '../src/utils/money';
 
 export { buildOrderPayload };
 
@@ -18,7 +19,8 @@ export async function fetchFormConfig(apiBase: string, slug: string): Promise<Em
     throw new Error(body.error || `Failed to load checkout (${res.status})`);
   }
   const json = await res.json();
-  return json.config as EmbedFormConfig;
+  // Prices arrive as strings ("249.00"); the order total is built with `+`
+  return normalizeMoney(json.config) as EmbedFormConfig;
 }
 
 export interface OrderResponse {
@@ -69,5 +71,5 @@ export async function submitOrder(
   if (!res.ok || json.success === false) {
     throw new Error(json.error || json.message || 'Failed to place order');
   }
-  return json;
+  return normalizeMoney(json);
 }

@@ -1,6 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
+import { normalizeMoney } from '../utils/money';
 
 // Use relative URLs in production (when served by Nginx), absolute URLs in development
 const API_URL = import.meta.env.VITE_API_URL === 'relative'
@@ -103,6 +104,8 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
     console.log('[API Interceptor] Response:', response.config.method?.toUpperCase(), response.config.url, 'Status:', response.status);
+    // Money arrives as strings; parse once here, before the response is cached
+    normalizeMoney(response.data);
     // Cache successful GET responses
     if (response.config.method?.toLowerCase() === 'get') {
       const cacheKey = getCacheKey(response.config);

@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/authStore';
 import { useNotificationsStore } from '../stores/notificationsStore';
 import toast from 'react-hot-toast';
+import { normalizeMoney } from '../utils/money';
 
 // Use relative URLs in production (when served by Nginx), absolute URLs in development
 const WS_URL = import.meta.env.VITE_WS_URL === 'relative'
@@ -51,7 +52,8 @@ export const connectSocket = () => {
     console.log('Socket disconnected');
   });
 
-  socket.on('order:created', (data) => {
+  socket.on('order:created', (raw) => {
+    const data = normalizeMoney(raw);
     toast.success(`New order received: ${data.orderNumber}`);
     useNotificationsStore.getState().addNotification({
       id: Date.now(), // Use number instead of string
@@ -64,7 +66,8 @@ export const connectSocket = () => {
     });
   });
 
-  socket.on('order:updated', (data) => {
+  socket.on('order:updated', (raw) => {
+    const data = normalizeMoney(raw);
     useNotificationsStore.getState().addNotification({
       id: Date.now(), // Use number instead of string
       type: 'order:updated',
@@ -76,7 +79,8 @@ export const connectSocket = () => {
     });
   });
 
-  socket.on('order:status_changed', (data) => {
+  socket.on('order:status_changed', (raw) => {
+    const data = normalizeMoney(raw);
     const statusText = data.status.split('_').join(' ');
     toast.success(`Order ${data.orderNumber} status changed to ${statusText}`);
     useNotificationsStore.getState().addNotification({
