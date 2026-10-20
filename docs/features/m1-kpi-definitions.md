@@ -100,3 +100,27 @@ Rep, leadership, product and delivery partner KPIs now come from the KPI layer. 
 - `backend/src/utils/kpiRequest.ts`, `controllers/{reportController,repStatsController}.ts`, `routes/{reportRoutes,repRoutes}.ts` (new); `services/teamReportService.ts` (new)
 - `backend/src/services/repPerformanceService.ts`, `mcp/tools/customerReps.ts`, `services/adminService.ts`, `scripts/set-operating-hours.ts`
 - `frontend/src/pages/CustomerReps.tsx`, `components/reps/RepTable.tsx`, `services/customer-reps.service.ts`
+
+---
+
+## COD-13 — M1-I05 Repoint endpoints and MCP tools, retire dead analytics
+**Date:** 2026-10-20 | **Type:** feat | **Branch:** feature/m1-kpi-definitions | **Commit:** 1320f27
+
+### Summary
+Every HTTP endpoint and MCP tool that shows revenue or a rate now reads it from the KPI layer. The numbers fixture proves GH₵92,000.00 and 376 delivered on each of them. Dead analytics routes and `profit-margins` are deleted. Date ranges from the browser are now store days. Plan tasks: M1-T25 to T27. Decisions: D35–D43 in `docs/plan/M1-decisions.md`.
+
+### Changes
+- **Backend:** analytics dashboard, sales trends, status distribution, funnel, rep and agent performance, product performance, financial summary and order stats use `deliveredRevenue` (delivery date) and the three rate names: `confirmationRate`, `deliverySuccessRate`, `orderToCashYield`. No revenue window on `updatedAt`.
+- **Backend:** financial summary adds `digitalRevenue` (GL 4020) and `paystackFees` (GL 5060, now in expenses) (D38, D39).
+- **MCP:** `orders_summary`, `analytics_daily/weekly/monthly`, `financial_summary`, `reps_*`, `agents_*` and `products_inventory` on the KPI layer. New `kpi/pending.ts`.
+- **Removed:** `GET /api/financial/profit-margins` (D40) and unused `/api/analytics/*` routes; list in `docs/plan/M1-analytics-routes.md`.
+- **Dates (D43):** the frontend sends `yyyy-MM-dd` days. The backend reads them in the store zone (`parseBound`, new `parseInclusiveBound` and `readDateBound`), so a date-only end includes the whole day. This fixes the dashboard range that started on 30 Sep for a browser in Lagos.
+- **Cleanup (/simplify):** shared `kpiWindow`, `roleScope`, `revenueScope`, `shiftYmd`; `deliveredRevenueByRep` removes the per-rep query loop; shared status sets; parallel queries.
+- **Frontend:** consumers updated for renamed fields; dashboard, picker and analytics tabs send store days.
+
+### Key Files
+- `backend/src/services/{analyticsService,financialService,orderService,glService,deliveryService,repPerformanceService}.ts`
+- `backend/src/services/kpi/{dates,revenue,rates}.ts`, `kpi/pending.ts` (new), `utils/kpiRequest.ts`
+- `backend/src/mcp/tools/*`, `mcp/utils.ts`
+- `backend/src/__tests__/integration/{dateBounds.test.ts,fixtureChecks/endpoints.ts,fixtureChecks/mcp.ts}` (new)
+- `frontend/src/components/ui/DateRangePicker.tsx`, `pages/DynamicDashboard.tsx`, `hooks/useDashboardData.ts`, `stores/financialStore.ts`
