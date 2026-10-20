@@ -69,12 +69,40 @@ export const handleWebhook = async (req: AuthRequest, res: Response): Promise<vo
     res.status(200).send('EVENT_RECEIVED');
     return;
   }
-  const { tenantId, config: dbConfig } = match;
+  // Several tenant configs share this phone / WABA id: the signature decides. Exactly one
+  // candidate's app secret must verify. Otherwise nothing is processed (200 so Meta does not retry).
+  let resolved: { tenantId: string; config: any };
+  let preVerified = false;
+  if ('candidates' in match) {
+    const signature = req.headers['x-hub-signature-256'] as string | undefined;
+    const rawBody: Buffer | undefined = (req as any).rawBody;
+    const verified = rawBody
+      ? match.candidates.filter((c) => {
+        const secret = c.config?.appSecret || process.env.WHATSAPP_APP_SECRET;
+        return !!secret && verifyWebhookSignature(rawBody, signature, secret);
+      })
+      : [];
+    if (verified.length !== 1) {
+      logger.error('WhatsApp webhook: several tenant configs match and the signature does not pick exactly one, ignored', {
+        candidateTenantIds: match.candidates.map((c) => c.tenantId),
+        verifiedCount: verified.length,
+      });
+      res.status(200).send('EVENT_RECEIVED');
+      return;
+    }
+    resolved = verified[0];
+    preVerified = true;
+  } else {
+    resolved = match;
+  }
+  const { tenantId, config: dbConfig } = resolved;
   const appSecret = dbConfig?.appSecret || process.env.WHATSAPP_APP_SECRET;
 
   // If app secret is configured, verify signature using the raw body buffer
   // captured by the express.json verify callback in server.ts
-  if (appSecret) {
+  if (preVerified) {
+    // signature already verified against this tenant's secret
+  } else if (appSecret) {
     const signature = req.headers['x-hub-signature-256'] as string | undefined;
     const rawBody: Buffer = (req as any).rawBody;
 
