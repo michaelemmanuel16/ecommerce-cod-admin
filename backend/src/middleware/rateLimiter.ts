@@ -66,3 +66,12 @@ export const publicOrderLimiter = rateLimit({
   message: { message: 'Too many order tracking attempts. Please try again later.' },
   ...commonSettings
 });
+
+// Digital download links are public and guessable only by token, but a leaked link can be hammered:
+// cap each IP at 30 per 15 minutes, like order tracking.
+export const publicDownloadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isDevelopment ? 5000 : 30, // Relaxed for development
+  message: { message: 'Too many download attempts. Please try again later.' },
+  ...commonSettings
+});

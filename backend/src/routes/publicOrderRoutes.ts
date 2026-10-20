@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as publicOrderController from '../controllers/publicOrderController';
-import { webhookLimiter, publicOrderLimiter } from '../middleware/rateLimiter';
+import { webhookLimiter, publicOrderLimiter, publicDownloadLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validation';
 import { body, param } from 'express-validator';
 import { digitalDeliveryService } from '../services/digitalDeliveryService';
@@ -99,7 +99,7 @@ router.post(
 );
 
 // Download digital product by token
-router.get('/download/:token', async (req, res) => {
+router.get('/download/:token', publicDownloadLimiter, async (req, res) => {
   try {
     const { token } = req.params;
     const result = await digitalDeliveryService.validateAndGetDownloadUrl(token);
