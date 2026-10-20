@@ -68,7 +68,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
   showRefundPolicy = false,
 }) => {
   const hasDiscount = selectedPackage?.originalPrice && selectedPackage.originalPrice > selectedPackage.price && selectedPackage.showDiscount !== false;
-  const packageOriginalPrice = hasDiscount ? selectedPackage.originalPrice : selectedPackage?.price || 0;
+  const packageOriginalPrice = hasDiscount ? selectedPackage.originalPrice! : selectedPackage?.price || 0;
   const packageDiscount = hasDiscount ? (selectedPackage.originalPrice! - selectedPackage.price) : 0;
   const packageFinalPrice = selectedPackage?.price || 0;
 

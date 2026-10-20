@@ -61,7 +61,6 @@ export const WebhookForm: React.FC<WebhookFormProps> = ({
 
   const [errors, setErrors] = useState({
     name: '',
-    url: '',
     secret: '',
     productId: '',
     fieldMapping: '',

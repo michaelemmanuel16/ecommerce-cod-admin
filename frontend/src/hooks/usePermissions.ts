@@ -15,7 +15,7 @@ export const usePermissions = () => {
     if (isSuperAdmin) return true;
 
     // Use dynamic permissions from auth store (fetched from database)
-    if (!permissions) return false;
+    if (!permissions || Array.isArray(permissions)) return false;
 
     const resourcePermissions = permissions[resource];
     if (!resourcePermissions || !Array.isArray(resourcePermissions)) return false;

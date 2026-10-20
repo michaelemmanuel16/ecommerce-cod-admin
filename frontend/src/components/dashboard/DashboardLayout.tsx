@@ -256,18 +256,18 @@ function renderChartsByRow(
         const rowCharts = chartsByRow[rowNum];
 
         // Calculate total colSpan for this row
-        const totalColSpan = rowCharts.reduce(
-          (sum, chart) => sum + (chart.gridPosition?.colSpan || 1),
+        const totalColSpan = rowCharts.reduce<number>(
+          (sum: number, chart) => sum + (chart.gridPosition?.colSpan || 1),
           0
         );
 
         // Map totalColSpan to actual Tailwind classes
-        const gridColsClass = {
+        const gridColsClass = ({
           1: 'lg:grid-cols-1',
           2: 'lg:grid-cols-2',
           3: 'lg:grid-cols-3',
           4: 'lg:grid-cols-4',
-        }[totalColSpan] || 'lg:grid-cols-2';
+        } as Record<number, string>)[totalColSpan] || 'lg:grid-cols-2';
 
         return (
           <div

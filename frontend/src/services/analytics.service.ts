@@ -35,6 +35,7 @@ export interface PerformanceMetrics {
   revenue?: number;
   avgResponseTime?: number;
   failed?: number;
+  active?: number;
   onTimeRate?: number;
   totalDeliveries?: number;
   unpaidDeliveredOrders?: number;

@@ -132,7 +132,6 @@ export const deliveryAgentConfig: DashboardConfig = {
       dataSource: 'readyForPickup',
       gridPosition: { row: 1, col: 3, colSpan: 1 },
       height: 300,
-      config: {},
     },
   ],
 

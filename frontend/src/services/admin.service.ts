@@ -17,6 +17,8 @@ export interface SystemConfig {
     accountSid?: string;
     authToken?: string;
     phoneNumber?: string;
+    senderId?: string;
+    isEnabled?: boolean;
   };
   emailProvider?: {
     provider: string;

@@ -14,8 +14,9 @@ const isPreviewMessage = (data: any): data is PreviewMessage =>
 
 // Minimal valid base used in create mode, where no form has been saved yet.
 // The editor's streamed draft is merged on top, so these are just safe
-// defaults that render until the first patch arrives.
-const EMPTY_PREVIEW_BASE: PublicCheckoutForm = {
+// defaults that render until the first patch arrives. isActive/createdAt/
+// updatedAt are persistence metadata the preview never reads, hence the cast.
+const EMPTY_PREVIEW_BASE: Omit<PublicCheckoutForm, 'isActive' | 'createdAt' | 'updatedAt'> = {
   id: 0,
   productId: 0,
   name: '',
@@ -49,7 +50,7 @@ export const CheckoutFormPreview: React.FC = () => {
     // Create mode: no saved form to fetch — render the streamed draft over a
     // minimal base.
     if (isCreateMode) {
-      setBaseForm(EMPTY_PREVIEW_BASE);
+      setBaseForm(EMPTY_PREVIEW_BASE as PublicCheckoutForm);
       setIsLoading(false);
       return;
     }

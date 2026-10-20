@@ -6,17 +6,11 @@
 import React from 'react';
 import { Clock, Phone, MapPin, DollarSign, ChevronRight } from 'lucide-react';
 import { formatCurrency } from '../../../utils/format';
-import { WidgetProps } from '../../../config/types/dashboard';
+import { WidgetProps, OrdersAwaitingConfig } from '../../../config/types/dashboard';
 import { formatDistanceToNow } from 'date-fns';
 
 interface OrdersAwaitingWidgetProps extends WidgetProps {
-  config: {
-    id: string;
-    type: 'ordersAwaiting';
-    title: string;
-    height: number;
-    dataSource: string;
-  };
+  config: OrdersAwaitingConfig;
 }
 
 interface OrderData {
