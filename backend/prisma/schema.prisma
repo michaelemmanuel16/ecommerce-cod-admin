@@ -14,7 +14,7 @@ model Tenant {
   logo                      String?
   region                    String?
   currency                  String    @default("GHS")
-  defaultDeliveryFee        Float?    @map("default_delivery_fee")
+  defaultDeliveryFee        Decimal?  @map("default_delivery_fee") @db.Decimal(19, 4)
   currentPlanId             String?   @map("current_plan_id")
   subscriptionStatus        String    @default("active") @map("subscription_status")
   trialEndsAt               DateTime? @map("trial_ends_at")
@@ -86,7 +86,7 @@ model Plan {
   priceGHS         Decimal  @map("price_ghs") @db.Decimal(10, 2)
   priceNGN         Decimal? @map("price_ngn") @db.Decimal(10, 2)
   paystackPlanCode String?  @map("paystack_plan_code")
-  features         Json @default("{}")
+  features         Json     @default("{}")
   isActive         Boolean  @default(true) @map("is_active")
   createdAt        DateTime @default(now()) @map("created_at")
 
@@ -122,13 +122,13 @@ model User {
   refreshToken          String?             @map("refresh_token")
   passwordResetToken    String?             @unique @map("password_reset_token")
   passwordResetExpires  DateTime?           @map("password_reset_expires")
-  commissionAmount      Float?              @default(0) @map("commission_amount") /// Fixed commission amount per delivery (GHS)
+  commissionAmount      Decimal?            @default(0) @map("commission_amount") @db.Decimal(19, 4) /// Fixed commission amount per delivery (GHS)
   country               String?
   preferences           Json?
   vehicleType           String?             @map("vehicle_type")
   vehicleId             String?             @map("vehicle_id")
   deliveryRate          Float?              @default(0) @map("delivery_rate")
-  totalEarnings         Float?              @default(0) @map("total_earnings")
+  totalEarnings         Decimal?            @default(0) @map("total_earnings") @db.Decimal(19, 4)
   totalCollected        Decimal             @default(0) @map("total_collected") @db.Decimal(19, 4)
   location              String?
   createdAt             DateTime            @default(now()) @map("created_at")
@@ -169,33 +169,33 @@ model User {
 }
 
 model Customer {
-  id             Int          @id @default(autoincrement())
-  email          String?
-  phoneNumber    String       @map("phone_number")
-  alternatePhone String?      @map("alternate_phone")
-  address        String
-  state          String
-  area           String
-  landmark       String?
-  tags           String[]     @default([])
-  notes          String?
-  totalOrders    Int          @default(0) @map("total_orders")
-  totalSpent     Float        @default(0) @map("total_spent")
-  isActive       Boolean      @default(true) @map("is_active")
-  smsOptOut      Boolean      @default(false) @map("sms_opt_out")
-  whatsappOptOut Boolean      @default(false) @map("whatsapp_opt_out")
-  emailOptOut    Boolean      @default(false) @map("email_opt_out")
+  id               Int          @id @default(autoincrement())
+  email            String?
+  phoneNumber      String       @map("phone_number")
+  alternatePhone   String?      @map("alternate_phone")
+  address          String
+  state            String
+  area             String
+  landmark         String?
+  tags             String[]     @default([])
+  notes            String?
+  totalOrders      Int          @default(0) @map("total_orders")
+  totalSpent       Decimal      @default(0) @map("total_spent") @db.Decimal(19, 4)
+  isActive         Boolean      @default(true) @map("is_active")
+  smsOptOut        Boolean      @default(false) @map("sms_opt_out")
+  whatsappOptOut   Boolean      @default(false) @map("whatsapp_opt_out")
+  emailOptOut      Boolean      @default(false) @map("email_opt_out")
   // Stored 32-byte random hex (not signed, not derived from id); generated lazily before marketing sends.
-  unsubscribeToken String?    @unique @map("unsubscribe_token")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
-  firstName      String       @map("first_name")
-  lastName       String       @map("last_name")
-  calls          Call[]
-  orders         Order[]
-  messageLogs    MessageLog[]
-  tenantId       String?      @map("tenant_id")
-  tenant         Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  unsubscribeToken String?      @unique @map("unsubscribe_token")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+  firstName        String       @map("first_name")
+  lastName         String       @map("last_name")
+  calls            Call[]
+  orders           Order[]
+  messageLogs      MessageLog[]
+  tenantId         String?      @map("tenant_id")
+  tenant           Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([phoneNumber, tenantId], map: "customers_phone_number_tenant_key")
   @@index([isActive])
@@ -212,7 +212,7 @@ model Product {
   name                    String
   description             String?
   category                String
-  price                   Float
+  price                   Decimal                @db.Decimal(19, 4)
   stockQuantity           Int                    @map("stock_quantity")
   lowStockThreshold       Int                    @default(10) @map("low_stock_threshold")
   imageUrl                String?                @map("image_url")
@@ -254,18 +254,18 @@ model Order {
   deliveryAgentId    Int?                @map("delivery_agent_id")
   status             OrderStatus         @default(pending_confirmation)
   paymentStatus      PaymentStatus       @default(pending) @map("payment_status")
-  subtotal           Float
-  shippingCost       Float               @default(0) @map("shipping_cost")
-  discount           Float               @default(0)
-  totalAmount        Float               @map("total_amount")
-  codAmount          Float?              @map("cod_amount")
+  subtotal           Decimal             @db.Decimal(19, 4)
+  shippingCost       Decimal             @default(0) @map("shipping_cost") @db.Decimal(19, 4)
+  discount           Decimal             @default(0) @db.Decimal(19, 4)
+  totalAmount        Decimal             @map("total_amount") @db.Decimal(19, 4)
+  codAmount          Decimal?            @map("cod_amount") @db.Decimal(19, 4)
   notes              String?
   internalNotes      String?             @map("internal_notes")
   orderType          String              @default("physical") @map("order_type")
   paymentMethod      String              @default("cod") @map("payment_method")
   paymentReference   String?             @map("payment_reference")
-  depositPaid        Int                 @default(0) @map("deposit_paid")
-  balanceDue         Int                 @default(0) @map("balance_due")
+  depositPaid        Decimal             @default(0) @map("deposit_paid") @db.Decimal(19, 4)
+  balanceDue         Decimal             @default(0) @map("balance_due") @db.Decimal(19, 4)
   capiEventFired     Boolean             @default(false) @map("capi_event_fired")
   // Meta click identifiers captured from the buyer's browser at checkout, forwarded
   // to the CAPI Purchase event as un-hashed match keys (fbp = browser id cookie,
@@ -346,8 +346,8 @@ model OrderItem {
   orderId    Int      @map("order_id")
   productId  Int      @map("product_id")
   quantity   Int
-  unitPrice  Float    @map("unit_price")
-  totalPrice Float    @map("total_price")
+  unitPrice  Decimal  @map("unit_price") @db.Decimal(19, 4)
+  totalPrice Decimal  @map("total_price") @db.Decimal(19, 4)
   createdAt  DateTime @default(now()) @map("created_at")
   itemType   String   @default("package") @map("item_type")
   metadata   Json?
@@ -411,7 +411,7 @@ model Transaction {
   id            Int           @id @default(autoincrement())
   orderId       Int?          @unique @map("order_id")
   type          String
-  amount        Float
+  amount        Decimal       @db.Decimal(19, 4)
   paymentMethod String        @map("payment_method")
   status        PaymentStatus @default(pending)
   reference     String?
@@ -436,7 +436,7 @@ model Transaction {
 model Expense {
   id          Int      @id @default(autoincrement())
   category    String
-  amount      Float
+  amount      Decimal  @db.Decimal(19, 4)
   description String
   receiptUrl  String?  @map("receipt_url")
   recordedBy  Int?     @map("recorded_by")
@@ -737,11 +737,11 @@ model FormPackage {
   formId        Int          @map("form_id")
   name          String
   description   String?
-  price         Float
+  price         Decimal      @db.Decimal(19, 4)
   quantity      Int
   discountType  String       @default("none") @map("discount_type")
-  discountValue Float        @default(0) @map("discount_value")
-  originalPrice Float?       @map("original_price")
+  discountValue Decimal      @default(0) @map("discount_value") @db.Decimal(19, 4)
+  originalPrice Decimal?     @map("original_price") @db.Decimal(19, 4)
   isPopular     Boolean      @default(false) @map("is_popular")
   isDefault     Boolean      @default(false) @map("is_default")
   sortOrder     Int          @default(0) @map("sort_order")
@@ -761,13 +761,13 @@ model FormUpsell {
   name          String
   description   String?
   imageUrl      String?      @map("image_url")
-  price         Float
+  price         Decimal      @db.Decimal(19, 4)
   items         Json?
   sortOrder     Int          @default(0) @map("sort_order")
   createdAt     DateTime     @default(now()) @map("created_at")
   discountType  String       @default("none") @map("discount_type")
-  discountValue Float        @default(0) @map("discount_value")
-  originalPrice Float?       @map("original_price")
+  discountValue Decimal      @default(0) @map("discount_value") @db.Decimal(19, 4)
+  originalPrice Decimal?     @map("original_price") @db.Decimal(19, 4)
   productId     Int?         @map("product_id")
   form          CheckoutForm @relation(fields: [formId], references: [id], onDelete: Cascade)
   product       Product?     @relation(fields: [productId], references: [id])
@@ -784,7 +784,7 @@ model FormSubmission {
   formData        Json         @map("form_data")
   selectedPackage Json         @map("selected_package")
   selectedUpsells Json?        @map("selected_upsells")
-  totalAmount     Float        @map("total_amount")
+  totalAmount     Decimal      @map("total_amount") @db.Decimal(19, 4)
   ipAddress       String?      @map("ip_address")
   userAgent       String?      @map("user_agent")
   createdAt       DateTime     @default(now()) @map("created_at")
@@ -816,12 +816,12 @@ model PendingCheckout {
   paymentMethod       String   @map("payment_method")
   orderType           String   @map("order_type")
   currency            String
-  subtotal            Float
-  shippingCost        Float    @default(0) @map("shipping_cost")
-  discount            Float    @default(0)
-  totalAmount         Float    @map("total_amount")
-  codAmount           Float?   @map("cod_amount")
-  balanceDue          Int      @default(0) @map("balance_due")
+  subtotal            Decimal  @db.Decimal(19, 4)
+  shippingCost        Decimal  @default(0) @map("shipping_cost") @db.Decimal(19, 4)
+  discount            Decimal  @default(0) @db.Decimal(19, 4)
+  totalAmount         Decimal  @map("total_amount") @db.Decimal(19, 4)
+  codAmount           Decimal? @map("cod_amount") @db.Decimal(19, 4)
+  balanceDue          Decimal  @default(0) @map("balance_due") @db.Decimal(19, 4)
   paystackChargeMinor Int      @map("paystack_charge_minor")
   orderItems          Json     @map("order_items")
   formData            Json     @map("form_data")
@@ -867,7 +867,7 @@ model Call {
 model Payout {
   id         Int      @id @default(autoincrement())
   repId      Int      @map("rep_id")
-  amount     Float
+  amount     Decimal  @db.Decimal(19, 4)
   method     String
   status     String   @default("completed")
   payoutDate DateTime @default(now()) @map("payout_date")
@@ -889,7 +889,7 @@ model product_cost_entries {
   id              Int      @id @default(autoincrement())
   product_id      Int
   category        String   @default("purchase")
-  amount          Float
+  amount          Decimal  @db.Decimal(19, 4)
   description     String?
   date            DateTime @default(now())
   created_at      DateTime @default(now())
