@@ -4,6 +4,7 @@ import { MessageChannel, MessageDirection, MessageStatus, Prisma } from '@prisma
 import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { refreshTokenIfNeeded } from './whatsappTokenRefreshService';
 import { getTenantId, withoutTenant } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 // WhatsApp Business Cloud API configuration
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v21.0';
@@ -176,7 +177,7 @@ export interface OrderContext {
   customerId: number;
   customerName: string;
   customerPhone: string;
-  totalAmount: number;
+  totalAmount: Money.Money;
   deliveryAgentName?: string;
   productName?: string;
   status: string;
@@ -223,7 +224,7 @@ export async function sendWhatsAppForOrder(
     customerId: order.customer.id,
     customerName: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
     customerPhone: order.customer.phoneNumber,
-    totalAmount: Number(order.totalAmount),
+    totalAmount: Money.parse(order.totalAmount),
     deliveryAgentName: order.deliveryAgent
       ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim()
       : undefined,

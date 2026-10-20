@@ -9,6 +9,7 @@ import logger from '../utils/logger';
 import { getTenantId } from '../utils/tenantContext';
 import { renderEmailTemplate } from './emailTemplateService';
 import { ensureUnsubscribeToken, buildUnsubscribeUrl, applyUnsubscribe } from './unsubscribeService';
+import * as Money from '../utils/money';
 
 // ---------- Types ----------
 
@@ -40,6 +41,12 @@ interface SendEmailOptions {
  *                sent from a dedicated CodAdmin subdomain so bulk can't damage its
  *                reputation. For order/status/digital-delivery/unsubscribe email.
  */
+/** "GHS 1,234.50": 2 decimals and thousands separators, no float conversion. */
+function formatMoneyWithCurrency(currency: string, amount: Money.MoneyInput): string {
+  const [whole, decimals] = Money.toApi(amount).split('.');
+  return `${currency} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${decimals}`;
+}
+
 export interface SendEmailMeta {
   as?: 'platform' | 'tenant';
 }
@@ -424,10 +431,7 @@ export async function sendWorkflowEmail(
       store_name: tenant?.name ?? '',
       order_number: order ? String(order.id) : '',
       order_total: order
-        ? `${currency} ${Number(order.totalAmount).toLocaleString('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}`
+        ? formatMoneyWithCurrency(currency, order.totalAmount)
         : '',
       download_url: '',
       unsubscribe_url: unsubscribeUrl,

@@ -10,6 +10,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { evaluateConditions, evaluateRule } from '../../utils/conditionEvaluator';
+import { Prisma } from '@prisma/client';
 
 describe('conditionEvaluator (extended branch coverage)', () => {
   describe('getNestedValue - truthy non-object branch', () => {
@@ -30,6 +31,23 @@ describe('conditionEvaluator (extended branch coverage)', () => {
       // 'matches' operator accesses expected.pattern - throws on null
       const result = evaluateRule('hello', 'matches', null as any);
       expect(result).toBe(false);
+    });
+  });
+
+  describe('money fields (Prisma.Decimal)', () => {
+    it('compares a Decimal against a number threshold', () => {
+      const spent = new Prisma.Decimal('1000.50');
+      expect(evaluateRule(spent, 'greater_than', 1000)).toBe(true);
+      expect(evaluateRule(spent, 'greater_than', 1001)).toBe(false);
+      expect(evaluateRule(spent, 'less_than', 1001)).toBe(true);
+      expect(evaluateRule(spent, 'greater_than_or_equal', 1000.5)).toBe(true);
+      expect(evaluateRule(spent, 'less_than_or_equal', 1000)).toBe(false);
+      expect(evaluateRule(spent, 'equals', 1000.5)).toBe(true);
+      expect(evaluateRule(spent, 'not_equals', 1000.5)).toBe(false);
+    });
+
+    it('does not treat a money string as a number', () => {
+      expect(evaluateRule('1000.50', 'greater_than', 1000)).toBe(false);
     });
   });
 });

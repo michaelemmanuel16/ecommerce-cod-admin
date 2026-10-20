@@ -91,6 +91,7 @@ import { setupAgingCron } from './queues/agingQueue';
 import { setupFinancialReconciliationCron } from './queues/financialReconciliationQueue';
 import { setupMessageCleanupCron } from './queues/messageCleanupQueue';
 import { setupPendingCheckoutCleanupCron } from './queues/pendingCheckoutCleanupQueue';
+import * as Money from './utils/money';
 
 // Validate environment variables before starting server
 try {
@@ -150,6 +151,10 @@ app.use('/api/public', (_req, res, next) => {
 // SECURITY: Trust only the first proxy (nginx). Using `true` trusts ALL proxies,
 // allowing attackers to spoof X-Forwarded-For and bypass rate limiting.
 app.set("trust proxy", 1);
+
+// M0-T24: money in API responses is a string with 2 decimals. Every Prisma.Decimal in a res.json body goes
+// through Money.jsonReplacer, so no route formats money by hand.
+app.set("json replacer", Money.jsonReplacer);
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 const platformUrl = process.env.PLATFORM_URL || derivePlatformOrigin(frontendUrl);

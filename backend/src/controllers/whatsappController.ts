@@ -10,6 +10,7 @@ import whatsappService, {
 import { runInTenant } from '../utils/tenantContext';
 import logger from '../utils/logger';
 import { MessageChannel, MessageStatus } from '@prisma/client';
+import * as Money from '../utils/money';
 
 export const verifyWebhook = async (req: AuthRequest, res: Response): Promise<void> => {
   const mode = req.query['hub.mode'] as string;
@@ -322,7 +323,7 @@ export const testSend = async (req: AuthRequest, res: Response): Promise<void> =
       customerId: 0,
       customerName: 'Test Customer',
       customerPhone: to,
-      totalAmount: 150.00,
+      totalAmount: Money.parse('150.00'),
       deliveryAgentName: 'Test Agent',
       status: 'confirmed',
     };

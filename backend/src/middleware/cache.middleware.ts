@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import Redis from 'ioredis';
 import logger from '../utils/logger';
 import { getTenantId } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 // Redis client configuration
 const redis = new Redis({
@@ -82,7 +83,7 @@ export const cacheMiddleware = (options: CacheOptions = {}) => {
       // Override json method to cache response
       res.json = function (body: any) {
         // Cache the response
-        redis.setex(cacheKey, ttl, JSON.stringify(body))
+        redis.setex(cacheKey, ttl, JSON.stringify(body, Money.jsonReplacer))
           .catch((err) => logger.error('Failed to cache response:', err));
 
         // Send response

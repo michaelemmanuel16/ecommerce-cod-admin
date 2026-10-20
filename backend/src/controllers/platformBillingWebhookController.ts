@@ -12,6 +12,7 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
 import { withWebhookDedup } from '../utils/webhookDedup';
+import * as Money from '../utils/money';
 
 const PROVIDER = 'paystack-platform';
 
@@ -114,7 +115,7 @@ async function resolveTenantForEvent(eventType: string, data: any): Promise<stri
 async function dispatchEvent(eventType: string, data: any, tenantId: string): Promise<void> {
   const nextPaymentDate = parseDate(data.next_payment_date || data.subscription?.next_payment_date);
   const planCode = data.plan?.plan_code || data.plan_object?.plan_code || data.metadata?.planId;
-  const amountNGN = typeof data.amount === 'number' ? data.amount / 100 : undefined;
+  const amountNGN = typeof data.amount === 'number' ? Money.toApi(Money.fromMinor(data.amount)) : undefined;
 
   // Structured log line (F3) so subscribe/charge/fail are traceable.
   logger.info('Platform billing event', { tenantId, event: eventType, plan: planCode, amountNGN });

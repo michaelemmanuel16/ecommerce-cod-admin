@@ -4,6 +4,7 @@ import { redis } from '../middleware/cache.middleware';
 import { SUBSCRIPTION_STATUS, PLAN_NAMES } from '../config/billing';
 import { seedTenantDefaults } from './tenantDefaultsService';
 import logger from '../utils/logger';
+import * as Money from '../utils/money';
 
 // ── Metrics ──────────────────────────────────────────────
 
@@ -26,10 +27,10 @@ export async function getPlatformMetrics() {
   });
 
   const planMap = new Map(plans.map(p => [p.id, p]));
-  const mrr = tenantsByPlan.reduce((sum, group) => {
+  const mrr = Money.sum(tenantsByPlan.map((group) => {
     const plan = planMap.get(group.currentPlanId!);
-    return sum + (plan ? Number(plan.priceGHS) * group._count : 0);
-  }, 0);
+    return plan ? Money.mul(plan.priceGHS, group._count) : Money.ZERO;
+  }));
 
   return { totalTenants, activeTenants, suspendedTenants, mrr, activeUsers };
 }
@@ -140,7 +141,7 @@ export async function getTenantDetail(id: string) {
     adminName: adminUser ? `${adminUser.firstName} ${adminUser.lastName}` : null,
     usage: {
       ordersThisMonth,
-      revenueThisMonth: Number(revenue._sum.totalAmount || 0),
+      revenueThisMonth: Money.orZero(revenue._sum.totalAmount),
       totalUsers: tenant._count.users,
     },
   };

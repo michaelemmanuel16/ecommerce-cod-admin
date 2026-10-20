@@ -4,6 +4,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { getRepPerformanceDetails } from '../services/repPerformanceService';
 import { adminService } from '../services/adminService';
+import * as Money from '../utils/money';
 
 export const getAllUsers = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -202,8 +203,8 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         !['delivered', 'cancelled', 'returned'].includes(o.status)
       ).length;
 
-      const rate = agent.deliveryRate || agent.commissionAmount || 0;
-      const calculatedEarnings = delivered * rate;
+      const rate = agent.deliveryRate ? Money.fromNumber(agent.deliveryRate) : Money.orZero(agent.commissionAmount);
+      const calculatedEarnings = Money.mul(delivered, rate);
 
       // MTD metrics
       const mtdOrders = orders.filter((o: any) => new Date(o.createdAt) >= startOfMonth);
@@ -223,7 +224,7 @@ export const getAgentPerformance = async (req: AuthRequest, res: Response, next:
         vehicleId: agent.vehicleId,
         deliveryRate: rate,
         totalEarnings: calculatedEarnings,
-        mtdEarnings: mtdCompleted * rate,
+        mtdEarnings: Money.mul(mtdCompleted, rate),
         location: agent.location,
         mtdCompleted,
         mtdTotalAssigned: mtdOrders.length,

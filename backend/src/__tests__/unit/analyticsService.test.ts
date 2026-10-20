@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { prismaMock } from '../mocks/prisma.mock';
 import { AnalyticsService } from '../../services/analyticsService';
+import * as Money from '../../utils/money';
 
 describe('AnalyticsService', () => {
   let analyticsService: AnalyticsService;
@@ -36,8 +37,8 @@ describe('AnalyticsService', () => {
       expect(metrics.todayOrders).toBe(10);
       expect(metrics.pendingOrders).toBe(30);
       expect(metrics.deliveredOrders).toBe(60);
-      expect(metrics.totalRevenue).toBe(10000);
-      expect(metrics.todayRevenue).toBe(500);
+      expect(Money.toApi(metrics.totalRevenue)).toBe('10000.00');
+      expect(Money.toApi(metrics.todayRevenue)).toBe('500.00');
       expect(metrics.activeAgents).toBe(5);
       expect(metrics.deliveryRate).toBe(60); // 60/100 * 100
       expect(metrics.avgDeliveryTime).toBeGreaterThan(0);
@@ -52,7 +53,7 @@ describe('AnalyticsService', () => {
       const metrics = await analyticsService.getDashboardMetrics();
 
       expect(metrics.totalOrders).toBe(0);
-      expect(metrics.totalRevenue).toBe(0);
+      expect(Money.toApi(metrics.totalRevenue)).toBe('0.00');
       expect(metrics.deliveryRate).toBe(0);
       expect(metrics.avgDeliveryTime).toBe(0);
     });
@@ -87,7 +88,7 @@ describe('AnalyticsService', () => {
 
       const jan1Data = trends.find((t) => t.date === '2024-01-01');
       expect(jan1Data?.orders).toBe(2);
-      expect(jan1Data?.revenue).toBe(300);
+      expect(Money.toApi(jan1Data!.revenue)).toBe('300.00');
       expect(jan1Data?.delivered).toBe(2);
     });
 
@@ -119,9 +120,9 @@ describe('AnalyticsService', () => {
       const feb2024 = trends.find((t) => t.date === '2024-02');
 
       expect(jan2024?.orders).toBe(2);
-      expect(jan2024?.revenue).toBe(300);
+      expect(Money.toApi(jan2024!.revenue)).toBe('300.00');
       expect(feb2024?.orders).toBe(1);
-      expect(feb2024?.revenue).toBe(150);
+      expect(Money.toApi(feb2024!.revenue)).toBe('150.00');
     });
 
     it('should calculate conversion rate correctly', async () => {
@@ -197,7 +198,7 @@ describe('AnalyticsService', () => {
       expect(performance[0].completed).toBe(2);
       expect(performance[0].pending).toBe(1);
       expect(performance[0].successRate).toBe(66.66666666666666); // 2/3 * 100
-      expect(performance[0].revenue).toBe(300);
+      expect(Money.toApi(performance[0].revenue)).toBe('300.00');
       expect(performance[0].avgResponseTime).toBeGreaterThan(0);
     });
 
@@ -224,7 +225,7 @@ describe('AnalyticsService', () => {
       expect(performance).toHaveLength(1);
       expect(performance[0].totalAssigned).toBe(0);
       expect(performance[0].completed).toBe(0);
-      expect(performance[0].revenue).toBe(0);
+      expect(Money.toApi(performance[0].revenue)).toBe('0.00');
       expect(performance[0].successRate).toBe(0);
       expect(performance[0].avgResponseTime).toBe(0);
     });
@@ -310,9 +311,9 @@ describe('AnalyticsService', () => {
       expect(insights.totalCustomers).toBe(100);
       expect(insights.activeCustomers).toBe(90);
       expect(insights.topCustomers).toHaveLength(2);
-      expect(insights.topCustomers[0].totalSpent).toBe(1000);
+      expect(Money.toApi(insights.topCustomers[0].totalSpent)).toBe('1000.00');
       expect(insights.customersByArea).toHaveLength(2);
-      expect(insights.avgOrderValue).toBe(150);
+      expect(Money.toApi(insights.avgOrderValue)).toBe('150.00');
     });
   });
 
@@ -357,11 +358,11 @@ describe('AnalyticsService', () => {
       expect(performance[0].productId).toBe('product-1');
       expect(performance[0].productName).toBe('Product A');
       expect(performance[0].unitsSold).toBe(50);
-      expect(performance[0].revenue).toBe(5000);
+      expect(Money.toApi(performance[0].revenue)).toBe('5000.00');
       expect(performance[0].orderCount).toBe(25);
 
       // Should be sorted by revenue (descending)
-      expect(performance[0].revenue).toBeGreaterThan(performance[1].revenue);
+      expect(Money.gt(performance[0].revenue, performance[1].revenue)).toBe(true);
     });
 
     it('should handle products with no sales', async () => {
@@ -396,10 +397,10 @@ describe('AnalyticsService', () => {
       expect(distribution).toHaveLength(2);
       expect(distribution[0].area).toBe('Manhattan');
       expect(distribution[0].orderCount).toBe(50);
-      expect(distribution[0].revenue).toBe(10000);
+      expect(Money.toApi(distribution[0].revenue)).toBe('10000.00');
       expect(distribution[1].area).toBe('Brooklyn');
       expect(distribution[1].orderCount).toBe(30);
-      expect(distribution[1].revenue).toBe(6000);
+      expect(Money.toApi(distribution[1].revenue)).toBe('6000.00');
     });
   });
 
@@ -454,7 +455,7 @@ describe('AnalyticsService', () => {
       const series = await analyticsService.getTimeSeriesData('revenue', 7);
 
       const jan1 = series.find((s) => s.date === '2024-01-01');
-      expect(jan1?.value).toBe(300);
+      expect(Money.toApi(jan1!.value)).toBe('300.00');
     });
 
     it('should only count delivered orders for revenue', async () => {
@@ -476,7 +477,7 @@ describe('AnalyticsService', () => {
       const series = await analyticsService.getTimeSeriesData('revenue', 7);
 
       const jan1 = series.find((s) => s.date === '2024-01-01');
-      expect(jan1?.value).toBe(100); // Only delivered order counts
+      expect(Money.toApi(jan1!.value)).toBe('100.00'); // Only delivered order counts
     });
   });
 
@@ -494,7 +495,7 @@ describe('AnalyticsService', () => {
 
       expect(stats.ordersLastHour).toBe(5);
       expect(stats.deliveriesInProgress).toBe(3);
-      expect(stats.avgOrderValue).toBe(175);
+      expect(Money.toApi(stats.avgOrderValue)).toBe('175.00');
       expect(stats.timestamp).toBeDefined();
     });
   });

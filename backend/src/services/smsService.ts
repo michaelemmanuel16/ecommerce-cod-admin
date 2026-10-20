@@ -4,6 +4,7 @@ import { MessageChannel, MessageDirection, MessageStatus } from '@prisma/client'
 import { decryptProviderSecrets } from '../utils/providerCrypto';
 import { formatPhoneNumber, OrderContext } from './whatsappService';
 import { getTenantId, runInTenantOf, withoutTenant } from '../utils/tenantContext';
+import * as Money from '../utils/money';
 
 // Arkesel SMS API
 const ARKESEL_API_URL = 'https://sms.arkesel.com/api/v2/sms/send';
@@ -245,7 +246,7 @@ export async function sendSmsForOrder(
     customerId: order.customer.id,
     customerName: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
     customerPhone: order.customer.phoneNumber,
-    totalAmount: Number(order.totalAmount),
+    totalAmount: Money.parse(order.totalAmount),
     deliveryAgentName: order.deliveryAgent
       ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}`.trim()
       : undefined,

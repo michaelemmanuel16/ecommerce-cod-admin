@@ -2,6 +2,7 @@ import prisma from '../utils/prisma';
 import { getTenantId } from '../utils/tenantContext';
 import { Prisma } from '@prisma/client';
 import { GL_ACCOUNTS } from '../config/glAccounts';
+import * as Money from '../utils/money';
 
 
 interface DateFilters {
@@ -206,8 +207,8 @@ export class AnalyticsService {
         todayOrders,
         pendingOrders,
         deliveredOrders,
-        totalRevenue: Number(totalRevenue._sum.creditAmount || 0) - Number(totalRevenue._sum.debitAmount || 0),
-        todayRevenue: Number(todayRevenue._sum.creditAmount || 0) - Number(todayRevenue._sum.debitAmount || 0),
+        totalRevenue: Money.toApi(Money.sub(Money.orZero(totalRevenue._sum.creditAmount), Money.orZero(totalRevenue._sum.debitAmount))),
+        todayRevenue: Money.toApi(Money.sub(Money.orZero(todayRevenue._sum.creditAmount), Money.orZero(todayRevenue._sum.debitAmount))),
         activeAgents,
         deliverySamples: deliveries.length
       });
@@ -235,8 +236,8 @@ export class AnalyticsService {
       todayOrders,
       pendingOrders,
       deliveredOrders,
-      totalRevenue: Number(totalRevenue._sum.creditAmount || 0) - Number(totalRevenue._sum.debitAmount || 0),
-      todayRevenue: Number(todayRevenue._sum.creditAmount || 0) - Number(todayRevenue._sum.debitAmount || 0),
+      totalRevenue: Money.sub(Money.orZero(totalRevenue._sum.creditAmount), Money.orZero(totalRevenue._sum.debitAmount)),
+      todayRevenue: Money.sub(Money.orZero(todayRevenue._sum.creditAmount), Money.orZero(todayRevenue._sum.debitAmount)),
       activeAgents,
       avgDeliveryTime: avgTime,
       deliveryRate: totalOrders > 0 ? (deliveredOrders / totalOrders) * 100 : 0
@@ -295,7 +296,7 @@ export class AnalyticsService {
       }
     });
 
-    const trends: Record<string, { orders: number; revenue: number; delivered: number }> = {};
+    const trends: Record<string, { orders: number; revenue: Money.Money; delivered: number }> = {};
 
     orders.forEach((order) => {
       const key =
@@ -304,11 +305,11 @@ export class AnalyticsService {
           : `${order.createdAt.getFullYear()}-${String(order.createdAt.getMonth() + 1).padStart(2, '0')}`;
 
       if (!trends[key]) {
-        trends[key] = { orders: 0, revenue: 0, delivered: 0 };
+        trends[key] = { orders: 0, revenue: Money.ZERO, delivered: 0 };
       }
 
       trends[key].orders += 1;
-      trends[key].revenue += order.totalAmount;
+      trends[key].revenue = Money.add(trends[key].revenue, order.totalAmount);
       if (order.status === 'delivered') {
         trends[key].delivered += 1;
       }
@@ -449,7 +450,7 @@ export class AnalyticsService {
           repId: rep.id,
           pendingCount,
           unpaidDeliveredCount: unpaidDelivered._count.id || 0,
-          unpaidDeliveredRevenue: unpaidDelivered._sum.totalAmount || 0
+          unpaidDeliveredRevenue: Money.orZero(unpaidDelivered._sum.totalAmount)
         };
       })
     );
@@ -458,9 +459,11 @@ export class AnalyticsService {
       const total = rep.assignedOrdersAsRep.length;
       // Completed count for MTD metrics (success rate/revenue trend)
       const completed = rep.assignedOrdersAsRep.filter((o) => o.status === 'delivered').length;
-      const revenue = rep.assignedOrdersAsRep
-        .filter((o) => o.status === 'delivered')
-        .reduce((sum, o) => sum + o.totalAmount, 0);
+      const revenue = Money.sum(
+        rep.assignedOrdersAsRep
+          .filter((o) => o.status === 'delivered')
+          .map((o) => o.totalAmount)
+      );
 
       // Calculate average response time
       let totalResponseTime = 0;
@@ -484,7 +487,7 @@ export class AnalyticsService {
         // Use separately fetched stats (not filtered by date)
         pending: stats?.pendingCount || 0,
         unpaidDeliveredOrders: stats?.unpaidDeliveredCount || 0,
-        unpaidDeliveredRevenue: stats?.unpaidDeliveredRevenue || 0,
+        unpaidDeliveredRevenue: stats?.unpaidDeliveredRevenue ?? Money.ZERO,
         successRate: total > 0 ? (completed / total) * 100 : 0,
         revenue,
         avgResponseTime
@@ -620,7 +623,7 @@ export class AnalyticsService {
           area: group.area,
           count: group._count.area
         })),
-        avgOrderValue: avgOrderValue._avg.totalAmount || 0
+        avgOrderValue: Money.orZero(avgOrderValue._avg.totalAmount)
       };
 
       return insights;
@@ -632,7 +635,7 @@ export class AnalyticsService {
         activeCustomers: 0,
         topCustomers: [],
         customersByArea: [],
-        avgOrderValue: 0
+        avgOrderValue: Money.ZERO
       };
     }
   }
@@ -692,11 +695,11 @@ export class AnalyticsService {
           sku: product?.sku || '',
           category: product?.category || '',
           unitsSold: ps._sum.quantity || 0,
-          revenue: ps._sum.totalPrice || 0,
+          revenue: Money.orZero(ps._sum.totalPrice),
           orderCount: ps._count
         };
       })
-      .sort((a, b) => b.revenue - a.revenue);
+      .sort((a, b) => Money.compare(b.revenue, a.revenue));
 
     return performance;
   }
@@ -731,7 +734,7 @@ export class AnalyticsService {
     return areaStats.map((stat) => ({
       area: stat.deliveryArea,
       orderCount: stat._count,
-      revenue: stat._sum.totalAmount || 0
+      revenue: Money.orZero(stat._sum.totalAmount)
     }));
   }
 
@@ -756,27 +759,29 @@ export class AnalyticsService {
       }
     });
 
-    const series: Record<string, number> = {};
+    // Counts for 'orders' and 'delivered', money (Decimal) for 'revenue'
+    const series: Record<string, number | Money.Money> = {};
+    const isMoney = metric === 'revenue';
 
     orders.forEach((order) => {
       const dateKey = order.createdAt.toISOString().split('T')[0];
 
-      if (!series[dateKey]) {
-        series[dateKey] = 0;
+      if (series[dateKey] === undefined) {
+        series[dateKey] = isMoney ? Money.ZERO : 0;
       }
 
       switch (metric) {
         case 'orders':
-          series[dateKey] += 1;
+          series[dateKey] = (series[dateKey] as number) + 1;
           break;
         case 'revenue':
           if (order.status === 'delivered') {
-            series[dateKey] += order.totalAmount;
+            series[dateKey] = Money.add(series[dateKey] as Money.Money, order.totalAmount);
           }
           break;
         case 'delivered':
           if (order.status === 'delivered') {
-            series[dateKey] += 1;
+            series[dateKey] = (series[dateKey] as number) + 1;
           }
           break;
       }
@@ -828,7 +833,7 @@ export class AnalyticsService {
     return {
       ordersLastHour,
       deliveriesInProgress,
-      avgOrderValue: avgOrderValue._avg.totalAmount || 0,
+      avgOrderValue: Money.orZero(avgOrderValue._avg.totalAmount),
       timestamp: now
     };
   }

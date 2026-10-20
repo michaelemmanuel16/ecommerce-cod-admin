@@ -65,10 +65,30 @@ describe('Money helper', () => {
     expect(Money.tryParse(1e16)).toBeNull();
     expect(Money.toApi(Money.tryParse('12.5')!)).toBe('12.50');
   });
-
   it('orZero treats null and undefined as zero', () => {
     expect(Money.toApi(Money.orZero(null))).toBe('0.00');
     expect(Money.toApi(Money.orZero(undefined))).toBe('0.00');
     expect(Money.toApi(Money.orZero(new Prisma.Decimal('12.5')))).toBe('12.50');
+  });
+
+  it('jsonReplacer turns every Decimal into a 2-decimal string and leaves other values alone', () => {
+    const body = {
+      total: new Prisma.Decimal('249'),
+      nested: { amounts: [new Prisma.Decimal('0.1'), new Prisma.Decimal('1234.5678')] },
+      rate: 12.5,
+      count: 3,
+      name: 'x',
+      missing: null,
+      date: new Date('2024-01-01T00:00:00Z'),
+    };
+    expect(JSON.parse(JSON.stringify(body, Money.jsonReplacer))).toEqual({
+      total: '249.00',
+      nested: { amounts: ['0.10', '1234.57'] },
+      rate: 12.5,
+      count: 3,
+      name: 'x',
+      missing: null,
+      date: '2024-01-01T00:00:00.000Z',
+    });
   });
 });

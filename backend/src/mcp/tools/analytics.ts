@@ -3,7 +3,8 @@ import { getTenantId } from '../../utils/tenantContext';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
 import { GL_ACCOUNTS } from '../../config/glAccounts';
-import { mcpJson, mcpError } from '../utils';
+import { mcpJson, mcpError, getCurrency } from '../utils';
+import * as Money from '../../utils/money';
 
 const dailySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -73,7 +74,7 @@ export function registerAnalyticsTools(
           }),
         ]);
 
-        const revenue = Number(glRevenue._sum.creditAmount || 0) - Number(glRevenue._sum.debitAmount || 0);
+        const revenue = Money.sub(Money.orZero(glRevenue._sum.creditAmount), Money.orZero(glRevenue._sum.debitAmount));
 
         // Resolve product names for top products
         const productIds = topProducts.map((p) => p.productId);
@@ -87,6 +88,7 @@ export function registerAnalyticsTools(
 
         return mcpJson({
           date: start.toISOString().split('T')[0],
+          currency: await getCurrency(),
           totalOrders: orders,
           revenue,
           statusBreakdown: Object.fromEntries(statusCounts.map((s) => [s.status, s._count.id])),
@@ -136,12 +138,13 @@ export function registerAnalyticsTools(
         ]);
 
         return mcpJson({
+          currency: await getCurrency(),
           currentWeek: { from: thisWeekStart.toISOString().split('T')[0], to: thisWeekEnd.toISOString().split('T')[0], ...thisWeek },
           priorWeek: { from: lastWeekStart.toISOString().split('T')[0], to: lastWeekEnd.toISOString().split('T')[0], ...lastWeek },
           change: {
             orders: thisWeek.totalOrders - lastWeek.totalOrders,
-            revenue: (thisWeek.revenue as number) - (lastWeek.revenue as number),
-            deliveryRate: `${((thisWeek.deliveryRate as number) - (lastWeek.deliveryRate as number)).toFixed(1)}pp`,
+            revenue: Money.sub(thisWeek.revenue, lastWeek.revenue),
+            deliveryRate: `${(thisWeek.deliveryRate - lastWeek.deliveryRate).toFixed(1)}pp`,
           },
         });
       } catch (err) {
@@ -185,13 +188,14 @@ export function registerAnalyticsTools(
 
         return mcpJson({
           month: `${year}-${String(month).padStart(2, '0')}`,
+          currency: await getCurrency(),
           ...current,
           newCustomers,
           priorMonth: prior,
           growth: {
             orders: `${orderGrowth}%`,
-            revenue: prior.revenue
-              ? `${((((current.revenue as number) - (prior.revenue as number)) / (prior.revenue as number)) * 100).toFixed(1)}%`
+            revenue: prior.revenue.gt(0)
+              ? `${Money.mul(Money.div(Money.sub(current.revenue, prior.revenue), prior.revenue), 100).toFixed(1)}%`
               : 'N/A',
           },
         });
@@ -228,7 +232,7 @@ async function getWeekStats(start: Date, end: Date) {
     }),
   ]);
 
-  const revenue = Number(glRevenue._sum.creditAmount || 0) - Number(glRevenue._sum.debitAmount || 0);
+  const revenue = Money.sub(Money.orZero(glRevenue._sum.creditAmount), Money.orZero(glRevenue._sum.debitAmount));
 
   return {
     totalOrders: total,

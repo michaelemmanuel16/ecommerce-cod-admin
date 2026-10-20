@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { prismaMock } from '../mocks/prisma.mock';
 import { AnalyticsService } from '../../services/analyticsService';
+import * as Money from '../../utils/money';
 
 describe('AnalyticsService - Month-to-Date Filtering', () => {
     let analyticsService: AnalyticsService;
@@ -33,7 +34,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
             // Verify MTD filtering was applied
             expect(metrics.totalOrders).toBe(10); // Only Feb orders
             expect(metrics.deliveredOrders).toBe(0); // Only Feb delivered
-            expect(metrics.totalRevenue).toBe(1000); // Only Feb revenue
+            expect(Money.toApi(metrics.totalRevenue)).toBe('1000.00'); // Only Feb revenue
             expect(metrics.pendingOrders).toBe(154); // All pending (no date filter)
 
             // Verify the date filter was constructed correctly
@@ -72,7 +73,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
             // Verify custom date range was used
             expect(metrics.totalOrders).toBe(50);
             expect(metrics.deliveredOrders).toBe(30);
-            expect(metrics.totalRevenue).toBe(5000);
+            expect(Money.toApi(metrics.totalRevenue)).toBe('5000.00');
 
             // Verify the custom dates were passed to Prisma
             const orderCountCalls = prismaMock.order.count.mock.calls;
@@ -152,7 +153,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
             expect(performance).toHaveLength(1);
             expect(performance[0].totalAssigned).toBe(2); // MTD orders
             expect(performance[0].completed).toBe(1); // MTD delivered
-            expect(performance[0].revenue).toBe(100); // MTD revenue
+            expect(Money.toApi(performance[0].revenue)).toBe('100.00'); // MTD revenue
             expect(performance[0].pending).toBe(154); // All-time pending
             expect(performance[0].unpaidDeliveredOrders).toBe(5); // All-time unpaid count
 
@@ -205,7 +206,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
 
             expect(performance[0].totalAssigned).toBe(2); // Custom range orders
             expect(performance[0].completed).toBe(2); // Custom range delivered
-            expect(performance[0].revenue).toBe(800); // Custom range revenue
+            expect(Money.toApi(performance[0].revenue)).toBe('800.00'); // Custom range revenue
             expect(performance[0].pending).toBe(154); // Still all-time
 
             // Verify custom date range was used
@@ -279,7 +280,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
 
             expect(performance[0].totalAssigned).toBe(1); // Only today's orders
             expect(performance[0].completed).toBe(1);
-            expect(performance[0].revenue).toBe(100);
+            expect(Money.toApi(performance[0].revenue)).toBe('100.00');
             expect(performance[0].pending).toBe(50); // All-time pending
         });
 
@@ -318,7 +319,7 @@ describe('AnalyticsService - Month-to-Date Filtering', () => {
 
             expect(metrics.totalOrders).toBe(0);
             expect(metrics.deliveredOrders).toBe(0);
-            expect(metrics.totalRevenue).toBe(0);
+            expect(Money.toApi(metrics.totalRevenue)).toBe('0.00');
             expect(metrics.pendingOrders).toBe(0);
         });
 

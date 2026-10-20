@@ -8,6 +8,7 @@ import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
+import * as Money from '../utils/money';
 
 
 interface CreateWebhookData {
@@ -329,9 +330,15 @@ export class WebhookService {
    * Hash of (phone + totalAmount + date) prevents race-condition duplicates
    * via a DB unique constraint.
    */
-  private generateWebhookFingerprint(phone: string, totalAmount: number, webhookConfigId?: number): string {
+  /** Money from an external payload field. Missing or invalid is zero. */
+  private parseMoneyField(value: unknown): Money.Money {
+    return Money.tryParse(typeof value === 'string' ? value.trim() : value) ?? Money.ZERO;
+  }
+
+  private generateWebhookFingerprint(phone: string, totalAmount: Money.Money, webhookConfigId?: number): string {
     const dateStr = new Date().toISOString().split('T')[0]; // same calendar day
-    const raw = `${phone}|${totalAmount}|${webhookConfigId || ''}|${dateStr}`;
+    // Decimal.toString() prints 675 and 675.5 as the old number form did, so same-day fingerprints stay stable
+    const raw = `${phone}|${totalAmount.toString()}|${webhookConfigId || ''}|${dateStr}`;
     return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 40);
   }
 
@@ -372,7 +379,7 @@ export class WebhookService {
         // Determine product, quantity, and price
         let product = null;
         let quantity = 1;
-        let price = 0;
+        let price: Money.Money = Money.ZERO;
         let packageInfo = '';
 
         // Check if webhook has a configured product (new flow)
@@ -387,7 +394,7 @@ export class WebhookService {
           if (packageField) {
             const parsed = parsePackageField(packageField);
             quantity = parsed.quantity;
-            price = parsed.price;
+            price = Money.fromNumber(parsed.price);
 
             logger.info('Parsed package field', {
               packageField,
@@ -398,13 +405,13 @@ export class WebhookService {
           } else {
             // Fall back to explicit quantity/price fields if package field is empty
             quantity = Number(mappedData.quantity || externalOrder.quantity || 1);
-            price = Number(mappedData.price || externalOrder.price || 0);
+            price = this.parseMoneyField(mappedData.price || externalOrder.price);
           }
         } else {
           // Old flow: Look up product by name (backward compatibility)
           const productName = mappedData.productName || externalOrder.product_name || externalOrder.product;
           quantity = Number(mappedData.quantity || externalOrder.quantity || 1);
-          price = Number(mappedData.price || externalOrder.price || 0);
+          price = this.parseMoneyField(mappedData.price || externalOrder.price);
           packageInfo = mappedData.package || externalOrder.package || '';
 
           product = productName ? await this.findProductByName(productName) : null;
@@ -414,9 +421,11 @@ export class WebhookService {
         // The parsed price from package field is the TOTAL price for the package, not per-unit
         // Example: "BUY THREE SETS - GH₵675" means 3 sets for 675 total (not 675 each)
         const itemTotal = price; // Use price as-is (it's already the total)
-        const subtotal = mappedData.subtotal ? Number(mappedData.subtotal) : itemTotal;
-        const shippingCost = Number(mappedData.shippingCost || mappedData.deliveryFee || externalOrder.shipping_cost || externalOrder.delivery_fee || 0);
-        const totalAmount = Math.round((mappedData.totalAmount ? Number(mappedData.totalAmount) : subtotal + shippingCost) * 100) / 100;
+        const subtotal = mappedData.subtotal ? this.parseMoneyField(mappedData.subtotal) : itemTotal;
+        const shippingCost = this.parseMoneyField(mappedData.shippingCost || mappedData.deliveryFee || externalOrder.shipping_cost || externalOrder.delivery_fee);
+        const totalAmount = Money.roundHalfUp(
+          mappedData.totalAmount ? this.parseMoneyField(mappedData.totalAmount) : Money.add(subtotal, shippingCost)
+        );
 
         // Guard 1: exact-retry deduplication by externalOrderId (in-memory lookup from pre-fetch)
         const externalId = this.getExternalId(externalOrder);
@@ -440,7 +449,7 @@ export class WebhookService {
         if (existingExternalIdSet.has(`fp:${fingerprint}`)) {
           logger.info('Skipping duplicate webhook order (same fingerprint in batch)', {
             phone: customer.phoneNumber,
-            totalAmount,
+            totalAmount: Money.toApi(totalAmount),
           });
           results.skipped++;
           continue;
@@ -468,7 +477,7 @@ export class WebhookService {
                 create: {
                   productId: product.id,
                   quantity,
-                  unitPrice: quantity > 0 ? price / quantity : price,
+                  unitPrice: quantity > 0 ? Money.roundHalfUp(Money.div(price, quantity), 4) : price,
                   totalPrice: itemTotal
                 }
               } : undefined,
@@ -489,7 +498,7 @@ export class WebhookService {
           if (err.code === 'P2002' && err.meta?.target?.includes('webhook_fingerprint')) {
             logger.info('Skipping duplicate webhook order (concurrent fingerprint collision)', {
               phone: customer.phoneNumber,
-              totalAmount,
+              totalAmount: Money.toApi(totalAmount),
               fingerprint,
             });
             results.skipped++;

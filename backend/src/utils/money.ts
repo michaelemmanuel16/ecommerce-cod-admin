@@ -110,6 +110,18 @@ export function toApi(a: MoneyInput): string {
   return parse(a).toFixed(2, Decimal.ROUND_HALF_UP);
 }
 
+/**
+ * JSON.stringify replacer for API output (M0-T24): every Prisma.Decimal becomes its toApi() string.
+ * JSON.stringify calls Decimal.toJSON() before the replacer runs ("249"), so the replacer reads the
+ * original value from the holder (`this[key]`). Installed once on the Express app
+ * (`app.set('json replacer', ...)`), in the MCP JSON helper and in the response cache.
+ * All Decimal columns in the schema are money, so no Decimal escapes as a bare number string.
+ */
+export function jsonReplacer(this: any, key: string, value: unknown): unknown {
+  const original = this?.[key];
+  return Decimal.isDecimal(original) ? toApi(original) : value;
+}
+
 /** Paystack boundary: major units to integer minor units (pesewas/kobo), half up. */
 export function toMinor(a: MoneyInput): number {
   return roundHalfUp(mul(a, 100), 0).toNumber();

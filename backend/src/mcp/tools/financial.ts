@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { mcpJson, mcpError, getDateRange } from '../utils';
+import { mcpJson, mcpError, getDateRange, getCurrency } from '../utils';
+import * as Money from '../../utils/money';
 
 const financialSummarySchema = z.object({
   period: z.enum(['today', 'week', 'month']).default('today'),
@@ -62,15 +63,16 @@ export function registerFinancialTools(
 
         return mcpJson({
           period: parsed.period,
+          currency: await getCurrency(),
           dateRange: { from: start.toISOString(), to: end.toISOString() },
           revenue: {
-            delivered: revenue._sum.totalAmount ?? 0,
+            delivered: Money.orZero(revenue._sum.totalAmount),
             deliveredOrders: revenue._count.id,
-            pending: pendingRevenue._sum.totalAmount ?? 0,
+            pending: Money.orZero(pendingRevenue._sum.totalAmount),
             pendingOrders: pendingRevenue._count.id,
           },
           expenses: {
-            total: expenses._sum.amount ?? 0,
+            total: Money.orZero(expenses._sum.amount),
             count: expenses._count.id,
           },
           agentBalances: agentBalances.map((ab) => ({

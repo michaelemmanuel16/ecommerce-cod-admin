@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import { Requester } from '../utils/authUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
+import * as Money from '../utils/money';
 
 interface CreateCustomerData {
   firstName: string;
@@ -122,7 +123,7 @@ export class CustomerService {
       const rawCustomers = await prisma.$queryRawUnsafe<any[]>(
         `SELECT c.*,
           COUNT(o.id)::int AS total_orders,
-          COALESCE(SUM(o.total_amount), 0)::float AS total_spent
+          COALESCE(SUM(o.total_amount), 0)::text AS total_spent
         FROM customers c
         LEFT JOIN orders o ON o.customer_id = c.id AND o.deleted_at IS NULL
         WHERE ${whereClause}
@@ -149,7 +150,7 @@ export class CustomerService {
         notes: c.notes,
         isActive: c.is_active,
         totalOrders: c.total_orders,
-        totalSpent: c.total_spent,
+        totalSpent: Money.parse(c.total_spent),
         createdAt: c.created_at,
         updatedAt: c.updated_at,
         orders: [], // not needed for list view
@@ -181,7 +182,7 @@ export class CustomerService {
     const customersWithMetrics = customers.map(customer => ({
       ...customer,
       totalOrders: customer.orders.length,
-      totalSpent: customer.orders.reduce((sum, order) => sum + order.totalAmount, 0)
+      totalSpent: Money.sum(customer.orders.map(order => order.totalAmount))
     }));
 
     return {
@@ -589,13 +590,14 @@ export class CustomerService {
       }
     }
 
+    const totalSpent = Money.sum(customer.orders.map(order => order.totalAmount));
     const analytics = {
       totalOrders: customer.orders.length,
-      totalSpent: customer.orders.reduce((sum, order) => sum + order.totalAmount, 0),
+      totalSpent,
       avgOrderValue:
         customer.orders.length > 0
-          ? customer.orders.reduce((sum, order) => sum + order.totalAmount, 0) / customer.orders.length
-          : 0,
+          ? Money.div(totalSpent, customer.orders.length)
+          : Money.ZERO,
       ordersByStatus: customer.orders.reduce((acc: Record<string, number>, order) => {
         acc[order.status] = (acc[order.status] || 0) + 1;
         return acc;
@@ -834,7 +836,7 @@ export class CustomerService {
         where: { id: primaryId },
         data: {
           totalOrders: primaryCustomer.totalOrders + secondaryCustomer.totalOrders,
-          totalSpent: primaryCustomer.totalSpent + secondaryCustomer.totalSpent,
+          totalSpent: Money.add(primaryCustomer.totalSpent, secondaryCustomer.totalSpent),
           tags: Array.from(new Set([...primaryCustomer.tags, ...secondaryCustomer.tags]))
         }
       });

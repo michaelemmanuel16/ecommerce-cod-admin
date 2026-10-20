@@ -12,6 +12,7 @@ import { sendPasswordResetEmail } from '../services/emailService';
 import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 import { seedTenantDefaults } from '../services/tenantDefaultsService';
 import logger from '../utils/logger';
+import * as Money from '../utils/money';
 
 export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -69,7 +70,7 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
           lastName: user.lastName,
           role: user.role,
           isPlatformAdmin: user.isPlatformAdmin || false,
-          commissionAmount: user.commissionAmount || 0,
+          commissionAmount: Money.orZero(user.commissionAmount),
           deliveryRate: user.deliveryRate,
           preferences: user.preferences,
         },

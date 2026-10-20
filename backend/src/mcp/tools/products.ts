@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import prisma from '../../utils/prisma';
-import { mcpJson, mcpError } from '../utils';
+import { mcpJson, mcpError, getCurrency } from '../utils';
 
 const productsInventorySchema = z.object({
   productId: z.number().int().optional(),
@@ -53,6 +53,7 @@ export function registerProductTools(
         }
 
         return mcpJson({
+          currency: await getCurrency(),
           products: results,
           totalProducts: results.length,
           lowStockCount: results.filter((p) => p.isLowStock).length,

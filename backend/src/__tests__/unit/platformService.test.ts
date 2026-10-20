@@ -19,6 +19,7 @@ import {
   getSystemHealth,
 } from '../../services/platformService';
 import { AppError } from '../../middleware/errorHandler';
+import * as Money from '../../utils/money';
 
 beforeEach(() => {
   mockRedisInfo.mockReset();
@@ -52,7 +53,7 @@ describe('getPlatformMetrics', () => {
     expect(result.suspendedTenants).toBe(2);
     expect(result.activeUsers).toBe(42);
     // MRR = (3 * 50) + (2 * 150) = 150 + 300 = 450
-    expect(result.mrr).toBe(450);
+    expect(Money.toApi(result.mrr)).toBe('450.00');
   });
 
   it('should return zero mrr when no active tenants with plans', async () => {
@@ -64,7 +65,7 @@ describe('getPlatformMetrics', () => {
     const result = await getPlatformMetrics();
 
     expect(result.totalTenants).toBe(0);
-    expect(result.mrr).toBe(0);
+    expect(Money.toApi(result.mrr)).toBe('0.00');
   });
 });
 
@@ -162,7 +163,7 @@ describe('getTenantDetail', () => {
 
     expect(result.id).toBe('tenant-1');
     expect(result.usage.ordersThisMonth).toBe(8);
-    expect(result.usage.revenueThisMonth).toBe(3200);
+    expect(Money.toApi(result.usage.revenueThisMonth)).toBe('3200.00');
     expect(result.usage.totalUsers).toBe(4);
   });
 
