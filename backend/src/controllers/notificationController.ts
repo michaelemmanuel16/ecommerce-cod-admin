@@ -47,6 +47,14 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
   }
 };
 
+/** Unread rows of the signed-in user (F-106). The bell reads this; the socket event `notification` tells it to refresh. */
+export const getUnreadCount = async (req: AuthRequest, res: Response): Promise<void> => {
+  const unreadCount = await prisma.notification.count({
+    where: { userId: req.user!.id, isRead: false }
+  });
+  res.json({ unreadCount });
+};
+
 export const markAsRead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;

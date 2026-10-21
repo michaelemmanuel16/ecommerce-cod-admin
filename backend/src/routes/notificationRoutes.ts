@@ -11,6 +11,7 @@ router.use(authenticate);
 router.use(tenantRateLimiter);
 
 router.get('/', paginationValidation, validate, notificationController.getNotifications);
+router.get('/unread-count', notificationController.getUnreadCount);
 router.patch('/:id/read', notificationController.markAsRead);
 router.patch('/read-all', notificationController.markAllAsRead);
 
