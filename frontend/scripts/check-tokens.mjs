@@ -12,6 +12,14 @@ const names = Object.keys(light);
 const missing = names.filter((n) => !(n in dark));
 const extra = Object.keys(dark).filter((n) => !(n in light));
 
+// .legacy-light (light tokens inside the dark shell) must repeat :root exactly. Skipped for a file that has no such block.
+const legacy = readTokens(file).legacy;
+const drift = Object.keys(legacy).length ? names.filter((n) => legacy[n] !== light[n]) : [];
+if (drift.length) {
+  console.error(`check-tokens: .legacy-light differs from :root for ${drift.join(', ')}`);
+  process.exit(1);
+}
+
 if (names.length === 0) {
   console.error(`check-tokens: no tokens found in the :root block of ${file}`);
   process.exit(1);

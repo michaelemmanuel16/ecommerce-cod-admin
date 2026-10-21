@@ -15,6 +15,10 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   permissions: Permissions | null;
+  /** From /api/auth/me. null until the first answer; the sidebar shows placeholders meanwhile. */
+  menu: string[] | null;
+  homeRoute: string | null;
+  roles: Array<{ id: number | null; name: string }> | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
@@ -35,6 +39,9 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       permissions: null,
+      menu: null,
+      homeRoute: null,
+      roles: null,
       isAuthenticated: false,
       isLoading: false,  // This should not be persisted
 
@@ -96,6 +103,9 @@ export const useAuthStore = create<AuthState>()(
           accessToken: null,
           refreshToken: null,
           permissions: null,
+          menu: null,
+          homeRoute: null,
+          roles: null,
           isAuthenticated: false,
         });
         disconnectSocket();
@@ -133,8 +143,8 @@ export const useAuthStore = create<AuthState>()(
             return;
           }
 
-          const { permissions } = await authService.getMe();
-          set({ permissions: permissions || null });
+          const { permissions, menu, homeRoute, roles } = await authService.getMe();
+          set({ permissions: permissions || null, menu: menu ?? null, homeRoute: homeRoute ?? null, roles: roles ?? null });
           console.log('[AuthStore] Permissions refreshed successfully');
         } catch (error) {
           console.error('[AuthStore] Failed to refresh permissions:', error);
@@ -205,6 +215,9 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         permissions: state.permissions,
+        menu: state.menu,
+        homeRoute: state.homeRoute,
+        roles: state.roles,
         isAuthenticated: state.isAuthenticated,
         // Exclude isLoading from persistence
       }),

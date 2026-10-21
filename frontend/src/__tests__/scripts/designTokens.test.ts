@@ -35,6 +35,16 @@ describe('check-tokens', () => {
   });
 });
 
+describe('check-tokens .legacy-light', () => {
+  const dark = '[data-theme="dark"]{--pine:#3FC1A8;}';
+  it('fails when the light copy drifts from :root, passes when equal', () => {
+    const res = run('check-tokens.mjs', withCss(`:root{--pine:#0F5C55;}${dark}.legacy-light{--pine:#000000;}`));
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('.legacy-light');
+    expect(run('check-tokens.mjs', withCss(`:root{--pine:#0F5C55;}${dark}.legacy-light{--pine:#0F5C55;}`)).status).toBe(0);
+  });
+});
+
 describe('check-contrast', () => {
   it('passes on tokens.css', () => {
     expect(run('check-contrast.mjs', TOKENS).status).toBe(0);
