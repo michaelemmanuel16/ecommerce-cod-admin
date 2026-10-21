@@ -104,12 +104,14 @@ export const updateOrderStatusValidation: ValidationChain[] = [
 
 export const assignRepValidation: ValidationChain[] = [
   param('id').isInt({ min: 1 }).withMessage('Order id must be a number'),
-  body('customerRepId').isInt({ min: 1 }).withMessage('customerRepId must be a number')
+  body('unassign').optional().equals('both'),
+  body('customerRepId').if(body('unassign').not().equals('both')).isInt({ min: 1 }).withMessage('customerRepId must be a number')
 ];
 
 export const assignAgentValidation: ValidationChain[] = [
   param('id').isInt({ min: 1 }).withMessage('Order id must be a number'),
-  body('deliveryAgentId').isInt({ min: 1 }).withMessage('deliveryAgentId must be a number'),
+  body('unassign').optional().equals('both'),
+  body('deliveryAgentId').if(body('unassign').not().equals('both')).isInt({ min: 1 }).withMessage('deliveryAgentId must be a number'),
   body('confirmBlocked').optional().isBoolean().toBoolean()
 ];
 
@@ -145,7 +147,8 @@ export const bulkAssignValidation: ValidationChain[] = [
   orderIdsValidation,
   body('customerRepId').optional().isInt({ min: 1 }).withMessage('customerRepId must be a number'),
   body('deliveryAgentId').optional().isInt({ min: 1 }).withMessage('deliveryAgentId must be a number'),
-  body().custom((b) => b.customerRepId !== undefined || b.deliveryAgentId !== undefined).withMessage('Choose a call rep or a delivery agent.'),
+  body('unassign').optional().equals('both'),
+  body().custom((b) => b.unassign === 'both' || b.customerRepId !== undefined || b.deliveryAgentId !== undefined).withMessage('Choose a call rep or a delivery agent.'),
   body('confirmBlocked').optional().isBoolean().toBoolean(),
 ];
 

@@ -210,8 +210,8 @@ export const bulkUpdateOrderStatus = async (req: AuthRequest, res: Response): Pr
 };
 
 export const bulkAssignOrders = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { orderIds, customerRepId, deliveryAgentId, confirmBlocked } = req.body;
-  res.json(await orderService.bulkAssign({ orderIds, customerRepId, deliveryAgentId, confirmBlocked: confirmBlocked === true }, req.user!));
+  const { orderIds, customerRepId, deliveryAgentId, confirmBlocked, unassign } = req.body;
+  res.json(await orderService.bulkAssign({ orderIds, customerRepId, deliveryAgentId, confirmBlocked: confirmBlocked === true, unassign }, req.user!));
 };
 
 export const getOrderTransitions = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -226,7 +226,11 @@ export const getOrderStatuses = async (_req: AuthRequest, res: Response): Promis
 export const assignCustomerRep = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { customerRepId } = req.body;
+    const { customerRepId, unassign } = req.body;
+    if (unassign === 'both') {
+      res.json({ order: await orderService.unassignOrder(Number(id), req.user!) });
+      return;
+    }
     const order = await orderService.assignCustomerRep(Number(id), Number(customerRepId), req.user!);
     res.json({ order });
   } catch (error) {
@@ -237,7 +241,11 @@ export const assignCustomerRep = async (req: AuthRequest, res: Response): Promis
 export const assignDeliveryAgent = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { deliveryAgentId, confirmBlocked } = req.body;
+    const { deliveryAgentId, confirmBlocked, unassign } = req.body;
+    if (unassign === 'both') {
+      res.json({ order: await orderService.unassignOrder(Number(id), req.user!) });
+      return;
+    }
     const order = await orderService.assignDeliveryAgent(Number(id), Number(deliveryAgentId), req.user!, confirmBlocked === true);
     res.json({ order });
   } catch (error) {

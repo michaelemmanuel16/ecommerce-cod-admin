@@ -339,6 +339,63 @@ export class AssignmentService {
   }
 
   /**
+   * "Unassign both" (F-314): clears the call rep and the delivery agent. One history row and one audit row, no
+   * notification. A closed order keeps its people, as for an agent change.
+   */
+  async unassignBoth(orderId: number, actor: AssignmentActor) {
+    const order = await prisma.order.findUnique({ where: { id: orderId, deletedAt: null } });
+    if (!order) {
+      throw new AppError('Order not found', 404);
+    }
+    if (CLOSED_STATUSES.includes(order.status)) {
+      throw new AppError('This order is closed. Its delivery agent cannot change.', 409, 'ORDER_CLOSED');
+    }
+
+    const actorUser = actor.kind === 'user' && actor.userId
+      ? await prisma.user.findUnique({ where: { id: actor.userId }, select: { firstName: true, lastName: true } })
+      : null;
+    const actorName = actorUser ? `${actorUser.firstName} ${actorUser.lastName}` : 'the system';
+    const tenantId = resolveTenantId(order.tenantId);
+    const updated = await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        customerRepId: null,
+        deliveryAgentId: null,
+        orderHistory: {
+          create: {
+            tenantId,
+            status: order.status,
+            notes: `Call rep and delivery agent removed by ${actorName}`,
+            changedBy: actor.userId,
+            actorKind: actor.kind,
+            metadata: { removedRepId: order.customerRepId, removedAgentId: order.deliveryAgentId }
+          }
+        }
+      },
+      include: {
+        customerRep: { select: { id: true, firstName: true, lastName: true } },
+        deliveryAgent: { select: { id: true, firstName: true, lastName: true } },
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        userId: actor.userId,
+        action: 'unassign_both',
+        resource: 'order',
+        resourceId: orderId.toString(),
+        metadata: { removedRepId: order.customerRepId, removedAgentId: order.deliveryAgentId },
+        ...(actor.kind === 'user' && { actorKind: 'person' as const, channel: 'app' as const }),
+        ...(actor.kind === 'system' && { actorKind: 'system' as const, channel: 'system' as const })
+      }
+    });
+
+    emitOrderUpdated(getSocketInstance() as any, updated);
+    return updated;
+  }
+
+  /**
    * Assign a delivery agent or a sales rep to an order: updates the order, writes the OrderHistory row and the
    * audit log, notifies the assignee (inbox and socket) and the order room. The one path for the manual endpoints,
    * the bulk assign and the workflow actions (`assign_agent`, `assign_user`). The delivery agent of a closed order

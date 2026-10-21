@@ -201,6 +201,39 @@ describe('assign', () => {
   });
 });
 
+describe('unassign both (F-314)', () => {
+  it('single: clears both, one history row, no notification', async () => {
+    const id = await mkOrder('confirmed', { customerRepId: U.rep.id, deliveryAgentId: U.agent.id });
+    const before = await prismaBase.notification.count({ where: { tenantId } });
+    const res = await request(app).patch(`/api/orders/${id}/assign-rep`).set(bearer(U.admin.token)).send({ unassign: 'both' });
+    expect(res.status).toBe(200);
+    expect(res.body.order).toMatchObject({ customerRepId: null, deliveryAgentId: null });
+    const row = await prismaBase.orderHistory.findMany({ where: { orderId: id, notes: { contains: 'removed by' } } });
+    expect(row).toHaveLength(1);
+    expect(row[0].notes).toBe('Call rep and delivery agent removed by admin Mut');
+    expect(await prismaBase.notification.count({ where: { tenantId } })).toBe(before);
+    // assign-agent takes the same body
+    const id2 = await mkOrder('confirmed', { customerRepId: U.rep.id });
+    expect((await request(app).patch(`/api/orders/${id2}/assign-agent`).set(bearer(U.admin.token)).send({ unassign: 'both' })).status).toBe(200);
+  });
+
+  it('bulk of 3 succeeds; a closed order fails with ORDER_CLOSED; a rep gets 403', async () => {
+    const ids = [1, 2, 3].map(() => mkOrder('confirmed', { customerRepId: U.rep.id, deliveryAgentId: U.agent.id }));
+    const done = await Promise.all(ids);
+    const res = await bulkAssign('admin', { orderIds: done, unassign: 'both' });
+    expect(res.body.succeeded.sort()).toEqual([...done].sort());
+    expect(res.body.failed).toEqual([]);
+    expect(await prismaBase.order.count({ where: { id: { in: done }, customerRepId: null, deliveryAgentId: null } })).toBe(3);
+
+    const closed = await mkOrder('delivered', { customerRepId: U.rep.id, deliveryAgentId: U.agent.id });
+    const mixed = await bulkAssign('admin', { orderIds: [closed], unassign: 'both' });
+    expect(mixed.body.failed).toEqual([expect.objectContaining({ id: closed, code: 'ORDER_CLOSED' })]);
+    expect((await prismaBase.order.findUniqueOrThrow({ where: { id: closed } })).deliveryAgentId).toBe(U.agent.id);
+    expect((await bulkAssign('rep', { orderIds: done, unassign: 'both' })).status).toBe(403);
+    expect((await bulkAssign('admin', { orderIds: Array.from({ length: 201 }, (_, i) => i + 1), unassign: 'both' })).status).toBe(413);
+  });
+});
+
 describe('DELETE /api/orders/:id (F-316)', () => {
   it.each([
     ['pending_confirmation'], ['payment_pending'], ['payment_failed'], ['confirmed'], ['preparing'], ['ready_for_pickup'], ['cancelled'], ['failed_delivery'],

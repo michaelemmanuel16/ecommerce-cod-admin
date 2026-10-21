@@ -1384,6 +1384,18 @@ export class OrderService {
     return assignmentService.assignByRole(orderId, deliveryAgentId, 'delivery_agent', actorOf(requester), { checkAvailable: true, confirmBlocked });
   }
 
+  /** "Unassign both" for one order (F-314): same role gate as assigning a rep. */
+  async unassignOrder(orderId: number, requester: Requester) {
+    this.assertCanAssign(requester);
+    return assignmentService.unassignBoth(orderId, actorOf(requester));
+  }
+
+  private assertCanAssign(requester: Requester) {
+    if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      throw new AppError('Only administrators or managers can assign orders', 403);
+    }
+  }
+
   /**
    * Bulk status change (F-313): each order goes through the state machine alone, with its own history row and side
    * effects. A move that fails does not stop the others. The partial result lists every failure with a code.
@@ -1411,14 +1423,24 @@ export class OrderService {
    * alone and failures are listed.
    */
   async bulkAssign(
-    data: { orderIds: number[]; customerRepId?: number; deliveryAgentId?: number; confirmBlocked?: boolean },
+    data: { orderIds: number[]; customerRepId?: number; deliveryAgentId?: number; confirmBlocked?: boolean; unassign?: 'both' },
     requester: Requester,
   ): Promise<BulkResult> {
-    if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      throw new AppError('Only administrators or managers can assign orders', 403);
-    }
+    this.assertCanAssign(requester);
     const ids = limitBulk(data.orderIds);
     const { customerRepId, deliveryAgentId, confirmBlocked } = data;
+    if (data.unassign === 'both') {
+      const cleared: BulkResult = { succeeded: [], failed: [] };
+      for (const id of ids) {
+        try {
+          await assignmentService.unassignBoth(id, actorOf(requester));
+          cleared.succeeded.push(id);
+        } catch (error) {
+          cleared.failed.push(bulkFailure(id, error));
+        }
+      }
+      return cleared;
+    }
     if (customerRepId) await assignmentService.loadAssignee(customerRepId, 'sales_rep');
     if (deliveryAgentId) await assignmentService.loadAssignee(deliveryAgentId, 'delivery_agent', { checkAvailable: true, confirmBlocked });
 
