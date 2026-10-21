@@ -8,11 +8,13 @@ export const getStoreCurrency = (): string => useConfigStore.getState().currency
 
 /**
  * The one money formatter. Amount in the store currency by default; pass `currency` for a record that has its own.
- * An unknown or malformed code never throws: it shows "XYZ 1,234.50".
+ * An unknown or malformed code never throws: it shows "XYZ 1,234.50". Whole amounts drop the cents.
  */
 export const formatCurrency = (amount: string | number | null | undefined, currency?: string): string => {
   const targetCurrency = currency || getStoreCurrency();
   const value = parseMoney(amount);
+  // Whole amounts show no cents, as in the v2 mockups ("GH₵249"); other amounts show 2 decimals.
+  const cents = Number.isInteger(value) ? { minimumFractionDigits: 0, maximumFractionDigits: 0 } : {};
 
   try {
     return new Intl.NumberFormat('en-US', {
@@ -21,9 +23,10 @@ export const formatCurrency = (amount: string | number | null | undefined, curre
       // narrowSymbol renders the local glyph (GH₵5,680.00) instead of the ISO
       // code prefix (GHS 5,680.00) that 'symbol' falls back to for GHS/NGN.
       currencyDisplay: 'narrowSymbol',
+      ...cents,
     }).format(value);
   } catch {
-    return `${targetCurrency} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
+    return `${targetCurrency} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2, ...cents }).format(value)}`;
   }
 };
 

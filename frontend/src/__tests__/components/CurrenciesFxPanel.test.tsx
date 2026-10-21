@@ -61,7 +61,7 @@ describe('CurrenciesFxPanel', () => {
     (fxService.getRates as any).mockResolvedValue(ratesWith([rate('NGN', 'auto', TODAY)]));
     render(<CurrenciesFxPanel />);
     await screen.findByTestId('row-NGN');
-    expect(await screen.findByText('GH₵92,000.00')).toBeTruthy();
+    expect(await screen.findByText('GH₵92,000')).toBeTruthy();
     expect(screen.getByTestId('tile-sample-rate').textContent).toContain('1 GH₵ = ₦112');
   });
 

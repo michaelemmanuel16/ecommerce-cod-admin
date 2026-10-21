@@ -44,14 +44,15 @@ describe('normalizeMoney', () => {
 describe('formatCurrency', () => {
   beforeEach(() => useConfigStore.setState({ currency: 'GHS' }));
   it('formats strings and numbers the same', () => {
-    expect(formatCurrency('249.00', 'USD')).toBe('$249.00');
-    expect(formatCurrency('0.00', 'USD')).toBe('$0.00');
-    expect(formatCurrency('249', 'USD')).toBe('$249.00');
-    expect(formatCurrency(249, 'USD')).toBe('$249.00');
+    expect(formatCurrency('249.00', 'USD')).toBe('$249');
+    expect(formatCurrency('0.00', 'USD')).toBe('$0');
+    expect(formatCurrency('249', 'USD')).toBe('$249');
+    expect(formatCurrency(249, 'USD')).toBe('$249');
   });
   it('renders null as zero, not NaN', () => {
-    expect(formatCurrency(null, 'USD')).toBe('$0.00');
-    expect(formatCurrency(undefined, 'USD')).toBe('$0.00');
+    expect(formatCurrency(null, 'USD')).toBe('$0');
+    expect(formatCurrency('249.5', 'USD')).toBe('$249.50');
+    expect(formatCurrency(undefined, 'USD')).toBe('$0');
   });
 });
 
@@ -59,9 +60,9 @@ describe('one money formatter (M3-T31)', () => {
   beforeEach(() => useConfigStore.setState({ currency: 'GHS' }));
 
   it('formats in the store currency, and follows a change at once', () => {
-    expect(formatCurrency(249)).toBe('GH₵249.00');
+    expect(formatCurrency(249)).toBe('GH₵249');
     useConfigStore.setState({ currency: 'NGN' });
-    expect(formatCurrency('8530000')).toBe('₦8,530,000.00');
+    expect(formatCurrency('8530000')).toBe('₦8,530,000');
     expect(getStoreCurrency()).toBe('NGN');
   });
   it('formats two currencies side by side', () => {
@@ -74,12 +75,12 @@ describe('one money formatter (M3-T31)', () => {
     expect(formatCurrency(1234.5, 'not-a-code')).toBe('not-a-code 1,234.50');
   });
   it('converts a foreign amount at the day rate and shows the rate used', () => {
-    expect(formatConverted(11200, 'NGN', 112)).toEqual({ text: 'GH₵100.00', rateText: '₦112 = GH₵1' });
+    expect(formatConverted(11200, 'NGN', 112)).toEqual({ text: 'GH₵100', rateText: '₦112 = GH₵1' });
     expect(formatConverted('8530000', 'NGN', 112).text).toBe('GH₵76,160.71');
   });
   it('leaves a foreign amount unconverted when there is no rate, and a store-currency amount alone', () => {
-    expect(formatConverted(11200, 'NGN', null)).toEqual({ text: '₦11,200.00', rateText: '' });
-    expect(formatConverted(11200, 'NGN', 0)).toEqual({ text: '₦11,200.00', rateText: '' });
-    expect(formatConverted(50, 'GHS', 112)).toEqual({ text: 'GH₵50.00', rateText: '' });
+    expect(formatConverted(11200, 'NGN', null)).toEqual({ text: '₦11,200', rateText: '' });
+    expect(formatConverted(11200, 'NGN', 0)).toEqual({ text: '₦11,200', rateText: '' });
+    expect(formatConverted(50, 'GHS', 112)).toEqual({ text: 'GH₵50', rateText: '' });
   });
 });

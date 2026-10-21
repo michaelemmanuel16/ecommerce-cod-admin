@@ -62,7 +62,7 @@ describe('EarningsHistory Component', () => {
 
         // Check summary cards
         expect(screen.getByText('Total Paid')).toBeInTheDocument();
-        expect(screen.getAllByText(/1,630\.00/)[0]).toBeInTheDocument(); // 1620 + 10
+        expect(screen.getAllByText(/1,630(?!\.)/)[0]).toBeInTheDocument(); // 1620 + 10
         expect(screen.getByText('Total Payments')).toBeInTheDocument();
         expect(screen.getAllByText('2')[0]).toBeInTheDocument();
         expect(screen.getByText('Orders Paid')).toBeInTheDocument();
