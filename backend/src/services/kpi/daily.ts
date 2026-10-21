@@ -3,6 +3,8 @@
  *
  *  - ordersPlacedByDay: orders placed (createdAt) per store-zone day, in [from, to). Same scope as the confirmation
  *    rate: not deleted, not digital (rates.ts). Days with no order are absent.
+ *  - confirmedPlacedByDay: the same orders, only those that are confirmed now (the CONFIRMED statuses of the confirmation
+ *    rate), per placement day. Reports' daily table.
  *  - failedDeliveryCalls: calls logged in [from, to) on orders whose status is `failed_delivery`, counted once per order
  *    (F-203: an order with several calls counts once).
  *  - failedDeliveryCallsTarget: the daily call-rep target. A `daily` Target with metric `failed_delivery_calls_per_day`
@@ -12,7 +14,7 @@ import prisma from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import { Prisma } from '@prisma/client';
 import { getStoreTimeZone, parseYmd } from './dates';
-import { DIGITAL } from './rates';
+import { CONFIRMED, DIGITAL } from './rates';
 import { kpiMeta, type KpiResult } from './types';
 
 export const FAILED_CALLS_METRIC = 'failed_delivery_calls_per_day';
@@ -32,6 +34,20 @@ export async function ordersPlacedByDay(tenantId: string, from: Date, to: Date):
     WHERE tenant_id = ${tenantId}
       AND deleted_at IS NULL
       AND status::text NOT IN (${Prisma.join(DIGITAL)})
+      AND created_at >= ${from} AND created_at < ${to}
+    GROUP BY 1
+    ORDER BY 1`);
+  return rows.map((r) => ({ date: r.day, count: Number(r.total) }));
+}
+
+export async function confirmedPlacedByDay(tenantId: string, from: Date, to: Date): Promise<OrdersPlacedDay[]> {
+  const zone = getStoreTimeZone(tenantId);
+  const rows = await runInTenant(tenantId, () => prisma.$queryRaw<Array<{ day: string; total: bigint }>>`
+    SELECT TO_CHAR((created_at AT TIME ZONE 'UTC') AT TIME ZONE ${zone}, 'YYYY-MM-DD') AS day, COUNT(*) AS total
+    FROM orders
+    WHERE tenant_id = ${tenantId}
+      AND deleted_at IS NULL
+      AND status::text IN (${Prisma.join(CONFIRMED)})
       AND created_at >= ${from} AND created_at < ${to}
     GROUP BY 1
     ORDER BY 1`);
