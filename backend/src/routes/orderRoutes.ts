@@ -18,6 +18,7 @@ router.get('/export', bulkOrderRateLimiter, requireResourcePermission('orders', 
 router.post('/upload', bulkImportRateLimiter, spreadsheetUpload.single('file'), handleUploadErrors, requireResourcePermission('orders', 'bulk_import'), bulkOrderController.uploadOrders);
 router.post('/bulk', requireResourcePermission('orders', 'bulk_import'), orderController.bulkImportOrders);
 router.get('/kanban', requireResourcePermission('orders', 'view'), orderController.getKanbanView);
+router.get('/statuses', requireResourcePermission('orders', 'view'), orderController.getOrderStatuses);
 router.get('/stats', requireResourcePermission('orders', 'view'), orderController.getOrderStats);
 router.delete('/bulk', bulkOrderRateLimiter, bulkDeleteValidation, validate, requireResourcePermission('orders', 'delete'), orderController.bulkDeleteOrders);
 

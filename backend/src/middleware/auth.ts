@@ -65,6 +65,7 @@ function getDefaultPermissions() {
       products: ['create', 'view', 'update', 'delete', 'update_stock'],
       financial: ['view', 'create', 'update', 'delete'],
       analytics: ['view'],
+      marketing: ['view'],
       workflows: ['create', 'view', 'update', 'delete', 'execute'],
       settings: ['view', 'update'],
       calls: ['create', 'view', 'update', 'delete'],
@@ -78,6 +79,7 @@ function getDefaultPermissions() {
       products: ['create', 'view', 'update', 'delete'],
       financial: ['view', 'create'],
       analytics: ['view'],
+      marketing: ['view'],
       workflows: ['create', 'view', 'update', 'delete', 'execute'],
       settings: ['view'],
       calls: ['create', 'view', 'update', 'delete'],
@@ -91,6 +93,7 @@ function getDefaultPermissions() {
       products: ['view'],
       financial: ['view'],
       analytics: ['view'],
+      marketing: ['view'],
       workflows: ['view', 'execute'],
       settings: [],
       calls: ['view'],
@@ -99,10 +102,11 @@ function getDefaultPermissions() {
     sales_rep: {
       users: [],
       orders: ['create', 'view', 'update'],
-      customers: ['create', 'view', 'update', 'delete'],
+      customers: ['create', 'view', 'update'],
       products: ['view'],
       financial: [],
       analytics: ['view'],
+      marketing: [],
       workflows: [],
       settings: [],
       calls: ['create', 'view'],
@@ -115,6 +119,7 @@ function getDefaultPermissions() {
       products: ['create', 'view', 'update', 'delete', 'update_stock'],
       financial: [],
       analytics: ['view'],
+      marketing: [],
       workflows: [],
       settings: [],
       calls: [],
@@ -127,6 +132,7 @@ function getDefaultPermissions() {
       products: ['view'],
       financial: ['create'],
       analytics: ['view'],
+      marketing: [],
       workflows: [],
       settings: [],
       calls: ['view'],
@@ -139,6 +145,7 @@ function getDefaultPermissions() {
       products: ['view'],
       financial: ['view', 'create'],
       analytics: ['view'],
+      marketing: [],
       workflows: [],
       calls: [],
       settings: [],
@@ -251,6 +258,12 @@ export async function hasPermission(
   const permissions = await getPermissionsFromDatabase();
   const list = permissions[user.role]?.[resource];
   return Array.isArray(list) && list.includes(action);
+}
+
+/** The role's permissions as the checks above see them: the tenant's saved matrix merged over the defaults. */
+export async function getEffectivePermissions(role: UserRole | string): Promise<Record<string, string[]>> {
+  const permissions = await getPermissionsFromDatabase();
+  return permissions[role] ?? {};
 }
 
 // Resource-action permission middleware (SystemConfig.rolePermissions). Several actions mean "any of them".

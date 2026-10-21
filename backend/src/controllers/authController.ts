@@ -8,6 +8,7 @@ import { withSoftDeleted } from '../utils/prismaExtensions';
 import { runInTenant, runInTenantOf, withoutTenant } from '../utils/tenantContext';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError } from '../middleware/errorHandler';
+import navService from '../services/navService';
 import { adminService } from '../services/adminService';
 import { sendPasswordResetEmail } from '../services/emailService';
 import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
@@ -251,11 +252,10 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
       }
     });
 
-    // Get user permissions from system config
-    const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
-    const userPermissions = allPermissions[user?.role || ''] || {};
+    // Effective permissions (saved matrix merged over the defaults), home route, menu keys and role names for the shell
+    const shell = user ? await navService.getShell(user.id, user.role) : { permissions: {} };
 
-    res.json({ user, permissions: userPermissions });
+    res.json({ user, ...shell });
   } catch (error) {
     next(error);
   }

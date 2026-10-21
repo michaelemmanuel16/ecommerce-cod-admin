@@ -99,7 +99,8 @@ export interface TransitionResult {
   afterCommit?: () => void;
 }
 
-const ALL_STATUSES = Object.values(OrderStatus);
+/** The 12 order statuses, in schema order. GET /api/orders/statuses returns this list. */
+export const ALL_STATUSES = Object.values(OrderStatus);
 
 const PRE_DISPATCH: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup'];
 const isPreDispatch = (s: OrderStatus) => PRE_DISPATCH.includes(s);

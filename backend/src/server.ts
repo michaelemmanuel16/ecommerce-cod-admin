@@ -82,6 +82,8 @@ import platformRoutes from './routes/platformRoutes';
 import mcpKeyRoutes from './routes/mcpKeyRoutes';
 import roleRoutes from './routes/roleRoutes';
 import auditRoutes from './routes/auditRoutes';
+import navRoutes from './routes/navRoutes';
+import searchRoutes from './routes/searchRoutes';
 import mcpHttpTransport from './mcp/httpTransport';
 import { closeRateLimiter } from './mcp/rateLimiter';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
@@ -276,6 +278,8 @@ app.use('/api/platform', platformRoutes);
 app.use('/api/mcp-keys', apiLimiter, mcpKeyRoutes);
 app.use('/api/roles', apiLimiter, roleRoutes);
 app.use('/api/audit-log', apiLimiter, auditRoutes);
+app.use('/api/nav', apiLimiter, navRoutes);
+app.use('/api/search', apiLimiter, searchRoutes);
 
 // MCP Streamable HTTP transport (auth via API key in Authorization header)
 app.use('/mcp', apiLimiter, mcpHttpTransport);
