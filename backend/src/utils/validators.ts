@@ -1,5 +1,7 @@
 import { body, param, query, ValidationChain } from 'express-validator';
 import { DeclineReason, FailureReason, OrderStatus } from '@prisma/client';
+import { ORDER_FLAG_CODES } from '../services/orderFlagService';
+import { ORDER_SORT_FIELDS } from '../services/orderService';
 
 /**
  * Password validation utility
@@ -102,17 +104,52 @@ export const updateOrderStatusValidation: ValidationChain[] = [
 
 export const assignRepValidation: ValidationChain[] = [
   param('id').isInt({ min: 1 }).withMessage('Order id must be a number'),
-  body('customerRepId').isInt({ min: 1 }).withMessage('customerRepId must be a number')
+  body('unassign').optional().equals('both'),
+  body('customerRepId').if(body('unassign').not().equals('both')).isInt({ min: 1 }).withMessage('customerRepId must be a number')
 ];
 
 export const assignAgentValidation: ValidationChain[] = [
   param('id').isInt({ min: 1 }).withMessage('Order id must be a number'),
-  body('deliveryAgentId').isInt({ min: 1 }).withMessage('deliveryAgentId must be a number')
+  body('unassign').optional().equals('both'),
+  body('deliveryAgentId').if(body('unassign').not().equals('both')).isInt({ min: 1 }).withMessage('deliveryAgentId must be a number'),
+  body('confirmBlocked').optional().isBoolean().toBoolean()
 ];
 
 export const paginationValidation: ValidationChain[] = [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 })
+];
+
+/** Orders list and tab counts (F-310 to F-312). Counts ignore the sort and page fields. */
+export const orderListValidation: ValidationChain[] = [
+  ...paginationValidation,
+  query('sortBy').optional().isIn([...ORDER_SORT_FIELDS]).withMessage(`Sort by ${ORDER_SORT_FIELDS.join(', ')}`),
+  query('search').optional().isString().isLength({ max: 100 }),
+  query('sortOrder').optional().isIn(['asc', 'desc']),
+  query('dateBasis').optional().isIn(['created', 'delivery']),
+  query('flag').optional().isIn([...ORDER_FLAG_CODES, 'any']),
+];
+
+/** `orderIds` length is limited in the service (413 above 200). */
+const orderIdsValidation = body('orderIds').isArray({ min: 1 }).withMessage('Select at least one order')
+  .custom((ids) => ids.every((id: any) => Number.isInteger(id) && id > 0)).withMessage('All order IDs must be numbers');
+
+export const bulkStatusValidation: ValidationChain[] = [
+  orderIdsValidation,
+  body('status').isIn(ORDER_STATUS_VALUES),
+  body('note').optional().isString().isLength({ max: 500 }),
+  body('declineReason').optional().isIn(Object.values(DeclineReason)),
+  body('failureReason').optional().isIn(Object.values(FailureReason)),
+  body('nextAttemptDate').optional({ nullable: true }).isISO8601()
+];
+
+export const bulkAssignValidation: ValidationChain[] = [
+  orderIdsValidation,
+  body('customerRepId').optional().isInt({ min: 1 }).withMessage('customerRepId must be a number'),
+  body('deliveryAgentId').optional().isInt({ min: 1 }).withMessage('deliveryAgentId must be a number'),
+  body('unassign').optional().equals('both'),
+  body().custom((b) => b.unassign === 'both' || b.customerRepId !== undefined || b.deliveryAgentId !== undefined).withMessage('Choose a call rep or a delivery agent.'),
+  body('confirmBlocked').optional().isBoolean().toBoolean(),
 ];
 
 export const bulkDeleteValidation: ValidationChain[] = [
