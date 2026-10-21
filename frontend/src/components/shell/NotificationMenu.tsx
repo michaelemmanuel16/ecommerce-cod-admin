@@ -1,12 +1,23 @@
+import { useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import { useNotificationsStore } from '../../stores/notificationsStore';
 import { usePopover } from './usePopover';
 
-/** The bell. It keeps what the old header bell did (the latest notifications, mark as read) until the Inbox page and
- *  the database count arrive (M3-T36); the mockup links the bell to the Inbox. */
+/** The bell. The count is read from the database (GET /api/notifications/unread-count) on load and again on every
+ *  socket event `notification`. The popover keeps what the old header bell did (the latest notifications, mark as read)
+ *  until the Inbox page arrives (M9); the mockup links the bell to the Inbox. */
 export function NotificationMenu() {
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationsStore();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, fetchUnreadCount, fetchNotifications } = useNotificationsStore();
   const { open, toggle, wrapRef, triggerRef } = usePopover();
+
+  useEffect(() => {
+    void fetchUnreadCount();
+  }, [fetchUnreadCount]);
+
+  // The list is read when the popover opens, and again when the count moves while it is open.
+  useEffect(() => {
+    if (open) void fetchNotifications();
+  }, [open, unreadCount, fetchNotifications]);
 
   return (
     <div className="popwrap" ref={wrapRef}>
