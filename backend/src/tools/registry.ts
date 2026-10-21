@@ -1,4 +1,4 @@
-import { z, ZodError, ZodTypeAny } from 'zod';
+import { z, ZodTypeAny } from 'zod';
 import { TOOL_PERMISSIONS, ToolName } from '../config/toolPermissions';
 import { AppError } from '../middleware/errorHandler';
 import type { AuditChannel, UserKind } from '@prisma/client';
@@ -6,6 +6,7 @@ import { auditService, ToolCallStatus } from '../services/auditService';
 import { AccessFacts, loadAccessFacts, permittedCells } from '../services/toolAccessService';
 import { runInTenant } from '../utils/tenantContext';
 import logger from '../utils/logger';
+import { formatIssues } from './shared';
 
 /**
  * M2-T04: the tool registry. Every action by a person, an AI agent, a partner or the system goes
@@ -45,13 +46,6 @@ export interface ToolDef<S extends ZodTypeAny = ZodTypeAny, R = unknown> {
   kind: ToolKind;
   /** Permission cell. Always TOOL_PERMISSIONS[name]; defineTool fills it. */
   permission: string;
-  /**
-   * 'listed' (default): when the caller has a role, the role's `tools` list must contain this tool.
-   * 'any': skip the role allow-list (the base permission still applies).
-   */
-  roleScope: 'listed' | 'any';
-  /** 'preview': the caller must see a preview and confirm before the write runs (used from M12). */
-  confirm: 'none' | 'preview';
   /** True when the output or effect carries money. */
   money: boolean;
   /** Channels that may call the tool. Default: all. A call from any other channel is refused as "not available". */
@@ -59,15 +53,13 @@ export interface ToolDef<S extends ZodTypeAny = ZodTypeAny, R = unknown> {
 }
 
 /** What a tool file writes: the permission cell is not its choice, and the rest have defaults. */
-export type ToolSpec<S extends ZodTypeAny, R> = Omit<ToolDef<S, R>, 'permission' | 'kind' | 'roleScope' | 'confirm' | 'money'> &
-  Partial<Pick<ToolDef<S, R>, 'kind' | 'roleScope' | 'confirm' | 'money' | 'allowedChannels'>>;
+export type ToolSpec<S extends ZodTypeAny, R> = Omit<ToolDef<S, R>, 'permission' | 'kind' | 'money'> &
+  Partial<Pick<ToolDef<S, R>, 'kind' | 'money' | 'allowedChannels'>>;
 
 /** Build a ToolDef: the permission cell always comes from TOOL_PERMISSIONS. */
 export function defineTool<S extends ZodTypeAny, R>(spec: ToolSpec<S, R>): ToolDef<S, R> {
   return {
     kind: 'read',
-    roleScope: 'listed',
-    confirm: 'none',
     money: false,
     // A write tool is offered to the MCP channel only until a tool says otherwise (chat and cards get writes in M12).
     ...(spec.kind === 'write' ? { allowedChannels: ['mcp'] as const } : {}),
@@ -118,7 +110,7 @@ function decide(def: ToolDef, channel: AuditChannel, facts: AccessFacts, permitt
   const byChannel = channelDenial(def, channel);
   if (byChannel) return byChannel;
   if (!permitted.has(def.permission)) return { shown: 'You do not have permission to use this tool.', detail: `missing permission ${def.permission}` };
-  if (def.roleScope === 'listed' && facts.roleTools !== null && !facts.roleTools.includes(def.name)) {
+  if (facts.roleTools !== null && !facts.roleTools.includes(def.name)) {
     return { shown: 'Your role does not include this tool.', detail: `the role does not list ${def.name}` };
   }
   return null;
@@ -135,7 +127,7 @@ async function accessOf(ctx: ToolContext, defs: ToolDef[]) {
  * Access check: null when the actor may run the tool, otherwise the reason. runTool uses it for every call.
  * Run it in the caller's tenant context.
  */
-export async function checkToolAccess(def: ToolDef, ctx: ToolContext): Promise<Denial | null> {
+async function checkToolAccess(def: ToolDef, ctx: ToolContext): Promise<Denial | null> {
   const { facts, permitted } = await accessOf(ctx, [def]);
   return decide(def, ctx.channel, facts, permitted);
 }
@@ -225,7 +217,3 @@ export async function runTool<R = unknown>(tool: ToolDef<any, R> | ToolName, raw
 }
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
-
-function formatIssues(error: ZodError): string {
-  return error.issues.map((i) => `${i.path.join('.') || 'input'}: ${i.message}`).join('; ');
-}

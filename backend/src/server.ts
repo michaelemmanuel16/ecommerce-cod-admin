@@ -83,6 +83,7 @@ import mcpKeyRoutes from './routes/mcpKeyRoutes';
 import roleRoutes from './routes/roleRoutes';
 import auditRoutes from './routes/auditRoutes';
 import mcpHttpTransport from './mcp/httpTransport';
+import { closeRateLimiter } from './mcp/rateLimiter';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
@@ -435,7 +436,10 @@ const shutdown = async (signal: string) => {
     server.close(() => {
       logger.info('HTTP server closed');
 
-      // 3. Disconnect from database
+      // 3. Close the MCP rate limiter's Redis connection (fail-open, so an error here is only logged)
+      closeRateLimiter().catch((error) => logger.error('Error closing the rate limiter:', error));
+
+      // 4. Disconnect from database
       import('./utils/prisma').then(({ default: prismaBase }) => {
         prismaBase.$disconnect().finally(() => {
           logger.info('Database disconnected');

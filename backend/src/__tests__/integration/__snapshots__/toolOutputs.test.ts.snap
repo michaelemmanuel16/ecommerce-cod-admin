@@ -1443,8 +1443,8 @@ exports[`read tool outputs on the numbers fixture (snapshot of the pre-registry 
 {
   "currency": "GHS",
   "dateRange": {
-    "from": "2026-09-30T23:00:00.000Z",
-    "to": "2026-10-17T13:00:00.000Z",
+    "from": "2026-10-01T00:00:00.000Z",
+    "to": "2026-10-17T23:59:59.999Z",
   },
   "period": "month",
   "reps": [

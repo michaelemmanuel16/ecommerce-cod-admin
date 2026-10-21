@@ -4,7 +4,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { toolQueryService } from '../services/toolQueryService';
 import { endOfDay, getStoreTimeZone, localDate, monthRange, parseYmd, shiftYmd, startOfDay, weekRange } from '../services/kpi/dates';
-import { withCurrency } from './shared';
+import { withCurrency, ymdField } from './shared';
 
 /**
  * Analytics tools, on top of the KPI services (delivered revenue by delivery date, the three named rates).
@@ -19,7 +19,7 @@ registerToolDef(defineTool({
   name: 'analytics_daily',
   description: 'Daily business summary for a store-zone day: orders placed, delivered revenue (2-decimal string) and delivered count (by delivery date), confirmationRate, deliverySuccessRate, orderToCashYield (percents, null when nothing to divide), status counts, top products. Defaults to today.',
   input: z.object({
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    date: ymdField.optional(),
   }),
   money: true,
   handler: async (input) => {
@@ -50,7 +50,7 @@ registerToolDef(defineTool({
   name: 'analytics_weekly',
   description: 'Weekly business summary (Monday to Sunday, store-zone days) with comparison to prior week: orders placed, delivered revenue (2-decimal string), delivered count, confirmationRate, deliverySuccessRate, orderToCashYield. Changes in the three rates are in percentage points ("pp"), null when either week has no value. Defaults to current week.',
   input: z.object({
-    weekOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    weekOf: ymdField.optional(),
   }),
   money: true,
   handler: async (input) => {

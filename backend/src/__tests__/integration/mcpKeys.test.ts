@@ -11,7 +11,7 @@ import { execFileSync } from 'child_process';
 import path from 'path';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
-import { generateAccessToken } from '../../utils/jwt';
+import { bearer, superAdminToken } from './helpers/superAdminToken';
 import { hashApiKey, validateKey, clearAuthCache, disconnectPrisma } from '../../mcp/auth';
 import { runTool } from '../../tools/registry';
 import '../../tools';
@@ -25,15 +25,6 @@ let pair: TwoTenants;
 let ownerA: string; // super_admin tokens
 let ownerB: string;
 let bareTenantId: string;
-
-const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
-
-async function superAdminToken(tenantId: string, slug: string) {
-  const u = await prismaBase.user.create({
-    data: { email: `owner-${slug}@codadmin.test`, password: 'x', firstName: 'Owner', lastName: slug, role: 'super_admin', tenantId },
-  });
-  return generateAccessToken({ id: u.id, email: u.email, role: 'super_admin', tenantId });
-}
 
 const roleId = async (tenantId: string, name: string) => (await prismaBase.role.findFirstOrThrow({ where: { tenantId, name } })).id;
 

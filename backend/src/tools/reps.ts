@@ -4,7 +4,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { toolQueryService } from '../services/toolQueryService';
 import { repRates } from '../services/kpi/reps';
 import { deliveredRevenueByRep } from '../services/kpi/revenue';
-import { getDateRange, storeRange, withCurrency } from './shared';
+import { dateRangeOut, periodField, storeRange, withCurrency } from './shared';
 
 /**
  * Customer rep tools. Rates come from the M1 rep service: confirmationRate (confirmed / assigned) and
@@ -41,19 +41,18 @@ registerToolDef(defineTool({
   description: 'Customer rep performance for a period: orders assigned, confirmationRate (confirmed / assigned), deliveredFromConfirmedRate (delivered / closed among the orders the rep confirmed), delivered revenue. Rates are percents, null when there is nothing to divide.',
   input: z.object({
     repId: z.number().int().optional(),
-    period: z.enum(['today', 'week', 'month']).default('today'),
+    period: periodField(false),
   }),
   money: true,
   handler: async (input) => {
-    const { start, end } = getDateRange(input.period);
+    const { from, to } = storeRange(input.period);
     const reps = await toolQueryService.salesReps(input.repId);
 
     // Rates and revenue come from the KPI layer: confirmationRate by customerRepId, deliveredFromConfirmedRate by confirmedById.
     const tenantId = resolveTenantId();
-    const to = new Date(end.getTime() + 1); // end is inclusive
     const [rangeRates, revenueByRep] = await Promise.all([
-      repRates(tenantId, start, to),
-      deliveredRevenueByRep(tenantId, start, to),
+      repRates(tenantId, from, to),
+      deliveredRevenueByRep(tenantId, from, to),
     ]);
 
     const repPerf = reps.map((rep) => {
@@ -73,7 +72,7 @@ registerToolDef(defineTool({
 
     return withCurrency({
       period: input.period,
-      dateRange: { from: start.toISOString(), to: end.toISOString() },
+      dateRange: dateRangeOut(from, to),
       reps: repPerf.sort((a, b) => b.ordersCreated - a.ordersCreated),
     });
   },

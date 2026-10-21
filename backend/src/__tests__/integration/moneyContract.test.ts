@@ -1,7 +1,7 @@
 /**
  * M0-T24 (COD-6): money in API and MCP output is a string with exactly 2 decimals.
  * Contract: GET /api/orders, GET /api/financial/summary and the MCP `orders_summary` tool.
- * The 2-decimal rule comes from one place: Money.jsonReplacer (Express `json replacer`, mcpJson).
+ * The 2-decimal rule comes from one place: Money.jsonReplacer (Express `json replacer`, toMcpResult).
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';

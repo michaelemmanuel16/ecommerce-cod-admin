@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import Redis from 'ioredis';
 import { RATE_LIMITS } from '../config/rateLimits';
 import logger from '../utils/logger';
@@ -102,11 +101,6 @@ async function check(counters: Counter[]): Promise<LimitResult> {
     logDown(error);
     return { allowed: true, limit: 0, remaining: 0, retryAfterSeconds: 0, degraded: true };
   }
-}
-
-/** Stable, non-reversible id for a raw API key, so the key never reaches Redis. */
-export function keyFingerprint(apiKey: string): string {
-  return createHash('sha256').update(apiKey).digest('hex').slice(0, 32);
 }
 
 const { mcp, chat } = RATE_LIMITS;

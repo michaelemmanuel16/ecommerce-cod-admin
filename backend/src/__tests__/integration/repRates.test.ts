@@ -28,10 +28,7 @@ import { rates } from '../../services/kpi/rates';
 import { getRepPerformanceDetails } from '../../services/repPerformanceService';
 import { startOfDay, endOfDay } from '../../services/kpi/dates';
 
-jest.mock('../../mcp/rateLimiter', () => ({
-  checkMcp: async () => ({ allowed: true, limit: 30, remaining: 29, retryAfterSeconds: 0 }),
-  keyFingerprint: (key: string) => key,
-}));
+jest.mock('../../mcp/rateLimiter', () => require('./helpers/allowAllRateLimiter').allowAllRateLimiter());
 
 let pair: TwoTenants;
 let repA: number;

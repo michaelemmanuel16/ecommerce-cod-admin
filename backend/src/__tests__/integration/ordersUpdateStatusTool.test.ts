@@ -10,7 +10,7 @@ import { prismaBase } from '../../utils/prisma';
 import { z } from 'zod';
 import { defineTool, getTool, listTools, runTool, ToolContext } from '../../tools/registry';
 import '../../tools';
-import { toolActorContext } from './helpers/callTool';
+import { toolActorContext, toolAuditRows } from './helpers/callTool';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 
 let pair: TwoTenants;
@@ -18,8 +18,7 @@ let orderId: number;
 
 const ctx = (channel: ToolContext['channel']) => toolActorContext(pair.a.id, channel);
 
-const auditRows = () =>
-  prismaBase.auditLog.findMany({ where: { tenantId: pair.a.id, resource: 'tool', resourceId: 'orders_update_status' }, orderBy: { id: 'asc' } });
+const auditRows = () => toolAuditRows(pair.a.id, 'orders_update_status');
 
 beforeAll(async () => {
   pair = await createTwoTenants('updstatus');

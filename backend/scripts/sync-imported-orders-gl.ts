@@ -13,7 +13,7 @@
 import { PrismaClient } from '@prisma/client';
 import { GLAutomationService, OrderWithItems } from '../src/services/glAutomationService';
 import agentReconciliationService from '../src/services/agentReconciliationService';
-import { SYSTEM_USER_ID } from '../src/config/constants';
+import { getSystemUserId } from '../src/services/systemUserService';
 import logger from '../src/utils/logger';
 
 const prisma = new PrismaClient();
@@ -133,14 +133,15 @@ async function syncOrderToGL(
       };
     }
 
-    // Execute actual GL entry creation in a transaction
+    // Execute actual GL entry creation in a transaction (the actor is the order's tenant's system user)
+    const systemUserId = await getSystemUserId(order.tenantId);
     const result = await prisma.$transaction(async (tx) => {
       // Create GL journal entry
       const glEntry = await GLAutomationService.createRevenueRecognitionEntry(
         tx as any,
         order as OrderWithItems,
         totalCOGS,
-        SYSTEM_USER_ID
+        systemUserId
       );
 
       // Update order with GL entry link and revenue recognized flag

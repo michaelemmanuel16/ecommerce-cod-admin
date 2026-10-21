@@ -4,7 +4,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { toolQueryService } from '../services/toolQueryService';
 import { productDeliveredUnits } from '../services/kpi/products';
-import { dateRangeOut, storeRange, withCurrency } from './shared';
+import { dateRangeOut, periodField, storeRange, withCurrency } from './shared';
 
 registerToolDef(defineTool({
   name: 'products_inventory',
@@ -12,7 +12,7 @@ registerToolDef(defineTool({
   input: z.object({
     productId: z.number().int().optional(),
     lowStockOnly: z.boolean().default(false),
-    period: z.enum(['today', 'week', 'month']).default('month'),
+    period: periodField(false, 'month'),
   }),
   money: true,
   handler: async (input) => {

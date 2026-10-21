@@ -27,3 +27,11 @@ export async function toolData(name: string, args: Record<string, unknown>, tena
 export async function toolMcpResult(name: string, args: unknown) {
   return toMcpResult(await runTool(name as never, args, await toolActorContext(getTenantId() as string)));
 }
+
+/** The tenant's audit rows for tool calls (all tools, or one), oldest first. */
+export const toolAuditRows = (tenantId: string, tool?: string) =>
+  prismaBase.auditLog.findMany({ where: { tenantId, resource: 'tool', ...(tool && { resourceId: tool }) }, orderBy: { id: 'asc' } });
+
+/** How many audit rows for tool calls the tenant has (all tools, or one). */
+export const toolAuditCount = (tenantId: string, tool?: string) =>
+  prismaBase.auditLog.count({ where: { tenantId, resource: 'tool', ...(tool && { resourceId: tool }) } });

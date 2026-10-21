@@ -15,12 +15,9 @@ import { prismaBase } from '../../utils/prisma';
 import { seedFixture, deleteFixtureRows, FIXTURE_SLUG } from '../fixtures/numbersFixture';
 import { getTool, runTool, ToolContext } from '../../tools/registry';
 import '../../tools';
-import { toolData, toolActorContext } from './helpers/callTool';
+import { toolData, toolActorContext, toolAuditCount } from './helpers/callTool';
 
 jest.setTimeout(180_000);
-
-// reps_performance builds its period from local midnight (getDateRange); the snapshot was recorded on a WAT machine.
-process.env.TZ = 'Africa/Lagos';
 
 const FIXTURE_NOW = new Date('2026-10-17T13:00:00Z');
 const BANNED_KEYS = /^(deliveryRate|fulfilmentRate|fulfillmentRate)$/;
@@ -114,9 +111,9 @@ describe('registry tools called directly with runTool', () => {
   };
 
   it('writes one audit row for each call', async () => {
-    const before = await prismaBase.auditLog.count({ where: { tenantId, resource: 'tool', resourceId: 'agents_status' } });
+    const before = await toolAuditCount(tenantId, 'agents_status');
     await run('agents_status', {});
-    const after = await prismaBase.auditLog.count({ where: { tenantId, resource: 'tool', resourceId: 'agents_status' } });
+    const after = await toolAuditCount(tenantId, 'agents_status');
     expect(after - before).toBe(1);
   });
 

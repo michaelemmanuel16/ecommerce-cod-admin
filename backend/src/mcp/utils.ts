@@ -2,7 +2,7 @@ import * as Money from '../utils/money';
 import type { ToolResult } from '../tools/registry';
 
 // MCP response helpers
-export function mcpJson(data: unknown) {
+function mcpJson(data: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(data, Money.jsonReplacer, 2) }] };
 }
 

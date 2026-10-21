@@ -24,12 +24,10 @@ import { listTools } from '../../tools/registry';
 import '../../tools';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { makeMcpKey } from './helpers/mcpKey';
+import { toolAuditRows } from './helpers/callTool';
 
 // 14 tools x 2 transports and the denied calls would trip the 30 calls a minute bucket. Plain function: resetMocks would wipe a jest.fn.
-jest.mock('../../mcp/rateLimiter', () => ({
-  checkMcp: async () => ({ allowed: true, limit: 30, remaining: 29, retryAfterSeconds: 0 }),
-  keyFingerprint: (key: string) => key,
-}));
+jest.mock('../../mcp/rateLimiter', () => require('./helpers/allowAllRateLimiter').allowAllRateLimiter());
 
 jest.setTimeout(60_000);
 
@@ -107,8 +105,7 @@ async function makeKey(label: string, userRole: 'admin' | 'sales_rep' | 'super_a
   return { key, user: { id: userId as number }, roleId };
 }
 
-const toolRows = (tool: string) =>
-  prismaBase.auditLog.findMany({ where: { tenantId: pair.a.id, resource: 'tool', resourceId: tool }, orderBy: { id: 'asc' } });
+const toolRows = (tool: string) => toolAuditRows(pair.a.id, tool);
 
 /** Valid input per tool, aimed at tenant A's own rows. */
 const argsFor = (): Record<string, Record<string, unknown>> => ({

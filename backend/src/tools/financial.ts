@@ -5,16 +5,16 @@ import * as Money from '../utils/money';
 import { toolQueryService } from '../services/toolQueryService';
 import { deliveredRevenue } from '../services/kpi/revenue';
 import { pendingRevenue } from '../services/kpi/pending';
-import { dateRangeOut, storeRange, withCurrency } from './shared';
+import { dateRangeOut, periodField, storeRange, withCurrency, ymdField } from './shared';
 
 registerToolDef(defineTool({
   name: 'financial_summary',
   description: 'Revenue and collection summary: delivered revenue (by delivery date) and delivered count, pending amounts, expenses, agent balances. Also includes digitalRevenue (digital product sales, GL account 4020) and paystackFees (payment gateway fees, GL account 5060) booked in the period. Money is a 2-decimal string. Period custom takes dateFrom and dateTo (inclusive, store-zone days).',
   input: z.object({
-    period: z.enum(['today', 'week', 'month', 'custom']).default('today'),
+    period: periodField(true),
     // custom only: store-zone days, dateTo inclusive
-    dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    dateFrom: ymdField.optional(),
+    dateTo: ymdField.optional(),
   }),
   money: true,
   handler: async (input) => {

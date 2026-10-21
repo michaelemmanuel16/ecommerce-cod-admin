@@ -1,12 +1,14 @@
 import { Response, NextFunction } from 'express';
 import { z } from 'zod';
+import { AuditChannel } from '@prisma/client';
 import { AuthRequest } from '../types';
 import { AppError } from '../middleware/errorHandler';
 import { auditService } from '../services/auditService';
+import { formatIssues } from '../tools/shared';
 
 const listQuery = z.object({
   actorId: z.coerce.number().int().positive().optional(),
-  channel: z.enum(['app', 'chat', 'mcp', 'connector', 'system']).optional(),
+  channel: z.nativeEnum(AuditChannel).optional(),
   tool: z.string().min(1).max(100).optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
@@ -19,7 +21,7 @@ export const listAuditLog = async (req: AuthRequest, res: Response, next: NextFu
   try {
     const parsed = listQuery.safeParse(req.query);
     if (!parsed.success) {
-      throw new AppError(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '), 400);
+      throw new AppError(formatIssues(parsed.error, ''), 400);
     }
     res.json(await auditService.list(parsed.data));
   } catch (error) {

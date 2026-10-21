@@ -810,7 +810,7 @@ export class WorkflowService {
     // Load order with products for condition evaluation (e.g. product-specific workflows)
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { orderItems: { include: { product: true } } },
+      select: { orderItems: { select: { product: { select: { name: true } } } } },
     });
 
     const input = {

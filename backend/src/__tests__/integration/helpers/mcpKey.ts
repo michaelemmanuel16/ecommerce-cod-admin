@@ -1,6 +1,5 @@
-import { randomBytes } from 'crypto';
 import { prismaBase } from '../../../utils/prisma';
-import { hashApiKey } from '../../../mcp/auth';
+import { generateMcpKey, hashApiKey } from '../../../mcp/auth';
 
 /**
  * An MCP key for a tenant: an ai_agent user (made here, unless `userId` is given, null for a key with no user), an optional
@@ -23,7 +22,7 @@ export async function makeMcpKey(
     })).id;
   }
   const roleId = opts.roleId ?? (roleName ? (await prismaBase.role.findFirstOrThrow({ where: { tenantId, name: roleName } })).id : null);
-  const key = `mcp_${randomBytes(16).toString('hex')}`;
+  const key = generateMcpKey();
   const row = await prismaBase.mcpApiKey.create({
     data: { tenantId, keyHash: hashApiKey(key), keyPrefix: key.slice(0, 8), label: slug, userId, roleId, revokedAt: opts.revokedAt },
   });

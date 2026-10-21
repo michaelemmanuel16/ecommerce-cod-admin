@@ -3,7 +3,7 @@ import { defineTool, registerToolDef } from './registry';
 import { resolveTenantId } from '../utils/tenantContext';
 import { toolQueryService } from '../services/toolQueryService';
 import { partnerRates } from '../services/kpi/partners';
-import { dateRangeOut, storeRange } from './shared';
+import { dateRangeOut, periodField, storeRange } from './shared';
 
 /**
  * Delivery agent (partner) tools. The rate is deliverySuccessRate from the KPI layer: delivered over
@@ -46,7 +46,7 @@ registerToolDef(defineTool({
   description: 'Delivery agent performance for orders placed in a period (store-zone days): assigned, delivered, failed, returned, closed, and deliverySuccessRate (delivered / closed, a percent, null when the agent has no closed order).',
   input: z.object({
     agentId: z.number().int().optional(),
-    period: z.enum(['today', 'week', 'month']).default('today'),
+    period: periodField(false),
   }),
   handler: async (input) => {
     const { from, to } = storeRange(input.period);

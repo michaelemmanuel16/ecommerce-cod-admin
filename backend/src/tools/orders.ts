@@ -7,7 +7,7 @@ import * as Money from '../utils/money';
 import orderService from '../services/orderService';
 import { deliveredRevenue } from '../services/kpi/revenue';
 import { rates } from '../services/kpi/rates';
-import { cursorId, dateRangeOut, limitField, nextCursorOf, storeRange, withCurrency } from './shared';
+import { cursorId, dateRangeOut, limitField, nextCursorOf, periodField, storeRange, withCurrency, ymdField } from './shared';
 
 /**
  * Order tools. Query logic lives in orderService; money is a 2-decimal string next to the tenant currency code.
@@ -20,8 +20,8 @@ registerToolDef(defineTool({
   description: 'Search orders by status, date range, customer, delivery agent, or keyword. Returns paginated results with customer and agent info.',
   input: z.object({
     status: z.enum(ORDER_STATUSES).optional(),
-    dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    dateFrom: ymdField.optional(),
+    dateTo: ymdField.optional(),
     customerId: z.number().int().optional(),
     agentId: z.number().int().optional(),
     search: z.string().max(100).optional(),
@@ -70,7 +70,7 @@ registerToolDef(defineTool({
   name: 'orders_summary',
   description: 'Order statistics for a period: orders placed and count by status (by order date), delivered revenue and delivered count (by delivery date), confirmationRate, deliverySuccessRate and orderToCashYield (percents, null when there is nothing to divide), and confirmedCount (orders placed in the period that were confirmed). Revenue is a 2-decimal string. dateTo is inclusive.',
   input: z.object({
-    period: z.enum(['today', 'week', 'month', 'custom']).default('today'),
+    period: periodField(true),
     dateFrom: z.string().optional(),
     dateTo: z.string().optional(),
   }),

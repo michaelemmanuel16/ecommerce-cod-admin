@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { AppError } from '../middleware/errorHandler';
 import { getCurrency } from '../utils/currency';
 import { endOfDay, getStoreTimeZone, localDate, monthRange, parseBound, parseYmd, shiftYmd, startOfDay } from '../services/kpi/dates';
@@ -7,7 +7,6 @@ import { endOfDay, getStoreTimeZone, localDate, monthRange, parseBound, parseYmd
  * Helpers the tool files share. They turn plain Errors into AppErrors: runTool shows an AppError message to the
  * caller and hides any other message behind a generic one.
  */
-
 
 /** Cursor from a tool call to a row id. A bad cursor is a 400 with the old message. */
 export function cursorId(cursor: string | undefined): number | undefined {
@@ -31,6 +30,20 @@ export function storeRange(period: string, dateFrom?: string, dateTo?: string): 
 /** `limit` field of a paged tool: 1 to 100, 25 by default. */
 export const limitField = z.number().int().min(1).max(100).default(25);
 
+/** A store-zone day, YYYY-MM-DD. Use `.optional()` where it is not required. */
+export const ymdField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** `period` field of a tool: today, week and month, plus custom (with dateFrom and dateTo) when `withCustom`. */
+export const periodField = (withCustom: boolean, defaultPeriod: 'today' | 'month' = 'today') =>
+  withCustom
+    ? z.enum(['today', 'week', 'month', 'custom']).default(defaultPeriod)
+    : z.enum(['today', 'week', 'month']).default(defaultPeriod);
+
+/** A failed zod parse as one line: `path: message; path: message`. An issue with no path shows `emptyPath`. */
+export function formatIssues(error: ZodError, emptyPath = 'input'): string {
+  return error.issues.map((i) => `${i.path.join('.') || emptyPath}: ${i.message}`).join('; ');
+}
+
 /** Tool output that carries money: the tenant currency code first, money fields as 2-decimal strings. */
 export async function withCurrency<T extends Record<string, unknown>>(data: T): Promise<{ currency: string } & T> {
   return { currency: await getCurrency(), ...data };
@@ -41,8 +54,7 @@ export function nextCursorOf(rows: Array<{ id: number }>, hasMore: boolean): str
   return hasMore ? encodeCursor(rows[rows.length - 1].id) : undefined;
 }
 
-// Cursor pagination
-export function encodeCursor(id: number): string {
+function encodeCursor(id: number): string {
   return Buffer.from(JSON.stringify({ id })).toString('base64');
 }
 
@@ -56,38 +68,6 @@ function decodeCursor(cursor: string): number {
   } catch (e) {
     if (e instanceof Error && e.message.startsWith('Invalid cursor')) throw e;
     throw new Error('Invalid cursor format');
-  }
-}
-
-// Date helpers
-export function getDateRange(period: string, dateFrom?: string, dateTo?: string): { start: Date; end: Date } {
-  const now = new Date();
-  const end = dateTo ? new Date(dateTo) : now;
-
-  switch (period) {
-    case 'today': {
-      const start = new Date(now);
-      start.setHours(0, 0, 0, 0);
-      const todayEnd = new Date(now);
-      todayEnd.setHours(23, 59, 59, 999);
-      return { start, end: dateTo ? end : todayEnd };
-    }
-    case 'week': {
-      const start = new Date(now);
-      start.setDate(start.getDate() - 7);
-      start.setHours(0, 0, 0, 0);
-      return { start, end };
-    }
-    case 'month': {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      return { start, end };
-    }
-    case 'custom': {
-      if (!dateFrom) throw new Error('dateFrom is required for custom period');
-      return { start: new Date(dateFrom), end };
-    }
-    default:
-      throw new Error(`Invalid period: ${period}`);
   }
 }
 

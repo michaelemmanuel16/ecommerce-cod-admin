@@ -2,7 +2,7 @@ import { randomBytes } from 'crypto';
 import { prismaBase } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { roleToolList } from '../config/defaultRoles';
-import { hashApiKey } from '../mcp/auth';
+import { generateMcpKey, hashApiKey } from '../mcp/auth';
 import { createAiAgentUser } from './systemUserService';
 
 export const MAX_KEYS_PER_TENANT = 5;
@@ -15,7 +15,7 @@ const DEFAULT_EXPIRY_DAYS = 90;
  */
 export async function createKey(p: { tenantId: string; label: string; roleId: number; userId?: number; expiresInDays?: number }) {
   const { tenantId, label } = p;
-  const rawKey = `mcp_${randomBytes(32).toString('hex')}`; // 256 bits
+  const rawKey = generateMcpKey();
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + (p.expiresInDays ?? DEFAULT_EXPIRY_DAYS));
 

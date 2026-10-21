@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { PrismaClient, UserKind } from '@prisma/client';
 import type { AccessFacts } from '../services/toolAccessService';
 import { roleToolList } from '../config/defaultRoles';
@@ -17,7 +17,7 @@ export interface McpPrincipal {
   access: AccessFacts;
 }
 
-/** One entry per key (by key hash), valid until `expires`. At AUTH_CACHE_MAX entries the whole cache is dropped. */
+/** One entry per key (by key hash), valid until `expires`. At AUTH_CACHE_MAX entries the oldest one is dropped. */
 const authCache = new Map<string, { principal: McpPrincipal; expires: number }>();
 const AUTH_CACHE_MAX = 500;
 
@@ -45,6 +45,11 @@ function getPrisma(): PrismaClient {
 
 export function hashApiKey(key: string): string {
   return createHash('sha256').update(key).digest('hex');
+}
+
+/** A new raw MCP key: `mcp_` and 256 random bits as hex. Only its hash is stored. */
+export function generateMcpKey(): string {
+  return `mcp_${randomBytes(32).toString('hex')}`;
 }
 
 /**
@@ -118,7 +123,7 @@ export async function validateKey(apiKey: string): Promise<McpPrincipal> {
       roleTools: roleToolList(mcpKey.role.tools),
     },
   };
-  if (authCache.size >= AUTH_CACHE_MAX) authCache.clear();
+  if (authCache.size >= AUTH_CACHE_MAX) authCache.delete(authCache.keys().next().value!);
   authCache.set(keyHash, { principal, expires: now + MCP_CONFIG.auth.cacheTtlMs });
 
   return principal;

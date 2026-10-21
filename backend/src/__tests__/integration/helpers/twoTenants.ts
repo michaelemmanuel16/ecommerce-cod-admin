@@ -2,7 +2,7 @@ import { randomBytes } from 'crypto';
 import prisma, { prismaBase } from '../../../utils/prisma';
 import { runInTenant } from '../../../utils/tenantContext';
 import { generateAccessToken } from '../../../utils/jwt';
-import { hashApiKey } from '../../../mcp/auth';
+import { generateMcpKey, hashApiKey } from '../../../mcp/auth';
 import { seedTenantDefaults } from '../../../services/tenantDefaultsService';
 import glService from '../../../services/glService';
 import { clearSystemUserIdCache } from '../../../services/systemUserService';
@@ -73,7 +73,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
   const pixelId = `${side === 'a' ? '1111' : '2222'}${digits}`;
   const capiToken = `capi-${marker}`;
   const formSlug = `form-${tag}`;
-  const mcpKey = `mcp_${randomBytes(16).toString('hex')}`;
+  const mcpKey = generateMcpKey();
   const downloadToken = randomBytes(16).toString('hex');
 
   const tenant = await prismaBase.tenant.create({ data: { name: `Two ${side.toUpperCase()} ${tag}`, slug: `two-${tag}`, currency: side === 'a' ? 'GHS' : 'NGN' } });

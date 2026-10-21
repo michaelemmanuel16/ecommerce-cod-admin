@@ -11,7 +11,7 @@ import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { clearAuthCache } from '../../mcp/auth';
 import { RATE_LIMITS } from '../../config/rateLimits';
-import { checkMcp, checkChat, closeRateLimiter, keyFingerprint } from '../../mcp/rateLimiter';
+import { checkMcp, checkChat, closeRateLimiter } from '../../mcp/rateLimiter';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 
 const rnd = () => randomBytes(8).toString('hex');
@@ -82,10 +82,6 @@ describe('limiter counts', () => {
       process.env.REDIS_HOST = saved.host;
       process.env.REDIS_PORT = saved.port;
     }
-  });
-
-  it('keyFingerprint never contains the raw key', () => {
-    expect(keyFingerprint('mcp_secretvalue')).not.toContain('secretvalue');
   });
 });
 

@@ -24,10 +24,7 @@ import analyticsService from '../../services/analyticsService';
 import { runInTenant } from '../../utils/tenantContext';
 import { makeMcpKey } from './helpers/mcpKey';
 
-jest.mock('../../mcp/rateLimiter', () => ({
-  checkMcp: async () => ({ allowed: true, limit: 30, remaining: 29, retryAfterSeconds: 0 }),
-  keyFingerprint: (key: string) => key,
-}));
+jest.mock('../../mcp/rateLimiter', () => require('./helpers/allowAllRateLimiter').allowAllRateLimiter());
 
 jest.setTimeout(180_000);
 

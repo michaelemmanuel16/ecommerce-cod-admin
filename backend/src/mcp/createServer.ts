@@ -3,7 +3,7 @@ import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-sc
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { runInTenant } from '../utils/tenantContext';
 import { validateKey, McpPrincipal } from './auth';
-import { checkMcp, keyFingerprint } from './rateLimiter';
+import { checkMcp } from './rateLimiter';
 import { MCP_CONFIG } from './config';
 import { mcpError, mcpRateLimited, toMcpResult } from './utils';
 import { allowedTools, listTools, runTool, ToolContext } from '../tools/registry';
@@ -55,7 +55,7 @@ export function createMcpServer(resolveApiKey: () => string) {
     }
 
     // The one counting point: per key and per tenant.
-    const limit = await checkMcp({ keyId: keyFingerprint(apiKey), tenantId: principal.tenantId });
+    const limit = await checkMcp({ keyId: principal.keyId, tenantId: principal.tenantId });
     if (!limit.allowed) return mcpRateLimited(limit.retryAfterSeconds);
 
     return toMcpResult(await runTool(request.params.name as never, request.params.arguments, contextOf(principal))) as never;
