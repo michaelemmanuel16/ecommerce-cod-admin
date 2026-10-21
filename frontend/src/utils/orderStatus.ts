@@ -6,16 +6,16 @@ import { OrderStatus } from '../types';
  * Role-specific labels (rep, agent) are views over this map.
  */
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  pending_confirmation: 'Pending Confirmation',
-  payment_pending: 'Payment Pending',
+  pending_confirmation: 'Pending confirmation',
+  payment_pending: 'Payment pending',
   confirmed: 'Confirmed',
   preparing: 'Preparing',
-  ready_for_pickup: 'Ready for Pickup',
-  out_for_delivery: 'Out for Delivery',
+  ready_for_pickup: 'Ready for pickup',
+  out_for_delivery: 'Out for delivery',
   delivered: 'Delivered',
-  digital_delivered: 'Digital Delivered',
+  digital_delivered: 'Digital delivered',
   cancelled: 'Cancelled',
   returned: 'Returned',
-  failed_delivery: 'Failed Delivery',
-  payment_failed: 'Payment Failed',
+  failed_delivery: 'Failed delivery',
+  payment_failed: 'Payment failed',
 };
