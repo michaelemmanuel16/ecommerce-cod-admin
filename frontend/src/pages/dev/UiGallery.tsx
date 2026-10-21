@@ -1,12 +1,12 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { Clock, Inbox, Moon, Phone, ShoppingCart, Sun, Truck, Wallet } from 'lucide-react';
 import {
-  Button, Card, Drawer, EmptyState, Input, Modal, Pagination, Select, Skeleton, Table, Tabs, Tag, Tile,
+  Button, Card, ConfirmDialog, Drawer, EmptyState, Input, Modal, Pagination, Select, Skeleton, Table, Tabs, Tag, Tile,
   ToastProvider, Tooltip, useToast, type Column,
 } from '../../components/ui-v2';
 
 // Dev-only page (route exists only when import.meta.env.DEV): every ui-v2 component in every variant.
-// ?theme=dark starts in dark mode; ?open=modal|drawer|toast opens a layer so it can be screenshotted.
+// ?theme=dark starts in dark mode; ?open=modal|drawer|confirm|toast opens a layer so it can be screenshotted.
 
 interface Row { id: number; order: string; customer: string; status: ReactNode; amount: string }
 const rows: Row[] = [
@@ -42,6 +42,7 @@ function Body() {
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(open === 'modal');
   const [drawer, setDrawer] = useState(open === 'drawer');
+  const [confirm, setConfirm] = useState(open === 'confirm');
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
@@ -125,12 +126,13 @@ function Body() {
           </div>
         </Section>
 
-        <Section title="Tooltip, Toast, Modal, Drawer">
+        <Section title="Tooltip, Toast, Modal, Drawer, ConfirmDialog">
           <div style={row}>
             <Tooltip label="Confirmed orders divided by new orders"><Button>Hover or focus me</Button></Tooltip>
             <Button onClick={() => say('Order #1042 saved')}>Show toast</Button>
             <Button onClick={() => setModal(true)}>Open modal</Button>
             <Button onClick={() => setDrawer(true)}>Open drawer</Button>
+            <Button variant="danger" onClick={() => setConfirm(true)}>Delete 3 orders</Button>
           </div>
         </Section>
       </div>
@@ -140,6 +142,9 @@ function Body() {
         <Input label="File name" placeholder="orders.csv" />
         <Select label="Status for new orders"><option>Pending</option><option>Confirmed</option></Select>
       </Modal>
+      <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} onConfirm={() => { setConfirm(false); say('3 orders deleted'); }} action="Delete" count={3} noun="order">
+        The 3 selected orders are removed from the list. You cannot undo this.
+      </ConfirmDialog>
       <Drawer open={drawer} onClose={() => setDrawer(false)} title="Order #1042" description="Abena Owusu · Accra"
         footer={<><Button onClick={() => setDrawer(false)}>Close</Button><Button variant="primary" onClick={() => setDrawer(false)}>Save</Button></>}>
         <Input label="Delivery address" defaultValue="12 Ring Road, Osu" />

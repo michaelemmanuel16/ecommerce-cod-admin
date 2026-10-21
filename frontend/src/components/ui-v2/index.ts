@@ -1,6 +1,7 @@
 // CodAdmin v2 design-system components (M3-T29). Styles: src/styles/tokens.css and components.css.
 export { Button } from './Button';
 export { Card } from './Card';
+export { ConfirmDialog } from './ConfirmDialog';
 export { Drawer } from './Drawer';
 export { EmptyState } from './EmptyState';
 export { Input } from './Input';
