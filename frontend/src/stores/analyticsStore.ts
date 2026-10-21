@@ -51,6 +51,13 @@ interface AnalyticsState {
   setupSocketListeners: () => void;
 }
 
+// Refresh metrics when order status changes. A named handler, so setup can remove just this one.
+function refreshOnStatusChange() {
+  const { fetchDashboardMetrics, fetchPendingOrders } = useAnalyticsStore.getState();
+  fetchDashboardMetrics();
+  fetchPendingOrders();
+}
+
 export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
   return {
     metrics: null,
@@ -76,7 +83,8 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
       socket.off('order:created');
       socket.off('order:updated');
       socket.off('order:assigned');
-      socket.off('order:status_changed');
+      // Remove only this store's handler: the orders store and the toast also listen for this event.
+      socket.off('order:status_changed', refreshOnStatusChange);
       socket.off('delivery:completed');
 
       socket.on('order:created', () => {
@@ -100,11 +108,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => {
         get().fetchAgentPerformance();
       });
 
-      socket.on('order:status_changed', () => {
-        // Refresh metrics when order status changes
-        get().fetchDashboardMetrics();
-        get().fetchPendingOrders();
-      });
+      socket.on('order:status_changed', refreshOnStatusChange);
 
       socket.on('delivery:completed', () => {
         // Refresh metrics when delivery is completed

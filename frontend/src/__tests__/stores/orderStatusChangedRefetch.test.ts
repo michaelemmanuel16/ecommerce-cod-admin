@@ -20,7 +20,11 @@ function fakeSocket() {
   const handlers: Record<string, Array<(p?: unknown) => void>> = {};
   return {
     handlers,
-    off: vi.fn((e: string) => { delete handlers[e]; }),
+    // As socket.io: off(event, handler) removes that handler only; off(event) removes them all.
+    off: vi.fn((e: string, h?: (p?: unknown) => void) => {
+      if (h) handlers[e] = (handlers[e] ?? []).filter((x) => x !== h);
+      else delete handlers[e];
+    }),
     on: vi.fn((e: string, h: (p?: unknown) => void) => { (handlers[e] ??= []).push(h); }),
     emit: (e: string, p?: unknown) => (handlers[e] ?? []).forEach((h) => h(p)),
   };
@@ -72,5 +76,23 @@ describe('stores re-fetch on order:status_changed', () => {
     a.emit('order:status_changed', event);
     expect(fetchDashboardMetrics).toHaveBeenCalled();
     expect(fetchPendingOrders).toHaveBeenCalled();
+  });
+
+  it('one socket: setting up the orders store keeps the analytics listener (and the reverse)', async () => {
+    const fetchDashboardMetrics = vi.fn();
+    const fetchPendingOrders = vi.fn();
+    useAnalyticsStore.setState({ fetchDashboardMetrics, fetchPendingOrders } as never);
+    vi.mocked(ordersService.getOrders).mockResolvedValue({ orders: [mockOrder], pagination: { page: 2, limit: 50, total: 1, pages: 1 } } as never);
+    const a = fakeSocket();
+    const toast = vi.fn();
+    a.on('order:status_changed', toast); // stands in for the toast handler in services/socket.ts
+    vi.mocked(getSocket).mockReturnValue(a as never);
+    useAnalyticsStore.getState().setupSocketListeners();
+    useOrdersStore.getState().setupSocketListeners();
+    useAnalyticsStore.getState().setupSocketListeners(); // a second setup must not add a duplicate
+    a.emit('order:status_changed', event);
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(fetchDashboardMetrics).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(ordersService.getOrders).toHaveBeenCalledTimes(1));
   });
 });
