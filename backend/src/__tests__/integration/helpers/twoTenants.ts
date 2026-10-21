@@ -258,12 +258,18 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
   };
 }
 
+/** Await Prisma queries one after another. Prisma queries are lazy, so none starts before its turn. */
+async function inSequence(queries: PromiseLike<unknown>[]): Promise<void> {
+  for (const query of queries) await query;
+}
+
 /** Delete every row of these tenants, one dependency level at a time (children first), then the tenants. */
 export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
   const t = { tenantId: { in: tenantIds } };
   const db = prismaBase;
-  // Each level only depends on the ones above it.
-  await Promise.all([
+  // Each level only depends on the ones above it. Deletes run one at a time: rows in the
+  // same level can still reference each other, and parallel deletes of linked tables deadlock (COD-130).
+  await inSequence([
     db.orderItem.deleteMany({ where: { order: t } }),
     db.formSubmission.deleteMany({ where: t }),
     db.pendingCheckout.deleteMany({ where: t }),
@@ -294,16 +300,15 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.feeRule.deleteMany({ where: t }),
     db.fxRate.deleteMany({ where: t }),
   ]);
-  await Promise.all([
+  await inSequence([
     db.order.deleteMany({ where: t }),
     db.checkoutForm.deleteMany({ where: t }),
     db.workflow.deleteMany({ where: t }),
     db.webhookConfig.deleteMany({ where: t }),
     db.account.deleteMany({ where: { ...t, parentId: { not: null } } }),
+    db.journalEntry.deleteMany({ where: t }),
   ]);
-  // Orders reference journal entries; deleting both at once deadlocks (COD-130).
-  await db.journalEntry.deleteMany({ where: t });
-  await Promise.all([
+  await inSequence([
     db.product.deleteMany({ where: t }),
     db.customer.deleteMany({ where: t }),
     db.account.deleteMany({ where: t }),
