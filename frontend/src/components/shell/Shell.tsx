@@ -7,6 +7,7 @@ import { useShellStore } from '../../stores/shellStore';
 import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 import { Skeleton, ToastProvider } from '../ui-v2';
 import { AnnouncementBanner } from './AnnouncementBanner';
+import { CommandPalette } from './CommandPalette';
 import { PlanBanner } from './PlanBanner';
 import { PreviewBanner } from './PreviewBanner';
 import { Sidebar } from './Sidebar';
@@ -76,7 +77,7 @@ export function Shell() {
             </main>
           </div>
         </div>
-        <div id="command-palette-root" />
+        <div id="command-palette-root"><CommandPalette /></div>
         <div id="ai-drawer-root" />
       </div>
     </ToastProvider>

@@ -25,6 +25,19 @@ interface OrdersState {
   setupSocketListeners: () => void;
 }
 
+// M3-T36: a status change (any client, same tenant) re-reads the list the page shows. Only when a list is
+// loaded, and without the loading flag, so the table does not flash.
+async function refetchOnStatusChange() {
+  const { orders: loaded, filters } = useOrdersStore.getState();
+  if (loaded.length === 0) return;
+  try {
+    const { orders, pagination } = await ordersService.getOrders(filters);
+    useOrdersStore.setState({ orders, pagination });
+  } catch (error) {
+    console.error('[OrdersStore] Refresh after order:status_changed failed:', error);
+  }
+}
+
 export const useOrdersStore = create<OrdersState>((set, get) => ({
   orders: [],
   selectedOrder: null,
@@ -138,6 +151,8 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     socket.off('orders:created');
     socket.off('orders:updated');
     socket.off('orders:deleted');
+    // Remove only this store's handler: other stores and the toast also listen for this event.
+    socket.off('order:status_changed', refetchOnStatusChange);
 
     // Listen for order events
     socket.on('orders:created', (data: { order: Order }) => {
@@ -156,6 +171,8 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
         data.ids.forEach(id => get().deleteOrder(id));
       }
     });
+
+    socket.on('order:status_changed', refetchOnStatusChange);
 
     console.log('[OrdersStore] Socket listeners setup complete');
   },

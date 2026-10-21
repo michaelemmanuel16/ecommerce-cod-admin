@@ -8,6 +8,7 @@ import { useAnalyticsStore } from './analyticsStore';
 import { useDeliveryAgentsStore } from './deliveryAgentsStore';
 import { useCustomerRepsStore } from './customerRepsStore';
 import { useOrdersStore } from './ordersStore';
+import { useNotificationsStore } from './notificationsStore';
 import toast from 'react-hot-toast';
 
 interface AuthState {
@@ -109,6 +110,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
         });
         disconnectSocket();
+        useNotificationsStore.getState().clearNotifications(); // the next person to sign in must not see this count
         if (showToast) {
           toast.success('Logged out successfully');
         }
@@ -204,6 +206,7 @@ export const useAuthStore = create<AuthState>()(
         useDeliveryAgentsStore.getState().setupSocketListeners();
         useCustomerRepsStore.getState().setupSocketListeners();
         useOrdersStore.getState().setupSocketListeners();
+        useNotificationsStore.getState().setupSocketListeners();
 
         console.log('[AuthStore] All socket listeners initialized');
       },

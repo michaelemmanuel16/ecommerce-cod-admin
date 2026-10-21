@@ -1,6 +1,5 @@
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../stores/authStore';
-import { useNotificationsStore } from '../stores/notificationsStore';
 import toast from 'react-hot-toast';
 import { normalizeMoney } from '../utils/money';
 import { refreshAccessToken, handleSessionExpired } from './tokenRefresh';
@@ -56,43 +55,16 @@ export const connectSocket = () => {
     console.log('Socket disconnected');
   });
 
+  // The bell's count is read from the database (notificationsStore listens for `notification`), so these
+  // order events only raise a toast. They no longer add to an in-memory list.
   socket.on('order:created', (data) => {
     toast.success(`New order received: ${data.orderNumber}`);
-    useNotificationsStore.getState().addNotification({
-      id: Date.now(), // Use number instead of string
-      type: 'order:created',
-      title: 'New Order',
-      message: `Order ${data.orderNumber} has been created`,
-      read: false,
-      createdAt: new Date().toISOString(),
-      data,
-    });
-  });
-
-  socket.on('order:updated', (data) => {
-    useNotificationsStore.getState().addNotification({
-      id: Date.now(), // Use number instead of string
-      type: 'order:updated',
-      title: 'Order Updated',
-      message: `Order ${data.orderNumber} has been updated`,
-      read: false,
-      createdAt: new Date().toISOString(),
-      data,
-    });
   });
 
   socket.on('order:status_changed', (data) => {
-    const statusText = data.status.split('_').join(' ');
+    // The server sends `newStatus`; `status` is kept for older payloads.
+    const statusText = String(data.newStatus ?? data.status ?? '').split('_').join(' ');
     toast.success(`Order ${data.orderNumber} status changed to ${statusText}`);
-    useNotificationsStore.getState().addNotification({
-      id: Date.now(), // Use number instead of string
-      type: 'order:status_changed',
-      title: 'Status Changed',
-      message: `Order ${data.orderNumber} is now ${statusText}`,
-      read: false,
-      createdAt: new Date().toISOString(),
-      data,
-    });
   });
 
   return socket;
