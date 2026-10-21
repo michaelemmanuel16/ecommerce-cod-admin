@@ -19,6 +19,13 @@ function shouldCache(config: InternalAxiosRequestConfig): boolean {
   return config.method?.toLowerCase() === 'get';
 }
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /** GET only: do not answer from the 5 second request cache. Refresh buttons and socket refetches set it. */
+    skipCache?: boolean;
+  }
+}
+
 export const apiClient = axios.create({
   baseURL: API_URL,
   headers: {
@@ -46,7 +53,7 @@ apiClient.interceptors.request.use(
     }
 
     // Check cache for GET requests
-    if (shouldCache(config)) {
+    if (shouldCache(config) && !config.skipCache) {
       const cacheKey = getCacheKey(config);
       const cached = requestCache.get(cacheKey);
 

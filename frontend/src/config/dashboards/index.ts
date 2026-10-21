@@ -4,24 +4,17 @@
  */
 
 import { DashboardRegistry } from '../types/dashboard';
-import { adminDashboardConfig } from './adminConfig';
 import { salesRepConfig } from './salesRepConfig';
 import { deliveryAgentConfig } from './deliveryAgentConfig';
-import { accountantConfig } from './accountantConfig';
-import { inventoryManagerConfig } from './inventoryManagerConfig';
 
 /**
  * Dashboard configuration registry
- * Maps roles to their dashboard configs
+ * Only the call rep and delivery agent dashboards are left (M3-T41): they stay until the rep app (M7) and the agent app (M10)
+ * replace them. The owner, admin and manager Dashboard is pages/Dashboard.tsx; the finance clerk and stock keeper have other homes.
  */
 export const dashboardConfigs: DashboardRegistry = {
-  super_admin: adminDashboardConfig,
-  admin: adminDashboardConfig,
-  manager: adminDashboardConfig,
   sales_rep: salesRepConfig,
   delivery_agent: deliveryAgentConfig,
-  accountant: accountantConfig,
-  inventory_manager: inventoryManagerConfig,
 };
 
 /**

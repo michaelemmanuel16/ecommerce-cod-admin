@@ -1,0 +1,419 @@
+{
+ "header": {
+  "asOfDate": "2026-10-17",
+  "generatedAt": "2026-10-17T06:42:00.000Z",
+  "timeZone": "Africa/Accra",
+  "greeting": "evening",
+  "currency": "GHS",
+  "remainingToday": "2085.71",
+  "remainingTodayRounded": "2100.00",
+  "targetMet": false
+ },
+ "ladder": {
+  "currency": "GHS",
+  "year": {
+   "actual": "1382000.00",
+   "target": "1800000.00",
+   "percent": 76.8,
+   "pace": 79.5,
+   "daysLeft": 75,
+   "tag": "behind",
+   "paceChip": {
+    "points": 3,
+    "tag": "behind"
+   }
+  },
+  "quarter": {
+   "actual": "92000.00",
+   "target": "540000.00",
+   "percent": 17,
+   "pace": 18.5,
+   "daysLeft": 75,
+   "tag": "behind"
+  },
+  "month": {
+   "actual": "92000.00",
+   "target": "180000.00",
+   "percent": 51.1,
+   "pace": 54.8,
+   "daysLeft": 14,
+   "tag": "off_track"
+  },
+  "day": {
+   "actual": "4200.00",
+   "target": "6285.71",
+   "percent": 66.8,
+   "deliveredOrders": 17,
+   "tag": "in_progress"
+  }
+ },
+ "quests": {
+  "onTargetDays": {
+   "hit": 14,
+   "of": 17,
+   "quest": "new_orders"
+  },
+  "items": [
+   {
+    "key": "new_orders",
+    "unit": "count",
+    "value": 64,
+    "target": 56,
+    "percent": 114.3,
+    "tag": "hit",
+    "tone": "ok"
+   },
+   {
+    "key": "delivered_revenue",
+    "unit": "money",
+    "value": "4200.00",
+    "target": "6285.71",
+    "percent": 66.8,
+    "tag": "open",
+    "tone": "warn"
+   },
+   {
+    "key": "failed_delivery_calls",
+    "unit": "count",
+    "value": 6,
+    "target": 15,
+    "targetSource": "default",
+    "percent": 40,
+    "tag": "open",
+    "tone": "bad"
+   }
+  ]
+ },
+ "tiles": {
+  "currency": "GHS",
+  "range": {
+   "from": "2026-10-01",
+   "to": "2026-10-17"
+  },
+  "ordersToday": {
+   "value": 64,
+   "target": 56,
+   "vsLastWeek": {
+    "date": "2026-10-10",
+    "count": 54,
+    "deltaPercent": 18,
+    "trend": "up"
+   }
+  },
+  "confirmationRate": {
+   "value": 71,
+   "target": 70,
+   "gapPoints": 1,
+   "tag": "on_track",
+   "confirmed": 1026,
+   "placed": 1445
+  },
+  "deliverySuccessRate": {
+   "value": 48.3,
+   "target": 60,
+   "gapPoints": -11.7,
+   "tag": "off_track",
+   "basis": "cohort",
+   "yield": 34,
+   "delivered": 376,
+   "closed": 778
+  },
+  "cash": {
+   "value": "23400.00",
+   "partners": 5,
+   "overdueOrders": 38
+  }
+ },
+ "chart": {
+  "currency": "GHS",
+  "period": "month",
+  "target": "180000.00",
+  "from": "2026-10-01",
+  "to": "2026-10-17",
+  "days": [
+   {
+    "date": "2026-10-01",
+    "delivered": "1800.00",
+    "cumulative": "1800.00",
+    "targetPace": "5806.45",
+    "vsPace": "-4006.45"
+   },
+   {
+    "date": "2026-10-02",
+    "delivered": "2600.00",
+    "cumulative": "4400.00",
+    "targetPace": "11612.90",
+    "vsPace": "-7212.90"
+   },
+   {
+    "date": "2026-10-03",
+    "delivered": "3000.00",
+    "cumulative": "7400.00",
+    "targetPace": "17419.35",
+    "vsPace": "-10019.35"
+   },
+   {
+    "date": "2026-10-04",
+    "delivered": "3400.00",
+    "cumulative": "10800.00",
+    "targetPace": "23225.81",
+    "vsPace": "-12425.81"
+   },
+   {
+    "date": "2026-10-05",
+    "delivered": "3600.00",
+    "cumulative": "14400.00",
+    "targetPace": "29032.26",
+    "vsPace": "-14632.26"
+   },
+   {
+    "date": "2026-10-06",
+    "delivered": "4200.00",
+    "cumulative": "18600.00",
+    "targetPace": "34838.71",
+    "vsPace": "-16238.71"
+   },
+   {
+    "date": "2026-10-07",
+    "delivered": "4800.00",
+    "cumulative": "23400.00",
+    "targetPace": "40645.16",
+    "vsPace": "-17245.16"
+   },
+   {
+    "date": "2026-10-08",
+    "delivered": "5200.00",
+    "cumulative": "28600.00",
+    "targetPace": "46451.61",
+    "vsPace": "-17851.61"
+   },
+   {
+    "date": "2026-10-09",
+    "delivered": "5600.00",
+    "cumulative": "34200.00",
+    "targetPace": "52258.06",
+    "vsPace": "-18058.06"
+   },
+   {
+    "date": "2026-10-10",
+    "delivered": "5900.00",
+    "cumulative": "40100.00",
+    "targetPace": "58064.52",
+    "vsPace": "-17964.52"
+   },
+   {
+    "date": "2026-10-11",
+    "delivered": "6100.00",
+    "cumulative": "46200.00",
+    "targetPace": "63870.97",
+    "vsPace": "-17670.97"
+   },
+   {
+    "date": "2026-10-12",
+    "delivered": "6200.00",
+    "cumulative": "52400.00",
+    "targetPace": "69677.42",
+    "vsPace": "-17277.42"
+   },
+   {
+    "date": "2026-10-13",
+    "delivered": "6300.00",
+    "cumulative": "58700.00",
+    "targetPace": "75483.87",
+    "vsPace": "-16783.87"
+   },
+   {
+    "date": "2026-10-14",
+    "delivered": "6400.00",
+    "cumulative": "65100.00",
+    "targetPace": "81290.32",
+    "vsPace": "-16190.32"
+   },
+   {
+    "date": "2026-10-15",
+    "delivered": "6500.00",
+    "cumulative": "71600.00",
+    "targetPace": "87096.77",
+    "vsPace": "-15496.77"
+   },
+   {
+    "date": "2026-10-16",
+    "delivered": "6600.00",
+    "cumulative": "78200.00",
+    "targetPace": "92903.23",
+    "vsPace": "-14703.23"
+   },
+   {
+    "date": "2026-10-17",
+    "delivered": "13800.00",
+    "cumulative": "92000.00",
+    "targetPace": "98709.68",
+    "vsPace": "-6709.68"
+   },
+   {
+    "date": "2026-10-18",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "104516.13",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-19",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "110322.58",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-20",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "116129.03",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-21",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "121935.48",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-22",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "127741.94",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-23",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "133548.39",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-24",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "139354.84",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-25",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "145161.29",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-26",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "150967.74",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-27",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "156774.19",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-28",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "162580.65",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-29",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "168387.10",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-30",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "174193.55",
+    "vsPace": null
+   },
+   {
+    "date": "2026-10-31",
+    "delivered": null,
+    "cumulative": null,
+    "targetPace": "180000.00",
+    "vsPace": null
+   }
+  ]
+ },
+ "drivers": {
+  "currency": "GHS",
+  "projectedMonth": {
+   "value": "164000.00",
+   "percentOfTarget": 91,
+   "tooEarly": false,
+   "basis": "todays_rate",
+   "daysGone": 17,
+   "daysInMonth": 31
+  },
+  "neededPerDay": {
+   "value": "6285.71",
+   "daysLeft": 14
+  },
+  "biggestLever": {
+   "rate": "deliverySuccessRate",
+   "points": 5,
+   "value": "22000.00"
+  }
+ },
+ "recentOrders": [
+  {
+   "id": 24117,
+   "externalOrderId": null,
+   "customerName": "Abena Owusu",
+   "city": "Kumasi",
+   "status": "delivered",
+   "notReachable": false,
+   "amount": "249.00",
+   "currency": "GHS",
+   "createdAt": "2026-10-17T05:10:00.000Z"
+  },
+  {
+   "id": 24116,
+   "externalOrderId": null,
+   "customerName": "Kwame Mensah",
+   "city": "Tema",
+   "status": "out_for_delivery",
+   "notReachable": false,
+   "amount": "498.00",
+   "currency": "GHS",
+   "createdAt": "2026-10-17T04:50:00.000Z"
+  },
+  {
+   "id": 24115,
+   "externalOrderId": null,
+   "customerName": "Efua Asante",
+   "city": "Osu, Accra",
+   "status": "confirmed",
+   "notReachable": false,
+   "amount": "249.00",
+   "currency": "GHS",
+   "createdAt": "2026-10-17T04:20:00.000Z"
+  },
+  {
+   "id": 24114,
+   "externalOrderId": null,
+   "customerName": "Yaw Boateng",
+   "city": "Kumasi",
+   "status": "failed_delivery",
+   "notReachable": false,
+   "amount": "249.00",
+   "currency": "GHS",
+   "createdAt": "2026-10-17T03:40:00.000Z"
+  }
+ ]
+}
