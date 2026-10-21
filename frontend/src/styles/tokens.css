@@ -1,0 +1,123 @@
+/* CodAdmin v2 design tokens and base layout (M3-T28, F-100, F-107).
+   Copied from docs/mockups/v2/app.css. Values are not re-derived.
+   Dark mode: data-theme="dark" on <html>, the same switch as the mockup.
+   This is the only file allowed to hold a hex colour (frontend/scripts/check-static.mjs).
+   Every token in :root has a dark value in [data-theme="dark"] (frontend/scripts/check-tokens.mjs).
+
+   Everything below the tokens is scoped under `.v2`, so the old pages are untouched until a
+   screen opts in. The shell (M3-T32) puts `.v2` on its root; portals render inside a `.v2` node.
+   Not copied from app.css: the `*{margin:0;padding:0}` reset (Tailwind preflight already does it) and the
+   page-only blocks (target ladder, podium, quests, wizard), which belong to the page tasks. */
+
+:root{
+  --pine:#0F5C55; --pine-2:#147066; --pine-soft:#E3F1EE;
+  --mint:#2FCB8B; --mint-soft:#DDF7EA;
+  --gold:#F2A93B; --gold-soft:#FFF1D9;
+  --coral:#EE5D52; --coral-soft:#FDE6E3;
+  --violet:#7C6CF2; --violet-soft:#ECEAFE;
+  --ink:#14211F; --ink-2:#4A5A57; --ink-3:#86948F;
+  --bg:#F4F7F6; --card:#FFFFFF; --line:#E4EAE8; --side:#FFFFFF; --hover:#F0F4F3;
+  --shadow:0 1px 2px rgba(20,33,31,.04),0 8px 24px -12px rgba(20,33,31,.10);
+  /* Values app.css writes inline. Named here so no component file needs a hex colour. */
+  --white:#FFFFFF;
+  --on-pine:#FFFFFF;
+  --ok-ink:#14975F;
+  --warn-ink:#B77612;
+  --veil:rgba(8,18,16,.45);
+  --shadow-pop:0 30px 80px -20px rgba(0,0,0,.5);
+  --shadow-drawer:-20px 0 50px -20px rgba(0,0,0,.25);
+  --shadow-menu:0 18px 40px -16px rgba(0,0,0,.35);
+}
+[data-theme="dark"]{
+  --pine:#3FC1A8; --pine-2:#56D3BA; --pine-soft:#12322E;
+  --mint:#3DDC97; --mint-soft:#123526;
+  --gold:#F5B84A; --gold-soft:#3A2C12;
+  --coral:#FF7468; --coral-soft:#3B1C1A;
+  --violet:#9D91FF; --violet-soft:#25214A;
+  --ink:#E8F0EE; --ink-2:#A9B8B4; --ink-3:#6F7E7A;
+  --bg:#0B1413; --card:#111D1B; --line:#1F2F2C; --side:#0E1917; --hover:#162623;
+  --shadow:0 1px 0 rgba(255,255,255,.02),0 12px 30px -16px rgba(0,0,0,.6);
+  --white:#FFFFFF;
+  --on-pine:#04211D;
+  --ok-ink:#3DDC97;
+  --warn-ink:#F5B84A;
+  --veil:rgba(8,18,16,.45);
+  --shadow-pop:0 30px 80px -20px rgba(0,0,0,.5);
+  --shadow-drawer:-20px 0 50px -20px rgba(0,0,0,.25);
+  --shadow-menu:0 18px 40px -16px rgba(0,0,0,.35);
+}
+
+/* base */
+.v2{font-family:"Plus Jakarta Sans",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.v2 *,.v2 *::before,.v2 *::after{box-sizing:border-box}
+.v2 h1,.v2 h2,.v2 h3,.v2 .num{font-family:"Bricolage Grotesque",sans-serif;letter-spacing:-.02em}
+.v2 .num{font-variant-numeric:tabular-nums}
+.v2 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+/* focus ring: app.css names button, a and input; select, textarea and tabindex targets get the same ring */
+.v2 button:focus-visible,.v2 a:focus-visible,.v2 input:focus-visible,.v2 select:focus-visible,.v2 textarea:focus-visible,.v2 [tabindex]:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+.v2 svg.lucide{width:18px;height:18px;stroke-width:1.9}
+
+/* shell */
+.v2 .app{display:grid;grid-template-columns:256px 1fr;min-height:100vh}
+.v2 .side{background:var(--side);border-right:1px solid var(--line);padding:18px 14px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow:auto}
+.v2 .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px}
+.v2 .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--pine),var(--mint));display:grid;place-items:center;color:var(--white)}
+.v2 .brand b{font-family:"Bricolage Grotesque";font-size:20px;font-weight:800}
+.v2 .store{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:12px;margin-bottom:16px}
+.v2 .store .av{width:30px;height:30px;border-radius:8px;background:var(--gold-soft);color:var(--gold);display:grid;place-items:center;font-weight:700}
+.v2 .store small{display:block;color:var(--ink-3);font-size:12px}
+.v2 .navgroup{margin:2px 0 6px}
+.v2 .navgroup p{font-size:12px;color:var(--ink-3);padding:4px 10px 2px;font-weight:600}
+.v2 .nav{text-decoration:none;display:flex;align-items:center;gap:11px;width:100%;padding:7px 10px;border-radius:10px;color:var(--ink-2);font-weight:500;text-align:left}
+.v2 .nav:hover{background:var(--hover);color:var(--ink)}
+.v2 .nav.on{background:var(--pine-soft);color:var(--pine);font-weight:700}
+.v2 .nav .pill{margin-left:auto;font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;background:var(--coral-soft);color:var(--coral)}
+.v2 .nav .pill.g{background:var(--gold-soft);color:var(--gold)}
+.v2 .me{margin-top:auto;padding:12px;border-radius:14px;background:linear-gradient(135deg,var(--pine),var(--pine-2));color:var(--white)}
+[data-theme="dark"] .v2 .me{color:var(--on-pine)}
+.v2 .me .row{display:flex;align-items:center;gap:10px}
+.v2 .me .lv{font-size:12px;opacity:.85}
+.v2 .bar{height:6px;border-radius:99px;background:rgba(255,255,255,.25);overflow:hidden;margin-top:8px}
+.v2 .bar i{display:block;height:100%;background:var(--white);border-radius:99px}
+
+.v2 .main{min-width:0}
+.v2 .top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;padding:14px 28px;background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.v2 .search{flex:1;max-width:520px;display:flex;align-items:center;gap:10px;padding:9px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink-3)}
+.v2 .search kbd{margin-left:auto;font:600 11px "Plus Jakarta Sans";border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+.v2 .ibtn{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--card);display:grid;place-items:center;color:var(--ink-2);position:relative}
+.v2 .ibtn .dot{position:absolute;top:8px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--coral)}
+.v2 .ibtn.sm{width:30px;height:30px;border-radius:9px}
+.v2 .ibtn.sm svg.lucide{width:16px;height:16px}
+.v2 .agentbtn{display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:12px;background:var(--ink);color:var(--bg);font-weight:600}
+.v2 .agentbtn .spark{color:var(--mint)}
+.v2 .avatar{width:38px;height:38px;border-radius:50%;background:var(--violet-soft);color:var(--violet);display:grid;place-items:center;font-weight:700}
+.v2 .content{padding:26px 28px 60px;max-width:1360px}
+.v2 .head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.v2 .head h1{font-size:30px;font-weight:800;line-height:1.1}
+.v2 .head p{color:var(--ink-2);margin-top:4px}
+.v2 .grid{display:grid;gap:16px}
+.v2 .kpis{grid-template-columns:repeat(4,1fr);margin-top:16px}
+.v2 .two{grid-template-columns:1.7fr 1fr;margin-top:16px}
+
+/* responsive: same breakpoints as app.css. Under 760px the sidebar is a drawer (F-100):
+   app.css hides it with display:none, here it slides in as `.side.open`, same easing as the agent drawer. */
+@media (max-width:1100px){
+  .v2 .kpis{grid-template-columns:repeat(2,1fr)}
+  .v2 .two{grid-template-columns:1fr}
+}
+@media (max-width:760px){
+  .v2 .app{grid-template-columns:1fr}
+  .v2 .side{position:fixed;left:0;top:0;z-index:50;width:256px;max-width:86vw;transform:translateX(-105%);visibility:hidden;transition:transform .28s cubic-bezier(.2,.8,.2,1);box-shadow:var(--shadow-drawer)}
+  .v2 .side.open{transform:none;visibility:visible}
+  .v2 .top{padding:12px 16px}.v2 .content{padding:20px 16px 70px}
+  .v2 .kpis{grid-template-columns:1fr}
+  .v2 .agentbtn span{display:none}
+  .v2 .tablewrap{overflow-x:auto}
+}
+@media (max-width:560px){
+  .v2 .top{gap:8px}
+  .v2 .search{flex:none;width:38px;height:38px;padding:0;justify-content:center;font-size:0}
+  .v2 .search kbd{display:none}
+  .v2 .agentbtn{padding:9px 11px}
+}
+@media (prefers-reduced-motion:reduce){.v2 *{transition:none!important;animation:none!important}}
