@@ -6,6 +6,11 @@
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
+// The 5-per-5-minutes limiter is proven in exportRateLimit.test.ts; here it would stop the suite
+jest.mock('../../middleware/bulkRateLimiter', () => ({
+  bulkOrderRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+  bulkImportRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';

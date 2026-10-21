@@ -7,6 +7,11 @@
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
+// The 5-per-5-minutes limiter is proven in exportRateLimit.test.ts; here it would stop the suite
+jest.mock('../../middleware/bulkRateLimiter', () => ({
+  bulkOrderRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+  bulkImportRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
 import request from 'supertest';
 import ExcelJS from 'exceljs';
 import { parse } from 'csv-parse/sync';

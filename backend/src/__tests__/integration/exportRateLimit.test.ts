@@ -1,5 +1,5 @@
 /**
- * M3-T15 (COD-23): the export limiter stays on both export routes (5 per 5 minutes, F-320).
+ * M3-T15 (COD-23), M3-T21 (COD-22): the export limiter stays on every export route (5 per 5 minutes, F-320, F-1057).
  */
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
@@ -34,5 +34,7 @@ describe('export rate limit', () => {
     expect((await request(app).get('/api/orders/export').set(bearer(token))).status).toBe(429);
     // the customer export shares the limiter
     expect((await request(app).get('/api/customers/export').set(bearer(token))).status).toBe(429);
+    // and so does the report export
+    expect((await request(app).get('/api/reports/overview/export?format=csv').set(bearer(token))).status).toBe(429);
   });
 });

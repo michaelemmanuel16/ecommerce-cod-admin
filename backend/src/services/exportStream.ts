@@ -49,7 +49,7 @@ export const exportMoney = (value: Money.MoneyInput | null | undefined) => (valu
 export const exportDate = (date: Date | null | undefined) => (date ? date.toISOString().slice(0, 16).replace('T', ' ') : '');
 
 /** A text cell that starts with = + - @ is read as a formula by Excel; a leading ' makes it text. */
-const FORMULA_START = /^[=+\-@\t\r]/;
+export const FORMULA_START = /^[=+\-@\t\r]/;
 
 function csvCell(value: string | number | null | undefined, numeric: boolean): string {
   if (value === null || value === undefined) return '';

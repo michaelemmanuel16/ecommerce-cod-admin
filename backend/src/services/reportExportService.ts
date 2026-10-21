@@ -16,6 +16,7 @@ import ExcelJS from 'exceljs';
 import { AppError } from '../middleware/errorHandler';
 import { teamReport } from './teamReportService';
 import type { ReportBody, ReportRange, ReportTab } from './reportsService';
+import { FORMULA_START } from './exportStream';
 
 type CellType = 'text' | 'int' | 'money' | 'percent' | 'days' | 'date';
 type Cell = { v: string | number | null; t: CellType };
@@ -231,7 +232,6 @@ export async function sectionsOf(tab: ExportTab, tenantId: string, r: ReportRang
 // ---------------------------------------------------------------------------------------------------------
 
 /** A text cell that starts with = + - @ is read as a formula by Excel; a leading ' makes it text (same rule as exportStream.ts). */
-const FORMULA_START = /^[=+\-@\t\r]/;
 const safeText = (value: string) => (FORMULA_START.test(value) ? `'${value}` : value);
 
 const fixed: Partial<Record<CellType, number>> = { money: 2, percent: 1, days: 1 };

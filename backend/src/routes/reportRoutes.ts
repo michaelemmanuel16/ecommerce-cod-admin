@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { exportReport, getReport, getTeamReport, tabNotBuilt } from '../controllers/reportController';
 import { authenticate, requirePermission, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
+import { bulkOrderRateLimiter } from '../middleware/bulkRateLimiter';
 
 const router = Router();
 
@@ -26,6 +27,6 @@ router.get('/products', reportRoles, requireResourcePermission('financial', 'vie
 router.get('/marketing', reportRoles, requireResourcePermission('marketing', 'view'), tabNotBuilt);
 
 // F-1057: CSV or Excel of a tab, or `all` for one workbook. Permission is checked per tab in the controller.
-router.get('/:tab/export', exportReport);
+router.get('/:tab/export', bulkOrderRateLimiter, exportReport);
 
 export default router;
