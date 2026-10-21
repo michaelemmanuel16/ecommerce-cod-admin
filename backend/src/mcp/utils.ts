@@ -53,6 +53,14 @@ export function mcpError(message: string) {
   return { content: [{ type: 'text' as const, text: `Error: ${message}` }], isError: true };
 }
 
+/** MCP error for a limited call. The text and structuredContent both carry retryAfterSeconds. */
+export function mcpRateLimited(retryAfterSeconds: number) {
+  return {
+    ...mcpError(`Rate limit exceeded. Please wait before making more requests. Retry after ${retryAfterSeconds} seconds.`),
+    structuredContent: { code: 'RATE_LIMITED', retryAfterSeconds },
+  };
+}
+
 // Date helpers
 export function getDateRange(period: string, dateFrom?: string, dateTo?: string): { start: Date; end: Date } {
   const now = new Date();

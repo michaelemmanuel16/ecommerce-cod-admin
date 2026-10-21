@@ -14,7 +14,10 @@ import { clearAuthCache, disconnectPrisma } from '../../mcp/auth';
 import { createTwoTenants, TwoTenants, TestTenant } from './helpers/twoTenants';
 
 // 14 tools x several calls would trip the 30 calls per minute bucket. Plain function: resetMocks would wipe a jest.fn.
-jest.mock('../../mcp/rateLimiter', () => ({ rateLimiter: { tryConsume: () => true } }));
+jest.mock('../../mcp/rateLimiter', () => ({
+  checkMcp: async () => ({ allowed: true, limit: 30, remaining: 29, retryAfterSeconds: 0 }),
+  keyFingerprint: (key: string) => key,
+}));
 
 let pair: TwoTenants;
 const clients = new Map<string, Client>();

@@ -1,9 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { runInTenant } from '../utils/tenantContext';
 import { validateKey } from './auth';
-import { rateLimiter } from './rateLimiter';
+import { checkMcp, keyFingerprint } from './rateLimiter';
 import { MCP_CONFIG } from './config';
-import { mcpError } from './utils';
+import { mcpError, mcpRateLimited } from './utils';
 
 // Import tool registrations
 import { registerOrderTools } from './tools/orders';
@@ -31,16 +31,17 @@ export function createMcpServer(resolveApiKey: () => string) {
 
   function wrapHandler<T>(handler: (args: T) => Promise<any>) {
     return async (args: T) => {
-      if (!rateLimiter.tryConsume()) {
-        return mcpError('Rate limit exceeded. Please wait before making more requests.');
-      }
-
+      const apiKey = resolveApiKey();
       let resolvedTenantId: string;
       try {
-        resolvedTenantId = await validateKey(resolveApiKey());
+        resolvedTenantId = await validateKey(apiKey);
       } catch (err) {
         return mcpError((err as Error).message);
       }
+
+      // The one counting point: per key and per tenant. T11 moves this into the registry call path.
+      const limit = await checkMcp({ keyId: keyFingerprint(apiKey), tenantId: resolvedTenantId });
+      if (!limit.allowed) return mcpRateLimited(limit.retryAfterSeconds);
 
       return runInTenant(resolvedTenantId, () => handler(args));
     };

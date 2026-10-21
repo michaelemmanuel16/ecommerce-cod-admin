@@ -80,6 +80,7 @@ import fxRoutes from './routes/fxRoutes';
 import billingRoutes from './routes/billingRoutes';
 import platformRoutes from './routes/platformRoutes';
 import mcpKeyRoutes from './routes/mcpKeyRoutes';
+import auditRoutes from './routes/auditRoutes';
 import mcpHttpTransport from './mcp/httpTransport';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
@@ -264,6 +265,7 @@ app.use('/api/fx', apiLimiter, fxRoutes);
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/mcp-keys', apiLimiter, mcpKeyRoutes);
+app.use('/api/audit-log', apiLimiter, auditRoutes);
 
 // MCP Streamable HTTP transport (auth via API key in Authorization header)
 app.use('/mcp', apiLimiter, mcpHttpTransport);

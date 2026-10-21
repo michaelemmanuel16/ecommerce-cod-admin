@@ -69,6 +69,7 @@ function getDefaultPermissions() {
       settings: ['view', 'update'],
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
+      audit: ['view'],
     },
     admin: {
       users: ['create', 'view', 'update', 'delete'],
@@ -81,6 +82,7 @@ function getDefaultPermissions() {
       settings: ['view'],
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
+      audit: ['view'],
     },
     manager: {
       users: [],

@@ -1,9 +1,11 @@
+import { RATE_LIMITS } from '../config/rateLimits';
+
 export const MCP_CONFIG = {
   name: 'cod-admin',
   version: '1.0.0',
   description: 'COD Admin MCP Server — query your business data via AI',
   rateLimit: {
-    maxCallsPerMinute: 30,
+    maxCallsPerMinute: RATE_LIMITS.mcp.perKeyPerMinute,
   },
   auth: {
     cacheTtlMs: 60_000, // Re-validate API key every 60 seconds

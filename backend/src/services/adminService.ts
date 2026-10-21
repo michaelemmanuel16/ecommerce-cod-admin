@@ -333,6 +333,7 @@ export const adminService = {
         analytics: ['view'],
         workflows: ['create', 'view', 'update', 'delete', 'execute'],
         settings: ['view', 'update'],
+        audit: ['view'],
       },
       admin: {
         users: ['create', 'view', 'update', 'delete'],
@@ -343,6 +344,7 @@ export const adminService = {
         analytics: ['view'],
         workflows: ['create', 'view', 'update', 'delete', 'execute'],
         settings: ['view'],
+        audit: ['view'],
       },
       manager: {
         users: [],

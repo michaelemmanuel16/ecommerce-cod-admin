@@ -2,6 +2,7 @@ import Bull from 'bull';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { forEachTenant } from '../utils/tenantLoop';
+import { AUDIT_RETENTION_DAYS, auditService } from '../services/auditService';
 
 const redisConfig = {
     host: process.env.REDIS_HOST || 'localhost',
@@ -63,6 +64,22 @@ export const processCleanupOldMessages = async () => {
 };
 messageCleanupQueue.process('cleanup-old-messages', processCleanupOldMessages);
 
+// M2-T05: audit log retention (AUDIT_RETENTION_DAYS, 400), once per tenant. A second named job on this queue.
+export const processAuditRetention = async () => {
+    logger.info(`Processing audit log retention (${AUDIT_RETENTION_DAYS} days)...`);
+    let totalDeleted = 0;
+    try {
+        await forEachTenant('Audit log retention', async () => {
+            totalDeleted += await auditService.purgeOlderThan(AUDIT_RETENTION_DAYS);
+        });
+        logger.info(`Audit log retention completed: ${totalDeleted} rows deleted.`);
+    } catch (error: any) {
+        logger.error('Audit log retention job failed:', error.message);
+        throw error;
+    }
+};
+messageCleanupQueue.process('purge-old-audit-logs', processAuditRetention);
+
 export const setupMessageCleanupCron = async () => {
     if (process.env.NODE_ENV === 'test') return;
 
@@ -75,6 +92,13 @@ export const setupMessageCleanupCron = async () => {
     await messageCleanupQueue.add('cleanup-old-messages', {}, {
         repeat: {
             cron: '0 4 * * *'
+        }
+    });
+
+    // Audit log retention daily at 4:30 AM
+    await messageCleanupQueue.add('purge-old-audit-logs', {}, {
+        repeat: {
+            cron: '30 4 * * *'
         }
     });
 
