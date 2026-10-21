@@ -37,6 +37,7 @@ const ALLOWED: Array<{ file: string; match: string; reason: string }> = [
   { file: 'services/deliveryService.ts', match: '/ totalDeliveries) * 100', reason: 'UNASSIGNED: agent successRate (completed / total deliveries)' },
   { file: 'services/webhookService.ts', match: '/ totalLogs) * 100', reason: 'not a KPI: webhook log success rate' },
   { file: 'services/customerService.ts', match: 'SUM(o.total_amount', reason: 'not order revenue: customer total_spent and sort by spend' },
+  { file: 'services/customerStatsService.ts', match: 'SUM(o.total_amount', reason: 'not order revenue: the customer deliveredValue stat (F-357)' },
   { file: 'services/checkoutFormService.ts', match: '_sum: { totalAmount', reason: 'UNASSIGNED: checkout form revenue and submission conversion' },
   { file: 'controllers/checkoutFormController.ts', match: '_sum: { totalAmount', reason: 'UNASSIGNED: checkout form revenue' },
   { file: 'controllers/checkoutFormController.ts', match: 'conversionRate', reason: 'UNASSIGNED: checkout form submission conversionRate' },
