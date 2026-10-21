@@ -66,7 +66,10 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       deliveryState,
       deliveryArea,
       notes,
-      estimatedDelivery
+      estimatedDelivery,
+      customerRepId,
+      deliveryAgentId,
+      customerConfirmed
     } = req.body;
 
     const order = await orderService.createOrder({
@@ -85,7 +88,12 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       deliveryArea,
       notes,
       estimatedDelivery: estimatedDelivery ? new Date(estimatedDelivery) : undefined,
-      createdById: req.user?.id
+      createdById: req.user?.id,
+      // F-317: a status in the body is not read. Every manual order starts at pending_confirmation.
+      customerRepId: customerRepId ? Number(customerRepId) : undefined,
+      deliveryAgentId: deliveryAgentId ? Number(deliveryAgentId) : undefined,
+      customerConfirmed: customerConfirmed === true,
+      requester: req.user
     });
 
     // Invalidate analytics cache
