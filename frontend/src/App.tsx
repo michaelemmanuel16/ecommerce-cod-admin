@@ -18,6 +18,7 @@ import { Onboarding } from './pages/Onboarding';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
+import { Dashboard } from './pages/Dashboard';
 // Lazy load all other pages for better initial load performance
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
 const Orders = lazy(() => import('./pages/Orders').then(m => ({ default: m.Orders })));
@@ -107,12 +108,26 @@ const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   return <>{children}</>;
 };
 
+// Owner, admin and manager see the owner Dashboard (M3-T41, F-210); the API trims the blocks a manager may not see.
+// Finance clerk and stock keeper never get here: AccessGate sends "/" to their home. Call reps and delivery agents keep the
+// old per-role dashboard (DynamicDashboard with salesRepConfig / deliveryAgentConfig) until the rep app (M7) and the agent
+// app (M10) ship; the plan never leaves them on a placeholder.
+const OWNER_DASHBOARD_ROLES = ['super_admin', 'admin', 'manager'];
+
 // Platform admins have no tenant store — land them on the platform tree instead of
 // the tenant dashboard. On the platform subdomain this never fires (separate router);
 // on the main domain it keeps their landing consistent with their (platform-only) menu.
 const DashboardIndex: React.FC = () => {
   const { user } = useAuthStore();
   if (user?.isPlatformAdmin) return <Navigate to="/platform" replace />;
+  if (user && OWNER_DASHBOARD_ROLES.includes(user.role)) return <Dashboard />;
+  return <DynamicDashboard />;
+};
+
+// "/m" is the delivery agent's mobile home. Owner roles that open it by hand go to their Dashboard.
+const MobileIndex: React.FC = () => {
+  const { user } = useAuthStore();
+  if (user && OWNER_DASHBOARD_ROLES.includes(user.role)) return <Navigate to="/" replace />;
   return <DynamicDashboard />;
 };
 
@@ -219,7 +234,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<DynamicDashboard />} />
+            <Route index element={<MobileIndex />} />
             <Route path="deliveries" element={
               <Suspense fallback={<Loading />}><MobileDeliveries /></Suspense>
             } />
