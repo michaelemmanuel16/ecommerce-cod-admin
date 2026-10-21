@@ -84,6 +84,21 @@ export async function deliveredRevenue(
   };
 }
 
+/**
+ * Average order value (F-1052): delivered revenue / delivered orders of the same result, 2 decimals, null when nothing
+ * was delivered. Reports shows this; the planned AOV (leadership.ts) is the same ratio over 30 days rounded to a whole unit.
+ */
+export function deliveredAov(revenue: DeliveredRevenue): KpiResult<string | null> {
+  const orders = revenue.deliveredOrders.value;
+  const { from, to, asOf } = revenue.total;
+  return {
+    name: 'Average order value', unit: 'money', dateBasis: 'deliveryDate', formulaId: 'revenue.aov.v1',
+    from, to, asOf, currency: revenue.total.currency,
+    value: orders > 0 ? Money.toApi(Money.roundHalfUp(Money.div(revenue.total.value, orders), 2)) : null,
+    detail: { deliveredOrders: orders },
+  };
+}
+
 export interface RevenueDay {
   /** Store-zone day, YYYY-MM-DD. */
   date: string;

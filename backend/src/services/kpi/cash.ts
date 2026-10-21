@@ -8,6 +8,8 @@ import prisma from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
 import { getCurrency } from '../../utils/currency';
+import { DAY_MS } from './dates';
+import { medianRounded } from './median';
 import { kpiMeta, type KpiResult } from './types';
 
 export async function cashHeldByPartners(tenantId: string): Promise<KpiResult<string>> {
@@ -27,4 +29,56 @@ export async function cashHeldByPartners(tenantId: string): Promise<KpiResult<st
       detail: { partners: held._count._all },
     };
   });
+}
+
+/**
+ * Cash received (M3-T20, F-1052): money partners handed in during the range = verified AgentDeposit amounts with a
+ * depositDate in [from, to). Same simple-body rule as cashHeldByPartners: M5 (F-902) replaces the body only.
+ */
+export async function cashReceived(tenantId: string, from: Date, to: Date): Promise<KpiResult<string>> {
+  return runInTenant(tenantId, async () => {
+    const [currency, received] = await Promise.all([
+      getCurrency(),
+      prisma.agentDeposit.aggregate({
+        where: { status: 'verified', depositDate: { gte: from, lt: to } },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+    ]);
+    return {
+      name: 'Cash received', value: Money.toApi(Money.orZero(received._sum.amount)), unit: 'money', currency,
+      ...kpiMeta(from, to, { dateBasis: 'delivery' as const, formulaId: 'cash.received.v1' }),
+      detail: { deposits: received._count._all },
+    };
+  });
+}
+
+/** What each partner holds now (AgentBalance, positive balances), by partner id. Same source as cashHeldByPartners. */
+export async function cashHeldByPartner(tenantId: string): Promise<Map<number, string>> {
+  const rows = await runInTenant(tenantId, () => prisma.agentBalance.findMany({
+    where: { currentBalance: { gt: 0 } },
+    select: { agentId: true, currentBalance: true },
+  }));
+  return new Map(rows.map((r) => [r.agentId, Money.toApi(r.currentBalance)]));
+}
+
+/**
+ * "Pays in" (F-1053): median days from the collection date of an order to the approval of its collection, over the
+ * collections dated in [from, to) that are approved. One value per partner id; a partner with no approved collection
+ * is absent (the page says "No payout yet"). Simple body on purpose: M5 (F-902) replaces it.
+ */
+export async function partnerPaysInDays(tenantId: string, from: Date, to: Date): Promise<Map<number, number>> {
+  const rows = await runInTenant(tenantId, () => prisma.agentCollection.findMany({
+    where: { collectionDate: { gte: from, lt: to }, approvedAt: { not: null } },
+    select: { agentId: true, collectionDate: true, approvedAt: true },
+  }));
+  const gaps = new Map<number, number[]>();
+  for (const r of rows) {
+    const list = gaps.get(r.agentId) ?? [];
+    list.push(Math.max(r.approvedAt!.getTime() - r.collectionDate.getTime(), 0) / DAY_MS);
+    gaps.set(r.agentId, list);
+  }
+  const out = new Map<number, number>();
+  for (const [agentId, list] of gaps) out.set(agentId, medianRounded(list, 1) as number);
+  return out;
 }
