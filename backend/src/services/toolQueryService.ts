@@ -19,6 +19,8 @@ const AGENT_PENDING_STATUSES: OrderStatus[] = ['confirmed', 'preparing', 'ready_
 const REP_PENDING_STATUSES: OrderStatus[] = ['pending_confirmation', 'confirmed'];
 /** A rep's order is no longer active once it is in one of these. */
 const REP_DONE_STATUSES: OrderStatus[] = ['delivered', 'cancelled', 'returned', 'failed_delivery', 'payment_failed'];
+/** products_inventory list size. Most tenants have fewer active products. */
+const MAX_ACTIVE_PRODUCTS = 200;
 
 /** Sum order counts per owner (agent or rep id) over the grouped rows. */
 function countBy<T extends { _count: { id: number } }>(rows: T[], owner: (row: T) => number | null): Map<number | null, number> {
@@ -65,11 +67,11 @@ export const toolQueryService = {
     return { customers: hasMore ? customers.slice(0, f.limit) : customers, hasMore };
   },
 
-  /** products_inventory: active products, at most 200 (most tenants have fewer), by name. */
+  /** products_inventory: active products, at most 200 (most tenants have fewer), by name. `hasMore` says the list was cut. */
   async activeProducts(productId?: number) {
-    return prisma.product.findMany({
+    const products = await prisma.product.findMany({
       where: { isActive: true, ...(productId ? { id: productId } : {}) },
-      take: 200,
+      take: MAX_ACTIVE_PRODUCTS + 1,
       select: {
         id: true,
         name: true,
@@ -81,6 +83,8 @@ export const toolQueryService = {
       },
       orderBy: { name: 'asc' },
     });
+    const hasMore = products.length > MAX_ACTIVE_PRODUCTS;
+    return { products: hasMore ? products.slice(0, MAX_ACTIVE_PRODUCTS) : products, hasMore };
   },
 
   /** deliveries_active: orders in a delivery-stage status, newest first. */

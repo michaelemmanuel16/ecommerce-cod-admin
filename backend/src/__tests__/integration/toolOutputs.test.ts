@@ -110,6 +110,22 @@ describe('registry tools called directly with runTool', () => {
     return JSON.parse(JSON.stringify((res as any).data));
   };
 
+  it('products_inventory says when the list stops at 200 active products', async () => {
+    const before = await run('products_inventory', {});
+    expect(before.truncated).toBe(false);
+    const extra = Array.from({ length: 201 }, (_, i) => ({
+      tenantId, sku: `TRUNC-${i}`, name: `zz truncation ${i}`, category: 'test', price: 1, stockQuantity: 1,
+    }));
+    await prismaBase.product.createMany({ data: extra });
+    try {
+      const after = await run('products_inventory', {});
+      expect(after.truncated).toBe(true);
+      expect(after.products).toHaveLength(200);
+    } finally {
+      await prismaBase.product.deleteMany({ where: { tenantId, sku: { startsWith: 'TRUNC-' } } });
+    }
+  });
+
   it('writes one audit row for each call', async () => {
     const before = await toolAuditCount(tenantId, 'agents_status');
     await run('agents_status', {});

@@ -251,7 +251,7 @@ describe('M2-T16 workflow actions go through the services', () => {
 
     it('rejects a bad priority or notes and writes nothing, not even the status', async () => {
       const id = await mkOrder('pending_confirmation', { notes: 'keep' });
-      for (const bad of ['abc', 1.5, '2.5', true, {}]) {
+      for (const bad of ['abc', 1.5, '2.5', true, {}, -1, '-5']) {
         await expect(viaQueue({ type: 'update_order', config: { status: 'confirmed', priority: bad } }, id)).rejects.toThrow('priority');
       }
       await expect(viaQueue({ type: 'update_order', config: { notes: '   ' } }, id)).rejects.toThrow('notes');
