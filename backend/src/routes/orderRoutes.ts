@@ -15,7 +15,7 @@ router.use(tenantRateLimiter);
 
 router.get('/', orderListValidation, validate, requireResourcePermission('orders', 'view'), orderController.getAllOrders);
 router.get('/counts', orderListValidation, validate, requireResourcePermission('orders', 'view'), orderController.getOrderCounts);
-router.get('/export', bulkOrderRateLimiter, requireResourcePermission('orders', 'view'), bulkOrderController.exportOrders);
+router.get('/export', bulkOrderRateLimiter, requireResourcePermission('orders', 'view'), orderController.exportOrders);
 router.post('/upload', bulkImportRateLimiter, spreadsheetUpload.single('file'), handleUploadErrors, requireResourcePermission('orders', 'bulk_import'), bulkOrderController.uploadOrders);
 router.post('/bulk', requireResourcePermission('orders', 'bulk_import'), orderController.bulkImportOrders);
 router.get('/kanban', requireResourcePermission('orders', 'view'), orderController.getKanbanView);

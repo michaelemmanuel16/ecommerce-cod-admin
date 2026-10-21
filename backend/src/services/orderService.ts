@@ -340,6 +340,35 @@ export class OrderService {
     };
   }
 
+  /** Rows the export would write (F-320): the list rows for the same filters. */
+  async exportCount(filters: OrderFilters, requester?: Requester) {
+    this.checkRange(filters);
+    return prisma.order.count({ where: listWhere(filters, requester, true) });
+  }
+
+  /** The export rows in batches of `size`, newest id first, one cursor read per batch (never the whole set at once). */
+  async *exportBatches(filters: OrderFilters, requester?: Requester, size = 1000) {
+    const where = listWhere(filters, requester, true);
+    let last: number | undefined;
+    for (;;) {
+      const rows = await prisma.order.findMany({
+        where: last === undefined ? where : { AND: [where, { id: { lt: last } }] },
+        orderBy: { id: 'desc' },
+        take: size,
+        include: {
+          customer: { select: { firstName: true, lastName: true, phoneNumber: true, alternatePhone: true } },
+          customerRep: { select: { firstName: true, lastName: true } },
+          deliveryAgent: { select: { firstName: true, lastName: true } },
+          orderItems: { include: { product: { select: { name: true } } } },
+        },
+      });
+      if (rows.length === 0) return;
+      yield rows;
+      last = rows[rows.length - 1].id;
+      if (rows.length < size) return;
+    }
+  }
+
   private checkRange({ startDate, endDate }: OrderFilters) {
     if (startDate && endDate && startDate > endDate) {
       throw new AppError('The start date is after the end date.', 400, 'INVALID_RANGE');

@@ -34,12 +34,8 @@ interface CustomerFilters {
 }
 
 export class CustomerService {
-  /**
-   * Get all customers with filters and pagination
-   */
-  async getAllCustomers(filters: CustomerFilters, requester?: Requester) {
-    const { search, area, tags, page = 1, limit = 20, sortBy, sortOrder = 'desc' } = filters;
-
+  /** The list filters as a `where`, shared by the list and the export (F-361). */
+  private listWhere({ search, area, tags }: CustomerFilters, requester?: Requester): Prisma.CustomerWhereInput {
     const where: Prisma.CustomerWhereInput = { isActive: true };
 
     // Role-based filtering for customers
@@ -69,6 +65,38 @@ export class CustomerService {
     if (tags && tags.length > 0) {
       where.tags = { hasSome: tags };
     }
+    return where;
+  }
+
+  /** Rows the export would write (F-361). */
+  exportCount(filters: CustomerFilters, requester?: Requester) {
+    return prisma.customer.count({ where: this.listWhere(filters, requester) });
+  }
+
+  /** The export rows in batches of `size`, newest id first, one cursor read per batch (never the whole set at once). */
+  async *exportBatches(filters: CustomerFilters, requester?: Requester, size = 1000) {
+    const where = this.listWhere(filters, requester);
+    let last: number | undefined;
+    for (;;) {
+      const rows = await prisma.customer.findMany({
+        where: last === undefined ? where : { AND: [where, { id: { lt: last } }] },
+        orderBy: { id: 'desc' },
+        take: size,
+      });
+      if (rows.length === 0) return;
+      yield rows;
+      last = rows[rows.length - 1].id;
+      if (rows.length < size) return;
+    }
+  }
+
+  /**
+   * Get all customers with filters and pagination
+   */
+  async getAllCustomers(filters: CustomerFilters, requester?: Requester) {
+    const { search, area, tags, page = 1, limit = 20, sortBy, sortOrder = 'desc' } = filters;
+
+    const where = this.listWhere(filters, requester);
 
     const skip = (page - 1) * limit;
 

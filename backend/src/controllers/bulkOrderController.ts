@@ -2,144 +2,14 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { OrderStatus } from '@prisma/client';
 import orderService, { BulkImportOrderData } from '../services/orderService';
-import { Parser } from 'json2csv';
 import ExcelJS from 'exceljs';
 import { parse } from 'csv-parse/sync';
 import logger from '../utils/logger';
-import { exportQuerySchema } from '../utils/bulkOrderValidators';
-import { z } from 'zod';
 import fileType from 'file-type';
 import { sanitizeName, sanitizePhoneNumber, sanitizeAddress, sanitizeString } from '../utils/sanitizer';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import prisma from '../utils/prisma';
 import * as Money from '../utils/money';
-import { addRowsWithMoney } from '../utils/xlsxMoney';
-
-export const exportOrders = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        // Validate query parameters
-        const validatedQuery = exportQuerySchema.parse(req.query);
-
-        const {
-            status,
-            customerId,
-            customerRepId,
-            deliveryAgentId,
-            area,
-            startDate,
-            endDate,
-            search,
-            format
-        } = validatedQuery;
-
-        // Parse status - can be a single value or array
-        let parsedStatus: OrderStatus[] | undefined;
-        if (status) {
-            parsedStatus = Array.isArray(status) ? status : [status];
-        }
-
-        // Role-based filtering (logic duplicated from orderController for consistency)
-        let effectiveCustomerRepId = customerRepId ? Number(customerRepId) : undefined;
-        if (req.user?.role === 'sales_rep') {
-            effectiveCustomerRepId = req.user.id;
-        }
-
-        let effectiveDeliveryAgentId = deliveryAgentId ? Number(deliveryAgentId) : undefined;
-        if (req.user?.role === 'delivery_agent') {
-            effectiveDeliveryAgentId = req.user.id;
-        }
-
-        // Fetch orders without pagination for export (configurable limit to prevent memory exhaustion)
-        const result = await orderService.getAllOrders({
-            status: parsedStatus,
-            customerId,
-            customerRepId: effectiveCustomerRepId,
-            deliveryAgentId: effectiveDeliveryAgentId,
-            area,
-            startDate: startDate ? new Date(startDate) : undefined,
-            endDate: endDate ? new Date(endDate) : undefined,
-            search,
-            page: 1,
-            limit: BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS
-        });
-
-        // Log warning if limit was reached
-        if (result.orders.length === BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS && result.pagination.total > BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS) {
-            logger.warn('Export limit reached', {
-                total: result.pagination.total,
-                exported: BULK_ORDER_CONFIG.EXPORT_MAX_RECORDS,
-                userId: req.user?.id
-            });
-        }
-
-        const orders = result.orders.map(order => {
-            // Format date as dd/mm/yyyy to match template
-            const date = new Date(order.createdAt);
-            const day = String(date.getDate()).padStart(2, '0');
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const year = date.getFullYear();
-            const formattedDate = `${day}/${month}/${year}`;
-
-            return {
-                'Date': formattedDate,
-                'Customer Name': `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
-                'Phone': order.customer?.phoneNumber || '',
-                'Alternative Phone': order.customer?.alternatePhone || '',
-                'Address': order.deliveryAddress,
-                'Area': order.deliveryArea,
-                'State': order.deliveryState,
-                'Product Name': order.orderItems?.[0]?.product?.name || '',
-                'Quantity': order.orderItems?.[0]?.quantity || 0,
-                'Total Amount': Money.toApi(order.totalAmount),
-                'Status': order.status,
-                'Customer Rep': order.customerRep ? `${order.customerRep.firstName} ${order.customerRep.lastName}` : 'Unassigned',
-                'Delivery Agent': order.deliveryAgent ? `${order.deliveryAgent.firstName} ${order.deliveryAgent.lastName}` : 'Unassigned',
-                'Order ID': order.id,
-                'Notes': order.notes || ''
-            };
-        });
-
-        // Handle empty results
-        if (orders.length === 0) {
-            res.status(404).json({ message: 'No orders found matching the criteria' });
-            return;
-        }
-
-        if (format === 'xlsx') {
-            const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet('Orders');
-
-            // Add headers
-            worksheet.columns = Object.keys(orders[0] || {}).map(key => ({
-                header: key,
-                key: key,
-                width: 20
-            }));
-
-            addRowsWithMoney(worksheet, orders, ['Total Amount']);
-
-            const buffer = await workbook.xlsx.writeBuffer();
-
-            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            res.setHeader('Content-Disposition', `attachment; filename=orders_export_${Date.now()}.xlsx`);
-            res.send(buffer);
-        } else {
-            const json2csvParser = new Parser();
-            const csv = json2csvParser.parse(orders);
-
-            res.setHeader('Content-Type', 'text/csv');
-            res.setHeader('Content-Disposition', `attachment; filename=orders_export_${Date.now()}.csv`);
-            res.send(csv);
-        }
-    } catch (error: any) {
-        logger.error('Export orders failed', { error: error.message, stack: error.stack });
-        if (error instanceof z.ZodError) {
-            res.status(400).json({ message: 'Invalid query parameters', errors: error.issues });
-            return;
-        }
-        res.status(500).json({ message: 'Export failed', error: error.message });
-    }
-};
 
 // Helper to find column value case-insensitively
 const getColumnValue = (row: any, ...possibleNames: string[]): string => {
