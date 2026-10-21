@@ -41,6 +41,8 @@ const CheckoutFormPreview = lazy(() => import('./pages/CheckoutFormPreview').the
 const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
 const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
+// Dev-only design-system gallery. The DEV flag is replaced at build time, so production bundles drop the import.
+const UiGallery = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiGallery')) : null;
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
@@ -204,6 +206,9 @@ function App() {
                 <PaymentCallback />
               </Suspense>
             } />
+            {UiGallery && (
+              <Route path="/dev/ui-v2" element={<Suspense fallback={<Loading />}><UiGallery /></Suspense>} />
+            )}
             {/* Auth routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />

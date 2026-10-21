@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react';
 import App from './App';
 import './index.css';
 import './styles/tokens.css';
+import './styles/components.css';
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({

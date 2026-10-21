@@ -55,7 +55,7 @@
 .v2 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 /* focus ring: app.css names button, a and input; select, textarea and tabindex targets get the same ring */
 .v2 button:focus-visible,.v2 a:focus-visible,.v2 input:focus-visible,.v2 select:focus-visible,.v2 textarea:focus-visible,.v2 [tabindex]:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
-.v2 svg.lucide{width:18px;height:18px;stroke-width:1.9}
+.v2 svg.lucide{width:18px;height:18px;stroke-width:1.9;display:inline;vertical-align:baseline} /* inline as in the mockup; Tailwind preflight makes svg block */
 
 /* shell */
 .v2 .app{display:grid;grid-template-columns:256px 1fr;min-height:100vh}
