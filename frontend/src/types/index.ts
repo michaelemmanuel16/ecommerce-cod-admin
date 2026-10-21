@@ -1,5 +1,4 @@
 export interface UserPreferences {
-  ordersDefaultView?: 'kanban' | 'list';
   onboardingCompleted?: boolean;
   onboardingCompletedAt?: string;
 }

@@ -8,6 +8,7 @@ import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 import { Skeleton, ToastProvider } from '../ui-v2';
 import { AnnouncementBanner } from './AnnouncementBanner';
 import { PlanBanner } from './PlanBanner';
+import { PreviewBanner } from './PreviewBanner';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { V2PageContext } from './useV2Page';
@@ -54,6 +55,7 @@ export function Shell() {
           <div className="main">
             <TopBar mobileOpen={mobileOpen} onToggleMobileMenu={() => setMobileOpen((o) => !o)} />
             <main className="content">
+              <PreviewBanner />
               {showBanners && <AnnouncementBanner />}
               {showBanners && user?.role === 'super_admin' && !user.isPlatformAdmin && <PlanBanner />}
               {configLoaded ? (

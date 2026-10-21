@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
 import { API_URL, handleSessionExpired, refreshAccessToken } from './tokenRefresh';
 import { normalizeMoney } from '../utils/money';
+import { isPreviewMode } from '../stores/previewStore';
 
 // Request cache (5 second TTL)
 const requestCache = new Map<string, { data: any; timestamp: number }>();
@@ -29,6 +30,12 @@ export const apiClient = axios.create({
 // Request interceptor to add JWT token and handle caching
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    // Preview mode (F-103) never writes: only reads go out.
+    // Token refresh and sign-out are not writes to the store's data.
+    if (isPreviewMode() && !['get', 'head', 'options'].includes(config.method?.toLowerCase() ?? 'get') && !config.url?.includes('/api/auth/')) {
+      toast.error('Preview mode: changes are not saved.');
+      return Promise.reject(new axios.Cancel('Blocked in preview mode'));
+    }
     console.log('[API Interceptor] Request:', config.method?.toUpperCase(), config.url);
     const token = useAuthStore.getState().accessToken;
     if (token && config.headers) {

@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { LayoutGrid, List, Filter, Plus, Edit2, Eye, Trash2, ArrowUp, ArrowDown, Phone, Download, Upload } from 'lucide-react';
+import { Filter, Plus, Edit2, Eye, Trash2, ArrowUp, ArrowDown, Phone, Download, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { KanbanBoard } from '../components/kanban/KanbanBoard';
 import { SearchBar } from '../components/common/SearchBar';
 import { FilterPanel } from '../components/common/FilterPanel';
 import { Button } from '../components/ui/Button';
@@ -11,7 +10,6 @@ import { OrderForm } from '../components/forms/OrderForm';
 import { CallHistoryModal } from '../components/calls/CallHistoryModal';
 import { BulkImportModal } from '../components/orders/BulkImportModal';
 import { useOrdersStore } from '../stores/ordersStore';
-import { useAuthStore } from '../stores/authStore';
 import { usePermissions } from '../hooks/usePermissions';
 import { Order, OrderStatus } from '../types';
 import { ordersService } from '../services/orders.service';
@@ -20,7 +18,6 @@ import { formatCurrency } from '../utils/format';
 import { getSocket } from '../services/socket';
 import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 
-type ViewMode = 'kanban' | 'list';
 type SortField = 'id' | 'customerName' | 'totalAmount' | 'createdAt' | 'status';
 type SortDirection = 'asc' | 'desc';
 
@@ -54,9 +51,7 @@ const statusOptions: { value: OrderStatus; label: string }[] = [
 
 export const Orders: React.FC = () => {
   const navigate = useNavigate();
-  const { user, updatePreferences } = useAuthStore();
   const { can } = usePermissions();
-  const [viewMode, setViewMode] = useState<ViewMode>(user?.preferences?.ordersDefaultView || 'list');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
   const [selectedOrderForEdit, setSelectedOrderForEdit] = useState<Order | null>(null);
@@ -412,38 +407,6 @@ export const Orders: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-4 justify-between">
-          {/* View Toggle - Hidden by default. Uncomment to enable Kanban view toggle */}
-          {/* <div className="flex items-center bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => {
-                setViewMode('kanban');
-                updatePreferences({ ordersDefaultView: 'kanban' }).catch(console.error);
-              }}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors ${
-                viewMode === 'kanban'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <LayoutGrid className="w-4 h-4" />
-              <span className="text-sm font-medium">Kanban</span>
-            </button>
-            <button
-              onClick={() => {
-                setViewMode('list');
-                updatePreferences({ ordersDefaultView: 'list' }).catch(console.error);
-              }}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <List className="w-4 h-4" />
-              <span className="text-sm font-medium">List</span>
-            </button>
-          </div> */}
-
           <div className="flex items-center gap-3 flex-1">
             <div className="flex-1 max-w-md onboarding-search-bar">
               <SearchBar onSearch={handleSearch} placeholder="Search orders..." />
@@ -459,7 +422,7 @@ export const Orders: React.FC = () => {
       </div>
 
       {/* Bulk Actions Bar */}
-      {selectedOrderIds.size > 0 && viewMode === 'list' && (
+      {selectedOrderIds.size > 0 && (
         <div className="flex-shrink-0 bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-blue-900">
@@ -498,223 +461,217 @@ export const Orders: React.FC = () => {
 
       {/* View Content - Only this section scrolls */}
       <div className="flex-1 min-h-0">
-        {viewMode === 'kanban' ? (
-          <div className="h-full overflow-x-auto overflow-y-hidden">
-            <KanbanBoard />
-          </div>
-        ) : (
-          <div className="h-full overflow-auto">
-            <div className="bg-white rounded-lg shadow onboarding-orders-table">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50 onboarding-orders-table-header">
+        <div className="h-full overflow-auto">
+          <div className="bg-white rounded-lg shadow onboarding-orders-table">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50 onboarding-orders-table-header">
+                  <tr>
+                    <ResizableHeader
+                      columnKey="checkbox"
+                      className="px-4 py-3 text-left sticky top-0 bg-gray-50 z-10"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedOrderIds.size === sortedOrders.length && sortedOrders.length > 0}
+                        onChange={(e) => handleSelectAll(e.target.checked)}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </ResizableHeader>
+                    <ResizableHeader
+                      columnKey="id"
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort('id')}
+                    >
+                      Order ID <SortIcon field="id" />
+                    </ResizableHeader>
+                    <ResizableHeader
+                      columnKey="customerName"
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort('customerName')}
+                    >
+                      Customer <SortIcon field="customerName" />
+                    </ResizableHeader>
+                    <ResizableHeader
+                      columnKey="phone"
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10"
+                    >
+                      Phone
+                    </ResizableHeader>
+                    <ResizableHeader
+                      columnKey="altPhone"
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10"
+                    >
+                      Alt. Phone
+                    </ResizableHeader>
+                    <ResizableHeader
+                      columnKey="address"
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10"
+                    >
+                      Address
+                    </ResizableHeader>
+                    <ResizableHeader
+                      columnKey="products"
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10"
+                    >
+                      Products
+                    </ResizableHeader>
+                    <ResizableHeader
+                      columnKey="amount"
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort('totalAmount')}
+                    >
+                      Amount <SortIcon field="totalAmount" />
+                    </ResizableHeader>
+                    <ResizableHeader
+                      columnKey="status"
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort('status')}
+                    >
+                      Status <SortIcon field="status" />
+                    </ResizableHeader>
+                    <ResizableHeader
+                      columnKey="date"
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort('createdAt')}
+                    >
+                      Date <SortIcon field="createdAt" />
+                    </ResizableHeader>
+                    <ResizableHeader
+                      columnKey="actions"
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10"
+                    >
+                      Actions
+                    </ResizableHeader>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {sortedOrders.length === 0 ? (
                     <tr>
-                      <ResizableHeader
-                        columnKey="checkbox"
-                        className="px-4 py-3 text-left sticky top-0 bg-gray-50 z-10"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedOrderIds.size === sortedOrders.length && sortedOrders.length > 0}
-                          onChange={(e) => handleSelectAll(e.target.checked)}
-                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                      </ResizableHeader>
-                      <ResizableHeader
-                        columnKey="id"
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100"
-                        onClick={() => handleSort('id')}
-                      >
-                        Order ID <SortIcon field="id" />
-                      </ResizableHeader>
-                      <ResizableHeader
-                        columnKey="customerName"
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100"
-                        onClick={() => handleSort('customerName')}
-                      >
-                        Customer <SortIcon field="customerName" />
-                      </ResizableHeader>
-                      <ResizableHeader
-                        columnKey="phone"
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10"
-                      >
-                        Phone
-                      </ResizableHeader>
-                      <ResizableHeader
-                        columnKey="altPhone"
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10"
-                      >
-                        Alt. Phone
-                      </ResizableHeader>
-                      <ResizableHeader
-                        columnKey="address"
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10"
-                      >
-                        Address
-                      </ResizableHeader>
-                      <ResizableHeader
-                        columnKey="products"
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10"
-                      >
-                        Products
-                      </ResizableHeader>
-                      <ResizableHeader
-                        columnKey="amount"
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100"
-                        onClick={() => handleSort('totalAmount')}
-                      >
-                        Amount <SortIcon field="totalAmount" />
-                      </ResizableHeader>
-                      <ResizableHeader
-                        columnKey="status"
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100"
-                        onClick={() => handleSort('status')}
-                      >
-                        Status <SortIcon field="status" />
-                      </ResizableHeader>
-                      <ResizableHeader
-                        columnKey="date"
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100"
-                        onClick={() => handleSort('createdAt')}
-                      >
-                        Date <SortIcon field="createdAt" />
-                      </ResizableHeader>
-                      <ResizableHeader
-                        columnKey="actions"
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10"
-                      >
-                        Actions
-                      </ResizableHeader>
+                      <td colSpan={11} className="px-6 py-12 text-center text-gray-500">
+                        No orders found. Create your first order to get started.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {sortedOrders.length === 0 ? (
-                      <tr>
-                        <td colSpan={11} className="px-6 py-12 text-center text-gray-500">
-                          No orders found. Create your first order to get started.
+                  ) : (
+                    sortedOrders.map((order) => (
+                      <tr key={order.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 whitespace-nowrap" style={{ width: columnWidths.checkbox, minWidth: columnWidths.checkbox, maxWidth: columnWidths.checkbox }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedOrderIds.has(order.id)}
+                            onChange={(e) => handleSelectOrder(order.id, e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900" style={{ width: columnWidths.id, minWidth: columnWidths.id, maxWidth: columnWidths.id }}>
+                          {order.id}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900" style={{ width: columnWidths.customerName, minWidth: columnWidths.customerName, maxWidth: columnWidths.customerName }}>
+                          <div className="truncate" title={order.customerName}>
+                            {order.customerName}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600" style={{ width: columnWidths.phone, minWidth: columnWidths.phone, maxWidth: columnWidths.phone }}>
+                          {order.customerPhone || '—'}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600" style={{ width: columnWidths.altPhone, minWidth: columnWidths.altPhone, maxWidth: columnWidths.altPhone }}>
+                          {order.shippingAddress?.phone && order.shippingAddress.phone !== order.customerPhone
+                            ? order.shippingAddress.phone
+                            : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600" style={{ width: columnWidths.address, minWidth: columnWidths.address, maxWidth: columnWidths.address }}>
+                          <div className="truncate">
+                            {order.shippingAddress
+                              ? `${order.shippingAddress.street}, ${order.shippingAddress.state}`
+                              : '—'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600" style={{ width: columnWidths.products, minWidth: columnWidths.products, maxWidth: columnWidths.products }}>
+                          <div className="truncate">
+                            {order.items.map(item => {
+                              // Show upsell name from metadata for upsell items
+                              if (item.itemType === 'upsell' && item.metadata?.upsellName) {
+                                return item.metadata.upsellName;
+                              }
+                              return item.productName;
+                            }).join(', ')}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {order.items.length} item{order.items.length > 1 ? 's' : ''}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900" style={{ width: columnWidths.amount, minWidth: columnWidths.amount, maxWidth: columnWidths.amount }}>
+                          {formatCurrency(order.totalAmount)}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap" style={{ width: columnWidths.status, minWidth: columnWidths.status, maxWidth: columnWidths.status }}>
+                          <select
+                            value={order.status}
+                            onChange={(e) => handleStatusChange(order.id, e.target.value as OrderStatus)}
+                            className={`onboarding-status-dropdown w-full px-2 py-1.5 text-xs font-medium rounded-md border-0 focus:ring-2 focus:ring-blue-500 ${statusColors[order.status]}`}
+                          >
+                            {statusOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500" style={{ width: columnWidths.date, minWidth: columnWidths.date, maxWidth: columnWidths.date }}>
+                          {new Date(order.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500" style={{ width: columnWidths.actions, minWidth: columnWidths.actions, maxWidth: columnWidths.actions }}>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleViewOrder(order.id)}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="View Details"
+                            >
+                              <Eye className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={() => handleEditOrder(order)}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="Edit Order"
+                            >
+                              <Edit2 className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={() => handleLogCall(order)}
+                              className="text-green-600 hover:text-green-800"
+                              title="Log Call"
+                            >
+                              <Phone className="w-5 h-5" />
+                            </button>
+                            {can('orders', 'delete') && (
+                              <button
+                                onClick={() => handleDeleteOrder(order)}
+                                className="text-red-600 hover:text-red-800"
+                                title="Delete Order"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
-                    ) : (
-                      sortedOrders.map((order) => (
-                        <tr key={order.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 whitespace-nowrap" style={{ width: columnWidths.checkbox, minWidth: columnWidths.checkbox, maxWidth: columnWidths.checkbox }}>
-                            <input
-                              type="checkbox"
-                              checked={selectedOrderIds.has(order.id)}
-                              onChange={(e) => handleSelectOrder(order.id, e.target.checked)}
-                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900" style={{ width: columnWidths.id, minWidth: columnWidths.id, maxWidth: columnWidths.id }}>
-                            {order.id}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900" style={{ width: columnWidths.customerName, minWidth: columnWidths.customerName, maxWidth: columnWidths.customerName }}>
-                            <div className="truncate" title={order.customerName}>
-                              {order.customerName}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600" style={{ width: columnWidths.phone, minWidth: columnWidths.phone, maxWidth: columnWidths.phone }}>
-                            {order.customerPhone || '—'}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600" style={{ width: columnWidths.altPhone, minWidth: columnWidths.altPhone, maxWidth: columnWidths.altPhone }}>
-                            {order.shippingAddress?.phone && order.shippingAddress.phone !== order.customerPhone
-                              ? order.shippingAddress.phone
-                              : '—'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600" style={{ width: columnWidths.address, minWidth: columnWidths.address, maxWidth: columnWidths.address }}>
-                            <div className="truncate">
-                              {order.shippingAddress
-                                ? `${order.shippingAddress.street}, ${order.shippingAddress.state}`
-                                : '—'}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600" style={{ width: columnWidths.products, minWidth: columnWidths.products, maxWidth: columnWidths.products }}>
-                            <div className="truncate">
-                              {order.items.map(item => {
-                                // Show upsell name from metadata for upsell items
-                                if (item.itemType === 'upsell' && item.metadata?.upsellName) {
-                                  return item.metadata.upsellName;
-                                }
-                                return item.productName;
-                              }).join(', ')}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {order.items.length} item{order.items.length > 1 ? 's' : ''}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900" style={{ width: columnWidths.amount, minWidth: columnWidths.amount, maxWidth: columnWidths.amount }}>
-                            {formatCurrency(order.totalAmount)}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap" style={{ width: columnWidths.status, minWidth: columnWidths.status, maxWidth: columnWidths.status }}>
-                            <select
-                              value={order.status}
-                              onChange={(e) => handleStatusChange(order.id, e.target.value as OrderStatus)}
-                              className={`onboarding-status-dropdown w-full px-2 py-1.5 text-xs font-medium rounded-md border-0 focus:ring-2 focus:ring-blue-500 ${statusColors[order.status]}`}
-                            >
-                              {statusOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500" style={{ width: columnWidths.date, minWidth: columnWidths.date, maxWidth: columnWidths.date }}>
-                            {new Date(order.createdAt).toLocaleDateString()}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500" style={{ width: columnWidths.actions, minWidth: columnWidths.actions, maxWidth: columnWidths.actions }}>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleViewOrder(order.id)}
-                                className="text-blue-600 hover:text-blue-800"
-                                title="View Details"
-                              >
-                                <Eye className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={() => handleEditOrder(order)}
-                                className="text-blue-600 hover:text-blue-800"
-                                title="Edit Order"
-                              >
-                                <Edit2 className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={() => handleLogCall(order)}
-                                className="text-green-600 hover:text-green-800"
-                                title="Log Call"
-                              >
-                                <Phone className="w-5 h-5" />
-                              </button>
-                              {can('orders', 'delete') && (
-                                <button
-                                  onClick={() => handleDeleteOrder(order)}
-                                  className="text-red-600 hover:text-red-800"
-                                  title="Delete Order"
-                                >
-                                  <Trash2 className="w-5 h-5" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {pagination.pages > 0 && (
-                <Pagination
-                  currentPage={pagination.page}
-                  totalPages={pagination.pages}
-                  onPageChange={setPage}
-                  pageSize={pagination.limit}
-                  pageSizeOptions={[25, 50, 75, 100]}
-                  onPageSizeChange={setPageSize}
-                  totalItems={pagination.total}
-                />
-              )}
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
+            {pagination.pages > 0 && (
+              <Pagination
+                currentPage={pagination.page}
+                totalPages={pagination.pages}
+                onPageChange={setPage}
+                pageSize={pagination.limit}
+                pageSizeOptions={[25, 50, 75, 100]}
+                onPageSizeChange={setPageSize}
+                totalItems={pagination.total}
+              />
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       <FilterPanel isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} />
