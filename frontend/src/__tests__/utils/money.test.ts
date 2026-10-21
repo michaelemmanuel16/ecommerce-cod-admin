@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { parseMoney, normalizeMoney } from '../../utils/money';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatConverted, getStoreCurrency } from '../../utils/format';
 import { useConfigStore } from '../../stores/configStore';
 
 describe('parseMoney', () => {
@@ -52,5 +52,34 @@ describe('formatCurrency', () => {
   it('renders null as zero, not NaN', () => {
     expect(formatCurrency(null, 'USD')).toBe('$0.00');
     expect(formatCurrency(undefined, 'USD')).toBe('$0.00');
+  });
+});
+
+describe('one money formatter (M3-T31)', () => {
+  beforeEach(() => useConfigStore.setState({ currency: 'GHS' }));
+
+  it('formats in the store currency, and follows a change at once', () => {
+    expect(formatCurrency(249)).toBe('GH₵249.00');
+    useConfigStore.setState({ currency: 'NGN' });
+    expect(formatCurrency('8530000')).toBe('₦8,530,000.00');
+    expect(getStoreCurrency()).toBe('NGN');
+  });
+  it('formats two currencies side by side', () => {
+    expect(formatCurrency(1234.5, 'GHS')).toBe('GH₵1,234.50');
+    expect(formatCurrency(1234.5, 'NGN')).toBe('₦1,234.50');
+  });
+  it('does not throw on an unknown or malformed currency code', () => {
+    // Intl puts a no-break space after a bare code
+    expect(formatCurrency(1234.5, 'XYZ').replace(/\u00a0/g, ' ')).toBe('XYZ 1,234.50');
+    expect(formatCurrency(1234.5, 'not-a-code')).toBe('not-a-code 1,234.50');
+  });
+  it('converts a foreign amount at the day rate and shows the rate used', () => {
+    expect(formatConverted(11200, 'NGN', 112)).toEqual({ text: 'GH₵100.00', rateText: '₦112 = GH₵1' });
+    expect(formatConverted('8530000', 'NGN', 112).text).toBe('GH₵76,160.71');
+  });
+  it('leaves a foreign amount unconverted when there is no rate, and a store-currency amount alone', () => {
+    expect(formatConverted(11200, 'NGN', null)).toEqual({ text: '₦11,200.00', rateText: '' });
+    expect(formatConverted(11200, 'NGN', 0)).toEqual({ text: '₦11,200.00', rateText: '' });
+    expect(formatConverted(50, 'GHS', 112)).toEqual({ text: 'GH₵50.00', rateText: '' });
   });
 });

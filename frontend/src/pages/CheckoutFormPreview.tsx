@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { CheckoutForm } from '../components/public/CheckoutForm';
 import { PublicCheckoutForm } from '../services/public-orders.service';
 import { checkoutFormsService } from '../services/checkout-forms.service';
+import { getStoreCurrency } from '../utils/format';
 
 type PreviewMessage = {
   type: 'checkout-preview-update';
@@ -25,7 +26,7 @@ const EMPTY_PREVIEW_BASE: Omit<PublicCheckoutForm, 'isActive' | 'createdAt' | 'u
   packages: [],
   upsells: [],
   country: 'GH',
-  currency: 'GHS',
+  currency: '',
   regions: {},
 };
 
@@ -50,7 +51,7 @@ export const CheckoutFormPreview: React.FC = () => {
     // Create mode: no saved form to fetch — render the streamed draft over a
     // minimal base.
     if (isCreateMode) {
-      setBaseForm(EMPTY_PREVIEW_BASE as PublicCheckoutForm);
+      setBaseForm({ ...EMPTY_PREVIEW_BASE, currency: getStoreCurrency() } as PublicCheckoutForm);
       setIsLoading(false);
       return;
     }

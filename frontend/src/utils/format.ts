@@ -1,18 +1,50 @@
 import { format, formatDistance, formatRelative } from 'date-fns';
 import { useConfigStore } from '../stores/configStore';
 import { parseMoney } from './money';
+import { getCurrencySymbol } from './countries';
 
+/** The store currency from config (F-100, O5). 'USD' until the config loads. */
+export const getStoreCurrency = (): string => useConfigStore.getState().currency || 'USD';
+
+/**
+ * The one money formatter. Amount in the store currency by default; pass `currency` for a record that has its own.
+ * An unknown or malformed code never throws: it shows "XYZ 1,234.50".
+ */
 export const formatCurrency = (amount: string | number | null | undefined, currency?: string): string => {
-  const globalCurrency = useConfigStore.getState().currency;
-  const targetCurrency = currency || globalCurrency || 'USD';
+  const targetCurrency = currency || getStoreCurrency();
+  const value = parseMoney(amount);
 
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: targetCurrency,
-    // narrowSymbol renders the local glyph (GH₵5,680.00) instead of the ISO
-    // code prefix (GHS 5,680.00) that 'symbol' falls back to for GHS/NGN.
-    currencyDisplay: 'narrowSymbol',
-  }).format(parseMoney(amount));
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: targetCurrency,
+      // narrowSymbol renders the local glyph (GH₵5,680.00) instead of the ISO
+      // code prefix (GHS 5,680.00) that 'symbol' falls back to for GHS/NGN.
+      currencyDisplay: 'narrowSymbol',
+    }).format(value);
+  } catch {
+    return `${targetCurrency} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`;
+  }
+};
+
+/** "₦112 = GH₵1": the rate used, `rate` = units of `foreign` for 1 unit of the store currency on that day. */
+export const formatRateUsed = (foreign: string, rate: number, store: string = getStoreCurrency()): string =>
+  `${getCurrencySymbol(foreign)}${new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(rate)} = ${getCurrencySymbol(store)}1`;
+
+/**
+ * An amount in another currency (for example Meta ad spend in NGN) shown in the store currency at that day's rate.
+ * `text` is the converted amount; `rateText` is the rate used, for the page to show next to it ("₦112 = GH₵1").
+ * Without a usable rate the amount stays in its own currency and `rateText` is empty, so nothing is converted on a guess.
+ */
+export const formatConverted = (
+  amount: string | number | null | undefined,
+  foreign: string,
+  rate: number | null | undefined,
+  store: string = getStoreCurrency(),
+): { text: string; rateText: string } => {
+  if (foreign === store) return { text: formatCurrency(amount, store), rateText: '' };
+  if (!rate || !Number.isFinite(rate) || rate <= 0) return { text: formatCurrency(amount, foreign), rateText: '' };
+  return { text: formatCurrency(parseMoney(amount) / rate, store), rateText: formatRateUsed(foreign, rate, store) };
 };
 
 export const formatNumber = (value: number): string => {

@@ -9,6 +9,7 @@ import { Select } from '../components/ui/Select';
 import { Pagination } from '../components/ui/Pagination';
 import { usePlatformStore } from '../stores/platformStore';
 import { platformPath } from '../utils/platformDomain';
+import { getStoreCurrency } from '../utils/format';
 
 const PLAN_OPTIONS = [
   { value: '', label: 'All Plans' },
@@ -56,7 +57,7 @@ export const PlatformTenants: React.FC = () => {
     slug: '',
     planName: '',
     region: '',
-    currency: 'GHS',
+    currency: getStoreCurrency(),
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -102,10 +103,10 @@ export const PlatformTenants: React.FC = () => {
         slug: form.slug,
         planName: form.planName || undefined,
         region: form.region || undefined,
-        currency: form.currency || 'GHS',
+        currency: form.currency || getStoreCurrency(),
       });
       setShowCreate(false);
-      setForm({ name: '', slug: '', planName: '', region: '', currency: 'GHS' });
+      setForm({ name: '', slug: '', planName: '', region: '', currency: getStoreCurrency() });
       load(1);
     } finally {
       setSubmitting(false);
@@ -277,7 +278,7 @@ export const PlatformTenants: React.FC = () => {
             label="Currency"
             value={form.currency}
             onChange={(e) => setForm({ ...form, currency: e.target.value })}
-            placeholder="GHS"
+            placeholder="Currency code"
           />
           <div className="flex justify-end gap-3 pt-2">
             <button
