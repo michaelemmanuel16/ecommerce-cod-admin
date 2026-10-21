@@ -5,6 +5,7 @@ import App from './App';
 import './index.css';
 import './styles/tokens.css';
 import './styles/components.css';
+import './styles/shell.css';
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({

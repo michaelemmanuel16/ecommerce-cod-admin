@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Layout } from './components/layout/Layout';
+import { Shell } from './components/shell/Shell';
 import { Toast } from './components/ui/Toast';
 import { Loading } from './components/ui/Loading';
 import { UpdatePrompt } from './components/pwa/UpdatePrompt';
@@ -272,7 +272,7 @@ function App() {
               element={
                 <ProtectedRoute>
                   <MobileRedirect>
-                    <Layout />
+                    <Shell />
                   </MobileRedirect>
                 </ProtectedRoute>
               }
@@ -305,9 +305,10 @@ function App() {
               <Route path="customer-reps" element={
                 <Suspense fallback={<Loading />}><CustomerReps /></Suspense>
               } />
-              <Route path="financial" element={
+              <Route path="finance" element={
                 <Suspense fallback={<Loading />}><Financial /></Suspense>
               } />
+              <Route path="financial" element={<Navigate to="/finance" replace />} />
               <Route path="analytics" element={
                 <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'accountant']}>
                   <Suspense fallback={<Loading />}><Analytics /></Suspense>

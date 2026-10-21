@@ -1,48 +1,62 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { platformService, Announcement } from '../../services/platform.service';
+import { platformService, type Announcement } from '../../services/platform.service';
 
-const typeStyles: Record<string, string> = {
-  info: 'bg-blue-50 text-blue-800 border-blue-200',
-  warning: 'bg-yellow-50 text-yellow-800 border-yellow-200',
-  maintenance: 'bg-red-50 text-red-800 border-red-200',
-};
+// Platform announcement (F-108): info, warning or maintenance. Dismissed for the session.
+const DISMISSED_KEY = 'dismissed-announcements';
 
-export const AnnouncementBanner: React.FC = () => {
+function readDismissed(): string[] {
+  try {
+    return JSON.parse(sessionStorage.getItem(DISMISSED_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function writeDismissed(ids: string[]) {
+  try {
+    sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(ids));
+  } catch {
+    // not remembered; it shows again after reload
+  }
+}
+
+export function AnnouncementBanner() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   useEffect(() => {
-    const fetchAnnouncements = async () => {
+    const load = async () => {
       try {
         const { announcements } = await platformService.getActiveAnnouncements();
-        const dismissed = JSON.parse(sessionStorage.getItem('dismissed-announcements') || '[]');
-        setAnnouncements(announcements.filter(a => !dismissed.includes(a.id)));
-      } catch { /* silent — banner is non-critical */ }
+        const dismissed = readDismissed();
+        setAnnouncements(announcements.filter((a) => !dismissed.includes(a.id)));
+      } catch {
+        // the banner is not critical: no banner, no error toast
+      }
     };
 
-    fetchAnnouncements();
-    const interval = setInterval(fetchAnnouncements, 5 * 60 * 1000);
+    load();
+    const interval = setInterval(load, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
   const dismiss = (id: string) => {
-    const dismissed = JSON.parse(sessionStorage.getItem('dismissed-announcements') || '[]');
-    sessionStorage.setItem('dismissed-announcements', JSON.stringify([...dismissed, id]));
-    setAnnouncements(prev => prev.filter(a => a.id !== id));
+    writeDismissed([...readDismissed(), id]);
+    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
   };
 
   if (announcements.length === 0) return null;
 
   return (
-    <div className="space-y-1">
-      {announcements.map(a => (
-        <div key={a.id} className={`flex items-center justify-between px-4 py-2 border rounded-lg text-sm ${typeStyles[a.type] || typeStyles.info}`}>
-          <span><strong>{a.title}</strong> — {a.body}</span>
-          <button onClick={() => dismiss(a.id)} className="ml-4 p-1 hover:opacity-70">
-            <X className="w-4 h-4" />
+    <>
+      {announcements.map((a) => (
+        <div key={a.id} className={`banner ${a.type}`} role="status">
+          <span><b>{a.title}</b> {a.body}</span>
+          <button type="button" className="ibtn sm" onClick={() => dismiss(a.id)} aria-label="Dismiss announcement">
+            <X />
           </button>
         </div>
       ))}
-    </div>
+    </>
   );
-};
+}

@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 export const SCANNED = [
   'src/components/ui-v2',
   'src/styles/components.css',
+  'src/styles/shell.css',
+  'src/components/shell',
   // later tasks: 'src/pages/v2', ...
 ];
 

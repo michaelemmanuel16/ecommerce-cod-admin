@@ -1,44 +1,39 @@
-import React, { useEffect, useState } from 'react';
-import { useAuthStore } from '../../stores/authStore';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { billingService } from '../../services/billing.service';
+import { Button } from '../ui-v2';
 
 /**
- * Persistent app-level nudge (MAN-61) for tenants that registered but never
- * finished paying (subscriptionStatus='pending'). Recovers abandoned Paystack
- * checkouts. Clears once the subscription flips to active. No hard lockout — that
- * is the enforcement sibling.
+ * Plan banner (F-108, MAN-61). Shows for the owner only, when the subscription is `pending` (registered, never
+ * paid: recovers abandoned Paystack checkouts) or `past_due`. No hard lockout.
  */
-export const PendingPlanBanner: React.FC = () => {
-  const { user, isAuthenticated } = useAuthStore();
-  const [planName, setPlanName] = useState<string | null>(null);
-  const [planLabel, setPlanLabel] = useState<string>('your plan');
-  const [enabled, setEnabled] = useState(false);
+export function PlanBanner() {
+  const [plan, setPlan] = useState<{ name: string; label: string; status: 'pending' | 'past_due'; paystack: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
     let active = true;
     billingService
       .getSubscription()
       .then((s) => {
-        if (!active) return;
-        if (s.subscriptionStatus === 'pending' && s.plan) {
-          setPlanName(s.plan.name);
-          setPlanLabel(s.plan.displayName);
-          setEnabled(s.billingEnabled !== false);
+        if (!active || !s.plan) return;
+        if (s.subscriptionStatus === 'pending' || s.subscriptionStatus === 'past_due') {
+          setPlan({ name: s.plan.name, label: s.plan.displayName, status: s.subscriptionStatus, paystack: s.billingEnabled !== false });
         }
       })
-      .catch(() => {/* banner is best-effort; never block the app */});
+      .catch(() => {
+        // best effort; never block the app
+      });
     return () => { active = false; };
-  }, [isAuthenticated]);
+  }, []);
 
-  if (!planName) return null;
+  if (!plan) return null;
 
   const resume = async () => {
-    if (!enabled || user?.role !== 'super_admin') return;
+    if (!plan.paystack) return;
     setBusy(true);
     try {
-      const { authorizationUrl } = await billingService.startSubscription(planName);
+      const { authorizationUrl } = await billingService.startSubscription(plan.name);
       window.location.href = authorizationUrl;
     } catch {
       setBusy(false);
@@ -46,19 +41,19 @@ export const PendingPlanBanner: React.FC = () => {
   };
 
   return (
-    <div className="mb-4 rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <p className="text-sm text-primary-900">
-        <strong>Finish setting up</strong> — complete payment to activate {planLabel}.
-      </p>
-      {user?.role === 'super_admin' && enabled && (
-        <button
-          onClick={resume}
-          disabled={busy}
-          className="self-start sm:self-auto min-h-[40px] px-4 rounded-lg bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-60"
-        >
+    <div className="banner plan" role="status">
+      {plan.status === 'pending' ? (
+        <span><b>Finish setting up.</b> Complete payment to activate {plan.label}.</span>
+      ) : (
+        <span><b>Your last payment did not go through.</b> Update billing to keep {plan.label}.</span>
+      )}
+      {plan.status === 'pending' && plan.paystack ? (
+        <Button size="mini" variant="primary" onClick={resume} disabled={busy}>
           {busy ? 'Redirecting to Paystack…' : 'Resume payment'}
-        </button>
+        </Button>
+      ) : (
+        <Link className="mini pri" to="/settings?tab=billing">Open billing</Link>
       )}
     </div>
   );
-};
+}
