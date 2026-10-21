@@ -7,10 +7,10 @@ import request from 'supertest';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
 import app from '../../server';
-import { prismaBase } from '../../utils/prisma';
+import prisma, { prismaBase } from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
-import { clearSystemUserIdCache, getSystemUserId, SYSTEM_USER_PASSWORD } from '../../services/systemUserService';
+import { clearSystemUserIdCache, ensureSystemUser, getSystemUserId, isReservedSystemEmail, SYSTEM_EMAIL_DOMAIN, SYSTEM_USER_PASSWORD } from '../../services/systemUserService';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { adminService } from '../../services/adminService';
 
@@ -65,6 +65,63 @@ describe('per-tenant system user', () => {
     clearSystemUserIdCache();
     const id = await getSystemUserId(pair.b.id);
     expect((await prismaBase.user.findUniqueOrThrow({ where: { id } })).tenantId).toBe(pair.b.id);
+  });
+});
+
+describe('reserved system email', () => {
+  const reserved = (tenantId: string) => `system+${tenantId}@${SYSTEM_EMAIL_DOMAIN}`;
+  const normal = (tenantId: string, email: string) => ({
+    email, password: 'x', firstName: 'N', lastName: 'U', role: 'admin' as const, tenantId,
+  });
+
+  it('isReservedSystemEmail matches the domain, case-insensitively, and ignores other input', () => {
+    expect(isReservedSystemEmail(`  System+X@${SYSTEM_EMAIL_DOMAIN.toUpperCase()} `)).toBe(true);
+    expect(isReservedSystemEmail('a@example.com')).toBe(false);
+    expect(isReservedSystemEmail(undefined)).toBe(false);
+  });
+
+  it('refuses to create a normal user with a reserved email', async () => {
+    await expect(runInTenant(pair.a.id, () =>
+      prisma.user.create({ data: normal(pair.a.id, reserved(pair.a.id).toUpperCase()) })
+    )).rejects.toMatchObject({ statusCode: 400 });
+    await expect(runInTenant(pair.a.id, () =>
+      prisma.user.createMany({ data: [normal(pair.a.id, reserved(pair.a.id))] })
+    )).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it('refuses to update a normal user email to a reserved email', async () => {
+    const userId = pair.a.users.salesRep.id;
+    const before = await prismaBase.user.findUniqueOrThrow({ where: { id: userId } });
+    await expect(runInTenant(pair.a.id, () =>
+      prisma.user.update({ where: { id: userId }, data: { email: reserved(pair.a.id) } })
+    )).rejects.toMatchObject({ statusCode: 400 });
+    await expect(runInTenant(pair.a.id, () =>
+      prisma.user.updateMany({ where: { id: userId }, data: { email: { set: reserved(pair.a.id) } } })
+    )).rejects.toMatchObject({ statusCode: 400 });
+    expect((await prismaBase.user.findUniqueOrThrow({ where: { id: userId } })).email).toBe(before.email);
+  });
+
+  it('ensureSystemUser still creates the system user after it was deleted', async () => {
+    await prismaBase.user.deleteMany({ where: { tenantId: pair.a.id, kind: 'system' } });
+    clearSystemUserIdCache();
+    const result = await ensureSystemUser(pair.a.id);
+    expect(result.created).toBe(true);
+    expect((await prismaBase.user.findUniqueOrThrow({ where: { id: result.id } })).email).toBe(reserved(pair.a.id));
+  });
+
+  it('ensureSystemUser names the holder when a normal user already has the email', async () => {
+    await prismaBase.user.deleteMany({ where: { tenantId: pair.b.id, kind: 'system' } });
+    clearSystemUserIdCache();
+    // written through the un-extended client to simulate a row that predates the guard
+    const squatter = await prismaBase.user.create({ data: normal(pair.b.id, reserved(pair.b.id)) });
+    try {
+      await expect(ensureSystemUser(pair.b.id)).rejects.toThrow(
+        `system user email for tenant ${pair.b.id} is held by user id ${squatter.id} (kind ${squatter.kind})`
+      );
+    } finally {
+      await prismaBase.user.delete({ where: { id: squatter.id } });
+      clearSystemUserIdCache();
+    }
   });
 });
 

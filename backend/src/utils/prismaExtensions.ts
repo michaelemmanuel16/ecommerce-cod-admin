@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { AsyncLocalStorage } from 'async_hooks';
+import { AppError } from '../middleware/errorHandler';
+import { isReservedSystemEmail } from './systemEmail';
 import { getTenantId, isUnscoped, TenantContextMissing } from './tenantContext';
 
 // Models that carry a tenantId column and need automatic scoping
@@ -97,6 +99,42 @@ export const tenantIsolationExtension = Prisma.defineExtension({
         }
         return query(args);
       },
+    },
+  },
+});
+
+// A written scalar may be a plain value or a Prisma `{ set: value }` update.
+const written = (v: any) => (v && typeof v === 'object' && 'set' in v ? v.set : v);
+
+/**
+ * The reserved system email domain belongs to kind = system users only. A normal user on
+ * `system+<tenant>@...` would block ensureSystemUser (email is unique) and break GL postings.
+ * On update, `kind` is not in data for normal edits, so a reserved email is refused outright.
+ */
+function guardReservedEmail(row: any, operation: string) {
+  const email = written(row?.email);
+  if (email === undefined || !isReservedSystemEmail(email)) return;
+  const isCreate = operation === 'create' || operation === 'createMany';
+  if (written(row?.kind) === 'system' && isCreate) return;
+  throw new AppError('This email address is reserved for system use', 400, 'RESERVED_EMAIL');
+}
+
+const guardUser = (operation: string, pick: (args: any) => any[]) =>
+  async ({ args, query }: { args: any; query: (a: any) => Promise<any> }) => {
+    pick(args).forEach((row) => guardReservedEmail(row, operation));
+    return query(args);
+  };
+
+/** Refuses the reserved system email on user writes unless a system user is being created. */
+export const reservedEmailExtension = Prisma.defineExtension({
+  name: 'reservedEmail',
+  query: {
+    user: {
+      create: guardUser('create', (a) => [a.data]),
+      createMany: guardUser('createMany', (a) => (Array.isArray(a.data) ? a.data : [a.data])),
+      update: guardUser('update', (a) => [a.data]),
+      updateMany: guardUser('updateMany', (a) => [a.data]),
+      upsert: guardUser('upsert', (a) => [a.create, { ...a.update, kind: undefined }]),
     },
   },
 });

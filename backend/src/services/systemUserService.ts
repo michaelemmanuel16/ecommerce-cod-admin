@@ -2,6 +2,10 @@ import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { withSoftDeleted } from '../utils/prismaExtensions';
+import { SYSTEM_EMAIL_DOMAIN, isReservedSystemEmail } from '../utils/systemEmail';
+import logger from '../utils/logger';
+
+export { SYSTEM_EMAIL_DOMAIN, isReservedSystemEmail };
 
 /**
  * M2-T03: each tenant has one system user (kind = system). Background jobs and
@@ -12,6 +16,8 @@ export const SYSTEM_USER_PASSWORD = '!';
 
 /** Filter for staff lists and recipient queries: the per-tenant system user is not a person. */
 export const HUMAN_USERS_WHERE = { kind: { not: 'system' } } satisfies Prisma.UserWhereInput;
+
+const systemUserEmail = (tenantId: string) => `system+${tenantId}@${SYSTEM_EMAIL_DOMAIN}`;
 
 const systemUserIds = new Map<string, number>();
 
@@ -30,7 +36,7 @@ export async function ensureSystemUser(tenantId: string): Promise<{ id: number; 
   try {
     const user = await withoutTenant('system-user-ensure', () => prisma.user.create({
       data: {
-        email: `system+${tenantId}@system.codadmin.internal`,
+        email: systemUserEmail(tenantId),
         password: SYSTEM_USER_PASSWORD,
         firstName: 'System',
         lastName: 'User',
@@ -45,8 +51,14 @@ export async function ensureSystemUser(tenantId: string): Promise<{ id: number; 
     if (error?.code !== 'P2002') throw error;
     // a concurrent call made it first (email is unique)
     const raced = await find();
-    if (!raced) throw error;
-    return { id: raced.id, created: false };
+    if (raced) return { id: raced.id, created: false };
+    // The re-find missed, so another user holds the reserved email. Name the conflict; never continue silently.
+    const email = systemUserEmail(tenantId);
+    const holder = await withoutTenant('system-user-ensure', () => withSoftDeleted(() =>
+      prisma.user.findFirst({ where: { email }, select: { id: true, kind: true } })));
+    const message = `system user email for tenant ${tenantId} is held by user id ${holder?.id ?? 'unknown'} (kind ${holder?.kind ?? 'unknown'})`;
+    logger.error(message, { tenantId, holderId: holder?.id, holderKind: holder?.kind });
+    throw new Error(message);
   }
 }
 
