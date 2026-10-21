@@ -254,6 +254,9 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
   await seed('roleAssignment', prismaBase.roleAssignment.create({
     data: { tenantId, roleId: ownerRole.id, holderId: admin.id, fromDate: new Date() },
   }));
+  await seed('userSession', prismaBase.userSession.create({
+    data: { tenantId, userId: admin.id, tokenHash: `hash-${tag}`, deviceLabel: 'Chrome on macOS', ip: '127.0.0.1' },
+  }));
 
   // The MCP key acts as an ai_agent user. admin holds every cell the 14 tools need and the Legacy role lists all
   // 14 tools, so suites that call every tool work. A suite that tests a narrower key makes its own user, role and key.
@@ -320,6 +323,7 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.feeRule.deleteMany({ where: t }),
     db.fxRate.deleteMany({ where: t }),
     db.roleAssignment.deleteMany({ where: t }),
+    db.userSession.deleteMany({ where: t }),
   ]);
   await inSequence([
     db.order.deleteMany({ where: t }),
