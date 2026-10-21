@@ -1,5 +1,6 @@
 import prisma from '../utils/prisma';
 import { hasPermission } from '../middleware/auth';
+import { roleToolList } from '../config/defaultRoles';
 
 /**
  * M2-T04: the database lookups behind the tool access decision. They live here because tool files and the
@@ -22,7 +23,7 @@ export async function loadAccessFacts(actorId: number, roleId: number | null): P
   ]);
   return {
     baseRole: user?.role ?? null,
-    roleTools: roleId === null ? null : Array.isArray(role?.tools) ? (role!.tools as string[]) : [],
+    roleTools: roleId === null ? null : roleToolList(role?.tools),
   };
 }
 

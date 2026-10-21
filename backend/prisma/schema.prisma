@@ -1525,11 +1525,11 @@ model McpApiKey {
   expiresAt  DateTime? @map("expires_at")
   revokedAt  DateTime? @map("revoked_at")
   lastUsedAt DateTime? @map("last_used_at")
-  // M2-T01: nullable until M2-T13 gives every key an actor user and a role.
+  // Nullable only for keys made before every key had a user and a role; the API and validateKey require both.
   userId     Int?      @map("user_id")
   roleId     Int?      @map("role_id")
   user       User?     @relation("McpApiKeyUser", fields: [userId], references: [id], onDelete: SetNull)
-  role       Role?     @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  role       Role?     @relation(fields: [roleId], references: [id], onDelete: NoAction)
 
   @@index([tenantId])
   @@map("mcp_api_keys")

@@ -1,59 +1,110 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { OrderStatus } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { ToolName } from '../../config/toolPermissions';
 
-const SCHEMA_RESOURCES = {
+/**
+ * The schema resources an MCP client can read. They list only the models and fields the tools can return (not the
+ * whole database), and take each field's type and each enum's values from the Prisma DMMF, so they cannot drift
+ * from the schema. `checkExposedFields` fails the build's tests when a listed field is not in the schema.
+ */
+
+interface ExposedModel {
+  model: string;
+  description: string;
+  /** Tools that return rows of this model. */
+  tools: ToolName[];
+  /** Scalar and enum fields the tools return. */
+  fields: string[];
+  relationships?: string[];
+}
+
+export const EXPOSED_MODELS: Record<string, ExposedModel> = {
   orders: {
     model: 'Order',
-    description: 'COD orders with status tracking, delivery assignment, and financial info',
-    fields: [
-      { name: 'id', type: 'Int', description: 'Unique order ID' },
-      { name: 'status', type: 'OrderStatus', description: 'Current order status', enum: Object.values(OrderStatus) },
-      { name: 'totalAmount', type: 'Decimal', description: 'Total order amount' },
-      { name: 'deliveryFee', type: 'Decimal', description: 'Delivery fee' },
-      { name: 'deliveryArea', type: 'String', description: 'Delivery area/city' },
-      { name: 'deliveryAddress', type: 'String', description: 'Full delivery address' },
-      { name: 'notes', type: 'String?', description: 'Order notes' },
-      { name: 'createdAt', type: 'DateTime', description: 'When order was placed' },
-    ],
-    relationships: ['customer', 'orderItems', 'deliveryAgent', 'customerRep'],
-    statusFlow: 'pending_confirmation → confirmed → preparing → ready_for_pickup → out_for_delivery → delivered. Can branch to: cancelled, returned, failed_delivery',
+    description: 'COD orders with status tracking, delivery assignment and amounts',
+    tools: ['orders_search', 'orders_summary', 'orders_update_status', 'deliveries_active'],
+    fields: ['id', 'status', 'totalAmount', 'deliveryAddress', 'deliveryState', 'deliveryArea', 'createdAt'],
+    relationships: ['customer', 'orderItems', 'deliveryAgent'],
   },
   customers: {
     model: 'Customer',
-    description: 'Customer profiles with contact info and order history',
-    fields: [
-      { name: 'id', type: 'Int', description: 'Unique customer ID' },
-      { name: 'firstName', type: 'String', description: 'First name' },
-      { name: 'lastName', type: 'String', description: 'Last name' },
-      { name: 'phoneNumber', type: 'String', description: 'Phone number (unique per tenant)' },
-      { name: 'alternatePhone', type: 'String?', description: 'Alternate phone' },
-      { name: 'state', type: 'String', description: 'State/region' },
-      { name: 'area', type: 'String?', description: 'Area/neighborhood' },
-      { name: 'address', type: 'String?', description: 'Full address' },
-    ],
-    relationships: ['orders', 'messageLogs'],
+    description: 'Customer profiles with contact info',
+    tools: ['customers_lookup', 'orders_search', 'deliveries_active'],
+    fields: ['id', 'firstName', 'lastName', 'phoneNumber', 'alternatePhone', 'address', 'state', 'createdAt'],
+  },
+  products: {
+    model: 'Product',
+    description: 'Products with price and stock',
+    tools: ['products_inventory'],
+    fields: ['id', 'name', 'sku', 'price', 'stockQuantity', 'lowStockThreshold', 'isActive'],
   },
   agents: {
-    model: 'User (role=delivery_agent)',
-    description: 'Delivery agents who fulfill orders. Agents have balances, stock, and performance metrics.',
-    fields: [
-      { name: 'id', type: 'Int', description: 'User ID' },
-      { name: 'firstName', type: 'String', description: 'First name' },
-      { name: 'lastName', type: 'String', description: 'Last name' },
-      { name: 'phoneNumber', type: 'String?', description: 'Phone number' },
-      { name: 'role', type: 'String', description: 'Always delivery_agent' },
-      { name: 'isActive', type: 'Boolean', description: 'Whether agent is active' },
-    ],
-    relationships: ['assignedOrders', 'agentBalance', 'agentStocks'],
-    relatedModels: {
-      AgentBalance: 'Tracks cash in hand, total collected, total deposited',
-      AgentStock: 'Tracks product inventory assigned to the agent',
-    },
+    model: 'User',
+    description: 'Delivery agents and sales reps (users with role delivery_agent or sales_rep)',
+    tools: ['agents_status', 'agents_performance', 'reps_status', 'reps_performance'],
+    fields: ['id', 'firstName', 'lastName', 'phoneNumber'],
+  },
+  agentBalances: {
+    model: 'AgentBalance',
+    description: 'Cash a delivery agent holds: collected, deposited and still owed',
+    tools: ['agents_status', 'financial_summary'],
+    fields: ['agentId', 'currentBalance', 'totalCollected', 'totalDeposited'],
   },
 };
 
+const modelsOf = () => Prisma.dmmf.datamodel.models;
+
+/** The field of a model in the DMMF, or undefined when the model or the field does not exist. */
+function findField(models: readonly Prisma.DMMF.Model[], model: string, name: string) {
+  return models.find((m) => m.name === model)?.fields.find((f) => f.name === name);
+}
+
+/** Each listed field that is not a scalar or enum field of its model, as "Model.field". Empty when all are real. */
+export function checkExposedFields(
+  exposed: Record<string, Pick<ExposedModel, 'model' | 'fields'>> = EXPOSED_MODELS,
+  models: readonly Prisma.DMMF.Model[] = modelsOf(),
+): string[] {
+  const missing: string[] = [];
+  for (const { model, fields } of Object.values(exposed)) {
+    for (const name of fields) {
+      const kind = findField(models, model, name)?.kind;
+      if (kind !== 'scalar' && kind !== 'enum') missing.push(`${model}.${name}`);
+    }
+  }
+  return missing;
+}
+
+const bodies = new Map<string, ReturnType<typeof buildBody>>();
+
+function buildBody(key: string) {
+  const entry = EXPOSED_MODELS[key];
+  const models = modelsOf();
+  return {
+    model: entry.model,
+    description: entry.description,
+    returnedBy: entry.tools,
+    fields: entry.fields.flatMap((name) => {
+      const f = findField(models, entry.model, name);
+      if (!f) return []; // checkExposedFields fails a test before this can happen
+      const values = f.kind === 'enum' ? Prisma.dmmf.datamodel.enums.find((e) => e.name === f.type)?.values.map((v) => v.name) : undefined;
+      return [{ name, type: `${f.type}${f.isRequired ? '' : '?'}`, ...(values && { values }) }];
+    }),
+    ...(entry.relationships && { relationships: entry.relationships }),
+  };
+}
+
+/** The resource body for one entry: fields with their schema type, enum values where a field is an enum. Built on first use. */
+export function buildSchemaResource(key: string) {
+  let body = bodies.get(key);
+  if (!body) {
+    body = buildBody(key);
+    bodies.set(key, body);
+  }
+  return body;
+}
+
 export function registerResources(server: McpServer) {
-  for (const [key, schema] of Object.entries(SCHEMA_RESOURCES)) {
+  for (const key of Object.keys(EXPOSED_MODELS)) {
     server.resource(
       `schema-${key}`,
       `schema://${key}`,
@@ -62,7 +113,7 @@ export function registerResources(server: McpServer) {
         contents: [{
           uri: `schema://${key}`,
           mimeType: 'application/json',
-          text: JSON.stringify(schema, null, 2),
+          text: JSON.stringify(buildSchemaResource(key), null, 2),
         }],
       }),
     );

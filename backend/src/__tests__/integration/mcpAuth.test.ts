@@ -16,9 +16,9 @@ const T0 = new Date('2026-10-21T10:00:00Z').getTime();
 const FAKE_ONLY_DATE = ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame',
   'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] as const;
 
-/** A key for tenant A (or `tenantId`) with the given user: null for no user. */
-async function newKey(userId: number | null, tenantId = pair.a.id) {
-  const { key, keyId } = await makeMcpKey(tenantId, { slug: 'authtest', userId });
+/** A key for tenant A (or `tenantId`) with the given user (null for no user) and the Legacy role (`roleName` null for no role). */
+async function newKey(userId: number | null, tenantId = pair.a.id, roleName: string | null = 'Legacy MCP (14 tools)') {
+  const { key, keyId } = await makeMcpKey(tenantId, { slug: 'authtest', userId, roleName });
   return { key, id: keyId };
 }
 
@@ -51,6 +51,11 @@ describe('validateKey', () => {
     await expect(validateKey('mcp_unknown')).rejects.toThrow(/Invalid API key/);
     const { key } = await newKey(null);
     await expect(validateKey(key)).rejects.toThrow(/not linked to a user/);
+  });
+
+  it('refuses a key with no role', async () => {
+    const { key } = await newKey(pair.a.ids.mcpUser, pair.a.id, null);
+    await expect(validateKey(key)).rejects.toThrow(/no role/);
   });
 
   it('refuses a key whose user belongs to another tenant', async () => {

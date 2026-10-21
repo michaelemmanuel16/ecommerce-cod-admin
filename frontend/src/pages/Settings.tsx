@@ -34,6 +34,12 @@ export const Settings: React.FC = () => {
 
   const [activeTab, setActiveTabState] = useState<SettingsTab>(getInitialTab);
 
+  // A link to /settings?tab=... while this page is open switches the tab.
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as SettingsTab;
+    if (tabParam && VALID_TABS.includes(tabParam)) setActiveTabState(tabParam);
+  }, [searchParams]);
+
   const setActiveTab = (tab: SettingsTab) => {
     setActiveTabState(tab);
     const params = new URLSearchParams(searchParams);

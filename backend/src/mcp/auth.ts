@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { PrismaClient, UserKind } from '@prisma/client';
 import type { AccessFacts } from '../services/toolAccessService';
+import { roleToolList } from '../config/defaultRoles';
 import { MCP_CONFIG } from './config';
 
 /**
@@ -12,7 +13,7 @@ export interface McpPrincipal {
   keyId: string;
   userId: number;
   actorKind: UserKind;
-  roleId: number | null;
+  roleId: number;
   access: AccessFacts;
 }
 
@@ -50,7 +51,7 @@ export function hashApiKey(key: string): string {
  * Validate an API key and resolve who it acts as.
  * Uses un-extended PrismaClient (no tenant context needed for key lookup).
  * The result (with the user's base role and the role's tool list) is cached per key for 60 seconds, so a revoked or expired key, or a deactivated user, stops
- * working within 60 seconds. A key with no user (made before every key had one) is refused.
+ * working within 60 seconds. A key with no user or no role (made before every key had both) is refused.
  */
 export async function validateKey(apiKey: string): Promise<McpPrincipal> {
   const keyHash = hashApiKey(apiKey);
@@ -90,6 +91,10 @@ export async function validateKey(apiKey: string): Promise<McpPrincipal> {
     throw new Error('API key is not linked to a user. Ask the owner to issue a new key.');
   }
 
+  if (mcpKey.roleId === null || !mcpKey.role) {
+    throw new Error('API key has no role. Ask the owner to issue a new key.');
+  }
+
   if (!mcpKey.user.isActive) {
     throw new Error('The user of this API key is deactivated');
   }
@@ -110,7 +115,7 @@ export async function validateKey(apiKey: string): Promise<McpPrincipal> {
     roleId: mcpKey.roleId,
     access: {
       baseRole: mcpKey.user.role,
-      roleTools: mcpKey.roleId === null ? null : Array.isArray(mcpKey.role?.tools) ? (mcpKey.role!.tools as string[]) : [],
+      roleTools: roleToolList(mcpKey.role.tools),
     },
   };
   if (authCache.size >= AUTH_CACHE_MAX) authCache.clear();

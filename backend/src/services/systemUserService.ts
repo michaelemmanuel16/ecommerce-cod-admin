@@ -14,8 +14,28 @@ export { SYSTEM_EMAIL_DOMAIN, isReservedSystemEmail };
  */
 export const SYSTEM_USER_PASSWORD = '!';
 
-/** Filter for staff lists and recipient queries: the per-tenant system user is not a person. */
-export const HUMAN_USERS_WHERE = { kind: { not: 'system' } } satisfies Prisma.UserWhereInput;
+/** Filter for staff lists and recipient queries: only people; the system user and AI agents are not staff. */
+export const HUMAN_USERS_WHERE = { kind: 'person' } satisfies Prisma.UserWhereInput;
+
+/** Create an ai_agent user (the actor behind an MCP key) with no usable password. `tx` is a client or a transaction. */
+export function createAiAgentUser(
+  tx: Prisma.TransactionClient,
+  { tenantId, name, email }: { tenantId: string; name: string; email: string },
+): Promise<{ id: number }> {
+  return tx.user.create({
+    data: {
+      email,
+      password: SYSTEM_USER_PASSWORD,
+      firstName: name,
+      lastName: 'AI agent',
+      // The base role is the ceiling; the key's role tool list is what narrows it.
+      role: 'super_admin',
+      kind: 'ai_agent',
+      tenantId,
+    },
+    select: { id: true },
+  });
+}
 
 const systemUserEmail = (tenantId: string) => `system+${tenantId}@${SYSTEM_EMAIL_DOMAIN}`;
 

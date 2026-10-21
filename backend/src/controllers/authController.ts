@@ -22,8 +22,8 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
     // Email is globally unique and there is no tenant yet: look up unscoped on
     // purpose, then continue inside the user's own tenant.
     const user = await withoutTenant('auth-login', () => prisma.user.findUnique({ where: { email } }));
-    // The per-tenant system user has no usable password and is never a login.
-    if (!user || user.kind === 'system') {
+    // The system user and AI agents have no usable password and are never a login.
+    if (!user || user.kind !== 'person') {
       throw new AppError('Invalid credentials', 401);
     }
 

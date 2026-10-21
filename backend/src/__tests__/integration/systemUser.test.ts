@@ -50,6 +50,17 @@ describe('per-tenant system user', () => {
     expect(users.some((u) => u.email.startsWith('system+'))).toBe(false);
   });
 
+  it('AI agent users are not staff and cannot log in', async () => {
+    const agent = await prismaBase.user.findUniqueOrThrow({ where: { id: pair.a.ids.mcpUser } });
+    expect(agent.kind).toBe('ai_agent');
+    const { users } = await runInTenant(pair.a.id, () =>
+      adminService.getAllUsers({ id: pair.a.users.admin.id, role: 'admin', tenantId: pair.a.id } as any, 1, 100)
+    );
+    expect(users.some((u) => u.id === agent.id)).toBe(false);
+    const res = await request(app).post('/api/auth/login').send({ email: agent.email, password: SYSTEM_USER_PASSWORD });
+    expect(res.status).toBe(401);
+  });
+
   it('seeding again (backfill) recreates a missing one and never adds a second', async () => {
     await prismaBase.user.deleteMany({ where: { tenantId: pair.b.id, kind: 'system' } });
     clearSystemUserIdCache();

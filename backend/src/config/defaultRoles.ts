@@ -9,6 +9,11 @@ export interface DefaultRole {
   isSystem: boolean;
 }
 
+/** The tool names in a role's `tools` JSON column; anything that is not a list reads as no tools. */
+export function roleToolList(tools: unknown): string[] {
+  return Array.isArray(tools) ? (tools as string[]) : [];
+}
+
 export const LEGACY_MCP_ROLE_NAME = 'Legacy MCP (14 tools)';
 
 export const DEFAULT_ROLES: DefaultRole[] = [
