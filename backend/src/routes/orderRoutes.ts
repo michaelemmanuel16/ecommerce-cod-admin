@@ -5,7 +5,7 @@ import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate, validateRequest } from '../middleware/validation';
 import { spreadsheetUpload, handleUploadErrors } from '../config/multer';
-import { createOrderValidation, updateOrderStatusValidation, assignRepValidation, assignAgentValidation, paginationValidation, bulkDeleteValidation } from '../utils/validators';
+import { createOrderValidation, updateOrderStatusValidation, assignRepValidation, assignAgentValidation, orderListValidation, bulkDeleteValidation } from '../utils/validators';
 import { bulkOrderRateLimiter, bulkImportRateLimiter } from '../middleware/bulkRateLimiter';
 
 const router = Router();
@@ -13,7 +13,8 @@ const router = Router();
 router.use(authenticate);
 router.use(tenantRateLimiter);
 
-router.get('/', paginationValidation, validate, requireResourcePermission('orders', 'view'), orderController.getAllOrders);
+router.get('/', orderListValidation, validate, requireResourcePermission('orders', 'view'), orderController.getAllOrders);
+router.get('/counts', orderListValidation, validate, requireResourcePermission('orders', 'view'), orderController.getOrderCounts);
 router.get('/export', bulkOrderRateLimiter, requireResourcePermission('orders', 'view'), bulkOrderController.exportOrders);
 router.post('/upload', bulkImportRateLimiter, spreadsheetUpload.single('file'), handleUploadErrors, requireResourcePermission('orders', 'bulk_import'), bulkOrderController.uploadOrders);
 router.post('/bulk', requireResourcePermission('orders', 'bulk_import'), orderController.bulkImportOrders);

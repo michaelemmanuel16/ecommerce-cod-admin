@@ -22,6 +22,8 @@ import { hasPermission } from '../middleware/auth';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 import * as Money from '../utils/money';
 import { roleScope } from '../utils/kpiRequest';
+import orderFlagService, { OrderFlagCode } from './orderFlagService';
+import { classifyQuery, nameMatch } from './searchService';
 import { kpiWindow } from './kpi/dates';
 import { deliveredRevenue, revenueScope } from './kpi/revenue';
 
@@ -74,18 +76,87 @@ export interface BulkImportOrderData {
   orderDate?: Date;
 }
 
-interface OrderFilters {
+export const ORDER_SORT_FIELDS = ['id', 'customer', 'totalAmount', 'createdAt'] as const;
+export type OrderSortField = typeof ORDER_SORT_FIELDS[number];
+export type OrderInclude = 'flags' | 'reminder' | 'threadCount';
+
+/** Filters shared by the list and the tab counts (F-308: counts use every filter except status). */
+export interface OrderFilters {
   status?: OrderStatus[];
   customerId?: number;
   customerRepId?: number;
+  /** Orders with no call rep. Wins over `customerRepId`. */
+  unassigned?: boolean;
   deliveryAgentId?: number;
+  productIds?: number[];
   area?: string;
+  flag?: OrderFlagCode | 'any';
+  /** What startDate and endDate filter on: order date (default) or delivery date. */
+  dateBasis?: 'created' | 'delivery';
   startDate?: Date;
   endDate?: Date;
   search?: string;
+}
+
+export interface OrderListQuery extends OrderFilters {
+  sortBy?: OrderSortField;
+  sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
+  include?: OrderInclude[];
 }
+
+/** Row scope: a rep sees orders where they are the call rep, a delivery agent their own deliveries. Other roles see all. */
+function orderScope(requester?: Requester): Prisma.OrderWhereInput {
+  if (requester?.role === 'sales_rep') return { customerRepId: requester.id };
+  if (requester?.role === 'delivery_agent') return { deliveryAgentId: requester.id };
+  return {};
+}
+
+/** The list `where`: tenant comes from the client extension. `withStatus: false` is the tab counts. */
+function listWhere(filters: OrderFilters, requester: Requester | undefined, withStatus: boolean): Prisma.OrderWhereInput {
+  const and: Prisma.OrderWhereInput[] = [orderScope(requester)];
+  if (withStatus && filters.status?.length) and.push({ status: { in: filters.status } });
+  if (filters.customerId) and.push({ customerId: filters.customerId });
+  if (filters.unassigned) and.push({ customerRepId: null });
+  else if (filters.customerRepId) and.push({ customerRepId: filters.customerRepId });
+  if (filters.deliveryAgentId) and.push({ deliveryAgentId: filters.deliveryAgentId });
+  if (filters.area) and.push({ deliveryArea: filters.area });
+  if (filters.productIds?.length) and.push({ orderItems: { some: { productId: { in: filters.productIds } } } });
+  if (filters.flag) and.push(orderFlagService.where(filters.flag));
+
+  if (filters.startDate || filters.endDate) {
+    const range = { ...(filters.startDate && { gte: filters.startDate }), ...(filters.endDate && { lte: filters.endDate }) };
+    // Delivery date is set only by a delivery, so this basis shows delivered orders only (F-311).
+    and.push(filters.dateBasis === 'delivery'
+      ? { deliveryDate: range, status: { in: ['delivered', 'digital_delivered'] } }
+      : { createdAt: range });
+  }
+
+  if (filters.search?.trim()) {
+    // `#23001` is an order number; a phone matches in any format; words match the customer's names (F-310).
+    const q = classifyQuery(filters.search.trim());
+    const customerMatch: Prisma.CustomerWhereInput[] = [
+      ...q.phone.map((p) => p as Prisma.CustomerWhereInput),
+      ...(q.nameWords.length ? [nameMatch(q.nameWords)] : []),
+    ];
+    // An empty OR matches nothing, as wanted for a term that is neither.
+    and.push({
+      OR: [
+        ...(q.orderId !== null ? [{ id: q.orderId }] : []),
+        ...(customerMatch.length ? [{ customer: { OR: customerMatch } }] : []),
+      ],
+    });
+  }
+  return { deletedAt: null, AND: and };
+}
+
+const SORT_ORDER_BY: Record<OrderSortField, (dir: Prisma.SortOrder) => Prisma.OrderOrderByWithRelationInput[]> = {
+  id: (dir) => [{ id: dir }],
+  customer: (dir) => [{ customer: { lastName: dir } }, { customer: { firstName: dir } }, { id: 'desc' }],
+  totalAmount: (dir) => [{ totalAmount: dir }, { id: 'desc' }],
+  createdAt: (dir) => [{ createdAt: dir }, { id: 'desc' }],
+};
 
 interface UpdateOrderStatusData {
   status: OrderStatus;
@@ -109,66 +180,18 @@ interface UpdateOrderStatusData {
 
 export class OrderService {
   /**
-   * Get all orders with filters and pagination
+   * Orders list (F-307, F-310 to F-312): filters, server sort and pagination. `include` adds `flags`, `reminder`
+   * and `threadCount` to each row; reminder and thread count are null until M9.
    */
-  async getAllOrders(filters: OrderFilters, requester?: Requester) {
-    const {
-      status,
-      customerId,
-      customerRepId,
-      deliveryAgentId,
-      area,
-      startDate,
-      endDate,
-      search,
-      page = 1,
-      limit = 20
-    } = filters;
-
-    const where: Prisma.OrderWhereInput = {
-      deletedAt: null, // Filter out soft-deleted orders
-    };
-
-    if (status && status.length > 0) where.status = { in: status };
-    if (customerId) where.customerId = customerId;
-    if (customerRepId) where.customerRepId = customerRepId;
-    if (deliveryAgentId) where.deliveryAgentId = deliveryAgentId;
-    if (area) where.deliveryArea = area;
-
-    // Role-based filtering
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      if (requester.role === 'sales_rep') {
-        where.customerRepId = requester.id;
-      } else if (requester.role === 'delivery_agent') {
-        where.deliveryAgentId = requester.id;
-      }
-    }
-
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = startDate;
-      if (endDate) where.createdAt.lte = endDate;
-    }
-
-    if (search) {
-      // Try to parse as number for ID search
-      const searchNum = parseInt(search);
-      const phoneSearch = customerPhoneSearch(search);
-      where.OR = [
-        // A phone typed as +233... parses to a number beyond Int4; it is not an order id.
-        ...(isNaN(searchNum) || searchNum > 2147483647 ? [] : [{ id: searchNum }]),
-        ...(phoneSearch ? [phoneSearch] : []),
-        { customer: { firstName: { contains: search, mode: 'insensitive' } } },
-        { customer: { lastName: { contains: search, mode: 'insensitive' } } }
-      ];
-    }
-
-    const skip = (page - 1) * limit;
+  async getAllOrders(query: OrderListQuery, requester?: Requester) {
+    const { sortBy = 'createdAt', sortOrder = 'desc', page = 1, limit = 20, include = [] } = query;
+    this.checkRange(query);
+    const where = listWhere(query, requester, true);
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
         where,
-        skip,
+        skip: (page - 1) * limit,
         take: limit,
         include: {
           customer: {
@@ -206,13 +229,21 @@ export class OrderService {
             }
           }
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: SORT_ORDER_BY[sortBy](sortOrder)
       }),
       prisma.order.count({ where })
     ]);
 
+    const flags = include.includes('flags') ? await orderFlagService.forOrders(orders.map((o) => o.id)) : null;
+    const rows = orders.map((o) => ({
+      ...o,
+      ...(flags && { flags: flags.get(o.id) ?? [] }),
+      ...(include.includes('reminder') && { reminder: null }),
+      ...(include.includes('threadCount') && { threadCount: null }),
+    }));
+
     return {
-      orders,
+      orders: rows,
       pagination: {
         page,
         limit,
@@ -220,6 +251,32 @@ export class OrderService {
         pages: Math.ceil(total / limit)
       }
     };
+  }
+
+  /**
+   * Tab counts (F-308): every filter of the list except status, same row scope. `all` is the sum of the 12 statuses;
+   * `waitingToDispatch` is confirmed + preparing + ready_for_pickup.
+   */
+  async getOrderCounts(filters: OrderFilters, requester?: Requester) {
+    this.checkRange(filters);
+    const groups = await prisma.order.groupBy({
+      by: ['status'],
+      where: listWhere(filters, requester, false),
+      _count: { _all: true },
+    });
+    const byStatus = Object.fromEntries(Object.values(OrderStatus).map((s) => [s, 0])) as Record<OrderStatus, number>;
+    for (const g of groups) byStatus[g.status] = g._count._all;
+    return {
+      all: Object.values(byStatus).reduce((sum, n) => sum + n, 0),
+      byStatus,
+      waitingToDispatch: byStatus.confirmed + byStatus.preparing + byStatus.ready_for_pickup,
+    };
+  }
+
+  private checkRange({ startDate, endDate }: OrderFilters) {
+    if (startDate && endDate && startDate > endDate) {
+      throw new AppError('The start date is after the end date.', 400, 'INVALID_RANGE');
+    }
   }
 
   /**

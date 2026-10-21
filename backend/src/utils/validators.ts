@@ -1,5 +1,7 @@
 import { body, param, query, ValidationChain } from 'express-validator';
 import { DeclineReason, FailureReason, OrderStatus } from '@prisma/client';
+import { ORDER_FLAG_CODES } from '../services/orderFlagService';
+import { ORDER_SORT_FIELDS } from '../services/orderService';
 
 /**
  * Password validation utility
@@ -113,6 +115,15 @@ export const assignAgentValidation: ValidationChain[] = [
 export const paginationValidation: ValidationChain[] = [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 })
+];
+
+/** Orders list and tab counts (F-310 to F-312). Counts ignore the sort and page fields. */
+export const orderListValidation: ValidationChain[] = [
+  ...paginationValidation,
+  query('sortBy').optional().isIn([...ORDER_SORT_FIELDS]).withMessage(`Sort by ${ORDER_SORT_FIELDS.join(', ')}`),
+  query('sortOrder').optional().isIn(['asc', 'desc']),
+  query('dateBasis').optional().isIn(['created', 'delivery']),
+  query('flag').optional().isIn([...ORDER_FLAG_CODES, 'any']),
 ];
 
 export const bulkDeleteValidation: ValidationChain[] = [

@@ -40,7 +40,7 @@ export function classifyQuery(raw: string): Query {
   };
 }
 
-const nameMatch = (words: string[]): Prisma.CustomerWhereInput => ({
+export const nameMatch = (words: string[]): Prisma.CustomerWhereInput => ({
   AND: words.map((w) => ({
     OR: [
       { firstName: { contains: w, mode: 'insensitive' as const } },

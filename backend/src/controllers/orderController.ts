@@ -1,61 +1,52 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import { OrderStatus } from '@prisma/client';
-import orderService from '../services/orderService';
+import orderService, { OrderFilters, OrderInclude, OrderSortField } from '../services/orderService';
 import { clearCache } from '../middleware/cache';
 import { readDateBound } from '../utils/kpiRequest';
 import { ALL_STATUSES } from '../services/orderStateMachine';
 
+/** Filters shared by the list and the tab counts. Sort, page and include are read by the list only. */
+const readOrderFilters = (query: AuthRequest['query']): OrderFilters => {
+  const { status, customerId, customerRepId, unassigned, deliveryAgentId, area, flag, dateBasis, startDate, endDate, search } = query;
+  const many = (value: unknown) => (value === undefined ? [] : Array.isArray(value) ? value : [value]);
+
+  return {
+    status: status ? many(status) as OrderStatus[] : undefined,
+    customerId: customerId ? Number(customerId) : undefined,
+    customerRepId: customerRepId ? Number(customerRepId) : undefined,
+    unassigned: unassigned === 'true',
+    deliveryAgentId: deliveryAgentId ? Number(deliveryAgentId) : undefined,
+    // `productId=1&productId=2` and `productId[]=1` both arrive as an array
+    productIds: many(query.productId).map(Number).filter(Number.isInteger),
+    area: area as string | undefined,
+    flag: flag as OrderFilters['flag'],
+    dateBasis: dateBasis as OrderFilters['dateBasis'],
+    startDate: readDateBound(startDate, 'from'),
+    endDate: readDateBound(endDate, 'to'),
+    search: search as string | undefined,
+  };
+};
+
 export const getAllOrders = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const {
-      status,
-      customerId,
-      customerRepId,
-      deliveryAgentId,
-      area,
-      startDate,
-      endDate,
-      search,
-      page = 1,
-      limit = 50
-    } = req.query;
+  const { sortBy, sortOrder, page = 1, limit = 50, include } = req.query;
+  // Row scope (a rep sees own orders, an agent own deliveries) is applied in the service from req.user
+  const result = await orderService.getAllOrders({
+    ...readOrderFilters(req.query),
+    sortBy: sortBy as OrderSortField | undefined,
+    sortOrder: sortOrder as 'asc' | 'desc' | undefined,
+    page: Number(page),
+    limit: Number(limit),
+    include: String(include ?? '').split(',').filter((i): i is OrderInclude => ['flags', 'reminder', 'threadCount'].includes(i)),
+  }, req.user);
 
-    // Parse status - can be a single value or array
-    let parsedStatus: OrderStatus[] | undefined;
-    if (status) {
-      parsedStatus = Array.isArray(status) ? status as OrderStatus[] : [status as OrderStatus];
-    }
+  res.json(result);
+};
 
-    // ROLE-BASED FILTERING: Sales reps can only see their assigned orders
-    let effectiveCustomerRepId = customerRepId ? Number(customerRepId) : undefined;
-    if (req.user?.role === 'sales_rep') {
-      effectiveCustomerRepId = req.user.id; // Override with user's own ID
-    }
-
-    // ROLE-BASED FILTERING: Delivery agents can only see their assigned orders
-    let effectiveDeliveryAgentId = deliveryAgentId ? Number(deliveryAgentId) : undefined;
-    if (req.user?.role === 'delivery_agent') {
-      effectiveDeliveryAgentId = req.user.id; // Override with user's own ID
-    }
-
-    const result = await orderService.getAllOrders({
-      status: parsedStatus,
-      customerId: customerId ? Number(customerId) : undefined,
-      customerRepId: effectiveCustomerRepId,
-      deliveryAgentId: effectiveDeliveryAgentId,
-      area: area as string | undefined,
-      startDate: readDateBound(startDate, 'from'),
-      endDate: readDateBound(endDate, 'to'),
-      search: search as string | undefined,
-      page: Number(page),
-      limit: Number(limit)
-    }, req.user);
-
-    res.json(result);
-  } catch (error) {
-    throw error;
-  }
+export const getOrderCounts = async (req: AuthRequest, res: Response): Promise<void> => {
+  // Tabs count every filter except status
+  const { status: _status, ...filters } = readOrderFilters(req.query);
+  res.json(await orderService.getOrderCounts(filters, req.user));
 };
 
 export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
