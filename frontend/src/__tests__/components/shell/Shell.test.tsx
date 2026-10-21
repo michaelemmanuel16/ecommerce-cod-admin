@@ -198,6 +198,31 @@ describe('Shell', () => {
     });
   });
 
+  describe('old pages whose new home ships later', () => {
+    it('an owner sees Customer reps and Webhooks', async () => {
+      renderShell();
+      expect(await screen.findByRole('link', { name: 'Customer reps' })).toHaveAttribute('href', '/customer-reps');
+      expect(screen.getByRole('link', { name: 'Webhooks' })).toHaveAttribute('href', '/webhooks');
+      expect(screen.queryByRole('link', { name: 'Earnings history' })).not.toBeInTheDocument();
+    });
+
+    it('a delivery agent sees Agent stock, not Customer reps or Webhooks', async () => {
+      signIn({ ...owner, role: 'delivery_agent' }, ['orders']);
+      renderShell();
+      expect(await screen.findByRole('link', { name: 'Agent stock' })).toHaveAttribute('href', '/agent-inventory');
+      expect(screen.queryByRole('link', { name: 'Customer reps' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Webhooks' })).not.toBeInTheDocument();
+    });
+
+    it('a call rep sees Earnings history only', async () => {
+      signIn({ ...owner, role: 'sales_rep' }, ['orders']);
+      renderShell();
+      expect(await screen.findByRole('link', { name: 'Earnings history' })).toHaveAttribute('href', '/earnings-history');
+      expect(screen.queryByRole('link', { name: 'Agent stock' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Customer reps' })).not.toBeInTheDocument();
+    });
+  });
+
   describe('dark mode and old pages', () => {
     it('wraps a not-restyled page in .legacy-light, so it stays light inside the dark shell', async () => {
       renderShell('/orders');

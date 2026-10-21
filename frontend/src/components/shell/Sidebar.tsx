@@ -37,8 +37,8 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onNavigate }
 
   const groups = useMemo<NavGroup[] | null>(() => {
     if (user?.isPlatformAdmin) return [PLATFORM_GROUP];
-    return menu ? visibleGroups(menu) : null;
-  }, [user?.isPlatformAdmin, menu]);
+    return menu && user ? visibleGroups(menu, user.role) : null;
+  }, [user, menu]);
 
   const country = useMemo(() => countryOf(currency), [currency]);
   const fullName = user ? `${user.firstName} ${user.lastName}`.trim() : '';
