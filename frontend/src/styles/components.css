@@ -1,0 +1,117 @@
+/* Shared component rules for src/components/ui-v2 (M3-T29, F-100).
+   Each rule is copied from docs/mockups/v2/app.css or the shared blocks of docs/mockups/v2/index.html,
+   with the `.v2` scope added. Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
+
+/* buttons */
+.v2 .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:11px;border:1px solid var(--line);background:var(--card);font-weight:600}
+.v2 .btn.pri{background:var(--pine);border-color:var(--pine);color:var(--on-pine)}
+.v2 a.btn{color:var(--ink);text-decoration:none}
+.v2 a.btn.pri{color:var(--on-pine)}
+/* new: red action for ConfirmDialog (F-111: "a red action button"); same shape as .btn.pri */
+.v2 .btn.danger{background:var(--coral);border-color:var(--coral);color:var(--on-pine)}
+/* new: disabled state (the mockup sets opacity .5 inline on the Back button) */
+.v2 .btn:disabled,.v2 .mini:disabled{opacity:.5;cursor:default}
+.v2 .mini{font-size:12.5px;font-weight:600;padding:5px 10px;border-radius:9px;border:1px solid var(--line)}
+.v2 .mini.pri{background:var(--pine);color:var(--on-pine);border-color:var(--pine)}
+
+/* card, tile */
+.v2 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+.v2 .ct{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 0}
+.v2 .ct h3{font-size:16px;font-weight:700}
+.v2 .ct span{color:var(--ink-3);font-size:13px}
+.v2 .kpi{padding:18px}
+.v2 .kpi .ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;margin-bottom:12px}
+.v2 .kpi .v{font-size:26px;font-weight:700}
+.v2 .kpi .l{color:var(--ink-2);font-weight:500}
+.v2 .kpi .s{display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:12.5px;color:var(--ink-3)}
+
+/* tag */
+.v2 .tag{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px}
+.v2 .tag.ok{background:var(--mint-soft);color:var(--ok-ink)}
+.v2 .tag.bad{background:var(--coral-soft);color:var(--coral)}
+.v2 .tag.warn{background:var(--gold-soft);color:var(--warn-ink)}
+.v2 .tag.v{background:var(--violet-soft);color:var(--violet)}
+.v2 .tag.n{background:var(--hover);color:var(--ink-2)}
+
+/* table */
+.v2 .tablewrap table{width:100%;border-collapse:collapse}
+.v2 .tablewrap th{text-align:left;font-size:12.5px;font-weight:600;color:var(--ink-3);padding:12px 20px;border-bottom:1px solid var(--line)}
+.v2 .tablewrap td{padding:12px 20px;border-bottom:1px solid var(--line);vertical-align:middle}
+.v2 .tablewrap tr:last-child td{border-bottom:0}
+.v2 .tablewrap tbody tr:hover{background:var(--hover)}
+.v2 .tablewrap .r{text-align:right}
+.v2 .tablewrap tbody tr.orow{cursor:pointer}
+
+/* tabs */
+.v2 .tabs{display:flex;gap:6px;padding:14px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.v2 .tab{padding:7px 12px;border-radius:10px;font-weight:600;color:var(--ink-2);display:flex;gap:7px;align-items:center}
+.v2 .tab span{font-size:12px;padding:0 7px;border-radius:99px;background:var(--hover)}
+.v2 .tab.on{background:var(--ink);color:var(--bg)}
+.v2 .tab.on span{background:rgba(255,255,255,.18)}
+
+/* drawer (index.html .sheet) */
+.v2 .scrim{position:fixed;inset:0;background:var(--veil);backdrop-filter:blur(2px);z-index:54;opacity:0;pointer-events:none;transition:opacity .2s}
+.v2 .scrim.on{opacity:1;pointer-events:auto}
+.v2 .sheet{position:fixed;top:0;right:0;height:100vh;width:560px;max-width:100%;background:var(--card);border-left:1px solid var(--line);box-shadow:var(--shadow-drawer);transform:translateX(105%);transition:transform .28s cubic-bezier(.2,.8,.2,1);z-index:55;display:flex;flex-direction:column;visibility:hidden}
+.v2 .sheet.on{transform:none;visibility:visible}
+.v2 .sheet .sh{display:flex;align-items:flex-start;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.v2 .sheet .sh h2{font-size:21px;font-weight:800;line-height:1.2}
+.v2 .sheet .sh p{color:var(--ink-3);font-size:13px;margin-top:2px}
+.v2 .sheet .sh .ibtn{margin-left:auto;flex:none}
+.v2 .sheet .sb{flex:1;overflow:auto;padding:18px 20px 24px;display:flex;flex-direction:column;gap:20px}
+.v2 .sheet .sf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+@media (max-width:760px){.v2 .sheet{width:100%}}
+
+/* modal (index.html .mveil / .dlg) */
+.v2 .mveil{position:fixed;inset:0;background:var(--veil);backdrop-filter:blur(3px);z-index:65;display:flex;align-items:center;justify-content:center;padding:20px}
+.v2 .dlg{width:520px;max-width:100%;max-height:90vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-pop)}
+.v2 .dlg .mh{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 14px;border-bottom:1px solid var(--line)}
+.v2 .dlg .mh h3{font-size:19px;font-weight:800}
+.v2 .dlg .mh p{color:var(--ink-3);font-size:13px;margin-top:2px}
+.v2 .dlg .mh .ibtn{margin-left:auto;flex:none}
+.v2 .dlg .mb{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.v2 .dlg .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+
+/* confirm dialog and toast (shell.js components in app.css) */
+.v2 .sx-toast{position:fixed;left:50%;bottom:58px;transform:translateX(-50%);background:var(--pine);color:var(--on-pine);padding:9px 16px;border-radius:12px;font-weight:600;font-size:13px;z-index:90;box-shadow:var(--shadow)}
+.v2 .sx-veil{position:fixed;inset:0;background:var(--veil);backdrop-filter:blur(3px);z-index:80;display:flex;align-items:center;justify-content:center;padding:16px}
+.v2 .sx-modal{width:440px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:var(--shadow-pop)}
+.v2 .sx-modal h3{font-size:18px;font-weight:700} /* browser default bold; Tailwind preflight resets it */
+.v2 .sx-modal p{color:var(--ink-2);margin-top:8px}
+.v2 .sx-act{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+
+/* form fields (index.html .fl) and the compact select (.psel) */
+.v2 .fl label{display:block;font-weight:600;font-size:13px;margin-bottom:5px}
+.v2 .fl .opt{font-weight:500;color:var(--ink-3)}
+.v2 .fl input:not([type=checkbox]):not([type=file]),.v2 .fl select,.v2 .fl textarea{width:100%;font:500 14px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+.v2 .fl .hint,.v2 .hint{font-size:12.5px;color:var(--ink-3);margin-top:5px}
+/* new: error state for Input and Select */
+.v2 .fl .err{font-size:12.5px;color:var(--coral);margin-top:5px}
+.v2 .fl [aria-invalid="true"]{border-color:var(--coral)}
+.v2 .psel{font:600 13.5px "Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+
+/* pagination footer (index.html .pfoot) */
+.v2 .pfoot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px}
+.v2 .pfoot .pgbtns{display:flex;align-items:center;gap:8px}
+
+/* empty state (inbox.html .empty, rep.html icon and title) */
+.v2 .empty{padding:40px 20px;text-align:center;color:var(--ink-3)}
+.v2 .empty svg.lucide{width:30px;height:30px}
+.v2 .empty b{display:block;margin-top:8px;color:var(--ink-2);font-weight:600}
+.v2 .empty p{margin-top:2px}
+.v2 .empty .btn{margin-top:14px}
+
+/* new: skeleton, same surface as .hover rows, dimmed by the shared reduced-motion rule */
+.v2 .skel{background:var(--hover);border-radius:10px;animation:v2skel 1.4s ease-in-out infinite}
+@keyframes v2skel{50%{opacity:.5}}
+
+/* new: tooltip, the dark pill of .agentbtn and .sample (ink on bg) */
+.v2 .tip{position:relative;display:inline-flex}
+.v2 .tip-bubble{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:5px 10px;border-radius:9px;font-size:12.5px;font-weight:600;line-height:1.4;white-space:nowrap;box-shadow:var(--shadow);z-index:90;pointer-events:none}
+
+/* tile icon tones: the inline `style="background:var(--x-soft);color:var(--x)"` pairs of the dashboard KPIs */
+.v2 .kpi .ic.pine{background:var(--pine-soft);color:var(--pine)}
+.v2 .kpi .ic.mint{background:var(--mint-soft);color:var(--ok-ink)}
+.v2 .kpi .ic.coral{background:var(--coral-soft);color:var(--coral)}
+.v2 .kpi .ic.gold{background:var(--gold-soft);color:var(--gold)}
+.v2 .kpi .ic.violet{background:var(--violet-soft);color:var(--violet)}

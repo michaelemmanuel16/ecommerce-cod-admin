@@ -10,6 +10,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { getSupportedCountries, getCurrencyForCountry, SUPPORTED_CURRENCIES } from '../utils/countries';
 import toast from 'react-hot-toast';
+import { getStoreCurrency } from '../utils/format';
 
 const setupSchema = z.object({
   country: z.string().min(1, 'Please select a country'),
@@ -47,7 +48,7 @@ export const Onboarding: React.FC = () => {
 
   const form = useForm<SetupData>({
     resolver: zodResolver(setupSchema),
-    defaultValues: { country: '', currency: 'GHS', businessEmail: '', businessPhone: '', businessAddress: '', taxId: '' },
+    defaultValues: { country: '', currency: getStoreCurrency(), businessEmail: '', businessPhone: '', businessAddress: '', taxId: '' },
   });
 
   const selectedCountry = form.watch('country');

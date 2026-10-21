@@ -3,6 +3,7 @@ import { Calendar, DollarSign, FileText, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import apiClient from '../services/api';
 import toast from 'react-hot-toast';
+import { formatCurrency } from '../utils/format';
 
 interface Payout {
     id: number;
@@ -33,13 +34,6 @@ export default function EarningsHistory() {
         } finally {
             setIsLoading(false);
         }
-    };
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-GH', {
-            style: 'currency',
-            currency: 'GHS',
-        }).format(amount);
     };
 
     const formatDate = (dateString: string) => {

@@ -28,6 +28,7 @@ import { PackagesTab } from './builder/PackagesTab';
 import { UpsellsTab } from './builder/UpsellsTab';
 import { SettingsTab } from './builder/SettingsTab';
 import { DesignTab } from './builder/DesignTab';
+import { getStoreCurrency } from '../../utils/format';
 
 export interface CheckoutFormBuilderHandle {
   submit: () => void;
@@ -77,7 +78,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       defaultCountry: initialData?.country || 'Ghana',
       buttonColor: initialData?.styling?.buttonColor || '#0f172a',
       accentColor: initialData?.styling?.accentColor || '#f97316',
-      currency: initialData?.currency || 'GHS',
+      currency: initialData?.currency || getStoreCurrency(),
       redirectUrl: initialData?.redirectUrl || '',
       allowedOrigins: (initialData?.allowedOrigins || []).join('\n'),
       codEnabled: initialData?.codEnabled ?? true,
@@ -114,7 +115,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         defaultCountry: initialData.country || 'Ghana',
         buttonColor: initialData.styling?.buttonColor || '#0f172a',
         accentColor: initialData.styling?.accentColor || '#f97316',
-        currency: initialData.currency || 'GHS',
+        currency: initialData.currency || getStoreCurrency(),
         redirectUrl: initialData.redirectUrl || '',
         allowedOrigins: (initialData.allowedOrigins || []).join('\n'),
         codEnabled: initialData.codEnabled ?? true,
