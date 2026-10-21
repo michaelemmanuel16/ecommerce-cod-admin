@@ -21,6 +21,7 @@ export const SCANNED = [
   'src/styles/components.css',
   'src/styles/shell.css',
   'src/components/shell',
+  'src/pages/NoAccess.tsx',
   // later tasks: 'src/pages/v2', ...
 ];
 

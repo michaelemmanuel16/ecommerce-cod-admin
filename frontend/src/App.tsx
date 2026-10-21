@@ -6,10 +6,8 @@ import { Shell } from './components/shell/Shell';
 import { Toast } from './components/ui/Toast';
 import { Loading } from './components/ui/Loading';
 import { UpdatePrompt } from './components/pwa/UpdatePrompt';
-import { OnboardingProvider } from './components/onboarding';
-import { CustomerRepOnboarding, OnboardingWelcomeModal } from './components/onboarding';
-import { useIsMobile } from './hooks/useIsMobile';
-import { DESKTOP_FLAG, MOBILE_OPT_IN } from './constants/mobile';
+import { AccessGate } from './components/shell/AccessGate';
+import { canOpenPath } from './components/shell/navModel';
 import { useConfigStore } from './stores/configStore';
 import { isPlatformDomain, platformLoginPath } from './utils/platformDomain';
 
@@ -83,13 +81,12 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; skipOnboardingCheck?
   return <>{children}</>;
 };
 
-const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }> = ({ children, allowedRoles }) => {
-  const { user } = useAuthStore();
-
-  if (!user || !allowedRoles.includes(user.role)) {
+// Legacy /m pages (retired in M10-T08). They need the same access as the agent stock page, which the menu decides.
+const MobileGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, menu, homeRoute } = useAuthStore();
+  if (!user || !menu || !canOpenPath('/agent-inventory', menu, user.role, homeRoute)) {
     return <Navigate to="/" replace />;
   }
-
   return <>{children}</>;
 };
 
@@ -117,27 +114,6 @@ const DashboardIndex: React.FC = () => {
   const { user } = useAuthStore();
   if (user?.isPlatformAdmin) return <Navigate to="/platform" replace />;
   return <DynamicDashboard />;
-};
-
-const MobileRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuthStore();
-  const isMobile = useIsMobile();
-  const location = useLocation();
-
-  // Only auto-redirect when the user has explicitly opted in via the "Mobile View"
-  // sidebar button (which sets MOBILE_OPT_IN). Without opt-in, mobile agents stay on
-  // the desktop view because key mobile pages (Deliveries) are still stubs.
-  if (
-    user?.role === 'delivery_agent' &&
-    isMobile &&
-    !location.pathname.startsWith('/m') &&
-    localStorage.getItem(DESKTOP_FLAG) !== 'true' &&
-    localStorage.getItem(MOBILE_OPT_IN) === 'true'
-  ) {
-    return <Navigate to="/m/" replace />;
-  }
-
-  return <>{children}</>;
 };
 
 function App() {
@@ -187,194 +163,180 @@ function App() {
   // Main tenant domain — full app
   return (
     <ErrorBoundary>
-      <OnboardingProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* Public routes - no authentication required */}
-            <Route path="/form/:slug" element={
-              <Suspense fallback={<Loading />}>
-                <PublicCheckout />
-              </Suspense>
-            } />
-            <Route path="/pricing" element={
-              <Suspense fallback={<Loading />}>
-                <Pricing />
-              </Suspense>
-            } />
-            <Route path="/checkout/payment/callback" element={
-              <Suspense fallback={<Loading />}>
-                <PaymentCallback />
-              </Suspense>
-            } />
-            {UiGallery && (
-              <Route path="/dev/ui-v2" element={<Suspense fallback={<Loading />}><UiGallery /></Suspense>} />
-            )}
-            {/* Auth routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            {/* Platform login on main domain — used by PlatformGuard redirect in local dev */}
-            <Route path="/platform/login" element={
-              <Suspense fallback={<Loading />}><PlatformLogin /></Suspense>
-            } />
-            <Route path="/onboarding" element={
-              <ProtectedRoute skipOnboardingCheck>
-                <Onboarding />
-              </ProtectedRoute>
-            } />
-            {/* Admin-only preview route — bare shell so the editor iframe
-                doesn't render the sidebar/header inside itself. Auth is
-                enforced by the backend /preview-config endpoint. */}
-            <Route path="/checkout-forms/:id/preview" element={
+      <BrowserRouter>
+        <Routes>
+          {/* Public routes - no authentication required */}
+          <Route path="/form/:slug" element={
+            <Suspense fallback={<Loading />}>
+              <PublicCheckout />
+            </Suspense>
+          } />
+          <Route path="/pricing" element={
+            <Suspense fallback={<Loading />}>
+              <Pricing />
+            </Suspense>
+          } />
+          <Route path="/checkout/payment/callback" element={
+            <Suspense fallback={<Loading />}>
+              <PaymentCallback />
+            </Suspense>
+          } />
+          {UiGallery && (
+            <Route path="/dev/ui-v2" element={<Suspense fallback={<Loading />}><UiGallery /></Suspense>} />
+          )}
+          {/* Auth routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          {/* Platform login on main domain — used by PlatformGuard redirect in local dev */}
+          <Route path="/platform/login" element={
+            <Suspense fallback={<Loading />}><PlatformLogin /></Suspense>
+          } />
+          <Route path="/onboarding" element={
+            <ProtectedRoute skipOnboardingCheck>
+              <Onboarding />
+            </ProtectedRoute>
+          } />
+          {/* Admin-only preview route — bare shell so the editor iframe
+              doesn't render the sidebar/header inside itself. Auth is
+              enforced by the backend /preview-config endpoint. */}
+          <Route path="/checkout-forms/:id/preview" element={
+            <ProtectedRoute>
+              <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
+            </ProtectedRoute>
+          } />
+          {/* Mobile routes for delivery agents */}
+          <Route
+            path="/m"
+            element={
               <ProtectedRoute>
-                <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
+                <MobileGate>
+                  <Suspense fallback={<Loading />}>
+                    <MobileLayout />
+                  </Suspense>
+                </MobileGate>
               </ProtectedRoute>
+            }
+          >
+            <Route index element={<DynamicDashboard />} />
+            <Route path="deliveries" element={
+              <Suspense fallback={<Loading />}><MobileDeliveries /></Suspense>
             } />
-            {/* Mobile routes for delivery agents */}
-            <Route
-              path="/m"
-              element={
-                <ProtectedRoute>
-                  <RoleGuard allowedRoles={['delivery_agent']}>
-                    <Suspense fallback={<Loading />}>
-                      <MobileLayout />
-                    </Suspense>
-                  </RoleGuard>
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<DynamicDashboard />} />
-              <Route path="deliveries" element={
-                <Suspense fallback={<Loading />}><MobileDeliveries /></Suspense>
-              } />
-              <Route path="deliveries/:id" element={
-                <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
-              } />
-              <Route path="deliveries/order/:orderId" element={
-                <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
-              } />
-              <Route path="inventory" element={
-                <Suspense fallback={<Loading />}><AgentMyInventory /></Suspense>
-              } />
-              <Route path="collections" element={
-                <Suspense fallback={<Loading />}><MobileCollections /></Suspense>
-              } />
-              {/* TODO: replace with mobile-optimized Settings */}
-              <Route path="settings" element={
-                <Suspense fallback={<Loading />}><Settings /></Suspense>
-              } />
-            </Route>
+            <Route path="deliveries/:id" element={
+              <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
+            } />
+            <Route path="deliveries/order/:orderId" element={
+              <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
+            } />
+            <Route path="inventory" element={
+              <Suspense fallback={<Loading />}><AgentMyInventory /></Suspense>
+            } />
+            <Route path="collections" element={
+              <Suspense fallback={<Loading />}><MobileCollections /></Suspense>
+            } />
+            {/* TODO: replace with mobile-optimized Settings */}
+            <Route path="settings" element={
+              <Suspense fallback={<Loading />}><Settings /></Suspense>
+            } />
+          </Route>
 
-            {/* Desktop routes */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <MobileRedirect>
-                    <Shell />
-                  </MobileRedirect>
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<DashboardIndex />} />
-              <Route path="orders" element={
-                <Suspense fallback={<Loading />}><Orders /></Suspense>
-              } />
-              <Route path="orders/:id" element={
-                <Suspense fallback={<Loading />}><OrderDetails /></Suspense>
-              } />
-              <Route path="products" element={
-                <Suspense fallback={<Loading />}><Products /></Suspense>
-              } />
-              <Route path="products/new" element={
-                <Suspense fallback={<Loading />}><ProductForm /></Suspense>
-              } />
-              <Route path="products/:id/edit" element={
-                <Suspense fallback={<Loading />}><ProductForm /></Suspense>
-              } />
-              <Route path="customers" element={
-                <Suspense fallback={<Loading />}><Customers /></Suspense>
-              } />
-              <Route path="customers/:id" element={
-                <Suspense fallback={<Loading />}><CustomerDetails /></Suspense>
-              } />
-              <Route path="delivery-agents" element={
-                <Suspense fallback={<Loading />}><DeliveryAgents /></Suspense>
-              } />
-              <Route path="customer-reps" element={
-                <Suspense fallback={<Loading />}><CustomerReps /></Suspense>
-              } />
-              <Route path="finance" element={
-                <Suspense fallback={<Loading />}><Financial /></Suspense>
-              } />
-              <Route path="financial" element={<Navigate to="/finance" replace />} />
-              <Route path="analytics" element={
-                <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'accountant']}>
-                  <Suspense fallback={<Loading />}><Analytics /></Suspense>
-                </RoleGuard>
-              } />
-              <Route path="workflows" element={
-                <Suspense fallback={<Loading />}><Workflows /></Suspense>
-              } />
-              <Route path="workflows/new" element={
-                <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
-              } />
-              <Route path="workflows/:id" element={
-                <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
-              } />
-              <Route path="communications" element={
-                <RoleGuard allowedRoles={['super_admin', 'admin', 'manager']}>
-                  <Suspense fallback={<Loading />}><Communications /></Suspense>
-                </RoleGuard>
-              } />
-              <Route path="settings" element={
-                <Suspense fallback={<Loading />}><Settings /></Suspense>
-              } />
-              <Route path="settings/billing" element={
-                <Suspense fallback={<Loading />}><Billing /></Suspense>
-              } />
-              <Route path="settings/billing/callback" element={
-                <Suspense fallback={<Loading />}><SubscriptionCallback /></Suspense>
-              } />
-              <Route path="checkout-forms" element={
-                <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
-              } />
-              <Route path="checkout-forms/new" element={
-                <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
-              } />
-              <Route path="checkout-forms/:id/edit" element={
-                <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
-              } />
-              <Route path="webhooks" element={
-                <RoleGuard allowedRoles={['super_admin', 'admin']}>
-                  <Suspense fallback={<Loading />}><Webhooks /></Suspense>
-                </RoleGuard>
-              } />
-              <Route path="agent-inventory" element={
-                <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'inventory_manager', 'delivery_agent']}>
-                  <Suspense fallback={<Loading />}><AgentInventoryRoute /></Suspense>
-                </RoleGuard>
-              } />
-              <Route path="earnings-history" element={
-                <RoleGuard allowedRoles={['sales_rep']}>
-                  <Suspense fallback={<Loading />}><EarningsHistory /></Suspense>
-                </RoleGuard>
-              } />
-              <Route path="platform" element={platformRoute(PlatformDashboard)} />
-              <Route path="platform/tenants" element={platformRoute(PlatformTenants)} />
-              <Route path="platform/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
-              <Route path="platform/announcements" element={platformRoute(PlatformAnnouncements)} />
-              <Route path="platform/billing" element={platformRoute(PlatformBilling)} />
+          {/* Desktop routes */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Shell />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="financial" element={<Navigate to="/finance" replace />} />
+            {/* Every page below needs its menu item (F-102); platform pages use PlatformGuard instead. */}
+            <Route element={<AccessGate />}>
+            <Route index element={<DashboardIndex />} />
+            <Route path="orders" element={
+              <Suspense fallback={<Loading />}><Orders /></Suspense>
+            } />
+            <Route path="orders/:id" element={
+              <Suspense fallback={<Loading />}><OrderDetails /></Suspense>
+            } />
+            <Route path="products" element={
+              <Suspense fallback={<Loading />}><Products /></Suspense>
+            } />
+            <Route path="products/new" element={
+              <Suspense fallback={<Loading />}><ProductForm /></Suspense>
+            } />
+            <Route path="products/:id/edit" element={
+              <Suspense fallback={<Loading />}><ProductForm /></Suspense>
+            } />
+            <Route path="customers" element={
+              <Suspense fallback={<Loading />}><Customers /></Suspense>
+            } />
+            <Route path="customers/:id" element={
+              <Suspense fallback={<Loading />}><CustomerDetails /></Suspense>
+            } />
+            <Route path="delivery-agents" element={
+              <Suspense fallback={<Loading />}><DeliveryAgents /></Suspense>
+            } />
+            <Route path="customer-reps" element={
+              <Suspense fallback={<Loading />}><CustomerReps /></Suspense>
+            } />
+            <Route path="finance" element={
+              <Suspense fallback={<Loading />}><Financial /></Suspense>
+            } />
+            <Route path="analytics" element={
+              <Suspense fallback={<Loading />}><Analytics /></Suspense>
+            } />
+            <Route path="workflows" element={
+              <Suspense fallback={<Loading />}><Workflows /></Suspense>
+            } />
+            <Route path="workflows/new" element={
+              <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
+            } />
+            <Route path="workflows/:id" element={
+              <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
+            } />
+            <Route path="communications" element={
+              <Suspense fallback={<Loading />}><Communications /></Suspense>
+            } />
+            <Route path="settings" element={
+              <Suspense fallback={<Loading />}><Settings /></Suspense>
+            } />
+            <Route path="settings/billing" element={
+              <Suspense fallback={<Loading />}><Billing /></Suspense>
+            } />
+            <Route path="settings/billing/callback" element={
+              <Suspense fallback={<Loading />}><SubscriptionCallback /></Suspense>
+            } />
+            <Route path="checkout-forms" element={
+              <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
+            } />
+            <Route path="checkout-forms/new" element={
+              <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
+            } />
+            <Route path="checkout-forms/:id/edit" element={
+              <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
+            } />
+            <Route path="webhooks" element={
+              <Suspense fallback={<Loading />}><Webhooks /></Suspense>
+            } />
+            <Route path="agent-inventory" element={
+              <Suspense fallback={<Loading />}><AgentInventoryRoute /></Suspense>
+            } />
+            <Route path="earnings-history" element={
+              <Suspense fallback={<Loading />}><EarningsHistory /></Suspense>
+            } />
             </Route>
-          </Routes>
-          {/* Onboarding Tour Components - Only visible for sales_rep role */}
-          <CustomerRepOnboarding />
-          <OnboardingWelcomeModal />
-        </BrowserRouter>
-        <Toast />
-        <UpdatePrompt />
-      </OnboardingProvider>
+            <Route path="platform" element={platformRoute(PlatformDashboard)} />
+            <Route path="platform/tenants" element={platformRoute(PlatformTenants)} />
+            <Route path="platform/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
+            <Route path="platform/announcements" element={platformRoute(PlatformAnnouncements)} />
+            <Route path="platform/billing" element={platformRoute(PlatformBilling)} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+      <Toast />
+      <UpdatePrompt />
     </ErrorBoundary>
   );
 }

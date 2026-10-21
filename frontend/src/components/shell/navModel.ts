@@ -103,15 +103,30 @@ export const PLATFORM_GROUP: NavGroup = {
   ],
 };
 
+/** One rule for sidebar and route guards: the item's key is in the `menu` from /api/auth/me, or (old page) its role rule. */
+function itemVisible(item: NavItem, allowed: Set<string>, role: string): boolean {
+  return item.to !== null && (item.oldPageFor ? item.oldPageFor(role) : allowed.has(item.key));
+}
+
 /** Groups with only the items this person may see and that have a page. A group left empty is dropped. */
 export function visibleGroups(menu: string[], role: string): NavGroup[] {
   const allowed = new Set(menu);
   return NAV_GROUPS
-    .map((g) => ({
-      ...g,
-      items: g.items.filter((i) => i.to !== null && (i.oldPageFor ? i.oldPageFor(role) : allowed.has(i.key))),
-    }))
+    .map((g) => ({ ...g, items: g.items.filter((i) => itemVisible(i, allowed, role)) }))
     .filter((g) => g.items.length > 0);
+}
+
+/**
+ * Route guard (F-102): may this person open `pathname`? A page belongs to the nav item whose `to` it is or sits under
+ * (/orders/12 -> Orders, /settings/billing -> Settings). The item must be visible in the menu. "/" and the person's own
+ * home route are always open: they are where the person lands. A path no item owns is closed.
+ */
+export function canOpenPath(pathname: string, menu: string[], role: string, homeRoute: string | null): boolean {
+  if (pathname === '/' || pathname === homeRoute) return true;
+  const owner = NAV_GROUPS.flatMap((g) => g.items)
+    .filter((i) => i.to && i.to !== '/' && isActive(i.to, pathname))
+    .sort((a, b) => (b.to as string).length - (a.to as string).length)[0];
+  return !!owner && itemVisible(owner, new Set(menu), role);
 }
 
 /** Active item: the route itself or a page under it (/orders/12 keeps Orders lit). "/" matches only itself. */

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { Home, Truck, Package, Menu, X, Wallet, Settings, LogOut, type LucideIcon } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
-import { DESKTOP_FLAG, MOBILE_OPT_IN } from '../../constants/mobile';
 
 const tabs = [
   { to: '/m/', icon: Home, label: 'Dashboard' },
@@ -14,15 +13,6 @@ export function MobileLayout() {
   const [moreOpen, setMoreOpen] = useState(false);
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
-
-  // Clear both flags to ensure desktop view sticks: DESKTOP_FLAG prevents
-  // MobileRedirect from re-redirecting, and removing mobile_opt_in resets
-  // the user's explicit mobile preference.
-  const handleSwitchDesktop = () => {
-    localStorage.setItem(DESKTOP_FLAG, 'true');
-    localStorage.removeItem(MOBILE_OPT_IN);
-    navigate('/');
-  };
 
   const handleLogout = () => {
     logout();
@@ -104,11 +94,6 @@ export function MobileLayout() {
                 icon={Settings}
                 label="Settings"
                 onClick={() => { setMoreOpen(false); navigate('/m/settings'); }}
-              />
-              <MoreItem
-                icon={Home}
-                label="Switch to Desktop"
-                onClick={() => { setMoreOpen(false); handleSwitchDesktop(); }}
               />
               <div className="border-t border-gray-100 my-1" />
               <MoreItem
