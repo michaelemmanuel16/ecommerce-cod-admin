@@ -18,7 +18,8 @@ import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
 import assignmentService from './assignmentService';
 import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
 import { hasPermission } from '../middleware/auth';
-import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
+import { findAndReactivateCustomerByPhone, findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
+import { auditService } from './auditService';
 import * as Money from '../utils/money';
 import { roleScope } from '../utils/kpiRequest';
 import orderFlagService, { OrderFlagCode } from './orderFlagService';
@@ -41,7 +42,8 @@ interface CreateOrderData {
     itemType?: 'package' | 'upsell';
     metadata?: any;
   }>;
-  subtotal: Money.MoneyInput;
+  /** Default: the sum of the lines. */
+  subtotal?: Money.MoneyInput;
   shippingCost?: Money.MoneyInput;
   discount?: Money.MoneyInput;
   totalAmount: Money.MoneyInput;
@@ -51,6 +53,12 @@ interface CreateOrderData {
   notes?: string;
   estimatedDelivery?: Date;
   createdById?: number;
+  /** F-317: the call rep and delivery agent. A sales_rep requester is always the call rep; only `orders:assign` roles may set either. */
+  customerRepId?: number;
+  deliveryAgentId?: number;
+  /** F-317: "Customer already confirmed on this call". The order moves to confirmed through the machine and a manual `Call` is saved. */
+  customerConfirmed?: boolean;
+  requester?: Requester;
 }
 
 export interface BulkImportOrderData {
@@ -181,6 +189,30 @@ interface UpdateOrderStatusData {
 }
 
 
+/** One order line as sent by an edit. */
+interface ItemInput {
+  productId: number;
+  quantity: number;
+  unitPrice: Money.MoneyInput;
+  itemType?: 'package' | 'upsell';
+  metadata?: any;
+}
+
+const itemSnapshot = (i: { productId: number; quantity: number; unitPrice: Money.MoneyInput }) =>
+  ({ productId: i.productId, quantity: i.quantity, unitPrice: Money.toApi(i.unitPrice) });
+
+/**
+ * F-318: the fields an edit may change, by status. Before dispatch: everything. On the road: contact, address
+ * and notes. Done or closed: notes only. (`payment_failed` has nothing dispatched, so it edits like the first group.)
+ */
+function editableFields(status: OrderStatus): string[] {
+  if (status === 'out_for_delivery' || status === 'failed_delivery') {
+    return ['customerPhone', 'alternatePhone', 'deliveryAddress', 'deliveryState', 'deliveryArea', 'notes'];
+  }
+  if (['delivered', 'digital_delivered', 'returned', 'cancelled'].includes(status)) return ['notes'];
+  return ['customerName', 'customerPhone', 'alternatePhone', 'customerEmail', 'deliveryAddress', 'deliveryState', 'deliveryArea', 'orderItems', 'discount', 'totalAmount', 'notes'];
+}
+
 /** F-316: states that can be deleted. The others have money or stock effects. */
 const DELETABLE_STATUSES: OrderStatus[] = [
   'pending_confirmation', 'payment_pending', 'payment_failed', 'confirmed', 'preparing', 'ready_for_pickup', 'cancelled', 'failed_delivery',
@@ -308,6 +340,35 @@ export class OrderService {
     };
   }
 
+  /** Rows the export would write (F-320): the list rows for the same filters. */
+  async exportCount(filters: OrderFilters, requester?: Requester) {
+    this.checkRange(filters);
+    return prisma.order.count({ where: listWhere(filters, requester, true) });
+  }
+
+  /** The export rows in batches of `size`, newest id first, one cursor read per batch (never the whole set at once). */
+  async *exportBatches(filters: OrderFilters, requester?: Requester, size = 1000) {
+    const where = listWhere(filters, requester, true);
+    let last: number | undefined;
+    for (;;) {
+      const rows = await prisma.order.findMany({
+        where: last === undefined ? where : { AND: [where, { id: { lt: last } }] },
+        orderBy: { id: 'desc' },
+        take: size,
+        include: {
+          customer: { select: { firstName: true, lastName: true, phoneNumber: true, alternatePhone: true } },
+          customerRep: { select: { firstName: true, lastName: true } },
+          deliveryAgent: { select: { firstName: true, lastName: true } },
+          orderItems: { include: { product: { select: { name: true } } } },
+        },
+      });
+      if (rows.length === 0) return;
+      yield rows;
+      last = rows[rows.length - 1].id;
+      if (rows.length < size) return;
+    }
+  }
+
   private checkRange({ startDate, endDate }: OrderFilters) {
     if (startDate && endDate && startDate > endDate) {
       throw new AppError('The start date is after the end date.', 400, 'INVALID_RANGE');
@@ -377,6 +438,21 @@ export class OrderService {
       throw new AppError('Either customerId or customerPhone must be provided', 400);
     }
 
+    // Call rep and delivery agent (F-317). A rep's own order is theirs; the assign fields need `orders:assign`.
+    let customerRepId = data.customerRepId;
+    let deliveryAgentId = data.deliveryAgentId;
+    if (data.requester?.role === 'sales_rep') {
+      customerRepId = data.requester.id;
+      if (deliveryAgentId) throw new AppError('You cannot assign a delivery agent.', 403, 'FORBIDDEN');
+    } else if ((customerRepId || deliveryAgentId) && data.requester && !(await hasPermission(data.requester, 'orders', 'assign'))) {
+      throw new AppError('You do not have permission to assign this order.', 403, 'FORBIDDEN');
+    }
+    if (customerRepId && customerRepId !== data.requester?.id) await assignmentService.loadAssignee(customerRepId, 'sales_rep');
+    if (deliveryAgentId) await assignmentService.loadAssignee(deliveryAgentId, 'delivery_agent', { checkAvailable: true });
+    if (data.customerConfirmed && !data.createdById) {
+      throw new AppError('A confirmed order needs the person who took the call.', 400);
+    }
+
     // Validate products and check stock (batch query to avoid N+1)
     const productIds = [...new Set(data.orderItems.map(item => item.productId))];
     const products = await prisma.product.findMany({
@@ -389,8 +465,11 @@ export class OrderService {
       }
     }
 
+    const subtotal = data.subtotal ?? Money.sum(data.orderItems.map((item) => Money.mul(item.quantity, item.unitPrice)));
+    let confirmMove: Awaited<ReturnType<typeof transitionOrder>> | undefined;
+
     // Create order in transaction
-    const order = await prisma.$transaction(async (tx) => {
+    const created = await prisma.$transaction(async (tx) => {
       // Validate product availability (optional, as we already checked existence)
       for (const item of data.orderItems) {
         const product = productMap.get(item.productId);
@@ -407,7 +486,7 @@ export class OrderService {
       const newOrder = await tx.order.create({
         data: {
           customerId: customer.id,
-          subtotal: data.subtotal,
+          subtotal,
           shippingCost: data.shippingCost || 0,
           discount: data.discount || 0,
           totalAmount: data.totalAmount,
@@ -418,7 +497,9 @@ export class OrderService {
           notes: data.notes,
           estimatedDelivery: data.estimatedDelivery || null,
           createdById: data.createdById,
-                    orderItems: {
+          customerRepId,
+          deliveryAgentId,
+          orderItems: {
             create: data.orderItems.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
@@ -456,8 +537,33 @@ export class OrderService {
         }
       });
 
+      if (data.customerConfirmed) {
+        // F-317: created, then moved by the machine; the call row is what the pay rule reads
+        confirmMove = await transitionOrder(newOrder.id, 'confirmed', actorOf(data.requester, data.createdById), {
+          tx,
+          note: 'Customer confirmed on the call',
+        });
+        const calledAt = new Date();
+        await tx.call.create({
+          data: {
+            tenantId: resolveTenantId(customer.tenantId),
+            customerId: customer.id,
+            orderId: newOrder.id,
+            salesRepId: data.createdById!,
+            outcome: 'confirmed',
+            source: 'manual',
+            startedAt: calledAt,
+          },
+        });
+        await tx.order.updateMany({ where: { id: newOrder.id, firstContactAt: null }, data: { firstContactAt: calledAt } });
+      }
+
       return newOrder;
     });
+    confirmMove?.afterCommit?.();
+    const order = confirmMove
+      ? await prisma.order.findUniqueOrThrow({ where: { id: created.id }, include: { customer: true, orderItems: { include: { product: true } } } })
+      : created;
 
     logger.info(`Order created`, { orderId: order.id });
 
@@ -897,7 +1003,9 @@ export class OrderService {
   }
 
   /**
-   * Update order details
+   * Edit an order (F-318). Which fields may change depends on the status (`editableFields`); a locked field
+   * that really changes is refused, one sent back unchanged is ignored. A status in the body is a move through
+   * the machine. `statusVersion` / `updatedAt` in the body is the version check (STALE_ORDER, 409).
    */
   async updateOrder(orderId: number, updateData: any, requester?: Requester) {
     const order = await prisma.order.findUnique({
@@ -909,26 +1017,15 @@ export class OrderService {
       throw new AppError('Order not found', 404);
     }
 
-    // Enforce ownership
-    if (requester) {
-      const isOwner = checkResourceOwnership(requester, {
-        assignedRepId: order.customerRepId,
-        deliveryAgentId: order.deliveryAgentId,
-        customerId: order.customerId
-      }, 'order');
-
-      if (!isOwner) {
-        throw new AppError('You do not have permission to update this order', 403);
-      }
+    // The delivery agent cannot edit; a rep edits own orders only (call rep, not delivery agent)
+    if (requester?.role === 'delivery_agent') {
+      throw new AppError('You do not have permission to update this order', 403);
+    }
+    if (requester?.role === 'sales_rep' && order.customerRepId !== requester.id) {
+      throw new AppError('You do not have permission to update this order', 403);
     }
 
-    // Extract fields that need special handling
     const {
-      alternatePhone,
-      orderItems,
-      customerName,
-      customerEmail,
-      customerPhone,
       // D9: a status in this body is a move; it goes through the state machine and never into the generic update
       status: requestedStatus,
       force,
@@ -936,131 +1033,231 @@ export class OrderService {
       declineReason,
       failureReason,
       nextAttemptDate,
-      ...orderUpdateData
+      statusVersion,
+      updatedAt: clientUpdatedAt,
+      confirmTotalChange,
+      confirmPhoneChange,
+      subtotal: _subtotal, // always the sum of the lines
+      ...fields
     } = updateData;
 
+    if (
+      (statusVersion !== undefined && Number(statusVersion) !== order.statusVersion)
+      || (clientUpdatedAt && new Date(clientUpdatedAt).getTime() !== order.updatedAt.getTime())
+    ) {
+      throw new AppError('This order changed. Reload to see the new data.', 409, 'STALE_ORDER');
+    }
+
+    const targetStatus: OrderStatus = requestedStatus ?? order.status;
+    const plan = await this.planEdit(order, fields, targetStatus, requester, { confirmTotalChange, confirmPhoneChange });
+
     // First the move (its own transaction, so a refused move changes nothing), then the other fields.
+    let moved = false;
     if (requestedStatus && requestedStatus !== order.status) {
-      const actor = actorOf(requester);
-      await transitionOrder(orderId, requestedStatus, actor, this.moveOptions({
+      await transitionOrder(orderId, requestedStatus, actorOf(requester), this.moveOptions({
         force,
         reason,
         declineReason,
         failureReason,
         nextAttemptDate: nextAttemptDate ? new Date(nextAttemptDate) : undefined,
       }));
-      order.status = requestedStatus; // the item stock adjustment below depends on the current status
+      moved = true;
     }
 
-    // Update order and customer in a transaction
+    if (plan.changed.length === 0) {
+      return prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { customer: true, orderItems: { include: { product: true } } } });
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
-      // Update customer information if provided
-      if (order.customer) {
-        const customerUpdateData: any = {};
-
-        // Handle customer name
-        if (customerName !== undefined) {
-          const nameParts = customerName.trim().split(' ');
-          customerUpdateData.firstName = nameParts[0] || 'Unknown';
-          customerUpdateData.lastName = nameParts.slice(1).join(' ') || '';
-        }
-
-        // Handle customer email
-        if (customerEmail !== undefined) {
-          customerUpdateData.email = customerEmail;
-        }
-
-        // Handle customer phone number
-        if (customerPhone !== undefined) {
-          customerUpdateData.phoneNumber = normalizePhoneForStorage(customerPhone);
-        }
-
-        // Handle alternate phone
-        if (alternatePhone !== undefined) {
-          customerUpdateData.alternatePhone = normalizePhoneForStorage(alternatePhone);
-        }
-
-        // Only update if there are fields to update
-        if (Object.keys(customerUpdateData).length > 0) {
-          await tx.customer.update({
-            where: { id: order.customerId },
-            data: customerUpdateData
-          });
-        }
+      // The lock: nobody saved since we read the row (after a move the row changed on purpose, so the move is the check)
+      const locked = await tx.order.updateMany({
+        where: { id: orderId, ...(!moved && { updatedAt: order.updatedAt }) },
+        data: { ...plan.orderData, updatedAt: new Date() },
+      });
+      if (locked.count === 0) {
+        throw new AppError('This order changed. Reload to see the new data.', 409, 'STALE_ORDER');
       }
-
-      // If orderItems are provided, update them and adjust stock if needed
-      if (orderItems && Array.isArray(orderItems)) {
-        // Only adjust stock if the order status is 'out_for_delivery' or further
-        const statusesWithStockDeduction = ['out_for_delivery', 'delivered'];
-        const shouldAdjustStock = statusesWithStockDeduction.includes(order.status);
-
-        if (shouldAdjustStock) {
-          const oldItems = order.orderItems;
-          const newItems = orderItems;
-
-          // Restore old stock
-          for (const oldItem of oldItems) {
-            await tx.product.update({
-              where: { id: oldItem.productId },
-              data: { stockQuantity: { increment: oldItem.quantity } }
-            });
-          }
-
-          // Deduct new stock and validate atomically
-          for (const newItem of newItems) {
-            const result = await tx.product.updateMany({
-              where: {
-                id: newItem.productId,
-                stockQuantity: { gte: newItem.quantity }
-              },
-              data: {
-                stockQuantity: { decrement: newItem.quantity }
-              }
-            });
-
-            if (result.count === 0) {
-              throw new AppError(`Insufficient stock for product ID ${newItem.productId} `, 400);
-            }
-          }
-        }
-
-        // Delete existing order items
-        await tx.orderItem.deleteMany({
-          where: { orderId: orderId }
-        });
-
-        // Create new order items
+      if (Object.keys(plan.customerData).length > 0) {
+        await tx.customer.update({ where: { id: order.customerId }, data: plan.customerData });
+      }
+      if (plan.items) {
+        await tx.orderItem.deleteMany({ where: { orderId } });
         await tx.orderItem.createMany({
-          data: orderItems.map((item: any) => ({
-            orderId: orderId,
+          data: plan.items.map((item) => ({
+            orderId,
             productId: item.productId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             totalPrice: Money.roundHalfUp(Money.mul(item.unitPrice, item.quantity), 4),
-            itemType: item.itemType || 'package',
-            metadata: item.metadata || null
+            itemType: item.itemType,
+            metadata: item.metadata,
           }))
         });
       }
-
-      // Update order
-      return await tx.order.update({
+      return tx.order.findUniqueOrThrow({
         where: { id: orderId },
-        data: orderUpdateData,
-        include: {
-          customer: true,
-          orderItems: {
-            include: {
-              product: true
-            }
-          }
-        }
+        include: { customer: true, orderItems: { include: { product: true } } },
       });
+    });
+
+    await auditService.record({
+      actorId: requester?.id,
+      actorKind: requester ? 'person' : 'system',
+      channel: requester ? 'app' : 'system',
+      action: 'update_order',
+      resource: 'order',
+      resourceId: String(orderId),
+      before: plan.before,
+      after: plan.after,
+      metadata: { fields: plan.changed },
     });
 
     logger.info(`Order updated: ${orderId} `, { orderId: orderId });
     return updated;
+  }
+
+  /**
+   * The checks and the write set of one edit: what really changes, whether the status allows it, the phone,
+   * total and item rules. Throws before anything is written.
+   */
+  private async planEdit(
+    order: Prisma.OrderGetPayload<{ include: { customer: true; orderItems: true } }>,
+    fields: Record<string, any>,
+    status: OrderStatus,
+    requester: Requester | undefined,
+    confirm: { confirmTotalChange?: boolean; confirmPhoneChange?: boolean },
+  ) {
+    const customer = order.customer;
+    const items: ItemInput[] | undefined = Array.isArray(fields.orderItems) ? fields.orderItems : undefined;
+    const sameText = (a: unknown, b: unknown) => String(a ?? '').trim() === String(b ?? '').trim();
+    const samePhone = (input: unknown, stored: string | null) => {
+      const wanted = String(input ?? '').trim();
+      return wanted === '' ? !stored : !!stored && phoneLookupVariants(wanted).includes(stored);
+    };
+    const itemKey = (list: Array<{ productId: number; quantity: number; unitPrice: Money.MoneyInput }>) =>
+      list.map((i) => `${i.productId}:${i.quantity}:${Money.toApi(i.unitPrice)}`).sort().join('|');
+    const customerName = `${customer.firstName} ${customer.lastName}`.trim();
+
+    // What differs from the stored order. Unknown keys always count as a change, so they are refused.
+    const differs: Record<string, () => boolean> = {
+      customerName: () => !sameText(fields.customerName, customerName),
+      customerEmail: () => !sameText(fields.customerEmail, customer.email),
+      customerPhone: () => !samePhone(fields.customerPhone, customer.phoneNumber),
+      alternatePhone: () => !samePhone(fields.alternatePhone, customer.alternatePhone),
+      deliveryAddress: () => !sameText(fields.deliveryAddress, order.deliveryAddress),
+      deliveryState: () => !sameText(fields.deliveryState, order.deliveryState),
+      deliveryArea: () => !sameText(fields.deliveryArea, order.deliveryArea),
+      notes: () => !sameText(fields.notes, order.notes),
+      discount: () => Money.compare(fields.discount ?? 0, order.discount) !== 0,
+      totalAmount: () => Money.compare(fields.totalAmount, order.totalAmount) !== 0,
+      orderItems: () => !!items && itemKey(items) !== itemKey(order.orderItems),
+    };
+    const changed = Object.keys(fields).filter((key) => fields[key] !== undefined && (differs[key]?.() ?? true));
+
+    const allowed = editableFields(status);
+    const locked = changed.filter((key) => !allowed.includes(key));
+    if (locked.length > 0) {
+      throw new AppError(`You cannot change ${locked.join(', ')} on an order that is ${status.replace(/_/g, ' ')}.`, 400, 'FIELD_NOT_EDITABLE');
+    }
+
+    const orderData: Prisma.OrderUncheckedUpdateManyInput = {};
+    const customerData: Prisma.CustomerUpdateInput = {};
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    const note = (key: string, was: unknown, now: unknown) => { before[key] = was; after[key] = now; };
+
+    for (const key of ['deliveryAddress', 'deliveryState', 'deliveryArea', 'notes'] as const) {
+      if (changed.includes(key)) { orderData[key] = fields[key]; note(key, order[key], fields[key]); }
+    }
+    if (changed.includes('customerName')) {
+      const parts = String(fields.customerName).trim().split(' ');
+      customerData.firstName = parts[0] || 'Unknown';
+      customerData.lastName = parts.slice(1).join(' ') || '';
+      note('customerName', customerName, fields.customerName);
+    }
+    if (changed.includes('customerEmail')) {
+      customerData.email = fields.customerEmail || null;
+      note('customerEmail', customer.email, customerData.email);
+    }
+    if (changed.includes('alternatePhone')) {
+      customerData.alternatePhone = normalizePhoneForStorage(fields.alternatePhone) || null;
+      note('alternatePhone', customer.alternatePhone, customerData.alternatePhone);
+    }
+
+    if (changed.includes('customerPhone')) {
+      const phone = normalizePhoneForStorage(fields.customerPhone);
+      if (!phone) throw new AppError('Enter the customer phone number.', 400, 'PHONE_REQUIRED');
+      const owner = await findCustomerByPhoneIncludingArchived(prisma, phone);
+      if (owner && owner.id !== customer.id) {
+        const name = `${owner.firstName} ${owner.lastName}`.trim();
+        const err = new AppError(`This number belongs to ${name}`, 409, 'PHONE_BELONGS_TO_OTHER_CUSTOMER');
+        err.details = { customerId: owner.id, customerName: name };
+        throw err;
+      }
+      // The number is the customer's, so it changes for their other orders too: that needs a Yes
+      const otherOrders = await prisma.order.count({ where: { customerId: order.customerId, id: { not: order.id }, deletedAt: null } });
+      if (otherOrders > 0 && confirm.confirmPhoneChange !== true) {
+        const err = new AppError("Update the number for all of this customer's orders?", 409, 'PHONE_CHANGE_NEEDS_CONFIRMATION');
+        err.details = { otherOrders };
+        throw err;
+      }
+      customerData.phoneNumber = phone;
+      note('customerPhone', customer.phoneNumber, phone);
+    }
+
+    // Lines, discount and total (F-318): lines first, then the total the user typed or the one the lines give
+    let newItems: ItemInput[] | undefined;
+    if (items && changed.includes('orderItems')) {
+      newItems = await this.checkEditedItems(items, order.orderItems, requester);
+      orderData.subtotal = Money.sum(newItems.map((i) => Money.mul(i.quantity, i.unitPrice)));
+      note('orderItems', order.orderItems.map(itemSnapshot), newItems.map(itemSnapshot));
+    }
+    const discount = changed.includes('discount') ? Money.parse(fields.discount ?? 0) : Money.parse(order.discount);
+    if (changed.includes('discount')) { orderData.discount = discount; note('discount', Money.toApi(order.discount), Money.toApi(discount)); }
+
+    if (newItems || changed.includes('discount') || changed.includes('totalAmount')) {
+      const subtotal = Money.parse((orderData.subtotal as Money.MoneyInput | undefined) ?? order.subtotal);
+      const total = fields.totalAmount !== undefined
+        ? Money.parse(fields.totalAmount)
+        : Money.add(Money.sub(subtotal, discount), order.shippingCost);
+      if (total.isNegative()) throw new AppError('The total cannot be below zero.', 400, 'INVALID_TOTAL');
+      if (Money.compare(total, order.totalAmount) !== 0) {
+        if (status === 'confirmed' && confirm.confirmTotalChange !== true) {
+          const err = new AppError(`The customer confirmed ${Money.toApi(order.totalAmount)}. The new total is ${Money.toApi(total)}.`, 400, 'TOTAL_CHANGE_NOT_CONFIRMED');
+          err.details = { oldTotal: Money.toApi(order.totalAmount), newTotal: Money.toApi(total) };
+          throw err;
+        }
+        orderData.totalAmount = total;
+        // The cash to collect follows the total while it followed it before
+        if (order.codAmount && Money.compare(order.codAmount, order.totalAmount) === 0) orderData.codAmount = total;
+        note('totalAmount', Money.toApi(order.totalAmount), Money.toApi(total));
+      }
+    }
+
+    return { changed, orderData, customerData, items: newItems, before, after };
+  }
+
+  /** Lines of an edit: at least one, known products, whole quantities, and stock for any line that is new or bigger. */
+  private async checkEditedItems(items: ItemInput[], current: Array<{ productId: number; quantity: number; unitPrice: Money.MoneyInput }>, requester?: Requester): Promise<ItemInput[]> {
+    if (items.length === 0) throw new AppError('An order needs at least one item', 400, 'ITEMS_REQUIRED');
+    const products = await prisma.product.findMany({ where: { id: { in: [...new Set(items.map((i) => i.productId))] } } });
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const canGiveAway = !requester || requester.role === 'super_admin' || requester.role === 'admin';
+    for (const item of items) {
+      const product = productMap.get(item.productId);
+      if (!product) throw new AppError(`Product ID ${item.productId} not found`, 404);
+      if (!Number.isInteger(item.quantity) || item.quantity < 1) throw new AppError('Quantity must be a whole number above 0.', 400, 'INVALID_QUANTITY');
+      if (Money.tryParse(item.unitPrice)?.isNegative() ?? true) throw new AppError('Enter a price for each item.', 400, 'INVALID_PRICE');
+      const was = current.find((c) => c.productId === item.productId);
+      if (Money.parse(item.unitPrice).isZero() && !canGiveAway && !(was && Money.parse(was.unitPrice).isZero())) {
+        throw new AppError('Only the owner and admins can set a price to 0.', 403, 'PRICE_ZERO_ADMIN_ONLY');
+      }
+      // Current stock number until M4 (available to sell); a line that did not grow is not checked again
+      if ((!was || item.quantity > was.quantity) && product.stockQuantity < item.quantity) {
+        throw new AppError(`Insufficient stock for product ${product.name}. Current stock: ${product.stockQuantity} `, 400);
+      }
+    }
+    return items.map((item) => ({ ...item, itemType: item.itemType || 'package', metadata: item.metadata || null }));
   }
 
   /**

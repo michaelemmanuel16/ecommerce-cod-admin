@@ -33,21 +33,4 @@ export const bulkImportOrderSchema = z.object({
     notes: z.string().max(1000).optional().or(z.literal(''))
 });
 
-// Schema for export query parameters
-export const exportQuerySchema = z.object({
-    status: z.union([
-        z.nativeEnum(OrderStatus),
-        z.array(z.nativeEnum(OrderStatus))
-    ]).optional(),
-    customerId: z.string().regex(/^\d+$/).transform(Number).optional(),
-    customerRepId: z.string().regex(/^\d+$/).transform(Number).optional(),
-    deliveryAgentId: z.string().regex(/^\d+$/).transform(Number).optional(),
-    area: z.string().max(100).optional(),
-    startDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
-    endDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
-    search: z.string().max(200).optional(),
-    format: z.enum(['csv', 'xlsx']).default('csv')
-});
-
 export type BulkImportOrderData = z.infer<typeof bulkImportOrderSchema>;
-export type ExportQueryParams = z.infer<typeof exportQuerySchema>;

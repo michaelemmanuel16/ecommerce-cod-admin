@@ -5,6 +5,7 @@ import orderService, { OrderFilters, OrderInclude, OrderSortField } from '../ser
 import { clearCache } from '../middleware/cache';
 import { readDateBound } from '../utils/kpiRequest';
 import { ALL_STATUSES } from '../services/orderStateMachine';
+import { assertWithinCap, BatchRow, ExportColumn, exportDate, exportMoney, exportPhone, readFormat, streamExport } from '../services/exportStream';
 
 /** Filters shared by the list and the tab counts. Sort, page and include are read by the list only. */
 const readOrderFilters = (query: AuthRequest['query']): OrderFilters => {
@@ -49,6 +50,48 @@ export const getOrderCounts = async (req: AuthRequest, res: Response): Promise<v
   res.json(await orderService.getOrderCounts(filters, req.user));
 };
 
+type ExportOrder = BatchRow<ReturnType<typeof orderService.exportBatches>>;
+const fullName = (u: { firstName: string; lastName: string } | null) => (u ? `${u.firstName} ${u.lastName}`.trim() : '');
+
+/** F-320 columns. The order number is the id; the id the 3PL or store gave sits beside it. */
+const ORDER_EXPORT_COLUMNS: ExportColumn<ExportOrder>[] = [
+  { header: 'Order number', value: (o) => o.id },
+  { header: 'External order ID', value: (o) => o.externalOrderId },
+  { header: 'Date', value: (o) => exportDate(o.createdAt) },
+  { header: 'Customer', value: (o) => fullName(o.customer) },
+  { header: 'Phone', value: (o) => exportPhone(o.customer?.phoneNumber), kind: 'phone' },
+  { header: 'Alternate phone', value: (o) => exportPhone(o.customer?.alternatePhone), kind: 'phone' },
+  { header: 'Region', value: (o) => o.deliveryState },
+  { header: 'Town', value: (o) => o.deliveryArea },
+  { header: 'Address', value: (o) => o.deliveryAddress },
+  { header: 'Products', value: (o) => o.orderItems.map((i) => `${i.product?.name ?? 'Product'} x ${i.quantity}`).join('; ') },
+  { header: 'Quantity', value: (o) => o.orderItems.reduce((sum, i) => sum + i.quantity, 0), kind: 'count' },
+  { header: 'Status', value: (o) => o.status },
+  { header: 'Call rep', value: (o) => fullName(o.customerRep) },
+  { header: 'Delivery agent', value: (o) => fullName(o.deliveryAgent) },
+  { header: 'Subtotal', value: (o) => exportMoney(o.subtotal), kind: 'money' },
+  { header: 'Discount', value: (o) => exportMoney(o.discount), kind: 'money' },
+  { header: 'Total', value: (o) => exportMoney(o.totalAmount), kind: 'money' },
+  { header: 'Payment method', value: (o) => o.paymentMethod },
+  { header: 'Payment status', value: (o) => o.paymentStatus },
+  { header: 'Delivery date', value: (o) => exportDate(o.deliveryDate) },
+  { header: 'Decline or failure reason', value: (o) => o.declineReason ?? o.failureReason },
+  { header: 'Source', value: (o) => o.source },
+];
+
+/** F-320: the list filters and row scope, streamed as CSV or XLSX. */
+export const exportOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+  const format = readFormat(req.query.format);
+  const filters = readOrderFilters(req.query);
+  assertWithinCap(await orderService.exportCount(filters, req.user));
+  await streamExport(res, {
+    format,
+    filename: `orders-${new Date().toISOString().slice(0, 10)}`,
+    columns: ORDER_EXPORT_COLUMNS,
+    batches: orderService.exportBatches(filters, req.user),
+  });
+};
+
 export const createOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const {
@@ -66,7 +109,10 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       deliveryState,
       deliveryArea,
       notes,
-      estimatedDelivery
+      estimatedDelivery,
+      customerRepId,
+      deliveryAgentId,
+      customerConfirmed
     } = req.body;
 
     const order = await orderService.createOrder({
@@ -85,7 +131,12 @@ export const createOrder = async (req: AuthRequest, res: Response): Promise<void
       deliveryArea,
       notes,
       estimatedDelivery: estimatedDelivery ? new Date(estimatedDelivery) : undefined,
-      createdById: req.user?.id
+      createdById: req.user?.id,
+      // F-317: a status in the body is not read. Every manual order starts at pending_confirmation.
+      customerRepId: customerRepId ? Number(customerRepId) : undefined,
+      deliveryAgentId: deliveryAgentId ? Number(deliveryAgentId) : undefined,
+      customerConfirmed: customerConfirmed === true,
+      requester: req.user
     });
 
     // Invalidate analytics cache

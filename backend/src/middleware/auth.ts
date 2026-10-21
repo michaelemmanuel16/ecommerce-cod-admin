@@ -61,7 +61,7 @@ function getDefaultPermissions() {
     super_admin: {
       users: ['create', 'view', 'update', 'delete'],
       orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status'],
-      customers: ['create', 'view', 'update', 'delete'],
+      customers: ['create', 'view', 'update', 'delete', 'export'],
       products: ['create', 'view', 'update', 'delete', 'update_stock'],
       financial: ['view', 'create', 'update', 'delete'],
       analytics: ['view'],
@@ -75,7 +75,7 @@ function getDefaultPermissions() {
     admin: {
       users: ['create', 'view', 'update', 'delete'],
       orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status'],
-      customers: ['create', 'view', 'update', 'delete'],
+      customers: ['create', 'view', 'update', 'delete', 'export'],
       products: ['create', 'view', 'update', 'delete'],
       financial: ['view', 'create'],
       analytics: ['view'],
@@ -89,7 +89,7 @@ function getDefaultPermissions() {
     manager: {
       users: [],
       orders: ['view', 'update', 'bulk_import', 'assign'],
-      customers: ['create', 'view', 'update', 'delete'],
+      customers: ['create', 'view', 'update', 'delete', 'export'],
       products: ['view'],
       financial: ['view'],
       analytics: ['view'],
