@@ -1,46 +1,71 @@
 /**
- * Owner Dashboard data (M3-T09, F-200 to F-204). `ownerDashboard` builds the blocks of
+ * Owner Dashboard data (M3-T09 and M3-T10, F-200 to F-205, F-207, F-210). `ownerDashboard` builds the blocks of
  * GET /api/dashboard/owner from the M1 KPI functions (services/kpi/*); it does no counting of its own.
  * Every number and every tag key the mockup shows is in the response, so the frontend formats and never calculates.
  *
- * Blocks: header, ladder (year, quarter, month, day), quests, tiles. M3-T10 adds chart, drivers and recentOrders;
+ * Blocks: header, ladder (year, quarter, month, day), quests, tiles, chart, drivers, recentOrders.
  * `top` (F-208) comes with M6, the margin chip (F-202) with M5; until then neither is in the response.
  *
  *  - Error isolation: a block that throws becomes `{ error }`; the other blocks still answer.
- *  - Range (F-201) changes the tiles' rates. The ladder, the quests, the "orders today" tile and the cash tile always read the
- *    month (and year) that holds `asOf`.
+ *  - Range (F-201) changes the tiles' rates, the chart and the recent orders. The ladder, the quests, the "orders today"
+ *    tile, the cash tile and the drivers always read the month (and year) that holds `asOf`.
  *  - `asOf` is a store-zone day, default today; a day in the future is moved back to today (F-201).
+ *  - Cache (F-200): 30 seconds per tenant, range and day, filled with every block. Permission trimming happens after the
+ *    cache, so a manager with and without `financial:view` share one entry. The order events clear the tenant's entries.
+ *  - Permission trimming (F-210): no cash tile without `financial:view`, no recent orders without `orders:view`.
  */
+import prisma from '../utils/prisma';
 import { Prisma } from '@prisma/client';
+import { runInTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import logger from '../utils/logger';
+import { randomUUID } from 'crypto';
+import { AppError } from '../middleware/errorHandler';
 import { getCurrency } from '../utils/currency';
-import { deliveredRevenue, type DeliveredRevenue } from './kpi/revenue';
+import { AppEvent, onOrderEvent } from '../utils/appEvents';
+import { deliveredRevenue, deliveredRevenueByDay, type DeliveredRevenue } from './kpi/revenue';
 import { rates, ratePercent } from './kpi/rates';
 import { leadership, type Leadership, type Period } from './kpi/leadership';
 import { cashHeldByPartners } from './kpi/cash';
 import { failedDeliveryCalls, failedDeliveryCallsTarget, ordersPlacedByDay } from './kpi/daily';
 import { changePercent, paceChip, progressTag, questPercent, questTone, rateTag } from './kpi/status';
-import { endOfDay, getStoreTimeZone, localDate, parseYmd, shiftYmd, startOfDay, weekRange } from './kpi/dates';
+import { daysInMonth, endOfDay, getStoreTimeZone, localDate, parseYmd, shiftYmd, startOfDay, weekRange } from './kpi/dates';
 
 export const DASHBOARD_RANGES = ['today', 'week', 'month', 'last_7_days', 'last_30_days', 'quarter', 'year'] as const;
 export type DashboardRange = (typeof DASHBOARD_RANGES)[number];
+
+export const CACHE_TTL_MS = 30_000;
+const RECENT_ORDERS = 4;
+/** Fewer days gone than this and the projection is too early to trust (F-205 GUESS). */
+const MIN_DAYS_TO_PROJECT = 3;
+
+export interface DashboardAccess {
+  /** `financial:view`: the cash tile. */
+  cash: boolean;
+  /** `orders:view`: the recent orders block. */
+  orders: boolean;
+}
 
 export interface DashboardOptions {
   range?: DashboardRange;
   /** Store-zone day 'YYYY-MM-DD'. */
   asOf?: string;
+  access?: DashboardAccess;
 }
 
-export interface BlockError { error: string }
+/** What a failed block returns. The raw error stays in the server log (it can hold SQL or Prisma details); `errorId` finds it there. */
+export interface BlockError { error: { code: 'block_failed'; errorId: string; message?: string } }
 type Block<T> = T | BlockError;
 
-/** Everything the page shows, one key per block. */
+/** Everything the page shows, one key per block. Optional keys are trimmed by permission. */
 export interface OwnerDashboard {
   header: Block<Record<string, unknown>>;
   ladder: Block<Record<string, unknown>>;
   quests: Block<Record<string, unknown>>;
   tiles: Block<Record<string, unknown>>;
+  chart: Block<Record<string, unknown>>;
+  drivers: Block<Record<string, unknown>>;
+  recentOrders?: Block<Array<Record<string, unknown>>>;
 }
 
 interface Context {
@@ -76,6 +101,12 @@ function periodStart(ymd: string, period: Period): string {
   return `${year}-${String(startMonth).padStart(2, '0')}-01`;
 }
 
+function periodEnd(ymd: string, period: Period): string {
+  const { year, month } = parseYmd(ymd);
+  const endMonth = period === 'year' ? 12 : period === 'quarter' ? Math.floor((month - 1) / 3) * 3 + 3 : month;
+  return `${year}-${String(endMonth).padStart(2, '0')}-${String(daysInMonth(year, endMonth)).padStart(2, '0')}`;
+}
+
 /** First and last store day of a range that ends on asOf. */
 function rangeDays(range: DashboardRange, asOfDate: string, zone: string): { from: string; to: string } {
   switch (range) {
@@ -92,13 +123,18 @@ function greeting(zone: string): 'morning' | 'afternoon' | 'evening' {
   return hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
 }
 
-/** Run one block; a failure becomes `{ error }` and is logged, the other blocks go on. */
+/**
+ * Run one block; a failure becomes `{ error: { code, errorId } }` and the full error goes to the log under the same id.
+ * Only the message of an AppError below 500 (a message written for the user) is passed on.
+ */
 async function isolate<T>(name: string, tenantId: string, build: () => Promise<T>): Promise<Block<T>> {
   try {
     return await build();
   } catch (error: any) {
-    logger.error('Dashboard block failed', { block: name, tenantId, error: error?.message });
-    return { error: error?.message || 'Block failed' };
+    const errorId = randomUUID();
+    logger.error('Dashboard block failed', { block: name, tenantId, errorId, error: error?.message, stack: error?.stack });
+    const safe = error instanceof AppError && error.statusCode < 500;
+    return { error: { code: 'block_failed', errorId, ...(safe ? { message: error.message } : {}) } };
   }
 }
 
@@ -240,8 +276,78 @@ async function tilesBlock(c: Context) {
   };
 }
 
+async function chartBlock(c: Context) {
+  const [l, currency] = await Promise.all([c.lead(), c.currency()]);
+  const period = PERIOD_OF_RANGE[c.range];
+  const target = period ? l.attainment[period].target : null;
+  const lastDay = period ? periodEnd(c.asOfDate, period) : c.rangeTo;
+
+  const revenue = new Map((await deliveredRevenueByDay(c.tenantId, startOfDay(c.rangeFrom, c.zone), endOfDay(c.rangeTo, c.zone)))
+    .map((d) => [d.date, d.revenue]));
+  const dates: string[] = [];
+  for (let d = c.rangeFrom; d <= lastDay; d = shiftYmd(d, 1)) dates.push(d);
+
+  let cumulative = Money.ZERO;
+  const days = dates.map((date, i) => {
+    // Straight pace to the period target: day i of N is i / N of it, the same rule as the pace marker (F-202).
+    const targetPace = target ? Money.toApi(Money.roundHalfUp(Money.div(Money.mul(target, i + 1), dates.length), 2)) : null;
+    if (date > c.rangeTo) return { date, delivered: null, cumulative: null, targetPace, vsPace: null };
+    const delivered = Money.parse(revenue.get(date) ?? '0');
+    cumulative = Money.add(cumulative, delivered);
+    return {
+      date, delivered: Money.toApi(delivered), cumulative: Money.toApi(cumulative), targetPace,
+      /** Cumulative minus target pace: negative = behind. */
+      vsPace: targetPace ? Money.toApi(Money.sub(cumulative, targetPace)) : null,
+    };
+  });
+  return { currency, period: period ?? null, target, from: c.rangeFrom, to: c.rangeTo, days };
+}
+
+async function driversBlock(c: Context) {
+  const [l, currency] = await Promise.all([c.lead(), c.currency()]);
+  return {
+    currency,
+    projectedMonth: {
+      value: l.projectedMonth.value, percentOfTarget: l.projectedPercent.value,
+      /** Fewer than 3 days gone: the card says "Too early to project". */
+      tooEarly: l.daysGone < MIN_DAYS_TO_PROJECT,
+      basis: 'todays_rate', daysGone: l.daysGone, daysInMonth: l.daysInMonth,
+    },
+    neededPerDay: { value: l.neededPerDay.value, daysLeft: l.daysInMonth - l.daysGone },
+    biggestLever: { rate: l.lever.rate, points: l.lever.points, value: l.lever.value },
+  };
+}
+
+async function recentOrdersBlock(c: Context) {
+  const [rows, storeCurrency] = await Promise.all([
+    runInTenant(c.tenantId, () => prisma.order.findMany({
+      where: { deletedAt: null, createdAt: { gte: startOfDay(c.rangeFrom, c.zone), lt: endOfDay(c.rangeTo, c.zone) } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: RECENT_ORDERS,
+      select: {
+        id: true, externalOrderId: true, status: true, totalAmount: true, currency: true, deliveryArea: true, createdAt: true,
+        customer: { select: { firstName: true, lastName: true } },
+        calls: { orderBy: { createdAt: 'desc' }, take: 1, select: { outcome: true } },
+      },
+    })),
+    c.currency(),
+  ]);
+  return rows.map((o) => ({
+    id: o.id,
+    externalOrderId: o.externalOrderId,
+    customerName: `${o.customer.firstName} ${o.customer.lastName}`.trim(),
+    city: o.deliveryArea,
+    status: o.status,
+    /** A pending order whose last call was not reachable: the row shows Pending with a small note (F-207). */
+    notReachable: o.status === 'pending_confirmation' && o.calls[0]?.outcome === 'not_reachable',
+    amount: Money.toApi(o.totalAmount),
+    currency: o.currency ?? storeCurrency,
+    createdAt: o.createdAt.toISOString(),
+  }));
+}
+
 // ---------------------------------------------------------------------------------------------------------
-// Entry point
+// Entry point, cache, trimming
 // ---------------------------------------------------------------------------------------------------------
 
 async function build(tenantId: string, range: DashboardRange, asOfDate: string): Promise<OwnerDashboard> {
@@ -271,21 +377,73 @@ async function build(tenantId: string, range: DashboardRange, asOfDate: string):
       return new Map(rows.map((r) => [r.date, r.count]));
     }),
   };
-  const [header, ladder, quests, tiles] = await Promise.all([
+  // Every block is built for every viewer, so one cache entry serves all; `trim` takes out what a viewer may not see.
+  const [header, ladder, quests, tiles, chart, drivers, recentOrders] = await Promise.all([
     isolate('header', tenantId, () => headerBlock(c)),
     isolate('ladder', tenantId, () => ladderBlock(c)),
     isolate('quests', tenantId, () => questsBlock(c)),
     isolate('tiles', tenantId, () => tilesBlock(c)),
+    isolate('chart', tenantId, () => chartBlock(c)),
+    isolate('drivers', tenantId, () => driversBlock(c)),
+    isolate('recentOrders', tenantId, () => recentOrdersBlock(c)),
   ]);
-  return { header, ladder, quests, tiles };
+  return { header, ladder, quests, tiles, chart, drivers, recentOrders };
+}
+
+const cache = new Map<string, { at: number; body: OwnerDashboard }>();
+/** Raised by every clear, so a build that started before an order event does not cache its stale body. */
+let generation = 0;
+
+/** Drop a tenant's cached dashboards (all tenants without an argument). */
+export function clearDashboardCache(tenantId?: string): void {
+  generation += 1;
+  if (!tenantId) { cache.clear(); return; }
+  for (const key of cache.keys()) if (key.startsWith(`${tenantId}|`)) cache.delete(key);
+}
+
+let listening = false;
+/** Clear the tenant's cache on every order event. Idempotent; the server calls it at bootstrap (tests call it too). */
+export function registerDashboardCacheListeners(): void {
+  if (listening) return;
+  listening = true;
+  const clear = (evt: { tenantId: string }) => clearDashboardCache(evt.tenantId);
+  onOrderEvent(AppEvent.ORDER_STATUS_CHANGED, clear);
+  onOrderEvent(AppEvent.ORDER_CREATED, clear);
+  onOrderEvent(AppEvent.ORDER_DELETED, clear);
+}
+
+const hasError = (body: OwnerDashboard) => Object.values(body).some((b) => b && typeof b === 'object' && !Array.isArray(b) && 'error' in b);
+
+/** Take out what the viewer may not see. Works on a copy, the cached body stays whole. */
+function trim(body: OwnerDashboard, access: DashboardAccess): OwnerDashboard {
+  const out: OwnerDashboard = { ...body };
+  if (!access.orders) delete out.recentOrders;
+  if (!access.cash && out.tiles && !('error' in out.tiles)) {
+    const { cash: _cash, ...tiles } = out.tiles as Record<string, unknown>;
+    out.tiles = tiles;
+  }
+  return out;
 }
 
 export async function ownerDashboard(tenantId: string, options: DashboardOptions = {}): Promise<OwnerDashboard> {
   const range = options.range ?? 'month';
+  const access = options.access ?? { cash: true, orders: true };
   const zone = getStoreTimeZone(tenantId);
   const todayDate = localDate(new Date(), zone);
   // Validates the format (RangeError for 2026-02-30). A day after today is moved back to today.
   const requested = options.asOf ?? todayDate;
   parseYmd(requested);
-  return build(tenantId, range, requested > todayDate ? todayDate : requested);
+  const asOfDate = requested > todayDate ? todayDate : requested;
+
+  const key = `${tenantId}|${range}|${asOfDate}`;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return trim(hit.body, access);
+
+  const startedAt = generation;
+  const body = await build(tenantId, range, asOfDate);
+  if (!hasError(body) && generation === startedAt) {
+    if (cache.size > 200) for (const [k, v] of cache) if (Date.now() - v.at >= CACHE_TTL_MS) cache.delete(k);
+    cache.set(key, { at: Date.now(), body });
+  }
+  return trim(body, access);
 }

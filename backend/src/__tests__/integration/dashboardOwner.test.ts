@@ -8,7 +8,7 @@
  *   - Today the fixture delivers GH 4,950 in 19 orders, not the mockup's 4,200 in 17, so the sub-line needs GH 1,300 more, not 2,100.
  *   - The New orders quest was hit on 16 of 17 days (mockup: 14), 84 orders on Friday 10 October (mockup: +18%, here -24%), no failed-delivery call today (mockup: 6).
  */
-import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
 import request from 'supertest';
@@ -20,7 +20,7 @@ import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { deliveredRevenue } from '../../services/kpi/revenue';
 import { endOfDay, startOfDay } from '../../services/kpi/dates';
 import * as cash from '../../services/kpi/cash';
-import { ownerDashboard } from '../../services/dashboardService';
+import { clearDashboardCache, ownerDashboard } from '../../services/dashboardService';
 import { seedTargets, targetTree } from '../../../scripts/seed-targets';
 
 jest.setTimeout(300_000);
@@ -55,6 +55,8 @@ afterAll(async () => {
   await prismaBase.tenant.deleteMany({ where: { slug: FIXTURE_SLUG } });
   await prismaBase.$disconnect();
 });
+
+beforeEach(() => clearDashboardCache());
 
 describe('ladder on the fixture, 17 October (F-202)', () => {
   it('North Star 1.38M of 1.8M: 76.8 percent, pace 79.5, "3 pts behind", tag behind', async () => {
@@ -153,6 +155,7 @@ describe('quests (F-203)', () => {
     try {
       expect((await dash()).quests.items[2]).toMatchObject({ key: 'failed_delivery_calls', value: 2, target: 4, targetSource: 'target', percent: 50, tone: 'warn' });
       await prismaBase.target.delete({ where: { id: target.id } });
+      clearDashboardCache();
       expect((await dash()).quests.items[2]).toMatchObject({ value: 2, target: 15, targetSource: 'default', tone: 'bad' });
     } finally {
       await prismaBase.target.deleteMany({ where: { id: target.id } });
@@ -163,13 +166,15 @@ describe('quests (F-203)', () => {
 
 describe('error isolation per block', () => {
   it('a block that throws returns { error } and the others still answer', async () => {
-    jest.spyOn(cash, 'cashHeldByPartners').mockRejectedValue(new Error('cash exploded'));
+    jest.spyOn(cash, 'cashHeldByPartners').mockRejectedValue(new Error('select * from agent_balances failed'));
     const body = await dash();
-    expect(body.tiles).toEqual({ error: 'cash exploded' });
+    expect(body.tiles).toEqual({ error: { code: 'block_failed', errorId: expect.any(String) } });
+    expect(JSON.stringify(body)).not.toContain('agent_balances');
     expect(body.header.asOfDate).toBe('2026-10-17');
     expect(body.ladder.year.percent).toBe(76.8);
     expect(body.quests.items).toHaveLength(3);
-    expect(body.quests.items).toHaveLength(3);
+    expect(body.drivers.projectedMonth.value).toBeDefined();
+    expect(body.chart.days.length).toBeGreaterThan(0);
   });
 });
 

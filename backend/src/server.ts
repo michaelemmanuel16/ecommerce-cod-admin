@@ -98,6 +98,7 @@ import cron from 'node-cron';
 import './queues/workflowQueue';
 import { registerWorkflowListeners } from './services/workflowService';
 import { registerCustomerStatsListeners } from './services/customerStatsService';
+import { registerDashboardCacheListeners } from './services/dashboardService';
 import './queues/emailCampaignQueue';
 
 import { setupAgingCron } from './queues/agingQueue';
@@ -130,6 +131,8 @@ try {
 registerWorkflowListeners();
 // Customer stats are rebuilt from the same events (F-357)
 registerCustomerStatsListeners();
+// The Dashboard cache (30 s) is dropped on the same events (M3-T10)
+registerDashboardCacheListeners();
 
 const app: Application = express();
 const server = http.createServer(app);
