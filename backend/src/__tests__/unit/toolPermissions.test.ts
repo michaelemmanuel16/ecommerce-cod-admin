@@ -1,16 +1,13 @@
 import { describe, it, expect } from '@jest/globals';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_PERMISSIONS } from '../../config/toolPermissions';
 import { DEFAULT_ROLES, LEGACY_MCP_ROLE_NAME } from '../../config/defaultRoles';
-import { createMcpServer } from '../../mcp/createServer';
+import { listTools } from '../../tools/registry';
+import '../../tools';
 
 describe('TOOL_PERMISSIONS', () => {
-  const registered = () => {
-    const server = createMcpServer(() => 'unused') as McpServer & { _registeredTools: Record<string, unknown> };
-    return Object.keys(server._registeredTools);
-  };
+  const registered = () => listTools().map((t) => t.name);
 
-  it('has a permission cell for each of the 14 MCP tools, and no extras', () => {
+  it('has a permission cell for each of the 14 registry tools, and no extras', () => {
     const tools = registered();
     expect(tools).toHaveLength(14);
     expect(Object.keys(TOOL_PERMISSIONS).sort()).toEqual([...tools].sort());

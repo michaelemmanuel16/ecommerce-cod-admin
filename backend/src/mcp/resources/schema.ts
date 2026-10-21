@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { OrderStatus } from '@prisma/client';
 
 const SCHEMA_RESOURCES = {
   orders: {
@@ -6,11 +7,7 @@ const SCHEMA_RESOURCES = {
     description: 'COD orders with status tracking, delivery assignment, and financial info',
     fields: [
       { name: 'id', type: 'Int', description: 'Unique order ID' },
-      { name: 'status', type: 'OrderStatus', description: 'Current order status', enum: [
-        'pending_confirmation', 'payment_pending', 'confirmed', 'preparing',
-        'ready_for_pickup', 'out_for_delivery', 'delivered', 'digital_delivered',
-        'cancelled', 'returned', 'failed_delivery', 'payment_failed',
-      ]},
+      { name: 'status', type: 'OrderStatus', description: 'Current order status', enum: Object.values(OrderStatus) },
       { name: 'totalAmount', type: 'Decimal', description: 'Total order amount' },
       { name: 'deliveryFee', type: 'Decimal', description: 'Delivery fee' },
       { name: 'deliveryArea', type: 'String', description: 'Delivery area/city' },

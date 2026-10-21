@@ -17,13 +17,17 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
 import { prismaBase } from '../../utils/prisma';
-import { updateOrderStatusTool } from '../../mcp/tools/ordersWrite';
+import '../../tools';
+import { toolMcpResult } from './helpers/callTool';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { runInTenant } from '../../utils/tenantContext';
 
 let pair: TwoTenants;
 let orderAId: number;
 let orderBId: number;
+
+// The registry tool, called as the tenant's tool actor.
+const updateOrderStatusTool = (args: unknown) => toolMcpResult('orders_update_status', args);
 
 // Parse the JSON payload an MCP tool returns in content[0].text.
 function payload(res: any) {

@@ -1,14 +1,25 @@
 import { createHash } from 'crypto';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, UserKind } from '@prisma/client';
+import type { AccessFacts } from '../services/toolAccessService';
 import { MCP_CONFIG } from './config';
 
-interface CachedAuth {
-  keyHash: string;
+/**
+ * Who an MCP key acts as: the tenant, the key's user (the actor) and the key's role. `access` holds the user's base
+ * role and the role's tool list, read with the key, so the access check needs no further lookup.
+ */
+export interface McpPrincipal {
   tenantId: string;
-  validatedAt: number;
+  keyId: string;
+  userId: number;
+  actorKind: UserKind;
+  roleId: number | null;
+  access: AccessFacts;
 }
 
-let authCache: CachedAuth | null = null;
+/** One entry per key (by key hash), valid until `expires`. At AUTH_CACHE_MAX entries the whole cache is dropped. */
+const authCache = new Map<string, { principal: McpPrincipal; expires: number }>();
+const AUTH_CACHE_MAX = 500;
+
 let mcpPrisma: PrismaClient | null = null;
 
 function getPrisma(): PrismaClient {
@@ -36,22 +47,27 @@ export function hashApiKey(key: string): string {
 }
 
 /**
- * Validate an API key and resolve its tenantId.
+ * Validate an API key and resolve who it acts as.
  * Uses un-extended PrismaClient (no tenant context needed for key lookup).
- * Results are cached for 60 seconds to reduce DB lookups.
+ * The result (with the user's base role and the role's tool list) is cached per key for 60 seconds, so a revoked or expired key, or a deactivated user, stops
+ * working within 60 seconds. A key with no user (made before every key had one) is refused.
  */
-export async function validateKey(apiKey: string): Promise<string> {
+export async function validateKey(apiKey: string): Promise<McpPrincipal> {
   const keyHash = hashApiKey(apiKey);
+  const now = Date.now();
 
-  // Check cache — keyed on hash to prevent stale tenant if key changes
-  if (authCache && authCache.keyHash === keyHash && Date.now() - authCache.validatedAt < MCP_CONFIG.auth.cacheTtlMs) {
-    return authCache.tenantId;
-  }
+  // Cache is keyed on the hash, so a changed key never gets another key's tenant.
+  const cached = authCache.get(keyHash);
+  if (cached && now < cached.expires) return cached.principal;
 
   const prisma = getPrisma();
 
   const mcpKey = await prisma.mcpApiKey.findUnique({
     where: { keyHash },
+    include: {
+      user: { select: { id: true, kind: true, isActive: true, tenantId: true, role: true } },
+      role: { select: { tools: true } },
+    },
   });
 
   if (!mcpKey) {
@@ -70,6 +86,14 @@ export async function validateKey(apiKey: string): Promise<string> {
     throw new Error('API key is not linked to a tenant');
   }
 
+  if (!mcpKey.user || mcpKey.user.tenantId !== mcpKey.tenantId) {
+    throw new Error('API key is not linked to a user. Ask the owner to issue a new key.');
+  }
+
+  if (!mcpKey.user.isActive) {
+    throw new Error('The user of this API key is deactivated');
+  }
+
   // Update lastUsedAt (fire-and-forget, don't block the tool call)
   prisma.mcpApiKey.update({
     where: { id: mcpKey.id },
@@ -78,21 +102,28 @@ export async function validateKey(apiKey: string): Promise<string> {
     // Swallow update errors — lastUsedAt is non-critical
   });
 
-  // Cache the result — keyed on hash
-  authCache = {
-    keyHash,
+  const principal: McpPrincipal = {
     tenantId: mcpKey.tenantId,
-    validatedAt: Date.now(),
+    keyId: mcpKey.id,
+    userId: mcpKey.user.id,
+    actorKind: mcpKey.user.kind,
+    roleId: mcpKey.roleId,
+    access: {
+      baseRole: mcpKey.user.role,
+      roleTools: mcpKey.roleId === null ? null : Array.isArray(mcpKey.role?.tools) ? (mcpKey.role!.tools as string[]) : [],
+    },
   };
+  if (authCache.size >= AUTH_CACHE_MAX) authCache.clear();
+  authCache.set(keyHash, { principal, expires: now + MCP_CONFIG.auth.cacheTtlMs });
 
-  return mcpKey.tenantId;
+  return principal;
 }
 
 /**
  * Clear the auth cache (useful for testing or when key is revoked).
  */
 export function clearAuthCache(): void {
-  authCache = null;
+  authCache.clear();
 }
 
 /**

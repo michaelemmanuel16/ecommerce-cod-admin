@@ -12,7 +12,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "NODE_OPTIONS=--max-old-space-size=4096 jest --coverage --runInBand",
     "test:unit": "jest --testPathPattern=unit",
-    "test:integration": "NODE_OPTIONS=--max-old-space-size=4096 jest --testPathPattern=integration --runInBand",
+    "test:integration": "NODE_OPTIONS=--max-old-space-size=4096 jest --config jest.integration.config.js --runInBand",
     "test:load": "ts-node src/__tests__/load/load-test.ts",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",

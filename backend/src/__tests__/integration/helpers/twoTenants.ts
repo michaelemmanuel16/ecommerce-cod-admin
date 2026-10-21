@@ -125,9 +125,6 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     seed('webhookEvent', prismaBase.webhookEvent.create({
       data: { provider: 'paystack', eventType: 'charge.success', reference: `ref-${tag}`, payloadHash: `hash-${tag}`, tenantId },
     })),
-    prismaBase.mcpApiKey.create({
-      data: { tenantId, keyHash: hashApiKey(mcpKey), keyPrefix: mcpKey.slice(0, 8), label: `key ${marker}` },
-    }),
     // Full chart of accounts: suites read it, and the posting in wave 2 needs it.
     seedTenantDefaults(tenantId),
   ]);
@@ -257,6 +254,21 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
   await seed('roleAssignment', prismaBase.roleAssignment.create({
     data: { tenantId, roleId: ownerRole.id, holderId: admin.id, fromDate: new Date() },
   }));
+
+  // The MCP key acts as an ai_agent user. super_admin holds every permission cell and the Legacy role lists all
+  // 14 tools, so suites that call every tool work. A suite that tests a narrower key makes its own user, role and key.
+  const legacyRole = await prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Legacy MCP (14 tools)' } });
+  const mcpUserRow = await prismaBase.user.create({
+    data: {
+      email: `mcp-${tag}@codadmin.test`, password: 'x', firstName: `mcp${marker}`, lastName: `Last${marker}`,
+      role: 'super_admin', kind: 'ai_agent', tenantId,
+    },
+  });
+  await prismaBase.mcpApiKey.create({
+    data: { tenantId, keyHash: hashApiKey(mcpKey), keyPrefix: mcpKey.slice(0, 8), label: `key ${marker}`, userId: mcpUserRow.id, roleId: legacyRole.id },
+  });
+  ids.mcpUser = mcpUserRow.id;
+  ids.legacyRole = legacyRole.id;
 
   return {
     id: tenantId, slug: tenant.slug, marker, phone, amount,

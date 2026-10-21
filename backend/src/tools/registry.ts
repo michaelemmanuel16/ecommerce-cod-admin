@@ -3,7 +3,7 @@ import { TOOL_PERMISSIONS, ToolName } from '../config/toolPermissions';
 import { AppError } from '../middleware/errorHandler';
 import type { AuditChannel, UserKind } from '@prisma/client';
 import { auditService, ToolCallStatus } from '../services/auditService';
-import { actorHasPermission, roleAllowsTool } from '../services/toolAccessService';
+import { AccessFacts, loadAccessFacts, permittedCells } from '../services/toolAccessService';
 import { runInTenant } from '../utils/tenantContext';
 import logger from '../utils/logger';
 
@@ -26,6 +26,8 @@ export interface ToolContext {
   actorKind: UserKind;
   roleId: number | null;
   channel: AuditChannel;
+  /** The actor's base role and the role's tool list, when the caller already holds them (the MCP key cache). Otherwise runTool loads them. */
+  access?: AccessFacts;
 }
 
 /** A handler fills this to put more in the audit row (write tools: the row before and after). */
@@ -52,11 +54,13 @@ export interface ToolDef<S extends ZodTypeAny = ZodTypeAny, R = unknown> {
   confirm: 'none' | 'preview';
   /** True when the output or effect carries money. */
   money: boolean;
+  /** Channels that may call the tool. Default: all. A call from any other channel is refused as "not available". */
+  allowedChannels?: readonly AuditChannel[];
 }
 
 /** What a tool file writes: the permission cell is not its choice, and the rest have defaults. */
 export type ToolSpec<S extends ZodTypeAny, R> = Omit<ToolDef<S, R>, 'permission' | 'kind' | 'roleScope' | 'confirm' | 'money'> &
-  Partial<Pick<ToolDef<S, R>, 'kind' | 'roleScope' | 'confirm' | 'money'>>;
+  Partial<Pick<ToolDef<S, R>, 'kind' | 'roleScope' | 'confirm' | 'money' | 'allowedChannels'>>;
 
 /** Build a ToolDef: the permission cell always comes from TOOL_PERMISSIONS. */
 export function defineTool<S extends ZodTypeAny, R>(spec: ToolSpec<S, R>): ToolDef<S, R> {
@@ -65,6 +69,8 @@ export function defineTool<S extends ZodTypeAny, R>(spec: ToolSpec<S, R>): ToolD
     roleScope: 'listed',
     confirm: 'none',
     money: false,
+    // A write tool is offered to the MCP channel only until a tool says otherwise (chat and cards get writes in M12).
+    ...(spec.kind === 'write' ? { allowedChannels: ['mcp'] as const } : {}),
     ...spec,
     permission: TOOL_PERMISSIONS[spec.name],
   };
@@ -94,23 +100,58 @@ export type ToolResult<R = unknown> = ToolOutcome<R> & { durationMs: number };
 
 const GENERIC_ERROR = 'The tool failed. Try again or contact support.';
 
-/** Access check: a reason string when the actor may not run the tool, otherwise null. */
-async function authorize(def: ToolDef, ctx: ToolContext): Promise<{ shown: string; detail: string } | null> {
-  const needsRole = def.roleScope === 'listed' && ctx.roleId !== null;
-  const [permitted, listed] = await Promise.all([
-    actorHasPermission(ctx.actorId, def.permission),
-    needsRole ? roleAllowsTool(ctx.roleId as number, def.name) : true,
-  ]);
-  if (!permitted) return { shown: 'You do not have permission to use this tool.', detail: `missing permission ${def.permission}` };
-  if (!listed) return { shown: 'Your role does not include this tool.', detail: `role ${ctx.roleId} does not list this tool` };
+type Denial = { shown: string; detail: string };
+
+/** The channel part of the access decision. It needs no lookup, so runTool checks it before it reads the input. */
+function channelDenial(def: ToolDef, channel: AuditChannel): Denial | null {
+  if (def.allowedChannels && !def.allowedChannels.includes(channel)) {
+    return { shown: `The tool ${def.name} is not available from ${channel}.`, detail: `channel ${channel} not allowed` };
+  }
   return null;
+}
+
+/**
+ * The one access decision: the stricter of the actor's base role and the role's tool list, on top of the channel.
+ * Pure: the lookups are done by the caller (see accessOf).
+ */
+function decide(def: ToolDef, channel: AuditChannel, facts: AccessFacts, permitted: ReadonlySet<string>): Denial | null {
+  const byChannel = channelDenial(def, channel);
+  if (byChannel) return byChannel;
+  if (!permitted.has(def.permission)) return { shown: 'You do not have permission to use this tool.', detail: `missing permission ${def.permission}` };
+  if (def.roleScope === 'listed' && facts.roleTools !== null && !facts.roleTools.includes(def.name)) {
+    return { shown: 'Your role does not include this tool.', detail: `the role does not list ${def.name}` };
+  }
+  return null;
+}
+
+/** Load what the decision needs for these tools, once. Run in the caller's tenant context. */
+async function accessOf(ctx: ToolContext, defs: ToolDef[]) {
+  const facts = ctx.access ?? (await loadAccessFacts(ctx.actorId, ctx.roleId));
+  const permitted = await permittedCells(facts.baseRole, defs.map((d) => d.permission));
+  return { facts, permitted };
+}
+
+/**
+ * Access check: null when the actor may run the tool, otherwise the reason. runTool uses it for every call.
+ * Run it in the caller's tenant context.
+ */
+export async function checkToolAccess(def: ToolDef, ctx: ToolContext): Promise<Denial | null> {
+  const { facts, permitted } = await accessOf(ctx, [def]);
+  return decide(def, ctx.channel, facts, permitted);
+}
+
+/** The tools this actor may run: tools/list uses it. One load of the actor's facts, then the decision for every tool in memory. */
+export async function allowedTools(ctx: ToolContext, defs: ToolDef[] = listTools()): Promise<ToolDef[]> {
+  const { facts, permitted } = await accessOf(ctx, defs);
+  return defs.filter((def) => decide(def, ctx.channel, facts, permitted) === null);
 }
 
 /**
  * Status mapping:
  *  ok      handler returned
  *  invalid unknown tool, or input failed the zod schema (extra keys are dropped, so a planted tenantId never reaches the handler)
- *  denied  the actor's base role lacks the permission cell, or the role's tool list excludes the tool
+ *  denied  the actor's base role lacks the permission cell, the role's tool list excludes the tool, or the tool is
+ *          not available on the call's channel (allowedChannels; the message says "not available")
  *  error   the handler threw (an AppError message is shown to the caller, any other message is hidden)
  * Every call writes one audit row, also denied and invalid ones. If that write fails the failure is
  * logged and the result is still returned: the action itself already ran.
@@ -126,10 +167,15 @@ export async function runTool<R = unknown>(tool: ToolDef<any, R> | ToolName, raw
 
     const execute = async (): Promise<ToolOutcome<R>> => {
       if (!def) return { status: 'invalid', error: `Unknown tool "${name}"` };
+      const wrongChannel = channelDenial(def, ctx.channel);
+      if (wrongChannel) {
+        detail = wrongChannel.detail;
+        return { status: 'denied', error: wrongChannel.shown };
+      }
       const parsed = def.input.safeParse(rawInput ?? {});
       if (!parsed.success) return { status: 'invalid', error: formatIssues(parsed.error), issues: parsed.error.issues };
       try {
-        const denial = await authorize(def, ctx);
+        const denial = await checkToolAccess(def, ctx);
         if (denial) {
           detail = denial.detail;
           return { status: 'denied', error: denial.shown };

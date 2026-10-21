@@ -1,0 +1,362 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`tools/list is pinned to the registry version the snapshot of the list for this version (readable diff when it changes) 1`] = `
+{
+  "tools": [
+    {
+      "description": "Delivery agent performance for orders placed in a period (store-zone days): assigned, delivered, failed, returned, closed, and deliverySuccessRate (delivered / closed, a percent, null when the agent has no closed order).",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "agentId": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer",
+          },
+          "period": {
+            "default": "today",
+            "enum": [
+              "today",
+              "week",
+              "month",
+            ],
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "agents_performance",
+    },
+    {
+      "description": "Current workload for all delivery agents: pending deliveries, active deliveries, completed today.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {},
+        "type": "object",
+      },
+      "name": "agents_status",
+    },
+    {
+      "description": "Daily business summary for a store-zone day: orders placed, delivered revenue (2-decimal string) and delivered count (by delivery date), confirmationRate, deliverySuccessRate, orderToCashYield (percents, null when nothing to divide), status counts, top products. Defaults to today.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "date": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "analytics_daily",
+    },
+    {
+      "description": "Monthly business summary with growth metrics (store-zone calendar month): orders placed, delivered revenue (2-decimal string), delivered count, confirmationRate, deliverySuccessRate, orderToCashYield. Defaults to current month.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "month": {
+            "pattern": "^\\d{4}-\\d{2}$",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "analytics_monthly",
+    },
+    {
+      "description": "Weekly business summary (Monday to Sunday, store-zone days) with comparison to prior week: orders placed, delivered revenue (2-decimal string), delivered count, confirmationRate, deliverySuccessRate, orderToCashYield. Changes in the three rates are in percentage points ("pp"), null when either week has no value. Defaults to current week.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "weekOf": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "analytics_weekly",
+    },
+    {
+      "description": "Find customers by phone number or name. Returns customer info with order history summary.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "cursor": {
+            "type": "string",
+          },
+          "limit": {
+            "default": 25,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "name": {
+            "type": "string",
+          },
+          "phone": {
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "customers_lookup",
+    },
+    {
+      "description": "List active deliveries with order and agent info. Filter by agent, status, or city.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "agentId": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer",
+          },
+          "city": {
+            "type": "string",
+          },
+          "cursor": {
+            "type": "string",
+          },
+          "limit": {
+            "default": 25,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "status": {
+            "enum": [
+              "out_for_delivery",
+              "ready_for_pickup",
+              "confirmed",
+              "preparing",
+            ],
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "deliveries_active",
+    },
+    {
+      "description": "Revenue and collection summary: delivered revenue (by delivery date) and delivered count, pending amounts, expenses, agent balances. Also includes digitalRevenue (digital product sales, GL account 4020) and paystackFees (payment gateway fees, GL account 5060) booked in the period. Money is a 2-decimal string. Period custom takes dateFrom and dateTo (inclusive, store-zone days).",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "dateFrom": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+          "dateTo": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+          "period": {
+            "default": "today",
+            "enum": [
+              "today",
+              "week",
+              "month",
+              "custom",
+            ],
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "financial_summary",
+    },
+    {
+      "description": "Search orders by status, date range, customer, delivery agent, or keyword. Returns paginated results with customer and agent info.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "agentId": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer",
+          },
+          "cursor": {
+            "type": "string",
+          },
+          "customerId": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer",
+          },
+          "dateFrom": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+          "dateTo": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+          "limit": {
+            "default": 25,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "search": {
+            "maxLength": 100,
+            "type": "string",
+          },
+          "status": {
+            "enum": [
+              "pending_confirmation",
+              "payment_pending",
+              "confirmed",
+              "preparing",
+              "ready_for_pickup",
+              "out_for_delivery",
+              "delivered",
+              "digital_delivered",
+              "cancelled",
+              "returned",
+              "failed_delivery",
+              "payment_failed",
+            ],
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "orders_search",
+    },
+    {
+      "description": "Order statistics for a period: orders placed and count by status (by order date), delivered revenue and delivered count (by delivery date), confirmationRate, deliverySuccessRate and orderToCashYield (percents, null when there is nothing to divide), and confirmedCount (orders placed in the period that were confirmed). Revenue is a 2-decimal string. dateTo is inclusive.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "dateFrom": {
+            "type": "string",
+          },
+          "dateTo": {
+            "type": "string",
+          },
+          "period": {
+            "default": "today",
+            "enum": [
+              "today",
+              "week",
+              "month",
+              "custom",
+            ],
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "orders_summary",
+    },
+    {
+      "description": "Update an order's fulfillment status. Writes an order-history audit row and, via the shared order service, adjusts inventory and (on delivered/returned) payment status and accounting entries. Idempotent: makes no change if the order is already in the requested status. Valid statuses: pending_confirmation, payment_pending, payment_failed, confirmed, preparing, ready_for_pickup, out_for_delivery, delivered, digital_delivered, failed_delivery, returned, cancelled. The order state machine applies: an invalid move returns an error with the moves that are allowed. Optionally accepts deliveryDate (YYYY-MM-DD) to record when a delivery actually happened — use it when reconciling past deliveries from a 3PL, otherwise the delivery date defaults to now.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "deliveryDate": {
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string",
+          },
+          "notes": {
+            "maxLength": 500,
+            "type": "string",
+          },
+          "orderId": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer",
+          },
+          "status": {
+            "enum": [
+              "pending_confirmation",
+              "payment_pending",
+              "confirmed",
+              "preparing",
+              "ready_for_pickup",
+              "out_for_delivery",
+              "delivered",
+              "digital_delivered",
+              "cancelled",
+              "returned",
+              "failed_delivery",
+              "payment_failed",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "orderId",
+          "status",
+        ],
+        "type": "object",
+      },
+      "name": "orders_update_status",
+    },
+    {
+      "description": "Product stock levels with delivered units for a period (default month to date, store-zone days; delivered orders only, returns excluded). Optionally filter by product ID or show only low-stock items.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "lowStockOnly": {
+            "default": false,
+            "type": "boolean",
+          },
+          "period": {
+            "default": "month",
+            "enum": [
+              "today",
+              "week",
+              "month",
+            ],
+            "type": "string",
+          },
+          "productId": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer",
+          },
+        },
+        "type": "object",
+      },
+      "name": "products_inventory",
+    },
+    {
+      "description": "Customer rep performance for a period: orders assigned, confirmationRate (confirmed / assigned), deliveredFromConfirmedRate (delivered / closed among the orders the rep confirmed), delivered revenue. Rates are percents, null when there is nothing to divide.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "period": {
+            "default": "today",
+            "enum": [
+              "today",
+              "week",
+              "month",
+            ],
+            "type": "string",
+          },
+          "repId": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer",
+          },
+        },
+        "type": "object",
+      },
+      "name": "reps_performance",
+    },
+    {
+      "description": "Current workload for all customer/sales reps: orders created today, pending orders, total active orders.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {},
+        "type": "object",
+      },
+      "name": "reps_status",
+    },
+  ],
+  "version": "2026.10.1",
+}
+`;

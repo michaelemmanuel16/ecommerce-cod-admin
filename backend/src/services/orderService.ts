@@ -1005,6 +1005,76 @@ export class OrderService {
     return prisma.order.findFirst({ where: { id: orderId, deletedAt: null }, include: ORDER_EVENT_INCLUDE });
   }
 
+  /**
+   * Order search for the `orders_search` tool (M2-T07): filters, newest id first, one extra row read to tell
+   * whether a next page exists. Runs in the tenant context of the caller.
+   */
+  async search(filters: {
+    status?: OrderStatus;
+    dateFrom?: string;
+    dateTo?: string;
+    customerId?: number;
+    agentId?: number;
+    search?: string;
+    limit: number;
+    cursorId?: number;
+  }) {
+    const where: Prisma.OrderWhereInput = { deletedAt: null };
+    if (filters.status) where.status = filters.status;
+    if (filters.customerId) where.customerId = filters.customerId;
+    if (filters.agentId) where.deliveryAgentId = filters.agentId;
+    if (filters.dateFrom || filters.dateTo) {
+      where.createdAt = {};
+      if (filters.dateFrom) where.createdAt.gte = new Date(filters.dateFrom);
+      if (filters.dateTo) where.createdAt.lte = new Date(filters.dateTo);
+    }
+    if (filters.search) {
+      const searchNum = parseInt(filters.search);
+      const phoneSearch = customerPhoneSearch(filters.search);
+      where.OR = [
+        ...(isNaN(searchNum) ? [] : [{ id: searchNum }]),
+        ...(phoneSearch ? [phoneSearch] : []),
+        { customer: { firstName: { contains: filters.search, mode: 'insensitive' as const } } },
+      ];
+    }
+
+    const orders = await prisma.order.findMany({
+      where,
+      ...(filters.cursorId !== undefined ? { cursor: { id: filters.cursorId }, skip: 1 } : {}),
+      take: filters.limit + 1, // one extra row: tells whether there is a next page
+      orderBy: { id: 'desc' },
+      include: {
+        customer: {
+          select: {
+            id: true, firstName: true, lastName: true, phoneNumber: true,
+            alternatePhone: true, address: true, state: true,
+          },
+        },
+        deliveryAgent: { select: { id: true, firstName: true, lastName: true } },
+        orderItems: { include: { product: { select: { id: true, name: true } } } },
+      },
+    });
+    const hasMore = orders.length > filters.limit;
+    return { orders: hasMore ? orders.slice(0, filters.limit) : orders, hasMore };
+  }
+
+  /** Orders placed in [from, to) counted by status (the status breakdown of the summary tools). */
+  async statusCounts(from: Date, to: Date) {
+    return prisma.order.groupBy({
+      by: ['status'],
+      where: { createdAt: { gte: from, lt: to }, deletedAt: null },
+      _count: { id: true },
+    });
+  }
+
+  /** The order and its customer, for the `orders_update_status` tool. Null when it is not in this tenant. */
+  async findForStatusUpdate(orderId: number) {
+    return prisma.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      include: { customer: { select: { firstName: true, lastName: true, phoneNumber: true } } },
+    });
+  }
+
   /** Options common to every status move that comes from a request body. */
   private moveOptions(
     data: Pick<UpdateOrderStatusData, 'force' | 'reason' | 'declineReason' | 'failureReason' | 'nextAttemptDate'>,

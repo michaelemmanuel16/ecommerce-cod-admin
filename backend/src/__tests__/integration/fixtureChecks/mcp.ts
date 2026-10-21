@@ -13,13 +13,9 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import * as Money from '../../../utils/money';
-import { tenantStorage } from '../../../utils/tenantContext';
-import { registerOrderTools } from '../../../mcp/tools/orders';
-import { registerAnalyticsTools } from '../../../mcp/tools/analytics';
-import { registerFinancialTools } from '../../../mcp/tools/financial';
+import '../../../tools';
+import { toolData } from '../helpers/callTool';
 import { shiftYmd } from '../../../services/kpi/dates';
-
-type Handler = (args: any) => Promise<any>;
 
 const FROM = '2026-10-01';
 const TO = '2026-10-17';
@@ -36,17 +32,7 @@ function collectKeys(value: unknown, out: string[] = []): string[] {
 }
 
 export function mcpFixtureChecks(getTenantId: () => string): void {
-  const tools: Record<string, Handler> = {};
-  const fakeServer = { tool: (name: string, _d: string, _s: unknown, handler: Handler) => { tools[name] = handler; } } as any;
-  registerOrderTools(fakeServer, (h) => h);
-  registerAnalyticsTools(fakeServer, (h) => h);
-  registerFinancialTools(fakeServer, (h) => h);
-
-  const call = async (name: string, args: Record<string, unknown>) => {
-    const result = await tenantStorage.run({ tenantId: getTenantId() }, () => tools[name](args));
-    expect(result.isError).toBeFalsy();
-    return JSON.parse(result.content[0].text);
-  };
+  const call = (name: string, args: Record<string, unknown>) => toolData(name, args, getTenantId());
 
   describe('MCP tools on the fixture (M1-T26)', () => {
     it('orders_summary for 1 to 17 October: revenue 92000.00, 376 delivered, three rate names only', async () => {
