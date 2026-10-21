@@ -195,10 +195,81 @@ describe('M2-T16 workflow actions go through the services', () => {
     expect(await prismaBase.orderHistory.count({ where: { orderId: id, notes: { contains: 'assigned' } } })).toBe(0);
   });
 
-  it('update_order with no status fails instead of succeeding silently', async () => {
-    const id = await mkOrder('confirmed');
-    await expect(runInTenant(tenantId, () =>
-      executeAction({ type: 'update_order', config: { priority: 'high' } }, { orderId: id }))).rejects.toThrow('needs a status');
+  describe('update_order sets status, priority and notes (and nothing else)', () => {
+    const viaQueue = (action: any, id: number) => runInTenant(tenantId, () => executeAction(action, { orderId: id }));
+    const viaService = (action: any, id: number) =>
+      runInTenant(tenantId, () => (workflowService as any).executeAction(action, { orderId: id }));
+    const row = (id: number) => prismaBase.order.findUniqueOrThrow({ where: { id } });
+    const history = (id: number) => prismaBase.orderHistory.count({ where: { orderId: id } });
+
+    it('an empty action fails with the three-field message', async () => {
+      const id = await mkOrder('confirmed');
+      await expect(viaQueue({ type: 'update_order', config: {} }, id)).rejects.toThrow('update_order needs a status, priority or notes');
+      await expect(viaService({ type: 'update_order' }, id)).rejects.toThrow('update_order needs a status, priority or notes');
+    });
+
+    it.each([['queue', viaQueue], ['service', viaService]])('priority only (%s): word and integer set priority, no history row, status unchanged', async (_n, run) => {
+      const id = await mkOrder('confirmed');
+      const before = await history(id);
+      await run({ type: 'update_order', config: { priority: 'high' } }, id);
+      expect((await row(id)).priority).toBe(10);
+      await run({ type: 'update_order', priority: 7 }, id);
+      expect((await row(id)).priority).toBe(7);
+      await run({ type: 'update_order', config: { priority: '3' } }, id);
+      const after = await row(id);
+      expect(after.priority).toBe(3);
+      expect(after.status).toBe('confirmed');
+      expect(await history(id)).toBe(before);
+    });
+
+    it('a priority-only update fires no status_change workflow', async () => {
+      const wf = await mkWorkflow('priority quiet', 'status_change', {});
+      const id = await mkOrder('confirmed');
+      await viaQueue({ type: 'update_order', config: { priority: 'urgent' } }, id);
+      await quiet();
+      expect(await live(wf.id)).toHaveLength(0);
+    });
+
+    it('notes are appended to the staff notes, trimmed', async () => {
+      const id = await mkOrder('confirmed', { notes: 'Call before 5pm' });
+      await viaQueue({ type: 'update_order', config: { notes: '  VIP customer  ' } }, id);
+      expect((await row(id)).notes).toBe('Call before 5pm\nVIP customer');
+      const bare = await mkOrder('confirmed');
+      await viaService({ type: 'update_order', notes: 'first note' }, bare);
+      expect((await row(bare)).notes).toBe('first note');
+    });
+
+    it('status + priority + notes in one action: one history row, all three set', async () => {
+      const id = await mkOrder('pending_confirmation');
+      const before = await history(id);
+      const out = await viaService({ type: 'update_order', config: { status: 'confirmed', priority: 'low', notes: 'checked' } }, id);
+      const after = await row(id);
+      expect([after.status, after.priority, after.notes]).toEqual(['confirmed', 1, 'checked']);
+      expect(await history(id)).toBe(before + 1);
+      expect(out.updates).toEqual({ status: 'confirmed', priority: 1, notes: 'checked' });
+    });
+
+    it('rejects a bad priority or notes and writes nothing, not even the status', async () => {
+      const id = await mkOrder('pending_confirmation', { notes: 'keep' });
+      for (const bad of ['abc', 1.5, '2.5', true, {}]) {
+        await expect(viaQueue({ type: 'update_order', config: { status: 'confirmed', priority: bad } }, id)).rejects.toThrow('priority');
+      }
+      await expect(viaQueue({ type: 'update_order', config: { notes: '   ' } }, id)).rejects.toThrow('notes');
+      await expect(viaQueue({ type: 'update_order', config: { notes: 'x'.repeat(1001) } }, id)).rejects.toThrow('notes');
+      const after = await row(id);
+      expect([after.status, after.priority, after.notes]).toEqual(['pending_confirmation', 0, 'keep']);
+    });
+
+    it('a missing order is a 404 for a priority write', async () => {
+      await expect(viaQueue({ type: 'update_order', config: { priority: 'high' } }, 2147483000)).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('config.updates is never spread into the write: only its status is read', async () => {
+      const id = await mkOrder('pending_confirmation');
+      await viaQueue({ type: 'update_order', config: { updates: { deliveryAddress: 'x', priority: 3, status: 'confirmed' } } }, id);
+      const after = await row(id);
+      expect([after.status, after.deliveryAddress, after.priority]).toEqual(['confirmed', '1 St', 0]);
+    });
   });
 
   it('update_order refuses a move the state machine refuses (no direct write)', async () => {

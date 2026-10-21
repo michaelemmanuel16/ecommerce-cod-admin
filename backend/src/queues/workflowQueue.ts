@@ -7,7 +7,7 @@ import { emitToTenant } from '../sockets/index';
 import { runJobInTenant, getTenantId } from '../utils/tenantContext';
 import assignmentService from '../services/assignmentService';
 import { systemActor } from '../services/systemUserService';
-import { setOrderStatusByWorkflow, workflowStatus } from '../services/workflowActions';
+import { updateOrderByWorkflow } from '../services/workflowActions';
 
 // Send actions read tenant-scoped provider config (SystemConfig) and write
 // tenant-scoped MessageLog rows. They refuse to run with no tenant context.
@@ -341,8 +341,8 @@ export async function executeAction(action: any, input: any, conditions?: any): 
 
     case 'update_order': {
       const orderId = action.config?.orderId ?? input?.orderId;
-      const moved = await setOrderStatusByWorkflow(orderId, workflowStatus(action), input?.depth);
-      return { orderId, updated: moved.changed };
+      const result = await updateOrderByWorkflow(orderId, action, input?.depth);
+      return { orderId, updated: result.changed, updates: result.updates };
     }
 
     case 'assign_agent':

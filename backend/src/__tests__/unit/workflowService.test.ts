@@ -348,6 +348,7 @@ describe('WorkflowService', () => {
       };
 
       (transitionOrder as jest.Mock).mockResolvedValue({ changed: true } as never);
+      (prismaMock.order.findFirst as jest.Mock).mockResolvedValue({ notes: null } as never);
 
       const result = await (workflowService as any).executeAction(
         action,
@@ -361,7 +362,9 @@ describe('WorkflowService', () => {
         'order-1', 'confirmed', { kind: 'system', userId: 77 },
         expect.objectContaining({ workflowDepth: 1 })
       );
-      expect(prismaMock.order.update).not.toHaveBeenCalled();
+      // notes go in one write that carries no status
+      expect(prismaMock.order.update).toHaveBeenCalledTimes(1);
+      expect(prismaMock.order.update).toHaveBeenCalledWith({ where: { id: 'order-1' }, data: { notes: 'Auto-confirmed' } });
     });
 
     it('should throw error when order ID not provided', async () => {
@@ -376,11 +379,11 @@ describe('WorkflowService', () => {
     });
   });
 
-  describe('executeAction - update_order without a status', () => {
+  describe('executeAction - update_order without a field', () => {
     it('fails with a clear error instead of succeeding silently', async () => {
       await expect(
         (workflowService as any).executeAction({ type: 'update_order', orderId: 'order-1' }, {})
-      ).rejects.toThrow('update_order needs a status');
+      ).rejects.toThrow('update_order needs a status, priority or notes');
       expect(transitionOrder).not.toHaveBeenCalled();
     });
   });

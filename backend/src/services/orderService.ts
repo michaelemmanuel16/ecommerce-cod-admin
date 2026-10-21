@@ -1545,4 +1545,17 @@ export class OrderService {
   }
 }
 
+/**
+ * Set an order's priority and/or append to its notes, in one tenant-scoped write. These two fields only:
+ * the data object is built here, so no status (or anything else) can ride along. Callers validate the values.
+ */
+export async function setOrderPriorityAndNotes(orderId: number, fields: { priority?: number; notes?: string }): Promise<void> {
+  const order = await prisma.order.findFirst({ where: { id: orderId }, select: { notes: true } });
+  if (!order) throw new AppError('Order not found', 404);
+  const data: { priority?: number; notes?: string } = {};
+  if (fields.priority !== undefined) data.priority = fields.priority;
+  if (fields.notes !== undefined) data.notes = order.notes ? `${order.notes}\n${fields.notes}` : fields.notes;
+  await prisma.order.update({ where: { id: orderId }, data });
+}
+
 export default new OrderService();

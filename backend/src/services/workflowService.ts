@@ -5,7 +5,7 @@ import logger from '../utils/logger';
 import { workflowQueue } from '../queues/workflowQueue';
 import assignmentService from './assignmentService';
 import { systemActor } from './systemUserService';
-import { addOrderTag, setOrderStatusByWorkflow, workflowStatus } from './workflowActions';
+import { addOrderTag, updateOrderByWorkflow } from './workflowActions';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
 import crypto from 'crypto';
 import { getTenantId, resolveTenantId, runInTenant } from '../utils/tenantContext';
@@ -475,11 +475,11 @@ export class WorkflowService {
       throw new Error('Order ID not provided');
     }
 
-    // The status moves through the state machine as the system user (M2-T16); `depth` is the loop guard count.
-    await setOrderStatusByWorkflow(orderId, workflowStatus(action), context.depth);
+    // Status moves through the state machine as the system user (M2-T16); `depth` is the loop guard count.
+    const { updates } = await updateOrderByWorkflow(orderId, action, context.depth);
 
-    logger.info('Order updated via workflow', { orderId, status: workflowStatus(action) });
-    return { success: true, orderId, updates: { status: workflowStatus(action) } };
+    logger.info('Order updated via workflow', { orderId, ...updates });
+    return { success: true, orderId, updates };
   }
 
   /**
