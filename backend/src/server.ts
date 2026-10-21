@@ -94,6 +94,7 @@ import cron from 'node-cron';
 // Initialize queue workers
 import './queues/workflowQueue';
 import { registerWorkflowListeners } from './services/workflowService';
+import { registerCustomerStatsListeners } from './services/customerStatsService';
 import './queues/emailCampaignQueue';
 
 import { setupAgingCron } from './queues/agingQueue';
@@ -124,6 +125,8 @@ try {
 
 // Workflows run from the order state machine's events (order.created, order.status_changed)
 registerWorkflowListeners();
+// Customer stats are rebuilt from the same events (F-357)
+registerCustomerStatsListeners();
 
 const app: Application = express();
 const server = http.createServer(app);
