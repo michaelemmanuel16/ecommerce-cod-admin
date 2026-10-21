@@ -28,8 +28,9 @@ export function createAiAgentUser(
       password: SYSTEM_USER_PASSWORD,
       firstName: name,
       lastName: 'AI agent',
-      // The base role is the ceiling; the key's role tool list is what narrows it.
-      role: 'super_admin',
+      // The base role is the ceiling and 'admin' holds every cell the 14 tools need (the same role as the system user);
+      // the key's role tool list is what narrows it. Never super_admin: that role passes every permission check.
+      role: 'admin',
       kind: 'ai_agent',
       tenantId,
     },

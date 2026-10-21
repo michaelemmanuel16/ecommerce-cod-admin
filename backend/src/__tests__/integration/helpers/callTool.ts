@@ -4,14 +4,14 @@ import { runTool, ToolContext } from '../../../tools/registry';
 import { toMcpResult } from '../../../mcp/utils';
 
 /**
- * Call a registry tool as a test actor: the tenant's ai_agent user with every permission cell (super_admin), which
+ * Call a registry tool as a test actor: the tenant's ai_agent user with every permission cell the tools need (admin), which
  * createTwoTenants makes as `ids.mcpUser`. A tenant that has none (the numbers fixture) gets one here. Channel mcp, no role filter.
  */
 export async function toolActorContext(tenantId: string, channel: ToolContext['channel'] = 'mcp'): Promise<ToolContext> {
   const user =
-    (await prismaBase.user.findFirst({ where: { tenantId, kind: 'ai_agent', role: 'super_admin' } })) ??
+    (await prismaBase.user.findFirst({ where: { tenantId, kind: 'ai_agent', role: 'admin' } })) ??
     (await prismaBase.user.create({
-      data: { email: `tool-actor+${tenantId}@codadmin.test`, password: 'x', firstName: 'Tool', lastName: 'Actor', role: 'super_admin', kind: 'ai_agent', tenantId },
+      data: { email: `tool-actor+${tenantId}@codadmin.test`, password: 'x', firstName: 'Tool', lastName: 'Actor', role: 'admin', kind: 'ai_agent', tenantId },
     }));
   return { tenantId, actorId: user.id, actorKind: 'ai_agent', roleId: null, channel };
 }

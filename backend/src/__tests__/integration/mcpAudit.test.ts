@@ -138,6 +138,27 @@ afterAll(async () => {
   await prismaBase.$disconnect();
 });
 
+describe.each(TRANSPORTS)('tools/list with a revoked key over %s', (transport, connect) => {
+  it('gives a clean error, not a raw rejection or a tool list', async () => {
+    const { key } = await makeMcpKey(pair.a.id, { slug: `revoked-list-${transport === 'stdio' ? 's' : 'h'}`, roleName: 'Legacy MCP (14 tools)', revokedAt: new Date() });
+    clearAuthCache();
+    if (transport === 'stdio') {
+      const caller = await connect(key);
+      try {
+        await expect(caller.list()).rejects.toThrow('API key has been revoked');
+      } finally {
+        await caller.close();
+      }
+    } else {
+      const res = await request(app).post('/mcp').set('Authorization', `Bearer ${key}`).set('Content-Type', 'application/json')
+        .send({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+      // The HTTP route refuses a bad key before it builds a server, so the list handler is not reached.
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ error: 'API key has been revoked' });
+    }
+  });
+});
+
 describe.each(TRANSPORTS)('Done when 1: one audit row per call over %s', (transport, connect) => {
   it('each of the 14 tools writes exactly one row with actor, kind, channel mcp, tool, input, status, duration', async () => {
     const caller = await connect(pair.a.mcpKey);

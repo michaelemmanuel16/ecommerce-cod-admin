@@ -10,7 +10,7 @@ import app from '../../server';
 import prisma, { prismaBase } from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
-import { clearSystemUserIdCache, ensureSystemUser, getSystemUserId, isReservedSystemEmail, SYSTEM_EMAIL_DOMAIN, SYSTEM_USER_PASSWORD } from '../../services/systemUserService';
+import { clearSystemUserIdCache, createAiAgentUser, ensureSystemUser, getSystemUserId, isReservedSystemEmail, SYSTEM_EMAIL_DOMAIN, SYSTEM_USER_PASSWORD } from '../../services/systemUserService';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { adminService } from '../../services/adminService';
 
@@ -59,6 +59,12 @@ describe('per-tenant system user', () => {
     expect(users.some((u) => u.id === agent.id)).toBe(false);
     const res = await request(app).post('/api/auth/login').send({ email: agent.email, password: SYSTEM_USER_PASSWORD });
     expect(res.status).toBe(401);
+  });
+
+  it('createAiAgentUser makes an admin, not a super_admin', async () => {
+    const email = `ai-agent+role-${pair.a.id}@mcp.codadmin.internal`;
+    const { id } = await prismaBase.$transaction((tx) => createAiAgentUser(tx, { tenantId: pair.a.id, name: 'Role check', email }));
+    expect(await prismaBase.user.findUniqueOrThrow({ where: { id } })).toMatchObject({ role: 'admin', kind: 'ai_agent', tenantId: pair.a.id });
   });
 
   it('seeding again (backfill) recreates a missing one and never adds a second', async () => {

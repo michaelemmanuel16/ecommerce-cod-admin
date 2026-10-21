@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { runInTenant } from '../utils/tenantContext';
 import { validateKey, McpPrincipal } from './auth';
 import { checkMcp } from './rateLimiter';
@@ -63,7 +63,13 @@ export function createMcpServer(resolveApiKey: () => string) {
 
   // An error here (a bad key, a failed lookup) is an error to the client, never a full list.
   server.server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const principal = await validateKey(resolveApiKey());
+    let principal: McpPrincipal;
+    try {
+      principal = await validateKey(resolveApiKey());
+    } catch (err) {
+      // A list result has no isError flag, so the client gets a protocol error with the same safe message the call handler shows.
+      throw new McpError(ErrorCode.InvalidRequest, (err as Error).message);
+    }
     const allowed = await runInTenant(principal.tenantId, () => allowedTools(contextOf(principal)));
     const names = new Set<string>(allowed.map((def) => def.name));
     return { tools: entries().filter((t) => names.has(t.name)) } as never;

@@ -92,7 +92,7 @@ describe('POST /api/mcp-keys', () => {
     const row = await prismaBase.mcpApiKey.findUniqueOrThrow({ where: { id: res.body.id }, include: { user: true } });
     expect(row.keyHash).toBe(hashApiKey(res.body.key));
     expect(row.roleId).toBe(role);
-    expect(row.user).toMatchObject({ kind: 'ai_agent', tenantId: pair.a.id, firstName: 'Claude Desktop' });
+    expect(row.user).toMatchObject({ kind: 'ai_agent', tenantId: pair.a.id, firstName: 'Claude Desktop', role: 'admin' });
 
     const audit = await prismaBase.auditLog.findMany({ where: { tenantId: pair.a.id, resource: 'mcp_key', resourceId: res.body.id } });
     expect(audit).toHaveLength(1);
@@ -225,7 +225,7 @@ describe('migrate-legacy-mcp-keys', () => {
     const row = await keyRow();
     expect(row.roleId).toBe(pair.b.ids.legacyRole);
     const user = await prismaBase.user.findUniqueOrThrow({ where: { id: row.userId! } });
-    expect(user).toMatchObject({ kind: 'ai_agent', tenantId: pair.b.id, firstName: 'oldkey (legacy)' });
+    expect(user).toMatchObject({ kind: 'ai_agent', tenantId: pair.b.id, firstName: 'oldkey (legacy)', role: 'admin' });
 
     clearAuthCache();
     const p = await validateKey(oldKey);

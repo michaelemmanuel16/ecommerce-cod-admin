@@ -255,13 +255,13 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     data: { tenantId, roleId: ownerRole.id, holderId: admin.id, fromDate: new Date() },
   }));
 
-  // The MCP key acts as an ai_agent user. super_admin holds every permission cell and the Legacy role lists all
+  // The MCP key acts as an ai_agent user. admin holds every cell the 14 tools need and the Legacy role lists all
   // 14 tools, so suites that call every tool work. A suite that tests a narrower key makes its own user, role and key.
   const legacyRole = await prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Legacy MCP (14 tools)' } });
   const mcpUserRow = await prismaBase.user.create({
     data: {
       email: `mcp-${tag}@codadmin.test`, password: 'x', firstName: `mcp${marker}`, lastName: `Last${marker}`,
-      role: 'super_admin', kind: 'ai_agent', tenantId,
+      role: 'admin', kind: 'ai_agent', tenantId,
     },
   });
   await prismaBase.mcpApiKey.create({

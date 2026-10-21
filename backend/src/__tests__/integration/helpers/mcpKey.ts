@@ -9,7 +9,7 @@ export async function makeMcpKey(
   tenantId: string,
   opts: { slug: string; userRole?: 'admin' | 'sales_rep' | 'super_admin'; roleName?: string | null; roleId?: number | null; userId?: number | null; revokedAt?: Date },
 ) {
-  const { slug, userRole = 'super_admin', roleName = null } = opts;
+  const { slug, userRole = 'admin', roleName = null } = opts;
   let userId: number | null;
   if ('userId' in opts) {
     userId = opts.userId ?? null;
