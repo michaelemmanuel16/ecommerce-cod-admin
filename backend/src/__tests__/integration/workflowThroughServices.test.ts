@@ -151,7 +151,9 @@ describe('M2-T16 workflow actions go through the services', () => {
     const history = await prismaBase.orderHistory.findMany({ where: { orderId: id, notes: { contains: 'Delivery agent assigned' } } });
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ actorKind: 'system', changedBy: systemUserId, metadata: { assignedAgentId: other.id } });
-    expect(await prismaBase.auditLog.count({ where: { tenantId, action: 'assign_agent', resourceId: String(id) } })).toBe(1);
+    const audit = await prismaBase.auditLog.findMany({ where: { tenantId, action: 'assign_agent', resourceId: String(id) } });
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ actorKind: 'system', channel: 'system', userId: systemUserId });
   });
 
   it('the manual assignment path uses the same function and records a user actor', async () => {
@@ -295,6 +297,42 @@ describe('M2-T17 triggers come from the state machine', () => {
       const wf = await mkWorkflow('on created', 'order_created', {});
       expect((await importOrders([row('delivered')], { runWorkflows: true })).success).toBe(1);
       await waitFor(async () => (await live(wf.id)).length === 1, 'execution');
+    });
+  });
+
+  describe('from the spreadsheet upload (POST /api/orders/upload)', () => {
+    let seq = 0;
+    const upload = (runWorkflows?: string) => {
+      const phone = `+23325${String(SUFFIX).slice(-5)}${String(seq++).padStart(2, '0')}1`;
+      const csv = `Phone,Customer Name,Address,Total Amount,Status\n${phone},Up Load,${seq} Upload Road Accra,40,pending_confirmation\n`;
+      const req = request(app).post('/api/orders/upload').set(auth()).attach('file', Buffer.from(csv), 'orders.csv');
+      return runWorkflows === undefined ? req : req.field('runWorkflows', runWorkflows);
+    };
+
+    it('fires no workflow when the flag is missing or not "true"', async () => {
+      const wf = await mkWorkflow('on created', 'order_created', {});
+      for (const flag of [undefined, 'false', '1']) {
+        const res = await upload(flag);
+        expect(res.status).toBe(200);
+        expect(res.body.results.success).toBe(1);
+      }
+      await quiet();
+      expect(await executions(wf.id)).toHaveLength(0);
+    });
+
+    it('fires the workflow when runWorkflows is "true"', async () => {
+      const wf = await mkWorkflow('on created', 'order_created', {});
+      const res = await upload('true');
+      expect(res.status).toBe(200);
+      expect(res.body.results.success).toBe(1);
+      await waitFor(async () => (await live(wf.id)).length === 1, 'execution');
+    });
+
+    it('a service import with runWorkflows: false skips even a pending_confirmation order; unset keeps the old rule', () => {
+      const base = { orderId: 1, tenantId, status: 'pending_confirmation' as const, imported: true };
+      expect(workflowSkipReason({ ...base, runWorkflows: false })).not.toBeNull();
+      expect(workflowSkipReason({ ...base })).toBeNull();
+      expect(workflowSkipReason({ ...base, runWorkflows: true })).toBeNull();
     });
   });
 

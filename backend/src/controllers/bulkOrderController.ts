@@ -444,7 +444,9 @@ export const uploadOrders = async (req: AuthRequest, res: Response): Promise<voi
             req.user?.id,
             repMap,
             agentMap,
-            validOrders.length > 10 // Enable silent mode for imports > 10 orders to prevent event storms
+            validOrders.length > 10, // Enable silent mode for imports > 10 orders to prevent event storms
+            // Workflows (and the messages they send) run for the import only when the uploader asks
+            { runWorkflows: req.body?.runWorkflows === 'true' }
         );
 
 

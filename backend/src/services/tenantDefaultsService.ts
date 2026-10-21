@@ -7,6 +7,24 @@ import { seedDefaultEmailTemplates } from './emailTemplateService';
 import { ensureSystemUser } from './systemUserService';
 
 /**
+ * M2: a tenant that saved its role permissions before `orders:update_status` was granted to admin keeps the old
+ * list (stored cells replace the defaults). Add the cell when it is missing; nothing is ever removed.
+ * Run once from the backfill script, not on every seed, so an owner who later removes the cell keeps it removed.
+ */
+export async function grantAdminUpdateStatus(tenantId: string): Promise<void> {
+  await runInTenant(tenantId, async () => {
+    const config = await prisma.systemConfig.findFirst();
+    const stored = config?.rolePermissions as Record<string, Record<string, string[]>> | null | undefined;
+    const orders = stored?.admin?.orders;
+    if (!config || !Array.isArray(orders) || orders.includes('update_status')) return;
+    await prisma.systemConfig.update({
+      where: { id: config.id },
+      data: { rolePermissions: { ...stored, admin: { ...stored!.admin, orders: [...orders, 'update_status'] } } },
+    });
+  });
+}
+
+/**
  * Create what a tenant is missing: the chart of accounts, the default email
  * templates, the 7 default roles and the system user. Idempotent: re-running never creates duplicates (unique
  * `(tenantId, code)` on accounts, `(name, tenantId)` on email templates and

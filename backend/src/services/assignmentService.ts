@@ -373,7 +373,8 @@ export class AssignmentService {
         resource: 'order',
         resourceId: orderId.toString(),
         metadata: { [metaKey]: userId },
-        ...(actor.kind === 'user' && { actorKind: 'person' as const, channel: 'app' as const })
+        ...(actor.kind === 'user' && { actorKind: 'person' as const, channel: 'app' as const }),
+        ...(actor.kind === 'system' && { actorKind: 'system' as const, channel: 'system' as const })
       }
     });
 

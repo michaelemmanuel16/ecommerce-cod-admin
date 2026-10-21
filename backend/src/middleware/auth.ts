@@ -73,7 +73,7 @@ function getDefaultPermissions() {
     },
     admin: {
       users: ['create', 'view', 'update', 'delete'],
-      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign'],
+      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status'],
       customers: ['create', 'view', 'update', 'delete'],
       products: ['create', 'view', 'update', 'delete'],
       financial: ['view', 'create'],

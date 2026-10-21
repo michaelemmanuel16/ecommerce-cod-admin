@@ -1,13 +1,13 @@
 /**
  * Backfill (M2-T02, M2-T03): seed the 7 default roles and the system user for every
  * existing tenant. Idempotent: re-running adds nothing. Also picks up tenants created
- * without seedTenantDefaults.
+ * without seedTenantDefaults. Grants admin `orders:update_status` where stored permissions predate it.
  *
  * Run: npx ts-node src/scripts/backfillRolesAndSystemUser.ts
  */
 import prisma from '../utils/prisma';
 import { forEachTenant } from '../utils/tenantLoop';
-import { seedTenantDefaults } from '../services/tenantDefaultsService';
+import { grantAdminUpdateStatus, seedTenantDefaults } from '../services/tenantDefaultsService';
 
 async function main() {
   console.log('Seeding default roles and the system user for every tenant...');
@@ -19,6 +19,7 @@ async function main() {
     const result = await seedTenantDefaults(tenantId);
     roles += result.roles;
     systemUsers += result.systemUser;
+    await grantAdminUpdateStatus(tenantId);
     console.log(`  ${tenantId}: +${result.roles} roles, +${result.systemUser} system user`);
   });
 

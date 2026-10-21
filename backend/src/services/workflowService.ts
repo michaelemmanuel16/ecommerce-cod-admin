@@ -19,12 +19,14 @@ const BACKDATED_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Why an order event fires no workflows, or null when it fires them (M2-T17). `runWorkflows: true` overrides:
+ * - an import that says `runWorkflows: false` (the spreadsheet upload, unless the uploader asks)
  * - an imported order (or import re-import) with a status other than pending_confirmation
  * - an integration move (partner, MCP, sync) whose delivery date is more than 1 day in the past
  */
 export function workflowSkipReason(evt: OrderCreatedEvent | OrderStatusChangedEvent): string | null {
   if (evt.runWorkflows) return null;
   const status = 'to' in evt ? evt.to : evt.status;
+  if (evt.imported && evt.runWorkflows === false) return 'import without runWorkflows';
   if (evt.imported && status !== 'pending_confirmation') return 'imported order not pending_confirmation';
   if ('actor' in evt && (evt.actor.kind === 'integration' || evt.actor.kind === 'ai')
     && evt.deliveryDate && Date.now() - new Date(evt.deliveryDate).getTime() > BACKDATED_MS) {
