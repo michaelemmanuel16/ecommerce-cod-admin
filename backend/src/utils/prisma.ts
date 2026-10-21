@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import logger from './logger';
-import { softDeleteExtension, tenantIsolationExtension } from './prismaExtensions';
+import { reservedEmailExtension, softDeleteExtension, tenantIsolationExtension } from './prismaExtensions';
 
 // Performance monitoring extension
 const prismaBase = new PrismaClient({
@@ -19,6 +19,7 @@ const prismaBase = new PrismaClient({
 
 const prisma = prismaBase
   .$extends(tenantIsolationExtension)
+  .$extends(reservedEmailExtension)
   .$extends(softDeleteExtension);
 
 // Define type for extended client to be used across the app

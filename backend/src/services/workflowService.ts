@@ -1,11 +1,39 @@
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { WorkflowTriggerType, Prisma } from '@prisma/client';
+import { WorkflowTriggerType, Prisma, Workflow } from '@prisma/client';
 import logger from '../utils/logger';
 import { workflowQueue } from '../queues/workflowQueue';
+import assignmentService from './assignmentService';
+import { systemActor } from './systemUserService';
+import { addOrderTag, updateOrderByWorkflow } from './workflowActions';
 import { evaluateConditions as evaluateConditionRules } from '../utils/conditionEvaluator';
 import crypto from 'crypto';
-import { getTenantId, resolveTenantId } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId, runInTenant } from '../utils/tenantContext';
+import { AppEvent, OrderCreatedEvent, OrderStatusChangedEvent, onOrderEvent } from '../utils/appEvents';
+
+/** M2-T17 loop guard: a workflow-caused move stops at this depth; one run per order per workflow per window. */
+const LOOP_GUARD_MAX_DEPTH = 3;
+const LOOP_GUARD_WINDOW_MS = 60_000;
+export const LOOP_GUARD_MESSAGE = 'Skipped: loop guard';
+const BACKDATED_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Why an order event fires no workflows, or null when it fires them (M2-T17). `runWorkflows: true` overrides:
+ * - an import that says `runWorkflows: false` (the spreadsheet upload, unless the uploader asks)
+ * - an imported order (or import re-import) with a status other than pending_confirmation
+ * - an integration move (partner, MCP, sync) whose delivery date is more than 1 day in the past
+ */
+export function workflowSkipReason(evt: OrderCreatedEvent | OrderStatusChangedEvent): string | null {
+  if (evt.runWorkflows) return null;
+  const status = 'to' in evt ? evt.to : evt.status;
+  if (evt.imported && evt.runWorkflows === false) return 'import without runWorkflows';
+  if (evt.imported && status !== 'pending_confirmation') return 'imported order not pending_confirmation';
+  if ('actor' in evt && (evt.actor.kind === 'integration' || evt.actor.kind === 'ai')
+    && evt.deliveryDate && Date.now() - new Date(evt.deliveryDate).getTime() > BACKDATED_MS) {
+    return 'integration change with a delivery date older than 1 day';
+  }
+  return null;
+}
 
 
 interface CreateWorkflowData {
@@ -20,6 +48,13 @@ interface CreateWorkflowData {
 interface WorkflowFilters {
   isActive?: boolean;
   triggerType?: WorkflowTriggerType;
+}
+
+/** What the loop guard needs: the order, the depth, and which workflows already ran for it in the last minute. */
+interface RunGuard {
+  orderId: number;
+  depth: number;
+  recent: Set<number>;
 }
 
 export class WorkflowService {
@@ -182,24 +217,41 @@ export class WorkflowService {
       throw new AppError('Workflow is not active', 400);
     }
 
+    return this.runLoaded(workflow, input);
+  }
+
+  /** Check the workflow's conditions against the input, then queue a run. `workflow` is already loaded and active. */
+  private async runLoaded(workflow: Workflow, input?: any, guard?: RunGuard) {
     // For manual execution (no input), skip workflow-level conditions
     // The queue worker will handle finding orders that match conditions
     const isManualExecution = !input || Object.keys(input).length === 0;
 
     // Check conditions only for automatic triggers with input
     if (!isManualExecution && workflow.conditions && !this.evaluateConditions(workflow.conditions, input)) {
-      logger.info('Workflow conditions not met', { workflowId, input });
+      logger.info('Workflow conditions not met', { workflowId: workflow.id, input });
       return { message: 'Workflow conditions not met' };
+    }
+
+    return this.enqueueRun(workflow, input, guard);
+  }
+
+  /**
+   * Loop guard, execution record, queue: the one place a run is created (manual and triggered).
+   * `guard` is given for runs caused by an order event (M2-T17).
+   */
+  private async enqueueRun(workflow: Workflow, input?: any, guard?: RunGuard) {
+    if (guard && await this.loopGuardHit(workflow, input, guard)) {
+      return { message: LOOP_GUARD_MESSAGE };
     }
 
     // Create execution record
     const execution = await prisma.workflowExecution.create({
       data: {
         tenantId: resolveTenantId(workflow.tenantId),
-        workflowId,
+        workflowId: workflow.id,
         status: 'pending',
         input: input || {},
-              }
+      }
     });
 
     // Capture tenant context so the queue worker can restore it
@@ -221,7 +273,7 @@ export class WorkflowService {
     ]);
 
     logger.info('Workflow execution started', {
-      workflowId,
+      workflowId: workflow.id,
       executionId: execution.id
     });
 
@@ -423,19 +475,11 @@ export class WorkflowService {
       throw new Error('Order ID not provided');
     }
 
-    const updateData: any = {};
-    if (action.status) updateData.status = action.status;
-    if (action.notes) updateData.notes = action.notes;
-    if (action.priority !== undefined) updateData.priority = action.priority;
+    // Status moves through the state machine as the system user (M2-T16); `depth` is the loop guard count.
+    const { updates } = await updateOrderByWorkflow(orderId, action, context.depth);
 
-    // Dead duplicate of the workflowQueue action; can write status outside the state machine. // removed in M2-T15
-    await prisma.order.update({
-      where: { id: orderId },
-      data: updateData
-    });
-
-    logger.info('Order updated via workflow', { orderId, updateData });
-    return { success: true, orderId, updates: updateData };
+    logger.info('Order updated via workflow', { orderId, ...updates });
+    return { success: true, orderId, updates };
   }
 
   /**
@@ -449,10 +493,7 @@ export class WorkflowService {
       throw new Error('Order ID or Agent ID not provided');
     }
 
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { deliveryAgentId: agentId }
-    });
+    await assignmentService.assignByRole(orderId, agentId, 'delivery_agent', await systemActor());
 
     logger.info('Agent assigned via workflow', { orderId, agentId });
     return { success: true, orderId, agentId };
@@ -469,17 +510,7 @@ export class WorkflowService {
       throw new Error('Order ID or tag not provided');
     }
 
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
-    if (!order) {
-      throw new Error('Order not found');
-    }
-
-    const updatedTags = Array.from(new Set([...order.tags, tag]));
-
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { tags: updatedTags }
-    });
+    await addOrderTag(orderId, tag);
 
     logger.info('Tag added via workflow', { orderId, tag });
     return { success: true, orderId, tag };
@@ -589,16 +620,10 @@ export class WorkflowService {
       throw new Error('Failed to select user for assignment');
     }
 
-    // Build update data
-    const updateData: any = {
-      [targetField]: selectedUser.id
-    };
-
-    // Update the order
-    await prisma.order.update({
-      where: { id: orderId },
-      data: updateData
-    });
+    // Assign through the service: order, history row and notification (M2-T16)
+    await assignmentService.assignByRole(
+      orderId, selectedUser.id, targetField === 'customerRepId' ? 'sales_rep' : 'delivery_agent', await systemActor(),
+    );
 
     logger.info('User assigned via workflow', {
       orderId,
@@ -721,9 +746,51 @@ export class WorkflowService {
   }
 
   /**
-   * Status change workflows triggered
+   * Ids of the given workflows that already ran for this order in the last minute (one query for all of them).
+   * Empty at the depth limit: those runs are skipped without it.
    */
-  async triggerStatusChangeWorkflows(orderId: number, oldStatus: string, newStatus: string) {
+  private async recentRunIds(workflowIds: number[], orderId: number, depth: number): Promise<Set<number>> {
+    if (depth >= LOOP_GUARD_MAX_DEPTH || workflowIds.length === 0) return new Set();
+    const rows = await prisma.workflowExecution.findMany({
+      where: {
+        workflowId: { in: workflowIds },
+        status: { not: 'skipped' },
+        startedAt: { gte: new Date(Date.now() - LOOP_GUARD_WINDOW_MS) },
+        input: { path: ['orderId'], equals: orderId },
+      },
+      select: { workflowId: true },
+      distinct: ['workflowId'],
+    });
+    return new Set(rows.map((r) => r.workflowId));
+  }
+
+  /**
+   * Loop guard (M2-T17): true when this run must not happen, and records the skip in the execution log.
+   * Too deep (a chain of workflow-caused moves), or the workflow already ran for this order in the last minute.
+   */
+  private async loopGuardHit(workflow: Workflow, input: any, { orderId, depth, recent }: RunGuard): Promise<boolean> {
+    const tooDeep = depth >= LOOP_GUARD_MAX_DEPTH;
+    if (!tooDeep && !recent.has(workflow.id)) return false;
+
+    await prisma.workflowExecution.create({
+      data: {
+        tenantId: resolveTenantId(workflow.tenantId),
+        workflowId: workflow.id,
+        status: 'skipped',
+        input: input || {},
+        error: LOOP_GUARD_MESSAGE,
+        completedAt: new Date(),
+      },
+    });
+    logger.warn(LOOP_GUARD_MESSAGE, { workflowId: workflow.id, orderId, depth, tooDeep });
+    return true;
+  }
+
+  /**
+   * Status change workflows triggered. Runs from the `order.status_changed` event (see `registerWorkflowListeners`).
+   * `depth` is how many workflow-caused moves led here; it rides in the execution input so `update_order` can pass it on.
+   */
+  async triggerStatusChangeWorkflows(orderId: number, oldStatus: string, newStatus: string, depth: number = 0) {
     // Query both 'status' and 'targetStatus' paths since the wizard and editor
     // store the target status under different keys
     const workflows = await prisma.workflow.findMany({
@@ -745,21 +812,23 @@ export class WorkflowService {
     // Load order with products for condition evaluation (e.g. product-specific workflows)
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { orderItems: { include: { product: true } } },
+      select: { orderItems: { select: { product: { select: { name: true } } } } },
     });
 
     const input = {
       orderId,
       oldStatus,
       newStatus,
+      depth,
       productName: order?.orderItems
         ?.map((item: any) => item.product?.name)
         .filter(Boolean)
         .join(', ') || '',
     };
 
+    const recent = await this.recentRunIds(workflows.map((w) => w.id), orderId, depth);
     for (const workflow of workflows) {
-      await this.executeWorkflow(workflow.id, input);
+      await this.runLoaded(workflow, input, { orderId, depth, recent });
     }
 
     logger.info('Status change workflows triggered', {
@@ -771,9 +840,9 @@ export class WorkflowService {
   }
 
   /**
-   * Trigger workflows with order_created trigger type
+   * Trigger workflows with order_created trigger type. Runs from the `order.created` event.
    */
-  async triggerOrderCreatedWorkflows(order: any) {
+  async triggerOrderCreatedWorkflows(order: { id: number }) {
     try {
       // Find active workflows with order_created trigger
       const workflows = await prisma.workflow.findMany({
@@ -814,45 +883,16 @@ export class WorkflowService {
       // Prepare context for workflow evaluation
       const orderContext = {
         ...fullOrder,
+        orderId: fullOrder.id,
         productName: (fullOrder.orderItems || []).map((item: any) => item.product?.name || 'Unknown Product').join(', ')
       };
 
-      // Capture tenant context so the queue worker can restore it (mirror executeWorkflow at :206)
-      const tenantId = getTenantId();
+      const recent = await this.recentRunIds(workflows.map((w) => w.id), order.id, 0);
 
-      // Trigger each workflow
+      // Trigger each workflow. Workflow-level conditions are not checked for a new order (as before).
       for (const workflow of workflows) {
         try {
-          // Create execution record
-          const execution = await prisma.workflowExecution.create({
-            data: {
-              tenantId: resolveTenantId(workflow.tenantId),
-              workflowId: workflow.id,
-              status: 'pending',
-              input: orderContext
-            }
-          });
-
-          // Add to queue for async processing (with 5s timeout to prevent hanging order creation)
-          await Promise.race([
-            workflowQueue.add('execute-workflow', {
-              executionId: execution.id,
-              workflowId: workflow.id,
-              actions: workflow.actions,
-              conditions: workflow.conditions,
-              input: orderContext,
-              tenantId,
-            }),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('Workflow queue timeout')), 5000)
-            )
-          ]);
-
-          logger.info('Workflow triggered for new order', {
-            workflowId: workflow.id,
-            executionId: execution.id,
-            orderId: order.id
-          });
+          await this.enqueueRun(workflow, orderContext, { orderId: order.id, depth: 0, recent });
         } catch (error: any) {
           logger.error('Failed to trigger workflow', {
             workflowId: workflow.id,
@@ -867,6 +907,37 @@ export class WorkflowService {
         error: error.message
       });
       throw error;
+    }
+  }
+
+  /**
+   * Listener for `order.status_changed` (M2-T17). Applies the skip rules, then triggers inside the order's tenant.
+   * Never throws: the status change is already committed.
+   */
+  async onStatusChanged(evt: OrderStatusChangedEvent): Promise<void> {
+    try {
+      const skip = workflowSkipReason(evt);
+      if (skip) {
+        logger.info('Status change workflows skipped', { orderId: evt.orderId, to: evt.to, reason: skip });
+        return;
+      }
+      await runInTenant(evt.tenantId, () => this.triggerStatusChangeWorkflows(evt.orderId, evt.from, evt.to, evt.depth));
+    } catch (error: any) {
+      logger.error('Failed to trigger status change workflows', { orderId: evt.orderId, error: error.message });
+    }
+  }
+
+  /** Listener for `order.created` (M2-T17). Same skip rules; never throws. */
+  async onOrderCreated(evt: OrderCreatedEvent): Promise<void> {
+    try {
+      const skip = workflowSkipReason(evt);
+      if (skip) {
+        logger.info('Order created workflows skipped', { orderId: evt.orderId, status: evt.status, reason: skip });
+        return;
+      }
+      await runInTenant(evt.tenantId, () => this.triggerOrderCreatedWorkflows({ id: evt.orderId }));
+    } catch (error: any) {
+      logger.error('Failed to trigger order_created workflows', { orderId: evt.orderId, error: error.message });
     }
   }
 
@@ -900,4 +971,15 @@ export class WorkflowService {
   }
 }
 
-export default new WorkflowService();
+const workflowService = new WorkflowService();
+
+let registered = false;
+/** Listen to the state machine's events. Idempotent; the server calls it at bootstrap (tests call it or import the server). */
+export function registerWorkflowListeners(): void {
+  if (registered) return;
+  registered = true;
+  onOrderEvent(AppEvent.ORDER_STATUS_CHANGED, (evt) => { void workflowService.onStatusChanged(evt); });
+  onOrderEvent(AppEvent.ORDER_CREATED, (evt) => { void workflowService.onOrderCreated(evt); });
+}
+
+export default workflowService;

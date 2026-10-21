@@ -12,7 +12,7 @@
 import { Prisma, Order, OrderItem, Product, Customer, User } from '@prisma/client';
 import { GLAutomationService, OrderWithItems } from './glAutomationService';
 import logger from '../utils/logger';
-import { SYSTEM_USER_ID } from '../config/constants';
+import { getSystemUserId } from './systemUserService';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 
@@ -30,13 +30,13 @@ export class FinancialSyncService {
    *
    * @param tx - Prisma transaction client
    * @param order - Order with items, customer, agents
-   * @param userId - User ID creating the entries (defaults to SYSTEM_USER_ID)
+   * @param userId - User ID creating the entries (defaults to the tenant's system user)
    * @returns Object with transaction and journal entry created
    */
   static async syncOrderFinancialData(
     tx: Prisma.TransactionClient,
     order: OrderForSync,
-    userId: number = SYSTEM_USER_ID
+    userId?: number
   ): Promise<{
     transaction: any;
     journalEntry: any;
@@ -73,6 +73,8 @@ export class FinancialSyncService {
       logger.info(`Order ${order.id} already has revenue recognized`);
       return { transaction: null, journalEntry: null };
     }
+
+    userId ??= await getSystemUserId();
 
     try {
       // Step 1: Create Transaction record for COD tracking
@@ -180,7 +182,7 @@ export class FinancialSyncService {
    */
   static async batchSyncOrders(
     orderIds: number[],
-    userId: number = SYSTEM_USER_ID
+    userId?: number
   ): Promise<{
     synced: number;
     skipped: number;
@@ -216,7 +218,7 @@ export class FinancialSyncService {
    */
   private static async syncSingleOrder(
     orderId: number,
-    userId: number = SYSTEM_USER_ID
+    userId?: number
   ): Promise<void> {
     const tenantId = getTenantId();
     const order = await prisma.order.findUnique({

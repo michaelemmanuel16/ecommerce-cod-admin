@@ -52,6 +52,7 @@ import { getTenantId } from '../../utils/tenantContext';
 
 // Now import the queue — this triggers process() registration
 import '../../queues/financialReconciliationQueue';
+import { clearSystemUserIdCache } from '../../services/systemUserService';
 
 // Restore NODE_ENV
 process.env.NODE_ENV = originalEnv;
@@ -70,7 +71,9 @@ const makeOrder = (id: number) => ({
 describe('financialReconciliationQueue', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    clearSystemUserIdCache(); // ids are cached per tenant
     (prismaMock.tenant.findMany as any).mockResolvedValue([{ id: 'tenant-1' }]);
+    (prismaMock.user.findFirst as any).mockResolvedValue({ id: 900 }); // the tenant's system user
   });
 
   it('runs the processor once per tenant, inside tenantStorage.run', async () => {
@@ -147,6 +150,23 @@ describe('financialReconciliationQueue', () => {
     await processCallback();
 
     expect(seenTenant).toBe('tenant-x');
+  });
+
+  it("uses each tenant's own system user as the actor (tenant B gets B's)", async () => {
+    const systemUsers: Record<string, number> = { 'tenant-1': 101, 'tenant-2': 202 };
+    (prismaMock.tenant.findMany as any).mockResolvedValue([{ id: 'tenant-1' }, { id: 'tenant-2' }]);
+    (prismaMock.user.findFirst as any).mockImplementation(async ({ where }: any) =>
+      where.kind === 'system' && systemUsers[where.tenantId] ? { id: systemUsers[where.tenantId] } : null
+    );
+    (prismaMock.order.findMany as any).mockImplementation(async () => [
+      { ...makeOrder(getTenantId() === 'tenant-1' ? 1 : 2), tenantId: getTenantId() },
+    ]);
+    mockSyncOrderFinancialData.mockResolvedValue({ transaction: { id: 1 }, journalEntry: null });
+
+    await processCallback();
+
+    const actors = mockSyncOrderFinancialData.mock.calls.map((c: any[]) => [c[1].id, c[2]]);
+    expect(actors).toEqual([[1, 101], [2, 202]]);
   });
 
   it('throws when all orders fail for Bull retry', async () => {

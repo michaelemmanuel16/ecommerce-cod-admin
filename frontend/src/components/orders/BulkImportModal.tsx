@@ -62,6 +62,7 @@ interface ApiError {
 export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClose, onSuccess }) => {
     const [file, setFile] = useState<File | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [runWorkflows, setRunWorkflows] = useState(false);
     const [results, setResults] = useState<BulkImportResults | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,7 +85,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
 
         setIsUploading(true);
         try {
-            const data = await ordersService.uploadOrders(file);
+            const data = await ordersService.uploadOrders(file, runWorkflows);
             setResults(data.results);
             if (data.results.success > 0) {
                 toast.success(`Successfully imported ${data.results.success} orders`);
@@ -145,6 +146,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
         setFile(null);
         setResults(null);
         setIsUploading(false);
+        setRunWorkflows(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
@@ -222,6 +224,19 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
                                     </div>
                                 )}
                             </div>
+
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={runWorkflows}
+                                    onChange={(e) => setRunWorkflows(e.target.checked)}
+                                    className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm">
+                                    <span className="font-medium text-gray-900">Run workflows for imported orders</span>
+                                    <span className="block text-gray-500">Off: no workflow runs and no messages are sent for these orders.</span>
+                                </span>
+                            </label>
                         </div>
                     ) : (
                         <div className="space-y-6">

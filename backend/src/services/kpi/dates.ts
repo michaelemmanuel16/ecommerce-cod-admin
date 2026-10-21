@@ -102,6 +102,17 @@ export function monthRange(year: number, month: number, zone: string) {
 }
 
 /**
+ * The Monday-to-Sunday week that holds a local day: its first and last day ('YYYY-MM-DD') and [from, to) as instants.
+ */
+export function weekRange(ymd: string, zone: string) {
+  const { year, month, day } = parseYmd(ymd);
+  const dayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  const monday = shiftYmd(ymd, dayOfWeek === 0 ? -6 : 1 - dayOfWeek);
+  const sunday = shiftYmd(monday, 6);
+  return { monday, sunday, from: startOfDay(monday, zone), to: endOfDay(sunday, zone) };
+}
+
+/**
  * Turn a query value into a range bound.
  *  - 'YYYY-MM-DD' is a local calendar day. As `from` it is the start of that day. As `to` it is the END of
  *    that day (exclusive bound = start of the next day), so "from=2026-10-01&to=2026-10-17" means 1 to 17 October.

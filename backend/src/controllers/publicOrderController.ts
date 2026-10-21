@@ -1,7 +1,7 @@
 import { Response, Request, NextFunction } from 'express';
 import { resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { OrderStatus, Prisma } from '@prisma/client';
-import workflowService from '../services/workflowService';
+import { emitOrderCreatedEvent } from '../utils/appEvents';
 import checkoutFormService from '../services/checkoutFormService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
@@ -537,9 +537,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     });
 
     // Trigger workflows (non-blocking)
-    workflowService.triggerOrderCreatedWorkflows(order).catch(err => {
-      console.error('Failed to trigger workflow for public order:', err);
-    });
+    emitOrderCreatedEvent(order);
 
     // Emit socket event for real-time update
     emitOrderCreated(getSocketInstance() as any, order);

@@ -3,14 +3,14 @@ import { TransactionClient } from '../utils/prisma';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
-import { SYSTEM_USER_ID } from '../config/constants';
+import { getSystemUserId } from './systemUserService';
 import * as Money from '../utils/money';
 import { GLAutomationService, ORDER_GL_INCLUDE } from './glAutomationService';
 import agentInventoryService from './agentInventoryService';
-import workflowService from './workflowService';
 import { enqueueOrderFinancialSync } from '../queues/financialReconciliationQueue';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderUpdated, emitOrderStatusChanged, emitGLEntryCreated } from '../sockets';
+import { AppEvent, OrderStatusChangedEvent, emitOrderEvent } from '../utils/appEvents';
 
 /**
  * Side effects of a status move (M1-T10), called by the state machine in the move's transaction.
@@ -221,24 +221,26 @@ export async function applyGlEffects(
   historyId: number,
   opts: { postRevenueAlways?: boolean } = {},
 ): Promise<GlEffects> {
-  const by = userId ?? SYSTEM_USER_ID;
+  // Only a move that posts to the ledger needs an actor, so look it up lazily.
+  const actor = async () => userId ?? await getSystemUserId();
   const effects: GlEffects = {};
-  if (from === 'delivered') effects.reversal = await reverseRevenue(tx, order.id, to, by);
+  if (from === 'delivered') effects.reversal = await reverseRevenue(tx, order.id, to, await actor());
   if (to === 'delivered') {
-    const posted = await postRevenue(tx, order.id, by, opts.postRevenueAlways);
+    const posted = await postRevenue(tx, order.id, await actor(), opts.postRevenueAlways);
     effects.revenue = posted?.entry;
     effects.revenueOrder = posted?.order;
   }
-  if (to === 'failed_delivery') effects.failedFee = (await GLAutomationService.createFailedAttemptEntry(tx as any, order, historyId, by)) ?? undefined;
+  if (to === 'failed_delivery') effects.failedFee = (await GLAutomationService.createFailedAttemptEntry(tx as any, order, historyId, await actor())) ?? undefined;
   return effects;
 }
 
 /**
- * After the move commits: queue the financial sync, emit the socket events, trigger the workflows.
- * Event names and payloads are the ones updateOrderStatus always sent. Never throws.
+ * After the move commits: queue the financial sync, emit the socket events, emit `order.status_changed`
+ * (the workflow service listens, M2-T17). Event names and payloads are the ones updateOrderStatus always sent. Never throws.
  */
 export function afterCommitEffects(
   orderId: number, from: OrderStatus, to: OrderStatus, userId: number | undefined, gl: GlEffects,
+  statusChanged: OrderStatusChangedEvent,
 ): void {
   setImmediate(async () => {
     try {
@@ -260,8 +262,6 @@ export function afterCommitEffects(
     } catch (error) {
       logger.error('Failed to run post-commit order effects', { orderId, error });
     }
-    workflowService.triggerStatusChangeWorkflows(orderId, from, to).catch((error: any) => {
-      logger.error('Failed to trigger status change workflows', { orderId, error: error.message });
-    });
+    emitOrderEvent(AppEvent.ORDER_STATUS_CHANGED, statusChanged);
   });
 }

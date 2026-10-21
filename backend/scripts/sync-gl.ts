@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { GLAutomationService } from '../src/services/glAutomationService';
-import { SYSTEM_USER_ID } from '../src/config/constants';
+import { getSystemUserId } from '../src/services/systemUserService';
 
 const prisma = new PrismaClient();
 
@@ -30,6 +30,7 @@ async function main() {
     let count = 0;
     for (const order of unrecognizedOrders) {
         try {
+            const systemUserId = await getSystemUserId(order.tenantId);
             await prisma.$transaction(async (tx) => {
                 // Calculate total COGS
                 const totalCOGS = GLAutomationService.calculateTotalCOGS(order.orderItems as any);
@@ -39,7 +40,7 @@ async function main() {
                     tx as any,
                     order as any,
                     totalCOGS,
-                    SYSTEM_USER_ID
+                    systemUserId
                 );
 
                 // Update order

@@ -17,13 +17,17 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
 import { prismaBase } from '../../utils/prisma';
-import { updateOrderStatusTool } from '../../mcp/tools/ordersWrite';
-import { createTwoTenants, ensureSystemUser, TwoTenants } from './helpers/twoTenants';
+import '../../tools';
+import { toolMcpResult } from './helpers/callTool';
+import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { runInTenant } from '../../utils/tenantContext';
 
 let pair: TwoTenants;
 let orderAId: number;
 let orderBId: number;
+
+// The registry tool, called as the tenant's tool actor.
+const updateOrderStatusTool = (args: unknown) => toolMcpResult('orders_update_status', args);
 
 // Parse the JSON payload an MCP tool returns in content[0].text.
 function payload(res: any) {
@@ -32,7 +36,6 @@ function payload(res: any) {
 
 beforeAll(async () => {
   pair = await createTwoTenants('mcpwrite');
-  await ensureSystemUser(pair.a.id); // the MCP actor has no user: GL entries are created by the system user
   orderAId = pair.a.ids.order;
   orderBId = pair.b.ids.order;
 

@@ -16,7 +16,7 @@
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { prismaBase } from '../../utils/prisma';
-import { createTenant, deleteTenantRows, ensureSystemUser } from './helpers/twoTenants';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { runInTenant } from '../../utils/tenantContext';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import orderService from '../../services/orderService';
@@ -92,8 +92,7 @@ async function runPublicOrderToDelivered(packageId: number) {
 beforeAll(async () => {
   const tenant = await createTenant('DDec Tenant');
   tenantId = tenant.id;
-  await seedTenantDefaults(tenantId); // chart of accounts: delivered posts revenue
-  await ensureSystemUser(tenantId); // delivered posts revenue; a call with no actor user uses the system user
+  await seedTenantDefaults(tenantId); // chart of accounts, and the system user a no-actor delivered move posts as
   agentId = (await prismaBase.user.create({
     data: { email: `ddec-agent-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'Kofi', lastName: 'Agent', role: 'delivery_agent', tenantId },
   })).id;

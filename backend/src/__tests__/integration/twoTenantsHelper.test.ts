@@ -29,7 +29,9 @@ describe('createTwoTenants', () => {
       expect(t.users.salesRep.role).toBe('sales_rep');
       expect(t.users.deliveryAgent.role).toBe('delivery_agent');
       const rows = await prismaBase.user.findMany({ where: { tenantId: t.id } });
-      expect(rows.map((u) => u.role).sort()).toEqual(['admin', 'delivery_agent', 'sales_rep']);
+      const people = rows.filter((u) => u.kind === 'person');
+      expect(people.map((u) => u.role).sort()).toEqual(['admin', 'delivery_agent', 'sales_rep']);
+      expect(rows.filter((u) => u.kind === 'system')).toHaveLength(1); // M2-T03: one system user per tenant
     }
   });
 

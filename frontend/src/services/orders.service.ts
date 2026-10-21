@@ -146,9 +146,10 @@ export const ordersService = {
     window.URL.revokeObjectURL(url);
   },
 
-  async uploadOrders(file: File): Promise<any> {
+  async uploadOrders(file: File, runWorkflows = false): Promise<any> {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('runWorkflows', String(runWorkflows));
     const response = await apiClient.post('/api/orders/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'

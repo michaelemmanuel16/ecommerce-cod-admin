@@ -1,7 +1,7 @@
 /**
  * M0-T24 (COD-6): money in API and MCP output is a string with exactly 2 decimals.
  * Contract: GET /api/orders, GET /api/financial/summary and the MCP `orders_summary` tool.
- * The 2-decimal rule comes from one place: Money.jsonReplacer (Express `json replacer`, mcpJson).
+ * The 2-decimal rule comes from one place: Money.jsonReplacer (Express `json replacer`, toMcpResult).
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
@@ -9,8 +9,8 @@ import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { generateAccessToken } from '../../utils/jwt';
-import { tenantStorage } from '../../utils/tenantContext';
-import { registerOrderTools } from '../../mcp/tools/orders';
+import '../../tools';
+import { toolData } from './helpers/callTool';
 
 jest.mock('../../utils/socketInstance', () => ({
   setSocketInstance: jest.fn(),
@@ -83,10 +83,7 @@ describe('money contract', () => {
   });
 
   it('MCP orders_summary returns revenue as a 2-decimal string with a currency code', async () => {
-    const tools: Record<string, (args: any) => Promise<any>> = {};
-    registerOrderTools({ tool: (name: string, _d: string, _s: unknown, handler: any) => { tools[name] = handler; } } as any, (h) => h);
-    const result = await tenantStorage.run({ tenantId }, () => tools.orders_summary({ period: 'today' }));
-    const body = JSON.parse(result.content[0].text);
+    const body = await toolData('orders_summary', { period: 'today' }, tenantId);
     expect(body.revenue).toBe('249.00');
     expect(body.currency).toMatch(/^[A-Z]{3}$/);
   });

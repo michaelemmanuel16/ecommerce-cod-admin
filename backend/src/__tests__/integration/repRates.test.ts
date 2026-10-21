@@ -28,7 +28,7 @@ import { rates } from '../../services/kpi/rates';
 import { getRepPerformanceDetails } from '../../services/repPerformanceService';
 import { startOfDay, endOfDay } from '../../services/kpi/dates';
 
-jest.mock('../../mcp/rateLimiter', () => ({ rateLimiter: { tryConsume: () => true } }));
+jest.mock('../../mcp/rateLimiter', () => require('./helpers/allowAllRateLimiter').allowAllRateLimiter());
 
 let pair: TwoTenants;
 let repA: number;

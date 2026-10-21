@@ -1,12 +1,16 @@
 import { Router, Request, Response } from 'express';
-import { randomBytes, createHash } from 'crypto';
 import path from 'path';
 import { z } from 'zod';
 import prisma from '../utils/prisma';
-import { prismaBase } from '../utils/prisma';
 import { authenticate, requireSuperAdmin } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { getTenantId } from '../utils/tenantContext';
+import { AuthRequest } from '../types';
+import { auditService } from '../services/auditService';
+import { createKey, revokeKey } from '../services/mcpKeyService';
+import { roleToolList } from '../config/defaultRoles';
+import { AppError } from '../middleware/errorHandler';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -14,13 +18,34 @@ router.use(authenticate);
 router.use(tenantRateLimiter);
 router.use(requireSuperAdmin);
 
-const MAX_KEYS_PER_TENANT = 5;
-const DEFAULT_EXPIRY_DAYS = 90;
-
 const generateKeySchema = z.object({
-  label: z.string().min(1).max(50),
+  label: z.string().trim().min(1).max(50),
+  roleId: z.number().int().positive(),
+  userId: z.number().int().positive().optional(),
   expiresInDays: z.number().int().min(1).max(365).optional(),
 });
+
+/** Record an audit row for a key change. The raw key and its hash never go in: only the prefix does. */
+async function auditKey(req: AuthRequest, action: 'mcp_key_create' | 'mcp_key_revoke', key: {
+  id: string; label: string; keyPrefix: string; userId: number | null; roleId: number | null;
+}) {
+  try {
+    await auditService.record({
+      actorId: req.user!.id,
+      actorKind: 'person',
+      channel: 'app',
+      action,
+      resource: 'mcp_key',
+      resourceId: key.id,
+      metadata: { label: key.label, keyPrefix: key.keyPrefix, userId: key.userId, roleId: key.roleId },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+  } catch (error) {
+    // The key change already happened; a lost audit row is logged, not turned into a failed request.
+    logger.error('Failed to write MCP key audit row', { action, keyId: key.id, error });
+  }
+}
 
 // List all API keys for the tenant
 router.get('/', async (_req: Request, res: Response) => {
@@ -35,11 +60,20 @@ router.get('/', async (_req: Request, res: Response) => {
         expiresAt: true,
         lastUsedAt: true,
         revokedAt: true,
+        userId: true,
+        roleId: true,
+        role: { select: { name: true, tools: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json({ keys });
+    res.json({
+      keys: keys.map(({ role, ...key }) => ({
+        ...key,
+        roleName: role?.name ?? null,
+        toolCount: roleToolList(role?.tools).length,
+      })),
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch API keys' });
   }
@@ -49,38 +83,9 @@ router.get('/', async (_req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const parsed = generateKeySchema.parse(req.body);
+    const { key, rawKey, roleName, toolCount } = await createKey({ tenantId: getTenantId()!, ...parsed });
 
-    // Generate high-entropy key (256 bits)
-    const rawKey = `mcp_${randomBytes(32).toString('hex')}`;
-    const keyHash = createHash('sha256').update(rawKey).digest('hex');
-    const keyPrefix = rawKey.substring(0, 12); // "mcp_" + first 8 hex chars
-
-    const expiresInDays = parsed.expiresInDays ?? DEFAULT_EXPIRY_DAYS;
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + expiresInDays);
-
-    const tenantId = getTenantId();
-
-    // Atomic count + create in a transaction to prevent exceeding key limit
-    const mcpKey = await prismaBase.$transaction(async (tx) => {
-      const existingCount = await tx.mcpApiKey.count({
-        where: { tenantId: tenantId!, revokedAt: null },
-      });
-
-      if (existingCount >= MAX_KEYS_PER_TENANT) {
-        throw new Error(`Maximum ${MAX_KEYS_PER_TENANT} active API keys per tenant`);
-      }
-
-      return tx.mcpApiKey.create({
-        data: {
-          tenantId: tenantId!,
-          keyHash,
-          keyPrefix,
-          label: parsed.label,
-          expiresAt,
-        },
-      });
-    });
+    await auditKey(req as AuthRequest, 'mcp_key_create', key);
 
     // FRONTEND_URL doubles as the public base URL since nginx fronts both frontend and
     // backend on the same domain. If the architecture ever splits them across subdomains,
@@ -90,12 +95,16 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Return the raw key ONCE — it's hashed in the DB and can never be retrieved again
     res.status(201).json({
-      id: mcpKey.id,
+      id: key.id,
       key: rawKey,
-      keyPrefix,
-      label: mcpKey.label,
-      expiresAt: mcpKey.expiresAt,
-      createdAt: mcpKey.createdAt,
+      keyPrefix: key.keyPrefix,
+      label: key.label,
+      userId: key.userId,
+      roleId: key.roleId,
+      roleName,
+      toolCount,
+      expiresAt: key.expiresAt,
+      createdAt: key.createdAt,
       mcpConfig: {
         remote: {
           mcpServers: {
@@ -122,8 +131,8 @@ router.post('/', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'Invalid input', details: error.issues });
       return;
     }
-    if ((error as Error).message?.includes('Maximum')) {
-      res.status(400).json({ error: (error as Error).message });
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ error: error.message });
       return;
     }
     res.status(500).json({ error: 'Failed to generate API key' });
@@ -133,21 +142,13 @@ router.post('/', async (req: Request, res: Response) => {
 // Revoke an API key
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-
-    const key = await prisma.mcpApiKey.findFirst({
-      where: { id, revokedAt: null },
-    });
-
+    const key = await revokeKey(getTenantId()!, req.params.id);
     if (!key) {
       res.status(404).json({ error: 'API key not found' });
       return;
     }
 
-    await prisma.mcpApiKey.update({
-      where: { id },
-      data: { revokedAt: new Date() },
-    });
+    await auditKey(req as AuthRequest, 'mcp_key_revoke', key);
 
     res.json({ message: 'API key revoked' });
   } catch (error) {

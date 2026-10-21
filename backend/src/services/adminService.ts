@@ -14,6 +14,7 @@ import {
   SENSITIVE_FIELDS,
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
+import { HUMAN_USERS_WHERE } from './systemUserService';
 import { tenantIdForFormSlug } from './tenantLookupService';
 import { currencyOfTenant, getCurrency } from '../utils/currency';
 import { changeStoreCurrency } from './fxService';
@@ -332,16 +333,18 @@ export const adminService = {
         analytics: ['view'],
         workflows: ['create', 'view', 'update', 'delete', 'execute'],
         settings: ['view', 'update'],
+        audit: ['view'],
       },
       admin: {
         users: ['create', 'view', 'update', 'delete'],
-        orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign'],
+        orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status'],
         customers: ['create', 'view', 'update', 'delete'],
         products: ['create', 'view', 'update', 'delete'],
         financial: ['view', 'create'],
         analytics: ['view'],
         workflows: ['create', 'view', 'update', 'delete', 'execute'],
         settings: ['view'],
+        audit: ['view'],
       },
       manager: {
         users: [],
@@ -435,7 +438,7 @@ export const adminService = {
     await this.checkAdminPrivilege(requester, 'admin');
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: any = { ...HUMAN_USERS_WHERE }; // the per-tenant system user is not staff
     if (role) where.role = role;
     if (typeof isActive === 'boolean') where.isActive = isActive;
 

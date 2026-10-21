@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Bot, Copy, Check, Trash2, Plus, Key, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import api from '../../../services/api';
+import { Input } from '../../ui/Input';
+import { Select } from '../../ui/Select';
 import toast from 'react-hot-toast';
 
 interface McpApiKey {
@@ -10,6 +13,14 @@ interface McpApiKey {
   createdAt: string;
   expiresAt: string | null;
   lastUsedAt: string | null;
+  roleName: string | null;
+  toolCount: number;
+}
+
+interface RoleOption {
+  id: number;
+  name: string;
+  toolCount: number;
 }
 
 interface GeneratedKey {
@@ -29,6 +40,8 @@ export const McpIntegration: React.FC = () => {
   const [generatedKey, setGeneratedKey] = useState<GeneratedKey | null>(null);
   const [generating, setGenerating] = useState(false);
   const [label, setLabel] = useState('');
+  const [roles, setRoles] = useState<RoleOption[] | null>(null);
+  const [roleId, setRoleId] = useState('');
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedConfig, setCopiedConfig] = useState(false);
   const [configTab, setConfigTab] = useState<'remote' | 'local'>('remote');
@@ -50,11 +63,24 @@ export const McpIntegration: React.FC = () => {
 
   useEffect(() => { fetchKeys(); }, [fetchKeys]);
 
+  const openGenerate = () => {
+    setLabel('');
+    setRoleId('');
+    setGeneratedKey(null);
+    setShowGenerateModal(true);
+    // Roles are read once, the first time the form opens.
+    if (roles === null) {
+      api.get('/api/roles')
+        .then((res) => setRoles(res.data.roles))
+        .catch(() => toast.error('Failed to load roles'));
+    }
+  };
+
   const handleGenerate = async () => {
-    if (!label.trim()) return;
+    if (!label.trim() || !roleId) return;
     try {
       setGenerating(true);
-      const res = await api.post('/api/mcp-keys', { label: label.trim() });
+      const res = await api.post('/api/mcp-keys', { label: label.trim(), roleId: Number(roleId) });
       setGeneratedKey(res.data);
       fetchKeys();
     } catch (err: any) {
@@ -107,10 +133,10 @@ export const McpIntegration: React.FC = () => {
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Connect an AI assistant to your business data</h3>
           <p className="text-sm text-gray-500 mb-6">
             Query your orders, customers, deliveries, and revenue using natural language.
-            Generate an API key to connect any MCP-compatible AI assistant to your account.
+            Pick a role to decide which tools it can use, then generate an API key for any MCP-compatible AI assistant.
           </p>
           <button
-            onClick={() => { setLabel(''); setGeneratedKey(null); setShowGenerateModal(true); }}
+            onClick={openGenerate}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
           >
             <Key className="w-4 h-4" />
@@ -130,12 +156,17 @@ export const McpIntegration: React.FC = () => {
           <p className="text-xs text-gray-500 mt-0.5">Connect an AI assistant to query your business data</p>
         </div>
         <button
-          onClick={() => { setLabel(''); setGeneratedKey(null); setShowGenerateModal(true); }}
+          onClick={openGenerate}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
         >
           <Plus className="w-3.5 h-3.5" />
           Generate Key
         </button>
+      </div>
+
+      <div className="px-6 py-2 border-b border-gray-100 text-xs text-gray-500">
+        <Link to="/settings?tab=users" className="text-blue-600 hover:text-blue-800 font-medium">Roles and tools</Link>
+        {' '}decide what each assistant can do.
       </div>
 
       {/* Loading */}
@@ -172,6 +203,10 @@ export const McpIntegration: React.FC = () => {
                 <div className="text-sm font-medium text-gray-900">{k.label}</div>
                 <div className="text-xs text-gray-400 font-mono">{k.keyPrefix}...****</div>
               </div>
+              <div className="text-xs text-gray-500 hidden sm:block text-right">
+                <div>{k.roleName ?? 'No role'}</div>
+                <div className="text-gray-400">{k.toolCount} {k.toolCount === 1 ? 'tool' : 'tools'}</div>
+              </div>
               <div className="text-xs text-gray-400 hidden sm:block">{formatDate(k.createdAt)}</div>
               {k.lastUsedAt && (
                 <div className="text-xs text-gray-400 hidden md:block">Last used {formatDate(k.lastUsedAt)}</div>
@@ -195,25 +230,37 @@ export const McpIntegration: React.FC = () => {
             <div className="p-6">
               {!generatedKey ? (
                 <>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Generate API Key</h3>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Label</label>
-                  <input
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Create AI Assistant Key</h3>
+                  <Input
+                    id="mcp-key-name"
+                    label="Name"
                     type="text"
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
                     placeholder="e.g., My MacBook AI Assistant"
                     maxLength={50}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     autoFocus
                     onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
                   />
+                  <div className="mt-4">
+                    <Select
+                      id="mcp-key-role"
+                      label="Role"
+                      value={roleId}
+                      onChange={(e) => setRoleId(e.target.value)}
+                      options={[
+                        { value: '', label: 'Select a role' },
+                        ...(roles ?? []).map((r) => ({ value: r.id, label: /\(\d+ tools\)$/.test(r.name) ? r.name : `${r.name} (${r.toolCount} tools)` })),
+                      ]}
+                    />
+                  </div>
                   <div className="flex gap-3 mt-6">
                     <button onClick={() => setShowGenerateModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
                       Cancel
                     </button>
                     <button
                       onClick={handleGenerate}
-                      disabled={!label.trim() || generating}
+                      disabled={!label.trim() || !roleId || generating}
                       className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {generating ? <><RefreshCw className="w-4 h-4 animate-spin" /> Generating...</> : 'Generate'}

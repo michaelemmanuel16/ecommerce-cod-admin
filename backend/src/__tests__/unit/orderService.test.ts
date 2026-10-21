@@ -43,9 +43,11 @@ jest.mock('../../utils/appEvents', () => ({
   default: {
     emit: jest.fn(),
   },
+  emitOrderCreatedEvent: jest.fn(),
   AppEvent: {
     BULK_ORDERS_IMPORTED: 'BULK_ORDERS_IMPORTED',
     AGENT_COLLECTION_RECONCILED: 'AGENT_COLLECTION_RECONCILED',
+    ORDER_CREATED: 'order.created',
   },
 }));
 import appEvents, { AppEvent } from '../../utils/appEvents';

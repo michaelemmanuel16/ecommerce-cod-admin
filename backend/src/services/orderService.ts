@@ -3,23 +3,20 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, DeclineReason, FailureReason } from '@prisma/client';
 import logger from '../utils/logger';
-import appEvents, { AppEvent } from '../utils/appEvents';
-import workflowService from './workflowService';
+import appEvents, { AppEvent, emitOrderCreatedEvent } from '../utils/appEvents';
 import { getSocketInstance } from '../utils/socketInstance';
 import {
-  emitOrderAssigned,
   emitOrderCreated,
-  emitOrderUpdated,
   emitOrdersDeleted,
   emitToTenant,
 } from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
-import { SYSTEM_USER_ID } from '../config/constants';
 import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
 import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
+import assignmentService from './assignmentService';
 import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
 import { hasPermission } from '../middleware/auth';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
@@ -105,6 +102,8 @@ interface UpdateOrderStatusData {
   declineReason?: DeclineReason;
   failureReason?: FailureReason;
   nextAttemptDate?: Date | null;
+  // M2-T17: an integration move with an old deliveryDate fires no workflows, unless this is true
+  runWorkflows?: boolean;
 }
 
 
@@ -373,15 +372,8 @@ export class OrderService {
     // Emit socket event for real-time update
     emitOrderCreated(getSocketInstance() as any, order);
 
-    // Trigger workflows with order_created trigger (fully detached from request cycle)
-    setImmediate(() => {
-      workflowService.triggerOrderCreatedWorkflows(order).catch(error => {
-        logger.error('Failed to trigger order_created workflows', {
-          orderId: order.id,
-          error: error.message
-        });
-      });
-    });
+    // order_created workflows listen to this event (after commit, M2-T17)
+    emitOrderCreatedEvent(order);
 
     return order;
   }
@@ -397,7 +389,9 @@ export class OrderService {
     createdById?: number,
     repMap?: Map<string, number>,
     agentMap?: Map<string, number>,
-    silent: boolean = false
+    silent: boolean = false,
+    // M2-T17: an imported order whose status is not pending_confirmation fires no workflows, unless this is true
+    { runWorkflows }: { runWorkflows?: boolean } = {}
   ) {
     logger.info('🔥🔥🔥 CANARY: Starting bulkImportOrders with sequential processing V3 🔥🔥🔥');
     const results = {
@@ -496,6 +490,8 @@ export class OrderService {
               await transitionOrder(matchingExisting.id, newStatus, { kind: 'integration', userId: createdById }, {
                 note: 'Status updated via bulk CSV re-import',
                 deliveryDate: newStatus === 'delivered' ? orderDateValue : undefined,
+                imported: true,
+                runWorkflows,
               });
               logger.info('✅ CANARY: DUPLICATE — status updated forward', {
                 orderId: matchingExisting.id,
@@ -620,7 +616,7 @@ export class OrderService {
                 const syncResult = await FinancialSyncService.syncOrderFinancialData(
                   tx as any,
                   newOrder as any,
-                  createdById || SYSTEM_USER_ID
+                  createdById || undefined
                 );
 
                 if (syncResult.transaction || syncResult.journalEntry) {
@@ -650,12 +646,7 @@ export class OrderService {
             emitOrderCreated(getSocketInstance() as any, createdOrder);
           }
 
-          workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
-            logger.error('Failed to trigger workflow for bulk imported order', {
-              orderId: createdOrder.id,
-              error: err.message
-            });
-          });
+          emitOrderCreatedEvent(createdOrder, { imported: true, runWorkflows });
 
         } catch (error: any) {
           if (error.message === 'DUPLICATE_ORDER') {
@@ -991,6 +982,7 @@ export class OrderService {
       ...this.moveOptions(data),
       note: data.notes,
       deliveryDate: data.deliveryDate,
+      runWorkflows: data.runWorkflows,
       // Both used to be written by this method on delivered; kept as is
       paymentStatus: data.status === 'delivered' ? 'collected' : undefined,
     });
@@ -1004,6 +996,76 @@ export class OrderService {
     });
 
     return prisma.order.findFirst({ where: { id: orderId, deletedAt: null }, include: ORDER_EVENT_INCLUDE });
+  }
+
+  /**
+   * Order search for the `orders_search` tool (M2-T07): filters, newest id first, one extra row read to tell
+   * whether a next page exists. Runs in the tenant context of the caller.
+   */
+  async search(filters: {
+    status?: OrderStatus;
+    dateFrom?: string;
+    dateTo?: string;
+    customerId?: number;
+    agentId?: number;
+    search?: string;
+    limit: number;
+    cursorId?: number;
+  }) {
+    const where: Prisma.OrderWhereInput = { deletedAt: null };
+    if (filters.status) where.status = filters.status;
+    if (filters.customerId) where.customerId = filters.customerId;
+    if (filters.agentId) where.deliveryAgentId = filters.agentId;
+    if (filters.dateFrom || filters.dateTo) {
+      where.createdAt = {};
+      if (filters.dateFrom) where.createdAt.gte = new Date(filters.dateFrom);
+      if (filters.dateTo) where.createdAt.lte = new Date(filters.dateTo);
+    }
+    if (filters.search) {
+      const searchNum = parseInt(filters.search);
+      const phoneSearch = customerPhoneSearch(filters.search);
+      where.OR = [
+        ...(isNaN(searchNum) ? [] : [{ id: searchNum }]),
+        ...(phoneSearch ? [phoneSearch] : []),
+        { customer: { firstName: { contains: filters.search, mode: 'insensitive' as const } } },
+      ];
+    }
+
+    const orders = await prisma.order.findMany({
+      where,
+      ...(filters.cursorId !== undefined ? { cursor: { id: filters.cursorId }, skip: 1 } : {}),
+      take: filters.limit + 1, // one extra row: tells whether there is a next page
+      orderBy: { id: 'desc' },
+      include: {
+        customer: {
+          select: {
+            id: true, firstName: true, lastName: true, phoneNumber: true,
+            alternatePhone: true, address: true, state: true,
+          },
+        },
+        deliveryAgent: { select: { id: true, firstName: true, lastName: true } },
+        orderItems: { include: { product: { select: { id: true, name: true } } } },
+      },
+    });
+    const hasMore = orders.length > filters.limit;
+    return { orders: hasMore ? orders.slice(0, filters.limit) : orders, hasMore };
+  }
+
+  /** Orders placed in [from, to) counted by status (the status breakdown of the summary tools). */
+  async statusCounts(from: Date, to: Date) {
+    return prisma.order.groupBy({
+      by: ['status'],
+      where: { createdAt: { gte: from, lt: to }, deletedAt: null },
+      _count: { id: true },
+    });
+  }
+
+  /** The order and its customer, for the `orders_update_status` tool. Null when it is not in this tenant. */
+  async findForStatusUpdate(orderId: number) {
+    return prisma.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      include: { customer: { select: { firstName: true, lastName: true, phoneNumber: true } } },
+    });
   }
 
   /** Options common to every status move that comes from a request body. */
@@ -1356,68 +1418,7 @@ export class OrderService {
     if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
       throw new AppError('Only administrators or managers can assign customer representatives', 403);
     }
-    const [order, rep] = await Promise.all([
-      prisma.order.findUnique({ where: { id: orderId, deletedAt: null } }),
-      prisma.user.findUnique({ where: { id: customerRepId } })
-    ]);
-
-    if (!order) {
-      throw new AppError('Order not found', 404);
-    }
-
-    if (!rep || rep.role !== 'sales_rep') {
-      throw new AppError('Invalid customer representative', 400);
-    }
-
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        customerRepId: customerRepId,
-        orderHistory: {
-          create: {
-            tenantId: resolveTenantId(order.tenantId),
-            status: order.status,
-            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName} `,
-            changedBy: requester.id,
-            metadata: { assignedRepId: customerRepId }
-          }
-        }
-      },
-      include: {
-        customerRep: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true
-          }
-        }
-      }
-    });
-
-    logger.info(`Customer rep assigned to order: ${order.id} `, {
-      orderId,
-      repId: customerRepId,
-      changedBy: requester.id
-    });
-
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        tenantId: resolveTenantId(order.tenantId),
-        userId: requester.id,
-        action: 'assign_rep',
-        resource: 'order',
-        resourceId: orderId.toString(),
-        metadata: { assignedRepId: customerRepId }
-      }
-    });
-
-    // Emit socket events for real-time updates
-    const ioInstance = getSocketInstance() as any;
-    emitOrderAssigned(ioInstance, updated, customerRepId.toString(), 'sales_rep');
-    emitOrderUpdated(ioInstance, updated);
-
-    return updated;
+    return assignmentService.assignByRole(orderId, customerRepId, 'sales_rep', actorOf(requester));
   }
 
   /**
@@ -1433,72 +1434,7 @@ export class OrderService {
         throw new AppError('Only managers or the assigned sales representative can assign delivery agents', 403);
       }
     }
-    const [order, agent] = await Promise.all([
-      prisma.order.findUnique({ where: { id: orderId, deletedAt: null } }),
-      prisma.user.findUnique({ where: { id: deliveryAgentId } })
-    ]);
-
-    if (!order) {
-      throw new AppError('Order not found', 404);
-    }
-
-    if (!agent || agent.role !== 'delivery_agent') {
-      throw new AppError('Invalid delivery agent', 400);
-    }
-
-    if (!agent.isAvailable) {
-      throw new AppError('Delivery agent is not available', 400);
-    }
-
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        deliveryAgentId: deliveryAgentId,
-        orderHistory: {
-          create: {
-            tenantId: resolveTenantId(order.tenantId),
-            status: order.status,
-            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName} `,
-            changedBy: requester.id,
-            metadata: { assignedAgentId: deliveryAgentId }
-          }
-        }
-      },
-      include: {
-        deliveryAgent: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true
-          }
-        }
-      }
-    });
-
-    logger.info(`Delivery agent assigned to order: ${order.id} `, {
-      orderId,
-      agentId: deliveryAgentId,
-      changedBy: requester.id
-    });
-
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        tenantId: resolveTenantId(order.tenantId),
-        userId: requester.id,
-        action: 'assign_agent',
-        resource: 'order',
-        resourceId: orderId.toString(),
-        metadata: { assignedAgentId: deliveryAgentId }
-      }
-    });
-
-    // Emit socket events for real-time updates
-    const ioInstance = getSocketInstance() as any;
-    emitOrderAssigned(ioInstance, updated, deliveryAgentId.toString(), 'delivery_agent');
-    emitOrderUpdated(ioInstance, updated);
-
-    return updated;
+    return assignmentService.assignByRole(orderId, deliveryAgentId, 'delivery_agent', actorOf(requester), { checkAvailable: true });
   }
 
   /**
@@ -1607,6 +1543,19 @@ export class OrderService {
 
     return stats;
   }
+}
+
+/**
+ * Set an order's priority and/or append to its notes, in one tenant-scoped write. These two fields only:
+ * the data object is built here, so no status (or anything else) can ride along. Callers validate the values.
+ */
+export async function setOrderPriorityAndNotes(orderId: number, fields: { priority?: number; notes?: string }): Promise<void> {
+  const order = await prisma.order.findFirst({ where: { id: orderId }, select: { notes: true } });
+  if (!order) throw new AppError('Order not found', 404);
+  const data: { priority?: number; notes?: string } = {};
+  if (fields.priority !== undefined) data.priority = fields.priority;
+  if (fields.notes !== undefined) data.notes = order.notes ? `${order.notes}\n${fields.notes}` : fields.notes;
+  await prisma.order.update({ where: { id: orderId }, data });
 }
 
 export default new OrderService();

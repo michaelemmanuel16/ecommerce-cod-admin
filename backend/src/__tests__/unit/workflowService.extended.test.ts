@@ -186,6 +186,7 @@ describe('WorkflowService (extended branch coverage)', () => {
       // Mock executeWorkflow path - findUnique returns the workflow again
       (prismaMock.workflow.findUnique as any).mockResolvedValue({ ...workflow, conditions: null } as any);
       (prismaMock.workflowExecution.create as any).mockResolvedValue({ id: 100 } as any);
+      (prismaMock.workflowExecution.findMany as any).mockResolvedValue([] as any); // loop guard
       (prismaMock.workflowExecution.update as any).mockResolvedValue({} as any);
       (prismaMock.order.findUnique as any).mockResolvedValue({ id: 1 } as any);
       (prismaMock.order.update as any).mockResolvedValue({ id: 1 } as any);
@@ -222,6 +223,7 @@ describe('WorkflowService (extended branch coverage)', () => {
       // Mock executeWorkflow chain
       (prismaMock.workflow.findUnique as any).mockResolvedValue({ ...workflow, conditions: null } as any);
       (prismaMock.workflowExecution.create as any).mockResolvedValue({ id: 100 } as any);
+      (prismaMock.workflowExecution.findMany as any).mockResolvedValue([] as any); // loop guard
       (prismaMock.workflowExecution.update as any).mockResolvedValue({} as any);
       (prismaMock.order.update as any).mockResolvedValue({ id: 1 } as any);
       (prismaMock.auditLog.create as any).mockResolvedValue({} as any);

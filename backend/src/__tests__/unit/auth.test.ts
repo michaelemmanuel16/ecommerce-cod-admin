@@ -52,6 +52,7 @@ describe('Auth Controller', () => {
         lastName: 'User',
         role: 'admin' as any,
         isActive: true,
+        kind: 'person',
       };
 
       mockReq.body = {
@@ -97,6 +98,7 @@ describe('Auth Controller', () => {
         email: 'test@example.com',
         password: 'hashedPassword',
         isActive: false,
+        kind: 'person',
       };
 
       mockReq.body = {

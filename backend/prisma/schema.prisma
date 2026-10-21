@@ -56,6 +56,8 @@ model Tenant {
   messageLogs         MessageLog[]
   systemConfigs       SystemConfig[]
   mcpApiKeys          McpApiKey[]
+  roles               Role[]
+  roleAssignments     RoleAssignment[]
   webhookEvents       WebhookEvent[]
   emailTemplates      EmailTemplate[]
   emailCampaigns      EmailCampaign[]
@@ -167,6 +169,9 @@ model User {
   targetsAsOwner        Target[]            @relation("TargetUser")
   feeRules              FeeRule[]           @relation("FeeRulePartner")
   fxRatesCreated        FxRate[]            @relation("FxRateCreator")
+  kind                  UserKind            @default(person)
+  roleAssignments       RoleAssignment[]    @relation("RoleAssignmentHolder")
+  mcpApiKeys            McpApiKey[]         @relation("McpApiKeyUser")
   tenantId              String?             @map("tenant_id")
   tenant                Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -975,18 +980,27 @@ enum ShipmentStatus {
 }
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  userId     Int?     @map("user_id")
+  id         Int           @id @default(autoincrement())
+  userId     Int?          @map("user_id")
   action     String
   resource   String
-  resourceId String?  @map("resource_id")
+  resourceId String?       @map("resource_id")
   metadata   Json?
-  ipAddress  String?  @map("ip_address")
-  userAgent  String?  @map("user_agent")
-  createdAt  DateTime @default(now()) @map("created_at")
-  user       User?    @relation(fields: [userId], references: [id])
-  tenantId   String   @map("tenant_id")
-  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ipAddress  String?       @map("ip_address")
+  userAgent  String?       @map("user_agent")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  // M2-T01: who acted (person, agent, system), through which door, in which role, and the row before and after.
+  actorKind  UserKind?     @map("actor_kind")
+  channel    AuditChannel?
+  roleId     Int?          @map("role_id")
+  before     Json?
+  after      Json?
+  // Text with no foreign key until M12 creates AiAction.
+  aiActionId String?       @map("ai_action_id")
+  user       User?         @relation(fields: [userId], references: [id])
+  role       Role?         @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  tenantId   String        @map("tenant_id")
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([tenantId])
   @@index([userId])
@@ -995,6 +1009,7 @@ model AuditLog {
   @@index([createdAt])
   @@index([resource, resourceId])
   @@index([userId, createdAt])
+  @@index([tenantId, createdAt])
   @@map("audit_logs")
 }
 
@@ -1098,6 +1113,21 @@ model AgentDeposit {
   @@index([agentId, depositDate])
   @@index([status])
   @@map("agent_deposits")
+}
+
+enum UserKind {
+  person
+  ai_agent
+  company
+  system
+}
+
+enum AuditChannel {
+  app
+  chat
+  mcp
+  connector
+  system
 }
 
 enum UserRole {
@@ -1495,6 +1525,11 @@ model McpApiKey {
   expiresAt  DateTime? @map("expires_at")
   revokedAt  DateTime? @map("revoked_at")
   lastUsedAt DateTime? @map("last_used_at")
+  // Nullable only for keys made before every key had a user and a role; the API and validateKey require both.
+  userId     Int?      @map("user_id")
+  roleId     Int?      @map("role_id")
+  user       User?     @relation("McpApiKeyUser", fields: [userId], references: [id], onDelete: SetNull)
+  role       Role?     @relation(fields: [roleId], references: [id], onDelete: NoAction)
 
   @@index([tenantId])
   @@map("mcp_api_keys")
@@ -1593,4 +1628,44 @@ model FxRate {
   @@unique([tenantId, fromCurrency, toCurrency, date, source])
   @@index([tenantId])
   @@map("fx_rates")
+}
+
+/// M2-T01: minimal shape. M6 adds fields, UI and the permission matrix (F-1150).
+model Role {
+  id          Int              @id @default(autoincrement())
+  tenantId    String           @map("tenant_id")
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  name        String
+  area        String?
+  contract    Json?
+  tools       Json?
+  kpis        Json?
+  isSystem    Boolean          @default(false) @map("is_system")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  assignments RoleAssignment[]
+  mcpApiKeys  McpApiKey[]
+  auditLogs   AuditLog[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+model RoleAssignment {
+  id        Int       @id @default(autoincrement())
+  tenantId  String    @map("tenant_id")
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roleId    Int       @map("role_id")
+  role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  holderId  Int       @map("holder_id")
+  holder    User      @relation("RoleAssignmentHolder", fields: [holderId], references: [id], onDelete: Cascade)
+  fromDate  DateTime  @map("from_date") @db.Date
+  toDate    DateTime? @map("to_date") @db.Date
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([roleId])
+  @@index([holderId])
+  @@map("role_assignments")
 }

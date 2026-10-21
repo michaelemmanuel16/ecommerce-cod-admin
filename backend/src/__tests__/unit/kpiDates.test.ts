@@ -1,7 +1,7 @@
 /** M1-T15: store-zone date helpers. Written zone-agnostic: the same boundaries are checked in a UTC+0 zone (Accra), a +13 zone and a -5 zone. */
 import { describe, it, expect } from '@jest/globals';
 import {
-  DEFAULT_TIME_ZONE, daysInMonth, endOfDay, localDate, monthRange, parseBound, parseInclusiveBound, startOfDay, addDays,
+  DEFAULT_TIME_ZONE, daysInMonth, endOfDay, localDate, monthRange, parseBound, parseInclusiveBound, startOfDay, addDays, weekRange,
 } from '../../services/kpi/dates';
 
 const ZONES = ['Africa/Accra', 'Pacific/Auckland', 'America/New_York'];
@@ -83,5 +83,22 @@ describe('kpi dates', () => {
 
   it('addDays adds 24 hours per day', () => {
     expect(addDays(new Date('2026-10-01T00:00:00Z'), 30).toISOString()).toBe('2026-10-31T00:00:00.000Z');
+  });
+});
+
+describe('weekRange', () => {
+  it.each([
+    ['2026-10-12', '2026-10-12', '2026-10-18'], // a Monday
+    ['2026-10-15', '2026-10-12', '2026-10-18'], // a Thursday
+    ['2026-10-18', '2026-10-12', '2026-10-18'], // a Sunday belongs to the week that ends on it
+    ['2026-10-01', '2026-09-28', '2026-10-04'], // a week across a month end
+  ])('%s is in the week %s to %s', (day, monday, sunday) => {
+    expect(weekRange(day, 'Africa/Accra')).toMatchObject({ monday, sunday });
+  });
+
+  it.each(ZONES)('is [start of Monday, start of the next Monday) in store-zone days (%s)', (zone) => {
+    const w = weekRange('2026-10-15', zone);
+    expect(w.from.getTime()).toBe(startOfDay('2026-10-12', zone).getTime());
+    expect(w.to.getTime()).toBe(startOfDay('2026-10-19', zone).getTime());
   });
 });

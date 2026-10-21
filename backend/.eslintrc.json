@@ -8,5 +8,41 @@
     "ecmaVersion": 2020,
     "sourceType": "module"
   },
-  "rules": {}
+  "rules": {},
+  "overrides": [
+    {
+      "files": [
+        "src/tools/**/*.ts"
+      ],
+      "plugins": [
+        "@typescript-eslint"
+      ],
+      "rules": {
+        "no-restricted-imports": "off",
+        "@typescript-eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@prisma/client",
+                "importNames": ["PrismaClient"],
+                "message": "Tool files may not use the Prisma client. Call a service method. Type-only imports and enum values are allowed.",
+                "allowTypeImports": true
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/utils/prisma",
+                  "**/utils/prisma.*",
+                  "**/utils/prismaExtensions"
+                ],
+                "message": "Tool files may not import the Prisma util. Call a service method (M2-T04)."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

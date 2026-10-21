@@ -69,10 +69,11 @@ function getDefaultPermissions() {
       settings: ['view', 'update'],
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
+      audit: ['view'],
     },
     admin: {
       users: ['create', 'view', 'update', 'delete'],
-      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign'],
+      orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status'],
       customers: ['create', 'view', 'update', 'delete'],
       products: ['create', 'view', 'update', 'delete'],
       financial: ['view', 'create'],
@@ -81,6 +82,7 @@ function getDefaultPermissions() {
       settings: ['view'],
       calls: ['create', 'view', 'update', 'delete'],
       gl: ['create', 'view', 'update', 'delete'],
+      audit: ['view'],
     },
     manager: {
       users: [],

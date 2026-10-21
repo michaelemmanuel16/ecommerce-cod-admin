@@ -98,14 +98,19 @@ describe('transitionOrder (real DB)', () => {
         transitionOrder(id, 'cancelled', ADMIN),
       ]),
     );
-    const ok = results.filter((r) => r.status === 'fulfilled');
+    const ok = results.filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof transitionOrder>>> => r.status === 'fulfilled');
     const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
-    expect(ok).toHaveLength(1);
-    expect(failed).toHaveLength(1);
-    // The loser either lost the lock (STALE_ORDER) or read after the winner committed (the table then refuses it).
-    expect(['STALE_ORDER', 'INVALID_TRANSITION']).toContain(failed[0].reason.code);
-    expect(await history(id)).toHaveLength(1);
-    expect(await version(id)).toBe(1);
+    if (failed.length === 1) {
+      // The loser lost the lock (STALE_ORDER) or read after the winner committed and the table refused it.
+      expect(['STALE_ORDER', 'INVALID_TRANSITION']).toContain(failed[0].reason.code);
+    } else {
+      // The second move read after the first committed; preparing -> cancelled is legal, so both apply in turn.
+      expect(failed).toHaveLength(0);
+      expect(ok.map((r) => r.value.from).sort()).toEqual(['confirmed', 'preparing']);
+    }
+    // No lost update: one history row and one version step for each move that applied.
+    expect(await history(id)).toHaveLength(ok.length);
+    expect(await version(id)).toBe(ok.length);
   });
 
   it('out_for_delivery without a delivery agent is denied; with one it works and sets dispatchedAt', async () => {

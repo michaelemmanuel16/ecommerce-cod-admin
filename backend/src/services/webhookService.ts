@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 import crypto from 'crypto';
 import { safeEqual } from '../utils/crypto';
 import { parsePackageField } from '../utils/packageParser';
-import workflowService from './workflowService';
+import { emitOrderCreatedEvent } from '../utils/appEvents';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 import { resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
@@ -515,12 +515,7 @@ export class WebhookService {
         logger.info('Webhook order created', { orderId: createdOrder.id });
 
         // Trigger workflows for imported order
-        workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
-          logger.error('Failed to trigger workflow for webhook order', {
-            orderId: createdOrder.id,
-            error: err.message
-          });
-        });
+        emitOrderCreatedEvent(createdOrder, { imported: true });
 
         // Emit socket event for real-time update
         emitOrderCreated(getSocketInstance() as any, createdOrder);

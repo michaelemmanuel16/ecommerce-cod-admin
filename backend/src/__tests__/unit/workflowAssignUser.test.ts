@@ -9,8 +9,16 @@ jest.mock('../../sockets/index', () => ({
   emitOrderUpdated: jest.fn(),
   emitOrderAssigned: jest.fn(),
 }));
+// M2-T16: assignment goes through the service (history row + notification) as the system user.
+jest.mock('../../services/assignmentService', () => ({
+  __esModule: true,
+  default: { assignByRole: jest.fn() },
+}));
+jest.mock('../../services/systemUserService', () => ({ systemActor: jest.fn() }));
 
 import { executeAction } from '../../queues/workflowQueue';
+import assignmentService from '../../services/assignmentService';
+import { systemActor } from '../../services/systemUserService';
 
 const salesRepAction = (overrides: any = {}) => ({
   type: 'assign_user',
@@ -25,6 +33,7 @@ const salesRepAction = (overrides: any = {}) => ({
 describe('executeAssignUserAction (via executeAction)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (systemActor as jest.Mock).mockResolvedValue({ kind: 'system', userId: 77 } as never);
   });
 
   describe('forward-only (default: applyToAllUnassigned unset/false)', () => {
@@ -34,7 +43,6 @@ describe('executeAssignUserAction (via executeAction)', () => {
         customerRepId: null,
         orderItems: [],
       });
-      (prismaMock.order.update as any).mockResolvedValue({ id: 100, customerRepId: 2 });
 
       const result = await executeAction(salesRepAction(), { id: 100 });
 
@@ -43,10 +51,8 @@ describe('executeAssignUserAction (via executeAction)', () => {
       );
       // The bug was a tenant-wide sweep — findMany must NOT be used in forward-only mode.
       expect(prismaMock.order.findMany).not.toHaveBeenCalled();
-      expect(prismaMock.order.update).toHaveBeenCalledTimes(1);
-      expect(prismaMock.order.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 100 }, data: { customerRepId: 2 } })
-      );
+      expect(assignmentService.assignByRole).toHaveBeenCalledTimes(1);
+      expect(assignmentService.assignByRole).toHaveBeenCalledWith(100, 2, 'sales_rep', { kind: 'system', userId: 77 });
       expect(result.assigned).toBe(1);
     });
 
@@ -59,7 +65,7 @@ describe('executeAssignUserAction (via executeAction)', () => {
 
       const result = await executeAction(salesRepAction(), { id: 100 });
 
-      expect(prismaMock.order.update).not.toHaveBeenCalled();
+      expect(assignmentService.assignByRole).not.toHaveBeenCalled();
       expect(prismaMock.order.findMany).not.toHaveBeenCalled();
       expect(result.assigned).toBe(0);
     });
@@ -69,7 +75,7 @@ describe('executeAssignUserAction (via executeAction)', () => {
 
       expect(prismaMock.order.findUnique).not.toHaveBeenCalled();
       expect(prismaMock.order.findMany).not.toHaveBeenCalled();
-      expect(prismaMock.order.update).not.toHaveBeenCalled();
+      expect(assignmentService.assignByRole).not.toHaveBeenCalled();
       expect(result.assigned).toBe(0);
     });
   });
@@ -80,7 +86,6 @@ describe('executeAssignUserAction (via executeAction)', () => {
         { id: 1, customerRepId: null, orderItems: [] },
         { id: 2, customerRepId: null, orderItems: [] },
       ]);
-      (prismaMock.order.update as any).mockResolvedValue({ id: 1, customerRepId: 2 });
 
       const result = await executeAction(
         salesRepAction({ applyToAllUnassigned: true }),
@@ -90,7 +95,7 @@ describe('executeAssignUserAction (via executeAction)', () => {
       expect(prismaMock.order.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { customerRepId: null } })
       );
-      expect(prismaMock.order.update).toHaveBeenCalledTimes(2);
+      expect(assignmentService.assignByRole).toHaveBeenCalledTimes(2);
       expect(result.assigned).toBe(2);
     });
   });

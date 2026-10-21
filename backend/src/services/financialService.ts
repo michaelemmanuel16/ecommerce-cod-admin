@@ -15,7 +15,7 @@ import {
 import { GL_ACCOUNTS } from '../config/glAccounts';
 import { TRANSACTION_CONFIG } from '../config/transactionConfig';
 import { GLAutomationService } from './glAutomationService';
-import { SYSTEM_USER_ID } from '../config/constants';
+import { getSystemUserId } from './systemUserService';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { roleScope } from '../utils/kpiRequest';
@@ -766,7 +766,7 @@ export class FinancialService {
         );
 
         if (nonReconciledAmount.gt(0)) {
-          const userId = requester?.id ?? SYSTEM_USER_ID;
+          const userId = requester?.id ?? await getSystemUserId();
           // Use the minimum transaction ID as a stable idempotency key for the batch.
           // transactions[0].id is order-dependent; Math.min is consistent across re-calls.
           const sourceId = Math.min(...transactions.map(t => t.id));
@@ -1244,9 +1244,10 @@ export class FinancialService {
     }
 
     const numericId = parseInt(expenseId, 10);
+    const actorId = requester?.id ?? await getSystemUserId();
     const updated = await prisma.$transaction(async (tx) => {
       // Void old GL entry before updating
-      await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericId, requester?.id ?? SYSTEM_USER_ID);
+      await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericId, actorId);
 
       const result = await tx.expense.update({
         where: { id: numericId },
@@ -1274,7 +1275,7 @@ export class FinancialService {
         numericId,
         newAmount,
         newDescription,
-        requester?.id ?? SYSTEM_USER_ID
+        actorId
       );
 
       // Remap Prisma relation `user` → `recordedBy` for frontend compatibility
@@ -1319,7 +1320,7 @@ export class FinancialService {
     const numericExpenseId = parseInt(expenseId, 10);
     await prisma.$transaction(async (tx) => {
       // Void GL entry before deleting expense
-      await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericExpenseId, requester?.id ?? SYSTEM_USER_ID);
+      await GLAutomationService.voidJournalEntry(tx as any, 'expense', numericExpenseId, requester?.id ?? await getSystemUserId());
 
       await tx.expense.delete({
         where: { id: numericExpenseId }

@@ -113,7 +113,9 @@ export const bulkImportOrders = async (req: AuthRequest, res: Response): Promise
       throw new Error('Invalid orders data');
     }
 
-    const results = await orderService.bulkImportOrders(orders, req.user?.id, undefined, undefined, true);
+    const results = await orderService.bulkImportOrders(orders, req.user?.id, undefined, undefined, true, {
+      runWorkflows: req.body.runWorkflows === true ? true : undefined,
+    });
 
     // Invalidate analytics cache after bulk import
     clearCache('/api/analytics');

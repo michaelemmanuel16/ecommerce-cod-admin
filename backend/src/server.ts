@@ -80,7 +80,10 @@ import fxRoutes from './routes/fxRoutes';
 import billingRoutes from './routes/billingRoutes';
 import platformRoutes from './routes/platformRoutes';
 import mcpKeyRoutes from './routes/mcpKeyRoutes';
+import roleRoutes from './routes/roleRoutes';
+import auditRoutes from './routes/auditRoutes';
 import mcpHttpTransport from './mcp/httpTransport';
+import { closeRateLimiter } from './mcp/rateLimiter';
 import { verifyWebhook, handleWebhook } from './controllers/whatsappController';
 import { handleOAuthCallback, stopCleanupInterval } from './controllers/whatsappOAuthController';
 import { scheduleTokenRefresh } from './services/whatsappTokenRefreshService';
@@ -90,6 +93,7 @@ import cron from 'node-cron';
 
 // Initialize queue workers
 import './queues/workflowQueue';
+import { registerWorkflowListeners } from './services/workflowService';
 import './queues/emailCampaignQueue';
 
 import { setupAgingCron } from './queues/agingQueue';
@@ -117,6 +121,9 @@ try {
   logger.error('GL account code validation failed:', error);
   process.exit(1);
 }
+
+// Workflows run from the order state machine's events (order.created, order.status_changed)
+registerWorkflowListeners();
 
 const app: Application = express();
 const server = http.createServer(app);
@@ -264,6 +271,8 @@ app.use('/api/fx', apiLimiter, fxRoutes);
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/mcp-keys', apiLimiter, mcpKeyRoutes);
+app.use('/api/roles', apiLimiter, roleRoutes);
+app.use('/api/audit-log', apiLimiter, auditRoutes);
 
 // MCP Streamable HTTP transport (auth via API key in Authorization header)
 app.use('/mcp', apiLimiter, mcpHttpTransport);
@@ -427,7 +436,10 @@ const shutdown = async (signal: string) => {
     server.close(() => {
       logger.info('HTTP server closed');
 
-      // 3. Disconnect from database
+      // 3. Close the MCP rate limiter's Redis connection (fail-open, so an error here is only logged)
+      closeRateLimiter().catch((error) => logger.error('Error closing the rate limiter:', error));
+
+      // 4. Disconnect from database
       import('./utils/prisma').then(({ default: prismaBase }) => {
         prismaBase.$disconnect().finally(() => {
           logger.info('Database disconnected');

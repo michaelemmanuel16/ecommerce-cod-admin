@@ -7,9 +7,9 @@ jest.mock('../../services/paystackService', () => ({
   },
 }));
 
-jest.mock('../../services/workflowService', () => ({
+jest.mock('../../utils/appEvents', () => ({
   __esModule: true,
-  default: { triggerOrderCreatedWorkflows: jest.fn() },
+  emitOrderCreatedEvent: jest.fn(),
 }));
 
 jest.mock('../../services/checkoutFormService', () => ({
@@ -34,7 +34,7 @@ import * as paystackServiceModule from '../../services/paystackService';
 import { createPublicOrder } from '../../controllers/publicOrderController';
 import logger from '../../utils/logger';
 import * as Money from '../../utils/money';
-import workflowService from '../../services/workflowService';
+import { emitOrderCreatedEvent } from '../../utils/appEvents';
 import { metaCapiService } from '../../services/metaCapiService';
 
 const mockedLogger = logger as jest.Mocked<typeof logger>;
@@ -306,16 +306,15 @@ describe('publicOrderController.createPublicOrder — archived customers', () =>
   });
 
   function codOrderMocks() {
-    // The completed-order path calls .catch() on both of these, and
-    // clearAllMocks() strips the module-level implementations — so they have to
+    // The completed-order path calls .catch() on this, and
+    // clearAllMocks() strips the module-level implementation — so it has to
     // be re-armed here or the controller throws after the order is created.
-    (workflowService.triggerOrderCreatedWorkflows as any).mockResolvedValue(undefined);
     (metaCapiService.fireCapiPurchaseEvent as any).mockResolvedValue(undefined);
     (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(physicalForm());
     (prismaMock.formSubmission.findFirst as any).mockResolvedValue(null);
     (prismaMock.order.findFirst as any).mockResolvedValue(null);
     (prismaMock.order.create as any).mockResolvedValue({
-      id: 55, totalAmount: 250, status: 'pending_confirmation', orderType: 'physical',
+      id: 55, tenantId: 'tenant-1', totalAmount: 250, status: 'pending_confirmation', orderType: 'physical',
     });
     (prismaMock.formSubmission.create as any).mockResolvedValue({ id: 1 });
   }
@@ -344,6 +343,8 @@ describe('publicOrderController.createPublicOrder — archived customers', () =>
     });
     expect(prismaMock.customer.create).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(201);
+    // order_created workflows hear about it through the event (M2-T17)
+    expect(emitOrderCreatedEvent).toHaveBeenCalledWith(expect.objectContaining({ id: 55 }));
   });
 
   it('leaves an active customer untouched', async () => {

@@ -2,10 +2,10 @@ import { randomBytes } from 'crypto';
 import prisma, { prismaBase } from '../../../utils/prisma';
 import { runInTenant } from '../../../utils/tenantContext';
 import { generateAccessToken } from '../../../utils/jwt';
-import { hashApiKey } from '../../../mcp/auth';
+import { generateMcpKey, hashApiKey } from '../../../mcp/auth';
 import { seedTenantDefaults } from '../../../services/tenantDefaultsService';
 import glService from '../../../services/glService';
-import { SYSTEM_USER_ID } from '../../../config/constants';
+import { clearSystemUserIdCache } from '../../../services/systemUserService';
 
 /**
  * Two-tenant test harness (M0-T27). `createTwoTenants(label)` builds tenants A and B
@@ -73,7 +73,7 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
   const pixelId = `${side === 'a' ? '1111' : '2222'}${digits}`;
   const capiToken = `capi-${marker}`;
   const formSlug = `form-${tag}`;
-  const mcpKey = `mcp_${randomBytes(16).toString('hex')}`;
+  const mcpKey = generateMcpKey();
   const downloadToken = randomBytes(16).toString('hex');
 
   const tenant = await prismaBase.tenant.create({ data: { name: `Two ${side.toUpperCase()} ${tag}`, slug: `two-${tag}`, currency: side === 'a' ? 'GHS' : 'NGN' } });
@@ -125,9 +125,6 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     seed('webhookEvent', prismaBase.webhookEvent.create({
       data: { provider: 'paystack', eventType: 'charge.success', reference: `ref-${tag}`, payloadHash: `hash-${tag}`, tenantId },
     })),
-    prismaBase.mcpApiKey.create({
-      data: { tenantId, keyHash: hashApiKey(mcpKey), keyPrefix: mcpKey.slice(0, 8), label: `key ${marker}` },
-    }),
     // Full chart of accounts: suites read it, and the posting in wave 2 needs it.
     seedTenantDefaults(tenantId),
   ]);
@@ -251,6 +248,28 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
     })),
   ]);
 
+  // Roles come from seedTenantDefaults in wave 1; the harness adds one assignment (admin holds Owner).
+  const ownerRole = await prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Owner' } });
+  ids.role = ownerRole.id;
+  await seed('roleAssignment', prismaBase.roleAssignment.create({
+    data: { tenantId, roleId: ownerRole.id, holderId: admin.id, fromDate: new Date() },
+  }));
+
+  // The MCP key acts as an ai_agent user. admin holds every cell the 14 tools need and the Legacy role lists all
+  // 14 tools, so suites that call every tool work. A suite that tests a narrower key makes its own user, role and key.
+  const legacyRole = await prismaBase.role.findFirstOrThrow({ where: { tenantId, name: 'Legacy MCP (14 tools)' } });
+  const mcpUserRow = await prismaBase.user.create({
+    data: {
+      email: `mcp-${tag}@codadmin.test`, password: 'x', firstName: `mcp${marker}`, lastName: `Last${marker}`,
+      role: 'admin', kind: 'ai_agent', tenantId,
+    },
+  });
+  await prismaBase.mcpApiKey.create({
+    data: { tenantId, keyHash: hashApiKey(mcpKey), keyPrefix: mcpKey.slice(0, 8), label: `key ${marker}`, userId: mcpUserRow.id, roleId: legacyRole.id },
+  });
+  ids.mcpUser = mcpUserRow.id;
+  ids.legacyRole = legacyRole.id;
+
   return {
     id: tenantId, slug: tenant.slug, marker, phone, amount,
     users: { admin, salesRep, deliveryAgent },
@@ -265,6 +284,7 @@ async function inSequence(queries: PromiseLike<unknown>[]): Promise<void> {
 
 /** Delete every row of these tenants, one dependency level at a time (children first), then the tenants. */
 export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
+  clearSystemUserIdCache(); // a cached system user id must not outlive its tenant
   const t = { tenantId: { in: tenantIds } };
   const db = prismaBase;
   // Each level only depends on the ones above it. Deletes run one at a time: rows in the
@@ -299,6 +319,7 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.finding.deleteMany({ where: t }),
     db.feeRule.deleteMany({ where: t }),
     db.fxRate.deleteMany({ where: t }),
+    db.roleAssignment.deleteMany({ where: t }),
   ]);
   await inSequence([
     db.order.deleteMany({ where: t }),
@@ -307,6 +328,7 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.webhookConfig.deleteMany({ where: t }),
     db.account.deleteMany({ where: { ...t, parentId: { not: null } } }),
     db.journalEntry.deleteMany({ where: t }),
+    db.role.deleteMany({ where: t }),
   ]);
   await inSequence([
     db.product.deleteMany({ where: t }),
@@ -329,19 +351,4 @@ export async function createTwoTenants(label: string): Promise<TwoTenants> {
     throw failed.reason;
   }
   return { a, b, cleanup: () => deleteTenantRows([a.id, b.id]) };
-}
-
-/**
- * A status move by an `integration` or `system` actor has no user id, so the GL entries it posts are
- * created by SYSTEM_USER_ID (journal_entries.created_by has a foreign key). The test DB has no such
- * user: this adds one under `tenantId`, so `deleteTenantRows([tenantId])` removes it. No-op if it exists.
- */
-export async function ensureSystemUser(tenantId: string): Promise<void> {
-  if (await prismaBase.user.findUnique({ where: { id: SYSTEM_USER_ID } })) return;
-  await prismaBase.user.create({
-    data: {
-      id: SYSTEM_USER_ID, email: `system-user-${Date.now()}@codadmin.test`, password: 'x',
-      firstName: 'System', lastName: 'User', role: 'admin', tenantId,
-    },
-  });
 }
