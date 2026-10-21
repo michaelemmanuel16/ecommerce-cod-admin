@@ -14,7 +14,6 @@ import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import FinancialSyncService from './financialSyncService';
-import agentInventoryService from './agentInventoryService';
 import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
 import assignmentService from './assignmentService';
 import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
@@ -177,6 +176,38 @@ interface UpdateOrderStatusData {
   runWorkflows?: boolean;
 }
 
+
+/** F-316: states that can be deleted. The others have money or stock effects. */
+const DELETABLE_STATUSES: OrderStatus[] = [
+  'pending_confirmation', 'payment_pending', 'payment_failed', 'confirmed', 'preparing', 'ready_for_pickup', 'cancelled', 'failed_delivery',
+];
+
+/** One bulk request covers up to 200 orders (F-313, F-314). */
+export const BULK_ORDER_LIMIT = 200;
+
+/** Per-order result of a bulk status change or assign. */
+export interface BulkResult {
+  succeeded: number[];
+  failed: Array<{ id: number; code: string; message: string }>;
+}
+
+/** The ids of a bulk request without repeats, or HTTP 413 above the limit. */
+function limitBulk(orderIds: number[]): number[] {
+  const ids = [...new Set(orderIds)];
+  if (ids.length > BULK_ORDER_LIMIT) {
+    throw new AppError(`Select ${BULK_ORDER_LIMIT} orders or fewer.`, 413, 'TOO_MANY_ORDERS');
+  }
+  return ids;
+}
+
+/** One failed order of a bulk request: the error's code and message. An unexpected error is logged, not shown. */
+function bulkFailure(id: number, error: unknown): BulkResult['failed'][number] {
+  if (error instanceof AppError) {
+    return { id, code: error.errorCode ?? (error.statusCode === 404 ? 'NOT_FOUND' : 'ERROR'), message: error.message };
+  }
+  logger.error('Bulk order change failed', { orderId: id, error: (error as Error).message });
+  return { id, code: 'ERROR', message: 'This order could not be changed.' };
+}
 
 export class OrderService {
   /**
@@ -1211,263 +1242,116 @@ export class OrderService {
   }
 
   /**
-   * Soft delete order (set deletedAt timestamp)
+   * Soft delete one order (F-316). A thin wrapper over `softDeleteOrders`: a refusal becomes the error.
    */
   async deleteOrder(orderId: number, userId?: number, requester?: Requester) {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId, deletedAt: null },
-      include: { orderItems: true, customer: true }
-    });
-
-    if (!order) {
-      throw new AppError('Order not found', 404);
+    const { skipped } = await this.softDeleteOrders([orderId], userId, requester);
+    if (skipped.length) {
+      throw new AppError(skipped[0].reason, skipped[0].httpStatus, skipped[0].code);
     }
-
-    // Enforce ownership
-    if (requester) {
-      const isOwner = checkResourceOwnership(requester, {
-        assignedRepId: order.customerRepId,
-        deliveryAgentId: order.deliveryAgentId,
-        customerId: order.customerId
-      }, 'order');
-
-      if (!isOwner) {
-        throw new AppError('You do not have permission to delete this order', 403);
-      }
-    }
-
-    if (order.deletedAt) {
-      throw new AppError('Order already deleted', 400);
-    }
-
-    if (order.status === 'delivered') {
-      throw new AppError('Cannot delete delivered orders', 400);
-    }
-
-    // Soft delete with transaction (restock products, update customer stats)
-    await prisma.$transaction(async (tx) => {
-      // Restock products ONLY if they were deducted (out_for_delivery, delivered)
-      if (["out_for_delivery", "delivered"].includes(order.status)) {
-        let reversedFromAgent: number[] = [];
-        if (order.deliveryAgentId) {
-          reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
-            tx,
-            orderId,
-            order.deliveryAgentId,
-            userId ?? order.deliveryAgentId,
-            order.status === 'delivered'
-          );
-        }
-        for (const item of order.orderItems) {
-          if (reversedFromAgent.includes(item.productId)) continue;
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stockQuantity: { increment: item.quantity } }
-          });
-        }
-      }
-      // Update customer stats
-      await tx.customer.update({
-        where: { id: order.customerId },
-        data: {
-          totalOrders: { decrement: 1 },
-          totalSpent: { decrement: order.totalAmount }
-        }
-      });
-
-      // Create audit trail
-      await tx.orderHistory.create({
-        data: {
-          tenantId: resolveTenantId(order.tenantId),
-          orderId: order.id,
-          status: order.status,
-          notes: `Order deleted by user ${userId || 'system'} `,
-          changedBy: userId
-        }
-      });
-
-      // Soft delete the order
-      await tx.order.update({
-        where: { id: orderId },
-        data: { deletedAt: new Date() }
-      });
-
-      // Remove any associated AgentCollection record that isn't yet fully processed
-      // (If it's already 'deposited', we might want to keep it or handle it separately, 
-      // but usually deleting an order means its collection is invalid)
-      await (tx as any).agentCollection.deleteMany({
-        where: {
-          orderId,
-          status: { in: ['draft', 'verified', 'approved'] }
-        }
-      });
-    });
-
-    // Trigger proactive aging refresh (non-blocking)
-    appEvents.emit(AppEvent.ORDERS_DELETED);
-    emitOrderDeletedEvent(order);
-
-    logger.info(`Order soft deleted: ${order.id} `, { orderId, userId });
     return { message: 'Order deleted successfully' };
   }
+
   /**
-   * Bulk soft delete orders
+   * Bulk soft delete (F-315): deletes what the rules allow and lists the rest in `skipped`.
    */
   async bulkDeleteOrders(orderIds: number[], userId?: number, requester?: Requester) {
     if (!orderIds || orderIds.length === 0) {
       throw new AppError('No order IDs provided', 400);
     }
+    const { deleted, skipped } = await this.softDeleteOrders(orderIds, userId, requester);
+    return {
+      message: `Successfully deleted ${deleted.length} order(s)`,
+      deletedCount: deleted.length,
+      deleted: deleted.length,
+      skipped: skipped.map(({ id, reason }) => ({ id, reason })),
+    };
+  }
 
-    // Fetch orders with items to check permissions and status
-    const orders = await prisma.order.findMany({
-      where: {
-        id: { in: orderIds },
-        deletedAt: null
-      },
-      include: {
-        orderItems: true
+  /**
+   * The one delete path. Orders in a state with money or stock effects (out for delivery, delivered, digital delivered,
+   * returned) are refused, as are ids that are missing or not the requester's. The rest are soft deleted in one
+   * transaction with one history row each, a draft AgentCollection removed and ONE audit row holding the id list.
+   */
+  private async softDeleteOrders(orderIds: number[], userId?: number, requester?: Requester) {
+    const found = await prisma.order.findMany({ where: { id: { in: orderIds }, deletedAt: null } });
+    const byId = new Map(found.map((o) => [o.id, o]));
+
+    const deleted: typeof found = [];
+    const skipped: Array<{ id: number; reason: string; httpStatus: number; code: string }> = [];
+    for (const id of [...new Set(orderIds)]) {
+      const order = byId.get(id);
+      if (!order) {
+        skipped.push({ id, reason: 'Order not found', httpStatus: 404, code: 'NOT_FOUND' });
+      } else if (requester && !checkResourceOwnership(requester, {
+        assignedRepId: order.customerRepId,
+        deliveryAgentId: order.deliveryAgentId,
+        customerId: order.customerId
+      }, 'order')) {
+        skipped.push({ id, reason: 'You do not have permission to delete this order', httpStatus: 403, code: 'FORBIDDEN' });
+      } else if (!DELETABLE_STATUSES.includes(order.status)) {
+        skipped.push({ id, reason: 'Cancel or return the order first.', httpStatus: 409, code: 'ORDER_NOT_DELETABLE' });
+      } else {
+        deleted.push(order);
       }
-    });
-
-    if (orders.length === 0) {
-      throw new AppError('No valid orders found to delete', 404);
     }
+    if (!deleted.length) return { deleted, skipped };
 
-    // Validate each order
-    for (const order of orders) {
-      // Enforce ownership
-      if (requester) {
-        const isOwner = checkResourceOwnership(requester, {
-          assignedRepId: order.customerRepId,
-          deliveryAgentId: order.deliveryAgentId,
-          customerId: order.customerId
-        }, 'order');
-
-        if (!isOwner) {
-          throw new AppError(`You do not have permission to delete order #${order.id} `, 403);
-        }
-      }
-
-      if (order.status === 'delivered') {
-        throw new AppError(`Cannot delete delivered order #${order.id} `, 400);
-      }
-    }
-
-    // Aggregate updates for performance
+    const deletedIds = deleted.map((o) => o.id);
     const customerUpdates = new Map<number, { count: number, total: Prisma.Decimal }>();
-    const historyData: Prisma.OrderHistoryCreateManyInput[] = [];
-    const actualOrderIds = orders.map(o => o.id);
-
-    for (const order of orders) {
-      // Aggregate customer stats
-      const currentCust = customerUpdates.get(order.customerId) || { count: 0, total: Money.ZERO };
-      customerUpdates.set(order.customerId, {
-        count: currentCust.count + 1,
-        total: Money.add(currentCust.total, order.totalAmount)
-      });
-
-      // Prepare history data
-      historyData.push({
-        tenantId: resolveTenantId(order.tenantId),
-        orderId: order.id,
-        status: order.status,
-        notes: `Order deleted in bulk by user ${userId || 'system'} `,
-        changedBy: userId
-      });
+    for (const order of deleted) {
+      const current = customerUpdates.get(order.customerId) || { count: 0, total: Money.ZERO };
+      customerUpdates.set(order.customerId, { count: current.count + 1, total: Money.add(current.total, order.totalAmount) });
     }
 
-    // Perform bulk deletion in a single transaction
     await prisma.$transaction(async (tx) => {
-      // Phase 1: reverse agent stock (sequential — each call makes multiple tx queries
-      // that depend on per-order state, so they cannot be parallelised within the tx).
-      // Performance ceiling: ~50ms × N orders. For bulk deletes > ~100 orders, consider
-      // processing in smaller batches outside a single transaction.
-      // Aggregate warehouse restocks into a Map for batched Phase 2
-      const warehouseRestocks = new Map<number, number>(); // productId → qty
-      const deductedStatuses = ['out_for_delivery', 'delivered'];
+      await Promise.all([...customerUpdates.entries()].map(([customerId, stats]) =>
+        tx.customer.update({
+          where: { id: customerId },
+          data: { totalOrders: { decrement: stats.count }, totalSpent: { decrement: stats.total } }
+        })));
 
-      for (const order of orders) {
-        if (!deductedStatuses.includes(order.status)) continue;
-
-        let reversedFromAgent: number[] = [];
-        if (order.deliveryAgentId) {
-          reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
-            tx,
-            order.id,
-            order.deliveryAgentId,
-            userId ?? order.deliveryAgentId,
-            order.status === 'delivered'
-          );
-        }
-        for (const item of order.orderItems) {
-          if (reversedFromAgent.includes(item.productId)) continue;
-          warehouseRestocks.set(
-            item.productId,
-            (warehouseRestocks.get(item.productId) ?? 0) + item.quantity
-          );
-        }
-      }
-
-      // Phase 2: batch warehouse restocks (1 update per distinct product)
-      const updatePromises: Promise<any>[] = [];
-      for (const [productId, quantity] of warehouseRestocks.entries()) {
-        updatePromises.push(
-          tx.product.update({
-            where: { id: productId },
-            data: { stockQuantity: { increment: quantity } }
-          })
-        );
-      }
-
-      if (customerUpdates.size > 0) {
-        for (const [customerId, stats] of customerUpdates.entries()) {
-          updatePromises.push(
-            tx.customer.update({
-              where: { id: customerId },
-              data: {
-                totalOrders: { decrement: stats.count },
-                totalSpent: { decrement: stats.total }
-              }
-            })
-          );
-        }
-      }
-
-      // Execute all updates in parallel
-      await Promise.all(updatePromises);
-
-      // 3. Batch create audit trail
       await tx.orderHistory.createMany({
-        data: historyData
+        data: deleted.map((order) => ({
+          tenantId: resolveTenantId(order.tenantId),
+          orderId: order.id,
+          status: order.status,
+          notes: `Order deleted by user ${userId || 'system'} `,
+          changedBy: userId
+        }))
       });
 
-      // 4. Bulk soft delete orders
-      await tx.order.updateMany({
-        where: { id: { in: actualOrderIds } },
-        data: { deletedAt: new Date() }
+      await tx.order.updateMany({ where: { id: { in: deletedIds } }, data: { deletedAt: new Date() } });
+
+      // A draft collection of a deleted order is void. Later stages hold money and stay.
+      await tx.agentCollection.deleteMany({ where: { orderId: { in: deletedIds }, status: 'draft' } });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: resolveTenantId(deleted[0].tenantId),
+          userId,
+          action: orderIds.length === 1 ? 'delete_order' : 'bulk_delete_orders',
+          resource: 'order',
+          resourceId: deletedIds.length === 1 ? String(deletedIds[0]) : null,
+          metadata: { orderIds: deletedIds, skipped: skipped.map(({ id, reason }) => ({ id, reason })) },
+          ...(requester && { actorKind: 'person' as const, channel: 'app' as const })
+        }
       });
     });
 
     const ioInstance = getSocketInstance();
     if (ioInstance) {
-      emitOrdersDeleted(ioInstance as any, actualOrderIds);
+      emitOrdersDeleted(ioInstance as any, deletedIds);
     }
 
-    logger.info(`Bulk orders soft deleted: ${actualOrderIds.join(', ')} `, {
-      orderIds: actualOrderIds,
-      userId
-    });
+    logger.info(`Orders soft deleted: ${deletedIds.join(', ')} `, { orderIds: deletedIds, userId });
 
-    // Trigger proactive aging refresh (non-blocking)
+    // Trigger proactive aging refresh (non-blocking) and the customer stats refresh
     appEvents.emit(AppEvent.ORDERS_DELETED);
-    orders.forEach((o) => emitOrderDeletedEvent(o));
+    deleted.forEach((o) => emitOrderDeletedEvent(o));
 
-    return {
-      message: `Successfully deleted ${orders.length} order(s)`,
-      deletedCount: orders.length
-    };
+    return { deleted, skipped };
   }
-
 
   /**
    * Assign customer rep to order
@@ -1481,9 +1365,9 @@ export class OrderService {
   }
 
   /**
-   * Assign delivery agent to order
+   * Assign delivery agent to order. `confirmBlocked`: the owner confirmed a partner who is blocked for unpaid cash.
    */
-  async assignDeliveryAgent(orderId: number, deliveryAgentId: number, requester: Requester) {
+  async assignDeliveryAgent(orderId: number, deliveryAgentId: number, requester: Requester, confirmBlocked = false) {
     // Only admin/manager/sales_rep can assign delivery agent (sometimes sales reps do it after confirmation)
     // Actually, usually managers assign agents. Let's stick to manager+ for now, or check ownership.
     if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
@@ -1493,7 +1377,59 @@ export class OrderService {
         throw new AppError('Only managers or the assigned sales representative can assign delivery agents', 403);
       }
     }
-    return assignmentService.assignByRole(orderId, deliveryAgentId, 'delivery_agent', actorOf(requester), { checkAvailable: true });
+    return assignmentService.assignByRole(orderId, deliveryAgentId, 'delivery_agent', actorOf(requester), { checkAvailable: true, confirmBlocked });
+  }
+
+  /**
+   * Bulk status change (F-313): each order goes through the state machine alone, with its own history row and side
+   * effects. A move that fails does not stop the others. The partial result lists every failure with a code.
+   */
+  async bulkUpdateStatus(
+    data: { orderIds: number[]; status: OrderStatus; note?: string; declineReason?: DeclineReason; failureReason?: FailureReason; nextAttemptDate?: Date },
+    requester: Requester,
+  ): Promise<BulkResult> {
+    const { orderIds, ...move } = data;
+    const result: BulkResult = { succeeded: [], failed: [] };
+    for (const id of limitBulk(orderIds)) {
+      try {
+        await this.updateOrderStatus(id, { status: move.status, notes: move.note, declineReason: move.declineReason, failureReason: move.failureReason, nextAttemptDate: move.nextAttemptDate }, requester);
+        result.succeeded.push(id);
+      } catch (error) {
+        result.failed.push(bulkFailure(id, error));
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Bulk assign (F-314): one call rep, one delivery agent or both for up to 200 orders. The people are checked once
+   * (missing, wrong role, deactivated, unavailable or blocked fails the whole request); then each order is assigned
+   * alone and failures are listed.
+   */
+  async bulkAssign(
+    data: { orderIds: number[]; customerRepId?: number; deliveryAgentId?: number; confirmBlocked?: boolean },
+    requester: Requester,
+  ): Promise<BulkResult> {
+    if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+      throw new AppError('Only administrators or managers can assign orders', 403);
+    }
+    const ids = limitBulk(data.orderIds);
+    const { customerRepId, deliveryAgentId, confirmBlocked } = data;
+    if (customerRepId) await assignmentService.loadAssignee(customerRepId, 'sales_rep');
+    if (deliveryAgentId) await assignmentService.loadAssignee(deliveryAgentId, 'delivery_agent', { checkAvailable: true, confirmBlocked });
+
+    const actor = actorOf(requester);
+    const result: BulkResult = { succeeded: [], failed: [] };
+    for (const id of ids) {
+      try {
+        if (customerRepId) await assignmentService.assignByRole(id, customerRepId, 'sales_rep', actor);
+        if (deliveryAgentId) await assignmentService.assignByRole(id, deliveryAgentId, 'delivery_agent', actor, { checkAvailable: true, confirmBlocked });
+        result.succeeded.push(id);
+      } catch (error) {
+        result.failed.push(bulkFailure(id, error));
+      }
+    }
+    return result;
   }
 
   /**

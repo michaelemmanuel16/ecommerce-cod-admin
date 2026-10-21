@@ -196,6 +196,24 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
   }
 };
 
+export const bulkUpdateOrderStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { orderIds, status, note, declineReason, failureReason, nextAttemptDate } = req.body;
+  const result = await orderService.bulkUpdateStatus({
+    orderIds, status, note, declineReason, failureReason,
+    nextAttemptDate: nextAttemptDate ? new Date(nextAttemptDate) : undefined
+  }, req.user!);
+
+  // Invalidate analytics cache as status changes affect metrics
+  clearCache('/api/analytics');
+
+  res.json(result);
+};
+
+export const bulkAssignOrders = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { orderIds, customerRepId, deliveryAgentId, confirmBlocked } = req.body;
+  res.json(await orderService.bulkAssign({ orderIds, customerRepId, deliveryAgentId, confirmBlocked: confirmBlocked === true }, req.user!));
+};
+
 export const getOrderTransitions = async (req: AuthRequest, res: Response): Promise<void> => {
   const transitions = await orderService.getTransitions(Number(req.params.id), req.user!);
   res.json(transitions);
@@ -219,8 +237,8 @@ export const assignCustomerRep = async (req: AuthRequest, res: Response): Promis
 export const assignDeliveryAgent = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { deliveryAgentId } = req.body;
-    const order = await orderService.assignDeliveryAgent(Number(id), Number(deliveryAgentId), req.user!);
+    const { deliveryAgentId, confirmBlocked } = req.body;
+    const order = await orderService.assignDeliveryAgent(Number(id), Number(deliveryAgentId), req.user!, confirmBlocked === true);
     res.json({ order });
   } catch (error) {
     throw error;
