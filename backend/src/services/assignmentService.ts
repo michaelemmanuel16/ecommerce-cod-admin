@@ -1,6 +1,10 @@
-import { User } from '@prisma/client';
+import { ActorKind, User } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
+import { AppError } from '../middleware/errorHandler';
+import { resolveTenantId } from '../utils/tenantContext';
+import { getSocketInstance } from '../utils/socketInstance';
+import { emitOrderAssigned, emitOrderUpdated } from '../sockets';
 
 /**
  * Assignment weights for weighted user selection
@@ -17,6 +21,25 @@ interface UserWithWeight {
   user: User;
   weight?: number;
 }
+
+/** Who made the assignment: a signed-in user (manual path) or the tenant's system user (workflows). */
+export interface AssignmentActor {
+  kind: ActorKind;
+  userId?: number;
+}
+
+/** `checkAvailable`: also refuse an agent who is not available. The manual path asks for it. */
+interface AssignOptions {
+  checkAvailable?: boolean;
+}
+
+export type AssignRole = 'delivery_agent' | 'sales_rep';
+
+/** What differs between the two roles; the field, meta key, audit action and error text are derived from it. */
+const ASSIGN_KINDS: Record<AssignRole, { relation: string; short: string; label: string; noun: string }> = {
+  delivery_agent: { relation: 'deliveryAgent', short: 'agent', label: 'Delivery agent', noun: 'delivery agent' },
+  sales_rep: { relation: 'customerRep', short: 'rep', label: 'Customer rep', noun: 'customer representative' },
+};
 
 /**
  * Assignment Service
@@ -281,6 +304,84 @@ export class AssignmentService {
       valid: errors.length === 0,
       errors
     };
+  }
+
+  /**
+   * Assign a delivery agent or a sales rep to an order: updates the order, writes the OrderHistory row and the
+   * audit log, and notifies over the socket. The one path for the manual endpoints and the workflow actions
+   * (`assign_agent`, `assign_user`). The user must exist and have the role.
+   */
+  async assignByRole(orderId: number, userId: number, role: AssignRole, actor: AssignmentActor, { checkAvailable = false }: AssignOptions = {}) {
+    const kind = ASSIGN_KINDS[role];
+    const [order, user] = await Promise.all([
+      prisma.order.findUnique({ where: { id: orderId, deletedAt: null } }),
+      prisma.user.findUnique({ where: { id: userId } })
+    ]);
+
+    if (!order) {
+      throw new AppError('Order not found', 404);
+    }
+    if (!user) {
+      throw new AppError(`${kind.label} not found`, 404);
+    }
+    if (user.role !== role) {
+      throw new AppError(`Invalid ${kind.noun}`, 400);
+    }
+    if (checkAvailable && !user.isAvailable) {
+      throw new AppError('Delivery agent is not available', 400);
+    }
+
+    const metaKey = `assigned${kind.short[0].toUpperCase()}${kind.short.slice(1)}Id`;
+    const tenantId = resolveTenantId(order.tenantId);
+    const updated = await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        [`${kind.relation}Id`]: userId,
+        orderHistory: {
+          create: {
+            tenantId,
+            status: order.status,
+            notes: `${kind.label} assigned: ${user.firstName} ${user.lastName} `,
+            changedBy: actor.userId,
+            actorKind: actor.kind,
+            metadata: { [metaKey]: userId }
+          }
+        }
+      },
+      include: {
+        [kind.relation]: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true
+          }
+        }
+      }
+    });
+
+    logger.info(`${kind.label} assigned to order: ${order.id} `, {
+      orderId,
+      userId,
+      changedBy: actor.userId
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        userId: actor.userId,
+        action: `assign_${kind.short}`,
+        resource: 'order',
+        resourceId: orderId.toString(),
+        metadata: { [metaKey]: userId }
+      }
+    });
+
+    // Emit socket events for real-time updates
+    const ioInstance = getSocketInstance() as any;
+    emitOrderAssigned(ioInstance, updated, userId.toString(), role);
+    emitOrderUpdated(ioInstance, updated);
+
+    return updated;
   }
 }
 

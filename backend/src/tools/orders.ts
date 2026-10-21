@@ -110,6 +110,8 @@ registerToolDef(defineTool({
     // The real delivery date, for 3PL reconciliation where delivery happened days
     // ago. Only meaningful with status "delivered". Omitted => now.
     deliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'deliveryDate must be YYYY-MM-DD').optional(),
+    // A move with a deliveryDate more than 1 day in the past fires no workflows (3PL back-fill); true fires them anyway.
+    runWorkflows: z.boolean().optional(),
   }),
   kind: 'write',
   // A write tool is MCP-only by default (defineTool): outside agents sync partner status through it.
@@ -159,6 +161,7 @@ registerToolDef(defineTool({
       status: input.status,
       notes: input.notes ?? 'Status updated via MCP',
       deliveryDate,
+      runWorkflows: input.runWorkflows,
       actor: { kind: 'integration' },
     });
     trace.after = { status: input.status };

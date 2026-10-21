@@ -2,9 +2,9 @@
  * M1-T11: Order.status is written by the state machine only. This test scans backend/src (not __tests__)
  * for `order.update(` / `order.updateMany(` / `order.upsert(` calls whose `data:` object has a top-level
  * `status` key, and for raw `UPDATE orders ... status` SQL. Any file outside the allow-list fails.
+ * M2-T16: the workflow action files are off the allow-list, and may not call `prisma.order.update` at all.
  *
- * Limits: a text scan, not a type check. It misses a `data:` that is a variable or a spread (the two
- * workflow files do exactly that, so they are named in the allow-list), a status written through
+ * Limits: a text scan, not a type check. It misses a `data:` that is a variable or a spread, a status written through
  * `orderHistory`-style nested creates (not an Order.status write, ignored on purpose), and writes through
  * a differently named client (`prismaBase.order.update` is matched, `db.order.update` is too: the regex
  * keys on `order.update(`). Order creates are not scanned.
@@ -18,8 +18,6 @@ const SRC = path.resolve(__dirname, '../..');
 const ALLOWED: Record<string, string> = {
   'services/orderStateMachine.ts': 'the machine',
   'services/orderSideEffects.ts': 'side effects of the machine',
-  'queues/workflowQueue.ts': 'update_order action, removed in M2-T15',
-  'services/workflowService.ts': 'dead duplicate of the update_order action, removed in M2-T15',
 };
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
@@ -91,9 +89,9 @@ describe('Order.status writers (M1-T11 grep test)', () => {
     expect(Object.keys(ALLOWED).filter((rel) => !existing.has(rel))).toEqual([]);
   });
 
-  it('the workflow files are marked for removal in M2-T15', () => {
-    for (const rel of ['queues/workflowQueue.ts', 'services/workflowService.ts']) {
-      expect(files.find(([r]) => r === rel)![1]).toContain('// removed in M2-T15');
+  it('no workflow action file calls prisma.order.update (M2-T16)', () => {
+    for (const rel of ['queues/workflowQueue.ts', 'services/workflowService.ts', 'services/workflowActions.ts']) {
+      expect(files.find(([r]) => r === rel)![1]).not.toMatch(/prisma\.order\.update\b/);
     }
   });
 

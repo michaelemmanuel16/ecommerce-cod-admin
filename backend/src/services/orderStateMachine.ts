@@ -4,6 +4,7 @@ import { AppError } from '../middleware/errorHandler';
 import { hasPermission } from '../middleware/auth';
 import { resolveTenantId } from '../utils/tenantContext';
 import { Requester } from '../utils/authUtils';
+import { OrderStatusChangedEvent } from '../utils/appEvents';
 import { afterCommitEffects, applyGlEffects, GlEffects, legacyStockHook } from './orderSideEffects';
 
 /**
@@ -72,12 +73,18 @@ export interface TransitionOptions {
   /** D14: completeDelivery posts revenue even when codAmount is 0 (the status path posts only COD orders). */
   postRevenueAlways?: boolean;
   metadata?: Record<string, unknown>;
+  /** M2-T17: override the workflow skip rules (imports, backdated integration moves). */
+  runWorkflows?: boolean;
+  /** M2-T17: the move comes from a bulk import re-import; workflows skip it unless `runWorkflows`. */
+  imported?: boolean;
+  /** M2-T17: loop guard depth. A workflow's `update_order` passes the depth of the run that caused it, plus one. */
+  workflowDepth?: number;
   /** D8: a writer that does no stock work today (completeDelivery) keeps doing none. */
   skipLegacyStock?: boolean;
   tx?: TransactionClient;
 }
 
-interface TransitionResult {
+export interface TransitionResult {
   changed: boolean;
   from: OrderStatus;
   forced?: boolean;
@@ -85,7 +92,7 @@ interface TransitionResult {
   /** GL entries this move posted (revenue, reversal, failed-attempt fee). */
   gl?: GlEffects;
   /**
-   * Queues the financial sync, emits the socket events and triggers the workflows. Runs by itself
+   * Queues the financial sync, emits the socket events and emits `order.status_changed` (workflows listen). Runs by itself
    * after commit when transitionOrder owns the transaction. A caller that passes `options.tx` must
    * call it once, after its own commit.
    */
@@ -373,9 +380,10 @@ async function move(
     }
   }
 
+  const fields = moveFields(order, from, to, actor, { ...options, metadata: meta });
   const locked = await tx.order.updateMany({
     where: { id: orderId, statusVersion: order.statusVersion },
-    data: { status: to, ...moveFields(order, from, to, actor, { ...options, metadata: meta }) },
+    data: { status: to, ...fields },
   });
   if (locked.count === 0) {
     throw new OrderTransitionError('STALE_ORDER', 'This order was changed by someone else. Reload and try again.', { from, to });
@@ -411,6 +419,14 @@ async function move(
 
   const gl = await applySideEffects(tx, order, from, to, actor, options, history.id);
 
-  const afterCommit = () => afterCommitEffects(orderId, from, to, actor.userId, gl);
+  const statusChanged: OrderStatusChangedEvent = {
+    orderId, tenantId, from, to,
+    actor: { kind: actor.kind, userId: actor.userId },
+    depth: options.workflowDepth ?? 0,
+    deliveryDate: fields.deliveryDate !== undefined ? (fields.deliveryDate as Date | null) : order.deliveryDate,
+    imported: options.imported,
+    runWorkflows: options.runWorkflows,
+  };
+  const afterCommit = () => afterCommitEffects(orderId, from, to, actor.userId, gl, statusChanged);
   return { changed: true, from, forced, jump, gl, afterCommit };
 }

@@ -3,8 +3,11 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { evaluateConditions } from '../utils/conditionEvaluator';
 import { getSocketInstance } from '../utils/socketInstance';
-import { emitOrderUpdated, emitOrderAssigned, emitToTenant } from '../sockets/index';
+import { emitToTenant } from '../sockets/index';
 import { runJobInTenant, getTenantId } from '../utils/tenantContext';
+import assignmentService from '../services/assignmentService';
+import { systemActor } from '../services/systemUserService';
+import { setOrderStatusByWorkflow, workflowStatus } from '../services/workflowActions';
 
 // Send actions read tenant-scoped provider config (SystemConfig) and write
 // tenant-scoped MessageLog rows. They refuse to run with no tenant context.
@@ -150,6 +153,10 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
   // Determine which field to update
   const targetField = userType === 'sales_rep' ? 'customerRepId' : 'deliveryAgentId';
 
+  // Writes the order, the history row and the notification through the assignment service, as the system user.
+  const actor = await systemActor();
+  const assignTo = (orderId: number, userId: number) => assignmentService.assignByRole(orderId, userId, userType, actor);
+
   logger.info('Executing assign_user action', {
     userType,
     distributionMode,
@@ -234,16 +241,11 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
 
   // Even distribution
   if (distributionMode === 'even') {
-    const io = getSocketInstance();
-
     for (let i = 0; i < ordersToAssign.length; i++) {
       const assignmentIndex = i % assignments.length;
       const assignment = assignments[assignmentIndex];
 
-      const updatedOrder = await prisma.order.update({
-        where: { id: ordersToAssign[i].id },
-        data: { [targetField]: assignment.userId }
-      });
+      await assignTo(ordersToAssign[i].id, assignment.userId);
 
       assignedCount++;
       results.push({
@@ -255,15 +257,6 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
         orderId: ordersToAssign[i].id,
         userId: assignment.userId
       });
-
-      // Emit Socket.io events for real-time updates
-      if (io) {
-        emitOrderUpdated(io, updatedOrder);
-        emitOrderAssigned(io, updatedOrder, assignment.userId, userType);
-        logger.debug('Socket.io events emitted for order assignment', {
-          orderId: updatedOrder.id
-        });
-      }
     }
   }
   // Weighted distribution
@@ -273,8 +266,6 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
     if (totalWeight === 0) {
       return { assigned: 0, message: 'Total weight is 0, cannot distribute' };
     }
-
-    const io = getSocketInstance();
 
     for (const order of ordersToAssign) {
       // Generate random number and select user based on weight
@@ -290,10 +281,7 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
         }
       }
 
-      const updatedOrder = await prisma.order.update({
-        where: { id: order.id },
-        data: { [targetField]: selectedUserId }
-      });
+      await assignTo(order.id, selectedUserId);
 
       assignedCount++;
       results.push({
@@ -305,15 +293,6 @@ async function executeAssignUserAction(action: any, input: any, conditions?: any
         orderId: order.id,
         userId: selectedUserId
       });
-
-      // Emit Socket.io events for real-time updates
-      if (io) {
-        emitOrderUpdated(io, updatedOrder);
-        emitOrderAssigned(io, updatedOrder, selectedUserId, userType);
-        logger.debug('Socket.io events emitted for order assignment', {
-          orderId: updatedOrder.id
-        });
-      }
     }
   }
 
@@ -360,19 +339,16 @@ export async function executeAction(action: any, input: any, conditions?: any): 
       return { sent: true, messageLogId: result.messageLogId };
     }
 
-    case 'update_order':
-      // Writes status from config.updates, outside the state machine. // removed in M2-T15
-      const order = await prisma.order.update({
-        where: { id: action.config.orderId },
-        data: action.config.updates
-      });
-      return { orderId: order.id };
+    case 'update_order': {
+      const orderId = action.config?.orderId ?? input?.orderId;
+      const moved = await setOrderStatusByWorkflow(orderId, workflowStatus(action), input?.depth);
+      return { orderId, updated: moved.changed };
+    }
 
     case 'assign_agent':
-      await prisma.order.update({
-        where: { id: action.config.orderId },
-        data: { deliveryAgentId: action.config.agentId }
-      });
+      await assignmentService.assignByRole(
+        action.config?.orderId ?? input?.orderId, action.config.agentId, 'delivery_agent', await systemActor(),
+      );
       return { assigned: true };
 
     case 'assign_user':

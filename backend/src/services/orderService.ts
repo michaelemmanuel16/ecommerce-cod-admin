@@ -3,13 +3,10 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, DeclineReason, FailureReason } from '@prisma/client';
 import logger from '../utils/logger';
-import appEvents, { AppEvent } from '../utils/appEvents';
-import workflowService from './workflowService';
+import appEvents, { AppEvent, emitOrderCreatedEvent } from '../utils/appEvents';
 import { getSocketInstance } from '../utils/socketInstance';
 import {
-  emitOrderAssigned,
   emitOrderCreated,
-  emitOrderUpdated,
   emitOrdersDeleted,
   emitToTenant,
 } from '../sockets';
@@ -19,6 +16,7 @@ import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLoo
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
 import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
+import assignmentService from './assignmentService';
 import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
 import { hasPermission } from '../middleware/auth';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
@@ -104,6 +102,8 @@ interface UpdateOrderStatusData {
   declineReason?: DeclineReason;
   failureReason?: FailureReason;
   nextAttemptDate?: Date | null;
+  // M2-T17: an integration move with an old deliveryDate fires no workflows, unless this is true
+  runWorkflows?: boolean;
 }
 
 
@@ -372,15 +372,8 @@ export class OrderService {
     // Emit socket event for real-time update
     emitOrderCreated(getSocketInstance() as any, order);
 
-    // Trigger workflows with order_created trigger (fully detached from request cycle)
-    setImmediate(() => {
-      workflowService.triggerOrderCreatedWorkflows(order).catch(error => {
-        logger.error('Failed to trigger order_created workflows', {
-          orderId: order.id,
-          error: error.message
-        });
-      });
-    });
+    // order_created workflows listen to this event (after commit, M2-T17)
+    emitOrderCreatedEvent(order);
 
     return order;
   }
@@ -396,7 +389,9 @@ export class OrderService {
     createdById?: number,
     repMap?: Map<string, number>,
     agentMap?: Map<string, number>,
-    silent: boolean = false
+    silent: boolean = false,
+    // M2-T17: an imported order whose status is not pending_confirmation fires no workflows, unless this is true
+    { runWorkflows }: { runWorkflows?: boolean } = {}
   ) {
     logger.info('🔥🔥🔥 CANARY: Starting bulkImportOrders with sequential processing V3 🔥🔥🔥');
     const results = {
@@ -495,6 +490,8 @@ export class OrderService {
               await transitionOrder(matchingExisting.id, newStatus, { kind: 'integration', userId: createdById }, {
                 note: 'Status updated via bulk CSV re-import',
                 deliveryDate: newStatus === 'delivered' ? orderDateValue : undefined,
+                imported: true,
+                runWorkflows,
               });
               logger.info('✅ CANARY: DUPLICATE — status updated forward', {
                 orderId: matchingExisting.id,
@@ -649,12 +646,7 @@ export class OrderService {
             emitOrderCreated(getSocketInstance() as any, createdOrder);
           }
 
-          workflowService.triggerOrderCreatedWorkflows(createdOrder).catch(err => {
-            logger.error('Failed to trigger workflow for bulk imported order', {
-              orderId: createdOrder.id,
-              error: err.message
-            });
-          });
+          emitOrderCreatedEvent(createdOrder, { imported: true, runWorkflows });
 
         } catch (error: any) {
           if (error.message === 'DUPLICATE_ORDER') {
@@ -990,6 +982,7 @@ export class OrderService {
       ...this.moveOptions(data),
       note: data.notes,
       deliveryDate: data.deliveryDate,
+      runWorkflows: data.runWorkflows,
       // Both used to be written by this method on delivered; kept as is
       paymentStatus: data.status === 'delivered' ? 'collected' : undefined,
     });
@@ -1425,68 +1418,7 @@ export class OrderService {
     if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
       throw new AppError('Only administrators or managers can assign customer representatives', 403);
     }
-    const [order, rep] = await Promise.all([
-      prisma.order.findUnique({ where: { id: orderId, deletedAt: null } }),
-      prisma.user.findUnique({ where: { id: customerRepId } })
-    ]);
-
-    if (!order) {
-      throw new AppError('Order not found', 404);
-    }
-
-    if (!rep || rep.role !== 'sales_rep') {
-      throw new AppError('Invalid customer representative', 400);
-    }
-
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        customerRepId: customerRepId,
-        orderHistory: {
-          create: {
-            tenantId: resolveTenantId(order.tenantId),
-            status: order.status,
-            notes: `Customer rep assigned: ${rep.firstName} ${rep.lastName} `,
-            changedBy: requester.id,
-            metadata: { assignedRepId: customerRepId }
-          }
-        }
-      },
-      include: {
-        customerRep: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true
-          }
-        }
-      }
-    });
-
-    logger.info(`Customer rep assigned to order: ${order.id} `, {
-      orderId,
-      repId: customerRepId,
-      changedBy: requester.id
-    });
-
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        tenantId: resolveTenantId(order.tenantId),
-        userId: requester.id,
-        action: 'assign_rep',
-        resource: 'order',
-        resourceId: orderId.toString(),
-        metadata: { assignedRepId: customerRepId }
-      }
-    });
-
-    // Emit socket events for real-time updates
-    const ioInstance = getSocketInstance() as any;
-    emitOrderAssigned(ioInstance, updated, customerRepId.toString(), 'sales_rep');
-    emitOrderUpdated(ioInstance, updated);
-
-    return updated;
+    return assignmentService.assignByRole(orderId, customerRepId, 'sales_rep', actorOf(requester));
   }
 
   /**
@@ -1502,72 +1434,7 @@ export class OrderService {
         throw new AppError('Only managers or the assigned sales representative can assign delivery agents', 403);
       }
     }
-    const [order, agent] = await Promise.all([
-      prisma.order.findUnique({ where: { id: orderId, deletedAt: null } }),
-      prisma.user.findUnique({ where: { id: deliveryAgentId } })
-    ]);
-
-    if (!order) {
-      throw new AppError('Order not found', 404);
-    }
-
-    if (!agent || agent.role !== 'delivery_agent') {
-      throw new AppError('Invalid delivery agent', 400);
-    }
-
-    if (!agent.isAvailable) {
-      throw new AppError('Delivery agent is not available', 400);
-    }
-
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        deliveryAgentId: deliveryAgentId,
-        orderHistory: {
-          create: {
-            tenantId: resolveTenantId(order.tenantId),
-            status: order.status,
-            notes: `Delivery agent assigned: ${agent.firstName} ${agent.lastName} `,
-            changedBy: requester.id,
-            metadata: { assignedAgentId: deliveryAgentId }
-          }
-        }
-      },
-      include: {
-        deliveryAgent: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true
-          }
-        }
-      }
-    });
-
-    logger.info(`Delivery agent assigned to order: ${order.id} `, {
-      orderId,
-      agentId: deliveryAgentId,
-      changedBy: requester.id
-    });
-
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        tenantId: resolveTenantId(order.tenantId),
-        userId: requester.id,
-        action: 'assign_agent',
-        resource: 'order',
-        resourceId: orderId.toString(),
-        metadata: { assignedAgentId: deliveryAgentId }
-      }
-    });
-
-    // Emit socket events for real-time updates
-    const ioInstance = getSocketInstance() as any;
-    emitOrderAssigned(ioInstance, updated, deliveryAgentId.toString(), 'delivery_agent');
-    emitOrderUpdated(ioInstance, updated);
-
-    return updated;
+    return assignmentService.assignByRole(orderId, deliveryAgentId, 'delivery_agent', actorOf(requester), { checkAvailable: true });
   }
 
   /**

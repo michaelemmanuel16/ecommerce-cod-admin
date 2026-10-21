@@ -54,6 +54,7 @@ describe('Email channel prerequisites (MAN-77)', () => {
         id: 42, orderItems: [], customer: { id: 7 },
       });
       (prismaMock.workflowExecution.create as any).mockResolvedValue({ id: 'exec-1' });
+      (prismaMock.workflowExecution.findMany as any).mockResolvedValue([]); // loop guard: nothing ran lately
 
       const service = new WorkflowService();
       await tenantStorage.run({ tenantId: 'tenant-a' }, () =>

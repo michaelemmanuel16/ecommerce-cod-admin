@@ -16,7 +16,7 @@ import logger from '../utils/logger';
  */
 
 /** Bump when a tool name, input schema or permission changes. */
-export const REGISTRY_VERSION = '2026.10.1';
+export const REGISTRY_VERSION = '2026.10.2';
 
 export type ToolKind = 'read' | 'write';
 

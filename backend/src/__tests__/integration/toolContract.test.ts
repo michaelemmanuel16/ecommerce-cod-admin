@@ -34,6 +34,7 @@ jest.setTimeout(180_000);
 /** sha256 of the tools/list names, descriptions and input schemas, per registry version. */
 const PINNED_HASH: Record<string, string> = {
   '2026.10.1': '3f922785c1c8a87245e744157208076d7d995e9e2e9205acd8cca3b4e0cf6d36',
+  '2026.10.2': '9d9c5d932641596b5dd7ff34af7ce0c36c6f0b0a2428d11d22f7acf965a69713', // orders_update_status: runWorkflows (M2-T17)
 };
 
 const FROM = '2026-10-01';

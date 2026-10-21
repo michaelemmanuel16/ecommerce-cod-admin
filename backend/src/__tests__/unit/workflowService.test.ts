@@ -2,13 +2,24 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { prismaMock } from '../mocks/prisma.mock';
 import { WorkflowService } from '../../services/workflowService';
 import { AppError } from '../../middleware/errorHandler';
+import { systemActor } from '../../services/systemUserService';
+import { transitionOrder } from '../../services/orderStateMachine';
+import assignmentService from '../../services/assignmentService';
 import { WorkflowTriggerType } from '@prisma/client';
 
 // Mock the workflow queue
 jest.mock('../../queues/workflowQueue', () => ({
   workflowQueue: {
     add: jest.fn().mockResolvedValue({})
-  }
+  },
+}));
+
+// M2-T16: status moves and assignments go through the services, not prisma.order.update
+jest.mock('../../services/orderStateMachine', () => ({ transitionOrder: jest.fn() }));
+jest.mock('../../services/systemUserService', () => ({ systemActor: jest.fn() }));
+jest.mock('../../services/assignmentService', () => ({
+  __esModule: true,
+  default: { assignByRole: jest.fn() },
 }));
 
 // Mock the SMS service
@@ -31,6 +42,7 @@ describe('WorkflowService', () => {
 
   beforeEach(() => {
     workflowService = new WorkflowService();
+    (systemActor as jest.Mock).mockResolvedValue({ kind: 'system', userId: 77 } as never);
   });
 
   describe('createWorkflow', () => {
@@ -170,7 +182,7 @@ describe('WorkflowService', () => {
       ];
 
       prismaMock.workflowExecution.update.mockResolvedValue({} as any);
-      prismaMock.order.update.mockResolvedValue({} as any);
+      (transitionOrder as jest.Mock).mockResolvedValue({ changed: true } as never);
 
       const results = await workflowService.processWorkflowExecution(
         executionId,
@@ -192,7 +204,7 @@ describe('WorkflowService', () => {
       ];
 
       prismaMock.workflowExecution.update.mockResolvedValue({} as any);
-      prismaMock.order.update.mockRejectedValue(new Error('Order not found'));
+      (transitionOrder as jest.Mock).mockRejectedValue(new Error('Order not found') as never);
 
       const results = await workflowService.processWorkflowExecution(
         executionId,
@@ -217,7 +229,7 @@ describe('WorkflowService', () => {
       ];
 
       prismaMock.workflowExecution.update.mockResolvedValue({} as any);
-      prismaMock.order.update.mockRejectedValue(new Error('Order not found'));
+      (transitionOrder as jest.Mock).mockRejectedValue(new Error('Order not found') as never);
 
       await expect(
         workflowService.processWorkflowExecution(
@@ -257,6 +269,7 @@ describe('WorkflowService', () => {
         {
           type: 'update_order',
           orderId: 'invalid-order',
+          status: 'confirmed',
           stopOnError: true
         }
       ];
@@ -268,7 +281,7 @@ describe('WorkflowService', () => {
         }
         return Promise.resolve({} as any);
       });
-      prismaMock.order.update.mockRejectedValue(new Error('Order not found'));
+      (transitionOrder as jest.Mock).mockRejectedValue(new Error('Order not found') as never);
 
       await expect(
         workflowService.processWorkflowExecution(
@@ -334,13 +347,7 @@ describe('WorkflowService', () => {
         notes: 'Auto-confirmed'
       };
 
-      const mockOrder = {
-        id: 'order-1',
-        orderNumber: '1001',
-        status: 'confirmed'
-      };
-
-      prismaMock.order.update.mockResolvedValue(mockOrder as any);
+      (transitionOrder as jest.Mock).mockResolvedValue({ changed: true } as never);
 
       const result = await (workflowService as any).executeAction(
         action,
@@ -349,7 +356,12 @@ describe('WorkflowService', () => {
 
       expect(result.success).toBe(true);
       expect(result.orderId).toBe('order-1');
-      expect(prismaMock.order.update).toHaveBeenCalled();
+      // the system user moves it through the state machine; depth 1 = caused by a workflow
+      expect(transitionOrder).toHaveBeenCalledWith(
+        'order-1', 'confirmed', { kind: 'system', userId: 77 },
+        expect.objectContaining({ workflowDepth: 1 })
+      );
+      expect(prismaMock.order.update).not.toHaveBeenCalled();
     });
 
     it('should throw error when order ID not provided', async () => {
@@ -364,6 +376,15 @@ describe('WorkflowService', () => {
     });
   });
 
+  describe('executeAction - update_order without a status', () => {
+    it('fails with a clear error instead of succeeding silently', async () => {
+      await expect(
+        (workflowService as any).executeAction({ type: 'update_order', orderId: 'order-1' }, {})
+      ).rejects.toThrow('update_order needs a status');
+      expect(transitionOrder).not.toHaveBeenCalled();
+    });
+  });
+
   describe('executeAction - assign_agent', () => {
     it('should assign agent to order successfully', async () => {
       const action = {
@@ -372,18 +393,11 @@ describe('WorkflowService', () => {
         agentId: 'agent-1'
       };
 
-      const mockOrder = {
-        id: 'order-1',
-        deliveryAgentId: 'agent-1'
-      };
-
-      prismaMock.order.update.mockResolvedValue(mockOrder as any);
-
       const result = await (workflowService as any).executeAction(action, {});
 
       expect(result.success).toBe(true);
       expect(result.agentId).toBe('agent-1');
-      expect(prismaMock.order.update).toHaveBeenCalled();
+      expect(assignmentService.assignByRole).toHaveBeenCalledWith('order-1', 'agent-1', 'delivery_agent', { kind: 'system', userId: 77 });
     });
 
     it('should throw error when agent ID not provided', async () => {
@@ -406,43 +420,35 @@ describe('WorkflowService', () => {
         tag: 'urgent'
       };
 
-      const mockOrder = {
-        id: 'order-1',
-        tags: ['normal']
-      };
-
-      prismaMock.order.findUnique.mockResolvedValue(mockOrder as any);
-      prismaMock.order.update.mockResolvedValue({
-        ...mockOrder,
-        tags: ['normal', 'urgent']
-      } as any);
+      prismaMock.order.updateMany.mockResolvedValue({ count: 1 } as any);
 
       const result = await (workflowService as any).executeAction(action, {});
 
       expect(result.success).toBe(true);
       expect(result.tag).toBe('urgent');
-      expect(prismaMock.order.update).toHaveBeenCalled();
+      // one atomic write, never a read-modify-write
+      expect(prismaMock.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', NOT: { tags: { has: 'urgent' } } },
+        data: { tags: { push: 'urgent' } },
+      });
     });
 
-    it('should not duplicate tags', async () => {
-      const action = {
-        type: 'add_tag',
-        orderId: 'order-1',
-        tag: 'urgent'
-      };
+    it('does nothing when the order already has the tag', async () => {
+      const action = { type: 'add_tag', orderId: 'order-1', tag: 'urgent' };
+      prismaMock.order.updateMany.mockResolvedValue({ count: 0 } as any);
+      prismaMock.order.findFirst.mockResolvedValue({ id: 'order-1' } as any);
 
-      const mockOrder = {
-        id: 'order-1',
-        tags: ['urgent']
-      };
+      const result = await (workflowService as any).executeAction(action, {});
 
-      prismaMock.order.findUnique.mockResolvedValue(mockOrder as any);
-      prismaMock.order.update.mockResolvedValue(mockOrder as any);
+      expect(result.success).toBe(true);
+    });
 
-      await (workflowService as any).executeAction(action, {});
+    it('throws when the order does not exist', async () => {
+      const action = { type: 'add_tag', orderId: 'order-1', tag: 'urgent' };
+      prismaMock.order.updateMany.mockResolvedValue({ count: 0 } as any);
+      prismaMock.order.findFirst.mockResolvedValue(null);
 
-      const updateCall = (prismaMock.order.update as jest.Mock).mock.calls[0][0];
-      expect(updateCall.data.tags).toEqual(['urgent']);
+      await expect((workflowService as any).executeAction(action, {})).rejects.toThrow('Order not found');
     });
   });
 
@@ -462,6 +468,7 @@ describe('WorkflowService', () => {
       prismaMock.workflow.findMany.mockResolvedValue(mockWorkflows as any);
       prismaMock.workflow.findUnique.mockResolvedValue(mockWorkflows[0] as any);
       prismaMock.workflowExecution.create.mockResolvedValue({} as any);
+      prismaMock.workflowExecution.findMany.mockResolvedValue([]); // loop guard: nothing ran lately
 
       await workflowService.triggerStatusChangeWorkflows(
         'order-1',

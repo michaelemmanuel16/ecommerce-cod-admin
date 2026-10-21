@@ -7,7 +7,7 @@ import { digitalDeliveryService } from './digitalDeliveryService';
 import { GLAutomationService } from './glAutomationService';
 import { transitionOrder } from './orderStateMachine';
 import { metaCapiService } from './metaCapiService';
-import workflowService from './workflowService';
+import { emitOrderCreatedEvent } from '../utils/appEvents';
 import { emitOrderCreated } from '../sockets';
 import { getSocketInstance } from '../utils/socketInstance';
 import * as Money from '../utils/money';
@@ -249,12 +249,7 @@ async function settleInTenant(
   });
 
   // Workflows + realtime, now that the order exists.
-  workflowService.triggerOrderCreatedWorkflows(order).catch((err) => {
-    logger.error('Failed to trigger workflow for settled Paystack order', {
-      orderId: order.id,
-      error: err?.message,
-    });
-  });
+  emitOrderCreatedEvent(order);
   emitOrderCreated(getSocketInstance() as any, order);
 
   // Server-side Meta Purchase event (best-effort, idempotent via capiEventFired).

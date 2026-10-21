@@ -91,3 +91,8 @@ export async function getSystemUserId(tenantId?: string | null): Promise<number>
   systemUserIds.set(id, userId);
   return userId;
 }
+
+/** The actor for every order write a workflow makes: the tenant's system user (M2-T16). Resolve it once per action. */
+export async function systemActor(): Promise<{ kind: 'system'; userId: number }> {
+  return { kind: 'system', userId: await getSystemUserId() };
+}

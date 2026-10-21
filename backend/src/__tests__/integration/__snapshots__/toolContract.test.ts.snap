@@ -269,6 +269,9 @@ exports[`tools/list is pinned to the registry version the snapshot of the list f
             "maximum": 9007199254740991,
             "type": "integer",
           },
+          "runWorkflows": {
+            "type": "boolean",
+          },
           "status": {
             "enum": [
               "pending_confirmation",
@@ -357,6 +360,6 @@ exports[`tools/list is pinned to the registry version the snapshot of the list f
       "name": "reps_status",
     },
   ],
-  "version": "2026.10.1",
+  "version": "2026.10.2",
 }
 `;

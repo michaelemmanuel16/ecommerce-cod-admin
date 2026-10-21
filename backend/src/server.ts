@@ -92,6 +92,7 @@ import cron from 'node-cron';
 
 // Initialize queue workers
 import './queues/workflowQueue';
+import { registerWorkflowListeners } from './services/workflowService';
 import './queues/emailCampaignQueue';
 
 import { setupAgingCron } from './queues/agingQueue';
@@ -119,6 +120,9 @@ try {
   logger.error('GL account code validation failed:', error);
   process.exit(1);
 }
+
+// Workflows run from the order state machine's events (order.created, order.status_changed)
+registerWorkflowListeners();
 
 const app: Application = express();
 const server = http.createServer(app);
