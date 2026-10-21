@@ -4,6 +4,7 @@ import { OrderStatus } from '@prisma/client';
 import orderService from '../services/orderService';
 import { clearCache } from '../middleware/cache';
 import { readDateBound } from '../utils/kpiRequest';
+import { ALL_STATUSES } from '../services/orderStateMachine';
 
 export const getAllOrders = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -207,6 +208,9 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response): Promis
 export const getOrderTransitions = async (req: AuthRequest, res: Response): Promise<void> => {
   const transitions = await orderService.getTransitions(Number(req.params.id), req.user!);
   res.json(transitions);
+};
+export const getOrderStatuses = async (_req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ statuses: ALL_STATUSES });
 };
 // ... rest of file (assignCustomerRep, etc)
 
