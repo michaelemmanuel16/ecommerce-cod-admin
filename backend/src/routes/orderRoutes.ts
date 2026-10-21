@@ -5,7 +5,7 @@ import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate, validateRequest } from '../middleware/validation';
 import { spreadsheetUpload, handleUploadErrors } from '../config/multer';
-import { createOrderValidation, updateOrderStatusValidation, paginationValidation, bulkDeleteValidation } from '../utils/validators';
+import { createOrderValidation, updateOrderStatusValidation, assignRepValidation, assignAgentValidation, paginationValidation, bulkDeleteValidation } from '../utils/validators';
 import { bulkOrderRateLimiter, bulkImportRateLimiter } from '../middleware/bulkRateLimiter';
 
 const router = Router();
@@ -27,7 +27,7 @@ router.put('/:id', requireResourcePermission('orders', 'update'), orderControlle
 router.delete('/:id', requireResourcePermission('orders', 'delete'), orderController.deleteOrder);
 router.get('/:id/transitions', requireResourcePermission('orders', 'view'), orderController.getOrderTransitions);
 router.patch('/:id/status', validateRequest(updateOrderStatusValidation), requireResourcePermission('orders', 'update', 'update_status'), orderController.updateOrderStatus);
-router.patch('/:id/assign-rep', requireResourcePermission('orders', 'assign'), orderController.assignCustomerRep);
-router.patch('/:id/assign-agent', requireResourcePermission('orders', 'assign'), orderController.assignDeliveryAgent);
+router.patch('/:id/assign-rep', validateRequest(assignRepValidation), requireResourcePermission('orders', 'assign'), orderController.assignCustomerRep);
+router.patch('/:id/assign-agent', validateRequest(assignAgentValidation), requireResourcePermission('orders', 'assign'), orderController.assignDeliveryAgent);
 
 export default router;

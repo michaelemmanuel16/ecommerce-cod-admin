@@ -2,7 +2,7 @@ import { randomBytes } from 'crypto';
 import { prismaBase } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { roleToolList } from '../config/defaultRoles';
-import { generateMcpKey, hashApiKey } from '../mcp/auth';
+import { evictKey, generateMcpKey, hashApiKey } from '../mcp/auth';
 import { createAiAgentUser } from './systemUserService';
 
 export const MAX_KEYS_PER_TENANT = 5;
@@ -50,5 +50,8 @@ export async function revokeKey(tenantId: string, id: string) {
     const key = await tx.mcpApiKey.findFirst({ where: { id, tenantId, revokedAt: null } });
     if (!key) return null;
     return tx.mcpApiKey.update({ where: { id }, data: { revokedAt: new Date() } });
+  }).then((key) => {
+    if (key) evictKey(key.keyHash);
+    return key;
   });
 }

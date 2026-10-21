@@ -100,6 +100,16 @@ export const updateOrderStatusValidation: ValidationChain[] = [
   body('nextAttemptDate').optional({ nullable: true }).isISO8601()
 ];
 
+export const assignRepValidation: ValidationChain[] = [
+  param('id').isInt({ min: 1 }).withMessage('Order id must be a number'),
+  body('customerRepId').isInt({ min: 1 }).withMessage('customerRepId must be a number')
+];
+
+export const assignAgentValidation: ValidationChain[] = [
+  param('id').isInt({ min: 1 }).withMessage('Order id must be a number'),
+  body('deliveryAgentId').isInt({ min: 1 }).withMessage('deliveryAgentId must be a number')
+];
+
 export const paginationValidation: ValidationChain[] = [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 })

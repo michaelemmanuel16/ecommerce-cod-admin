@@ -55,8 +55,8 @@ export function generateMcpKey(): string {
 /**
  * Validate an API key and resolve who it acts as.
  * Uses un-extended PrismaClient (no tenant context needed for key lookup).
- * The result (with the user's base role and the role's tool list) is cached per key for 60 seconds, so a revoked or expired key, or a deactivated user, stops
- * working within 60 seconds. A key with no user or no role (made before every key had both) is refused.
+ * The result (with the user's base role and the role's tool list) is cached per key for 60 seconds, so an expired key or a deactivated user stops
+ * working within 60 seconds. A revoked key is evicted at once (`evictKey`). A key with no user or no role (made before every key had both) is refused.
  */
 export async function validateKey(apiKey: string): Promise<McpPrincipal> {
   const keyHash = hashApiKey(apiKey);
@@ -130,7 +130,14 @@ export async function validateKey(apiKey: string): Promise<McpPrincipal> {
 }
 
 /**
- * Clear the auth cache (useful for testing or when key is revoked).
+ * Drop one key's cache entry, so a revoked key stops working at once. Per process: a multi-instance deploy would need a shared signal.
+ */
+export function evictKey(keyHash: string): void {
+  authCache.delete(keyHash);
+}
+
+/**
+ * Clear the auth cache (useful for testing).
  */
 export function clearAuthCache(): void {
   authCache.clear();

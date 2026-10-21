@@ -372,7 +372,8 @@ export class AssignmentService {
         action: `assign_${kind.short}`,
         resource: 'order',
         resourceId: orderId.toString(),
-        metadata: { [metaKey]: userId }
+        metadata: { [metaKey]: userId },
+        ...(actor.kind === 'user' && { actorKind: 'person' as const, channel: 'app' as const })
       }
     });
 

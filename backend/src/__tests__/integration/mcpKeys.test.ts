@@ -143,6 +143,16 @@ describe('GET and DELETE /api/mcp-keys', () => {
     expect((await request(app).delete(`/api/mcp-keys/${created.body.id}`).set(bearer(ownerA))).status).toBe(404);
   });
 
+  it('a revoked key stops working on /mcp at once, even after a call warmed the auth cache', async () => {
+    clearAuthCache();
+    const created = await createKey('Warm then revoke', 'Delivery');
+    const call = () => request(app).post('/mcp').set('Authorization', `Bearer ${created.body.key}`).set('Content-Type', 'application/json')
+      .send({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    expect((await call()).status).toBe(200);
+    expect((await request(app).delete(`/api/mcp-keys/${created.body.id}`).set(bearer(ownerA))).status).toBe(200);
+    expect((await call()).status).toBe(401);
+  });
+
   it('two tenants: B neither lists nor revokes A keys', async () => {
     const created = await createKey('A only', 'Delivery');
     const listB = await request(app).get('/api/mcp-keys').set(bearer(ownerB));

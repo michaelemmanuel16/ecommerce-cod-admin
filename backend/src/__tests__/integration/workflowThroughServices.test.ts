@@ -162,6 +162,28 @@ describe('M2-T16 workflow actions go through the services', () => {
     expect(history[0]).toMatchObject({ actorKind: 'user', changedBy: admin.id });
   });
 
+  it('the assign endpoints refuse an empty body, a non-numeric body id and a non-numeric route id with 400', async () => {
+    const id = await mkOrder('confirmed');
+    for (const [route, field] of [['assign-agent', 'deliveryAgentId'], ['assign-rep', 'customerRepId']]) {
+      const patch = (orderId: string | number, body: Record<string, unknown>) =>
+        request(app).patch(`/api/orders/${orderId}/${route}`).set(auth()).send(body);
+      expect((await patch(id, {})).status).toBe(400);
+      expect((await patch(id, { [field]: 'abc' })).status).toBe(400);
+      expect((await patch('abc', { [field]: agentId })).status).toBe(400);
+    }
+  });
+
+  it('assign-agent over HTTP writes an audit row with actorKind person and channel app, found by ?channel=app', async () => {
+    const id = await mkOrder('confirmed');
+    const res = await request(app).patch(`/api/orders/${id}/assign-agent`).set(auth()).send({ deliveryAgentId: agentId });
+    expect(res.status).toBe(200);
+    const row = await prismaBase.auditLog.findFirstOrThrow({ where: { tenantId, action: 'assign_agent', resourceId: String(id) } });
+    expect(row).toMatchObject({ actorKind: 'person', channel: 'app', userId: admin.id });
+    const list = await request(app).get('/api/audit-log?channel=app&limit=100').set(auth());
+    expect(list.status).toBe(200);
+    expect(list.body.logs.map((r: any) => r.id)).toContain(row.id);
+  });
+
   it('assign_agent refuses a user that does not exist (404) or has the wrong role (400), and writes nothing', async () => {
     const id = await mkOrder('confirmed');
     const run = (userId: number) => runInTenant(tenantId, () =>
