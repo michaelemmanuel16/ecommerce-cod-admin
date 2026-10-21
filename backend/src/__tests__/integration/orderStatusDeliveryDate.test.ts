@@ -6,7 +6,8 @@
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { prismaBase } from '../../utils/prisma';
-import { createTenant, deleteTenantRows, ensureSystemUser } from './helpers/twoTenants';
+import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { ensureSystemUser } from '../../services/systemUserService';
 import { tenantStorage } from '../../utils/tenantContext';
 import orderService from '../../services/orderService';
 

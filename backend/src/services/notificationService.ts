@@ -3,6 +3,7 @@ import { getSocketInstance } from '../utils/socketInstance';
 import { emitNotification } from '../sockets';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
+import { HUMAN_USERS_WHERE } from './systemUserService';
 
 
 export async function createNotification(
@@ -56,7 +57,7 @@ export async function notifyAdminsOverdueCollections(
   // Admins of the current tenant only (the scoped query adds tenantId).
   // Callers run this once per tenant.
   const admins = await prisma.user.findMany({
-    where: { role: { in: ['admin', 'super_admin'] }, isActive: true },
+    where: { role: { in: ['admin', 'super_admin'] }, isActive: true, ...HUMAN_USERS_WHERE }, // not the system user
     select: { id: true }
   });
 

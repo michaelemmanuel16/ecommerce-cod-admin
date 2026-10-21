@@ -3,7 +3,7 @@ import { FinancialSyncService } from '../services/financialSyncService';
 import { ORDER_GL_INCLUDE } from '../services/glAutomationService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { SYSTEM_USER_ID } from '../config/constants';
+import { getSystemUserId } from '../services/systemUserService';
 import { runInTenantOf } from '../utils/tenantContext';
 import { forEachTenant } from '../utils/tenantLoop';
 
@@ -36,12 +36,14 @@ export const financialReconciliationQueue = process.env.NODE_ENV === 'test'
 // active revenue entry, so the two can never double post.
 // Order.tenantId is nullable, so continue inside the order's own tenant (a NULL-tenant legacy row
 // runs unscoped, with a log line) — otherwise every financial row is tagged tenant_id = NULL.
-const syncOrderFinancials = (order: any, userId: number = SYSTEM_USER_ID) =>
-    runInTenantOf(
+// The caller passes the actor, looked up before a NULL-tenant row drops to unscoped.
+const syncOrderFinancials = async (order: any, actorId: number) => {
+    return runInTenantOf(
         order.tenantId,
         'financial-reconciliation',
-        () => FinancialSyncService.syncOrderFinancialData(prisma as any, order, userId)
+        () => FinancialSyncService.syncOrderFinancialData(prisma as any, order, actorId)
     );
+};
 
 // Post-delivery sync: queued after the move commits (M1-T10). Bull retries (3 attempts, backoff).
 export const processOrderFinancialSync = async (job: { data: { orderId: number; tenantId?: string | null; userId?: number } }) => {
@@ -52,7 +54,7 @@ export const processOrderFinancialSync = async (job: { data: { orderId: number; 
             include: ORDER_GL_INCLUDE,
         });
         if (!order) return;
-        await syncOrderFinancials(order, userId);
+        await syncOrderFinancials(order, userId ?? await getSystemUserId(order.tenantId));
     });
 };
 
@@ -93,12 +95,15 @@ async function reconcileTenantOrders() {
 
     logger.info(`Financial reconciliation: found ${unsynced.length} delivered orders missing financial records.`);
 
+    // One lookup per tenant, not per order
+    const actorId = await getSystemUserId();
+
     let synced = 0;
     let failed = 0;
 
     for (const order of unsynced) {
         try {
-            const result = await syncOrderFinancials(order);
+            const result = await syncOrderFinancials(order, actorId);
 
             if (result.transaction || result.journalEntry) {
                 synced++;

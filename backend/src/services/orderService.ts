@@ -15,7 +15,6 @@ import {
 } from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
-import { SYSTEM_USER_ID } from '../config/constants';
 import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import FinancialSyncService from './financialSyncService';
 import agentInventoryService from './agentInventoryService';
@@ -620,7 +619,7 @@ export class OrderService {
                 const syncResult = await FinancialSyncService.syncOrderFinancialData(
                   tx as any,
                   newOrder as any,
-                  createdById || SYSTEM_USER_ID
+                  createdById || undefined
                 );
 
                 if (syncResult.transaction || syncResult.journalEntry) {

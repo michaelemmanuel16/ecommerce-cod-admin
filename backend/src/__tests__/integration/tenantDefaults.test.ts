@@ -39,6 +39,8 @@ const mkTenant = async (label: string) => {
 const counts = async (tenantId: string) => ({
   accounts: await prismaBase.account.count({ where: { tenantId } }),
   emailTemplates: await prismaBase.emailTemplate.count({ where: { tenantId } }),
+  roles: await prismaBase.role.count({ where: { tenantId } }),
+  systemUsers: await prismaBase.user.count({ where: { tenantId, kind: 'system' } }),
 });
 
 afterAll(async () => {
@@ -58,9 +60,9 @@ describe('seedTenantDefaults', () => {
     expect(first.accounts).toBe(16);
     const after1 = await counts(id);
     const second = await seedTenantDefaults(id);
-    expect(second).toEqual({ accounts: 0, emailTemplates: 0 });
+    expect(second).toEqual({ accounts: 0, emailTemplates: 0, roles: 0, systemUser: 0 });
     expect(await counts(id)).toEqual(after1);
-    expect(after1).toEqual({ accounts: 16, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length });
+    expect(after1).toEqual({ accounts: 16, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
   });
 
   it('fills only what is missing', async () => {
@@ -81,13 +83,13 @@ describe('seedTenantDefaults', () => {
     });
     expect(res.status).toBe(201);
     tenantIds.push(res.body.tenant.id);
-    expect(await counts(res.body.tenant.id)).toEqual({ accounts: 16, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length });
+    expect(await counts(res.body.tenant.id)).toEqual({ accounts: 16, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
   });
 
   it('platform createTenant seeds the new tenant', async () => {
     const t = await createTenant({ name: `Plat Defaults ${SUFFIX}`, slug: `defaults-plat-${SUFFIX}` });
     tenantIds.push(t.id);
-    expect(await counts(t.id)).toEqual({ accounts: 16, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length });
+    expect(await counts(t.id)).toEqual({ accounts: 16, emailTemplates: DEFAULT_EMAIL_TEMPLATES.length, roles: 7, systemUsers: 1 });
   });
 });
 

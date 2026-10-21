@@ -58,6 +58,9 @@ const MODELS: Array<[string, string, string, string]> = [
   ['findings', 'finding', 'finding', 'Finding'],
   ['fee rules', 'feeRule', 'feeRule', 'FeeRule'],
   ['FX rates', 'fxRate', 'fxRate', 'FxRate'],
+  // M2 models
+  ['roles', 'role', 'role', 'Role'],
+  ['role assignments', 'roleAssignment', 'roleAssignment', 'RoleAssignment'],
 ];
 
 describe('tenant B data never shows for tenant A', () => {
