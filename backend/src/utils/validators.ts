@@ -122,6 +122,7 @@ export const paginationValidation: ValidationChain[] = [
 export const orderListValidation: ValidationChain[] = [
   ...paginationValidation,
   query('sortBy').optional().isIn([...ORDER_SORT_FIELDS]).withMessage(`Sort by ${ORDER_SORT_FIELDS.join(', ')}`),
+  query('search').optional().isString().isLength({ max: 100 }),
   query('sortOrder').optional().isIn(['asc', 'desc']),
   query('dateBasis').optional().isIn(['created', 'delivery']),
   query('flag').optional().isIn([...ORDER_FLAG_CODES, 'any']),

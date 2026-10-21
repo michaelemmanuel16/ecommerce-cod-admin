@@ -105,6 +105,10 @@ export interface OrderListQuery extends OrderFilters {
   include?: OrderInclude[];
 }
 
+/** A search term is cut at 100 characters and 5 name words, as in the command palette search. */
+const SEARCH_MAX_LENGTH = 100;
+const SEARCH_MAX_WORDS = 5;
+
 /** Row scope: a rep sees orders where they are the call rep, a delivery agent their own deliveries. Other roles see all. */
 function orderScope(requester?: Requester): Prisma.OrderWhereInput {
   if (requester?.role === 'sales_rep') return { customerRepId: requester.id };
@@ -134,10 +138,10 @@ function listWhere(filters: OrderFilters, requester: Requester | undefined, with
 
   if (filters.search?.trim()) {
     // `#23001` is an order number; a phone matches in any format; words match the customer's names (F-310).
-    const q = classifyQuery(filters.search.trim());
+    const q = classifyQuery(filters.search.trim().slice(0, SEARCH_MAX_LENGTH));
     const customerMatch: Prisma.CustomerWhereInput[] = [
       ...q.phone.map((p) => p as Prisma.CustomerWhereInput),
-      ...(q.nameWords.length ? [nameMatch(q.nameWords)] : []),
+      ...(q.nameWords.length ? [nameMatch(q.nameWords.slice(0, SEARCH_MAX_WORDS))] : []),
     ];
     // An empty OR matches nothing, as wanted for a term that is neither.
     and.push({

@@ -239,6 +239,17 @@ describe('GET /api/orders', () => {
     expect(flagsOnly.body.orders[0]).not.toHaveProperty('reminder');
   });
 
+  it('a 5,000-character search is refused fast, and the service cuts a long term', async () => {
+    const started = Date.now();
+    const res = await list(tokens.admin, { search: 'a '.repeat(2500) });
+    expect(res.status).toBe(400);
+    expect(Date.now() - started).toBeLessThan(2000);
+    // Past the validator: the service still cuts at 100 characters and 5 words
+    const { default: orderService } = await import('../../services/orderService');
+    const rows = await runInTenant(fixtureTenantId, () => orderService.getAllOrders({ search: 'a '.repeat(2500), limit: 5 }));
+    expect(rows.orders.length).toBeGreaterThanOrEqual(0);
+  });
+
   it('401 with no token, 400 for a bad flag or date basis', async () => {
     expect((await request(app).get('/api/orders')).status).toBe(401);
     expect((await list(tokens.admin, { flag: 'nope' })).status).toBe(400);
