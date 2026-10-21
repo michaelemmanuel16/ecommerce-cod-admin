@@ -1,20 +1,22 @@
+import { useState } from 'react';
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceDot, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from 'recharts';
 import { Skeleton } from '../../../components/ui-v2';
 import { INFO, LEVER_LABEL, type Info } from '../copy';
-import { chartSummary, compactMoney, compactNumber, monthName, parseDay, plural, shortDay, toChartPoint, type ChartPoint } from '../format';
-import { BlockFrame, InfoTip } from './Frame';
+import { chartSummary, compactMoney, compactNumber, gapNumber, monthName, parseDay, plural, shortDay, toChartPoint, type ChartPoint } from '../format';
+import { BlockFrame, Tip } from './Frame';
 import { isBlockError, type Block, type Chart, type Drivers } from '../types';
 
-function Pill({ active, payload, currency, asOfDate }: { active?: boolean; payload?: Array<{ payload: ChartPoint }>; currency: string; asOfDate: string | null }) {
+function Pill({ active, payload, currency, asOfDate, pinned }: { active?: boolean; payload?: Array<{ payload: ChartPoint }>; currency: string; asOfDate: string | null; pinned: string | null }) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
-  if (p.cumulative === null) return null;
+  // the pinned callout already shows the last day with data
+  if (p.cumulative === null || p.date === pinned) return null;
   return (
     <div className="ctip">
       <small>{p.date === asOfDate ? 'Today, ' : ''}{shortDay(p.date)}</small>
       <b>
         {compactMoney(p.cumulative, currency)}
-        {p.vsPace !== null && ` · ${p.vsPace < 0 ? '−' : '+'}${compactNumber(Math.abs(p.vsPace))} vs pace`}
+        {p.vsPace !== null && ` · ${p.vsPace < 0 ? '−' : '+'}${gapNumber(Math.abs(p.vsPace))} vs pace`}
       </b>
     </div>
   );
@@ -25,17 +27,50 @@ const tickLabel = (date: string) => {
   return day === 1 ? shortDay(date) : String(day);
 };
 
+/** The x-axis ticks of the mockup: "1 Oct", "7", "14" and the last day of the month. Other ranges: first, two between, last. */
+function axisTicks(chart: Chart): string[] {
+  const dates = chart.days.map((d) => d.date);
+  if (dates.length === 0) return [];
+  if (chart.period === 'month' && dates.length >= 15) return [dates[0], dates[6], dates[13], dates[dates.length - 1]];
+  const n = dates.length - 1;
+  return [...new Set([0, Math.floor(n / 3), Math.floor((2 * n) / 3), n].map((i) => dates[i]))];
+}
+
+/**
+ * The dark callout the mockup pins at today's point (index.html, the <g> with rect rx=10 fill var(--ink)):
+ * "Today, 17 Oct" over "GH₵92k · −7k vs pace", 13px right and 7px below the point. It flips to the left near the right edge.
+ */
+function Callout({ cx, cy, title, text, width }: { cx?: number; cy?: number; title: string; text: string; width: number }) {
+  if (cx === undefined || cy === undefined) return null;
+  const boxW = Math.max(150, Math.round(text.length * 7.4 + 24));
+  const x = cx + 13 + boxW > width - 4 ? cx - 13 - boxW : cx + 13;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={6} fill="var(--card)" stroke="var(--pine)" strokeWidth={3} />
+      <g transform={`translate(${x} ${cy + 7})`}>
+        <rect width={boxW} height={44} rx={10} fill="var(--ink)" />
+        <text x={12} y={19} fill="var(--bg)" fontSize={11} fontFamily="Plus Jakarta Sans">{title}</text>
+        <text x={12} y={35} fill="var(--bg)" fontSize={13} fontWeight={700} fontFamily="Plus Jakarta Sans">{text}</text>
+      </g>
+    </g>
+  );
+}
+
 const hasTargetPace = (chart: Chart) => chart.days.some((d) => d.targetPace !== null);
 
 function Plot({ chart, asOfDate }: { chart: Chart; asOfDate: string | null }) {
   const data = chart.days.map(toChartPoint);
   const hasPace = hasTargetPace(chart);
   const lastActual = [...data].reverse().find((p) => p.cumulative !== null);
+  const [width, setWidth] = useState(640);
+  const calloutText = lastActual && lastActual.cumulative !== null
+    ? `${compactMoney(lastActual.cumulative, chart.currency)}${lastActual.vsPace !== null ? ` \u00B7 ${lastActual.vsPace < 0 ? '\u2212' : '+'}${gapNumber(Math.abs(lastActual.vsPace))} vs pace` : ''}`
+    : '';
 
   return (
     <>
       <div role="img" aria-label={chartSummary(chart, asOfDate)} className="chartbox">
-        <ResponsiveContainer width="100%" height={230}>
+        <ResponsiveContainer width="100%" height={230} onResize={(w) => setWidth(w)}>
           <ComposedChart data={data} margin={{ top: 12, right: 10, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id="dashRevenueFill" x1="0" x2="0" y1="0" y2="1">
@@ -45,20 +80,25 @@ function Plot({ chart, asOfDate }: { chart: Chart; asOfDate: string | null }) {
             </defs>
             <CartesianGrid vertical={false} stroke="var(--line)" />
             <XAxis
-              dataKey="date" tickFormatter={tickLabel} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={28}
+              dataKey="date" tickFormatter={tickLabel} axisLine={false} tickLine={false} ticks={axisTicks(chart)} interval={0}
               tick={{ fill: 'var(--ink-3)', fontSize: 11, fontFamily: 'Plus Jakarta Sans' }}
             />
             <YAxis
               width={44} axisLine={false} tickLine={false} tickCount={4} domain={[0, 'auto']} tickFormatter={compactNumber}
               tick={{ fill: 'var(--ink-3)', fontSize: 11, fontFamily: 'Plus Jakarta Sans' }}
             />
-            <ChartTooltip cursor={{ stroke: 'var(--line)' }} content={<Pill currency={chart.currency} asOfDate={asOfDate} />} />
+            <ChartTooltip cursor={{ stroke: 'var(--line)' }} content={<Pill currency={chart.currency} asOfDate={asOfDate} pinned={lastActual?.date ?? null} />} />
             {hasPace && (
               <Line dataKey="targetPace" type="linear" stroke="var(--ink-3)" strokeWidth={2} strokeDasharray="5 6" dot={false} activeDot={false} isAnimationActive={false} />
             )}
             <Area dataKey="cumulative" type="monotone" stroke="var(--pine)" strokeWidth={3} strokeLinecap="round" fill="url(#dashRevenueFill)" dot={false} activeDot={{ r: 5, fill: 'var(--card)', stroke: 'var(--pine)', strokeWidth: 3 }} isAnimationActive={false} connectNulls={false} />
             {lastActual && lastActual.cumulative !== null && (
-              <ReferenceDot x={lastActual.date} y={lastActual.cumulative} r={6} fill="var(--card)" stroke="var(--pine)" strokeWidth={3} ifOverflow="visible" />
+              <ReferenceDot
+                x={lastActual.date} y={lastActual.cumulative} ifOverflow="visible"
+                shape={(p: { cx?: number; cy?: number }) => (
+                  <Callout cx={p.cx} cy={p.cy} width={width} text={calloutText} title={`${lastActual.date === asOfDate ? 'Today, ' : ''}${shortDay(lastActual.date)}`} />
+                )}
+              />
             )}
           </ComposedChart>
         </ResponsiveContainer>
@@ -70,7 +110,7 @@ function Plot({ chart, asOfDate }: { chart: Chart; asOfDate: string | null }) {
 function Driver({ label, info, value, note }: { label: string; info: Info; value: string; note: string }) {
   return (
     <div className="drv">
-      <small>{label} <InfoTip info={info} /></small>
+      <small><Tip info={info}>{label}</Tip></small>
       <b>{value}</b>
       <em>{note}</em>
     </div>
@@ -118,7 +158,7 @@ export function ChartCard({ chart, drivers, loading, failed, onRetry, asOfDate }
   return (
     <div className="card">
       <div className="ct">
-        <h3>Delivered revenue vs target <InfoTip info={INFO.chart} /></h3>
+        <h3><Tip info={INFO.chart}>Delivered revenue vs target</Tip></h3>
         {chart && !isBlockError(chart) && (
           <div className="legend">
             <span><i className="dl" />Delivered</span>

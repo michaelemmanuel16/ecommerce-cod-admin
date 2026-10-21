@@ -68,7 +68,7 @@ export interface Tiles {
     yield: number | null; delivered: number; closed: number;
   };
   /** Missing when the viewer has no financial:view. */
-  cash?: { value: Money; partners: number };
+  cash?: { value: Money; partners: number; /** orders behind the cash delivered more than 8 days ago */ overdueOrders?: number };
 }
 
 export interface ChartDay { date: string; delivered: Money | null; cumulative: Money | null; targetPace: Money | null; vsPace: Money | null }

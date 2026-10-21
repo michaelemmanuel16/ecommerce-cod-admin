@@ -4,7 +4,7 @@ import { BAR_OF_PROGRESS, INFO, PROGRESS_TAG } from '../copy';
 import { compactMoney, hundredsMoney, monthName, plural, quarterOf, wholeMoney, wholePercent, parseDay } from '../format';
 import { PageLink } from '../links';
 import { PATHS } from '../paths';
-import { InfoTip } from './Frame';
+import { Tip } from './Frame';
 import type { Ladder, ProgressTag, Rung } from '../types';
 
 /** The ring on the North Star card: a circle of r=38, so the full dash is 2 x pi x 38. Drawing only. */
@@ -26,8 +26,7 @@ function RungView({ label, info, rung, currency }: { label: string; info: typeof
   return (
     <div className="rung">
       <small>
-        <PageLink to={PATHS.targets} className="plain">{label}</PageLink>
-        <InfoTip info={info} />
+        <PageLink to={PATHS.targets} className="plain" tip={info}>{label}</PageLink>
       </small>
       <div className="v num">{compactMoney(rung.actual, currency)} <Tag tone={tag.tone}>{tag.label}</Tag></div>
       <div className="t">
@@ -48,7 +47,7 @@ export function LadderCard({ ladder, asOfDate }: { ladder: Ladder; asOfDate: str
   return (
     <div className="card ladder">
       <div className="ns">
-        <small>North Star{y ? ` ${y}` : ''} {'·'} delivered revenue <InfoTip info={INFO.northStar} /></small>
+        <small><Tip info={INFO.northStar}>North Star{y ? ` ${y}` : ''} {'·'} delivered revenue</Tip></small>
         <div className="big num">{compactMoney(year.actual, currency)}</div>
         <div className="of">{year.target === null ? 'No North Star target set yet' : `of ${wholeMoney(year.target, currency)} this year`}</div>
         {year.percent !== null && (
@@ -73,7 +72,7 @@ export function LadderCard({ ladder, asOfDate }: { ladder: Ladder; asOfDate: str
         <RungView label={asOfDate ? `Q${quarterOf(asOfDate)} target` : 'Quarter target'} info={INFO.quarter} rung={quarter} currency={currency} />
         <RungView label={asOfDate ? `${monthName(asOfDate)} target` : 'Month target'} info={INFO.month} rung={month} currency={currency} />
         <div className="rung">
-          <small>Today's target <InfoTip info={INFO.today} /></small>
+          <small><Tip info={INFO.today}>Today's target</Tip></small>
           <div className="v num">{compactMoney(day.actual, currency)} <Tag tone={dayTag.tone}>{dayTag.label}</Tag></div>
           <div className="t">
             {day.target === null ? 'No target set' : `of ${hundredsMoney(day.target, currency)}`} {'\u00B7'} {day.deliveredOrders} delivered so far

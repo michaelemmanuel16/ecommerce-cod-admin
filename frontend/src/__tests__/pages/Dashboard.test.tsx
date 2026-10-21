@@ -127,15 +127,43 @@ describe('Dashboard data state (M3-T39, M3-T40)', () => {
     expect(await screen.findByText('ORDER PAGE')).toBeInTheDocument();
   });
 
-  it('every figure has an info tooltip with name, formula and date basis', async () => {
+  it('the label itself carries the tooltip (name, formula, date basis); no icon button', async () => {
     getOwner.mockResolvedValue(data());
     renderPage();
-    const button = await screen.findByRole('button', { name: /About Confirmation rate/ });
-    await userEvent.hover(button);
+    const label = (await screen.findByText('Confirmation rate')).closest('.tiplabel') as HTMLElement;
+    expect(label).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /^About / })).toBeNull();
+    await userEvent.hover(label);
     const tip = await screen.findByRole('tooltip');
     expect(tip).toHaveTextContent('Confirmation rate');
     expect(tip).toHaveTextContent('Formula');
     expect(tip).toHaveTextContent('Date basis');
+    expect(label).toHaveAttribute('aria-describedby', tip.id);
+    await userEvent.unhover(label);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('a label that is not a link takes focus and shows the tooltip on focus', async () => {
+    getOwner.mockResolvedValue(data());
+    renderPage();
+    const label = (await screen.findByText('Delivered revenue vs target')).closest('.tiplabel') as HTMLElement;
+    expect(label).toHaveAttribute('tabindex', '0');
+    act(() => label.focus());
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Date basis');
+  });
+
+  it('cash tile: "38 orders over 8 days" and Chase; without overdue orders "Held by N partners" and no tag', async () => {
+    getOwner.mockResolvedValue(data());
+    const { unmount } = renderPage();
+    expect(await screen.findByText('38 orders over 8 days')).toBeInTheDocument();
+    expect(screen.getByText('Chase')).toBeInTheDocument();
+    unmount();
+    const d = data();
+    d.tiles.cash.overdueOrders = 0;
+    getOwner.mockResolvedValue(d);
+    renderPage();
+    expect(await screen.findByText('Held by 5 partners')).toBeInTheDocument();
+    expect(screen.queryByText('Chase')).toBeNull();
   });
 
   it('permission-trimmed response: no cash tile, no recent orders block', async () => {

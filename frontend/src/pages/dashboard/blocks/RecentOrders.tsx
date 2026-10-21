@@ -8,7 +8,7 @@ import { INFO } from '../copy';
 import { initials, orderNumber } from '../format';
 import { PageLink } from '../links';
 import { PATHS } from '../paths';
-import { BlockFrame, InfoTip } from './Frame';
+import { BlockFrame, Tip } from './Frame';
 import type { Block, RecentOrder } from '../types';
 
 const STATUS_TONE: Record<string, TagTone> = {
@@ -66,7 +66,7 @@ export function RecentOrdersCard({ orders, loading, failed, onRetry }: RecentOrd
       {(rows) => (
         <div className="card">
           <div className="ct">
-            <h3>Recent orders <InfoTip info={INFO.recentOrders} /></h3>
+            <h3><Tip info={INFO.recentOrders}>Recent orders</Tip></h3>
             <PageLink to={PATHS.orders} className="mini">View all</PageLink>
           </div>
           {rows.length === 0 ? (

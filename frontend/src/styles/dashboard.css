@@ -47,10 +47,6 @@
 .v2 .quest b{display:block;font-size:13.5px}
 .v2 .quest small{color:var(--ink-3);font-size:smaller} /* the mockup has no reset: <small> is 83%, Tailwind's preflight makes it 80% */
 .v2 .quest .prog{margin-top:8px}
-.v2 .quest{position:relative}
-/* new: the (i) sits in the card corner so a long title keeps its line */
-.v2 .quest .infotip{position:absolute;top:8px;right:8px;width:14px;margin:0}
-.v2 .quest .infotip svg.lucide{width:13px;height:13px}
 
 /* tiles: three when the viewer has no financial:view (new) */
 .v2 .kpis.three{grid-template-columns:repeat(3,1fr)}
@@ -90,14 +86,12 @@
 .v2 td small.note{display:block;color:var(--ink-3);font-size:12px;margin-top:2px}
 .v2 .emptyrow{padding:24px 20px;color:var(--ink-3)}
 
-/* new: links inside labels look like the label; the info (i) beside a figure and its bubble */
+/* new: links inside labels look like the label, and the tooltip bubble */
 .v2 a.plain{color:inherit;text-decoration:none}
 .v2 a.plain:hover{text-decoration:underline}
-.v2 .infotip{display:inline-grid;place-items:center;width:16px;height:16px;margin-left:5px;vertical-align:-2px;border-radius:50%;color:var(--ink-3)}
-.v2 .infotip svg.lucide{width:14px;height:14px}
-.v2 .ns .infotip{color:inherit}
-.v2 .infotip:hover{color:var(--ink)}
-.v2 .ns .infotip:hover{color:inherit;opacity:1}
+/* new: a label with a tooltip (name, formula, date basis); no icon, only the help cursor */
+.v2 .tiplabel{cursor:help}
+.v2 .ct h3 .tiplabel{color:inherit;font-size:inherit} /* .ct span would grey a title */
 .v2 .infobubble{position:fixed;width:280px;max-width:calc(100vw - 16px);z-index:95;display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:12px;background:var(--ink);color:var(--bg);box-shadow:var(--shadow);font:500 12.5px/1.45 "Plus Jakarta Sans",system-ui,sans-serif;pointer-events:none}
 .v2 .infobubble b{font-weight:700;font-size:13px}
 .v2 .infobubble em{font-style:normal;font-weight:700;opacity:.7;margin-right:4px}
@@ -113,6 +107,11 @@
   .v2 .kpis.three{grid-template-columns:repeat(2,1fr)}
 }
 @media (max-width:760px){
+  /* the range menu stays on the greeting row, at the right, as in the mockup; the "Updated" text gives way */
+  .v2 .dash .head{flex-wrap:nowrap;align-items:flex-start}
+  .v2 .dash .head > div:first-child{flex:1 1 0;min-width:0}
+  .v2 .dash .headtools{flex:none;flex-wrap:nowrap}
+  .v2 .updated{display:none}
   .v2 .rungs,.v2 .quests{grid-template-columns:1fr}
   .v2 .kpis.three{grid-template-columns:1fr}
 }

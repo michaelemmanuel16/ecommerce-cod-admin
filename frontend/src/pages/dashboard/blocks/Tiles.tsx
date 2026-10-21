@@ -5,11 +5,10 @@ import { INFO, RATE_TAG, type Info } from '../copy';
 import { compactMoney, plural, weekdayName, wholePercent } from '../format';
 import { PageLink } from '../links';
 import { PATHS } from '../paths';
-import { InfoTip } from './Frame';
 import type { Tiles } from '../types';
 
 function Label({ text, to, info }: { text: string; to: string | null; info: Info }) {
-  return <><PageLink to={to} className="plain">{text}</PageLink><InfoTip info={info} /></>;
+  return <PageLink to={to} className="plain" tip={info}>{text}</PageLink>;
 }
 
 /** Four driver tiles (F-204). The cash tile is missing from the response without financial:view, then three tiles show. */
@@ -70,7 +69,13 @@ export function TilesRow({ tiles }: { tiles: Tiles }) {
           tone="gold"
           value={compactMoney(cash.value, tiles.currency)}
           label={<Label text="Cash still with agents" to={PATHS.finance} info={INFO.cash} />}
-          footer={<span>Held by {plural(cash.partners, 'partner')}</span>}
+          footer={
+            cash.overdueOrders ? (
+              <><span>{plural(cash.overdueOrders, 'order')} over 8 days</span><Tag tone="warn">Chase</Tag></>
+            ) : (
+              <span>Held by {plural(cash.partners, 'partner')}</span>
+            )
+          }
         />
       )}
     </div>

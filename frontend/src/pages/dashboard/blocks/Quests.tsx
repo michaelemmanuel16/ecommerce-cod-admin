@@ -6,7 +6,6 @@ import { compactMoney, hundredsMoney, wholePercent } from '../format';
 import { PageLink } from '../links';
 import { PATHS } from '../paths';
 import { parseMoney } from '../../../utils/money';
-import { InfoTip } from './Frame';
 import type { QuestItem, Quests } from '../types';
 
 const QUEST = {
@@ -43,7 +42,7 @@ export function QuestsRow({ quests, currency }: { quests: Quests; currency: stri
           <div key={q.key} className={clsx('card quest', done && 'done')}>
             <div className="ck">{done ? <Check /> : meta.icon}</div>
             <div className="qbody">
-              <b><PageLink to={meta.to} className="plain">{meta.title}</PageLink><InfoTip info={meta.info} /></b>
+              <b><PageLink to={meta.to} className="plain" tip={meta.info}>{meta.title}</PageLink></b>
               <small>{detail(q, currency)}</small>
               <div className="prog">
                 <i className={BAR_OF_TONE[q.tone]} style={{ width: `${Math.min(Math.max(q.percent ?? 0, 0), 100)}%` }} />

@@ -119,6 +119,16 @@ describe('tiles on the fixture (F-204)', () => {
     expect(kpi).toMatchObject({ value: '23400.00', unit: 'money', formulaId: 'cash.heldByPartners.v1' });
   });
 
+  it('cash tile counts the orders behind the cash that were delivered more than 8 days ago (overdueOrders)', async () => {
+    const { cash: tile } = (await dash()).tiles;
+    const expected = await prismaBase.order.count({
+      where: { tenantId, deletedAt: null, status: 'delivered', paymentStatus: 'collected', deliveryDate: { lt: new Date(FIXTURE_NOW.getTime() - 8 * 86_400_000) } },
+    });
+    expect(tile.overdueOrders).toBe(expected);
+    expect(expected).toBeGreaterThan(0);
+    expect(tile.overdueOrders).toBe((await cash.cashHeldByPartners(tenantId)).detail?.overdueOrders);
+  });
+
   it('the rates follow the range: today covers 17 October only', async () => {
     const { tiles } = await dash({ range: 'today' });
     expect(tiles.range).toEqual({ from: '2026-10-17', to: '2026-10-17' });

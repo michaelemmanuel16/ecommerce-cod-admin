@@ -1,6 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Info } from 'lucide-react';
 import { Button, Skeleton } from '../../../components/ui-v2';
 import { isBlockError, type Block } from '../types';
 import type { Info as InfoCopy } from '../copy';
@@ -48,18 +47,20 @@ export function SkeletonCard({ height }: { height: number }) {
 }
 
 /**
- * The (i) beside a figure: name, formula and date basis (F-200). Opens on hover and keyboard focus, closes on Escape.
- * The bubble sits in a portal with fixed coordinates, because the target ladder clips its children (overflow hidden).
+ * The tooltip of a figure's label: name, formula and date basis (F-200). The label itself takes focus (tabIndex 0),
+ * shows the tooltip on hover and keyboard focus, and closes on Escape. `linked`: the label is already a link, which is
+ * the focus stop, so the wrapper adds none. The bubble sits in a portal with fixed coordinates, because the target
+ * ladder clips its children (overflow hidden).
  */
-export function InfoTip({ info }: { info: InfoCopy }) {
+export function Tip({ info, linked, children }: { info: InfoCopy; linked?: boolean; children: ReactNode }) {
   const id = useId();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  const button = useRef<HTMLButtonElement>(null);
+  const label = useRef<HTMLSpanElement>(null);
 
   useLayoutEffect(() => {
-    if (!open || !button.current) return;
-    const r = button.current.getBoundingClientRect();
+    if (!open || !label.current) return;
+    const r = label.current.getBoundingClientRect();
     const width = 280;
     const left = Math.min(Math.max(8, r.left + r.width / 2 - width / 2), Math.max(8, window.innerWidth - width - 8));
     setPos({ left, top: r.bottom + 8 });
@@ -74,19 +75,18 @@ export function InfoTip({ info }: { info: InfoCopy }) {
 
   return (
     <>
-      <button
-        ref={button}
-        type="button"
-        className="infotip"
-        aria-label={`About ${info.name}`}
-        aria-describedby={open ? id : undefined}
+      <span
+        ref={label}
+        className="tiplabel"
+        tabIndex={linked ? undefined : 0}
+        aria-describedby={id}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
       >
-        <Info />
-      </button>
+        {children}
+      </span>
       {open && createPortal(
         <div className="v2">
           <div id={id} role="tooltip" className="infobubble" style={pos ? { left: pos.left, top: pos.top } : { visibility: 'hidden' }}>

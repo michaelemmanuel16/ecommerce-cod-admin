@@ -40,6 +40,9 @@ export function compactNumber(value: number): string {
   return `${sign}${trim(abs, 0)}`;
 }
 
+/** Whole thousands for a gap against the pace: 6,700 -> "7k" (the mockup's "−7k vs pace"). */
+export const gapNumber = (abs: number): string => compactNumber(abs >= 1000 && abs < 1_000_000 ? Math.round(abs / 1000) * 1000 : abs);
+
 /** "GH₵1.38M", "GH₵92k", "GH₵4.2k", "GH₵850": the short money of the mockup. */
 export function compactMoney(value: Money | null | undefined, currency: string): string {
   return `${getCurrencySymbol(currency)}${compactNumber(parseMoney(value))}`;
