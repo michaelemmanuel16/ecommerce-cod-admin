@@ -207,7 +207,8 @@ describe('GET /api/orders/statuses', () => {
       'ready_for_pickup', 'out_for_delivery', 'delivered', 'digital_delivered', 'cancelled', 'returned', 'failed_delivery', 'payment_failed']));
   });
 
-  it('needs settings:view', async () => {
-    expect((await request(app).get('/api/orders/statuses').set(bearer(pair.a.users.salesRep.token))).status).toBe(403);
+  it('needs only orders:view: a call rep reads it, a request without a token does not', async () => {
+    expect((await request(app).get('/api/orders/statuses').set(bearer(pair.a.users.salesRep.token))).status).toBe(200);
+    expect((await request(app).get('/api/orders/statuses')).status).toBe(401);
   });
 });
