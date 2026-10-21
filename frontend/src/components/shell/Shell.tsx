@@ -10,6 +10,7 @@ import { AnnouncementBanner } from './AnnouncementBanner';
 import { PlanBanner } from './PlanBanner';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
+import { V2PageContext } from './useV2Page';
 
 // Roles whose app is not the admin shell: no platform or plan banners for them (F-108).
 const NO_BANNER_ROLES = ['sales_rep', 'delivery_agent'];
@@ -26,6 +27,8 @@ export function Shell() {
   const fetchCounts = useShellStore((s) => s.fetchCounts);
   const [collapsed, setCollapsed] = useSidebarCollapse('sidebarCollapsed');
   const [mobileOpen, setMobileOpen] = useState(false);
+  // true while a restyled v2 page is on screen (see useV2Page); old pages render inside .legacy-light
+  const [v2Page, setV2Page] = useState(false);
 
   useEffect(() => {
     if (!user?.isPlatformAdmin) fetchCounts();
@@ -54,7 +57,11 @@ export function Shell() {
               {showBanners && <AnnouncementBanner />}
               {showBanners && user?.role === 'super_admin' && !user.isPlatformAdmin && <PlanBanner />}
               {configLoaded ? (
-                <Outlet />
+                <V2PageContext.Provider value={setV2Page}>
+                  <div className={v2Page ? undefined : 'legacy-light'}>
+                    <Outlet />
+                  </div>
+                </V2PageContext.Provider>
               ) : (
                 <div aria-busy="true" aria-label="Loading">
                   <Skeleton width={260} height={34} />

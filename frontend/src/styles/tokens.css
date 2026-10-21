@@ -47,6 +47,29 @@
   --shadow-menu:0 18px 40px -16px rgba(0,0,0,.35);
 }
 
+/* Not-yet-restyled pages inside the dark shell render with the light tokens (the shell wraps them in .legacy-light,
+   see components/shell/Shell.tsx). Same values as :root above; scripts/check-tokens.mjs fails if they drift. */
+.legacy-light{
+  --pine:#0F5C55; --pine-2:#147066; --pine-soft:#E3F1EE;
+  --mint:#2FCB8B; --mint-soft:#DDF7EA;
+  --gold:#F2A93B; --gold-soft:#FFF1D9;
+  --coral:#EE5D52; --coral-soft:#FDE6E3;
+  --violet:#7C6CF2; --violet-soft:#ECEAFE;
+  --ink:#14211F; --ink-2:#4A5A57; --ink-3:#86948F;
+  --bg:#F4F7F6; --card:#FFFFFF; --line:#E4EAE8; --side:#FFFFFF; --hover:#F0F4F3;
+  --shadow:0 1px 2px rgba(20,33,31,.04),0 8px 24px -12px rgba(20,33,31,.10);
+  /* Values app.css writes inline. Named here so no component file needs a hex colour. */
+  --white:#FFFFFF;
+  --on-pine:#FFFFFF;
+  --ok-ink:#14975F;
+  --warn-ink:#B77612;
+  --veil:rgba(8,18,16,.45);
+  --shadow-pop:0 30px 80px -20px rgba(0,0,0,.5);
+  --shadow-drawer:-20px 0 50px -20px rgba(0,0,0,.25);
+  --shadow-menu:0 18px 40px -16px rgba(0,0,0,.35);
+}
+[data-theme="dark"] .v2 .legacy-light{background:var(--bg);color:var(--ink);border-radius:18px;padding:20px}
+
 /* base */
 .v2{font-family:"Plus Jakarta Sans",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
 .v2 *,.v2 *::before,.v2 *::after{box-sizing:border-box}

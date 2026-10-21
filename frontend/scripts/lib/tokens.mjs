@@ -17,5 +17,5 @@ function declarations(body) {
 
 export function readTokens(file) {
   const css = fs.readFileSync(file, 'utf8');
-  return { light: declarations(block(css, ':root')), dark: declarations(block(css, '[data-theme="dark"]')) };
+  return { light: declarations(block(css, ':root')), dark: declarations(block(css, '[data-theme="dark"]')), legacy: declarations(block(css, '.legacy-light')) };
 }

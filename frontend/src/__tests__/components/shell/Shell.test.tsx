@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Shell } from '../../../components/shell/Shell';
+import { useV2Page } from '../../../components/shell/useV2Page';
 import { useAuthStore } from '../../../stores/authStore';
 import { useConfigStore } from '../../../stores/configStore';
 import { useShellStore } from '../../../stores/shellStore';
@@ -29,6 +30,11 @@ function signIn(user = owner, menu = OWNER_MENU) {
   });
 }
 
+function RestyledPage() {
+  useV2Page();
+  return <p>Restyled page</p>;
+}
+
 function renderShell(path = '/orders') {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -36,6 +42,7 @@ function renderShell(path = '/orders') {
         <Route path="/login" element={<p>Login page</p>} />
         <Route element={<Shell />}>
           <Route path="orders" element={<p>Orders page</p>} />
+          <Route path="restyled" element={<RestyledPage />} />
           <Route path="customers" element={<p>Customers page</p>} />
         </Route>
       </Routes>
@@ -188,6 +195,19 @@ describe('Shell', () => {
       await screen.findByRole('link', { name: /Orders/ });
       expect(screen.queryByText('Maintenance tonight')).not.toBeInTheDocument();
       expect(platformService.getActiveAnnouncements).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('dark mode and old pages', () => {
+    it('wraps a not-restyled page in .legacy-light, so it stays light inside the dark shell', async () => {
+      renderShell('/orders');
+      expect((await screen.findByText('Orders page')).parentElement).toHaveClass('legacy-light');
+    });
+
+    it('a page that calls useV2Page opts in to dark: no wrapper', async () => {
+      renderShell('/restyled');
+      const page = await screen.findByText('Restyled page');
+      await waitFor(() => expect(page.parentElement).not.toHaveClass('legacy-light'));
     });
   });
 
