@@ -3,7 +3,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, DeclineReason, FailureReason } from '@prisma/client';
 import logger from '../utils/logger';
-import appEvents, { AppEvent, emitOrderCreatedEvent } from '../utils/appEvents';
+import appEvents, { AppEvent, emitOrderCreatedEvent, emitOrderDeletedEvent } from '../utils/appEvents';
 import { getSocketInstance } from '../utils/socketInstance';
 import {
   emitOrderCreated,
@@ -1248,6 +1248,7 @@ export class OrderService {
 
     // Trigger proactive aging refresh (non-blocking)
     appEvents.emit(AppEvent.ORDERS_DELETED);
+    emitOrderDeletedEvent(order);
 
     logger.info(`Order soft deleted: ${order.id} `, { orderId, userId });
     return { message: 'Order deleted successfully' };
@@ -1402,6 +1403,7 @@ export class OrderService {
 
     // Trigger proactive aging refresh (non-blocking)
     appEvents.emit(AppEvent.ORDERS_DELETED);
+    orders.forEach((o) => emitOrderDeletedEvent(o));
 
     return {
       message: `Successfully deleted ${orders.length} order(s)`,

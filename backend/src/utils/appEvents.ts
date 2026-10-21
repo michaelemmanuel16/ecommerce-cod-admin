@@ -13,6 +13,7 @@ export enum AppEvent {
     ORDERS_DELETED = 'ORDERS_DELETED',
     ORDER_CREATED = 'order.created',
     ORDER_STATUS_CHANGED = 'order.status_changed',
+    ORDER_DELETED = 'order.deleted',
     // Add more as needed
 }
 
@@ -39,9 +40,15 @@ export interface OrderStatusChangedEvent extends OrderEventBase {
     deliveryDate?: Date | null;
 }
 
+/** A soft-deleted order. It carries the customer because the listener cannot count a deleted order back to its customer. */
+export interface OrderDeletedEvent extends OrderEventBase {
+    customerId: number;
+}
+
 interface OrderEventMap {
     [AppEvent.ORDER_CREATED]: OrderCreatedEvent;
     [AppEvent.ORDER_STATUS_CHANGED]: OrderStatusChangedEvent;
+    [AppEvent.ORDER_DELETED]: OrderDeletedEvent;
 }
 
 /**
@@ -66,6 +73,13 @@ export function emitOrderCreatedEvent(
 ): void {
     emitOrderEvent(AppEvent.ORDER_CREATED, {
         orderId: order.id, tenantId: resolveTenantId(order.tenantId), status: order.status, ...opts,
+    });
+}
+
+/** Emit `order.deleted` for a soft-deleted order, after the transaction commits. */
+export function emitOrderDeletedEvent(order: { id: number; tenantId?: string | null; customerId: number }): void {
+    emitOrderEvent(AppEvent.ORDER_DELETED, {
+        orderId: order.id, tenantId: resolveTenantId(order.tenantId), customerId: order.customerId,
     });
 }
 
