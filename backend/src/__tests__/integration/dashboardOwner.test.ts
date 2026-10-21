@@ -15,8 +15,8 @@ import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { generateAccessToken } from '../../utils/jwt';
-import { seedFixture, deleteFixtureRows, FIXTURE_SLUG } from '../fixtures/numbersFixture';
-import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { seedFixture, deleteFixtureRows, FIXTURE_SLUG, OVERDUE_OPEN_COLLECTIONS } from '../fixtures/numbersFixture';
+import { createTenant, createTwoTenants, deleteTenantRows, type TestTenant, type TwoTenants } from './helpers/twoTenants';
 import { deliveredRevenue } from '../../services/kpi/revenue';
 import { endOfDay, startOfDay } from '../../services/kpi/dates';
 import * as cash from '../../services/kpi/cash';
@@ -119,13 +119,10 @@ describe('tiles on the fixture (F-204)', () => {
     expect(kpi).toMatchObject({ value: '23400.00', unit: 'money', formulaId: 'cash.heldByPartners.v1' });
   });
 
-  it('cash tile counts the orders behind the cash that were delivered more than 8 days ago (overdueOrders)', async () => {
+  it('cash tile counts the open partner collections older than 8 days: 38 (overdueOrders)', async () => {
     const { cash: tile } = (await dash()).tiles;
-    const expected = await prismaBase.order.count({
-      where: { tenantId, deletedAt: null, status: 'delivered', paymentStatus: 'collected', deliveryDate: { lt: new Date(FIXTURE_NOW.getTime() - 8 * 86_400_000) } },
-    });
-    expect(tile.overdueOrders).toBe(expected);
-    expect(expected).toBeGreaterThan(0);
+    expect(tile.overdueOrders).toBe(OVERDUE_OPEN_COLLECTIONS);
+    expect(OVERDUE_OPEN_COLLECTIONS).toBe(38);
     expect(tile.overdueOrders).toBe((await cash.cashHeldByPartners(tenantId)).detail?.overdueOrders);
   });
 
@@ -217,6 +214,55 @@ describe('HTTP guards', () => {
     const res = await get(adminToken, 'asOf=2026-12-31');
     expect(res.status).toBe(200);
     expect(res.body.header.asOfDate).toBe('2026-10-17');
+  });
+});
+
+describe('cash.cashHeldByPartners overdueOrders (COD-26)', () => {
+  let both: TwoTenants;
+  let a: TestTenant;
+  let b: TestTenant;
+  const daysAgo = (d: number) => new Date(FIXTURE_NOW.getTime() - d * 86_400_000);
+
+  /** One order plus one AgentCollection for it, written with an explicit tenantId (as the harness does). */
+  async function collection(t: TestTenant, opts: { status: 'draft' | 'verified' | 'approved' | 'deposited' | 'reconciled'; days: number; allocated?: number; deleted?: boolean }) {
+    const order = await prismaBase.order.create({
+      data: {
+        customerId: t.ids.customer, deliveryAgentId: t.users.deliveryAgent.id, status: 'delivered', paymentStatus: 'collected',
+        subtotal: 100, shippingCost: 0, totalAmount: 100, codAmount: 100, deliveryAddress: '1 Test Street', deliveryState: 'Greater Accra',
+        deliveryArea: 'Accra', deliveryDate: daysAgo(opts.days), deletedAt: opts.deleted ? FIXTURE_NOW : null, tenantId: t.id,
+      },
+    });
+    await prismaBase.agentCollection.create({
+      data: {
+        orderId: order.id, agentId: t.users.deliveryAgent.id, amount: 100, allocatedAmount: opts.allocated ?? 0,
+        status: opts.status, collectionDate: daysAgo(opts.days), tenantId: t.id,
+      },
+    });
+  }
+
+  beforeAll(async () => {
+    both = await createTwoTenants('cash-overdue');
+    ({ a, b } = both);
+    // Counted: draft, verified, approved, and a part-paid approved one, all older than 8 days.
+    await collection(a, { status: 'draft', days: 9 });
+    await collection(a, { status: 'verified', days: 10 });
+    await collection(a, { status: 'approved', days: 12 });
+    await collection(a, { status: 'approved', days: 20, allocated: 40 });
+    // Not counted: cash no longer with the partner, newer than 8 days, soft-deleted order.
+    await collection(a, { status: 'deposited', days: 15 });
+    await collection(a, { status: 'reconciled', days: 15 });
+    await collection(a, { status: 'approved', days: 7 });
+    await collection(a, { status: 'draft', days: 2 });
+    await collection(a, { status: 'approved', days: 30, deleted: true });
+    // Another tenant's old open rows must not reach A.
+    await collection(b, { status: 'approved', days: 30 });
+    await collection(b, { status: 'draft', days: 11 });
+  });
+  afterAll(async () => { await both.cleanup(); });
+
+  it('counts open collections older than 8 days (part-paid approved included) and nothing else, per tenant', async () => {
+    expect((await cash.cashHeldByPartners(a.id)).detail?.overdueOrders).toBe(4);
+    expect((await cash.cashHeldByPartners(b.id)).detail?.overdueOrders).toBe(2);
   });
 });
 

@@ -26,9 +26,12 @@ export async function cashHeldByPartners(tenantId: string): Promise<KpiResult<st
         _sum: { currentBalance: true },
         _count: { _all: true },
       }),
-      // The orders behind the cash: delivered, collected by the partner, not yet deposited, delivered more than 8 days ago.
-      // (AgentBalance has no order link, so the orders come from Order.paymentStatus 'collected'.)
-      prisma.order.count({ where: { deletedAt: null, status: 'delivered', paymentStatus: 'collected', deliveryDate: { lt: overdueBefore } } }),
+      // The orders behind the cash: per-order AgentCollection rows the partner still holds (draft, verified, approved; a
+      // part-paid row stays approved) with a collectionDate older than 8 days. Differs on purpose from agingService, which
+      // keeps `deposited` as outstanding until reconciled: here a deposited collection is no longer with the partner.
+      prisma.agentCollection.count({
+        where: { status: { in: ['draft', 'verified', 'approved'] }, collectionDate: { lt: overdueBefore }, order: { deletedAt: null } },
+      }),
     ]);
     return {
       name: 'Cash held by partners', value: Money.toApi(Money.orZero(held._sum.currentBalance)), unit: 'money', currency,

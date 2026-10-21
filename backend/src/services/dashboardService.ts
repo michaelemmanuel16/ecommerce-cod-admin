@@ -272,7 +272,7 @@ async function tilesBlock(c: Context) {
       tag: rateTag(success.value, successTarget), basis: 'cohort', yield: r.orderToCashYield.value,
       delivered: success.detail?.delivered ?? 0, closed: success.detail?.closed ?? 0,
     },
-    /** overdueOrders: orders behind the cash that were delivered more than 8 days ago ("38 orders over 8 days"). */
+    /** overdueOrders: partner collections still open (draft, verified or approved) and collected more than 8 days ago ("38 orders over 8 days"). */
     cash: { value: cash.value, partners: cash.detail?.partners ?? 0, overdueOrders: cash.detail?.overdueOrders ?? 0 },
   };
 }
