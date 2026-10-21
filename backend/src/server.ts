@@ -56,6 +56,7 @@ import workflowRoutes from './routes/workflowRoutes';
 import webhookRoutes from './routes/webhookRoutes';
 import analyticsRoutes from './routes/analyticsRoutes';
 import kpiRoutes from './routes/kpiRoutes';
+import dashboardRoutes from './routes/dashboardRoutes';
 import reportRoutes from './routes/reportRoutes';
 import repRoutes from './routes/repRoutes';
 import notificationRoutes from './routes/notificationRoutes';
@@ -97,6 +98,7 @@ import cron from 'node-cron';
 import './queues/workflowQueue';
 import { registerWorkflowListeners } from './services/workflowService';
 import { registerCustomerStatsListeners } from './services/customerStatsService';
+import { registerDashboardCacheListeners } from './services/dashboardService';
 import './queues/emailCampaignQueue';
 
 import { setupAgingCron } from './queues/agingQueue';
@@ -129,6 +131,8 @@ try {
 registerWorkflowListeners();
 // Customer stats are rebuilt from the same events (F-357)
 registerCustomerStatsListeners();
+// The Dashboard cache (30 s) is dropped on the same events (M3-T10)
+registerDashboardCacheListeners();
 
 const app: Application = express();
 const server = http.createServer(app);
@@ -250,6 +254,7 @@ app.use('/api/workflows', apiLimiter, workflowRoutes);
 app.use('/api/webhooks', apiLimiter, webhookRoutes);
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
 app.use('/api/kpi', apiLimiter, kpiRoutes);
+app.use('/api/dashboard', apiLimiter, dashboardRoutes);
 app.use('/api/reports', apiLimiter, reportRoutes);
 app.use('/api/rep', apiLimiter, repRoutes);
 app.use('/api/notifications', apiLimiter, notificationRoutes);
