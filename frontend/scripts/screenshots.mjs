@@ -92,7 +92,21 @@ async function main() {
         await page.waitForTimeout(600);
         const size = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
         const file = shotName(def.name, theme, width);
-        await page.screenshot({ path: path.join(out, file), fullPage: true });
+        // the wait for fonts sometimes stalls on one page: reload and try once more, then note it and go on
+        const shoot = () => page.screenshot({ path: path.join(out, file), fullPage: true, timeout: 30000 });
+        try {
+          await shoot();
+        } catch {
+          await page.reload({ waitUntil: 'load', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(600);
+          try {
+            await shoot();
+          } catch {
+            errors.push('screenshot timed out twice (font wait)');
+            console.log(`FAILED   ${file}`);
+            continue;
+          }
+        }
         const sideways = scrollsSideways(size);
         shots.push({ page: def.name, theme, width, file, ...size, sideways, errors: [...errors] });
         console.log(`${sideways ? 'SIDEWAYS ' : 'ok       '}${file}${errors.length ? `  (${errors.length} console errors)` : ''}`);
