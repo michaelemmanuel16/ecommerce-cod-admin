@@ -22,6 +22,7 @@ import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
 import { Dashboard } from './pages/Dashboard';
+import { SettingsTabRedirect } from './pages/settings/SettingsTabRedirect';
 // Lazy load all other pages for better initial load performance
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
 const OrdersRoute = lazy(() => import('./pages/orders/OrdersRoute').then(m => ({ default: m.OrdersRoute })));
@@ -48,7 +49,6 @@ const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
 const Communications = lazy(() => import('./pages/Communications'));
-const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
 const SubscriptionCallback = lazy(() => import('./pages/SubscriptionCallback').then(m => ({ default: m.SubscriptionCallback })));
 const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
 const PlatformDashboard = lazy(() => import('./pages/PlatformDashboard').then(m => ({ default: m.PlatformDashboard })));
@@ -320,9 +320,8 @@ function App() {
             <Route path="settings" element={
               <Suspense fallback={<Loading />}><Settings /></Suspense>
             } />
-            <Route path="settings/billing" element={
-              <Suspense fallback={<Loading />}><Billing /></Suspense>
-            } />
+            {/* Billing is a Settings tab now (M3-T65); old links and the Paystack return land there. */}
+            <Route path="settings/billing" element={<SettingsTabRedirect tab="billing" />} />
             <Route path="settings/billing/callback" element={
               <SaasRoute><Suspense fallback={<Loading />}><SubscriptionCallback /></Suspense></SaasRoute>
             } />

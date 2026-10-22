@@ -7,6 +7,9 @@ export interface SystemConfig {
   businessEmail?: string;
   businessPhone?: string;
   businessAddress?: string;
+  supportWhatsapp?: string | null;
+  contactPerson?: string | null;
+  timeZone?: string;
   taxId?: string;
   currency: string;
   operatingHours?: {

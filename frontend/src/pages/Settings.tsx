@@ -10,12 +10,13 @@ import { UserManagementTable } from '../components/admin/UserManagementTable';
 import { RolePermissionsMatrix } from '../components/admin/RolePermissionsMatrix';
 import { IntegrationsPanel } from '../components/settings/IntegrationsPanel';
 import { CurrenciesFxPanel } from '../components/settings/CurrenciesFxPanel';
-import { LegacyBusinessPanel } from '../components/settings/LegacyBusinessPanel';
 import { LegacyCheckoutFormsPanel } from '../components/settings/LegacyCheckoutFormsPanel';
-import { Billing } from './Billing';
 import { NoAccess } from './NoAccess';
 import { ProfileTab } from './settings/ProfileTab';
 import { SecurityTab } from './settings/SecurityTab';
+import { BusinessTab } from './settings/BusinessTab';
+import { StatusesTab } from './settings/StatusesTab';
+import { BillingTab } from './settings/BillingTab';
 import { SETTINGS_TABS, type SettingsTab, type TabDef } from './settings/tabs';
 
 const KNOWN: SettingsTab[] = SETTINGS_TABS.map((t) => t.id);
@@ -52,8 +53,9 @@ function NotificationsPointer() {
 
 /**
  * The Settings shell (M3-T63, F-1220): a section menu built from the person's permissions, and the open section
- * at the right. The section is in the URL (?tab=), so a link opens the same one. Business details, Currencies and
- * FX, Billing and the old owner tabs show their old content here until M3-T65 and M3-T66 replace it.
+ * at the right. The section is in the URL (?tab=), so a link opens the same one. The owner tabs that have no new
+ * home yet (User management, Role permissions, Integrations with the AI Assistant card, Checkout forms) keep their
+ * old content here (F-1237), and so does Currencies and FX.
  */
 export function Settings() {
   useV2Page();
@@ -107,15 +109,16 @@ export function Settings() {
     switch (tab) {
       case 'profile': return <ProfileTab />;
       case 'security': return <SecurityTab />;
-      case 'business': return isSuperAdmin ? <Old><LegacyBusinessPanel systemConfig={systemConfig} onSaved={loadSystemConfig} /></Old> : <ViewOnly />;
+      case 'business': return isSuperAdmin ? <BusinessTab systemConfig={systemConfig} onSaved={loadSystemConfig} onOpenCurrencies={() => open('currencies')} /> : <ViewOnly />;
       case 'currencies':
         return isSuperAdmin ? (
           <Old>
             <CurrenciesFxPanel onStoreCurrencySaved={() => { loadSystemConfig(); useConfigStore.getState().fetchConfig(); }} />
           </Old>
         ) : <ViewOnly />;
+      case 'statuses': return <StatusesTab />;
       case 'notifications': return <NotificationsPointer />;
-      case 'billing': return <Old><Billing /></Old>;
+      case 'billing': return <BillingTab />;
       case 'users': return <Old><UserManagementTable /></Old>;
       case 'permissions': return <Old><RolePermissionsMatrix /></Old>;
       case 'integrations': return <Old><IntegrationsPanel systemConfig={systemConfig} onConfigSaved={loadSystemConfig} /></Old>;

@@ -3,7 +3,7 @@ import { State } from 'country-state-city';
 import { getRegionsForCountry, SUPPORTED_CURRENCIES, getCurrencyOptionLabel, getCurrencySymbol } from '../countries';
 import { ORDER_STATUS_LABELS } from '../orderStatus';
 import { ORDER_STATUS_CONFIG } from '../constants';
-import settingsSource from '../../components/settings/LegacyBusinessPanel.tsx?raw';
+import settingsSource from '../../components/settings/CurrenciesFxPanel.tsx?raw';
 import onboardingSource from '../../pages/Onboarding.tsx?raw';
 
 // M1-T03. The GH and NG counts are the same as backend/src/__tests__/unit/regions.test.ts. If the two
