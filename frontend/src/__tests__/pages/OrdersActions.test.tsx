@@ -64,7 +64,7 @@ beforeEach(() => {
     permissions: { orders: ['view', 'update', 'assign', 'delete', 'create', 'bulk_import'] },
   });
   answer();
-  svc.getTransitions.mockResolvedValue({ status: 'pending_confirmation', normal: ['confirmed', 'cancelled'], forced: ['delivered'] });
+  svc.getTransitions.mockResolvedValue({ status: 'pending_confirmation', normal: ['confirmed', 'cancelled'], forced: ['out_for_delivery', 'delivered'] });
 });
 
 describe('Orders actions: row status menu (M3-T44, F-313)', () => {
@@ -119,28 +119,37 @@ describe('Orders actions: row status menu (M3-T44, F-313)', () => {
     await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24112, 'failed_delivery', undefined, { failureReason: 'rescheduled', nextAttemptDate: next.value }));
   });
 
-  it('a forced move saves with an empty reason (COD-139)', async () => {
+  it('a forced move to Delivered saves at once, with no reason dialog (COD-139)', async () => {
     svc.updateOrderStatus.mockResolvedValue({});
     renderPage();
     await userEvent.click(await screen.findByRole('button', { name: /Change status of #24113/ }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Delivered' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Move #24113 to Delivered' });
+    await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'delivered', undefined, { force: true }));
+    expect(screen.queryByRole('dialog', { name: 'Move #24113 to Delivered' })).not.toBeInTheDocument();
+  });
+
+  it('another forced move saves with an empty reason (COD-139)', async () => {
+    svc.updateOrderStatus.mockResolvedValue({});
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /Change status of #24113/ }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Out for delivery' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Move #24113 to Out for delivery' });
     expect(within(dialog).getByLabelText('Reason (optional)')).toBeInTheDocument();
-    const save = within(dialog).getByRole('button', { name: 'Move to Delivered' });
+    const save = within(dialog).getByRole('button', { name: 'Move to Out for delivery' });
     expect(save).toBeEnabled();
     await userEvent.click(save);
-    await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'delivered', undefined, { force: true }));
+    await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'out_for_delivery', undefined, { force: true }));
   });
 
   it('a forced move sends a short reason as typed', async () => {
     svc.updateOrderStatus.mockResolvedValue({});
     renderPage();
     await userEvent.click(await screen.findByRole('button', { name: /Change status of #24113/ }));
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delivered' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Move #24113 to Delivered' });
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Out for delivery' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Move #24113 to Out for delivery' });
     await userEvent.type(within(dialog).getByLabelText('Reason (optional)'), 'oops');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Move to Delivered' }));
-    await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'delivered', undefined, { force: true, reason: 'oops' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Move to Out for delivery' }));
+    await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'out_for_delivery', undefined, { force: true, reason: 'oops' }));
   });
 
   it('a refused move shows the server sentence', async () => {

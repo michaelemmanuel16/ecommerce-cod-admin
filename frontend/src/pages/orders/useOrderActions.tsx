@@ -84,8 +84,10 @@ export function useOrderActions({ setSelected, refetch, setFocus }: Deps) {
 
   const moveStatus = useCallback((rows: OrderListRow[], target: OrderStatus, opts: { forced?: boolean; bulk?: boolean } = {}) => {
     const p = { rows, bulk: opts.bulk ?? false };
-    if (reasonKind(target) || opts.forced) setReason({ ...p, target, forced: opts.forced ?? false });
-    else void runMove(p, target, {});
+    // Owner 2026-10-22: Delivered never asks for a reason, even outside the normal flow (COD-139)
+    const ask = reasonKind(target) || (opts.forced && target !== 'delivered' && target !== 'digital_delivered');
+    if (ask) setReason({ ...p, target, forced: opts.forced ?? false });
+    else void runMove(p, target, opts.forced ? { force: true } : {});
   }, [runMove]);
 
   /* ---- assign (F-314) ---- */
