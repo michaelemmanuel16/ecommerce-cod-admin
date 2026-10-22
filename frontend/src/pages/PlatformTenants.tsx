@@ -11,14 +11,6 @@ import { usePlatformStore } from '../stores/platformStore';
 import { platformPath } from '../utils/platformDomain';
 import { getStoreCurrency } from '../utils/format';
 
-const PLAN_OPTIONS = [
-  { value: '', label: 'All Plans' },
-  { value: 'free', label: 'Free' },
-  { value: 'starter', label: 'Starter' },
-  { value: 'pro', label: 'Pro' },
-  { value: 'enterprise', label: 'Enterprise' },
-];
-
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
   { value: 'active', label: 'Active' },
@@ -41,9 +33,17 @@ export const PlatformTenants: React.FC = () => {
     tenantsPage,
     tenantsTotalPages,
     isLoading,
+    plans,
+    fetchPlans,
     fetchTenants,
     createTenant,
   } = usePlatformStore();
+
+  // The filter lists the live plans (F-140): free, growth, scale, enterprise.
+  const planOptions = [{ value: '', label: 'All Plans' }, ...plans.map((p) => ({ value: p.name, label: p.displayName }))];
+  useEffect(() => {
+    fetchPlans();
+  }, [fetchPlans]);
 
   const [search, setSearch] = useState('');
   const [plan, setPlan] = useState('');
@@ -143,7 +143,7 @@ export const PlatformTenants: React.FC = () => {
             onChange={(e) => setPlan(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {PLAN_OPTIONS.map((o) => (
+            {planOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
