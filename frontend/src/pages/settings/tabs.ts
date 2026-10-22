@@ -1,8 +1,8 @@
-import { BadgeDollarSign, CreditCard, FileText, Puzzle, Shield, ShieldCheck, Store, UserRound, Users, type LucideIcon } from 'lucide-react';
+import { BadgeDollarSign, Bell, CreditCard, FileText, Puzzle, Shield, ShieldCheck, Store, UserRound, Users, type LucideIcon } from 'lucide-react';
 import type { Action, Resource } from '../../types';
 
 export type SettingsTab =
-  | 'profile' | 'security' | 'business' | 'currencies' | 'billing'
+  | 'profile' | 'security' | 'business' | 'currencies' | 'notifications' | 'billing'
   | 'users' | 'permissions' | 'integrations' | 'checkout-forms';
 
 export interface TabAccess {
@@ -30,13 +30,14 @@ const updateSettings = (a: TabAccess) => a.can('settings', 'update');
 /**
  * The Settings sections in menu order. M3-T65 adds Order statuses (settings:view, settings:update) and
  * M3-T66 mounts Currencies and FX and the AI Assistant; later milestones add Operations, North Star and targets,
- * Rewards (M6) and Notifications (M9) by adding a row here.
+ * Rewards (M6) by adding a row here.
  */
 export const SETTINGS_TABS: TabDef[] = [
   { id: 'profile', label: 'Profile', icon: UserRound, group: 'main', visible: everyone, editable: everyone },
   { id: 'security', label: 'Security', icon: ShieldCheck, group: 'main', visible: everyone, editable: everyone },
   { id: 'business', label: 'Business details', icon: Store, group: 'main', visible: viewSettings, editable: updateSettings },
   { id: 'currencies', label: 'Currencies & FX', icon: BadgeDollarSign, group: 'main', visible: viewSettings, editable: updateSettings },
+  { id: 'notifications', label: 'Notifications', icon: Bell, group: 'main', visible: everyone, editable: everyone },
   { id: 'billing', label: 'Billing & plans', icon: CreditCard, group: 'main', visible: owner, editable: owner },
   { id: 'users', label: 'User management', icon: Users, group: 'moving', visible: owner, editable: owner },
   { id: 'permissions', label: 'Role permissions', icon: Shield, group: 'moving', visible: owner, editable: owner },

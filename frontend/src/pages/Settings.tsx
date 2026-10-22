@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useV2Page } from '../components/shell/useV2Page';
-import { Card } from '../components/ui-v2';
+import { Inbox } from 'lucide-react';
+import { Button, Card } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
 import { adminService, type SystemConfig } from '../services/admin.service';
 import { useConfigStore } from '../stores/configStore';
@@ -29,6 +30,22 @@ function ViewOnly() {
   return (
     <Card>
       <p className="setnote">You can view this section but not change it. The owner opens it in full.</p>
+    </Card>
+  );
+}
+
+/** Notifications (F-1227): a pointer to Inbox settings. The button turns on when Inbox ships (M9). */
+function NotificationsPointer() {
+  return (
+    <Card title="Notifications">
+      <div className="linkcard">
+        <span className="ico"><Inbox aria-hidden="true" /></span>
+        <div>
+          <b>Notification settings will live in Inbox</b>
+          <p>Inbox is coming soon.</p>
+        </div>
+        <Button variant="primary" disabled>Open Inbox settings</Button>
+      </div>
     </Card>
   );
 }
@@ -97,6 +114,7 @@ export function Settings() {
             <CurrenciesFxPanel onStoreCurrencySaved={() => { loadSystemConfig(); useConfigStore.getState().fetchConfig(); }} />
           </Old>
         ) : <ViewOnly />;
+      case 'notifications': return <NotificationsPointer />;
       case 'billing': return <Old><Billing /></Old>;
       case 'users': return <Old><UserManagementTable /></Old>;
       case 'permissions': return <Old><RolePermissionsMatrix /></Old>;

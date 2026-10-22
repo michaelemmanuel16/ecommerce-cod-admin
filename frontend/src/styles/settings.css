@@ -39,3 +39,10 @@
 .v2 .setnote{padding:14px 20px;color:var(--ink-2);font-size:13px}
 @media (max-width:900px){.v2 .setgrid{grid-template-columns:1fr}.v2 .subnav{position:static;flex-direction:row;overflow-x:auto}.v2 .subnav .nav{white-space:nowrap;width:auto}.v2 .subnav .navlabel{display:none}}
 @media (max-width:760px){.v2 .fields{grid-template-columns:1fr}.v2 .proftop{flex-wrap:wrap}}
+
+/* Notifications pointer (settings.html .linkcard) */
+.v2 .linkcard{display:flex;align-items:center;gap:14px;padding:18px 20px;flex-wrap:wrap}
+.v2 .linkcard .ico{width:44px;height:44px;border-radius:12px;background:var(--violet-soft);color:var(--violet);display:grid;place-items:center;flex:none}
+.v2 .linkcard p{color:var(--ink-2);font-size:13px}
+.v2 .linkcard .btn{margin-left:auto}
+.v2 .linkcard .btn:disabled{opacity:.5;cursor:not-allowed}

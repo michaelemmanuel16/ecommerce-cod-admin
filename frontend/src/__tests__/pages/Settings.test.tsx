@@ -77,20 +77,20 @@ describe('Settings shell: tabs by permission (F-1220)', () => {
   it('a sales rep sees Profile and Security only', () => {
     signIn('sales_rep');
     renderAt();
-    expect(tabNames()).toEqual(['Profile', 'Security']);
+    expect(tabNames()).toEqual(['Profile', 'Security', 'Notifications']);
   });
 
   it('an admin with settings:view sees the view-only tabs and no owner tabs', () => {
     signIn('admin', { settings: ['view'] });
     renderAt();
-    expect(tabNames()).toEqual(['Profile', 'Security', 'Business details', 'Currencies & FX']);
+    expect(tabNames()).toEqual(['Profile', 'Security', 'Business details', 'Currencies & FX', 'Notifications']);
   });
 
   it('the owner sees every tab, the old ones under "Moving soon"', () => {
     signIn('super_admin');
     renderAt();
     expect(tabNames()).toEqual([
-      'Profile', 'Security', 'Business details', 'Currencies & FX', 'Billing & plans',
+      'Profile', 'Security', 'Business details', 'Currencies & FX', 'Notifications', 'Billing & plans',
       'User management', 'Role permissions', 'Integrations', 'Checkout forms',
     ]);
     expect(screen.getByText('Moving soon')).toBeInTheDocument();
@@ -111,9 +111,17 @@ describe('Settings shell: tabs by permission (F-1220)', () => {
     expect(screen.getByTestId('where')).toHaveTextContent('/settings?tab=billing');
   });
 
-  it('an unknown or removed tab opens Profile', () => {
+  it('a sales rep opens Notifications: a pointer card with a disabled button', () => {
     signIn('sales_rep');
     renderAt('/settings?tab=notifications');
+    expect(screen.getByText('Notification settings will live in Inbox')).toBeInTheDocument();
+    expect(screen.getByText('Inbox is coming soon.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Inbox settings' })).toBeDisabled();
+  });
+
+  it('an unknown tab opens Profile', () => {
+    signIn('sales_rep');
+    renderAt('/settings?tab=nonsense');
     expect(screen.getByRole('heading', { name: 'Profile' })).toBeInTheDocument();
   });
 
