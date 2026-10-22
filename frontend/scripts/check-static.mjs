@@ -26,6 +26,9 @@ export const SCANNED = [
   'src/pages/dashboard',
   'src/styles/dashboard.css',
   'src/services/dashboard.service.ts',
+  'src/pages/Orders.tsx',
+  'src/pages/orders',
+  'src/styles/orders.css',
   // later tasks: 'src/pages/v2', ...
 ];
 

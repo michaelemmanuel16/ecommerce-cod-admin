@@ -7,6 +7,7 @@ import './styles/tokens.css';
 import './styles/components.css';
 import './styles/shell.css';
 import './styles/dashboard.css';
+import './styles/orders.css';
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({

@@ -25,18 +25,22 @@ interface OrdersState {
   setupSocketListeners: () => void;
 }
 
-// M3-T36: a status change (any client, same tenant) re-reads the list the page shows. Only when a list is
+// M3-T36: a change to an order (any client, same tenant) re-reads the list the page shows. Only when a list is
 // loaded, and without the loading flag, so the table does not flash.
-async function refetchOnStatusChange() {
+async function refetchOnOrderEvent() {
   const { orders: loaded, filters } = useOrdersStore.getState();
   if (loaded.length === 0) return;
   try {
     const { orders, pagination } = await ordersService.getOrders(filters);
     useOrdersStore.setState({ orders, pagination });
   } catch (error) {
-    console.error('[OrdersStore] Refresh after order:status_changed failed:', error);
+    console.error('[OrdersStore] Refresh after an order event failed:', error);
   }
 }
+
+// M3-T42: the names the backend emits (sockets/index.ts). The singular `order:created` and `order:updated` carry the
+// raw order and `orders:deleted` carries `{ orderIds }`, so none of them can be put into the list as it is: re-read.
+const REFETCH_EVENTS = ['order:created', 'order:updated', 'order:status_changed', 'order:assigned'] as const;
 
 export const useOrdersStore = create<OrdersState>((set, get) => ({
   orders: [],
@@ -147,33 +151,11 @@ export const useOrdersStore = create<OrdersState>((set, get) => ({
     const socket = getSocket();
     if (!socket) return;
 
-    // Remove existing listeners to prevent duplicates
-    socket.off('orders:created');
-    socket.off('orders:updated');
-    socket.off('orders:deleted');
-    // Remove only this store's handler: other stores and the toast also listen for this event.
-    socket.off('order:status_changed', refetchOnStatusChange);
+    // Remove only this store's handlers: other stores and the toast also listen for these events.
+    REFETCH_EVENTS.forEach((e) => socket.off(e, refetchOnOrderEvent));
+    socket.off('orders:deleted', refetchOnOrderEvent);
 
-    // Listen for order events
-    socket.on('orders:created', (data: { order: Order }) => {
-      console.log('[OrdersStore] Received orders:created event', data);
-      get().addOrder(data.order);
-    });
-
-    socket.on('orders:updated', (data: { order: Order }) => {
-      console.log('[OrdersStore] Received orders:updated event', data);
-      get().updateOrder(data.order.id, data.order);
-    });
-
-    socket.on('orders:deleted', (data: { ids: number[] }) => {
-      console.log('[OrdersStore] Received orders:deleted event', data);
-      if (Array.isArray(data.ids)) {
-        data.ids.forEach(id => get().deleteOrder(id));
-      }
-    });
-
-    socket.on('order:status_changed', refetchOnStatusChange);
-
-    console.log('[OrdersStore] Socket listeners setup complete');
+    REFETCH_EVENTS.forEach((e) => socket.on(e, refetchOnOrderEvent));
+    socket.on('orders:deleted', refetchOnOrderEvent);
   },
 }));

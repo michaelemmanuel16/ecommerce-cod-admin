@@ -10,6 +10,67 @@ export interface StatusMoveExtras {
   reason?: string;
 }
 
+/** One row of GET /api/orders as the Orders list reads it (M3-T11: include=flags,reminder,threadCount). */
+export interface OrderListRow {
+  id: number;
+  status: OrderStatus;
+  totalAmount: number;
+  createdAt: string;
+  customer: { id: number; firstName: string; lastName: string; phoneNumber: string; alternatePhone?: string | null };
+  /** null when nobody is assigned; also null for a removed user. */
+  customerRep: { id: number; firstName: string; lastName: string } | null;
+  deliveryAgent: { id: number; firstName: string; lastName: string } | null;
+  orderItems: Array<{
+    id: number;
+    quantity: number;
+    itemType?: string | null;
+    metadata?: { upsellName?: string } | null;
+    product: { id: number; name: string; sku?: string | null } | null;
+  }>;
+  flags?: Array<{ code: string; label: string }>;
+  /** null until M9 builds reminders. */
+  reminder?: { dueAt?: string } | null;
+  /** null until M9 builds team threads. */
+  threadCount?: number | null;
+}
+
+/** Query of GET /api/orders and GET /api/orders/counts (counts ignore the sort and page fields). */
+export interface OrderListParams {
+  status?: OrderStatus[];
+  search?: string;
+  sortBy?: 'id' | 'customer' | 'totalAmount' | 'createdAt';
+  sortOrder?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+  startDate?: string;
+  endDate?: string;
+  dateBasis?: 'created' | 'delivery';
+  productId?: number[];
+  deliveryAgentId?: number;
+  customerRepId?: number;
+  unassigned?: boolean;
+  flag?: 'any';
+}
+
+export interface OrderCounts {
+  all: number;
+  byStatus: Record<OrderStatus, number>;
+  waitingToDispatch: number;
+}
+
+/** Per-order result of a bulk status change or assign (orderService.BulkResult). */
+export interface BulkResult {
+  succeeded: number[];
+  failed: Array<{ id: number; code: string; message: string }>;
+}
+
+/** What the order state machine allows next for one order (GET /api/orders/:id/transitions). */
+export interface OrderTransitions {
+  status: OrderStatus;
+  normal: OrderStatus[];
+  forced: OrderStatus[];
+}
+
 const transformOrder = (order: any): Order => {
   try {
     // Transform orderItems to match frontend OrderItem interface
@@ -69,6 +130,21 @@ const transformOrder = (order: any): Order => {
 };
 
 export const ordersService = {
+  /** The Orders list page: raw rows with customer, call rep, delivery agent, items and flags. */
+  async listOrders(params: OrderListParams, skipCache = false): Promise<{ rows: OrderListRow[]; pagination: PaginationMeta }> {
+    const response = await apiClient.get('/api/orders', { params: { ...params, include: 'flags,reminder,threadCount' }, skipCache });
+    return {
+      rows: response.data.orders || [],
+      pagination: response.data.pagination || { page: 1, limit: 25, total: 0, pages: 0 },
+    };
+  },
+
+  async getCounts(params: OrderListParams, skipCache = false): Promise<OrderCounts> {
+    const { sortBy: _s, sortOrder: _o, page: _p, limit: _l, ...filters } = params;
+    const response = await apiClient.get('/api/orders/counts', { params: filters, skipCache });
+    return response.data;
+  },
+
   async getOrders(filters?: FilterOptions): Promise<{ orders: Order[]; pagination: PaginationMeta }> {
     const response = await apiClient.get('/api/orders', { params: filters });
     const orders = response.data.orders || [];
