@@ -89,9 +89,15 @@ export const sessionService = {
     return count > 0;
   },
 
-  /** Ends every session of the user except the given one. */
+  /**
+   * Ends every session of the user except the given one. The caller has a session, so the old
+   * User.refreshToken value (a pre-session device) is never theirs: it goes too.
+   */
   async revokeOthers(userId: number, keepSessionId: number): Promise<number> {
-    const { count } = await prisma.userSession.deleteMany({ where: { userId, id: { not: keepSessionId } } });
+    const [{ count }] = await prisma.$transaction([
+      prisma.userSession.deleteMany({ where: { userId, id: { not: keepSessionId } } }),
+      prisma.user.updateMany({ where: { id: userId }, data: { refreshToken: null } }),
+    ]);
     return count;
   },
 

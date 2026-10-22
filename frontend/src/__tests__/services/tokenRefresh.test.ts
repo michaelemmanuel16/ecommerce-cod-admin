@@ -47,6 +47,41 @@ describe('refreshAccessToken (single in-flight)', () => {
     expect(post).not.toHaveBeenCalled();
   });
 
+  it('two tabs: the tab that finds a rotated token in storage skips the /refresh call', async () => {
+    // A lock that runs callers one after another, like navigator.locks across tabs
+    let chain: Promise<unknown> = Promise.resolve();
+    const locks = { request: (_name: string, cb: () => Promise<unknown>) => (chain = chain.then(cb, cb)) };
+    Object.defineProperty(navigator, 'locks', { value: locks, configurable: true });
+    try {
+      post.mockResolvedValue({ data: { accessToken: 'acc2', refreshToken: 'r2' } });
+      // tab 1 refreshes: r1 -> r2, and the store persists it
+      await expect(refreshAccessToken()).resolves.toBe('acc2');
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(post).toHaveBeenCalledWith(expect.stringContaining('/api/auth/refresh'), { refreshToken: 'r1' });
+      expect(useAuthStore.getState().refreshToken).toBe('r2');
+
+      // tab 2 still holds r1 in memory; storage (shared) holds r2
+      useAuthStore.setState({ accessToken: 'stale', refreshToken: 'r1' });
+      localStorage.setItem('auth-storage', JSON.stringify({ state: { accessToken: 'acc2', refreshToken: 'r2' }, version: 0 }));
+      await expect(refreshAccessToken()).resolves.toBe('acc2');
+      expect(post).toHaveBeenCalledTimes(1); // no second call with the old token
+      expect(useAuthStore.getState()).toMatchObject({ accessToken: 'acc2', refreshToken: 'r2' });
+    } finally {
+      delete (navigator as any).locks;
+    }
+  });
+
+  it('works without navigator.locks and with unreadable storage', async () => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    post.mockResolvedValue({ data: { accessToken: 'n', refreshToken: 'r9' } });
+    try {
+      await expect(refreshAccessToken()).resolves.toBe('n');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(useAuthStore.getState().refreshToken).toBe('r9');
+  });
+
   it('handleSessionExpired logs out', () => {
     handleSessionExpired();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);

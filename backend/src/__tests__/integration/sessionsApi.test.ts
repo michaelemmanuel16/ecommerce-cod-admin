@@ -219,6 +219,26 @@ describe('sign out', () => {
     expect(list.body.sessions).toHaveLength(1);
   });
 
+  it('revoke-others also ends a legacy device that only has User.refreshToken', async () => {
+    const u = await mkUser();
+    const legacy = generateRefreshToken({ id: u.id, email: u.email, role: u.role, tenantId: pair.a.id });
+    const l = await login(u.email);
+    await prismaBase.user.update({ where: { id: u.id }, data: { refreshToken: legacy } });
+
+    const res = await request(app).post('/api/auth/sessions/revoke-others').set(bearer(l.body.tokens.accessToken));
+    expect(res.status).toBe(200);
+    expect((await refresh(legacy)).status).toBe(401);
+    expect((await refresh(l.body.tokens.refreshToken)).status).toBe(200);
+  });
+
+  it('login does not clear the legacy value of another device', async () => {
+    const u = await mkUser();
+    const legacy = generateRefreshToken({ id: u.id, email: u.email, role: u.role, tenantId: pair.a.id });
+    await prismaBase.user.update({ where: { id: u.id }, data: { refreshToken: legacy } });
+    expect((await login(u.email)).status).toBe(200);
+    expect((await refresh(legacy)).status).toBe(200);
+  });
+
   it('revoke-others from a token without a session id is a 400, and nothing is ended', async () => {
     const u = await mkUser();
     const l = await login(u.email);

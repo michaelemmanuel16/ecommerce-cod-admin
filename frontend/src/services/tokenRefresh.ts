@@ -41,6 +41,21 @@ export function handleSessionExpired(message = 'Your session has expired. Please
 // so the server sees one /refresh call instead of a burst that trips authLimiter.
 let inFlight: Promise<string> | null = null;
 
+// The server rotates the refresh token on every refresh, so two tabs must not both
+// send the old one. A Web Lock makes the tabs take turns; the tab that waits finds the
+// rotated tokens in storage and skips its own call.
+const LOCK_NAME = 'codadmin-token-refresh';
+const STORAGE_KEY = 'auth-storage'; // zustand persist name in authStore
+
+function readStoredTokens(): { accessToken?: string; refreshToken?: string } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw)?.state ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Gets a new access token with the stored refresh token and saves it in the store. */
 export function refreshAccessToken(): Promise<string> {
   if (inFlight) return inFlight;
@@ -49,11 +64,21 @@ export function refreshAccessToken(): Promise<string> {
     if (!refreshToken) {
       throw Object.assign(new Error('No refresh token'), { response: { status: 401 } });
     }
-    // Plain axios, not apiClient: the interceptor must not see this call
-    const response = await axios.post(`${API_URL}/api/auth/refresh`, { refreshToken });
-    const { accessToken, refreshToken: rotated } = response.data;
-    useAuthStore.getState().setAccessToken(accessToken, rotated);
-    return accessToken as string;
+    const run = async (): Promise<string> => {
+      // Another tab may have rotated the token while this one waited for the lock
+      const stored = readStoredTokens();
+      if (stored?.refreshToken && stored.accessToken && stored.refreshToken !== refreshToken) {
+        useAuthStore.setState({ accessToken: stored.accessToken, refreshToken: stored.refreshToken });
+        return stored.accessToken;
+      }
+      // Plain axios, not apiClient: the interceptor must not see this call
+      const response = await axios.post(`${API_URL}/api/auth/refresh`, { refreshToken });
+      const { accessToken, refreshToken: rotated } = response.data;
+      useAuthStore.getState().setAccessToken(accessToken, rotated);
+      return accessToken as string;
+    };
+    const locks = typeof navigator !== 'undefined' ? (navigator as Navigator & { locks?: LockManager }).locks : undefined;
+    return locks ? locks.request(LOCK_NAME, run) : run();
   })().finally(() => {
     inFlight = null;
   });
