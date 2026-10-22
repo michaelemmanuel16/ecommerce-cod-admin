@@ -174,7 +174,7 @@ test.describe('T62 Team tab and Export menu', () => {
     await expect(tiles.getByText('64', { exact: true })).toBeVisible();
     const table = page.getByRole('table', { name: 'Call reps' });
     for (const rep of api.reps) {
-      await expect(table.getByRole('row', { name: new RegExp(rep.name) })).toContainText(`${Math.round(rep.confirmationRate.value)}%`);
+      await expect(table.getByRole('row', { name: new RegExp(rep.name) })).toContainText(`${rep.confirmationPercent}%`);
     }
     await expect(table.locator('tr.tot')).toContainText('1,026');
     await expect(page.getByText('Why customers decline')).toBeVisible();

@@ -121,12 +121,23 @@ export interface CountedRate {
   detail?: Record<string, number>;
 }
 export interface TeamRates { confirmationRate: CountedRate; deliveredFromConfirmedRate: CountedRate }
-export interface TeamRepRow extends TeamRates {
-  repId: number;
-  name: string;
+export interface TeamFigures {
   calls: number;
   confirmed: number;
   notReachable: number;
+  /** Whole percents, rounded once from the counts by the API. */
+  confirmationPercent: number | null;
+  deliveredFromConfirmedPercent: number | null;
+  timeToFirstCallMinutes: number | null;
+  upsellRate: number | null;
+  extraValue: Money;
+  targetHit: { target: number; actual: number; percent: number | null } | null;
+}
+export interface TeamRepRow extends TeamRates, TeamFigures {
+  repId: number;
+  name: string;
+  /** 'ai_agent' for an AI agent, else 'person'. */
+  kind: string;
 }
 export interface TeamReport {
   from: string;
@@ -137,10 +148,11 @@ export interface TeamReport {
     callsMade: number;
     callsPerConfirmation: number | null;
     notReachable: { count: number; percentOfCalls: number | null };
+    totalDeclined: number;
     queue: { pending: number; oldestWaitMinutes: number | null; withoutRep: number };
   };
   reps: TeamRepRow[];
-  all: TeamRates & { calls: number; confirmed: number; notReachable: number };
+  all: TeamRates & TeamFigures;
   callOutcomes: Array<{ outcome: string; count: number }>;
   declineReasons: Array<{ reason: string; count: number; percent: number | null }>;
 }

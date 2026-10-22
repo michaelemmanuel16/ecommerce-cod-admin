@@ -324,11 +324,21 @@ describe('Team tab (F-1054)', () => {
     renderPage('/reports?tab=team');
     const table = await screen.findByRole('table', { name: 'Call reps' });
     expect(bodyRows(table)).toEqual([
-      ['Adwoa Darko', '1,360', '640', '74%', '52%253 of 486', '300'],
-      ['Confirm agent', '780', '328', '71%', '44%110 of 250', '206'],
-      ['Nana Kyei', '170', '58', '58%', '26%13 of 50', '34'],
-      ['All call reps', '2,310', '1,026', '71%', '48%376 of 778', '540'],
+      ['Adwoa Darko', '1,360', '640', '73%', '52%253 of 486', '12 min', '24%', 'GH₵6,100', '60%253 of 423', '300'],
+      ['Confirm agent', '780', '328', '71%', '44%110 of 250', '2 min', '15%', 'GH₵2,200', '44%110 of 250', '206'],
+      ['Nana Kyei', '170', '58', '58%', '26%13 of 50', '41 min', '9%', 'GH₵300', '26%13 of 50', '34'],
+      ['All call reps', '2,310', '1,026', '71%', '48%376 of 778', '9 min', '20%', 'GH₵8,600', '52%376 of 723', '540'],
     ]);
+    expect(within(table).getByText('AI agent')).toBeInTheDocument();
+    expect(within(table).getAllByText('Human')).toHaveLength(2);
+    expect(screen.getByText('301 declined')).toBeInTheDocument();
+  });
+
+  it('a rep with no target says No target; no time to first call reads n/a', async () => {
+    answer({ team: (b) => ({ ...b, reps: b.reps.map((r: any, i: number) => (i === 2 ? { ...r, targetHit: null, timeToFirstCallMinutes: null } : r)) }) });
+    renderPage('/reports?tab=team');
+    const table = await screen.findByRole('table', { name: 'Call reps' });
+    expect(bodyRows(table)[2]).toEqual(['Nana Kyei', '170', '58', '58%', '26%13 of 50', 'n/a', '9%', 'GH₵300', 'No target', '34']);
   });
 
   it('call outcomes list the five outcomes and the calls in the centre', async () => {

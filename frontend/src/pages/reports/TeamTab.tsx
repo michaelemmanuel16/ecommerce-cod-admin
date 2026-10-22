@@ -1,12 +1,13 @@
 import clsx from 'clsx';
-import { Clock, PhoneCall, PhoneMissed, PhoneOutgoing } from 'lucide-react';
+import { Bot, Clock, PhoneCall, PhoneMissed, PhoneOutgoing } from 'lucide-react';
 import { Card, EmptyState, Tag, Tile } from '../../components/ui-v2';
+import { useConfigStore } from '../../stores/configStore';
 import { initials } from '../dashboard/format';
 import { isBlockError } from '../dashboard/types';
 import { Donut } from './charts';
-import { count, plural, reasonLabel, wholePercent } from './format';
+import { count, plural, reasonLabel, wholeMoney, wholePercent } from './format';
 import { Part, type TabControl } from './Part';
-import type { DeliveryReport, TeamReport } from './types';
+import type { DeliveryReport, TeamFigures, TeamReport } from './types';
 
 const OUTCOME: Record<string, { label: string; color: string }> = {
   confirmed: { label: 'Confirmed', color: 'var(--mint)' },
@@ -23,6 +24,7 @@ const AVATAR = ['mint', 'violet', 'gold', 'coral'] as const;
 /** 190 minutes -> "3 h 10 min". */
 const waited = (minutes: number): string => (minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`);
 const callsPer = (n: number | null): string => (n === null ? 'Calls per confirmation: n/a' : `${n} calls per confirmation`);
+const minutesText = (n: number | null): string => (n === null ? 'n/a' : `${Number(n.toFixed(1))} min`);
 const of = (detail: Record<string, number> | undefined, top: string, bottom: string): string | null =>
   detail && detail[top] !== undefined && detail[bottom] !== undefined ? `${count(detail[top])} of ${count(detail[bottom])}` : null;
 
@@ -33,6 +35,28 @@ const of = (detail: Record<string, number> | undefined, top: string, bottom: str
  */
 export function TeamTab({ report, delivery, ctl, deliveryCtl }: { report: TeamReport | null; delivery: DeliveryReport | null; ctl: TabControl; deliveryCtl: TabControl }) {
   const { compare } = ctl;
+  const currency = useConfigStore((c) => c.currency);
+  // the rate cells of a rep row and of the All row are the same shape
+  const figureCells = (x: TeamFigures & { deliveredFromConfirmedRate: { detail?: Record<string, number> } }, strong: boolean) => (
+    <>
+      <td className="r num">{count(x.calls)}</td>
+      <td className="r num">{strong ? <b>{count(x.confirmed)}</b> : count(x.confirmed)}</td>
+      <td className="r num">{wholePercent(x.confirmationPercent)}</td>
+      <td className="r num">{wholePercent(x.deliveredFromConfirmedPercent)}<small className="ink3" style={{ display: 'block' }}>{of(x.deliveredFromConfirmedRate.detail, 'delivered', 'closed')}</small></td>
+      <td className="r num">{minutesText(x.timeToFirstCallMinutes)}</td>
+      <td className="r num">{wholePercent(x.upsellRate)}</td>
+      <td className="r num">{wholeMoney(x.extraValue, currency)}</td>
+      <td className="r">
+        {x.targetHit === null ? <span className="ink3">No target</span> : (
+          <>
+            <Tag tone="n">{wholePercent(x.targetHit.percent)}</Tag>
+            <small className="ink3" style={{ display: 'block' }}>{count(x.targetHit.actual)} of {count(x.targetHit.target)}</small>
+          </>
+        )}
+      </td>
+      <td className="r num">{count(x.notReachable)}</td>
+    </>
+  );
   return (
     <div className="panel">
       <Part name="Team performance" block={report ?? undefined} ctl={ctl} height={150}>
@@ -75,7 +99,7 @@ export function TeamTab({ report, delivery, ctl, deliveryCtl }: { report: TeamRe
                 )}
               </Card>
 
-              <Card title="Why customers decline" aside="Share of declined orders">
+              <Card title="Why customers decline" aside={`${count(t.tiles.totalDeclined)} declined`}>
                 {t.declineReasons.length === 0 ? <EmptyState title="No declined orders" text="Nothing to explain in this range." /> : (
                   <div className="bars">
                     {t.declineReasons.map((x, i) => {
@@ -108,21 +132,18 @@ export function TeamTab({ report, delivery, ctl, deliveryCtl }: { report: TeamRe
                     <tbody>
                       {t.reps.map((r, i) => (
                         <tr key={r.repId}>
-                          <td><div className="who"><div className={clsx('a', AVATAR[i % AVATAR.length])} aria-hidden="true">{initials(r.name)}</div><div><b>{r.name}</b></div></div></td>
-                          <td className="r num">{count(r.calls)}</td>
-                          <td className="r num"><b>{count(r.confirmed)}</b></td>
-                          <td className="r num">{wholePercent(r.confirmationRate.value)}</td>
-                          <td className="r num">{wholePercent(r.deliveredFromConfirmedRate.value)}<small className="ink3" style={{ display: 'block' }}>{of(r.deliveredFromConfirmedRate.detail, 'delivered', 'closed')}</small></td>
-                          <td className="r num">{count(r.notReachable)}</td>
+                          <td>
+                            <div className="who">
+                              <div className={clsx('a', r.kind === 'ai_agent' ? 'violet' : AVATAR[i % AVATAR.length])} aria-hidden="true">{r.kind === 'ai_agent' ? <Bot style={{ width: 15, height: 15 }} /> : initials(r.name)}</div>
+                              <div><b>{r.name}</b> {r.kind === 'ai_agent' ? <Tag tone="v">AI agent</Tag> : <Tag tone="n">Human</Tag>}</div>
+                            </div>
+                          </td>
+                          {figureCells(r, true)}
                         </tr>
                       ))}
                       <tr className="tot">
                         <td>All call reps</td>
-                        <td className="r num">{count(t.all.calls)}</td>
-                        <td className="r num">{count(t.all.confirmed)}</td>
-                        <td className="r num">{wholePercent(t.all.confirmationRate.value)}</td>
-                        <td className="r num">{wholePercent(t.all.deliveredFromConfirmedRate.value)}<small className="ink3" style={{ display: 'block' }}>{of(t.all.deliveredFromConfirmedRate.detail, 'delivered', 'closed')}</small></td>
-                        <td className="r num">{count(t.all.notReachable)}</td>
+                        {figureCells(t.all, false)}
                       </tr>
                     </tbody>
                   </table>

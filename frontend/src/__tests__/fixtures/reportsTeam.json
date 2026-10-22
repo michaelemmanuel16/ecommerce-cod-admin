@@ -14,7 +14,8 @@
       "pending": 64,
       "oldestWaitMinutes": 190,
       "withoutRep": 9
-    }
+    },
+    "totalDeclined": 301
   },
   "reps": [
     {
@@ -38,7 +39,18 @@
       },
       "calls": 1360,
       "confirmed": 640,
-      "notReachable": 300
+      "notReachable": 300,
+      "kind": "person",
+      "confirmationPercent": 73,
+      "deliveredFromConfirmedPercent": 52,
+      "timeToFirstCallMinutes": 12,
+      "upsellRate": 24,
+      "extraValue": "6100.00",
+      "targetHit": {
+        "target": 423,
+        "actual": 253,
+        "percent": 60
+      }
     },
     {
       "repId": 12,
@@ -61,7 +73,18 @@
       },
       "calls": 780,
       "confirmed": 328,
-      "notReachable": 206
+      "notReachable": 206,
+      "kind": "ai_agent",
+      "confirmationPercent": 71,
+      "deliveredFromConfirmedPercent": 44,
+      "timeToFirstCallMinutes": 2,
+      "upsellRate": 15,
+      "extraValue": "2200.00",
+      "targetHit": {
+        "target": 250,
+        "actual": 110,
+        "percent": 44
+      }
     },
     {
       "repId": 13,
@@ -84,7 +107,18 @@
       },
       "calls": 170,
       "confirmed": 58,
-      "notReachable": 34
+      "notReachable": 34,
+      "kind": "person",
+      "confirmationPercent": 58,
+      "deliveredFromConfirmedPercent": 26,
+      "timeToFirstCallMinutes": 41,
+      "upsellRate": 9,
+      "extraValue": "300.00",
+      "targetHit": {
+        "target": 50,
+        "actual": 13,
+        "percent": 26
+      }
     }
   ],
   "all": {
@@ -106,7 +140,17 @@
     },
     "calls": 2310,
     "confirmed": 1026,
-    "notReachable": 540
+    "notReachable": 540,
+    "confirmationPercent": 71,
+    "deliveredFromConfirmedPercent": 48,
+    "timeToFirstCallMinutes": 9,
+    "upsellRate": 20,
+    "extraValue": "8600.00",
+    "targetHit": {
+      "target": 723,
+      "actual": 376,
+      "percent": 52
+    }
   },
   "callOutcomes": [
     {
