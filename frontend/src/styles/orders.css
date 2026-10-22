@@ -60,7 +60,7 @@
 .v2 .menu hr{border:0;border-top:1px solid var(--line);margin:5px 0}
 .v2 .menu .note{padding:8px 10px;color:var(--ink-3);font-size:13px}
 /* new: the row Assign and status menus are fixed to the viewport, so the table's scroll box does not clip them */
-.v2 .menu.fixed{position:fixed;z-index:58}
+.v2 .menu.fixed{position:fixed;top:auto;z-index:58} /* top:auto: the inline top or bottom places it, not the .menu top */
 
 /* bulk bar */
 .v2 .bulk{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 20px;background:var(--pine-soft);border-bottom:1px solid var(--line)}

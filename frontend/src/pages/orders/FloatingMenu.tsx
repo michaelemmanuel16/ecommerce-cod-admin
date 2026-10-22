@@ -21,12 +21,19 @@ export function FloatingMenu({ anchor, label, align = 'right', width = 240, onCl
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number }>({ left: 8, top: 0 });
 
   useLayoutEffect(() => {
-    const r = anchor.getBoundingClientRect();
-    const left = align === 'right' ? Math.max(8, r.right - width) : Math.min(r.left, window.innerWidth - width - 8);
-    const height = ref.current?.offsetHeight ?? 320;
-    setPos(r.bottom + height + 12 > window.innerHeight && r.top > height
-      ? { left, bottom: window.innerHeight - r.top + 6 }
-      : { left, top: r.bottom + 6 });
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      const left = align === 'right' ? Math.max(8, r.right - width) : Math.min(r.left, window.innerWidth - width - 8);
+      const height = ref.current?.offsetHeight ?? 320;
+      setPos(r.bottom + height + 12 > window.innerHeight && r.top > height
+        ? { left, bottom: window.innerHeight - r.top + 6 }
+        : { left, top: r.bottom + 6 });
+    };
+    place();
+    // The content can grow after it opens (the status moves load later): place it again when its size changes
+    const observer = new ResizeObserver(place);
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
   }, [anchor, align, width]);
 
   useEffect(() => {
@@ -62,7 +69,7 @@ export function FloatingMenu({ anchor, label, align = 'right', width = 240, onCl
 
   return (
     <Portal>
-      // A portal still sends React events up to its parent, and the parent can be a table row that opens the order.
+      {/* A portal still sends React events up to its parent, and the parent can be a table row that opens the order. */}
       <div ref={ref} className="menu fixed" role="menu" aria-label={label} style={{ ...pos, width }} onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
