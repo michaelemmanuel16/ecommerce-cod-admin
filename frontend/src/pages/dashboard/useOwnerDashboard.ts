@@ -62,16 +62,18 @@ export function useOwnerDashboard(range: DashboardRange) {
       }
     };
     let bound: ReturnType<typeof getSocket> = null;
+    let poll: ReturnType<typeof setInterval> | undefined;
     const bind = () => {
       const socket = getSocket();
       if (!socket || socket === bound) return;
       if (bound) REFETCH_EVENTS.forEach((e) => bound?.off(e, onEvent));
       bound = socket;
       REFETCH_EVENTS.forEach((e) => socket.on(e, onEvent));
+      clearInterval(poll);
     };
     bind();
-    // The socket may connect after the page opens (reload on the Dashboard): look again until it is there.
-    const poll = setInterval(bind, 2000);
+    // The socket may connect after the page opens (reload on the Dashboard): look again until it is bound.
+    if (!bound) poll = setInterval(bind, 2000);
     return () => {
       clearInterval(poll);
       if (trailing.current) clearTimeout(trailing.current);
