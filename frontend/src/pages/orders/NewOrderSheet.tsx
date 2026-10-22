@@ -8,10 +8,11 @@ import { ordersService } from '../../services/orders.service';
 import { productsService } from '../../services/products.service';
 import { useConfigStore } from '../../stores/configStore';
 import type { Product } from '../../types';
-import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
+import { getCountryByCurrency, getCurrencySymbol, getRegionsForCountry } from '../../utils/countries';
 import { formatCurrency } from '../../utils/format';
 import type { Option } from './useFilterOptions';
-import { asNumber, computedTotal, linesSum, phoneOk, totalGap, unitsByProduct, type DraftLine } from './newOrder';
+import { phoneOk } from '../../utils/phone';
+import { asNumber, computedTotal, linesSum, totalGap, unitsByProduct, type DraftLine } from './newOrder';
 
 interface NewOrderSheetProps {
   open: boolean;
@@ -294,7 +295,7 @@ export function NewOrderSheet({ open, onClose, onCreated, customerId, canAssign,
           <Input label="Discount" optional type="number" min={0} value={form.discount} onChange={(e) => set('discount', e.target.value)} />
           <div>
             <Input
-              label={`Order total (${currency})`}
+              label={`Order total (${getCurrencySymbol(currency)})`}
               type="number"
               min={0}
               value={form.total === null ? String(computed) : form.total}
@@ -307,10 +308,6 @@ export function NewOrderSheet({ open, onClose, onCreated, customerId, canAssign,
                 Total differs from the lines by {formatCurrency(gap)}. Write the reason in the notes.
               </p>
             )}
-          </div>
-          <div className="fl full">
-            <label htmlFor="no-notes">Notes <span className="opt">(optional)</span></label>
-            <textarea id="no-notes" style={{ minHeight: 56 }} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
           </div>
           {canAssign && (
             <>
@@ -328,6 +325,10 @@ export function NewOrderSheet({ open, onClose, onCreated, customerId, canAssign,
               </Select>
             </>
           )}
+          <div className="fl full">
+            <label htmlFor="no-notes">Notes <span className="opt">(optional)</span></label>
+            <textarea id="no-notes" style={{ minHeight: 56 }} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
+          </div>
         </div>
       </div>
 

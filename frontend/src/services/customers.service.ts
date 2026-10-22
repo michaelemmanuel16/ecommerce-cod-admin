@@ -1,6 +1,6 @@
 import apiClient from './api';
 import { Customer, PaginationMeta } from '../types';
-import { samePhone } from '../pages/orders/newOrder';
+import { samePhone } from '../utils/phone';
 
 export const customersService = {
   async getCustomers(params?: { page?: number; limit?: number; search?: string; area?: string; sortBy?: 'totalOrders' | 'totalSpent'; sortOrder?: 'asc' | 'desc' }): Promise<{ customers: Customer[]; pagination: PaginationMeta }> {
