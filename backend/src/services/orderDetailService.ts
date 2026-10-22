@@ -23,6 +23,15 @@ function assertVisible<T extends { deletedAt: Date | null; customerRepId: number
   return order;
 }
 
+/** The source line of the drawer (F-321): where the order came from. A webhook order does not store which webhook sent it. */
+export function sourceLabelOf(source: string, formName?: string | null): string {
+  if (source === 'checkout_form') return formName ? `Checkout form: ${formName}` : 'Checkout form';
+  if (source === 'manual') return 'Manual';
+  if (source === 'import' || source === 'bulk_import') return 'Import';
+  if (source === 'webhook') return 'Webhook';
+  return source.charAt(0).toUpperCase() + source.slice(1).replace(/_/g, ' ');
+}
+
 const metaIds = (m: unknown): number[] => {
   if (!m || typeof m !== 'object') return [];
   const r = m as Record<string, unknown>;
@@ -32,7 +41,7 @@ const metaIds = (m: unknown): number[] => {
 export const orderDetailService = {
   /**
    * Order detail (F-321, F-323, F-300). The order row keeps the keys the old read-only page used; `items`, `history`,
-   * `assignees`, `calls`, `messages`, `flags`, `transitions`, `payment`, `paymentTag` and `displayNumber` are added.
+   * `assignees`, `calls`, `messages`, `flags`, `transitions`, `payment`, `paymentTag`, `sourceLabel` and `displayNumber` are added.
    * `messages` stays empty until the message log is wired to orders (M9).
    */
   async getDetail(orderId: number, requester: Requester) {
@@ -46,6 +55,7 @@ export const orderDetailService = {
       transaction: true,
       agentCollection: { include: { agent: userName } },
       calls: { orderBy: { createdAt: 'desc' }, include: { salesRep: userName } },
+      formSubmissions: { take: 1, orderBy: { createdAt: 'desc' }, include: { form: { select: { name: true } } } },
     } })), requester);
 
     const actor = actorOf(requester);
@@ -55,7 +65,7 @@ export const orderDetailService = {
       orderFlagService.forOrders([orderId]),
     ]);
 
-    const { agentCollection, calls, ...row } = order;
+    const { agentCollection, calls, formSubmissions, ...row } = order;
     const deposit = Money.parse(order.depositPaid).gt(0)
       ? { paid: Money.toApi(order.depositPaid), due: Money.toApi(order.balanceDue) }
       : null;
@@ -68,6 +78,7 @@ export const orderDetailService = {
     return {
       ...row,
       displayNumber: formatOrderNumber(order.id),
+      sourceLabel: sourceLabelOf(order.source, formSubmissions[0]?.form.name),
       items: order.orderItems,
       history: order.orderHistory,
       assignees: { customerRep: order.customerRep, deliveryAgent: order.deliveryAgent },

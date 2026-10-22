@@ -125,6 +125,94 @@ export interface OrderTransitions {
   forced: OrderStatus[];
 }
 
+/** One row of GET /api/orders/:id/timeline (orderTimeline.ts). */
+export interface TimelineEntry {
+  kind: 'placed' | 'status' | 'assignment' | 'edit' | 'call' | 'note' | 'planned';
+  size: 'main' | 'small';
+  at: string;
+  title: string;
+  actor: { kind: 'person' | 'ai_agent' | 'partner' | 'system'; userId: number | null; name: string | null } | null;
+  note: string | null;
+  status?: OrderStatus;
+  override?: boolean;
+  reason?: string | null;
+  durationChip?: string;
+}
+
+export type PaymentTagCode = 'pay_on_delivery' | 'cash_with_agent' | 'overdue_from_agent' | 'paid_in' | 'paid' | 'no_payment';
+
+/** GET /api/orders/:id as the order drawer reads it (orderDetailService.getDetail). Money fields arrive as strings or numbers. */
+export interface OrderDetail {
+  id: number;
+  displayNumber: string;
+  status: OrderStatus;
+  orderType?: 'physical' | 'digital';
+  createdAt: string;
+  updatedAt: string;
+  statusVersion: number;
+  source: string;
+  sourceLabel: string;
+  notes: string | null;
+  deliveryAddress: string | null;
+  deliveryState: string | null;
+  deliveryArea: string | null;
+  discount: string | number;
+  subtotal: string | number;
+  totalAmount: string | number;
+  customer: { id: number; firstName: string; lastName: string; email: string | null; phoneNumber: string; alternatePhone: string | null };
+  items: Array<{
+    id: number;
+    productId: number;
+    quantity: number;
+    unitPrice: string | number;
+    totalPrice: string | number;
+    itemType?: string | null;
+    metadata?: { upsellName?: string } | null;
+    product: { id: number; name: string } | null;
+  }>;
+  assignees: {
+    customerRep: { id: number; firstName: string; lastName: string } | null;
+    deliveryAgent: { id: number; firstName: string; lastName: string } | null;
+  };
+  calls: Array<{
+    id: number;
+    outcome: string;
+    notes: string | null;
+    duration?: number | null;
+    createdAt: string;
+    salesRep: { id: number; firstName: string; lastName: string };
+  }>;
+  messages: unknown[];
+  flags: Array<{ code: string; label: string }>;
+  transitions: OrderTransitions;
+  paymentTag: { code: PaymentTagCode; label: string };
+  payment: {
+    method: string;
+    status: string;
+    amount: string;
+    deposit: { paid: string; due: string } | null;
+    cashHeldBy?: string;
+  };
+}
+
+/** The body of PUT /api/orders/:id from the edit mode: only the fields that changed, plus the version and the two ticks. */
+export interface OrderEditBody {
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  alternatePhone?: string;
+  deliveryAddress?: string;
+  deliveryState?: string;
+  deliveryArea?: string;
+  notes?: string;
+  orderItems?: Array<{ productId: number; quantity: number; unitPrice: number }>;
+  discount?: number;
+  totalAmount?: number;
+  updatedAt?: string;
+  confirmTotalChange?: boolean;
+  confirmPhoneChange?: boolean;
+}
+
 const transformOrder = (order: any): Order => {
   try {
     // Transform orderItems to match frontend OrderItem interface
@@ -212,6 +300,22 @@ export const ordersService = {
   async getOrderById(id: number): Promise<Order> {
     const response = await apiClient.get(`/api/orders/${id}`);
     return transformOrder(response.data.order || response.data);
+  },
+
+  /** The order drawer (F-321): the whole order in one read. */
+  async getOrderDetail(id: number): Promise<OrderDetail> {
+    const response = await apiClient.get(`/api/orders/${id}`, { skipCache: true });
+    return response.data.order;
+  },
+
+  async getTimeline(id: number): Promise<TimelineEntry[]> {
+    const response = await apiClient.get(`/api/orders/${id}/timeline`, { skipCache: true });
+    return response.data.timeline;
+  },
+
+  /** Save from the drawer's edit mode (F-318). A stale save is refused with HTTP 409 STALE_ORDER. */
+  async editOrder(id: number, body: OrderEditBody): Promise<void> {
+    await apiClient.put(`/api/orders/${id}`, body);
   },
 
   async createOrder(order: Partial<Order>): Promise<Order> {

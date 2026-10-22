@@ -86,6 +86,23 @@ describe('GET /api/orders/:id', () => {
     expect(o.source).toBe('import');
   });
 
+  it('source line: checkout form name, manual, import, webhook', async () => {
+    const form = await prismaBase.checkoutForm.create({
+      data: { name: 'Magic Groove copybook set', slug: `od-form-${SUFFIX}`, productId, fields: [], styling: {}, regions: [], tenantId },
+    });
+    const viaForm = await mkOrder('pending_confirmation', { source: 'checkout_form' });
+    await prismaBase.formSubmission.create({
+      data: { formId: form.id, orderId: viaForm, formData: {}, selectedPackage: {}, totalAmount: 100, tenantId },
+    });
+    expect((await detail('admin', viaForm)).body.order.sourceLabel).toBe('Checkout form: Magic Groove copybook set');
+    expect((await detail('admin', viaForm)).body.order).not.toHaveProperty('formSubmissions');
+    const labels: Array<[string, string]> = [['manual', 'Manual'], ['bulk_import', 'Import'], ['import', 'Import'], ['webhook', 'Webhook']];
+    for (const [source, label] of labels) {
+      const id = await mkOrder('pending_confirmation', { source });
+      expect((await detail('admin', id)).body.order.sourceLabel).toBe(label);
+    }
+  });
+
   it('shows the flags of the order', async () => {
     const id = await mkOrder('pending_confirmation');
     const res = await detail('admin', id);

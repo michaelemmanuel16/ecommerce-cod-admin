@@ -1,0 +1,51 @@
+/* Order details drawer (M3-T46, T47, F-321, F-322, F-318). Copied from the style block of docs/mockups/v2/index.html
+   (#sh-order: .sec .fg .kv .hl .oi .tl .call .nt .nl), with the `.v2` scope added. Colours come from tokens.css only.
+   Rules with no mockup counterpart are marked "new". */
+
+.v2 .sheet.wide{width:640px}
+@media (max-width:760px){.v2 .sheet.wide{width:100%}}
+.v2 .sec>h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.v2 .fg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.v2 .fg .full{grid-column:1/-1}
+@media (max-width:760px){.v2 .sheet .fg{grid-template-columns:1fr}.v2 .sheet .kv{grid-template-columns:1fr}}
+.v2 .kv{display:grid;grid-template-columns:110px 1fr;gap:8px 12px}
+.v2 .kv dt{color:var(--ink-3);font-size:13px}
+.v2 .kv dd{font-weight:500;min-width:0;overflow-wrap:anywhere}
+.v2 .hl{border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.v2 .hl+.hl{margin-top:8px}
+.v2 .oi{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.v2 .oi:last-child{border-bottom:0}
+.v2 .oi small{display:block;color:var(--ink-3);font-size:12.5px}
+.v2 .oi.t{font-weight:700;border-top:1px solid var(--line);border-bottom:0}
+.v2 .oi .num,.v2 .kv .num{font-variant-numeric:tabular-nums}
+.v2 .tl{list-style:none;display:flex;flex-direction:column}
+.v2 .tl li{display:grid;grid-template-columns:12px 1fr;gap:12px;position:relative;padding-bottom:14px}
+.v2 .tl li:last-child{padding-bottom:0}
+.v2 .tl li:not(:last-child)::after{content:"";position:absolute;left:5px;top:16px;bottom:0;width:2px;background:var(--line)}
+.v2 .tl .d{width:12px;height:12px;border-radius:50%;background:var(--mint);margin-top:4px}
+.v2 .tl .d.bad{background:var(--coral)}
+.v2 .tl .d.plan{background:var(--card);border:2px solid var(--violet)}
+.v2 .tl small{display:block;color:var(--ink-3);font-size:12.5px}
+.v2 .call{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.v2 .call:last-child{border-bottom:0}
+.v2 .call p{grid-column:1/-1;color:var(--ink-2)}
+.v2 .call small{color:var(--ink-3);font-size:12.5px;text-align:right}
+.v2 .nl{display:grid;grid-template-columns:1fr 70px 90px 34px;gap:8px;align-items:end;margin-bottom:10px}
+.v2 .nl .fl label{font-size:12px}
+@media (max-width:760px){.v2 .nl{grid-template-columns:1fr 60px 80px 34px}}
+
+/* new: small timeline rows (edits, assignments, calls), the duration chip and the Override tag */
+.v2 .tl li.small{padding-bottom:10px}
+.v2 .tl li.small .d{width:8px;height:8px;margin:6px 2px 0;background:var(--line)}
+.v2 .tl li.small b{font-weight:500;font-size:13px}
+.v2 .tl .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.v2 .tl .row .tag,.v2 .tl .row .chip{font-size:11.5px}
+.v2 .tl li.future b{color:var(--ink-3)}
+
+/* new: the order header line, edit-mode helpers and the confirm tick */
+.v2 .sheet .sh .hdr{margin-left:auto;margin-top:4px;display:flex;align-items:center;gap:8px;flex:none}
+.v2 .sheet.wide .sh .ibtn{margin-left:0}
+.v2 .tick{display:flex;gap:8px;align-items:flex-start;font-weight:500;padding:10px 12px;border:1px solid var(--gold-soft);background:var(--gold-soft);color:var(--warn-ink);border-radius:12px}
+.v2 .tick input{width:16px;height:16px;margin-top:2px;accent-color:var(--pine)}
+.v2 .stale{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:var(--coral-soft);color:var(--coral);font-weight:600}
+.v2 .sheet .sb>.loading{padding:8px 0}

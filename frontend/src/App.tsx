@@ -23,8 +23,7 @@ import { DynamicDashboard } from './pages/DynamicDashboard';
 import { Dashboard } from './pages/Dashboard';
 // Lazy load all other pages for better initial load performance
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
-const Orders = lazy(() => import('./pages/Orders').then(m => ({ default: m.Orders })));
-const OrderDetails = lazy(() => import('./pages/OrderDetails').then(m => ({ default: m.OrderDetails })));
+const OrdersRoute = lazy(() => import('./pages/orders/OrdersRoute').then(m => ({ default: m.OrdersRoute })));
 const Products = lazy(() => import('./pages/Products').then(m => ({ default: m.Products })));
 const ProductForm = lazy(() => import('./pages/ProductForm').then(m => ({ default: m.ProductForm })));
 const Customers = lazy(() => import('./pages/Customers').then(m => ({ default: m.Customers })));
@@ -273,11 +272,8 @@ function App() {
             {/* Every page below needs its menu item (F-102); platform pages use PlatformGuard instead. */}
             <Route element={<AccessGate />}>
             <Route index element={<DashboardIndex />} />
-            <Route path="orders" element={
-              <Suspense fallback={<Loading />}><Orders /></Suspense>
-            } />
-            <Route path="orders/:id" element={
-              <Suspense fallback={<Loading />}><OrderDetails /></Suspense>
+            <Route path="orders/:id?" element={
+              <Suspense fallback={<Loading />}><OrdersRoute /></Suspense>
             } />
             <Route path="products" element={
               <Suspense fallback={<Loading />}><Products /></Suspense>
