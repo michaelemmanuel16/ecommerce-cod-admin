@@ -2,9 +2,10 @@ import type { TagTone } from '../../../components/ui-v2';
 import type { OrderDetail, OrderEditBody, PaymentTagCode } from '../../../services/orders.service';
 import type { OrderStatus } from '../../../types';
 import { formatPhoneLocal } from '../../../utils/format';
+import { personName } from '../../../utils/people';
 
 /** Which fields an edit may change, by status group (F-318). The server enforces the same table. */
-export type EditGroup = 'full' | 'dispatched' | 'notes';
+type EditGroup = 'full' | 'dispatched' | 'notes';
 
 export function editGroup(status: OrderStatus): EditGroup {
   if (status === 'out_for_delivery' || status === 'failed_delivery') return 'dispatched';
@@ -43,8 +44,6 @@ export function accraTime(iso: string): string {
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
 }
-
-export const fullName = (u: { firstName: string; lastName: string }): string => `${u.firstName} ${u.lastName}`.trim();
 
 /** Call outcomes the Log call form offers (the existing enum, F-324 renames them in M7). */
 export const CALL_OUTCOMES: Array<[value: string, label: string]> = [
@@ -86,7 +85,7 @@ export interface EditDraft {
 
 export function draftOf(o: OrderDetail): EditDraft {
   return {
-    name: fullName(o.customer),
+    name: personName(o.customer),
     email: o.customer.email ?? '',
     phone: formatPhoneLocal(o.customer.phoneNumber),
     altPhone: o.customer.alternatePhone ? formatPhoneLocal(o.customer.alternatePhone) : '',
@@ -129,7 +128,7 @@ export function buildEdit(o: OrderDetail, d: EditDraft): { body: EditBodyFields;
   const totalChanged = Math.abs(now - was) > 0.00001;
 
   const all: EditBodyFields = {};
-  if (text(d.name) !== fullName(c)) all.customerName = text(d.name);
+  if (text(d.name) !== personName(c)) all.customerName = text(d.name);
   if (text(d.email) !== text(c.email)) all.customerEmail = text(d.email);
   if (text(d.phone) !== formatPhoneLocal(c.phoneNumber)) all.customerPhone = text(d.phone);
   if (text(d.altPhone) !== (c.alternatePhone ? formatPhoneLocal(c.alternatePhone) : '')) all.alternatePhone = text(d.altPhone);

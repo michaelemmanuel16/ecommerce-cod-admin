@@ -4,7 +4,8 @@ import type { Column } from '../../components/ui-v2';
 import type { CustomerRow, CustomerSortField } from '../../services/customers.service';
 import { baseState } from '../../utils/baseState';
 import { formatCurrency, formatPhoneLocal } from '../../utils/format';
-import { AVATAR_TONES, customerName, initials, lastOrderDate } from './model';
+import { AVATAR_TONES, initials } from '../../utils/people';
+import { customerName, lastOrderDate } from './model';
 import { RiskTags } from './RiskTags';
 import type { SortState } from './urlState';
 

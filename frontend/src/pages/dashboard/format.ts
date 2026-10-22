@@ -16,7 +16,7 @@ export function parseDay(ymd: string): { year: number; month: number; day: numbe
 }
 
 /** "Friday 17 October" */
-export function longDay(ymd: string): string {
+function longDay(ymd: string): string {
   const { weekday, day, month } = parseDay(ymd);
   return `${WEEKDAYS[weekday]} ${day} ${MONTHS[month - 1]}`;
 }

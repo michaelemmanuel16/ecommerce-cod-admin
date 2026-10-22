@@ -7,7 +7,7 @@ import { ToastProvider } from '../../components/ui-v2';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { ROWS, SUMMARY } from '../fixtures/customersList';
-import { SEARCH_DEBOUNCE_MS } from '../../pages/customers/urlState';
+import { SEARCH_DEBOUNCE_MS } from '../../utils/urlState';
 
 const listCustomers = vi.fn();
 const getSummary = vi.fn();

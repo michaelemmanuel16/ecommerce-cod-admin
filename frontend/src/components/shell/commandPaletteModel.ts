@@ -9,7 +9,7 @@ import { PLATFORM_GROUP, visibleGroups, type NavItem } from './navModel';
  * "Go to" rows. Leaderboard and Targets have no page yet (`to: null` in navModel), so `G L` and `G T` do nothing
  * until those pages ship; `G O` opens Orders now.
  */
-export const GO_SHORTCUTS: Record<string, string> = { o: 'orders', l: 'leaderboard', t: 'targets' };
+const GO_SHORTCUTS: Record<string, string> = { o: 'orders', l: 'leaderboard', t: 'targets' };
 
 /** The hint printed on a row: "G O". */
 export const shortcutHint = (navKey: string): string | null => {

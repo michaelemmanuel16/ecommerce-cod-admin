@@ -2,7 +2,8 @@ import { MessageCircle, Phone } from 'lucide-react';
 import { Tag } from '../../../components/ui-v2';
 import type { OrderDetail } from '../../../services/orders.service';
 import { formatCurrency, formatPhoneLocal } from '../../../utils/format';
-import { fullName, methodLabel, num, PAYMENT_TONE, telUrl, whatsappUrl } from './model';
+import { personName } from '../../../utils/people';
+import { methodLabel, num, PAYMENT_TONE, telUrl, whatsappUrl } from './model';
 
 /** Items block: one row per line, then the total (mockup .oi). */
 export function ItemsView({ order }: { order: OrderDetail }) {
@@ -48,7 +49,7 @@ export function CustomerView({ order }: { order: OrderDetail }) {
       <h4>Customer</h4>
       <dl className="kv">
         <dt>Name</dt>
-        <dd>{fullName(c)}</dd>
+        <dd>{personName(c)}</dd>
         <dt>Phone</dt>
         <dd style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span>{formatPhoneLocal(c.phoneNumber)}</span>

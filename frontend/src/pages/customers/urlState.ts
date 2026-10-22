@@ -1,4 +1,5 @@
 import type { CustomerFilterParams, CustomerListParams, CustomerSegment, CustomerSortField, CustomerRisk } from '../../services/customers.service';
+import { positive } from '../../utils/urlState';
 import { isRisk, isSegment } from './model';
 
 export interface SortState {
@@ -22,21 +23,13 @@ export interface ListView {
   flagged: boolean;
 }
 
-/** The search waits this long after the last key press (F-352). */
-export const SEARCH_DEBOUNCE_MS = 300;
 export const PAGE_SIZES = [25, 50, 100] as const;
-export const DEFAULT_SIZE = 25;
 
 export const DEFAULT_VIEW: ListView = {
   segment: 'all', page: 1, q: '', sort: null, size: null, town: '', region: '', risk: null, blocked: false, flagged: false,
 };
 
 export const SORT_FIELDS: CustomerSortField[] = ['customer', 'orders', 'deliveredValue', 'lastOrder'];
-
-const positive = (v: string | null): number | null => {
-  const n = Number(v);
-  return v !== null && Number.isInteger(n) && n > 0 ? n : null;
-};
 
 export function parseView(search: URLSearchParams): ListView {
   const segment = search.get('segment');

@@ -15,7 +15,8 @@ import { useFilterOptions } from '../useFilterOptions';
 import { useOrderActions } from '../useOrderActions';
 import { CallsBlock } from './CallsBlock';
 import { CustomerEdit, ItemsEdit, PaymentEdit } from './EditBlocks';
-import { buildEdit, accraTime, draftOf, fullName, PAYMENT_TONE, type EditDraft } from './model';
+import { personName } from '../../../utils/people';
+import { buildEdit, accraTime, draftOf, PAYMENT_TONE, type EditDraft } from './model';
 import { Timeline } from './Timeline';
 import { CustomerView, ItemsView, PaymentView } from './ViewBlocks';
 
@@ -285,7 +286,7 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
                 >
                   <option value="" disabled={!!assigned?.customerRep}>Unassigned</option>
                   {assigned?.customerRep && !options.reps.some((r) => r.id === assigned.customerRep!.id) && (
-                    <option value={assigned.customerRep.id}>{fullName(assigned.customerRep)}</option>
+                    <option value={assigned.customerRep.id}>{personName(assigned.customerRep)}</option>
                   )}
                   {options.reps.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </Select>
@@ -300,7 +301,7 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
                 >
                   <option value="" disabled={!!assigned?.deliveryAgent}>Unassigned</option>
                   {assigned?.deliveryAgent && !options.agents.some((a) => a.id === assigned.deliveryAgent!.id) && (
-                    <option value={assigned.deliveryAgent.id}>{fullName(assigned.deliveryAgent)}</option>
+                    <option value={assigned.deliveryAgent.id}>{personName(assigned.deliveryAgent)}</option>
                   )}
                   {options.agents.map((a) => <option key={a.id} value={a.id} disabled={a.unavailable}>{a.name}{a.unavailable ? ' (not available today)' : ''}</option>)}
                 </Select>
@@ -312,7 +313,7 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
               <Timeline entries={timeline} sourceLabel={order.sourceLabel} />
             </div>
 
-            <CallsBlock calls={order.calls} onLog={canLog ? logCall : undefined} me={me ? fullName(me) : 'Me'} />
+            <CallsBlock calls={order.calls} onLog={canLog ? logCall : undefined} me={me ? personName(me) : 'Me'} />
 
             <div className="sec">
               <h4>Messages</h4>

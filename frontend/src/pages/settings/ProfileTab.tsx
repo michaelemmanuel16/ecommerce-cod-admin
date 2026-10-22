@@ -2,15 +2,14 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button, Card, Input, useToast } from '../../components/ui-v2';
 import { accountService, type ProfileUser } from '../../services/account.service';
 import { authService } from '../../services/auth.service';
-import { API_URL } from '../../services/tokenRefresh';
 import { useAuthStore } from '../../stores/authStore';
+import { photoSrc } from '../../utils/photoSrc';
 
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const PHOTO_MAX = 5 * 1024 * 1024;
 
 const initials = (first = '', last = '') => `${first[0] ?? ''}${last[0] ?? ''}`.toUpperCase();
 const joinName = (u: { firstName?: string; lastName?: string }) => [u.firstName, u.lastName].filter(Boolean).join(' ');
-const photoSrc = (url: string) => (url.startsWith('/') ? `${API_URL}${url}` : url);
 const apiMessage = (e: unknown, fallback: string) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
 
 /** Profile (M3-T63, F-1221, F-1222). Full name is one input; the server splits it on the last space. */

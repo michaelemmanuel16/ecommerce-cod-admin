@@ -9,7 +9,7 @@ export type ReportTabId = 'overview' | 'sales' | 'delivery' | 'team';
 
 export interface ReportParams { from: string; to: string; compare: boolean }
 
-export interface ReportHead {
+interface ReportHead {
   tab: ReportTabId;
   range: { from: string; to: string; days: number; timeZone: string };
   /** The previous period, null when compare is off. */
@@ -20,14 +20,14 @@ export interface ReportHead {
 export type ReportBody = ReportHead | TeamReport;
 
 export interface Counted { value: number; previous: number | null; deltaPercent: number | null }
-export interface MoneyTile { value: Money; previous: Money | null; deltaPercent: number | null }
+interface MoneyTile { value: Money; previous: Money | null; deltaPercent: number | null }
 export interface RateTile { value: number | null; previous: number | null; deltaPoints: number | null }
-export interface TargetedRate extends RateTile { target: number; tag: RateTag }
-export interface SuccessRate extends TargetedRate { delivered: number; closed: number }
+interface TargetedRate extends RateTile { target: number; tag: RateTag }
+interface SuccessRate extends TargetedRate { delivered: number; closed: number }
 
 /* ---- Overview ---- */
 export type Segment = 'delivered' | 'failed' | 'returned' | 'outForDelivery' | 'waitingToDispatch' | 'pendingCall' | 'cancelled' | 'other';
-export interface OverviewTiles {
+interface OverviewTiles {
   currency: string;
   orders: Counted;
   confirmed: Counted & { confirmationRate: TargetedRate };
@@ -35,14 +35,14 @@ export interface OverviewTiles {
   deliveredRevenue: MoneyTile & { monthTarget: Money | null };
   orderToCashYield: RateTile;
 }
-export interface EndedUp {
+interface EndedUp {
   total: number;
   segments: Array<{ key: Segment; count: number; percent: number | null }>;
   deliverySuccessRate: number | null;
   orderToCashYield: number | null;
 }
-export interface DayRow { date: string; orders: number; confirmed: number; delivered: number; revenue: Money }
-export interface DailyTable {
+interface DayRow { date: string; orders: number; confirmed: number; delivered: number; revenue: Money }
+interface DailyTable {
   rows: Array<DayRow & { previous: DayRow | null }>;
   total: { orders: number; confirmed: number; delivered: number; revenue: Money };
 }
@@ -75,7 +75,7 @@ export interface SalesReport extends ReportHead {
 }
 
 /* ---- Delivery ---- */
-export interface DeliveryTiles {
+interface DeliveryTiles {
   currency: string;
   deliverySuccessRate: SuccessRate;
   failed: Counted;
@@ -84,7 +84,7 @@ export interface DeliveryTiles {
   outForDeliveryNow: { value: number; partners: number };
   slowestPaysIn: { partnerId: number; name: string; days: number } | null;
 }
-export interface PartnerRow {
+interface PartnerRow {
   partnerId: number;
   name: string;
   assigned: number;
@@ -116,11 +116,11 @@ export interface DeliveryReport extends ReportHead {
 }
 
 /* ---- Team (GET /api/reports/team: no blocks, no previous period) ---- */
-export interface CountedRate {
+interface CountedRate {
   value: number | null;
   detail?: Record<string, number>;
 }
-export interface TeamRates { confirmationRate: CountedRate; deliveredFromConfirmedRate: CountedRate }
+interface TeamRates { confirmationRate: CountedRate; deliveredFromConfirmedRate: CountedRate }
 export interface TeamFigures {
   calls: number;
   confirmed: number;
@@ -133,7 +133,7 @@ export interface TeamFigures {
   extraValue: Money;
   targetHit: { target: number; actual: number; percent: number | null } | null;
 }
-export interface TeamRepRow extends TeamRates, TeamFigures {
+interface TeamRepRow extends TeamRates, TeamFigures {
   repId: number;
   name: string;
   /** 'ai_agent' for an AI agent, else 'person'. */

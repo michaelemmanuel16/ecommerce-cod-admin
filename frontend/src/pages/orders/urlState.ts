@@ -1,4 +1,5 @@
 import type { OrderListParams } from '../../services/orders.service';
+import { positive } from '../../utils/urlState';
 import { isTabId, tabStatuses, type StatusTabId } from './model';
 import type { SortField, SortState } from './columns';
 
@@ -26,11 +27,8 @@ export interface ListView {
   ids: number[] | null;
 }
 
-/** The search waits this long after the last key press (F-310). */
-export const SEARCH_DEBOUNCE_MS = 300;
 export const PAGE_SIZES = [25, 50, 75, 100] as const;
-export const DEFAULT_SIZE = 25;
-export const DEFAULT_SORT: SortState = { by: 'createdAt', dir: 'desc' };
+const DEFAULT_SORT: SortState = { by: 'createdAt', dir: 'desc' };
 
 export const DEFAULT_VIEW: ListView = {
   tab: 'all', page: 1, q: '', sort: DEFAULT_SORT, size: null, from: null, to: null, basis: 'created',
@@ -43,11 +41,6 @@ export const MAX_IDS = 2000;
 const SORT_FIELDS: SortField[] = ['id', 'customer', 'totalAmount', 'createdAt'];
 const DAY = 86_400_000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-const positive = (v: string | null): number | null => {
-  const n = Number(v);
-  return v !== null && Number.isInteger(n) && n > 0 ? n : null;
-};
 
 const readIds = (v: string | null): number[] | null => {
   if (!v || !/^\d+(,\d+)*$/.test(v)) return null;

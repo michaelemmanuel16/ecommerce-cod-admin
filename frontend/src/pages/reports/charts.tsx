@@ -8,7 +8,7 @@ const AXIS = { fill: 'var(--ink-3)', fontSize: 11, fontFamily: 'Plus Jakarta San
 /** About nine labels along the x axis whatever the range (the mockup's `every`). */
 const every = (n: number) => Math.max(0, Math.ceil(n / 9) - 1);
 
-export interface Series { key: string; color: string; area?: boolean }
+interface Series { key: string; color: string; area?: boolean }
 type Row = Record<string, string | number | null>;
 
 interface DayChartProps {
@@ -72,7 +72,7 @@ export function DayBarChart({ data, summary, compare, color = 'var(--pine)', for
   );
 }
 
-export interface Slice { name: string; value: number; color: string; text: string }
+interface Slice { name: string; value: number; color: string; text: string }
 
 /** The donut with its centre text, and the list of slices beside it (.donutrow). `text` is the figure in the list. */
 export function Donut({ slices, top, sub, summary }: { slices: Slice[]; top: string; sub: string; summary: string }) {
@@ -95,7 +95,7 @@ export function Donut({ slices, top, sub, summary }: { slices: Slice[]; top: str
   );
 }
 
-export interface TargetBar { label: string; value: number }
+interface TargetBar { label: string; value: number }
 
 /**
  * Delivery success per state against the target line (the mockup's #chRegion). Horizontal bars, one row per state, so

@@ -2,6 +2,7 @@ import type { OrderStatus } from '../../types';
 import type { TagTone } from '../../components/ui-v2';
 import type { OrderCounts, OrderListRow } from '../../services/orders.service';
 import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
+import { personName } from '../../utils/people';
 
 /** Tab ids are the URL values of `?status=`: a status, `payment_issues` (two statuses) or `all`. */
 export type StatusTabId = 'all' | OrderStatus | 'payment_issues';
@@ -15,7 +16,7 @@ interface TabDef {
 }
 
 /** Tab order of docs/mockups/v2/index.html#orders. "Unpaid by agent" (F-309) ships in M5. */
-export const STATUS_TABS: TabDef[] = [
+const STATUS_TABS: TabDef[] = [
   { id: 'all', label: 'All', statuses: [] },
   { id: 'pending_confirmation', label: ORDER_STATUS_LABELS.pending_confirmation, statuses: ['pending_confirmation'] },
   { id: 'confirmed', label: ORDER_STATUS_LABELS.confirmed, statuses: ['confirmed'] },
@@ -63,14 +64,7 @@ export const STATUS_TONE: Record<OrderStatus, TagTone> = {
 /** "#24118" (F-300). One place, so every screen writes an order number the same way. */
 export const orderNumber = (id: number): string => `#${id}`;
 
-export const customerName = (row: OrderListRow): string => `${row.customer.firstName} ${row.customer.lastName}`.trim();
-export const personName = (u: { firstName: string; lastName: string }): string => `${u.firstName} ${u.lastName}`.trim();
-
-export const initials = (name: string): string =>
-  name.split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-
-/** Avatar tint per customer, the five tones of TONE in the mockup. */
-export const AVATAR_TONES = ['pine', 'gold', 'violet', 'coral', 'mint'] as const;
+export const customerName = (row: OrderListRow): string => personName(row.customer);
 
 /** "Copybook set × 2 + 1 more": the first item and how many more (an upsell shows its own name). */
 export function productSummary(row: OrderListRow): string {

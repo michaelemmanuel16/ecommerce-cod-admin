@@ -11,7 +11,8 @@ import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
 import type { OrderStatus } from '../types';
 import { RiskTags } from './customers/RiskTags';
 import { CustomerModal } from './customers/CustomerModal';
-import { AVATAR_TONES, customerName, initials, lastOrderDate } from './customers/model';
+import { AVATAR_TONES, initials } from '../utils/people';
+import { customerName, lastOrderDate } from './customers/model';
 import { orderNumber, shortDate, STATUS_TONE } from './orders/model';
 
 type TabId = 'orders' | 'messages' | 'calls' | 'notes';

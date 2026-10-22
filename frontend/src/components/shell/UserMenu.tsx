@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
-import { API_URL } from '../../services/tokenRefresh';
+import { photoSrc } from '../../utils/photoSrc';
 import { platformLoginPath } from '../../utils/platformDomain';
 import { usePopover } from './usePopover';
 
@@ -34,7 +34,7 @@ export function UserMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        {user?.photoUrl ? <img src={user.photoUrl.startsWith('/') ? `${API_URL}${user.photoUrl}` : user.photoUrl} alt="" className="avatar-img" /> : initials(user?.firstName, user?.lastName)}
+        {user?.photoUrl ? <img src={photoSrc(user.photoUrl)} alt="" className="avatar-img" /> : initials(user?.firstName, user?.lastName)}
       </button>
       {open && (
         <div className="sx-menu" role="menu">

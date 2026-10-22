@@ -4,7 +4,8 @@ import { Button, Select } from '../../components/ui-v2';
 import { useConfigStore } from '../../stores/configStore';
 import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
 import { isRisk, RISK_LABEL, RISKS } from './model';
-import { SEARCH_DEBOUNCE_MS, type ListView } from './urlState';
+import { SEARCH_DEBOUNCE_MS } from '../../utils/urlState';
+import type { ListView } from './urlState';
 
 interface FilterBarProps {
   view: ListView;

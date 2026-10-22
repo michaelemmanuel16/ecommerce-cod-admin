@@ -71,7 +71,7 @@ export interface Tiles {
   cash?: { value: Money; partners: number; /** orders behind the cash delivered more than 8 days ago */ overdueOrders?: number };
 }
 
-export interface ChartDay { date: string; delivered: Money | null; cumulative: Money | null; targetPace: Money | null; vsPace: Money | null }
+interface ChartDay { date: string; delivered: Money | null; cumulative: Money | null; targetPace: Money | null; vsPace: Money | null }
 export interface Chart {
   currency: string;
   period: 'month' | 'quarter' | 'year' | null;
