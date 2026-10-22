@@ -27,6 +27,8 @@ const readOrderFilters = (query: AuthRequest['query']): OrderFilters => {
     startDate: readDateBound(startDate, 'from'),
     endDate: readDateBound(endDate, 'to'),
     search: search as string | undefined,
+    // validated as a comma list of at most 2,000 numbers
+    ids: typeof query.ids === 'string' && query.ids ? query.ids.split(',').map(Number) : undefined,
   };
 };
 

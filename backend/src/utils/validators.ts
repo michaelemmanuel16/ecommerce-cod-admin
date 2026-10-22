@@ -161,6 +161,9 @@ export const orderListValidation: ValidationChain[] = [
   query('sortOrder').optional().isIn(['asc', 'desc']),
   query('dateBasis').optional().isIn(['created', 'delivery']),
   query('flag').optional().isIn([...ORDER_FLAG_CODES, 'any']),
+  // The orders an import made (F-319): a comma list of ids, numbers only, at most 2,000
+  query('ids').optional().isString().matches(/^\d+(,\d+)*$/).withMessage('ids must be a comma list of numbers')
+    .custom((v: string) => v.split(',').length <= 2000).withMessage('ids can hold at most 2,000 numbers'),
 ];
 
 /** `orderIds` length is limited in the service (413 above 200). */
