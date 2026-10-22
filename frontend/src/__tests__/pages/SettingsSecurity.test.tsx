@@ -173,3 +173,26 @@ describe('Export and delete (F-1225, F-1226)', () => {
     expect(container.querySelector('.confirm')).toBeNull();
   });
 });
+
+describe('Session list length (owner G3)', () => {
+  it('shows this device and 4 others, and "Show all" opens the rest', async () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      id: 10 + i, deviceLabel: `Device ${i}`, ip: null, lastSeenAt: HOURS_AGO, createdAt: HOURS_AGO, current: i === 6,
+    }));
+    listSessions.mockResolvedValue(many);
+    renderTab();
+    expect(await screen.findByText('Device 6')).toBeInTheDocument();
+    expect(screen.getByText('Device 3')).toBeInTheDocument();
+    expect(screen.queryByText('Device 4')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Show all 8' }));
+    expect(screen.getByText('Device 7')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Show fewer' }));
+    expect(screen.queryByText('Device 7')).not.toBeInTheDocument();
+  });
+
+  it('5 sessions or fewer show no button', async () => {
+    renderTab();
+    expect(await screen.findByText('iPhone · Safari')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Show all/ })).not.toBeInTheDocument();
+  });
+});

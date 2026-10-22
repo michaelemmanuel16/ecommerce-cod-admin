@@ -66,9 +66,12 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
   );
 }
 
+const SESSIONS_SHOWN = 5;
+
 function SessionsCard({ reloadKey }: { reloadKey: number }) {
   const say = useToast();
   const [rows, setRows] = useState<SessionRow[] | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(() => {
     accountService.listSessions().then(setRows).catch(() => setRows([]));
@@ -96,13 +99,16 @@ function SessionsCard({ reloadKey }: { reloadKey: number }) {
   };
 
   const others = rows?.filter((r) => !r.current).length ?? 0;
+  // Owner G3 2026-10-22: show this device and the 4 latest others; the rest behind "Show all"
+  const sorted = rows ? [...rows.filter((r) => r.current), ...rows.filter((r) => !r.current)] : [];
+  const shown = showAll ? sorted : sorted.slice(0, SESSIONS_SHOWN);
   return (
     <Card
       title="Where you are signed in"
       aside={<Button size="mini" disabled={others === 0} onClick={signOutOthers}>Sign out everywhere else</Button>}
     >
       <div style={{ marginTop: 8 }}>
-        {rows?.map((r) => {
+        {shown.map((r) => {
           const Icon = deviceIcon(r.deviceLabel);
           return (
             <div className="sess" key={r.id}>
@@ -116,6 +122,11 @@ function SessionsCard({ reloadKey }: { reloadKey: number }) {
           );
         })}
         {rows?.length === 0 && <p className="setnote">No sessions to show.</p>}
+        {sorted.length > SESSIONS_SHOWN && (
+          <div className="cardfoot">
+            <Button size="mini" onClick={() => setShowAll(!showAll)}>{showAll ? 'Show fewer' : `Show all ${sorted.length}`}</Button>
+          </div>
+        )}
       </div>
     </Card>
   );
