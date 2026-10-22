@@ -1,0 +1,105 @@
+/* Reports (M3-T60, M3-T61, F-1050 to F-1053). Copied from the style block of docs/mockups/v2/reports.html and
+   docs/mockups/v2/app.css (.insight .seg .sw .bars .bar-row .donutrow .dt), with the `.v2` scope added.
+   Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
+
+.v2 .reports > * + *{margin-top:16px}
+.v2 .reports > .head{margin-bottom:22px}
+.v2 .reports > .head + *{margin-top:0}
+.v2 .reports .panel > * + *{margin-top:16px}
+.v2 .reports .panel > .kpis{margin-top:0}
+.v2 .reports .panel > .grid.two{margin-top:16px}
+/* new: a range change keeps the old figures on screen, dimmed, until the new answer arrives (same as the Dashboard) */
+.v2 .reports.busy .panel{opacity:.6;transition:opacity .15s}
+.v2 .hd-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.v2 .ink3{color:var(--ink-3)}
+.v2 .reports .two{align-items:start}
+.v2 .reports .two.even{grid-template-columns:1fr 1fr}
+.v2 .kpi .tag{white-space:nowrap}
+/* new: two tiles when the viewer has no financial:view (no cash tiles) */
+.v2 .kpis.n2{grid-template-columns:repeat(2,1fr)}
+/* new: the .dlt row of the mockup, shown by the page only while compare is on */
+.v2 .dlt{display:flex;margin-top:8px;font-size:12.5px;color:var(--ink-3);align-items:center;gap:6px}
+
+/* date card */
+.v2 .datecard{padding:14px 18px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.v2 .datecard .seg{margin-top:0}
+.v2 .customdates{display:flex;align-items:center;gap:8px}
+.v2 .rangetext{margin-left:auto;text-align:right}
+.v2 .rangetext .ink3{font-size:12.5px}
+.v2 .rangeerr{color:var(--coral);font-weight:600}
+.v2 .sw{display:inline-flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
+.v2 .sw input{position:absolute;opacity:0;width:1px;height:1px}
+.v2 .sw .tg{width:38px;height:22px;border-radius:99px;background:var(--line);position:relative;transition:background .15s;flex:none}
+.v2 .sw .tg::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
+.v2 .sw input:checked+.tg{background:var(--pine)}
+.v2 .sw input:checked+.tg::after{transform:translateX(16px)}
+.v2 .sw input:focus-visible+.tg{outline:2px solid var(--pine);outline-offset:2px}
+
+/* agent card */
+.v2 .insight{border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.v2 .insight.card{padding:14px 16px}
+.v2 .insight .h{display:flex;gap:10px;align-items:flex-start}
+.v2 .insight .ico{flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center}
+.v2 .insight .ico.coral{background:var(--coral-soft);color:var(--coral)}
+.v2 .insight b{display:block;font-size:13.5px}
+.v2 .insight p{color:var(--ink-2);font-size:13px}
+.v2 .insight .act{display:flex;gap:8px;margin-top:10px;padding-left:40px}
+.v2 .insight .act a.mini{display:inline-block}
+.v2 .agentrow{grid-template-columns:1fr 1fr}
+
+/* tab bar (.pgtabs) */
+.v2 .tabs.pgtabs{display:flex;gap:6px;flex-wrap:wrap;margin:16px 0;padding:0;border-bottom:0}
+.v2 .pgtabs .tab{border:1px solid var(--line);background:var(--card)}
+.v2 .pgtabs .tab.on{border-color:var(--ink);background:var(--ink);color:var(--bg)}
+.v2 .tab svg.lucide{width:16px;height:16px}
+
+/* charts, legends, donut */
+.v2 .lgrow{display:flex;gap:14px;flex-wrap:wrap;padding:10px 20px 0;color:var(--ink-2);font-size:12.5px}
+.v2 .lgrow i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.v2 .lgrow i.dash{background:none;border-top:2px dashed var(--ink-3);height:0;width:14px;border-radius:0;vertical-align:3px}
+.v2 .donutrow{display:flex;align-items:center;gap:22px;padding:14px 20px 20px;flex-wrap:wrap}
+.v2 .donutbox{position:relative;width:160px;height:160px;flex:none}
+/* new: the centre text of the donut (the mockup draws it inside the svg) */
+.v2 .donutc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.v2 .donutc b{font-family:"Bricolage Grotesque",sans-serif;font-size:19px;font-weight:800;line-height:1.1}
+.v2 .donutc span{color:var(--ink-3);font-size:11px;font-weight:500}
+.v2 .donutrow .dl{flex:1;min-width:180px;display:grid;gap:8px}
+.v2 .donutrow .dl div{display:flex;align-items:center;gap:8px;font-size:13px}
+.v2 .donutrow .dl i{width:10px;height:10px;border-radius:3px;flex:none}
+.v2 .donutrow .dl b{margin-left:auto}
+
+/* bars ("Where orders ended up", reasons) */
+.v2 .bars{padding:14px 20px 18px;display:flex;flex-direction:column;gap:14px}
+.v2 .bar-row{display:grid;grid-template-columns:130px 1fr 92px;gap:14px;align-items:center}
+.v2 .bar-row .track{height:10px;border-radius:99px;background:var(--hover);overflow:hidden;position:relative}
+.v2 .bar-row .track i{display:block;height:100%;border-radius:99px}
+.v2 .bar-row .val{text-align:right;font-weight:700}
+.v2 .bar-row .val small{color:var(--ink-3);font-weight:500}
+.v2 .note{padding:0 20px 18px;color:var(--ink-2);font-size:13px}
+.v2 .two3{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:14px 20px 4px}
+
+/* tables */
+.v2 .tcard .tablewrap{margin-top:8px}
+.v2 .dailywrap{max-height:340px;overflow-y:auto}
+.v2 .dt{font-size:13px}
+.v2 .tablewrap .dt th,.v2 .tablewrap .dt td{padding:12px 10px}
+.v2 .tablewrap .dt th:first-child,.v2 .tablewrap .dt td:first-child{padding-left:20px}
+.v2 .tablewrap .dt th:last-child,.v2 .tablewrap .dt td:last-child{padding-right:20px}
+.v2 .dt th small{display:block;font-weight:500;color:var(--ink-3)}
+.v2 .dt .num{white-space:nowrap}
+.v2 .dt tr.tot td{background:var(--hover);font-weight:700}
+.v2 .dt.camp th{white-space:nowrap;vertical-align:bottom}
+.v2 .dt .rate{min-width:112px}
+.v2 .dt .rate .prog{margin-top:6px}
+
+@media (max-width:1100px){
+  .v2 .agentrow{grid-template-columns:1fr}
+  .v2 .reports .two.even{grid-template-columns:1fr}
+  .v2 .kpis.n2{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:760px){
+  .v2 .bar-row{grid-template-columns:100px 1fr 76px;gap:10px}
+  .v2 .two3{grid-template-columns:1fr}
+  .v2 .kpis.n2{grid-template-columns:1fr}
+  .v2 .rangetext{margin-left:0;text-align:left}
+}

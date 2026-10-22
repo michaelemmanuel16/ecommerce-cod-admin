@@ -42,6 +42,10 @@ export const SCANNED = [
   'src/pages/customers',
   'src/styles/customers.css',
   'src/styles/orderDrawer.css',
+  'src/pages/Reports.tsx',
+  'src/pages/reports',
+  'src/styles/reports.css',
+  'src/services/reports.service.ts',
   // later tasks: 'src/pages/v2', ...
 ];
 

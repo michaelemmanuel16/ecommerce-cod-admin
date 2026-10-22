@@ -1,0 +1,358 @@
+{
+ "tab": "overview",
+ "range": {
+  "from": "2026-10-01",
+  "to": "2026-10-17",
+  "days": 17,
+  "timeZone": "Africa/Accra"
+ },
+ "compare": {
+  "from": "2026-09-01",
+  "to": "2026-09-17",
+  "days": 17
+ },
+ "generatedAt": "2026-10-17T06:42:00.000Z",
+ "currency": "GHS",
+ "tiles": {
+  "currency": "GHS",
+  "orders": {
+   "value": 1445,
+   "previous": 1380,
+   "deltaPercent": 4.7
+  },
+  "confirmed": {
+   "value": 1026,
+   "previous": 980,
+   "deltaPercent": 4.7,
+   "confirmationRate": {
+    "value": 71,
+    "previous": 71,
+    "deltaPoints": 0,
+    "target": 70,
+    "tag": "on_track"
+   }
+  },
+  "delivered": {
+   "value": 376,
+   "previous": 387,
+   "deltaPercent": -2.8,
+   "dateBasis": "deliveryDate",
+   "deliverySuccessRate": {
+    "value": 48,
+    "previous": 60,
+    "deltaPoints": -12,
+    "target": 60,
+    "tag": "off_track",
+    "basis": "cohort",
+    "delivered": 376,
+    "closed": 778
+   }
+  },
+  "deliveredRevenue": {
+   "value": "92000.00",
+   "previous": "96000.00",
+   "deltaPercent": -4.2,
+   "monthTarget": "180000.00"
+  },
+  "orderToCashYield": {
+   "value": 34,
+   "previous": 38,
+   "deltaPoints": -4
+  }
+ },
+ "endedUp": {
+  "total": 1445,
+  "segments": [
+   {
+    "key": "delivered",
+    "count": 376,
+    "percent": 26.0
+   },
+   {
+    "key": "failed",
+    "count": 354,
+    "percent": 24.5
+   },
+   {
+    "key": "returned",
+    "count": 48,
+    "percent": 3.3
+   },
+   {
+    "key": "outForDelivery",
+    "count": 148,
+    "percent": 10.2
+   },
+   {
+    "key": "waitingToDispatch",
+    "count": 100,
+    "percent": 6.9
+   },
+   {
+    "key": "pendingCall",
+    "count": 64,
+    "percent": 4.4
+   },
+   {
+    "key": "cancelled",
+    "count": 355,
+    "percent": 24.6
+   },
+   {
+    "key": "other",
+    "count": 0,
+    "percent": 0.0
+   }
+  ],
+  "deliverySuccessRate": 48,
+  "orderToCashYield": 34
+ },
+ "daily": {
+  "rows": [
+   {
+    "date": "2026-10-01",
+    "orders": 78,
+    "confirmed": 55,
+    "delivered": 20,
+    "revenue": "4894.00",
+    "previous": {
+     "date": "2026-09-01",
+     "orders": 79,
+     "confirmed": 56,
+     "delivered": 22,
+     "revenue": "5457.00"
+    }
+   },
+   {
+    "date": "2026-10-02",
+    "orders": 82,
+    "confirmed": 58,
+    "delivered": 24,
+    "revenue": "5872.00",
+    "previous": {
+     "date": "2026-09-02",
+     "orders": 77,
+     "confirmed": 55,
+     "delivered": 24,
+     "revenue": "5954.00"
+    }
+   },
+   {
+    "date": "2026-10-03",
+    "orders": 91,
+    "confirmed": 65,
+    "delivered": 22,
+    "revenue": "5383.00",
+    "previous": {
+     "date": "2026-09-03",
+     "orders": 83,
+     "confirmed": 59,
+     "delivered": 23,
+     "revenue": "5705.00"
+    }
+   },
+   {
+    "date": "2026-10-04",
+    "orders": 88,
+    "confirmed": 63,
+    "delivered": 25,
+    "revenue": "6117.00",
+    "previous": {
+     "date": "2026-09-04",
+     "orders": 81,
+     "confirmed": 58,
+     "delivered": 25,
+     "revenue": "6202.00"
+    }
+   },
+   {
+    "date": "2026-10-05",
+    "orders": 95,
+    "confirmed": 67,
+    "delivered": 23,
+    "revenue": "5628.00",
+    "previous": {
+     "date": "2026-09-05",
+     "orders": 87,
+     "confirmed": 62,
+     "delivered": 24,
+     "revenue": "5954.00"
+    }
+   },
+   {
+    "date": "2026-10-06",
+    "orders": 70,
+    "confirmed": 50,
+    "delivered": 18,
+    "revenue": "4404.00",
+    "previous": {
+     "date": "2026-09-06",
+     "orders": 73,
+     "confirmed": 52,
+     "delivered": 20,
+     "revenue": "4961.00"
+    }
+   },
+   {
+    "date": "2026-10-07",
+    "orders": 62,
+    "confirmed": 44,
+    "delivered": 15,
+    "revenue": "3670.00",
+    "previous": {
+     "date": "2026-09-07",
+     "orders": 69,
+     "confirmed": 49,
+     "delivered": 18,
+     "revenue": "4465.00"
+    }
+   },
+   {
+    "date": "2026-10-08",
+    "orders": 84,
+    "confirmed": 60,
+    "delivered": 21,
+    "revenue": "5138.00",
+    "previous": {
+     "date": "2026-09-08",
+     "orders": 78,
+     "confirmed": 55,
+     "delivered": 22,
+     "revenue": "5457.00"
+    }
+   },
+   {
+    "date": "2026-10-09",
+    "orders": 90,
+    "confirmed": 64,
+    "delivered": 26,
+    "revenue": "6362.00",
+    "previous": {
+     "date": "2026-09-09",
+     "orders": 84,
+     "confirmed": 60,
+     "delivered": 25,
+     "revenue": "6202.00"
+    }
+   },
+   {
+    "date": "2026-10-10",
+    "orders": 97,
+    "confirmed": 69,
+    "delivered": 24,
+    "revenue": "5872.00",
+    "previous": {
+     "date": "2026-09-10",
+     "orders": 86,
+     "confirmed": 61,
+     "delivered": 26,
+     "revenue": "6450.00"
+    }
+   },
+   {
+    "date": "2026-10-11",
+    "orders": 93,
+    "confirmed": 66,
+    "delivered": 27,
+    "revenue": "6606.00",
+    "previous": {
+     "date": "2026-09-11",
+     "orders": 85,
+     "confirmed": 60,
+     "delivered": 27,
+     "revenue": "6698.00"
+    }
+   },
+   {
+    "date": "2026-10-12",
+    "orders": 88,
+    "confirmed": 62,
+    "delivered": 22,
+    "revenue": "5383.00",
+    "previous": {
+     "date": "2026-09-12",
+     "orders": 81,
+     "confirmed": 58,
+     "delivered": 24,
+     "revenue": "5954.00"
+    }
+   },
+   {
+    "date": "2026-10-13",
+    "orders": 76,
+    "confirmed": 54,
+    "delivered": 20,
+    "revenue": "4894.00",
+    "previous": {
+     "date": "2026-09-13",
+     "orders": 79,
+     "confirmed": 56,
+     "delivered": 22,
+     "revenue": "5457.00"
+    }
+   },
+   {
+    "date": "2026-10-14",
+    "orders": 68,
+    "confirmed": 48,
+    "delivered": 17,
+    "revenue": "4160.00",
+    "previous": {
+     "date": "2026-09-14",
+     "orders": 75,
+     "confirmed": 53,
+     "delivered": 19,
+     "revenue": "4713.00"
+    }
+   },
+   {
+    "date": "2026-10-15",
+    "orders": 89,
+    "confirmed": 63,
+    "delivered": 23,
+    "revenue": "5628.00",
+    "previous": {
+     "date": "2026-09-15",
+     "orders": 83,
+     "confirmed": 59,
+     "delivered": 24,
+     "revenue": "5953.00"
+    }
+   },
+   {
+    "date": "2026-10-16",
+    "orders": 96,
+    "confirmed": 68,
+    "delivered": 24,
+    "revenue": "5872.00",
+    "previous": {
+     "date": "2026-09-16",
+     "orders": 88,
+     "confirmed": 62,
+     "delivered": 23,
+     "revenue": "5705.00"
+    }
+   },
+   {
+    "date": "2026-10-17",
+    "orders": 98,
+    "confirmed": 70,
+    "delivered": 25,
+    "revenue": "6117.00",
+    "previous": {
+     "date": "2026-09-17",
+     "orders": 92,
+     "confirmed": 65,
+     "delivered": 19,
+     "revenue": "4713.00"
+    }
+   }
+  ],
+  "total": {
+   "orders": 1445,
+   "confirmed": 1026,
+   "delivered": 376,
+   "revenue": "92000.00"
+  }
+ }
+}

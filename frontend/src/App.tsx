@@ -31,7 +31,7 @@ const CustomerDetails = lazy(() => import('./pages/CustomerDetails').then(m => (
 const DeliveryAgents = lazy(() => import('./pages/DeliveryAgents').then(m => ({ default: m.DeliveryAgents })));
 const CustomerReps = lazy(() => import('./pages/CustomerReps').then(m => ({ default: m.CustomerReps })));
 const Financial = lazy(() => import('./pages/Financial').then(m => ({ default: m.Financial })));
-const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })));
+const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m.Workflows })));
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
@@ -269,6 +269,8 @@ function App() {
             }
           >
             <Route path="financial" element={<Navigate to="/finance" replace />} />
+            {/* The old Analytics page is gone (M3-T60): old links and bookmarks land on Reports. */}
+            <Route path="analytics" element={<Navigate to="/reports" replace />} />
             {/* Every page below needs its menu item (F-102); platform pages use PlatformGuard instead. */}
             <Route element={<AccessGate />}>
             <Route index element={<DashboardIndex />} />
@@ -299,8 +301,8 @@ function App() {
             <Route path="finance" element={
               <Suspense fallback={<Loading />}><Financial /></Suspense>
             } />
-            <Route path="analytics" element={
-              <Suspense fallback={<Loading />}><Analytics /></Suspense>
+            <Route path="reports" element={
+              <Suspense fallback={<Loading />}><Reports /></Suspense>
             } />
             <Route path="workflows" element={
               <Suspense fallback={<Loading />}><Workflows /></Suspense>
