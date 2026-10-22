@@ -6,7 +6,14 @@ import { Requester } from '../utils/authUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
 import * as Money from '../utils/money';
-import { looksLikePhone, normalizePhoneForStorage, phoneLookupVariants, phonePartialDigits, phoneSearchConditions } from '../utils/phone';
+import { normalizePhoneForStorage, phoneLookupVariants, phoneSearchConditions } from '../utils/phone';
+import { withSoftDeleted } from '../utils/prismaExtensions';
+import { auditService } from './auditService';
+import { getStoreTimeZone, localDate, startOfDay } from './kpi/dates';
+
+/** The customer form fields (F-355). Opt-out flags and stats are not on the form, so they are never taken from the body. */
+const FORM_FIELDS = ['firstName', 'lastName', 'email', 'phoneNumber', 'alternatePhone', 'address', 'state', 'area', 'landmark', 'notes'] as const;
+type FormField = typeof FORM_FIELDS[number];
 
 interface CreateCustomerData {
   firstName: string;
@@ -15,67 +22,143 @@ interface CreateCustomerData {
   phoneNumber: string;
   alternatePhone?: string;
   address: string;
+  /** Region */
   state: string;
-  zipCode?: string;
+  /** Town */
   area: string;
   landmark?: string;
-  tags?: string[];
   notes?: string;
+  /** Take back an archived customer who holds the phone number (F-355). */
+  reactivate?: boolean;
 }
+
+export const CUSTOMER_SEGMENTS = ['all', 'repeat', 'first_time', 'refused_before', 'not_reachable'] as const;
+export type CustomerSegment = typeof CUSTOMER_SEGMENTS[number];
+export const CUSTOMER_RISKS = ['low', 'watch', 'high'] as const;
+export type CustomerRisk = typeof CUSTOMER_RISKS[number];
+/** `totalOrders` and `totalSpent` are the old names; `totalSpent` now sorts by delivered value. */
+export const CUSTOMER_SORT_FIELDS = ['customer', 'orders', 'deliveredValue', 'lastOrder', 'totalOrders', 'totalSpent'] as const;
+export type CustomerSortField = typeof CUSTOMER_SORT_FIELDS[number];
+
+/** F-357: Low = 0 refusals, Watch = 1, High = 2 or more. */
+export const riskOf = (refusedOrders: number): CustomerRisk => (refusedOrders >= 2 ? 'high' : refusedOrders === 1 ? 'watch' : 'low');
+/** Refusals at which COD is off. The stored `codBlocked` and the owner override arrive with the refusal rule (M7); until then it is derived. */
+export const COD_BLOCK_REFUSALS = 3;
+/** The AI problem finder rule for "repeat refuser" (F-353); M11 moves it into the finder service. */
+const FLAGGED_REFUSALS = 2;
 
 interface CustomerFilters {
   search?: string;
+  /** Town */
   area?: string;
+  region?: string;
+  risk?: CustomerRisk;
+  blocked?: boolean;
+  flagged?: boolean;
+  segment?: CustomerSegment;
   tags?: string[];
   page?: number;
   limit?: number;
-  sortBy?: 'totalOrders' | 'totalSpent';
+  sortBy?: CustomerSortField;
   sortOrder?: 'asc' | 'desc';
 }
 
+const isAdminRole = (requester?: Requester) =>
+  !requester || requester.role === 'super_admin' || requester.role === 'admin' || requester.role === 'manager';
+
+const fullName = (c: { firstName: string; lastName: string }) => `${c.firstName} ${c.lastName}`.trim();
+
 export class CustomerService {
-  /** The list filters as a `where`, shared by the list and the export (F-361). */
-  private listWhere({ search, area, tags }: CustomerFilters, requester?: Requester): Prisma.CustomerWhereInput {
-    const where: Prisma.CustomerWhereInput = { isActive: true };
+  /**
+   * Row scope (F-350): owner, admin and manager see all. A call rep sees customers they created or have an order with.
+   * A delivery agent sees customers of their own orders. Any other role keeps the old rule (an order of theirs).
+   */
+  private scopeWhere(requester?: Requester): Prisma.CustomerWhereInput | null {
+    if (isAdminRole(requester)) return null;
+    const { id, role } = requester!;
+    if (role === 'sales_rep') {
+      return { OR: [{ createdById: id }, { orders: { some: { customerRepId: id, deletedAt: null } } }] };
+    }
+    if (role === 'delivery_agent') return { orders: { some: { deliveryAgentId: id, deletedAt: null } } };
+    return { orders: { some: { OR: [{ customerRepId: id }, { deliveryAgentId: id }], deletedAt: null } } };
+  }
 
-    // Role-based filtering for customers
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      // For sales reps and delivery agents, they can only see customers they have orders with
-      where.orders = {
-        some: {
-          OR: [
-            { customerRepId: requester.id },
-            { deliveryAgentId: requester.id }
-          ],
-          deletedAt: null
-        }
-      };
+  /**
+   * Ids (of `among`, or all in the tenant) whose newest call is not_reachable or no_answer. The newest call being
+   * one of those also means no later `confirmed` call (F-351).
+   */
+  private async notReachableIds(among?: number[]): Promise<number[]> {
+    if (among && !among.length) return [];
+    const tenantId = getTenantId();
+    const rows = await prisma.$queryRaw<Array<{ customer_id: number }>>(Prisma.sql`
+      SELECT customer_id FROM (
+        SELECT DISTINCT ON (customer_id) customer_id, outcome FROM calls
+        WHERE ${tenantId ? Prisma.sql`tenant_id = ${tenantId}` : Prisma.sql`TRUE`}
+          ${among ? Prisma.sql`AND customer_id = ANY(${among}::int[])` : Prisma.empty}
+        ORDER BY customer_id, created_at DESC, id DESC
+      ) newest
+      WHERE outcome IN ('not_reachable', 'no_answer')`);
+    return rows.map((r) => r.customer_id);
+  }
+
+  /** The list filters as a `where`, shared by the list, the tiles and the export (F-361). */
+  private async listWhere(filters: CustomerFilters, requester?: Requester): Promise<Prisma.CustomerWhereInput> {
+    const { search, area, region, risk, blocked, flagged, segment, tags } = filters;
+    const and: Prisma.CustomerWhereInput[] = [];
+
+    const scope = this.scopeWhere(requester);
+    if (scope) and.push(scope);
+
+    // One character is too little to search on (F-352)
+    const term = search?.trim();
+    if (term && term.length >= 2) {
+      const phone = phoneSearchConditions(term);
+      const words = term.split(/\s+/);
+      and.push({
+        OR: [
+          { firstName: { contains: term, mode: 'insensitive' } },
+          { lastName: { contains: term, mode: 'insensitive' } },
+          // "Abena Owusu": every word is in the first or last name
+          ...(words.length > 1
+            ? [{ AND: words.map((w) => ({ OR: [{ firstName: { contains: w, mode: 'insensitive' as const } }, { lastName: { contains: w, mode: 'insensitive' as const } }] })) }]
+            : []),
+          ...phone,
+          ...phone.map((c) => ({ alternatePhone: c.phoneNumber })),
+          { email: { contains: term, mode: 'insensitive' } },
+        ],
+      });
     }
 
-    if (search) {
-      where.OR = [
-        { firstName: { contains: search, mode: 'insensitive' } },
-        { lastName: { contains: search, mode: 'insensitive' } },
-        ...phoneSearchConditions(search),
-        { email: { contains: search, mode: 'insensitive' } }
-      ];
+    if (area) and.push({ area });
+    if (region) and.push({ state: region });
+    if (tags && tags.length > 0) and.push({ tags: { hasSome: tags } });
+
+    if (risk === 'low') and.push({ refusedOrders: 0 });
+    if (risk === 'watch') and.push({ refusedOrders: 1 });
+    if (risk === 'high') and.push({ refusedOrders: { gte: 2 } });
+    if (blocked !== undefined) and.push({ refusedOrders: blocked ? { gte: COD_BLOCK_REFUSALS } : { lt: COD_BLOCK_REFUSALS } });
+
+    if (segment === 'repeat') and.push({ totalOrders: { gte: 2 } });
+    if (segment === 'first_time') and.push({ totalOrders: 1 });
+    if (segment === 'refused_before') and.push({ refusedOrders: { gte: 1 } });
+
+    if (segment === 'not_reachable' || flagged) {
+      const ids = await this.notReachableIds();
+      if (segment === 'not_reachable') and.push({ id: { in: ids } });
+      if (flagged) and.push({ OR: [{ refusedOrders: { gte: FLAGGED_REFUSALS } }, { id: { in: ids } }] });
     }
 
-    if (area) where.area = area;
-    if (tags && tags.length > 0) {
-      where.tags = { hasSome: tags };
-    }
-    return where;
+    return { isActive: true, AND: and };
   }
 
   /** Rows the export would write (F-361). */
-  exportCount(filters: CustomerFilters, requester?: Requester) {
-    return prisma.customer.count({ where: this.listWhere(filters, requester) });
+  async exportCount(filters: CustomerFilters, requester?: Requester) {
+    return prisma.customer.count({ where: await this.listWhere(filters, requester) });
   }
 
   /** The export rows in batches of `size`, newest id first, one cursor read per batch (never the whole set at once). */
   async *exportBatches(filters: CustomerFilters, requester?: Requester, size = 1000) {
-    const where = this.listWhere(filters, requester);
+    const where = await this.listWhere(filters, requester);
     let last: number | undefined;
     for (;;) {
       const rows = await prisma.customer.findMany({
@@ -90,181 +173,163 @@ export class CustomerService {
     }
   }
 
-  /**
-   * Get all customers with filters and pagination
-   */
-  async getAllCustomers(filters: CustomerFilters, requester?: Requester) {
-    const { search, area, tags, page = 1, limit = 20, sortBy, sortOrder = 'desc' } = filters;
-
-    const where = this.listWhere(filters, requester);
-
-    const skip = (page - 1) * limit;
-
-    // When sorting by computed fields (totalOrders/totalSpent), use raw SQL
-    // to sort and paginate at the database level instead of loading all records
-    if (sortBy) {
-      // Build WHERE conditions for raw SQL
-      const conditions: string[] = ['c.is_active = true'];
-      const params: any[] = [];
-      let paramIdx = 1;
-
-      // Tenant isolation for raw SQL (Prisma extension does not intercept $queryRawUnsafe)
-      const tenantId = getTenantId();
-      if (tenantId) {
-        conditions.push(`c.tenant_id = $${paramIdx}`);
-        params.push(tenantId);
-        paramIdx++;
-      }
-
-      if (search) {
-        // A phone-like term also matches every stored format of the number (normalized or old).
-        // A partly typed local number (024 55) also matches the normalized form.
-        const partial = phonePartialDigits(search);
-        const phoneLike = partial ? `%${partial}%` : `%${search}%`;
-        conditions.push(`(c.first_name ILIKE $${paramIdx} OR c.last_name ILIKE $${paramIdx} OR c.phone_number LIKE $${paramIdx + 1} OR c.phone_number = ANY($${paramIdx + 2}::text[]) OR c.email ILIKE $${paramIdx})`);
-        params.push(`%${search}%`, phoneLike, looksLikePhone(search) ? phoneLookupVariants(search) : []);
-        paramIdx += 3;
-      }
-      if (area) {
-        conditions.push(`c.area = $${paramIdx}`);
-        params.push(area);
-        paramIdx++;
-      }
-      if (tags && tags.length > 0) {
-        conditions.push(`c.tags && $${paramIdx}::text[]`);
-        params.push(tags);
-        paramIdx++;
-      }
-      if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-        conditions.push(`EXISTS (SELECT 1 FROM orders o2 WHERE o2.customer_id = c.id AND o2.deleted_at IS NULL AND (o2.customer_rep_id = $${paramIdx} OR o2.delivery_agent_id = $${paramIdx}))`);
-        params.push(requester.id);
-        paramIdx++;
-      }
-
-      const whereClause = conditions.join(' AND ');
-      // Aggregate expressions, not the aliases: customers has its own total_orders / total_spent columns (c.*), so the alias is ambiguous in ORDER BY.
-      const orderCol = sortBy === 'totalOrders' ? 'COUNT(o.id)' : 'COALESCE(SUM(o.total_amount), 0)';
-      const orderDir = sortOrder === 'asc' ? 'ASC' : 'DESC';
-
-      // Count total
-      const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
-        `SELECT COUNT(*)::bigint as count FROM customers c WHERE ${whereClause}`,
-        ...params
-      );
-      const total = Number(countResult[0].count);
-
-      // Fetch sorted page with aggregated metrics
-      const rawCustomers = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT c.*,
-          COUNT(o.id)::int AS total_orders,
-          COALESCE(SUM(o.total_amount), 0)::text AS total_spent
-        FROM customers c
-        LEFT JOIN orders o ON o.customer_id = c.id AND o.deleted_at IS NULL
-        WHERE ${whereClause}
-        GROUP BY c.id
-        ORDER BY ${orderCol} ${orderDir}, c.created_at DESC
-        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
-        ...params, limit, skip
-      );
-
-      // Map raw results to match Prisma output shape
-      const customersWithMetrics = rawCustomers.map((c: any) => ({
-        id: c.id,
-        firstName: c.first_name,
-        lastName: c.last_name,
-        email: c.email,
-        phoneNumber: c.phone_number,
-        alternatePhone: c.alternate_phone,
-        address: c.address,
-        state: c.state,
-        area: c.area,
-        zipCode: c.zip_code,
-        landmark: c.landmark,
-        tags: c.tags || [],
-        notes: c.notes,
-        isActive: c.is_active,
-        totalOrders: c.total_orders,
-        totalSpent: Money.parse(c.total_spent),
-        createdAt: c.created_at,
-        updatedAt: c.updated_at,
-        orders: [], // not needed for list view
-      }));
-
-      return {
-        customers: customersWithMetrics,
-        pagination: { page, limit, total, pages: Math.ceil(total / limit) }
-      };
+  private orderBy(sortBy: CustomerSortField | undefined, dir: 'asc' | 'desc'): Prisma.CustomerOrderByWithRelationInput[] {
+    switch (sortBy) {
+      case 'customer': return [{ firstName: dir }, { lastName: dir }, { id: 'desc' }];
+      case 'orders':
+      case 'totalOrders': return [{ totalOrders: dir }, { id: 'desc' }];
+      case 'deliveredValue':
+      case 'totalSpent': return [{ deliveredValue: dir }, { id: 'desc' }];
+      case 'lastOrder': return [{ lastOrderAt: { sort: dir, nulls: 'last' } }, { id: 'desc' }];
+      default: return [{ createdAt: 'desc' }, { id: 'desc' }];
     }
+  }
 
-    // Default: no computed sort — use standard Prisma query
-    const [customers, total] = await Promise.all([
-      prisma.customer.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          orders: {
-            where: { deletedAt: null },
-            select: { id: true, totalAmount: true }
-          }
-        }
-      }),
-      prisma.customer.count({ where })
-    ]);
-
-    const customersWithMetrics = customers.map(customer => ({
-      ...customer,
-      totalOrders: customer.orders.length,
-      totalSpent: Money.sum(customer.orders.map(order => order.totalAmount))
-    }));
-
+  /** The stored stats plus the derived risk, COD block and "not reachable" tag of one customer row. */
+  private withDerived<T extends { id: number; refusedOrders: number; deliveredValue: Prisma.Decimal; unsubscribeToken?: string | null }>(
+    customer: T, notReachable: Set<number>
+  ) {
+    const { unsubscribeToken, ...row } = customer;
     return {
-      customers: customersWithMetrics,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+      ...row,
+      // The old "Total spent" column; the list now shows delivered value
+      totalSpent: customer.deliveredValue,
+      risk: riskOf(customer.refusedOrders),
+      codBlocked: customer.refusedOrders >= COD_BLOCK_REFUSALS,
+      notReachable: notReachable.has(customer.id),
     };
   }
 
   /**
-   * Create new customer
+   * Get all customers with filters and pagination. Counts come from the stored stats (F-357), not from joins per row.
    */
-  async createCustomer(data: CreateCustomerData) {
-    // Check if customer with phone number already exists. Archived customers
-    // count: they still hold the number in the unique index, so missing one here
-    // turns a clean 400 into a constraint-violation 500.
+  async getAllCustomers(filters: CustomerFilters, requester?: Requester) {
+    const { page = 1, limit = 25, sortBy, sortOrder = 'desc' } = filters;
+    const where = await this.listWhere(filters, requester);
+
+    const [customers, total] = await Promise.all([
+      prisma.customer.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: this.orderBy(sortBy, sortOrder),
+      }),
+      prisma.customer.count({ where }),
+    ]);
+
+    const unreachable = new Set(await this.notReachableIds(customers.map((c) => c.id)));
+    return {
+      customers: customers.map((c) => this.withDerived(c, unreachable)),
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    };
+  }
+
+  /**
+   * Tiles and segment tabs (F-351). One query per number, all from `listWhere`, so each count equals the list total
+   * for the same filters. `segment` is ignored: every tab is counted under the other filters.
+   */
+  async getSummary(filters: CustomerFilters, requester?: Requester) {
+    const base = { ...filters, segment: undefined };
+    const count = async (extra: Partial<CustomerFilters>) =>
+      prisma.customer.count({ where: await this.listWhere({ ...base, ...extra }, requester) });
+
+    const zone = getStoreTimeZone(getTenantId());
+    const monthStart = startOfDay(`${localDate(new Date(), zone).slice(0, 7)}-01`, zone);
+    const [all, repeat, firstTime, refusedBefore, notReachable, blocked, newThisMonth] = await Promise.all([
+      count({}),
+      count({ segment: 'repeat' }),
+      count({ segment: 'first_time' }),
+      count({ segment: 'refused_before' }),
+      count({ segment: 'not_reachable' }),
+      count({ blocked: true }),
+      prisma.customer.count({ where: { AND: [await this.listWhere(base, requester), { createdAt: { gte: monthStart } }] } }),
+    ]);
+
+    // First-time plus repeat are the customers with orders; the two percentages add up to 100
+    const withOrders = firstTime + repeat;
+    const firstTimePct = withOrders ? Math.round((firstTime / withOrders) * 100) : 0;
+    return {
+      tiles: {
+        total: all,
+        newThisMonth,
+        firstTime,
+        firstTimePct,
+        repeat,
+        repeatPct: withOrders ? 100 - firstTimePct : 0,
+        blocked,
+      },
+      segments: { all, repeat, first_time: firstTime, refused_before: refusedBefore, not_reachable: notReachable } as Record<CustomerSegment, number>,
+    };
+  }
+
+  /** A phone that already belongs to a customer blocks the save (F-355, F-362). `exceptId` is the customer being edited. */
+  private async assertPhoneFree(phoneNumber: string, requester: Requester | undefined, exceptId?: number, reactivate = false) {
+    // Archived customers included: they still hold the number in the unique index
+    const owner = await findCustomerByPhoneIncludingArchived(prisma, phoneNumber);
+    // The customer's own old-format number matches too; that is not a duplicate.
+    if (!owner || owner.id === exceptId) return null;
+    // Only the roles that can see deleted customers may restore one
+    if (owner.isActive === false && reactivate && isAdminRole(requester)) return owner;
+    const archived = owner.isActive === false;
+    const err = new AppError(
+      archived ? `${fullName(owner)} was deleted and has this number. Restore that customer instead.` : `This number belongs to ${fullName(owner)}`,
+      409,
+      archived ? 'CUSTOMER_ARCHIVED' : 'PHONE_BELONGS_TO_OTHER_CUSTOMER'
+    );
+    // The name is in the message (F-355); the id (the link) only goes to a requester who can open that customer
+    const scope = this.scopeWhere(requester);
+    const canSee = !scope || (await prisma.customer.count({ where: { id: owner.id, AND: [scope] } })) > 0;
+    err.details = canSee ? { customerId: owner.id, customerName: fullName(owner) } : { customerName: fullName(owner) };
+    throw err;
+  }
+
+  private async audit(requester: Requester, action: string, customer: { id: number; tenantId: string | null }, before: object, after: object) {
+    await auditService.record({
+      tenantId: resolveTenantId(customer.tenantId),
+      actorId: requester.id,
+      actorKind: 'person',
+      channel: 'app',
+      action,
+      resource: 'customer',
+      resourceId: String(customer.id),
+      before,
+      after,
+    });
+  }
+
+  /**
+   * Create new customer. `createdById` is set so a rep sees the customer they added (F-355).
+   */
+  async createCustomer(data: CreateCustomerData, requester?: Requester) {
     const phoneNumber = normalizePhoneForStorage(data.phoneNumber);
     const alternatePhone = normalizePhoneForStorage(data.alternatePhone);
-    const existingCustomer = await findCustomerByPhoneIncludingArchived(prisma, phoneNumber);
+    const archived = await this.assertPhoneFree(phoneNumber, requester, undefined, data.reactivate === true);
 
-    if (existingCustomer) {
-      throw new AppError(
-        existingCustomer.isActive === false
-          ? 'An archived customer already uses this phone number. Restore that customer instead.'
-          : 'Customer with this phone number already exists',
-        400
-      );
+    const fields = {
+      firstName: data.firstName || 'Unknown',
+      lastName: data.lastName || '',
+      email: data.email,
+      phoneNumber,
+      alternatePhone,
+      address: data.address,
+      state: data.state,
+      area: data.area,
+      landmark: data.landmark,
+      notes: data.notes,
+    };
+    const customer = archived
+      ? await withSoftDeleted(() => prisma.customer.update({ where: { id: archived.id }, data: { ...fields, isActive: true } }))
+      : await prisma.customer.create({ data: { ...fields, createdById: requester?.id } });
+
+    if (requester) {
+      await this.audit(requester, archived ? 'reactivate' : 'create', customer, archived ? { isActive: false } : {}, fields);
     }
-
-    const customer = await prisma.customer.create({
-      data: {
-        ...data,
-        phoneNumber,
-        alternatePhone,
-        firstName: data.firstName || 'Unknown',
-        lastName: data.lastName || '',
-      }
-    });
-
-    logger.info('Customer created', {
-      customerId: customer.id,
-      phoneNumber: customer.phoneNumber
-    });
-
+    logger.info('Customer created', { customerId: customer.id, phoneNumber: customer.phoneNumber });
     return customer;
   }
 
   /**
-   * Get customer by ID
+   * Get customer by ID, with stats, risk and block state (F-354). A deleted customer opens for the owner roles only.
    */
   async getCustomerById(customerId: string, requester?: Requester) {
     const id = parseInt(customerId, 10);
@@ -272,63 +337,34 @@ export class CustomerService {
       throw new AppError('Invalid customer ID', 400);
     }
 
-    const customer = await prisma.customer.findUnique({
-      where: { id },
-      include: {
-        orders: {
-          where: { deletedAt: null },
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-          select: {
-            id: true,
-            status: true,
-            totalAmount: true,
-            createdAt: true
-          }
-        }
-      }
-    });
-
-    if (!customer) {
+    const customer = await withSoftDeleted(() => prisma.customer.findUnique({ where: { id } }));
+    if (!customer || (customer.isActive === false && !isAdminRole(requester))) {
       throw new AppError('Customer not found', 404);
     }
 
-    // Role-based filtering of orders and ownership check
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      // For sales reps, check if they have any orders with this customer
-      const hasOrder = await prisma.order.findFirst({
-        where: {
-          customerId: customer.id,
-          customerRepId: requester.id,
-          deletedAt: null
-        }
-      });
-
-      if (!hasOrder) {
-        throw new AppError('You do not have permission to view this customer details', 403);
-      }
-
-      // Filter the orders in the result to only show the rep's orders
-      // Use re-fetching with filter for accuracy
-      const filteredOrders = await prisma.order.findMany({
-        where: {
-          customerId: customer.id,
-          customerRepId: requester.id,
-          deletedAt: null
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-        select: {
-          id: true,
-          status: true,
-          totalAmount: true,
-          createdAt: true
-        }
-      });
-      (customer as any).orders = filteredOrders;
+    const scope = this.scopeWhere(requester);
+    if (scope && (await prisma.customer.count({ where: { id, AND: [scope] } })) === 0) {
+      throw new AppError('You do not have permission to view this customer details', 403);
     }
 
-    return customer;
+    // A rep or agent sees only their own orders of this customer
+    const orderScope: Prisma.OrderWhereInput = !scope ? {}
+      : requester!.role === 'delivery_agent' ? { deliveryAgentId: requester!.id }
+      : { customerRepId: requester!.id };
+    const orders = await prisma.order.findMany({
+      where: { customerId: id, deletedAt: null, ...orderScope },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: { id: true, status: true, totalAmount: true, createdAt: true },
+    });
+
+    const unreachable = new Set(await this.notReachableIds([id]));
+    return {
+      ...this.withDerived(customer, unreachable),
+      // Delivered value divided by delivered orders
+      averageOrderValue: customer.deliveredOrders > 0 ? Money.toApi(Money.div(customer.deliveredValue, customer.deliveredOrders)) : null,
+      orders,
+    };
   }
 
   /**
@@ -368,7 +404,8 @@ export class CustomerService {
   }
 
   /**
-   * Update customer details
+   * Update customer details. A rep can edit a customer they can see (F-355). The audit row holds the changed fields
+   * before and after.
    */
   async updateCustomer(customerId: string, updateData: Partial<CreateCustomerData>, requester?: Requester) {
     const id = parseInt(customerId, 10);
@@ -384,60 +421,38 @@ export class CustomerService {
       throw new AppError('Customer not found', 404);
     }
 
-    // Role-based ownership check for update
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      const hasOrder = await prisma.order.findFirst({
-        where: {
-          customerId: customer.id,
-          customerRepId: requester.id,
-          deletedAt: null
-        }
-      });
-
-      if (!hasOrder) {
-        throw new AppError('You do not have permission to update this customer', 403);
-      }
+    const scope = this.scopeWhere(requester);
+    if (scope && (await prisma.customer.count({ where: { id, AND: [scope] } })) === 0) {
+      throw new AppError('You do not have permission to update this customer', 403);
     }
 
-    // Store phones normalized (unparseable input stays as typed).
-    if (updateData.phoneNumber) updateData = { ...updateData, phoneNumber: normalizePhoneForStorage(updateData.phoneNumber) };
-    if (updateData.alternatePhone) updateData = { ...updateData, alternatePhone: normalizePhoneForStorage(updateData.alternatePhone) };
+    // Only the form fields; phones are stored normalized (unparseable input stays as typed).
+    const changes: Partial<Record<FormField, string | undefined>> = {};
+    for (const field of FORM_FIELDS) {
+      if (updateData[field] !== undefined) changes[field] = updateData[field];
+    }
+    if (changes.phoneNumber) changes.phoneNumber = normalizePhoneForStorage(changes.phoneNumber);
+    if (changes.alternatePhone) changes.alternatePhone = normalizePhoneForStorage(changes.alternatePhone);
 
-    // If updating phone number, check for duplicates
-    if (updateData.phoneNumber && updateData.phoneNumber !== customer.phoneNumber) {
-      // Archived customers included — see createCustomer.
-      const existingCustomer = await findCustomerByPhoneIncludingArchived(
-        prisma,
-        updateData.phoneNumber
-      );
-
-      // The customer's own old-format number matches too; that is not a duplicate.
-      if (existingCustomer && existingCustomer.id !== id) {
-        throw new AppError(
-          existingCustomer.isActive === false
-            ? 'Phone number already in use by an archived customer'
-            : 'Phone number already in use',
-          400
-        );
-      }
+    if (changes.phoneNumber && changes.phoneNumber !== customer.phoneNumber) {
+      await this.assertPhoneFree(changes.phoneNumber, requester, id);
     }
 
     const updated = await prisma.customer.update({
       where: { id },
-      data: updateData
+      data: changes
     });
 
     if (requester) {
-      await prisma.auditLog.create({
-        data: {
-          tenantId: resolveTenantId(updated.tenantId),
-          userId: requester.id,
-          action: 'update',
-          resource: 'customer',
-          resourceId: customerId,
-          metadata: { changes: Object.keys(updateData) }
+      const before: Record<string, unknown> = {};
+      const after: Record<string, unknown> = {};
+      for (const field of Object.keys(changes) as FormField[]) {
+        if (customer[field] !== updated[field]) {
+          before[field] = customer[field];
+          after[field] = updated[field];
         }
-      });
+      }
+      await this.audit(requester, 'update', updated, before, after);
     }
 
     logger.info('Customer updated', { customerId });
@@ -445,7 +460,8 @@ export class CustomerService {
   }
 
   /**
-   * Soft delete customer (deactivate)
+   * Soft delete customer (deactivate). Owner, admin and manager only. Their orders stay; a customer with an order
+   * out for delivery cannot be deleted (F-356).
    */
   async deleteCustomer(customerId: string, requester?: Requester) {
     const id = parseInt(customerId, 10);
@@ -462,8 +478,13 @@ export class CustomerService {
     }
 
     // Role-based ownership check for delete
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+    if (!isAdminRole(requester)) {
       throw new AppError('You do not have permission to delete customers', 403);
+    }
+
+    const inFlight = await prisma.order.count({ where: { customerId: id, status: 'out_for_delivery', deletedAt: null } });
+    if (inFlight > 0) {
+      throw new AppError('This customer has an order out for delivery. Delete them after it is delivered or returned.', 409, 'CUSTOMER_HAS_ORDER_IN_FLIGHT');
     }
 
     await prisma.customer.update({
@@ -472,15 +493,7 @@ export class CustomerService {
     });
 
     if (requester) {
-      await prisma.auditLog.create({
-        data: {
-          tenantId: resolveTenantId(customer.tenantId),
-          userId: requester.id,
-          action: 'deactivate',
-          resource: 'customer',
-          resourceId: customerId
-        }
-      });
+      await this.audit(requester, 'deactivate', customer, { isActive: true }, { isActive: false });
     }
 
     logger.info('Customer deactivated', { customerId: id });

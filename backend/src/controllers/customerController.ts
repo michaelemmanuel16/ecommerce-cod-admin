@@ -1,42 +1,42 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
-import customerService from '../services/customerService';
+import customerService, { CustomerRisk, CustomerSegment, CustomerSortField } from '../services/customerService';
 import { assertWithinCap, BatchRow, ExportColumn, exportDate, exportMoney, exportPhone, readFormat, streamExport } from '../services/exportStream';
 
+/** The filters shared by the list, the tiles and the export (F-350 to F-353). Validated by `customerListValidation`. */
+function readFilters(req: AuthRequest) {
+  const { search, area, region, risk, blocked, flagged, segment } = req.query;
+  return {
+    search: search as string | undefined,
+    area: area as string | undefined,
+    region: region as string | undefined,
+    risk: risk as CustomerRisk | undefined,
+    blocked: blocked === undefined ? undefined : blocked === 'true',
+    flagged: flagged === 'true' ? true : undefined,
+    segment: segment as CustomerSegment | undefined,
+  };
+}
+
 export const getAllCustomers = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { search, area, page = 1, limit = 20, sortBy, sortOrder } = req.query;
+  const { page = 1, limit = 25, sortBy, sortOrder } = req.query;
+  const result = await customerService.getAllCustomers({
+    ...readFilters(req),
+    page: Number(page),
+    limit: Number(limit),
+    sortBy: sortBy as CustomerSortField | undefined,
+    sortOrder: sortOrder as 'asc' | 'desc' | undefined,
+  }, req.user);
 
-    const validSortBy = ['totalOrders', 'totalSpent'].includes(sortBy as string)
-      ? (sortBy as 'totalOrders' | 'totalSpent')
-      : undefined;
-    const validSortOrder = ['asc', 'desc'].includes(sortOrder as string)
-      ? (sortOrder as 'asc' | 'desc')
-      : undefined;
+  res.json(result);
+};
 
-    const result = await customerService.getAllCustomers({
-      search: search as string | undefined,
-      area: area as string | undefined,
-      page: Number(page),
-      limit: Number(limit),
-      sortBy: validSortBy,
-      sortOrder: validSortOrder,
-    }, req.user);
-
-    res.json(result);
-  } catch (error) {
-    throw error;
-  }
+export const getCustomerSummary = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await customerService.getSummary(readFilters(req), req.user));
 };
 
 export const createCustomer = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const customerData = req.body;
-    const customer = await customerService.createCustomer(customerData);
-    res.status(201).json({ customer });
-  } catch (error) {
-    throw error;
-  }
+  const customer = await customerService.createCustomer(req.body, req.user);
+  res.status(201).json({ customer });
 };
 
 export const getCustomer = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -91,11 +91,10 @@ const CUSTOMER_EXPORT_COLUMNS: ExportColumn<ExportCustomer>[] = [
   { header: 'Email opt-out', value: (c) => yesNo(c.emailOptOut) },
 ];
 
-/** F-361: the list filters (search, area), streamed as CSV or XLSX. */
+/** F-361: the list filters, streamed as CSV or XLSX. */
 export const exportCustomers = async (req: AuthRequest, res: Response): Promise<void> => {
   const format = readFormat(req.query.format);
-  const { search, area } = req.query;
-  const filters = { search: search as string | undefined, area: area as string | undefined };
+  const filters = readFilters(req);
   assertWithinCap(await customerService.exportCount(filters, req.user));
   await streamExport(res, {
     format,
