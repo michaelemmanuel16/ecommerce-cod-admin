@@ -15,6 +15,7 @@ import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 import { seedTenantDefaults } from '../services/tenantDefaultsService';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
+import { accountService } from '../services/accountService';
 
 export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -155,6 +156,19 @@ export const logout = async (req: AuthRequest, res: Response, next: NextFunction
   }
 };
 
+export const changePassword = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { currentPassword, newPassword } = req.body ?? {};
+    await accountService.changePassword(req.user!.id, currentPassword, newPassword, req.user!.sid, {
+      ip: req.ip ?? null,
+      userAgent: req.get('user-agent') ?? null,
+    });
+    res.json({ message: 'Password changed. Other devices were signed out.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const forgotPassword = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { email } = req.body;
@@ -244,6 +258,8 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
         email: true,
         firstName: true,
         lastName: true,
+        displayName: true,
+        photoUrl: true,
         phoneNumber: true,
         role: true,
         isActive: true,

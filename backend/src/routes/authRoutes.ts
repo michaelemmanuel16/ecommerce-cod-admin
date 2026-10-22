@@ -3,7 +3,7 @@ import * as authController from '../controllers/authController';
 import { authenticate, requireSuperAdmin } from '../middleware/auth';
 import { validate } from '../middleware/validation';
 import { registerTenantValidation, loginValidation, forgotPasswordValidation, resetPasswordValidation } from '../utils/validators';
-import { authLimiter, registrationLimiter, apiLimiter } from '../middleware/rateLimiter';
+import { authLimiter, registrationLimiter, apiLimiter, changePasswordLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -13,6 +13,7 @@ router.post('/refresh', authLimiter, authController.refresh);
 router.post('/forgot-password', authLimiter, forgotPasswordValidation, validate, authController.forgotPassword);
 router.post('/reset-password', authLimiter, resetPasswordValidation, validate, authController.resetPassword);
 router.post('/logout', apiLimiter, authenticate, authController.logout);
+router.post('/change-password', authenticate, changePasswordLimiter, authController.changePassword);
 router.get('/me', apiLimiter, authenticate, authController.me);
 router.delete('/delete-account', authLimiter, authenticate, requireSuperAdmin, authController.deleteTenantAccount);
 

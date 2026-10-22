@@ -7,6 +7,7 @@ import { adminService } from '../services/adminService';
 import * as Money from '../utils/money';
 import { resolveTenantId } from '../utils/tenantContext';
 import { readDateBound, toInvalidRange } from '../utils/kpiRequest';
+import { accountService } from '../services/accountService';
 
 export const getAllUsers = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -372,3 +373,35 @@ export const getMyPayoutHistory = async (req: AuthRequest, res: Response, next: 
   }
 };
 
+
+// ---- Self-service account (M3-T22) ----
+
+const auditContext = (req: AuthRequest) => ({ ip: req.ip ?? null, userAgent: req.get('user-agent') ?? null });
+
+export const updateMe = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const user = await accountService.updateProfile(req.user!.id, req.body ?? {}, auditContext(req));
+    res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const uploadMyPhoto = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (!req.file) throw new AppError('No photo uploaded', 400);
+    const user = await accountService.setPhoto(req.user!.id, req.user!.tenantId, req.file, auditContext(req));
+    res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const removeMyPhoto = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const user = await accountService.removePhoto(req.user!.id, auditContext(req));
+    res.json({ user });
+  } catch (error) {
+    next(error);
+  }
+};

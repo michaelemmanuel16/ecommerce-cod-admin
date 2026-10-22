@@ -29,6 +29,17 @@ export const registrationLimiter = rateLimit({
   ...commonSettings
 });
 
+// Change password: 5 failed tries per 15 minutes for each signed-in user (F-1223).
+// Not relaxed in dev or test, and a successful change does not use up the budget.
+export const changePasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req: any) => `user:${req.user?.id ?? 'anon'}`,
+  message: { message: 'Too many password attempts, please try again later' },
+  ...commonSettings
+});
+
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: isDevelopment ? 50000 : 500, // Increased to 500 in production
