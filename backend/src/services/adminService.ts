@@ -19,6 +19,8 @@ import { tenantIdForFormSlug } from './tenantLookupService';
 import { currencyOfTenant, getCurrency } from '../utils/currency';
 import { changeStoreCurrency } from './fxService';
 import { parseOperatingHours } from './kpi/workingTime';
+import { normalizeInternationalPhone } from '../utils/phone';
+import { isValidTimeZone } from '../utils/timeZone';
 
 export const adminService = {
   /**
@@ -184,6 +186,9 @@ export const adminService = {
     businessEmail?: string;
     businessPhone?: string;
     businessAddress?: string;
+    supportWhatsapp?: string | null;
+    contactPerson?: string | null;
+    timeZone?: string;
     taxId?: string;
     currency?: string;
     operatingHours?: any;
@@ -195,15 +200,31 @@ export const adminService = {
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
     const tenantId = getTenantId();
-    const config = tenantId
-      ? await prisma.systemConfig.findUnique({ where: { tenantId } })
-      : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
+    const findConfig = () => tenantId
+      ? prisma.systemConfig.findUnique({ where: { tenantId } })
+      : prisma.systemConfig.findFirst({ where: { tenantId: null } });
+    // A new tenant has no row until the first read seeds it; a save before that read must work too.
+    let config = await findConfig();
+    if (!config) {
+      await this.getSystemConfig();
+      config = await findConfig();
+    }
     if (!config) throw new Error('System config not found');
 
     // The store currency is Tenant.currency, not a SystemConfig column (M1-T31). The owner can change it at any time.
     const { currency, ...configData } = data;
     data = configData;
     if (currency !== undefined && tenantId) await changeStoreCurrency(tenantId, currency);
+
+    // Business details (M3-T25, F-1230): the support WhatsApp is an international number, the time zone an IANA name.
+    if (data.supportWhatsapp) {
+      const whatsapp = normalizeInternationalPhone(data.supportWhatsapp);
+      if (!whatsapp) throw new AppError('Support WhatsApp must be an international number, for example +233245550103', 400, 'INVALID_WHATSAPP');
+      data.supportWhatsapp = whatsapp;
+    }
+    if (data.timeZone !== undefined && !isValidTimeZone(data.timeZone)) {
+      throw new AppError('Time zone must be an IANA name, for example Africa/Accra', 400, 'INVALID_TIME_ZONE');
+    }
 
     // Operating hours drive the time-to-first-call clock (M1-T22, F-755): reject a bad shape now, not at read time.
     if (data.operatingHours !== undefined && data.operatingHours !== null) {
