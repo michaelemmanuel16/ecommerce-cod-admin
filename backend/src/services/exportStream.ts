@@ -51,7 +51,7 @@ export const exportDate = (date: Date | null | undefined) => (date ? date.toISOS
 /** A text cell that starts with = + - @ is read as a formula by Excel; a leading ' makes it text. */
 export const FORMULA_START = /^[=+\-@\t\r]/;
 
-function csvCell(value: string | number | null | undefined, numeric: boolean): string {
+export function csvCell(value: string | number | null | undefined, numeric: boolean): string {
   if (value === null || value === undefined) return '';
   let text = String(value);
   if (!numeric && FORMULA_START.test(text)) text = `'${text}`;

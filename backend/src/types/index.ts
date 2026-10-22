@@ -7,6 +7,7 @@ export interface AuthRequest extends Request {
     email: string;
     role: UserRole;
     tenantId?: string | null;
+    sid?: number;
   };
   /** Set by authenticate() once it has verified the platform-admin flag (saves a second lookup). */
   isPlatformAdmin?: boolean;
@@ -17,6 +18,8 @@ export interface JWTPayload {
   email: string;
   role: UserRole;
   tenantId?: string | null;
+  /** UserSession id. Absent on tokens issued before sessions existed (M3-T23). */
+  sid?: number;
 }
 
 export interface PaginationParams {

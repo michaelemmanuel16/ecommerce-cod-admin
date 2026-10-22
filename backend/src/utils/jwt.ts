@@ -1,4 +1,5 @@
 import * as jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import { JWTPayload } from '../types';
 
 // Enforce environment variables - no defaults for security
@@ -18,7 +19,9 @@ export const generateAccessToken = (payload: JWTPayload): string => {
 };
 
 export const generateRefreshToken = (payload: JWTPayload): string => {
-  return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+  // jwtid makes every refresh token unique, even for two logins in the same second:
+  // sessions are found by the hash of the token (M3-T23).
+  return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: '7d', jwtid: randomUUID() });
 };
 
 export const verifyAccessToken = (token: string): JWTPayload => {

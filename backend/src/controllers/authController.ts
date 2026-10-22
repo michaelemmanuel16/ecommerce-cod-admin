@@ -15,6 +15,9 @@ import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 import { seedTenantDefaults } from '../services/tenantDefaultsService';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
+import { auditService } from '../services/auditService';
+import { accountService } from '../services/accountService';
+import { sessionService, hashToken, requestMeta } from '../services/sessionService';
 
 export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -38,27 +41,19 @@ export const login = async (req: AuthRequest, res: Response, next: NextFunction)
     }
 
     await runInTenantOf(user.tenantId, 'auth-login', async () => {
-      const accessToken = generateAccessToken({
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        tenantId: user.tenantId ?? null
-      });
-
-      const refreshToken = generateRefreshToken({
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        tenantId: user.tenantId ?? null
-      });
-
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          refreshToken,
-          lastLogin: new Date()
-        }
-      });
+      let accessToken: string;
+      let refreshToken: string;
+      if (user.tenantId) {
+        // One session per login (M3-T23)
+        ({ accessToken, refreshToken } = await sessionService.start({ ...user, tenantId: user.tenantId }, requestMeta(req)));
+        await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
+      } else {
+        // A user without a tenant cannot own a session row: old single-token flow
+        const claims = { id: user.id, email: user.email, role: user.role, tenantId: null };
+        accessToken = generateAccessToken(claims);
+        refreshToken = generateRefreshToken(claims);
+        await prisma.user.update({ where: { id: user.id }, data: { refreshToken, lastLogin: new Date() } });
+      }
 
       // Get user permissions from system config
       const allPermissions = await adminService.getRolePermissions(req.user as any) as Record<string, any>;
@@ -114,27 +109,53 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
       throw new AppError('Token format outdated. Please log in again.', 401, 'TOKEN_FORMAT_OUTDATED');
     }
 
+    const tokenHash = hashToken(refreshToken);
+    const meta = requestMeta(req);
+
+    // 1. The normal path: the token belongs to a session. Rotate it inside that session.
+    const session = await withoutTenant('auth-refresh', () => prisma.userSession.findUnique({ where: { tokenHash } }));
+    if (session) {
+      const owner = await withoutTenant('auth-refresh', () => prisma.user.findUnique({ where: { id: session.userId } }));
+      if (!owner || owner.isActive === false || owner.id !== decoded.id) {
+        throw new AppError('Invalid refresh token', 401);
+      }
+      const rotated = await runInTenant(session.tenantId, () => sessionService.rotate(session, owner, meta));
+      res.json(rotated);
+      return;
+    }
+
+    // 2. Legacy path: a user who only has the old User.refreshToken value (issued before sessions existed).
     const user = await withoutTenant('auth-refresh', () => prisma.user.findUnique({
       where: { id: decoded.id }
     }));
 
     // SECURITY: Use timing-safe comparison to prevent timing attacks on refresh tokens
-    const isValidToken = user && user.refreshToken && refreshToken &&
+    const isValidToken = user && user.isActive !== false && user.refreshToken && refreshToken &&
       safeEqual(user.refreshToken, refreshToken);
     if (!user || !isValidToken) {
       throw new AppError('Invalid refresh token', 401);
     }
 
-    const newAccessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
+    // No tenant, no session row: the old flow stays (no rotation)
+    if (!user.tenantId) {
+      res.json({
+        accessToken: generateAccessToken({ id: user.id, email: user.email, role: user.role, tenantId: null })
+      });
+      return;
+    }
 
-    res.json({
-      accessToken: newAccessToken
+    // Move the user onto a session, once. The session is made first, so a failure leaves the old value in place.
+    const migrated = await runInTenant(user.tenantId, async () => {
+      const started = await sessionService.start({ ...user, tenantId: user.tenantId! }, meta);
+      const { count } = await prisma.user.updateMany({ where: { id: user.id, refreshToken: user.refreshToken }, data: { refreshToken: null } });
+      if (count === 0) {
+        // Someone else used the same old value first
+        await prisma.userSession.deleteMany({ where: { id: started.session.id } });
+        throw new AppError('Invalid refresh token', 401);
+      }
+      return started;
     });
+    res.json({ accessToken: migrated.accessToken, refreshToken: migrated.refreshToken });
   } catch (error) {
     next(error);
   }
@@ -143,6 +164,9 @@ export const refresh = async (req: AuthRequest, res: Response, next: NextFunctio
 export const logout = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (req.user) {
+      if (req.user.sid) {
+        await prisma.userSession.deleteMany({ where: { id: req.user.sid, userId: req.user.id } });
+      }
       await prisma.user.update({
         where: { id: req.user.id },
         data: { refreshToken: null }
@@ -150,6 +174,50 @@ export const logout = async (req: AuthRequest, res: Response, next: NextFunction
     }
 
     res.json({ message: 'Logout successful' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const changePassword = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { currentPassword, newPassword } = req.body ?? {};
+    await accountService.changePassword(req.user!.id, currentPassword, newPassword, req.user!.sid, {
+      ip: req.ip ?? null,
+      userAgent: req.get('user-agent') ?? null,
+    });
+    res.json({ message: 'Password changed. Other devices were signed out.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const listSessions = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const sessions = await sessionService.list(req.user!.id, req.user!.sid);
+    res.json({ sessions });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const revokeSession = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) throw new AppError('Invalid session ID', 400);
+    if (!(await sessionService.revoke(req.user!.id, id))) throw new AppError('Session not found', 404);
+    res.json({ message: 'Session signed out' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const revokeOtherSessions = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    // Tokens issued before sessions existed carry no session id: the caller must refresh once first
+    if (!req.user!.sid) throw new AppError('Current session unknown. Refresh and try again.', 400, 'SESSION_UNKNOWN');
+    const revoked = await sessionService.revokeOthers(req.user!.id, req.user!.sid);
+    res.json({ message: 'Signed out everywhere else', revoked });
   } catch (error) {
     next(error);
   }
@@ -215,15 +283,18 @@ export const resetPassword = async (req: AuthRequest, res: Response, next: NextF
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await runInTenantOf(user.tenantId, 'auth-reset-password', () => prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        passwordResetToken: null,
-        passwordResetExpires: null,
-        refreshToken: null,
-      },
-    }));
+    await runInTenantOf(user.tenantId, 'auth-reset-password', async () => {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          password: hashedPassword,
+          passwordResetToken: null,
+          passwordResetExpires: null,
+          refreshToken: null,
+        },
+      });
+      await prisma.userSession.deleteMany({ where: { userId: user.id } });
+    });
 
     res.json({ message: 'Password reset successful. Please log in with your new password.' });
   } catch (error) {
@@ -244,6 +315,8 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
         email: true,
         firstName: true,
         lastName: true,
+        displayName: true,
+        photoUrl: true,
         phoneNumber: true,
         role: true,
         isActive: true,
@@ -366,24 +439,9 @@ export const registerTenant = async (req: AuthRequest, res: Response, next: Next
     // A failed seed is logged, not fatal: the startup seed fills any gap
     await seedTenantDefaults(tenant.id).catch((err) => logger.error(`Seeding defaults failed for tenant ${tenant.id}:`, err));
 
-    const accessToken = generateAccessToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    const refreshToken = generateRefreshToken({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId ?? null
-    });
-
-    await runInTenantOf(user.tenantId, 'register-tenant', () => prisma.user.update({
-      where: { id: user.id },
-      data: { refreshToken }
-    }));
+    const { accessToken, refreshToken } = await runInTenantOf(user.tenantId, 'register-tenant', () =>
+      sessionService.start({ ...user, tenantId: tenant.id }, requestMeta(req))
+    );
 
     res.status(201).json({
       message: 'Tenant registered successfully',
@@ -416,7 +474,8 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
     if (!req.user) throw new AppError('Not authenticated', 401);
     if (req.user.role !== 'super_admin') throw new AppError('Only the super admin can delete the account', 403);
 
-    const { password } = req.body;
+    const { password, confirm } = req.body ?? {};
+    if (confirm !== 'DELETE') throw new AppError('Type DELETE to confirm', 400, 'CONFIRM_REQUIRED');
     if (!password) throw new AppError('Password is required to confirm deletion', 400);
 
     // Verify password
@@ -428,6 +487,30 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
 
     const tenantId = req.user.tenantId;
     if (!tenantId) throw new AppError('No tenant associated with this account', 400);
+
+    // A paying tenant must cancel first (F-1226)
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, include: { currentPlan: true } });
+    const paying = tenant
+      && (tenant.subscriptionStatus === SUBSCRIPTION_STATUS.ACTIVE || tenant.subscriptionStatus === SUBSCRIPTION_STATUS.PAST_DUE)
+      && tenant.currentPlan && Number(tenant.currentPlan.priceGHS) > 0
+      && !(tenant.freeAccessExpiresAt && tenant.freeAccessExpiresAt > new Date());
+    if (paying) {
+      throw new AppError('Cancel your subscription before deleting the account', 409, 'SUBSCRIPTION_ACTIVE');
+    }
+
+    // Audit row first: if it cannot be written, nothing is deleted. The tenant's own audit rows go with the
+    // tenant below, so the same facts also go to the application log, which outlives the data.
+    await auditService.record({
+      actorId: req.user.id,
+      channel: 'app',
+      action: 'delete_account',
+      resource: 'tenant',
+      resourceId: tenantId,
+      metadata: { tenantName: tenant?.name },
+      ipAddress: req.ip ?? null,
+      userAgent: req.get('user-agent') ?? null,
+    });
+    logger.warn('Account deletion', { tenantId, userId: req.user.id, tenantName: tenant?.name });
 
     // Delete all tenant data atomically in dependency order.
     // Uses parameterized queries (Prisma.sql) to prevent SQL injection.
