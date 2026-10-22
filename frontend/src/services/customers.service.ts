@@ -63,6 +63,7 @@ export const customersService = {
       address: typeof c.address === 'string' ? c.address : '',
       region: c.state ?? '',
       town: c.area ?? '',
+      landmark: c.landmark ?? '',
     };
   },
 
@@ -128,8 +129,9 @@ export type CustomerSortField = 'customer' | 'orders' | 'deliveredValue' | 'last
 /** The filters shared by the list, the tiles and the export. */
 export interface CustomerFilterParams {
   search?: string;
-  /** Town */
+  /** City/Town */
   area?: string;
+  /** State */
   region?: string;
   risk?: CustomerRisk;
   blocked?: boolean;
@@ -153,9 +155,9 @@ export interface CustomerRow {
   phoneNumber: string;
   alternatePhone: string | null;
   address: string;
-  /** Region */
+  /** State */
   state: string;
-  /** Town */
+  /** City/Town */
   area: string;
   landmark: string | null;
   notes: string | null;

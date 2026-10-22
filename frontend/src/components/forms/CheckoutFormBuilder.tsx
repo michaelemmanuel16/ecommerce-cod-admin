@@ -50,15 +50,17 @@ interface CheckoutFormBuilderProps {
 
 // Destinations are pinned via standardKey so relabeling any of these (e.g.
 // "Street Address" → "Delivery Address") keeps the value flowing to the order.
-// The region field is part of the default set because a physical order without
-// one is rejected by the order API.
+// State, City/Town and Nearest landmark are part of the default set because a
+// physical order without them is hard for a rider to find. Email and Street
+// address are off by default; a seller can turn them on.
 const defaultFields: FormField[] = [
   { id: '1', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
   { id: '2', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
-  { id: '3', label: 'Alt Phone', type: 'phone', required: false, enabled: true, standardKey: 'alternativePhone' },
-  { id: '4', label: 'Email Address', type: 'email', required: false, enabled: true, standardKey: 'email' },
-  { id: '5', label: 'Street Address', type: 'textarea', required: true, enabled: true, standardKey: 'streetAddress' },
-  { id: '6', label: 'Region/State', type: 'state', required: true, enabled: true, standardKey: 'region' },
+  { id: '3', label: 'State', type: 'state', required: true, enabled: true, standardKey: 'region' },
+  { id: '4', label: 'City/Town', type: 'text', required: true, enabled: true, standardKey: 'town' },
+  { id: '5', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' },
+  { id: '6', label: 'Email Address', type: 'email', required: false, enabled: false, standardKey: 'email' },
+  { id: '7', label: 'Street Address', type: 'textarea', required: false, enabled: false, standardKey: 'streetAddress' },
 ];
 
 export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, CheckoutFormBuilderProps>(({

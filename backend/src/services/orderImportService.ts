@@ -171,7 +171,7 @@ export type RegionMatch = { region: string } | { problem: string };
 
 /** An exact match (case, spaces and a trailing "Region" ignored) is accepted. A near match is a hint and is not applied. */
 export function matchRegion(input: string, regions: string[], countryName: string): RegionMatch {
-  if (!input) return { problem: 'Region is missing' };
+  if (!input) return { problem: 'State is missing' };
   if (!regions.length) return { region: input };
   const key = regionKey(input);
   const exact = regions.find((r) => regionKey(r) === key);
@@ -181,8 +181,8 @@ export function matchRegion(input: string, regions: string[], countryName: strin
     .filter(({ r, d }) => d <= (regionKey(r).length >= 7 ? 2 : 1))
     .sort((a, b) => a.d - b.d)[0];
   return near
-    ? { problem: `Region "${input}" is not in the list. Did you mean ${near.r}?` }
-    : { problem: `Region "${input}" is not one of ${countryName}'s regions` };
+    ? { problem: `State "${input}" is not in the list. Did you mean ${near.r}?` }
+    : { problem: `State "${input}" is not one of ${countryName}'s states` };
 }
 
 function parseDate(text: string): Date | null | undefined {
@@ -316,7 +316,8 @@ export function checkRows(sheetRows: SheetRow[], ctx: CheckContext): CheckedRow[
       totalAmount,
       deliveryAddress: address,
       deliveryState: (region as { region: string }).region,
-      deliveryArea: sanitizeString(v.town, BULK_ORDER_CONFIG.NAME.MAX_LENGTH) || (region as { region: string }).region,
+      // No town in the file: leave it empty. The state never goes in the town field.
+      deliveryArea: sanitizeString(v.town, BULK_ORDER_CONFIG.NAME.MAX_LENGTH),
       productName,
       productId,
       quantity: qty,

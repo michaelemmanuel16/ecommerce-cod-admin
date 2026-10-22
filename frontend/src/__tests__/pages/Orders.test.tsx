@@ -24,6 +24,7 @@ const socket = {
   on: vi.fn((e: string, h: () => void) => handlers.set(e, [...(handlers.get(e) ?? []), h])),
   off: vi.fn((e: string, h: () => void) => handlers.set(e, (handlers.get(e) ?? []).filter((x) => x !== h))),
 };
+vi.mock('../../services/locations.service', () => ({ locationsService: { getTowns: () => Promise.resolve(['Adum']) } }));
 vi.mock('../../services/socket', () => ({ getSocket: () => socket }));
 vi.mock('../../services/products.service', () => ({ productsService: { getProducts: () => Promise.resolve([{ id: 1, name: 'Copybook set', isActive: true }, { id: 2, name: 'Refill pens', isActive: true }]) } }));
 vi.mock('../../services/delivery-agents.service', () => ({ deliveryAgentsService: { getDeliveryAgents: () => Promise.resolve([{ id: '5', name: 'Kofi Appiah', isActive: true, isAvailable: true }]) } }));
@@ -364,7 +365,7 @@ describe('Orders list: New order sheet link (M3-T45)', () => {
     renderPage('/orders?new=1&customerId=7');
     const sheet = await screen.findByRole('dialog', { name: 'New order' });
     await waitFor(() => expect(within(sheet).getByLabelText('Customer name')).toHaveValue('Abena Owusu'));
-    expect(within(sheet).getByLabelText('Region')).toHaveValue('Ashanti');
+    expect(within(sheet).getByLabelText('State')).toHaveValue('Ashanti');
     await userEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(/^\/orders$/));
   });

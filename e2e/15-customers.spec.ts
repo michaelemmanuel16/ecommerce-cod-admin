@@ -132,8 +132,8 @@ test.describe('T50 customer page', () => {
     await dlg.getByLabel('First name').fill('W6 test');
     await dlg.getByLabel(/^Last name/).fill('Buyer');
     await dlg.getByLabel('Phone', { exact: true }).fill('024 555 0999');
-    await dlg.getByLabel('Region').selectOption({ index: 1 });
-    await dlg.getByLabel('Town').fill('Accra');
+    await dlg.getByLabel('State').selectOption({ index: 1 });
+    await dlg.getByLabel('City/Town').selectOption({ index: 1 });
     await dlg.getByLabel('Street address').fill('5 Ring Road');
     await dlg.getByRole('button', { name: 'Add customer' }).click();
     await expect(page.getByText('W6 test Buyer added')).toBeVisible();
@@ -150,8 +150,8 @@ test.describe('T50 customer page', () => {
     const dlg = page.getByRole('dialog', { name: 'Add customer' });
     await dlg.getByLabel('First name').fill('Dup');
     await dlg.getByLabel('Phone', { exact: true }).fill('0245550182');
-    await dlg.getByLabel('Region').selectOption({ index: 1 });
-    await dlg.getByLabel('Town').fill('Accra');
+    await dlg.getByLabel('State').selectOption({ index: 1 });
+    await dlg.getByLabel('City/Town').selectOption({ index: 1 });
     await dlg.getByLabel('Street address').fill('1 St');
     await dlg.getByRole('button', { name: 'Add customer' }).click();
     await expect(dlg.getByText('This number belongs to Abena Owusu')).toBeVisible();

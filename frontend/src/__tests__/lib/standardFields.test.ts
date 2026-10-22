@@ -28,6 +28,13 @@ describe('resolveStandardKey', () => {
     }
   });
 
+  it('maps the town and landmark labels (COD-138)', () => {
+    for (const label of ['City/Town', 'City', 'Town or area']) {
+      expect(resolveStandardKey(field({ label }))).toBe('town');
+    }
+    expect(resolveStandardKey(field({ label: 'Nearest landmark' }))).toBe('landmark');
+  });
+
   it('maps a WhatsApp number to the alternate phone slot', () => {
     expect(resolveStandardKey(field({ label: 'Whatsapp Number', type: 'phone' }))).toBe(
       'alternativePhone'
@@ -54,8 +61,9 @@ describe('resolveStandardKey', () => {
 
   it('leaves genuinely custom fields unmapped', () => {
     expect(resolveStandardKey(field({ label: 'How did you hear about us?' }))).toBeNull();
-    // "City" is deliberately not a region alias — a form may carry both.
-    expect(resolveStandardKey(field({ label: 'City' }))).toBeNull();
+    expect(resolveStandardKey(field({ label: 'Favourite colour' }))).toBeNull();
+    // "City" is the town slot, never the state slot — a form may carry both.
+    expect(resolveStandardKey(field({ label: 'City' }))).toBe('town');
   });
 });
 
@@ -101,9 +109,9 @@ describe('findMissingRequiredKeys', () => {
 
   it('flags the slot a mislabelled field left empty', () => {
     const broken = physicalFields.map((f) =>
-      f.label === 'Delivery Address' ? { ...f, standardKey: 'custom' as const } : f
+      f.label === 'Full Name' ? { ...f, standardKey: 'custom' as const } : f
     );
-    expect(findMissingRequiredKeys(broken)).toEqual(['streetAddress']);
+    expect(findMissingRequiredKeys(broken)).toEqual(['fullName']);
   });
 
   it('ignores disabled fields', () => {

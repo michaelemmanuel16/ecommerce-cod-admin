@@ -12,6 +12,7 @@ import logger from '../utils/logger';
 import { paystackService } from '../services/paystackService';
 import { metaCapiService } from '../services/metaCapiService';
 import * as Money from '../utils/money';
+import { cleanText, deliveryAddressOf, slotRule, CheckoutSlot } from '../utils/checkoutLocation';
 
 /**
  * Buyer-selectable payment methods. `cod` settles on delivery; the two Paystack
@@ -172,15 +173,23 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     const isPaystack = paymentMethod === 'paystack_deposit' || paymentMethod === 'paystack_full';
 
     // Validate required fields — digital products don't need address/state
-    const requiredFields = isDigital
-      ? ['name', 'phoneNumber']
-      : ['name', 'phoneNumber', 'address', 'state'];
+    // Address, town and landmark follow the form's own field config (COD-138): a field the seller turned off
+    // is not demanded, and a form saved before town/landmark existed asks for both.
+    const requiredFields = isDigital ? ['name', 'phoneNumber'] : ['name', 'phoneNumber', 'state'];
+    const slotFields: Array<[CheckoutSlot, string]> = [['streetAddress', 'address'], ['town', 'town'], ['landmark', 'landmark']];
+    if (!isDigital) {
+      for (const [slot, key] of slotFields) {
+        if (slotRule(form.fields, slot) === 'required') requiredFields.push(key);
+      }
+    }
     for (const field of requiredFields) {
-      if (!formData[field]) {
+      if (!cleanText(formData[field])) {
         reject(`Missing required field: ${field}`);
         return;
       }
     }
+    const town = cleanText(formData.town, 100);
+    const landmark = cleanText(formData.landmark);
 
     // Paystack orders settle into the form's tenant Paystack account; without
     // a tenant we'd create an orphaned unpaid order. Fail fast before any DB write.
@@ -220,8 +229,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           alternatePhone,
           address: formData.address || '',
           state: formData.state || '',
-          area: formData.state || '',
-          landmark: formData.landmark || null,
+          area: town,
+          landmark: landmark || null,
           notes: formData.notes || null,
           ...(formTenantId ? { tenantId: formTenantId } : {})
         }
@@ -236,6 +245,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       if (alternatePhone && alternatePhone !== customer.alternatePhone) {
         updateData.alternatePhone = alternatePhone;
       }
+      // A returning buyer's newest town and landmark replace the old ones.
+      if (town && town !== customer.area) updateData.area = town;
+      if (landmark && landmark !== customer.landmark) updateData.landmark = landmark;
       if (Object.keys(updateData).length > 0) {
         customer = await prisma.customer.update({
           where: { id: customer.id },
@@ -490,9 +502,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         totalAmount: finalTotal,
         codAmount: finalTotal,
         balanceDue: 0,
-        deliveryAddress: formData.address || null,
+        deliveryAddress: deliveryAddressOf(formData.address, landmark),
         deliveryState: formData.state || null,
-        deliveryArea: formData.state || null,
+        deliveryArea: town || null,
         notes: formData.notes || null,
         source: 'checkout_form',
         fbp,

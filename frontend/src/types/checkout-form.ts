@@ -21,6 +21,8 @@ export type StandardFieldKey =
   | 'alternativePhone'
   | 'email'
   | 'region'
+  | 'town'
+  | 'landmark'
   | 'streetAddress';
 
 export interface FormField {

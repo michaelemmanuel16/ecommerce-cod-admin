@@ -74,8 +74,8 @@ test.describe('T45 New order sheet', () => {
     await sheet.getByLabel('Customer name').fill('W6 test Gifty');
     await sheet.getByLabel('Phone', { exact: true }).fill('0245550182');
     await sheet.getByLabel('Delivery address').fill('14 Adum Road');
-    await sheet.getByLabel('Region').selectOption('Ashanti');
-    await sheet.getByLabel('Town or area').fill('Adum');
+    await sheet.getByLabel('State').selectOption('Ashanti');
+    await sheet.getByLabel('City/Town').selectOption('Adum');
     await sheet.getByLabel('Product').selectOption({ label: 'Copybook set' });
     await expect(sheet.getByLabel(/Order total/)).toHaveValue('249');
     await sheet.getByLabel(/Order total/).fill('200');
@@ -105,7 +105,7 @@ test.describe('T45 New order sheet', () => {
     await page.goto('/orders?new=1&customerId=7');
     const sheet = page.getByRole('dialog', { name: 'New order' });
     await expect(sheet.getByLabel('Customer name')).toHaveValue('Abena Owusu');
-    await expect(sheet.getByLabel('Region')).toHaveValue('Ashanti');
+    await expect(sheet.getByLabel('State')).toHaveValue('Ashanti');
     await sheet.getByRole('button', { name: 'Cancel' }).click();
     await expect(page).toHaveURL(/\/orders$/);
   });

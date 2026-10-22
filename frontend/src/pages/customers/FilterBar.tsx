@@ -51,13 +51,13 @@ export function FilterBar({ view, onChange, towns }: FilterBarProps) {
           </button>
         )}
       </label>
-      <Select compact label="City" value={view.town} onChange={(e) => change({ town: e.target.value })}>
-        <option value="">All cities</option>
+      <Select compact label="City/Town" value={view.town} onChange={(e) => change({ town: e.target.value })}>
+        <option value="">All towns</option>
         {/* a town in the link that nobody lives in any more still shows as selected */}
         {(view.town && !towns.includes(view.town) ? [...towns, view.town] : towns).map((t) => <option key={t} value={t}>{t}</option>)}
       </Select>
-      <Select compact label="Region" value={view.region} onChange={(e) => change({ region: e.target.value })}>
-        <option value="">All regions</option>
+      <Select compact label="State" value={view.region} onChange={(e) => change({ region: e.target.value })}>
+        <option value="">All states</option>
         {(view.region && !regions.includes(view.region) ? [...regions, view.region] : regions).map((r) => <option key={r} value={r}>{r}</option>)}
       </Select>
       <Select compact label="Risk" value={view.risk ?? ''} onChange={(e) => change({ risk: isRisk(e.target.value) ? e.target.value : null })}>

@@ -29,7 +29,7 @@ jest.setTimeout(180_000);
 const OCTOBER = { startDate: '2026-10-01', endDate: '2026-10-31' };
 const SUFFIX = Date.now();
 const ORDER_HEADERS = [
-  'Order number', 'External order ID', 'Date', 'Customer', 'Phone', 'Alternate phone', 'Region', 'Town', 'Address', 'Products',
+  'Order number', 'External order ID', 'Date', 'Customer', 'Phone', 'Alternate phone', 'State', 'Town', 'Address', 'Products',
   'Quantity', 'Status', 'Call rep', 'Delivery agent', 'Subtotal', 'Discount', 'Total', 'Payment method', 'Payment status',
   'Delivery date', 'Decline or failure reason', 'Source',
 ];
@@ -210,7 +210,7 @@ describe('GET /api/customers/export', () => {
     expect(res.headers['content-disposition']).toMatch(/customers-\d{4}-\d{2}-\d{2}\.csv/);
     const rows = csvRows(res);
     expect(rows[0]).toEqual([
-      'Name', 'Phone', 'Alternate phone', 'Email', 'Region', 'Town', 'Orders', 'Delivered', 'Refused', 'Delivered value',
+      'Name', 'Phone', 'Alternate phone', 'Email', 'State', 'Town', 'Orders', 'Delivered', 'Refused', 'Delivered value',
       'Last order', 'SMS opt-out', 'WhatsApp opt-out', 'Email opt-out',
     ]);
     expect(list.body.pagination.total).toBeGreaterThan(100);

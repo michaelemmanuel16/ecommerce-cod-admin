@@ -49,13 +49,13 @@ describe('checkRows', () => {
 
   it('region: a near match shows "Did you mean Ashanti?" and is not auto-fixed', () => {
     const r = check({ region: 'Ashante' });
-    expect(r.problems).toEqual(['Region "Ashante" is not in the list. Did you mean Ashanti?']);
+    expect(r.problems).toEqual(['State "Ashante" is not in the list. Did you mean Ashanti?']);
     expect(r.data).toBeUndefined();
   });
 
   it('region: no near match, and missing', () => {
-    expect(problem({ region: 'Lagos' })).toEqual(['Region "Lagos" is not one of Ghana\'s regions']);
-    expect(problem({ region: '' })).toEqual(['Region is missing']);
+    expect(problem({ region: 'Lagos' })).toEqual(['State "Lagos" is not one of Ghana\'s states']);
+    expect(problem({ region: '' })).toEqual(['State is missing']);
   });
 
   it('product: name or SKU, case-insensitive; unknown and ambiguous are problems', () => {
@@ -194,10 +194,10 @@ describe('readSheet', () => {
 
 describe('problemsCsv', () => {
   it('keeps the file columns and adds a problem column; formulas become text', () => {
-    const text = problemsCsv(['phone', 'address'], [{ cells: { phone: '123', address: '=SUM(A1)' }, problems: ['Phone must have 9 to 15 digits', 'Region is missing'] }]);
+    const text = problemsCsv(['phone', 'address'], [{ cells: { phone: '123', address: '=SUM(A1)' }, problems: ['Phone must have 9 to 15 digits', 'State is missing'] }]);
     expect(text.replace(/^﻿/, '').split('\r\n')).toEqual([
       'phone,address,problem',
-      "123,'=SUM(A1),Phone must have 9 to 15 digits; Region is missing",
+      "123,'=SUM(A1),Phone must have 9 to 15 digits; State is missing",
       '',
     ]);
   });

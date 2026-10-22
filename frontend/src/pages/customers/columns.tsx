@@ -46,7 +46,7 @@ export function buildColumns({ sort, onSort }: ColumnContext): Column<CustomerRo
         );
       },
     },
-    { key: 'city', header: 'City', render: (c) => c.area || <span className="mut">—</span> },
+    { key: 'city', header: 'City/Town', render: (c) => c.area || <span className="mut">—</span> },
     { key: 'orders', header: head('orders', 'Orders'), right: true, render: (c) => <span className="num">{c.totalOrders}</span> },
     { key: 'delivered', header: 'Delivered', right: true, render: (c) => <span className="num">{c.deliveredOrders}</span> },
     {

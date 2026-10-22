@@ -7,7 +7,7 @@ const BAD: OrderStatus[] = ['failed_delivery', 'returned', 'cancelled', 'payment
 
 const FIELD_WORDS: Record<string, string> = {
   customerName: 'name', customerEmail: 'email', customerPhone: 'phone', alternatePhone: 'alternate phone',
-  deliveryAddress: 'address', deliveryState: 'region', deliveryArea: 'town', orderItems: 'items', totalAmount: 'total',
+  deliveryAddress: 'address', deliveryState: 'state', deliveryArea: 'city/town', orderItems: 'items', totalAmount: 'total',
 };
 
 /** Who did it, in words: "Adwoa Darko", "AI agent", "Partner", "System". */

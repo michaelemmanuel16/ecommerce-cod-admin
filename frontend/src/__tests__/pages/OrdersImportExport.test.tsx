@@ -81,7 +81,7 @@ describe('Import modal (F-319)', () => {
     checkImport.mockResolvedValue(CHECK);
     const input = await openImport();
     expect(screen.getByText(/Up to 2,000 rows/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Download template/ })).toHaveAttribute('href', expect.stringContaining('customer_name%2Cphone%2Caddress%2Cregion%2Cproduct%2Cquantity%2Cprice%2Cstatus'));
+    expect(screen.getByRole('link', { name: /Download template/ })).toHaveAttribute('href', expect.stringContaining('customer_name%2Cphone%2Caddress%2Cstate%2Cproduct%2Cquantity%2Cprice%2Cstatus'));
     await userEvent.upload(input, new File(['x'], 'meta-leads.xlsx'));
     expect(await screen.findByText('40 ready')).toBeInTheDocument();
     expect(screen.getByText('2 need a fix')).toBeInTheDocument();

@@ -11,6 +11,7 @@ import { DETAIL } from '../fixtures/customersList';
 const getCustomerDetail = vi.fn();
 const deleteCustomer = vi.fn();
 const updateCustomer = vi.fn();
+vi.mock('../../services/locations.service', () => ({ locationsService: { getTowns: () => Promise.resolve(['Kumasi', 'Obuasi']) } }));
 vi.mock('../../services/customers.service', () => ({
   customersService: {
     getCustomerDetail: (...a: unknown[]) => getCustomerDetail(...a),
@@ -156,9 +157,9 @@ describe('Customer detail: actions (F-355, F-356)', () => {
     const dlg = screen.getByRole('dialog', { name: 'Edit customer' });
     expect(within(dlg).getByLabelText('First name')).toHaveValue('Abena');
     expect(within(dlg).getByLabelText('Phone')).toHaveValue('024 555 0182');
-    expect(within(dlg).getByLabelText('Region')).toHaveValue('Ashanti');
-    await userEvent.clear(within(dlg).getByLabelText(/^Landmark/));
-    await userEvent.type(within(dlg).getByLabelText(/^Landmark/), 'By the church');
+    expect(within(dlg).getByLabelText('State')).toHaveValue('Ashanti');
+    await userEvent.clear(within(dlg).getByLabelText(/^Nearest landmark/));
+    await userEvent.type(within(dlg).getByLabelText(/^Nearest landmark/), 'By the church');
     await userEvent.click(within(dlg).getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(updateCustomer).toHaveBeenCalledWith(1, expect.objectContaining({ landmark: 'By the church', firstName: 'Abena' })));
     expect(await screen.findByText('Abena Owusu saved')).toBeInTheDocument();
