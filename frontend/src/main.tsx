@@ -9,6 +9,7 @@ import './styles/shell.css';
 import './styles/dashboard.css';
 import './styles/auth.css';
 import './styles/orders.css';
+import './styles/orderDrawer.css';
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
