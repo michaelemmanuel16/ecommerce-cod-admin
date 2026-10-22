@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { BASE_URL, OWNER_EMAIL, createProduct, createUser, ownerToken, signIn, stamp, uniquePhone, type TestProduct, type TestUser } from './helpers/m3';
 
 /**
@@ -33,6 +33,16 @@ test.describe.serial('M3 owner flow', () => {
     const row = page.getByRole('row').filter({ hasText: customerName });
     await expect(row).toHaveCount(1);
     return row;
+  };
+
+  /**
+   * The row menus close on any scroll. A click that first scrolls the table sideways gets that scroll event one frame
+   * later, after the menu opened. Scroll the button into view, wait a frame, then click.
+   */
+  const openMenu = async (page: Page, button: Locator) => {
+    await button.scrollIntoViewIfNeeded();
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    await button.click();
   };
 
   test('login lands on the Dashboard', async ({ page }) => {
@@ -77,12 +87,12 @@ test.describe.serial('M3 owner flow', () => {
     await signIn(page, OWNER_EMAIL);
     const row = await findOrderRow(page);
 
-    await row.getByRole('button', { name: /^Assign order/ }).click();
+    await openMenu(page, row.getByRole('button', { name: /^Assign order/ }));
     await page.getByRole('menuitem', { name: new RegExp(rep.lastName) }).click();
     await expect(page.getByText(`${rep.name} will call 1 order`)).toBeVisible();
     await expect(row).toContainText(rep.name);
 
-    await row.getByRole('button', { name: /^Assign order/ }).click();
+    await openMenu(page, row.getByRole('button', { name: /^Assign order/ }));
     await page.getByRole('menuitem', { name: new RegExp(agent.lastName) }).click();
     await expect(page.getByText(`${agent.name} will deliver 1 order`)).toBeVisible();
     await expect(row).toContainText(agent.name);
@@ -94,13 +104,13 @@ test.describe.serial('M3 owner flow', () => {
     const statusButton = row.getByRole('button', { name: /^Change status of/ });
 
     // A normal move
-    await statusButton.click();
+    await openMenu(page, statusButton);
     await page.getByRole('menuitem', { name: 'Confirmed', exact: true }).click();
     await expect(page.getByText(/is now Confirmed$/)).toBeVisible();
     await expect(row).toContainText('Confirmed');
 
     // Delivered is outside the normal flow from Confirmed. It moves at once: no reason dialog opens.
-    await statusButton.click();
+    await openMenu(page, statusButton);
     await expect(page.getByText('Outside the normal flow')).toBeVisible();
     await page.getByRole('menuitem', { name: 'Delivered', exact: true }).click();
     await expect(page.getByText(/is now Delivered$/)).toBeVisible();
