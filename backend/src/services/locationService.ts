@@ -24,7 +24,7 @@ export function getTowns(countryCode: string, stateName: string): string[] {
 }
 
 /** Towns for every state of a country, keyed by state name. Sent to the public checkout with the regions. */
-export function getTownsByState(countryCode: string, stateNames: string[]): Record<string, string[]> {
+function getTownsByState(countryCode: string, stateNames: string[]): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const s of stateNames) out[s] = getTowns(countryCode, s);
   return out;

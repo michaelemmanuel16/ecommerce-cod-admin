@@ -6,7 +6,7 @@ import { ActorKind, OrderStatus } from '@prisma/client';
  * A planned re-delivery is the last row. Times are ISO strings; the screen shows them in Accra time.
  */
 
-export type TimelineActorKind = 'person' | 'ai_agent' | 'partner' | 'system';
+type TimelineActorKind = 'person' | 'ai_agent' | 'partner' | 'system';
 
 const ACTOR_KIND: Record<ActorKind, TimelineActorKind> = {
   user: 'person',
@@ -15,7 +15,7 @@ const ACTOR_KIND: Record<ActorKind, TimelineActorKind> = {
   system: 'system',
 };
 
-export interface TimelineActor {
+interface TimelineActor {
   kind: TimelineActorKind;
   userId: number | null;
   name: string | null;
@@ -61,7 +61,7 @@ export interface TimelineHistoryRow {
   forced: boolean;
 }
 
-export interface TimelineCall {
+interface TimelineCall {
   outcome: string;
   notes: string | null;
   createdAt: Date;
@@ -104,7 +104,7 @@ export function formatDuration(ms: number): string {
 const meta = (m: unknown): Record<string, unknown> => (m && typeof m === 'object' && !Array.isArray(m) ? m as Record<string, unknown> : {});
 const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
 
-export interface TimelineInput {
+interface TimelineInput {
   order: TimelineOrder;
   history: TimelineHistoryRow[];
   calls: TimelineCall[];

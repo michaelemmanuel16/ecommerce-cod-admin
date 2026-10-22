@@ -14,9 +14,9 @@ import { ratePercent } from './rates';
 /** Under the pace by this many points or more, a period is off track. */
 export const OFF_TRACK_POINTS = 3;
 
-export type ProgressTag = 'hit' | 'on_track' | 'behind' | 'off_track' | 'no_target';
-export type RateTag = 'on_track' | 'behind' | 'off_track' | 'no_data';
-export type Tone = 'ok' | 'warn' | 'bad';
+type ProgressTag = 'hit' | 'on_track' | 'behind' | 'off_track' | 'no_target';
+type RateTag = 'on_track' | 'behind' | 'off_track' | 'no_data';
+type Tone = 'ok' | 'warn' | 'bad';
 
 /** Points a value is under a reference (0 when at or above it), to 1 decimal so 54.8 - 51.8 is 3, not 2.9999999999999964. */
 const under = (value: number, reference: number) => Math.max(Math.round((reference - value) * 10) / 10, 0);
@@ -36,7 +36,7 @@ export function rateTag(value: number | null, target: number): RateTag {
   return gap < OFF_TRACK_POINTS ? 'behind' : 'off_track';
 }
 
-export interface PaceChip {
+interface PaceChip {
   /** Whole points between progress and pace, always >= 0. */
   points: number;
   tag: 'ahead' | 'behind' | 'on_pace';

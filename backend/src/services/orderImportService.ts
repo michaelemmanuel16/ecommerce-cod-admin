@@ -44,7 +44,7 @@ export interface SheetRow {
   cells: Record<string, string>;
 }
 
-export interface Sheet {
+interface Sheet {
   headers: string[];
   rows: SheetRow[];
   /** Said to the user when something in the file was left out. */
@@ -167,7 +167,7 @@ export function editDistance(a: string, b: string): number {
 
 const regionKey = (s: string) => s.toLowerCase().replace(/\bregion\b/g, '').replace(/[^a-z]/g, '');
 
-export type RegionMatch = { region: string } | { problem: string };
+type RegionMatch = { region: string } | { problem: string };
 
 /** An exact match (case, spaces and a trailing "Region" ignored) is accepted. A near match is a hint and is not applied. */
 export function matchRegion(input: string, regions: string[], countryName: string): RegionMatch {
@@ -202,8 +202,8 @@ function parseDate(text: string): Date | null | undefined {
 /** "GH₵ 1,200.50" to "1200.50". */
 const moneyText = (s: string) => s.replace(/[,\s]/g, '').replace(/^(GH₵|GHS|₦|NGN|\$)/i, '');
 
-export interface ImportProduct { id: number; name: string; sku: string }
-export interface ImportUser { id: number; name: string }
+interface ImportProduct { id: number; name: string; sku: string }
+interface ImportUser { id: number; name: string }
 
 export interface CheckContext {
   regions: string[];
@@ -215,7 +215,7 @@ export interface CheckContext {
   now?: Date;
 }
 
-export interface CheckedRow {
+interface CheckedRow {
   row: number;
   /** The cells as the file spells them, for the problems file. */
   cells: Record<string, string>;
@@ -339,7 +339,7 @@ export function checkRows(sheetRows: SheetRow[], ctx: CheckContext): CheckedRow[
 
 const normalizeText = (val: string | null | undefined) => String(val || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-export interface ExistingOrder {
+interface ExistingOrder {
   id: number;
   status: OrderStatus;
   deliveryAddress: string | null;
@@ -380,7 +380,7 @@ export const isForwardStatus = (current: OrderStatus, next: OrderStatus) => {
 // Prepare: lookups, checks, duplicates
 // ---------------------------------------------------------------------------------------------------------
 
-export interface DuplicateRow { row: number; orderId: number; advances: boolean }
+interface DuplicateRow { row: number; orderId: number; advances: boolean }
 
 export interface PreparedImport {
   fileName: string;

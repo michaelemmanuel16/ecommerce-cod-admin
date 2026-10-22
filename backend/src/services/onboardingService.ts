@@ -7,8 +7,6 @@ import { changeStoreCurrency } from './fxService';
 import { adminService } from './adminService';
 import { normalizeInternationalPhone } from '../utils/phone';
 
-export type PartnerType = '3pl' | 'agent';
-
 export interface StoreInput {
   businessName?: string;
   country?: string;
