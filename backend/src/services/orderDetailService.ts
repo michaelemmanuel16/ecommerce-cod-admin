@@ -12,14 +12,14 @@ import { buildTimeline, TimelineEdit } from './orderTimeline';
 
 const userName = { select: { id: true, firstName: true, lastName: true } } as const;
 
-/** A missing, deleted or out-of-scope order. A rep or an agent who does not own it gets the same 404 as a missing order. */
+/** A missing, deleted or out-of-scope order. Scope is checked first, so a rep or an agent who does not own the order always gets the generic 404 (a deleted order is not revealed). */
 function assertVisible<T extends { deletedAt: Date | null; customerRepId: number | null; deliveryAgentId: number | null }>(
   order: T | null,
   requester: Requester,
 ): T {
   if (!order) throw new AppError('Order not found', 404);
-  if (order.deletedAt) throw new AppError('This order was deleted.', 404);
   if (!ownsOrder(order, actorOf(requester))) throw new AppError('Order not found', 404);
+  if (order.deletedAt) throw new AppError('This order was deleted.', 404);
   return order;
 }
 

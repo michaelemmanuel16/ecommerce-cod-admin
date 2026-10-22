@@ -132,6 +132,18 @@ describe('GET /api/orders/:id', () => {
     expect((await detail('admin', 987654321)).status).toBe(404);
   });
 
+  it('a rep asking for another rep\'s deleted order gets the generic "Order not found"; the owning rep sees the deleted message', async () => {
+    const id = await mkOrder('cancelled', { customerRepId: U.rep.id, deletedAt: new Date() });
+    for (const who of ['rep2', 'agent']) {
+      const res = await detail(who, id);
+      expect(res.status).toBe(404);
+      expect(JSON.stringify(res.body)).toContain('Order not found');
+      expect(JSON.stringify(res.body)).not.toContain('deleted');
+      expect((await timeline(who, id)).body.message).toBe('Order not found');
+    }
+    expect(JSON.stringify((await detail('rep', id)).body)).toContain('This order was deleted.');
+  });
+
   it('two tenants: an order of another tenant returns 404 on detail and timeline', async () => {
     const otherCustomer = (await prismaBase.customer.create({
       data: { firstName: 'Kofi', lastName: 'Other', phoneNumber: `+23327${String(SUFFIX).slice(-7)}`, address: '5 Rd', state: 'Ashanti', area: 'Adum', tenantId: otherTenantId },
@@ -139,7 +151,9 @@ describe('GET /api/orders/:id', () => {
     const foreign = await mkOrder('confirmed', {
       orderItems: undefined, orderHistory: { create: { tenantId: otherTenantId, status: 'confirmed' } },
     }, otherTenantId, otherCustomer);
-    expect((await detail('owner', foreign)).status).toBe(404);
+    const crossTenant = await detail('owner', foreign);
+    expect(crossTenant.status).toBe(404);
+    expect(crossTenant.body.message).toBe('Order not found');
     expect((await timeline('owner', foreign)).status).toBe(404);
     expect((await request(app).get(`/api/orders/${foreign}`).set(bearer(U.otherOwner.token))).status).toBe(200);
   });
