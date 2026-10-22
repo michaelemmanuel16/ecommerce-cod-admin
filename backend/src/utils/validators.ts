@@ -2,6 +2,7 @@ import { body, param, query, ValidationChain } from 'express-validator';
 import { DeclineReason, FailureReason, OrderStatus } from '@prisma/client';
 import { ORDER_FLAG_CODES } from '../services/orderFlagService';
 import { ORDER_SORT_FIELDS } from '../services/orderService';
+import { CUSTOMER_RISKS, CUSTOMER_SEGMENTS, CUSTOMER_SORT_FIELDS } from '../services/customerService';
 
 /**
  * Password validation utility
@@ -58,14 +59,29 @@ export const loginValidation: ValidationChain[] = [
   body('password').notEmpty()
 ];
 
+/** F-355: a phone with letters is an error; fewer than 9 digits is too short. Spaces, + and dashes are fine (F-362). */
+const customerPhone = (field: string) => (v: unknown) => {
+  const text = String(v ?? '');
+  if (/[a-z]/i.test(text)) throw new Error(`${field} can only have digits, spaces, + and dashes`);
+  if (text.replace(/\D/g, '').length < 9) throw new Error(`${field} needs at least 9 digits`);
+  return true;
+};
+
 export const createCustomerValidation: ValidationChain[] = [
   body('firstName').notEmpty().trim(),
   body('lastName').optional().trim(),
-  body('phoneNumber').isMobilePhone('any'),
+  body('phoneNumber').custom(customerPhone('Phone number')),
+  body('alternatePhone').optional({ values: 'falsy' }).custom(customerPhone('Alternate phone')),
   body('address').notEmpty(),
   body('state').notEmpty(),
   body('area').notEmpty()
 ];
+
+export const updateCustomerValidation: ValidationChain[] = [
+  body('phoneNumber').optional().custom(customerPhone('Phone number')),
+  body('alternatePhone').optional({ values: 'falsy' }).custom(customerPhone('Alternate phone')),
+];
+
 
 export const createProductValidation: ValidationChain[] = [
   body('sku').notEmpty(),
@@ -123,6 +139,18 @@ export const assignAgentValidation: ValidationChain[] = [
 export const paginationValidation: ValidationChain[] = [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 })
+];
+
+/** Customers list, tiles and export filters (F-350 to F-353). */
+export const customerListValidation: ValidationChain[] = [
+  ...paginationValidation,
+  query('sortBy').optional().isIn([...CUSTOMER_SORT_FIELDS]).withMessage(`Sort by ${CUSTOMER_SORT_FIELDS.join(', ')}`),
+  query('sortOrder').optional().isIn(['asc', 'desc']),
+  query('search').optional().isString().isLength({ max: 100 }),
+  query('segment').optional().isIn([...CUSTOMER_SEGMENTS]),
+  query('risk').optional().isIn([...CUSTOMER_RISKS]),
+  query('blocked').optional().isBoolean(),
+  query('flagged').optional().isBoolean(),
 ];
 
 /** Orders list and tab counts (F-310 to F-312). Counts ignore the sort and page fields. */

@@ -50,13 +50,15 @@ describe('CustomerService', () => {
     it('should throw error when phone number already exists', async () => {
       prismaMock.customer.findMany.mockResolvedValue([{
         id: 2,
+        firstName: 'Abena',
+        lastName: 'Owusu',
         phoneNumber: '+1234567890'
       } as any]);
 
       await expect(
         customerService.createCustomer(createCustomerData)
       ).rejects.toThrow(
-        new AppError('Customer with this phone number already exists', 400)
+        new AppError('This number belongs to Abena Owusu', 409)
       );
     });
   });
@@ -95,13 +97,13 @@ describe('CustomerService', () => {
 
     it('should throw error when updating to duplicate phone number', async () => {
       prismaMock.customer.findUnique.mockResolvedValueOnce(mockCustomer as any);
-      prismaMock.customer.findMany.mockResolvedValueOnce([{ id: 3 } as any]);
+      prismaMock.customer.findMany.mockResolvedValueOnce([{ id: 3, firstName: 'Abena', lastName: 'Owusu', phoneNumber: '+9876543210' } as any]);
 
       await expect(
         customerService.updateCustomer('1', {
           phoneNumber: '+9876543210'
         })
-      ).rejects.toThrow(new AppError('Phone number already in use', 400));
+      ).rejects.toThrow(new AppError('This number belongs to Abena Owusu', 409));
     });
 
     it('should allow updating to same phone number', async () => {
