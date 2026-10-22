@@ -116,6 +116,25 @@ describe('Import modal (F-319)', () => {
     expect(screen.queryByText(/from your import/)).toBeNull();
   });
 
+  it('run workflows: unticked sends false, ticked sends true', async () => {
+    checkImport.mockResolvedValue(CHECK);
+    uploadOrders.mockResolvedValue(RESULT);
+    const input = await openImport();
+    await userEvent.upload(input, new File(['x'], 'meta-leads.xlsx'));
+    const box = (await screen.findByLabelText('Run workflows for these orders')) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    expect(screen.getByText('Off by default, so imported orders send no customer messages.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Import 40 orders' }));
+    expect(uploadOrders.mock.calls[0][1]).toBe(false);
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Close' })).at(-1)!);
+
+    await userEvent.click(screen.getByRole('button', { name: /Import/ }));
+    await userEvent.upload(screen.getByLabelText('Choose a file to import'), new File(['x'], 'again.xlsx'));
+    await userEvent.click(await screen.findByLabelText('Run workflows for these orders'));
+    await userEvent.click(screen.getByRole('button', { name: 'Import 40 orders' }));
+    expect(uploadOrders.mock.calls[1][1]).toBe(true);
+  });
+
   it('shows the server sentence when the file is refused', async () => {
     checkImport.mockRejectedValue({ response: { data: { message: 'Split the file into parts of 2,000 rows.' } } });
     const input = await openImport();

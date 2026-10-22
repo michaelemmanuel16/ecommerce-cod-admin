@@ -29,10 +29,13 @@ const SHOWN_PROBLEMS = 5;
 export function ImportModal({ open, onClose, onImported, onShow }: ImportModalProps) {
   const [stage, setStage] = useState<Stage>({ name: 'pick' });
   const [over, setOver] = useState(false);
+  // off by default, so imported orders send no customer messages (F-319)
+  const [runWorkflows, setRunWorkflows] = useState(false);
 
   const close = () => {
     setStage({ name: 'pick' });
     setOver(false);
+    setRunWorkflows(false);
     onClose();
   };
 
@@ -55,7 +58,7 @@ export function ImportModal({ open, onClose, onImported, onShow }: ImportModalPr
     const { file, check } = stage;
     setStage({ name: 'importing', file, check });
     try {
-      const result = await ordersService.uploadOrders(file);
+      const result = await ordersService.uploadOrders(file, runWorkflows);
       setStage({ name: 'done', file, result });
       onImported();
     } catch (err) {
@@ -213,6 +216,15 @@ export function ImportModal({ open, onClose, onImported, onShow }: ImportModalPr
         </div>
       )}
       {check && check.note && <div className="hint">{check.note}</div>}
+      {check && (
+        <div>
+          <label className="chk">
+            <input type="checkbox" checked={runWorkflows} disabled={busy} onChange={(e) => setRunWorkflows(e.target.checked)} />
+            Run workflows for these orders
+          </label>
+          <div className="hint">Off by default, so imported orders send no customer messages.</div>
+        </div>
+      )}
       {check && check.duplicates > 0 && (
         <div className="hint">{check.duplicates.toLocaleString('en-GB')} {check.duplicates === 1 ? 'row matches' : 'rows match'} orders you already have.</div>
       )}
