@@ -9,7 +9,7 @@ import { productsService } from '../../services/products.service';
 import { useConfigStore } from '../../stores/configStore';
 import type { Product } from '../../types';
 import { getCountryByCurrency, getCurrencySymbol, getRegionsForCountry } from '../../utils/countries';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatPhoneLocal } from '../../utils/format';
 import type { Option } from './useFilterOptions';
 import { phoneOk } from '../../utils/phone';
 import { asNumber, computedTotal, linesSum, totalGap, unitsByProduct, type DraftLine } from './newOrder';
@@ -102,7 +102,7 @@ export function NewOrderSheet({ open, onClose, onCreated, customerId, canAssign,
       .catch(() => undefined);
     if (customerId) {
       customersService.getForOrder(customerId)
-        .then((c) => live && setForm((f) => ({ ...f, name: c.name, phone: c.phone, alternatePhone: c.alternatePhone, email: c.email, address: c.address, region: c.region, town: c.town })))
+        .then((c) => live && setForm((f) => ({ ...f, name: c.name, phone: formatPhoneLocal(c.phone), alternatePhone: c.alternatePhone && formatPhoneLocal(c.alternatePhone), email: c.email, address: c.address, region: c.region, town: c.town })))
         .catch(() => undefined);
     }
     return () => {

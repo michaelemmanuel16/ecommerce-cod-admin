@@ -176,7 +176,7 @@ describe('New order sheet (M3-T45, F-317)', () => {
     renderSheet({ customerId: 7 });
     await waitFor(() => expect(screen.getByLabelText('Customer name')).toHaveValue('Abena Owusu'));
     expect(svc.getForOrder).toHaveBeenCalledWith(7);
-    expect(screen.getByLabelText('Phone')).toHaveValue('+233245550182');
+    expect(screen.getByLabelText('Phone')).toHaveValue('024 555 0182');
     expect(screen.getByLabelText('Delivery address')).toHaveValue('14 Adum Road');
     expect(screen.getByLabelText('Region')).toHaveValue('Ashanti');
     expect(screen.getByLabelText('Town or area')).toHaveValue('Adum');
