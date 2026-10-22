@@ -311,3 +311,42 @@ describe('two tenants', () => {
     expect(searchB.body.orders).toEqual([]);
   });
 });
+
+describe('ids filter (the orders an import made, F-319)', () => {
+  it('lists only the given ids, and the counts follow', async () => {
+    const all = await list(tokens.admin, { limit: 5 });
+    const ids = all.body.orders.map((o: any) => o.id);
+    const res = await list(tokens.admin, { ids: ids.slice(0, 3).join(',') });
+    expect(res.status).toBe(200);
+    expect(res.body.orders.map((o: any) => o.id).sort()).toEqual(ids.slice(0, 3).sort());
+    expect((await counts(tokens.admin, { ids: ids.slice(0, 3).join(',') })).body.all).toBe(3);
+  });
+
+  it('a rep gets only own orders from a list of ids', async () => {
+    const mine = (await list(tokens.adwoa, { limit: 2 })).body.orders.map((o: any) => o.id);
+    const theirs = (await list(tokens.admin, { customerRepId: userIds.nana, limit: 2 })).body.orders.map((o: any) => o.id);
+    expect(theirs.length).toBe(2);
+    const res = await list(tokens.adwoa, { ids: [...mine, ...theirs].join(',') });
+    expect(res.body.orders.map((o: any) => o.id).sort()).toEqual(mine.sort());
+    expect((await list(tokens.adwoa, { ids: theirs.join(',') })).body.pagination.total).toBe(0);
+  });
+
+  it('refuses ids that are not numbers or are more than 2,000', async () => {
+    expect((await list(tokens.admin, { ids: '1,2,abc' })).status).toBe(400);
+    expect((await list(tokens.admin, { ids: '1,,2' })).status).toBe(400);
+    expect((await list(tokens.admin, { ids: '-5' })).status).toBe(400);
+    const many = Array.from({ length: 2001 }, (_, i) => i + 1).join(',');
+    expect((await list(tokens.admin, { ids: many })).status).toBe(400);
+    const max = Array.from({ length: 2000 }, (_, i) => i + 1).join(',');
+    expect((await list(tokens.admin, { ids: max })).status).toBe(200);
+  });
+
+  it('tenant A asking for tenant B order id gets nothing', async () => {
+    const a = pair.a.users.admin.token;
+    const both = await request(app).get('/api/orders').query({ ids: `${pair.a.ids.order},${pair.b.ids.order}` }).set(bearer(a));
+    expect(both.body.orders.map((o: any) => o.id)).toEqual([pair.a.ids.order]);
+    const onlyB = await request(app).get('/api/orders').query({ ids: String(pair.b.ids.order) }).set(bearer(a));
+    expect(onlyB.body.orders).toEqual([]);
+    expect(onlyB.body.pagination.total).toBe(0);
+  });
+});

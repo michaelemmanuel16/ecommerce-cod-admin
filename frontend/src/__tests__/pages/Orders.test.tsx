@@ -28,7 +28,6 @@ vi.mock('../../services/socket', () => ({ getSocket: () => socket }));
 vi.mock('../../services/products.service', () => ({ productsService: { getProducts: () => Promise.resolve([{ id: 1, name: 'Copybook set', isActive: true }, { id: 2, name: 'Refill pens', isActive: true }]) } }));
 vi.mock('../../services/delivery-agents.service', () => ({ deliveryAgentsService: { getDeliveryAgents: () => Promise.resolve([{ id: '5', name: 'Kofi Appiah', isActive: true, isAvailable: true }]) } }));
 vi.mock('../../services/customer-reps.service', () => ({ customerRepsService: { getCustomerReps: () => Promise.resolve([{ id: '2', name: 'Adwoa Darko', isActive: true, isAvailable: true }]) } }));
-vi.mock('../../components/orders/BulkImportModal', () => ({ BulkImportModal: () => null }));
 vi.mock('../../components/forms/OrderForm', () => ({ OrderForm: () => null }));
 
 function Where() {

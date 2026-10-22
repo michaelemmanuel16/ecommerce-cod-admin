@@ -107,6 +107,8 @@ export interface OrderFilters {
   startDate?: Date;
   endDate?: Date;
   search?: string;
+  /** Only these order ids (the orders an import made, F-319). Tenant and row scope still apply. */
+  ids?: number[];
 }
 
 export interface OrderListQuery extends OrderFilters {
@@ -133,6 +135,7 @@ function listWhere(filters: OrderFilters, requester: Requester | undefined, with
   const and: Prisma.OrderWhereInput[] = [orderScope(requester)];
   if (withStatus && filters.status?.length) and.push({ status: { in: filters.status } });
   if (filters.customerId) and.push({ customerId: filters.customerId });
+  if (filters.ids?.length) and.push({ id: { in: filters.ids } });
   if (filters.unassigned) and.push({ customerRepId: null });
   else if (filters.customerRepId) and.push({ customerRepId: filters.customerRepId });
   if (filters.deliveryAgentId) and.push({ deliveryAgentId: filters.deliveryAgentId });

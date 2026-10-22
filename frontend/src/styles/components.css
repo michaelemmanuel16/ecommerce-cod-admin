@@ -117,3 +117,16 @@
 .v2 .kpi .ic.coral{background:var(--coral-soft);color:var(--coral)}
 .v2 .kpi .ic.gold{background:var(--gold-soft);color:var(--gold)}
 .v2 .kpi .ic.violet{background:var(--violet-soft);color:var(--violet)}
+
+/* import modal (index.html #m-import: .drop .filebar .hl) */
+.v2 .drop{border:2px dashed var(--line);border-radius:14px;padding:22px;text-align:center;color:var(--ink-2);cursor:pointer}
+.v2 .drop:hover,.v2 .drop.over,.v2 .drop:focus-within{border-color:var(--pine)}
+.v2 .drop svg.lucide{width:26px;height:26px;color:var(--ink-3)}
+.v2 .drop b{display:block;margin-top:6px}
+.v2 .drop input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.v2 .filebar{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.v2 .filebar .ic{flex:none;width:36px;height:36px;border-radius:10px;display:grid;place-items:center}
+.v2 .hl{border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.v2 .hl+.hl{margin-top:8px}
+.v2 .chk{display:flex;align-items:center;gap:8px;font-weight:600}
+.v2 .chk input{width:16px;height:16px;accent-color:var(--pine)}

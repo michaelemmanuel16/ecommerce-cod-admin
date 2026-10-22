@@ -22,6 +22,8 @@ export interface ListView {
   /** A call rep id, or 'none' for orders with no call rep. */
   rep: number | 'none' | null;
   flagged: boolean;
+  /** Only these orders: the ones an import made (F-319). While set, the date range is not applied. */
+  ids: number[] | null;
 }
 
 /** The search waits this long after the last key press (F-310). */
@@ -32,8 +34,11 @@ export const DEFAULT_SORT: SortState = { by: 'createdAt', dir: 'desc' };
 
 export const DEFAULT_VIEW: ListView = {
   tab: 'all', page: 1, q: '', sort: DEFAULT_SORT, size: null, from: null, to: null, basis: 'created',
-  product: null, agent: null, rep: null, flagged: false,
+  product: null, agent: null, rep: null, flagged: false, ids: null,
 };
+
+/** The import can make 2,000 orders; the API takes no more. */
+export const MAX_IDS = 2000;
 
 const SORT_FIELDS: SortField[] = ['id', 'customer', 'totalAmount', 'createdAt'];
 const DAY = 86_400_000;
@@ -42,6 +47,12 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const positive = (v: string | null): number | null => {
   const n = Number(v);
   return v !== null && Number.isInteger(n) && n > 0 ? n : null;
+};
+
+const readIds = (v: string | null): number[] | null => {
+  if (!v || !/^\d+(,\d+)*$/.test(v)) return null;
+  const ids = v.split(',').map(Number);
+  return ids.length <= MAX_IDS ? ids : null;
 };
 
 export function parseView(search: URLSearchParams): ListView {
@@ -69,6 +80,7 @@ export function parseView(search: URLSearchParams): ListView {
     agent: positive(search.get('agent')),
     rep: rep === 'none' ? 'none' : positive(rep),
     flagged: search.get('flagged') === '1',
+    ids: readIds(search.get('ids')),
   };
 }
 
@@ -90,6 +102,7 @@ export function writeView(view: ListView): URLSearchParams {
   if (view.agent !== null) out.set('agent', String(view.agent));
   if (view.rep !== null) out.set('rep', String(view.rep));
   if (view.flagged) out.set('flagged', '1');
+  if (view.ids) out.set('ids', view.ids.join(','));
   return out;
 }
 
@@ -155,9 +168,9 @@ export function listParams(view: ListView, limit: number, now: Date = new Date()
     sortOrder: view.sort.dir,
     page: view.page,
     limit,
-    startDate: range.from,
-    endDate: range.to,
-    dateBasis: view.basis,
+    // imported history orders can be older than the range, so a list of ids shows them whatever the dates
+    ...(!view.ids && { startDate: range.from, endDate: range.to, dateBasis: view.basis }),
+    ...(view.ids && { ids: view.ids.join(',') }),
     ...(view.product !== null && { productId: [view.product] }),
     ...(view.agent !== null && { deliveryAgentId: view.agent }),
     ...(view.rep === 'none' && { unassigned: true }),

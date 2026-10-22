@@ -1,24 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, Plus, Upload } from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
 import type { OrderListRow } from '../services/orders.service';
 import { useV2Page } from '../components/shell/useV2Page';
 import { Button, EmptyState, Pagination, Skeleton, Table, Tabs, useToast } from '../components/ui-v2';
-import { BulkImportModal } from '../components/orders/BulkImportModal';
 import { OrderForm } from '../components/forms/OrderForm';
 import { usePermissions } from '../hooks/usePermissions';
-import { ordersService } from '../services/orders.service';
 import { buildColumns, type SortField } from './orders/columns';
 import { ColumnsMenu } from './orders/ColumnsMenu';
 import { FilterBar } from './orders/FilterBar';
 import { FloatingMenu } from './orders/FloatingMenu';
 import { BulkBar } from './orders/BulkBar';
+import { ExportMenu } from './orders/ExportMenu';
+import { ImportModal } from './orders/ImportModal';
 import { RowAssignItems } from './orders/AssignItems';
 import { RowStatus } from './orders/RowStatus';
 import { useOrderActions, type FocusSet } from './orders/useOrderActions';
-import { CLOSED, DELETABLE, orderNumber, STATUS_TABS, tabCount, visibleTabs, type StatusTabId } from './orders/model';
+import { CLOSED, DELETABLE, orderNumber, tabCount, visibleTabs, type StatusTabId } from './orders/model';
 import { readPref, writePref } from './orders/prefs';
-import { DEFAULT_SIZE, PAGE_SIZES, listParams, parseView, rangeOf, rangePhrase, sizeOf, writeView, type ListView } from './orders/urlState';
+import { DEFAULT_SIZE, DEFAULT_VIEW, MAX_IDS, PAGE_SIZES, listParams, parseView, rangeOf, rangePhrase, sizeOf, writeView, type ListView } from './orders/urlState';
 import { useColumnPrefs } from './orders/useColumnPrefs';
 import { useFilterOptions } from './orders/useFilterOptions';
 import { useOrderList } from './orders/useOrderList';
@@ -49,7 +49,6 @@ export function Orders({ onOpen }: OrdersProps) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [importOpen, setImportOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [assignFor, setAssignFor] = useState<{ row: OrderListRow; anchor: HTMLElement } | null>(null);
   const [focus, setFocus] = useState<FocusSet | null>(null);
 
@@ -111,18 +110,6 @@ export function Orders({ onOpen }: OrdersProps) {
     count: list.counts ? tabCount(t.id, list.counts).toLocaleString('en-GB') : undefined,
   }));
 
-  const exportOrders = async () => {
-    setExporting(true);
-    try {
-      await ordersService.exportOrders({ status: STATUS_TABS.find((t) => t.id === view.tab)?.statuses });
-      say('Orders exported');
-    } catch {
-      say('The orders could not be exported');
-    } finally {
-      setExporting(false);
-    }
-  };
-
   const total = list.counts?.all ?? list.pagination.total;
 
   return (
@@ -141,10 +128,7 @@ export function Orders({ onOpen }: OrdersProps) {
               Import
             </Button>
           )}
-          <Button onClick={exportOrders} disabled={exporting}>
-            <Download />
-            Export
-          </Button>
+          <ExportMenu params={params} total={list.pagination.total} />
           {can('orders', 'create') && (
             <Button variant="primary" onClick={() => setFormOpen(true)}>
               <Plus />
@@ -180,6 +164,12 @@ export function Orders({ onOpen }: OrdersProps) {
             onDelete={() => actions.askDelete(selectedRows)}
             onClear={() => setSelected(new Set())}
           />
+        )}
+        {view.ids && (
+          <div className="shownote" role="status">
+            Showing the {view.ids.length.toLocaleString('en-GB')} {view.ids.length === 1 ? 'order' : 'orders'} from your import.
+            <Button size="mini" onClick={() => go({ ...view, ids: null, page: 1 })}>Show all orders</Button>
+          </div>
         )}
         {focus && (
           <div className="shownote" role="status">
@@ -243,7 +233,12 @@ export function Orders({ onOpen }: OrdersProps) {
         </FloatingMenu>
       )}
       {actions.dialogs}
-      <BulkImportModal isOpen={importOpen} onClose={() => setImportOpen(false)} onSuccess={() => void list.refetch()} />
+      <ImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => void list.refetch()}
+        onShow={(ids) => go({ ...DEFAULT_VIEW, ids: ids.slice(0, MAX_IDS) })}
+      />
       <OrderForm isOpen={formOpen} onClose={() => setFormOpen(false)} order={null} onSuccess={() => void list.refetch()} />
     </section>
   );

@@ -28,7 +28,6 @@ vi.mock('../../services/delivery-agents.service', () => ({
 vi.mock('../../services/customer-reps.service', () => ({
   customerRepsService: { getCustomerReps: () => Promise.resolve([{ id: '2', name: 'Adwoa Darko', isActive: true }, { id: '3', name: 'Nana Kyei', isActive: true }]) },
 }));
-vi.mock('../../components/orders/BulkImportModal', () => ({ BulkImportModal: () => null }));
 vi.mock('../../components/forms/OrderForm', () => ({ OrderForm: () => null }));
 
 const refused = (status: number, data: Record<string, unknown>) =>

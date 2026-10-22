@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_VIEW, parseView, presetOf, presetRange, rangePhrase, writeView } from '../../pages/orders/urlState';
+import { DEFAULT_VIEW, listParams, MAX_IDS, parseView, presetOf, presetRange, rangePhrase, writeView } from '../../pages/orders/urlState';
 
 const NOW = new Date('2026-10-22T10:00:00Z');
 
@@ -12,7 +12,7 @@ describe('Orders URL state (M3-T43)', () => {
   it('round trips every field', () => {
     const view = {
       tab: 'payment_issues' as const, page: 3, q: '#24118', sort: { by: 'customer' as const, dir: 'asc' as const }, size: 75,
-      from: '2026-09-01', to: '2026-09-30', basis: 'delivery' as const, product: 4, agent: 5, rep: 'none' as const, flagged: true,
+      from: '2026-09-01', to: '2026-09-30', basis: 'delivery' as const, product: 4, agent: 5, rep: 'none' as const, flagged: true, ids: [7, 8, 9],
     };
     expect(parseView(writeView(view))).toEqual(view);
   });
@@ -20,6 +20,16 @@ describe('Orders URL state (M3-T43)', () => {
   it('drops values it does not accept', () => {
     const v = parseView(new URLSearchParams('status=x&page=-2&sort=hack&size=30&from=2026-01-01&rep=abc&product=0&basis=nope'));
     expect(v).toEqual(DEFAULT_VIEW);
+  });
+
+  it('ids (the orders an import made): numbers only, at most 2,000, and they replace the date range', () => {
+    expect(parseView(new URLSearchParams('ids=5,6,7')).ids).toEqual([5, 6, 7]);
+    expect(parseView(new URLSearchParams('ids=5,x')).ids).toBeNull();
+    expect(parseView(new URLSearchParams(`ids=${Array.from({ length: MAX_IDS + 1 }, (_, i) => i + 1).join(',')}`)).ids).toBeNull();
+    const params = listParams(parseView(new URLSearchParams('ids=5,6')), 25, NOW);
+    expect(params.ids).toBe('5,6');
+    expect(params.startDate).toBeUndefined();
+    expect(listParams(DEFAULT_VIEW, 25, NOW).ids).toBeUndefined();
   });
 
   it('presets, in Africa/Accra (UTC) dates', () => {

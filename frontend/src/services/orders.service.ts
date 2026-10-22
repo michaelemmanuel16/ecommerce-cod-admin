@@ -52,6 +52,37 @@ export interface OrderListParams {
   customerRepId?: number;
   unassigned?: boolean;
   flag?: 'any';
+  /** Comma list of order ids (the orders an import made). */
+  ids?: string;
+}
+
+/** One problem row of the import check (POST /api/orders/upload/validate). */
+export interface ImportProblem {
+  row: number;
+  problems: string[];
+  values?: Record<string, unknown>;
+}
+
+/** What the check step answers (orderImportService.checkReport). Nothing is saved. */
+export interface ImportCheck {
+  fileName: string;
+  total: number;
+  ready: number;
+  needFix: number;
+  duplicates: number;
+  note?: string | null;
+  problems: ImportProblem[];
+  problemsCsv: string | null;
+}
+
+/** What the import answers (POST /api/orders/upload). */
+export interface ImportResult {
+  results: { success: number; failed: number; duplicates: number; orderIds: number[]; errors: Array<{ error: string }> };
+  total: number;
+  needFix: number;
+  note?: string | null;
+  problems: ImportProblem[];
+  problemsCsv: string | null;
 }
 
 export interface OrderCounts {
@@ -273,6 +304,34 @@ export const ordersService = {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
+  },
+
+  /** Import step 1 (F-319): reads the file and counts ready rows and problems. Saves nothing. */
+  async checkImport(file: File): Promise<ImportCheck> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post('/api/orders/upload/validate', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return response.data;
+  },
+
+  /**
+   * The Export menu (F-320): downloads the list with its filters as CSV or XLSX. Resolves with the file name
+   * the server chose (orders-<date>.csv). The sort and page are not sent; the file holds every matching order.
+   */
+  async exportList(params: OrderListParams, format: 'csv' | 'xlsx'): Promise<string> {
+    const { sortBy: _s, sortOrder: _o, page: _p, limit: _l, ...filters } = params;
+    const response = await apiClient.get('/api/orders/export', { params: { ...filters, format }, responseType: 'blob', skipCache: true });
+    const named = /filename="?([^";]+)"?/.exec(String(response.headers?.['content-disposition'] ?? ''));
+    const name = named?.[1] ?? `orders-${new Date().toISOString().slice(0, 10)}.${format}`;
+    const url = window.URL.createObjectURL(response.data as Blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', name);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    return name;
   },
 
   async uploadOrders(file: File, runWorkflows = false): Promise<any> {
