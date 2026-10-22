@@ -51,8 +51,8 @@ export function refreshAccessToken(): Promise<string> {
     }
     // Plain axios, not apiClient: the interceptor must not see this call
     const response = await axios.post(`${API_URL}/api/auth/refresh`, { refreshToken });
-    const { accessToken } = response.data;
-    useAuthStore.getState().setAccessToken(accessToken);
+    const { accessToken, refreshToken: rotated } = response.data;
+    useAuthStore.getState().setAccessToken(accessToken, rotated);
     return accessToken as string;
   })().finally(() => {
     inFlight = null;

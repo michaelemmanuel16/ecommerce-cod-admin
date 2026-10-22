@@ -1,4 +1,5 @@
 import prisma from '../utils/prisma';
+import { sessionService } from './sessionService';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import bcrypt from 'bcrypt';
 import { UserRole } from '@prisma/client';
@@ -620,6 +621,9 @@ export const adminService = {
       } as any,
     });
 
+    // Deactivating signs the user out of every device at once (F-1224)
+    if (data.isActive === false) await sessionService.revokeAll(userId);
+
     await this.createAuditLog(requester, 'update', 'user', userId.toString(), { changes: Object.keys(data) });
 
     return updatedUser;
@@ -651,6 +655,8 @@ export const adminService = {
       },
     });
 
+    await sessionService.revokeAll(userId);
+
     await this.createAuditLog(requester, 'reset_password', 'user', userId.toString());
 
     return updatedUser;
@@ -676,6 +682,8 @@ export const adminService = {
       where: { id: userId },
       data: { isActive: false },
     });
+
+    await sessionService.revokeAll(userId);
 
     await this.createAuditLog(requester, 'deactivate', 'user', userId.toString());
 

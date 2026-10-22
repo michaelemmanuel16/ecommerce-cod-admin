@@ -25,7 +25,7 @@ interface AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
   registerTenant: (data: { companyName: string; adminEmail: string; adminPassword: string; adminName: string; planName?: string }) => Promise<void>;
   logout: (showToast?: boolean) => void;
-  setAccessToken: (token: string) => void;
+  setAccessToken: (token: string, refreshToken?: string) => void;
   updatePreferences: (preferences: UserPreferences) => Promise<void>;
   refreshPermissions: () => Promise<void>;
   setupPermissionListener: () => void;
@@ -116,8 +116,9 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      setAccessToken: (token: string) => {
-        set({ accessToken: token });
+      // The server rotates the refresh token on every refresh (M3-T23): keep the new one
+      setAccessToken: (token: string, refreshToken?: string) => {
+        set(refreshToken ? { accessToken: token, refreshToken } : { accessToken: token });
       },
 
       updatePreferences: async (preferences: UserPreferences) => {

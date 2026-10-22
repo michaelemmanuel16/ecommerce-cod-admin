@@ -83,7 +83,8 @@ describe('auth under fail-closed', () => {
     registeredTenantId = res.body.tenant.id;
     const user = await prismaBase.user.findUnique({ where: { email: body.adminEmail } });
     expect(user!.tenantId).toBe(registeredTenantId);
-    expect(user!.refreshToken).toBeTruthy();
+    // register-tenant starts a session (M3-T23); the old column stays empty
+    expect(await prismaBase.userSession.count({ where: { userId: user!.id } })).toBe(1);
 
     const dup = await request(app).post('/api/auth/register-tenant').send({ ...body, companyName: `Reg Co 2 ${SUFFIX}` });
     expect(dup.status).toBe(400);

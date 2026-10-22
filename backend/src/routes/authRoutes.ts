@@ -14,6 +14,9 @@ router.post('/forgot-password', authLimiter, forgotPasswordValidation, validate,
 router.post('/reset-password', authLimiter, resetPasswordValidation, validate, authController.resetPassword);
 router.post('/logout', apiLimiter, authenticate, authController.logout);
 router.post('/change-password', authenticate, changePasswordLimiter, authController.changePassword);
+router.get('/sessions', apiLimiter, authenticate, authController.listSessions);
+router.post('/sessions/revoke-others', apiLimiter, authenticate, authController.revokeOtherSessions);
+router.delete('/sessions/:id', apiLimiter, authenticate, authController.revokeSession);
 router.get('/me', apiLimiter, authenticate, authController.me);
 router.delete('/delete-account', authLimiter, authenticate, requireSuperAdmin, authController.deleteTenantAccount);
 
