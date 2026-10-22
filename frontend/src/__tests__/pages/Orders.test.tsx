@@ -8,6 +8,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { COUNTS, ROWS } from '../fixtures/ordersList';
 import { ORDER_EVENTS, SOCKET_REFRESH_MS } from '../../pages/orders/useOrdersList';
+import { SEARCH_DEBOUNCE_MS } from '../../pages/orders/urlState';
 
 const listOrders = vi.fn();
 const getCounts = vi.fn();
@@ -24,6 +25,9 @@ const socket = {
   off: vi.fn((e: string, h: () => void) => handlers.set(e, (handlers.get(e) ?? []).filter((x) => x !== h))),
 };
 vi.mock('../../services/socket', () => ({ getSocket: () => socket }));
+vi.mock('../../services/products.service', () => ({ productsService: { getProducts: () => Promise.resolve([{ id: 1, name: 'Copybook set', isActive: true }, { id: 2, name: 'Refill pens', isActive: true }]) } }));
+vi.mock('../../services/delivery-agents.service', () => ({ deliveryAgentsService: { getDeliveryAgents: () => Promise.resolve([{ id: '5', name: 'Kofi Appiah', isActive: true, isAvailable: true }]) } }));
+vi.mock('../../services/customer-reps.service', () => ({ customerRepsService: { getCustomerReps: () => Promise.resolve([{ id: '2', name: 'Adwoa Darko', isActive: true, isAvailable: true }]) } }));
 vi.mock('../../components/orders/BulkImportModal', () => ({ BulkImportModal: () => null }));
 vi.mock('../../components/forms/OrderForm', () => ({ OrderForm: () => null }));
 
@@ -47,7 +51,8 @@ function renderPage(url = '/orders', onOpen?: (id: number) => void) {
 }
 
 const answer = (rows = ROWS, total = 1000) => {
-  listOrders.mockResolvedValue({ rows, pagination: { page: 1, limit: 25, total, pages: Math.ceil(total / 25) } });
+  listOrders.mockImplementation((p: { page?: number; limit?: number }) =>
+    Promise.resolve({ rows, pagination: { page: p.page ?? 1, limit: p.limit ?? 25, total, pages: Math.ceil(total / (p.limit ?? 25)) } }));
   getCounts.mockResolvedValue(COUNTS);
 };
 
@@ -117,7 +122,9 @@ describe('Orders list: rows (M3-T42, F-307)', () => {
     renderPage();
     await screen.findByText('#24117');
     expect(screen.getByText('Copybook set × 2 + 1 more')).toBeInTheDocument();
-    expect(screen.getByText('Kofi Appiah')).toBeInTheDocument();
+    const delivered = screen.getByText('#24117').closest('tr') as HTMLElement;
+    expect(within(delivered).getByText('Kofi Appiah')).toBeInTheDocument();
+    expect(within(delivered).getByText('Adwoa Darko')).toBeInTheDocument();
     expect(screen.getByText(/No call rep \+1/)).toBeInTheDocument();
     expect(screen.getByText('4 replies')).toBeInTheDocument();
     expect(screen.getByText(/^Reminder /)).toBeInTheDocument();
@@ -209,5 +216,141 @@ describe('Orders list: socket refresh (M3-T42)', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(SOCKET_REFRESH_MS + 50); });
     expect(listOrders.mock.calls.length).toBe(calls + 1);
     vi.useRealTimers();
+  });
+});
+
+const lastParams = () => listOrders.mock.calls[listOrders.mock.calls.length - 1][0];
+
+describe('Orders list: search, sort, paging (M3-T43, F-310)', () => {
+  it('search waits 300 ms after the last key press, then asks the server and writes ?q=', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderPage();
+    await screen.findByText('#24117');
+    const calls = listOrders.mock.calls.length;
+    await user.type(screen.getByLabelText('Search orders'), '#24118');
+    await act(async () => { await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS - 50); });
+    expect(listOrders.mock.calls.length).toBe(calls);
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    await waitFor(() => expect(lastParams()).toEqual(expect.objectContaining({ search: '#24118', page: 1 })));
+    expect(listOrders.mock.calls.length).toBe(calls + 1);
+    expect(screen.getByTestId('where').textContent).toContain('q=%2324118');
+    vi.useRealTimers();
+  });
+
+  it('the search box shows the search from the link', async () => {
+    renderPage('/orders?q=24118');
+    expect(await screen.findByLabelText('Search orders')).toHaveValue('24118');
+    await waitFor(() => expect(lastParams()).toEqual(expect.objectContaining({ search: '24118' })));
+  });
+
+  it('a header click sorts on the server; a second click turns it round', async () => {
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /Sort by amount/ }));
+    await waitFor(() => expect(lastParams()).toEqual(expect.objectContaining({ sortBy: 'totalAmount', sortOrder: 'desc' })));
+    expect(screen.getByTestId('where').textContent).toContain('sort=totalAmount');
+    await userEvent.click(screen.getByRole('button', { name: /Sort by amount/ }));
+    await waitFor(() => expect(lastParams()).toEqual(expect.objectContaining({ sortBy: 'totalAmount', sortOrder: 'asc' })));
+    await userEvent.click(screen.getByRole('button', { name: /Sort by customer/ }));
+    await waitFor(() => expect(lastParams()).toEqual(expect.objectContaining({ sortBy: 'customer', sortOrder: 'asc' })));
+  });
+
+  it('page size 25 / 50 / 75 / 100 is saved per user and put in the URL', async () => {
+    renderPage();
+    const select = await screen.findByLabelText('Rows per page');
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['25 per page', '50 per page', '75 per page', '100 per page']);
+    expect(lastParams().limit).toBe(25);
+    await userEvent.selectOptions(select, '75');
+    await waitFor(() => expect(lastParams().limit).toBe(75));
+    expect(screen.getByTestId('where').textContent).toContain('size=75');
+    expect(JSON.parse(localStorage.getItem('codadmin.orders.pageSize.1') as string)).toBe(75);
+  });
+
+  it('opens with the page size this person saved', async () => {
+    localStorage.setItem('codadmin.orders.pageSize.1', '100');
+    renderPage();
+    await waitFor(() => expect(lastParams().limit).toBe(100));
+  });
+
+  it('Previous and Next change ?page=', async () => {
+    answer(ROWS, 80);
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Next page' }));
+    expect(screen.getByTestId('where').textContent).toContain('page=2');
+    await waitFor(() => expect(lastParams().page).toBe(2));
+    await userEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+    expect(screen.getByTestId('where').textContent).not.toContain('page=');
+  });
+});
+
+describe('Orders list: dates and filters (M3-T43, F-311, F-312)', () => {
+  it('defaults to This month on Order date', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-22T10:00:00Z'));
+    renderPage();
+    await waitFor(() => expect(listOrders).toHaveBeenCalled());
+    expect(lastParams()).toEqual(expect.objectContaining({ startDate: '2026-10-01', endDate: '2026-10-31', dateBasis: 'created' }));
+    expect(screen.getByRole('button', { name: 'Date range: This month' })).toBeInTheDocument();
+    expect(screen.getByText(/orders in October\./)).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('a preset and the basis go to the server and the URL; counts use the same range', async () => {
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /Date range/ }));
+    await userEvent.click(screen.getByRole('menuitemradio', { name: 'Today' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delivery date' }));
+    await waitFor(() => expect(lastParams()).toEqual(expect.objectContaining({ dateBasis: 'delivery' })));
+    const where = screen.getByTestId('where').textContent as string;
+    expect(where).toContain('basis=delivery');
+    expect(where).toMatch(/from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}/);
+    const counted = getCounts.mock.calls[getCounts.mock.calls.length - 1][0];
+    expect(counted).toEqual(expect.objectContaining({ dateBasis: 'delivery', startDate: lastParams().startDate, endDate: lastParams().endDate }));
+  });
+
+  it('Product, Delivery agent, Assigned to and Flagged filter on the server', async () => {
+    renderPage();
+    await userEvent.selectOptions(await screen.findByLabelText('Product'), 'Refill pens');
+    await waitFor(() => expect(lastParams().productId).toEqual([2]));
+    await userEvent.selectOptions(screen.getByLabelText('Delivery agent'), 'Kofi Appiah');
+    await waitFor(() => expect(lastParams().deliveryAgentId).toBe(5));
+    await userEvent.selectOptions(screen.getByLabelText('Assigned to'), 'Unassigned');
+    await waitFor(() => expect(lastParams().unassigned).toBe(true));
+    await userEvent.selectOptions(screen.getByLabelText('Assigned to'), 'Adwoa Darko');
+    await waitFor(() => expect(lastParams()).toEqual(expect.objectContaining({ customerRepId: 2 })));
+    expect(lastParams().unassigned).toBeUndefined();
+    await userEvent.click(screen.getByRole('button', { name: /Flagged by agent/ }));
+    await waitFor(() => expect(lastParams().flag).toBe('any'));
+    const where = screen.getByTestId('where').textContent as string;
+    expect(where).toContain('product=2');
+    expect(where).toContain('agent=5');
+    expect(where).toContain('rep=2');
+    expect(where).toContain('flagged=1');
+  });
+
+  it('a filter change goes back to page 1', async () => {
+    answer(ROWS, 80);
+    renderPage('/orders?page=2');
+    await userEvent.click(await screen.findByRole('button', { name: /Flagged by agent/ }));
+    await waitFor(() => expect(lastParams()).toEqual(expect.objectContaining({ flag: 'any', page: 1 })));
+  });
+
+  it('a copied link opens the same view in a fresh page', async () => {
+    const link = '/orders?status=delivered&q=abena&sort=totalAmount&dir=asc&page=2&size=50&from=2026-09-03&to=2026-09-20&basis=delivery&product=1&agent=5&rep=none&flagged=1';
+    renderPage(link);
+    await waitFor(() => expect(listOrders).toHaveBeenCalled());
+    expect(lastParams()).toEqual({
+      status: ['delivered'], search: 'abena', sortBy: 'totalAmount', sortOrder: 'asc', page: 2, limit: 50,
+      startDate: '2026-09-03', endDate: '2026-09-20', dateBasis: 'delivery', productId: [1], deliveryAgentId: 5, unassigned: true, flag: 'any',
+    });
+    expect(screen.getByLabelText('Search orders')).toHaveValue('abena');
+    expect(screen.getByRole('tab', { name: /Delivered/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'Flagged by agent' })).toHaveAttribute('aria-pressed', 'true');
+    await screen.findByText('#24117');
+    expect(screen.getByLabelText('Product')).toHaveValue('1');
+    expect(screen.getByLabelText('Assigned to')).toHaveValue('none');
+    expect(screen.getByLabelText('Rows per page')).toHaveValue('50');
+    expect(screen.getByRole('button', { name: 'Date range: Custom' })).toBeInTheDocument();
+    expect(screen.getByLabelText('From date')).toHaveValue('2026-09-03');
   });
 });

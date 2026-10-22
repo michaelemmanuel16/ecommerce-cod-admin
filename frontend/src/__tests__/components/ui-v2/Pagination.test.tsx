@@ -36,4 +36,13 @@ describe('ui-v2 Pagination', () => {
     expect(screen.getByText('Showing 0 of 0 orders')).toBeInTheDocument();
     expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
   });
+  it('shows a page size select only when asked, and reports the choice', async () => {
+    const onPageSizeChange = vi.fn();
+    const { rerender } = render(<Pagination page={1} pageSize={25} total={80} noun="orders" onPageChange={() => {}} />);
+    expect(screen.queryByLabelText('Rows per page')).toBeNull();
+    rerender(<Pagination page={1} pageSize={25} total={80} noun="orders" onPageChange={() => {}} pageSizes={[25, 50]} onPageSizeChange={onPageSizeChange} />);
+    expect(screen.getByLabelText('Rows per page')).toHaveValue('25');
+    await userEvent.setup().selectOptions(screen.getByLabelText('Rows per page'), '50');
+    expect(onPageSizeChange).toHaveBeenCalledWith(50);
+  });
 });

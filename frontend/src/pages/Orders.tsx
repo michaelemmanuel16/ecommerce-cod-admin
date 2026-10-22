@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, Columns3, Download, Plus, Upload } from 'lucide-react';
+import { Download, Plus, Upload } from 'lucide-react';
 import { useV2Page } from '../components/shell/useV2Page';
 import { Button, EmptyState, Pagination, Skeleton, Table, Tabs, useToast } from '../components/ui-v2';
-import { usePopover } from '../components/shell/usePopover';
 import { BulkImportModal } from '../components/orders/BulkImportModal';
 import { OrderForm } from '../components/forms/OrderForm';
 import { usePermissions } from '../hooks/usePermissions';
 import { ordersService } from '../services/orders.service';
-import { buildColumns } from './orders/columns';
-import { COLUMN_LABELS } from './orders/labels';
+import { buildColumns, type SortField } from './orders/columns';
+import { ColumnsMenu } from './orders/ColumnsMenu';
+import { FilterBar } from './orders/FilterBar';
 import { STATUS_TABS, tabCount, visibleTabs, type StatusTabId } from './orders/model';
-import { DEFAULT_VIEW, listParams, parseView, writeView, type ListView } from './orders/urlState';
-import { FIXED_COLUMNS, useColumnPrefs, type ColumnId } from './orders/useColumnPrefs';
+import { readPref, writePref } from './orders/prefs';
+import { DEFAULT_SIZE, PAGE_SIZES, listParams, parseView, rangeOf, rangePhrase, sizeOf, writeView, type ListView } from './orders/urlState';
+import { useColumnPrefs } from './orders/useColumnPrefs';
+import { useFilterOptions } from './orders/useFilterOptions';
 import { useOrdersList } from './orders/useOrdersList';
-
-const PAGE_SIZE = 25;
 
 interface OrdersProps {
   /** A row click calls this. The default goes to /orders/:id; the order drawer (M3-T46) plugs in here. */
@@ -33,22 +33,29 @@ export function Orders({ onOpen }: OrdersProps) {
   const { can } = usePermissions();
   const [search, setSearch] = useSearchParams();
   const view = useMemo(() => parseView(search), [search]);
-  const params = useMemo(() => listParams(view, PAGE_SIZE), [view]);
+  // the page size: the link's, else the one this person saved (F-310)
+  const [savedSize, setSavedSize] = useState(() => readPref<number>('pageSize', DEFAULT_SIZE));
+  const pageSize = sizeOf(view, (PAGE_SIZES as readonly number[]).includes(savedSize) ? savedSize : DEFAULT_SIZE);
+  const params = useMemo(() => listParams(view, pageSize), [view, pageSize]);
   const list = useOrdersList(params);
   const columnPrefs = useColumnPrefs();
-  const columnsMenu = usePopover();
+  const options = useFilterOptions();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [importOpen, setImportOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  const go = useCallback((next: ListView) => setSearch(writeView(next), { replace: false }), [setSearch]);
+  const go = useCallback((next: ListView, replace = false) => setSearch(writeView(next), { replace }), [setSearch]);
 
   // A new view starts with nothing selected; a silent refresh keeps the selection.
   const viewKey = JSON.stringify(params);
   useEffect(() => setSelected(new Set()), [viewKey]);
 
   const open = (id: number) => (onOpen ? onOpen(id) : navigate(`/orders/${id}`));
+
+  // First click on a column sorts newest / biggest first (names, a to z); a second click turns it round.
+  const onSort = (by: SortField) =>
+    go({ ...view, page: 1, sort: { by, dir: view.sort.by === by ? (view.sort.dir === 'asc' ? 'desc' : 'asc') : by === 'customer' ? 'asc' : 'desc' } });
 
   const columns = useMemo(
     () =>
@@ -66,8 +73,10 @@ export function Orders({ onOpen }: OrdersProps) {
         widthOf: columnPrefs.widthOf,
         setWidth: columnPrefs.setWidth,
         hidden: columnPrefs.hidden,
+        sort: view.sort,
+        onSort,
       }),
-    [selected, list.rows, columnPrefs.widthOf, columnPrefs.setWidth, columnPrefs.hidden],
+    [selected, list.rows, columnPrefs.widthOf, columnPrefs.setWidth, columnPrefs.hidden, view],
   );
   const tableWidth = columns.reduce((sum, c) => sum + (typeof c.width === 'number' ? c.width : 0), 0);
 
@@ -97,7 +106,7 @@ export function Orders({ onOpen }: OrdersProps) {
         <div>
           <h1>Orders</h1>
           <p>
-            {total.toLocaleString('en-GB')} {total === 1 ? 'order' : 'orders'}. The agent flags orders that need you.
+            {total.toLocaleString('en-GB')} {total === 1 ? 'order' : 'orders'} {rangePhrase(rangeOf(view))}. The agent flags orders that need you.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -125,41 +134,12 @@ export function Orders({ onOpen }: OrdersProps) {
           label="Order status"
           items={tabs}
           value={view.tab}
-          onChange={(id) => go({ ...DEFAULT_VIEW, tab: id as StatusTabId })}
+          onChange={(id) => go({ ...view, tab: id as StatusTabId, page: 1 })}
         />
-        <div className="filters">
-          <div className="mwrap" ref={columnsMenu.wrapRef}>
-            <button
-              ref={columnsMenu.triggerRef}
-              type="button"
-              className="btn"
-              aria-haspopup="menu"
-              aria-expanded={columnsMenu.open}
-              onClick={columnsMenu.toggle}
-            >
-              <Columns3 />
-              Columns
-            </button>
-            {columnsMenu.open && (
-              <div className="menu left" role="menu" aria-label="Columns">
-                {(Object.keys(COLUMN_LABELS) as ColumnId[])
-                  .filter((id) => !FIXED_COLUMNS.includes(id))
-                  .map((id) => (
-                    <button
-                      key={id}
-                      type="button"
-                      role="menuitemcheckbox"
-                      aria-checked={!columnPrefs.hidden.includes(id)}
-                      onClick={() => columnPrefs.toggle(id)}
-                    >
-                      {COLUMN_LABELS[id]}
-                      {!columnPrefs.hidden.includes(id) && <Check className="cur" aria-hidden="true" />}
-                    </button>
-                  ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <FilterBar view={view} onChange={go} products={options.products} agents={options.agents} reps={options.reps}>
+          <span style={{ marginLeft: 'auto' }} />
+          <ColumnsMenu hidden={columnPrefs.hidden} onToggle={columnPrefs.toggle} />
+        </FilterBar>
 
         {list.loading ? (
           <div style={{ padding: 20 }} aria-busy="true" aria-label="Loading orders">
@@ -182,10 +162,16 @@ export function Orders({ onOpen }: OrdersProps) {
 
         <Pagination
           page={list.pagination.page}
-          pageSize={PAGE_SIZE}
+          pageSize={pageSize}
           total={list.pagination.total}
           noun="orders"
           onPageChange={(page) => go({ ...view, page })}
+          pageSizes={PAGE_SIZES}
+          onPageSizeChange={(size) => {
+            setSavedSize(size);
+            writePref('pageSize', size);
+            go({ ...view, page: 1, size });
+          }}
         />
       </div>
 
