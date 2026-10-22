@@ -174,6 +174,15 @@ describe('GET /api/customers: filters, search and sort', () => {
     expect(names(await list({ flagged: 'true', area: 'Tema' }))).toEqual(['Kojo']);
   });
 
+  it('towns in use for the City filter: active customers in the row scope, sorted', async () => {
+    const owner = await get('/api/customers/towns', tokens.owner);
+    expect(owner.body.towns).toEqual(['Accra', 'Kumasi', 'Tamale', 'Tema']);
+    // Gone is deleted, so a town only they live in would not show; a rep sees the towns of their own customers
+    const rep = await get('/api/customers/towns', tokens.rep1);
+    expect(rep.status).toBe(200);
+    expect(rep.body.towns.length).toBeLessThanOrEqual(owner.body.towns.length);
+  });
+
   it('search: name, two words, any phone format, alternate phone, email; one character waits', async () => {
     expect(names(await list({ search: 'abena' }))).toEqual(['Abena']);
     expect(names(await list({ search: 'Abena Owusu' }))).toEqual(['Abena']);
@@ -392,6 +401,12 @@ describe('two tenants', () => {
       .send({ firstName: 'Same', phoneNumber: (await prismaBase.customer.findUniqueOrThrow({ where: { id: bCustomer } })).phoneNumber, address: 'x', state: 'x', area: 'x' });
     expect(res.status).toBe(201);
     expect(res.body.customer.tenantId).toBe(a.id);
+  });
+
+  it('the towns list stays inside the tenant', async () => {
+    const res = await get('/api/customers/towns', pair.b.users.admin.token);
+    expect(res.status).toBe(200);
+    expect(res.body.towns).toEqual(['Accra']);
   });
 
   it('the not reachable lookup stays inside the tenant', async () => {

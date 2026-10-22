@@ -262,6 +262,18 @@ export class CustomerService {
     };
   }
 
+  /** The towns in use, for the City filter (F-353). Active customers inside the row scope only. */
+  async getTowns(requester?: Requester): Promise<string[]> {
+    const scope = this.scopeWhere(requester);
+    const rows = await prisma.customer.findMany({
+      where: { isActive: true, area: { not: '' }, ...(scope ? { AND: [scope] } : {}) },
+      distinct: ['area'],
+      select: { area: true },
+      orderBy: { area: 'asc' },
+    });
+    return rows.map((r) => r.area);
+  }
+
   /** A phone that already belongs to a customer blocks the save (F-355, F-362). `exceptId` is the customer being edited. */
   private async assertPhoneFree(phoneNumber: string, requester: Requester | undefined, exceptId?: number, reactivate = false) {
     // Archived customers included: they still hold the number in the unique index

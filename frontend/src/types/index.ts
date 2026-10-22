@@ -4,7 +4,7 @@ export interface UserPreferences {
 }
 
 export type Resource = 'users' | 'orders' | 'customers' | 'products' | 'financial' | 'analytics' | 'workflows' | 'settings';
-export type Action = 'create' | 'view' | 'update' | 'delete' | 'bulk_import' | 'assign' | 'update_stock' | 'execute';
+export type Action = 'create' | 'view' | 'update' | 'delete' | 'bulk_import' | 'assign' | 'update_stock' | 'execute' | 'export';
 
 export type Permissions = Record<string, string[]> | string[];
 

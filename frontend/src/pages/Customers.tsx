@@ -1,252 +1,174 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, Search, Edit2, Trash2, Eye, User, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Download, Repeat, UserPlus, UserX, Users } from 'lucide-react';
+import { useV2Page } from '../components/shell/useV2Page';
+import { Button, EmptyState, Pagination, Skeleton, Table, Tabs, Tag, Tile, useToast } from '../components/ui-v2';
+import { usePermissions } from '../hooks/usePermissions';
 import { customersService } from '../services/customers.service';
-import { formatCurrency } from '../utils/format';
-import { Customer } from '../types';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { Pagination } from '../components/ui/Pagination';
-import { CustomerForm } from '../components/forms/CustomerForm';
-import { useCustomersStore } from '../stores/customersStore';
-import toast from 'react-hot-toast';
+import { buildColumns } from './customers/columns';
+import { CustomerModal } from './customers/CustomerModal';
+import { FilterBar } from './customers/FilterBar';
+import { RISK_RULE, SEGMENT_TABS } from './customers/model';
+import { DEFAULT_SIZE, PAGE_SIZES, filterParams, listParams, parseView, writeView, type ListView } from './customers/urlState';
+import { useCustomerList } from './customers/useCustomerList';
 
-export const Customers: React.FC = () => {
+const count = (n: number | undefined) => (n === undefined ? '—' : n.toLocaleString('en-GB'));
+
+/**
+ * The Customers list (M3-T49, F-350 to F-353, F-361), built from docs/mockups/v2/customers.html.
+ * The view (tab, search, filters, sort, page) is in the URL, so a copied link opens the same list.
+ */
+export function Customers() {
+  useV2Page();
   const navigate = useNavigate();
-  const { customers, pagination, isLoading, searchQuery, sortBy, sortOrder, fetchCustomers, setPage, setSearchQuery: setStoreSearchQuery, setSort } = useCustomersStore();
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const say = useToast();
+  const { can } = usePermissions();
+  const [search, setSearch] = useSearchParams();
+  const view = useMemo(() => parseView(search), [search]);
+  const pageSize = view.size ?? DEFAULT_SIZE;
+  const params = useMemo(() => listParams(view, pageSize), [view, pageSize]);
+  const filters = useMemo(() => filterParams(view), [view]);
+  const list = useCustomerList(params, filters);
+  const [towns, setTowns] = useState<string[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  useEffect(() => {
-    fetchCustomers();
-  }, [fetchCustomers]);
+  const loadTowns = useCallback((fresh = false) => {
+    customersService.getTowns(fresh).then(setTowns).catch(() => undefined);
+  }, []);
+  useEffect(() => loadTowns(), [loadTowns]);
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setStoreSearchQuery(e.target.value);
-  };
+  const go = useCallback((next: ListView, replace = false) => setSearch(writeView(next), { replace }), [setSearch]);
 
-  const loadCustomers = async () => {
-    await fetchCustomers();
-  };
+  // First click on a column sorts biggest or newest first (names, a to z); a second click turns it round.
+  const columns = useMemo(
+    () =>
+      buildColumns({
+        sort: view.sort,
+        onSort: (by) =>
+          go({ ...view, page: 1, sort: { by, dir: view.sort?.by === by ? (view.sort.dir === 'asc' ? 'desc' : 'asc') : by === 'customer' ? 'asc' : 'desc' } }),
+      }),
+    [view, go],
+  );
 
-  const handleAddCustomer = () => {
-    setSelectedCustomer(null);
-    setIsFormOpen(true);
-  };
-
-  const handleViewCustomer = (customerId: number) => {
-    navigate(`/customers/${customerId}`);
-  };
-
-  const handleEditCustomer = (customerId: number) => {
-    const customer = customers.find((c) => c.id === customerId);
-    if (customer) {
-      setSelectedCustomer(customer);
-      setIsFormOpen(true);
-    }
-  };
-
-  const handleDeleteCustomer = async (customerId: number, customerName: string) => {
-    if (!confirm(`Are you sure you want to delete "${customerName}"? This action cannot be undone.`)) {
-      return;
-    }
-
+  const exportCustomers = async () => {
+    setExporting(true);
     try {
-      await customersService.deleteCustomer(customerId);
-      toast.success('Customer deleted successfully');
-      loadCustomers(); // Refresh the list
-    } catch (error: any) {
-      console.error('Failed to delete customer:', error);
-      toast.error(error.response?.data?.message || 'Failed to delete customer. They may have associated orders.');
+      await customersService.exportCustomers(filters);
+      say('Customers exported');
+    } catch {
+      say('The customers could not be exported');
+    } finally {
+      setExporting(false);
     }
   };
 
-  const handleFormSuccess = () => {
-    loadCustomers();
-  };
-
-  const handleSort = (field: 'totalOrders' | 'totalSpent') => {
-    const newOrder = sortBy === field && sortOrder === 'desc' ? 'asc' : 'desc';
-    setSort(field, newOrder);
-  };
-
-  const getSortIcon = (field: 'totalOrders' | 'totalSpent') => {
-    if (sortBy !== field) return <ChevronsUpDown className="w-3 h-3 text-gray-400 inline ml-1" />;
-    return sortOrder === 'asc'
-      ? <ChevronUp className="w-3 h-3 text-blue-600 inline ml-1" />
-      : <ChevronDown className="w-3 h-3 text-blue-600 inline ml-1" />;
-  };
+  const tiles = list.summary?.tiles;
+  const segments = list.summary?.segments;
+  const month = new Date().toLocaleString('en-GB', { month: 'short' });
 
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
+    <section>
+      <div className="head">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
-          <p className="text-sm text-gray-600 mt-1">View and manage your customer base and their order history.</p>
+          <h1>Customers</h1>
+          <p>Who buys, who comes back, and who refuses delivery.</p>
         </div>
-        <Button variant="primary" onClick={handleAddCustomer} className="onboarding-add-customer-btn">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Customer
-        </Button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {can('customers', 'export') && (
+            <Button onClick={exportCustomers} disabled={exporting}>
+              <Download />
+              Export CSV
+            </Button>
+          )}
+          {can('customers', 'create') && (
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              <UserPlus />
+              Add customer
+            </Button>
+          )}
+        </div>
       </div>
 
-      <Card className="mb-6">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search customers by name, email, or phone..."
-            value={searchQuery}
-            onChange={handleSearchChange}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      <div className="grid kpis" style={{ marginTop: 0 }}>
+        <Tile
+          icon={<Users />}
+          tone="pine"
+          value={count(tiles?.total)}
+          label="Total customers"
+          footer={<><span>All customers</span><Tag tone="ok">+{count(tiles?.newThisMonth)} in {month}</Tag></>}
+        />
+        <Tile
+          icon={<UserPlus />}
+          tone="violet"
+          value={count(tiles?.firstTime)}
+          label="First-time"
+          footer={<><span>{tiles?.firstTimePct ?? 0}% of buyers</span><Tag>1 order</Tag></>}
+        />
+        <Tile
+          icon={<Repeat />}
+          tone="mint"
+          value={count(tiles?.repeat)}
+          label="Repeat customers"
+          footer={<><span>2 or more orders</span><Tag tone="ok">{tiles?.repeatPct ?? 0}%</Tag></>}
+        />
+        <Tile
+          icon={<UserX />}
+          tone="coral"
+          value={count(tiles?.blocked)}
+          label="Blocked for refusing delivery"
+          footer={<><span>Refused 3 times</span><Tag tone="bad">COD off</Tag></>}
+        />
+      </div>
+
+      <div className="card ctwrap" style={{ marginTop: 16 }}>
+        <Tabs
+          label="Customer segment"
+          items={SEGMENT_TABS.map((t) => ({ id: t.id, label: t.label, count: segments ? count(segments[t.id]) : undefined }))}
+          value={view.segment}
+          onChange={(id) => go({ ...view, segment: id as ListView['segment'], page: 1 })}
+        />
+        <FilterBar view={view} onChange={go} towns={towns} />
+
+        {list.loading ? (
+          <div style={{ padding: 20 }} aria-busy="true" aria-label="Loading customers">
+            <Skeleton height={44} />
+            <Skeleton height={44} className="skelgap" />
+            <Skeleton height={44} className="skelgap" />
+          </div>
+        ) : list.error ? (
+          <EmptyState title={list.error} action={<Button onClick={() => void list.refetch()}>Try again</Button>} />
+        ) : list.rows.length === 0 ? (
+          <EmptyState title="No customers match." />
+        ) : (
+          <Table label="Customers" className="ct2" columns={columns} rows={list.rows} rowKey={(r) => r.id} onRowClick={(r) => navigate(`/customers/${r.id}`)} />
+        )}
+
+        <Pagination
+          page={list.pagination.page}
+          pageSize={pageSize}
+          total={list.pagination.total}
+          noun="customers"
+          onPageChange={(page) => go({ ...view, page })}
+          pageSizes={PAGE_SIZES}
+          onPageSizeChange={(size) => go({ ...view, page: 1, size })}
+        />
+        <div className="cfoot">
+          <span>{RISK_RULE}</span>
         </div>
-      </Card>
+      </div>
 
-      {isLoading ? (
-        <Card>
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading customers...</p>
-          </div>
-        </Card>
-      ) : customers.length === 0 ? (
-        <Card>
-          <div className="text-center py-12">
-            <p className="text-gray-600">
-              {searchQuery ? 'No customers found matching your search.' : 'No customers yet. Add your first customer to get started.'}
-            </p>
-          </div>
-        </Card>
-      ) : (
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Customer
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Phone
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Location
-                  </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort('totalOrders')}
-                  >
-                    Orders{getSortIcon('totalOrders')}
-                  </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort('totalSpent')}
-                  >
-                    Total Spent{getSortIcon('totalSpent')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {customers.map((customer) => (
-                  <tr
-                    key={customer.id}
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => handleViewCustomer(customer.id)}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-3">
-                        <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                          <User className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{customer.firstName} {customer.lastName}</div>
-                          <div className="text-xs text-gray-500">ID: {customer.id}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{customer.phone}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {customer.address ? (
-                        <div className="text-sm text-gray-900">
-                          {customer.address.state}
-                        </div>
-                      ) : (
-                        <span className="text-sm text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm text-gray-900">{customer.totalOrders}</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm font-medium text-gray-900">
-                        {formatCurrency(customer.totalSpent)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewCustomer(customer.id);
-                          }}
-                          className="text-blue-600 hover:text-blue-800 transition-colors"
-                          title="View Details"
-                        >
-                          <Eye className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditCustomer(customer.id);
-                          }}
-                          className="text-blue-600 hover:text-blue-800 transition-colors"
-                          title="Edit Customer"
-                        >
-                          <Edit2 className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteCustomer(customer.id, `${customer.firstName} ${customer.lastName}`);
-                          }}
-                          className="text-red-600 hover:text-red-800 transition-colors"
-                          title="Delete Customer"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {pagination.pages > 1 && (
-            <Pagination
-              currentPage={pagination.page}
-              totalPages={pagination.pages}
-              onPageChange={setPage}
-            />
-          )}
-        </Card>
-      )}
-
-      {/* Customer Form Modal */}
-      <CustomerForm
-        isOpen={isFormOpen}
-        onClose={() => {
-          setIsFormOpen(false);
-          setSelectedCustomer(null);
+      <CustomerModal
+        open={adding}
+        onClose={() => setAdding(false)}
+        customer={null}
+        onSaved={(name) => {
+          setAdding(false);
+          say(`${name} added`);
+          void list.refetch();
+          loadTowns(true);
         }}
-        customer={selectedCustomer}
-        onSuccess={handleFormSuccess}
       />
-    </div>
+    </section>
   );
-};
+}
