@@ -153,3 +153,6 @@ docs/research/competitors/*/raw/
 
 # Script reports (phone collision CSVs etc.)
 backend/scripts/output/
+
+# Screenshot script output (M3-T69): the PNGs go on the PR, not in git
+docs/screenshots/m3/
