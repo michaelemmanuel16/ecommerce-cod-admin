@@ -34,7 +34,8 @@ vi.mock('../../components/admin/UserManagementTable', () => ({ UserManagementTab
 vi.mock('../../components/admin/RolePermissionsMatrix', () => ({ RolePermissionsMatrix: () => <div>ROLES PANEL</div> }));
 vi.mock('../../components/settings/IntegrationsPanel', () => ({ IntegrationsPanel: () => <div>INTEGRATIONS PANEL</div> }));
 vi.mock('../../components/settings/CurrenciesFxPanel', () => ({ CurrenciesFxPanel: () => <div>CURRENCIES PANEL</div> }));
-vi.mock('../../pages/Billing', () => ({ Billing: () => <div>BILLING PANEL</div> }));
+vi.mock('../../pages/settings/BillingTab', () => ({ BillingTab: () => <div>BILLING PANEL</div> }));
+vi.mock('../../pages/settings/StatusesTab', () => ({ StatusesTab: () => <div>STATUSES PANEL</div> }));
 
 const ME = { id: 1, email: 'ama@shop.com', firstName: 'Ama', lastName: 'Mensah Boateng', displayName: 'Ama', phoneNumber: '+233245550182', photoUrl: null, role: 'admin', createdAt: '2026-01-02T00:00:00.000Z' };
 
@@ -83,14 +84,14 @@ describe('Settings shell: tabs by permission (F-1220)', () => {
   it('an admin with settings:view sees the view-only tabs and no owner tabs', () => {
     signIn('admin', { settings: ['view'] });
     renderAt();
-    expect(tabNames()).toEqual(['Profile', 'Security', 'Business details', 'Currencies & FX', 'Notifications']);
+    expect(tabNames()).toEqual(['Profile', 'Security', 'Business details', 'Currencies & FX', 'Order statuses', 'Notifications']);
   });
 
   it('the owner sees every tab, the old ones under "Moving soon"', () => {
     signIn('super_admin');
     renderAt();
     expect(tabNames()).toEqual([
-      'Profile', 'Security', 'Business details', 'Currencies & FX', 'Notifications', 'Billing & plans',
+      'Profile', 'Security', 'Business details', 'Currencies & FX', 'Order statuses', 'Notifications', 'Billing & plans',
       'User management', 'Role permissions', 'Integrations', 'Checkout forms',
     ]);
     expect(screen.getByText('Moving soon')).toBeInTheDocument();
@@ -181,5 +182,29 @@ describe('Profile tab (F-1221, F-1222)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save profile' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('This email is already in use');
     expect(useAuthStore.getState().user?.firstName).toBe('Ama');
+  });
+});
+
+describe('Business details and Order statuses tabs in the shell (M3-T65)', () => {
+  it('the owner opens Business details and sees the form with Save', async () => {
+    signIn('super_admin');
+    renderAt('/settings?tab=business');
+    expect(screen.getByLabelText('Business name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Time zone')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+  });
+
+  it('Open Currencies & FX on Business details switches the tab', async () => {
+    signIn('super_admin');
+    renderAt('/settings?tab=business');
+    await userEvent.click(screen.getByRole('button', { name: 'Open Currencies & FX' }));
+    expect(screen.getByTestId('where')).toHaveTextContent('/settings?tab=currencies');
+    expect(screen.getByText('CURRENCIES PANEL')).toBeInTheDocument();
+  });
+
+  it('an admin with settings:view opens Order statuses', () => {
+    signIn('admin', { settings: ['view'] });
+    renderAt('/settings?tab=statuses');
+    expect(screen.getByText('STATUSES PANEL')).toBeInTheDocument();
   });
 });

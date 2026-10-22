@@ -105,3 +105,39 @@ test.describe('T64 security', () => {
     // Do not press it: this is the dev owner account
   });
 });
+
+test.describe('T66 old URLs and handover (F-1215, F-1237)', () => {
+  test('/connections opens Integrations and keeps section and oauth parameters', async ({ page }) => {
+    await signIn(page, 'admin@codadmin.com');
+    await page.goto('/connections?section=whatsapp&oauth=success');
+    await expect(page).toHaveURL(/\/settings\?/);
+    const url = new URL(page.url());
+    expect(url.searchParams.get('tab')).toBe('integrations');
+    expect(url.searchParams.get('section')).toBe('whatsapp');
+    expect(url.searchParams.get('oauth')).toBe('success');
+  });
+
+  test('/settings?tab=integrations and ?oauth= stay on Integrations', async ({ page }) => {
+    await signIn(page, 'admin@codadmin.com');
+    await page.goto('/settings?tab=integrations&section=ai-assistant');
+    await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Integrations' })).toHaveAttribute('aria-current', 'page');
+    await page.goto('/settings?oauth=success&section=whatsapp');
+    await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Integrations' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  test('?tab=users and ?tab=roles open their tabs; ?tab=forms goes to Checkout forms with its parameters', async ({ page }) => {
+    await signIn(page, 'admin@codadmin.com');
+    await page.goto('/settings?tab=users');
+    await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'User management' })).toHaveAttribute('aria-current', 'page');
+    await page.goto('/settings?tab=roles');
+    await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Role permissions' })).toHaveAttribute('aria-current', 'page');
+    await page.goto('/settings?tab=forms&from=email');
+    await expect(page).toHaveURL(/\/checkout-forms\?from=email/);
+  });
+
+  test('/settings/billing redirects to the Billing tab', async ({ page }) => {
+    await signIn(page, 'admin@codadmin.com');
+    await page.goto('/settings/billing');
+    await expect(page).toHaveURL(/\/settings\?tab=billing/);
+  });
+});

@@ -287,6 +287,12 @@ export const ordersService = {
     return response.data;
   },
 
+  /** GET /api/orders/statuses: the fixed list of order statuses from the state machine (F-1233). */
+  async getStatuses(): Promise<OrderStatus[]> {
+    const response = await apiClient.get('/api/orders/statuses');
+    return response.data.statuses;
+  },
+
   async getOrders(filters?: FilterOptions): Promise<{ orders: Order[]; pagination: PaginationMeta }> {
     const response = await apiClient.get('/api/orders', { params: filters });
     const orders = response.data.orders || [];
