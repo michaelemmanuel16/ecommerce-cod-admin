@@ -14,7 +14,7 @@ import { presetRange, type DayRange, type Preset } from './reports/range';
 import { SalesTab } from './reports/SalesTab';
 import { visibleTabs, type TabKey } from './reports/tabs';
 import { TeamTab } from './reports/TeamTab';
-import type { DeliveryReport, OverviewReport, SalesReport } from './reports/types';
+import type { DeliveryReport, OverviewReport, SalesReport, TeamReport } from './reports/types';
 import { useReport } from './reports/useReport';
 
 /**
@@ -22,8 +22,8 @@ import { useReport } from './reports/useReport';
  * card, the compare switch and the tab bar; each tab asks for its own numbers (GET /api/reports/:tab) only while it is
  * open. The page does no KPI arithmetic: every figure, change and tag comes from the API.
  *
- * Not on the page yet: "Explain this month" (M11), the Team tab body and the Export menu (M3-T62), Products and profit
- * (M5) and Marketing (M8). The last two have a slot in tabs.ts and stay hidden.
+ * Team performance and the Export menu are M3-T62 (F-1054, F-1057). Not on the page yet: "Explain this month" (M11),
+ * Products and profit (M5) and Marketing (M8). The last two have a slot in tabs.ts and stay hidden.
  */
 export function Reports() {
   useV2Page();
@@ -42,6 +42,8 @@ export function Reports() {
   const sales = useReport<SalesReport>('sales', params, tab === 'sales');
   // the Delivery numbers also feed the card on top, so they load whatever the open tab is
   const delivery = useReport<DeliveryReport>('delivery', params, true);
+  // Team has no previous period: the compare switch never changes its request
+  const team = useReport<TeamReport>('team', { ...range, compare: false }, tab === 'team');
 
   const open = (key: TabKey) => setSearch((prev) => { const next = new URLSearchParams(prev); next.set('tab', key); return next; }, { replace: true });
   const choosePreset = (next: Preset) => {
@@ -50,9 +52,10 @@ export function Reports() {
     setPreset(next);
   };
 
-  const current = tab === 'overview' ? overview : tab === 'sales' ? sales : delivery;
-  // the label comes from the answer (the server's days), until there is one from the days asked for
-  const answered = (tab === 'team' ? delivery : current).data;
+  const head = tab === 'overview' ? overview : tab === 'sales' ? sales : delivery;
+  const current = tab === 'team' ? team : head;
+  // the label comes from the answer (the server's days), until there is one from the days asked for; Team uses Delivery's
+  const answered = head.data;
   const label = answered ? rangeLabel(answered.range.from, answered.range.to) : rangeLabel(range.from, range.to);
   const compareLabel = compare && answered?.compare ? `Previous period: ${rangeLabel(answered.compare.from, answered.compare.to)}` : null;
   const ctl = (r: { loading: boolean; failed: boolean; refetch: () => Promise<void> }) => ({ loading: r.loading, failed: r.failed, compare, onRetry: () => void r.refetch() });
@@ -64,14 +67,14 @@ export function Reports() {
           <h1>Reports</h1>
           <p>Sales, delivery and team numbers for the dates you pick.</p>
         </div>
-        <div className="hd-actions"><ExportSlot /></div>
+        <div className="hd-actions">{can('analytics', 'export') && <ExportSlot tab={tab} params={params} />}</div>
       </div>
 
       <DateCard
         preset={preset} range={range} onPreset={choosePreset} onCustom={setCustom}
         compare={compare} onCompare={setCompare} label={label} compareLabel={compareLabel}
       />
-      {tab !== 'team' && current.failed && current.message && <p className="rangeerr" role="alert">{current.message}</p>}
+      {current.failed && current.message && <p className="rangeerr" role="alert">{current.message}</p>}
 
       <AgentCards delivery={delivery.data} onOpenDelivery={() => open('delivery')} />
 
@@ -84,7 +87,7 @@ export function Reports() {
         {tab === 'overview' && <OverviewTab report={overview.data} ctl={ctl(overview)} />}
         {tab === 'sales' && <SalesTab report={sales.data} ctl={ctl(sales)} />}
         {tab === 'delivery' && <DeliveryTab report={delivery.data} ctl={ctl(delivery)} />}
-        {tab === 'team' && <TeamTab />}
+        {tab === 'team' && <TeamTab report={team.data} delivery={delivery.data} ctl={ctl(team)} deliveryCtl={ctl(delivery)} />}
       </div>
     </section>
   );

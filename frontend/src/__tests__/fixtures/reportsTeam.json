@@ -1,0 +1,160 @@
+{
+  "from": "2026-10-01T00:00:00.000Z",
+  "to": "2026-10-17T23:59:59.999Z",
+  "asOf": "2026-10-17T18:30:00.000Z",
+  "tiles": {
+    "ordersConfirmed": 1026,
+    "callsMade": 2310,
+    "callsPerConfirmation": 2.25,
+    "notReachable": {
+      "count": 540,
+      "percentOfCalls": 23.4
+    },
+    "queue": {
+      "pending": 64,
+      "oldestWaitMinutes": 190,
+      "withoutRep": 9
+    }
+  },
+  "reps": [
+    {
+      "repId": 11,
+      "name": "Adwoa Darko",
+      "confirmationRate": {
+        "value": 73.5,
+        "detail": {
+          "confirmed": 640,
+          "placed": 871
+        }
+      },
+      "deliveredFromConfirmedRate": {
+        "value": 52.1,
+        "detail": {
+          "delivered": 253,
+          "failed": 150,
+          "returned": 83,
+          "closed": 486
+        }
+      },
+      "calls": 1360,
+      "confirmed": 640,
+      "notReachable": 300
+    },
+    {
+      "repId": 12,
+      "name": "Confirm agent",
+      "confirmationRate": {
+        "value": 70.5,
+        "detail": {
+          "confirmed": 328,
+          "placed": 465
+        }
+      },
+      "deliveredFromConfirmedRate": {
+        "value": 44.0,
+        "detail": {
+          "delivered": 110,
+          "failed": 100,
+          "returned": 40,
+          "closed": 250
+        }
+      },
+      "calls": 780,
+      "confirmed": 328,
+      "notReachable": 206
+    },
+    {
+      "repId": 13,
+      "name": "Nana Kyei",
+      "confirmationRate": {
+        "value": 58.0,
+        "detail": {
+          "confirmed": 58,
+          "placed": 100
+        }
+      },
+      "deliveredFromConfirmedRate": {
+        "value": 26.0,
+        "detail": {
+          "delivered": 13,
+          "failed": 30,
+          "returned": 7,
+          "closed": 50
+        }
+      },
+      "calls": 170,
+      "confirmed": 58,
+      "notReachable": 34
+    }
+  ],
+  "all": {
+    "confirmationRate": {
+      "value": 71.0,
+      "detail": {
+        "confirmed": 1026,
+        "placed": 1445
+      }
+    },
+    "deliveredFromConfirmedRate": {
+      "value": 48.3,
+      "detail": {
+        "delivered": 376,
+        "failed": 354,
+        "returned": 48,
+        "closed": 778
+      }
+    },
+    "calls": 2310,
+    "confirmed": 1026,
+    "notReachable": 540
+  },
+  "callOutcomes": [
+    {
+      "outcome": "confirmed",
+      "count": 1026
+    },
+    {
+      "outcome": "not_reachable",
+      "count": 540
+    },
+    {
+      "outcome": "rescheduled",
+      "count": 318
+    },
+    {
+      "outcome": "declined",
+      "count": 301
+    },
+    {
+      "outcome": "other",
+      "count": 125
+    }
+  ],
+  "declineReasons": [
+    {
+      "reason": "price_too_high",
+      "count": 102,
+      "percent": 33.9
+    },
+    {
+      "reason": "prank_or_mistake",
+      "count": 66,
+      "percent": 21.9
+    },
+    {
+      "reason": "changed_mind",
+      "count": 60,
+      "percent": 19.9
+    },
+    {
+      "reason": "bought_elsewhere",
+      "count": 43,
+      "percent": 14.3
+    },
+    {
+      "reason": "other",
+      "count": 30,
+      "percent": 10.0
+    }
+  ]
+}
