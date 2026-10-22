@@ -272,6 +272,8 @@ function App() {
             <Route path="financial" element={<Navigate to="/finance" replace />} />
             {/* The old Analytics page is gone (M3-T60): old links and bookmarks land on Reports. */}
             <Route path="analytics" element={<Navigate to="/reports" replace />} />
+            {/* /connections is the future Connections page (M9); until then it opens Integrations with its query (M3-T66). */}
+            <Route path="connections" element={<SettingsTabRedirect tab="integrations" />} />
             {/* Every page below needs its menu item (F-102); platform pages use PlatformGuard instead. */}
             <Route element={<AccessGate />}>
             <Route index element={<DashboardIndex />} />

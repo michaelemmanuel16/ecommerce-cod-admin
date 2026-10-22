@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useV2Page } from '../components/shell/useV2Page';
 import { Inbox } from 'lucide-react';
 import { Button, Card } from '../components/ui-v2';
@@ -20,6 +20,13 @@ import { BillingTab } from './settings/BillingTab';
 import { SETTINGS_TABS, type SettingsTab, type TabDef } from './settings/tabs';
 
 const KNOWN: SettingsTab[] = SETTINGS_TABS.map((t) => t.id);
+
+/**
+ * Old ?tab= names from the handover map (F-1237). "roles" is the old name of Role permissions. "forms" goes to the
+ * Checkout forms page, which exists. User management, Role permissions and Integrations stay here until Staff (M6)
+ * and Connections (M9) ship; their tabs keep their old content.
+ */
+const TAB_ALIASES: Record<string, SettingsTab> = { roles: 'permissions' };
 
 /** The old Settings tabs keep their light look until each gets its new page (the shell does the same for old pages). */
 function Old({ children }: { children: React.ReactNode }) {
@@ -77,8 +84,16 @@ export function Settings() {
   }, [isSuperAdmin]);
 
   // OAuth callback goes to integrations; an unknown or removed ?tab= (for example "notifications") opens Profile
-  const asked = params.has('oauth') ? 'integrations' : params.get('tab');
+  const raw = params.has('oauth') ? 'integrations' : params.get('tab');
+  const asked = raw && TAB_ALIASES[raw] ? TAB_ALIASES[raw] : raw;
   const tab: SettingsTab = KNOWN.includes(asked as SettingsTab) ? (asked as SettingsTab) : 'profile';
+  // ?tab=forms: the Checkout forms page is the new home, so go there and keep the other parameters
+  if (raw === 'forms') {
+    const rest = new URLSearchParams(params);
+    rest.delete('tab');
+    const query = rest.toString();
+    return <Navigate to={`/checkout-forms${query ? `?${query}` : ''}`} replace />;
+  }
   const visible = SETTINGS_TABS.filter((t) => t.visible(access));
   const def = SETTINGS_TABS.find((t) => t.id === tab)!;
   const allowed = def.visible(access);
