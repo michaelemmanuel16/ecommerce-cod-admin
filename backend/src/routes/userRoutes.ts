@@ -29,6 +29,7 @@ router.get('/me/payout-history', userController.getMyPayoutHistory);
 router.patch('/me', (req, res, next) => (req.body?.email !== undefined ? changePasswordLimiter(req, res, next) : next()), userController.updateMe);
 router.post('/me/photo', avatarUpload.single('photo'), handleAvatarErrors, userController.uploadMyPhoto);
 router.delete('/me/photo', userController.removeMyPhoto);
+router.get('/me/export', userController.exportMyData);
 router.get('/:id', requirePermission(['super_admin', 'admin', 'manager']), userController.getUser);
 router.get('/:id/profile', requireSelf, userController.getUser);
 router.put('/:id', requirePermission(['super_admin', 'admin']), userController.updateUser);

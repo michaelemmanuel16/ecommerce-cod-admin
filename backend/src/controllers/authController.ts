@@ -15,6 +15,7 @@ import { SUBSCRIPTION_STATUS, SELF_SERVE_PLAN_NAMES } from '../config/billing';
 import { seedTenantDefaults } from '../services/tenantDefaultsService';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
+import { auditService } from '../services/auditService';
 import { accountService } from '../services/accountService';
 import { sessionService, hashToken, requestMeta } from '../services/sessionService';
 
@@ -473,7 +474,8 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
     if (!req.user) throw new AppError('Not authenticated', 401);
     if (req.user.role !== 'super_admin') throw new AppError('Only the super admin can delete the account', 403);
 
-    const { password } = req.body;
+    const { password, confirm } = req.body ?? {};
+    if (confirm !== 'DELETE') throw new AppError('Type DELETE to confirm', 400, 'CONFIRM_REQUIRED');
     if (!password) throw new AppError('Password is required to confirm deletion', 400);
 
     // Verify password
@@ -485,6 +487,30 @@ export const deleteTenantAccount = async (req: AuthRequest, res: Response, next:
 
     const tenantId = req.user.tenantId;
     if (!tenantId) throw new AppError('No tenant associated with this account', 400);
+
+    // A paying tenant must cancel first (F-1226)
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, include: { currentPlan: true } });
+    const paying = tenant
+      && (tenant.subscriptionStatus === SUBSCRIPTION_STATUS.ACTIVE || tenant.subscriptionStatus === SUBSCRIPTION_STATUS.PAST_DUE)
+      && tenant.currentPlan && Number(tenant.currentPlan.priceGHS) > 0
+      && !(tenant.freeAccessExpiresAt && tenant.freeAccessExpiresAt > new Date());
+    if (paying) {
+      throw new AppError('Cancel your subscription before deleting the account', 409, 'SUBSCRIPTION_ACTIVE');
+    }
+
+    // Audit row first: if it cannot be written, nothing is deleted. The tenant's own audit rows go with the
+    // tenant below, so the same facts also go to the application log, which outlives the data.
+    await auditService.record({
+      actorId: req.user.id,
+      channel: 'app',
+      action: 'delete_account',
+      resource: 'tenant',
+      resourceId: tenantId,
+      metadata: { tenantName: tenant?.name },
+      ipAddress: req.ip ?? null,
+      userAgent: req.get('user-agent') ?? null,
+    });
+    logger.warn('Account deletion', { tenantId, userId: req.user.id, tenantName: tenant?.name });
 
     // Delete all tenant data atomically in dependency order.
     // Uses parameterized queries (Prisma.sql) to prevent SQL injection.

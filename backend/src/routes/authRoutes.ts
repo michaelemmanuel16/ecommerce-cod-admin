@@ -18,6 +18,7 @@ router.get('/sessions', apiLimiter, authenticate, authController.listSessions);
 router.post('/sessions/revoke-others', apiLimiter, authenticate, authController.revokeOtherSessions);
 router.delete('/sessions/:id', apiLimiter, authenticate, authController.revokeSession);
 router.get('/me', apiLimiter, authenticate, authController.me);
-router.delete('/delete-account', authLimiter, authenticate, requireSuperAdmin, authController.deleteTenantAccount);
+// Wrong passwords share the 5-tries-per-15-minutes limit (F-1226)
+router.delete('/delete-account', authenticate, requireSuperAdmin, changePasswordLimiter, authController.deleteTenantAccount);
 
 export default router;

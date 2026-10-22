@@ -8,6 +8,7 @@ import * as Money from '../utils/money';
 import { resolveTenantId } from '../utils/tenantContext';
 import { readDateBound, toInvalidRange } from '../utils/kpiRequest';
 import { accountService } from '../services/accountService';
+import { dataExportService } from '../services/dataExportService';
 
 export const getAllUsers = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -403,5 +404,15 @@ export const removeMyPhoto = async (req: AuthRequest, res: Response, next: NextF
     res.json({ user });
   } catch (error) {
     next(error);
+  }
+};
+
+export const exportMyData = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    await dataExportService.stream(res, req.user!, auditContext(req));
+  } catch (error) {
+    // Once the first byte is out the status cannot change: cut the connection
+    if (res.headersSent) res.destroy(error as Error);
+    else next(error);
   }
 };
