@@ -10,7 +10,7 @@
  *  - waitingToDispatch / outForDelivery: right-now snapshots, not tied to a range.
  */
 import prisma from '../../utils/prisma';
-import { baseState } from '../../utils/regions';
+import { stateLabel } from '../../utils/regions';
 import { runInTenant } from '../../utils/tenantContext';
 import { OrderStatus } from '@prisma/client';
 import { DAY_MS } from './dates';
@@ -55,7 +55,7 @@ export async function successByState(tenantId: string, from: Date, to: Date): Pr
   }));
   const states = new Map<string, Map<OrderStatus, number>>();
   for (const g of groups) {
-    const state = baseState(g.deliveryState) || 'Not set';
+    const state = stateLabel(g.deliveryState);
     const counts = states.get(state) ?? new Map<OrderStatus, number>();
     counts.set(g.status, (counts.get(g.status) ?? 0) + g._count._all);
     states.set(state, counts);

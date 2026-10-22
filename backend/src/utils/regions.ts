@@ -23,3 +23,6 @@ export function getRegionsForCountry(countryCode: string): string[] {
  * The frontend keeps a copy in frontend/src/utils/baseState.ts.
  */
 export const baseState = (state: string | null | undefined): string => (state ?? '').replace(/\s*\(.*\)\s*$/, '').trim();
+
+/** The report row a state falls in: its baseState, or "Not set" when blank. */
+export const stateLabel = (state: string | null | undefined): string => baseState(state) || 'Not set';

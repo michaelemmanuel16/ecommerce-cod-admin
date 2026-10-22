@@ -6,7 +6,7 @@ import { initials } from '../dashboard/format';
 import { isBlockError } from '../dashboard/types';
 import { DayLineChart, TargetBars } from './charts';
 import { countChange, rateChange, snapshotChange } from './delta';
-import { count, daysText, placeName, plural, rangeLabel, reasonLabel, wholeMoney, wholePercent } from './format';
+import { count, daysText, plural, rangeLabel, reasonLabel, wholeMoney, wholePercent } from './format';
 import { Part, type TabControl } from './Part';
 import type { DeliveryReport } from './types';
 
@@ -168,16 +168,17 @@ export function DeliveryTab({ report, ctl }: { report: DeliveryReport | null; ct
       <div className="grid two even">
         <Part name="Delivery success by State" block={report?.successByState} ctl={ctl} height={240}>
           {(c) => {
-            const rows = c.rows.filter((r) => r.successRate !== null).map((r) => ({ label: placeName(r.state), value: r.successRate as number }));
+            const rows = c.rows.filter((r) => r.successRate !== null).map((r) => ({ label: r.state, value: r.successRate as number }));
             return (
               <Card title="Delivery success by State" aside={`Target ${c.target}%`}>
                 {rows.length === 0 ? <EmptyState title="No closed orders yet" text="States show once an order is delivered, failed or returned." /> : (
-                  <div className="chart">
+                  <>
                     <TargetBars
                       rows={rows} target={c.target}
                       summary={`Delivery success by state against the ${c.target} percent target: ${rows.map((r) => `${r.label} ${Math.round(r.value)} percent`).join(', ')}.`}
                     />
-                  </div>
+                    <p className="note">A full bar is 100%. The dark line is the {c.target}% target.</p>
+                  </>
                 )}
               </Card>
             );

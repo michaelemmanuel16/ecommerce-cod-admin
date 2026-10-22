@@ -1,6 +1,7 @@
 import { City, Country, State } from 'country-state-city';
 import { currencyOfTenant } from '../utils/currency';
 import { GH_TOWNS } from '../data/towns/GH';
+import { baseState } from '../utils/regions';
 
 // Countries where we keep our own town list; every other country uses country-state-city.
 const OWN_TOWNS: Record<string, Record<string, string[]>> = { GH: GH_TOWNS };
@@ -13,7 +14,7 @@ export function getTowns(countryCode: string, stateName: string): string[] {
   const own = OWN_TOWNS[code];
   if (own) {
     // Checkout stores some states as "Greater Accra (Tema)"; that is still Greater Accra.
-    const key = Object.keys(own).find((k) => norm(k) === norm(stateName.replace(/\s*\(.*\)\s*$/, '')));
+    const key = Object.keys(own).find((k) => norm(k) === norm(baseState(stateName)));
     return key ? own[key] : [];
   }
   const state = State.getStatesOfCountry(code).find((s) => norm(s.name) === norm(stateName));

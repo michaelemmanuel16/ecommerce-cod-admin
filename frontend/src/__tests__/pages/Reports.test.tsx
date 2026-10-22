@@ -223,8 +223,8 @@ describe('Sales tab (F-1052, F-1064)', () => {
     expect(screen.queryByText('Cash still with partners')).toBeNull();
   });
 
-  it('the location table is State, with Not set for an empty place and a total', async () => {
-    answer({ sales: (b) => { b.byState.rows[4].state = 'Unknown'; return b; } });
+  it('the location table is State, with the API Not set row and a total', async () => {
+    answer({ sales: (b) => { b.byState.rows[4].state = 'Not set'; return b; } });
     await openSales();
     const table = await screen.findByRole('table', { name: 'Revenue by State' });
     expect(within(table).getByRole('columnheader', { name: 'State' })).toBeInTheDocument();

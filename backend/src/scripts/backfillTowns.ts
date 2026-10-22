@@ -14,7 +14,6 @@ import { baseState } from '../utils/regions';
 const BATCH = 500;
 
 const norm = (s: string | null | undefined): string => (s ?? '').trim().toLowerCase();
-export { baseState };
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

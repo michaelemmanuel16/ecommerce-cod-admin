@@ -203,14 +203,14 @@ export function allowedTransitions(
   const from = order.status;
   // COD-139: a physical order is never offered the digital and payment statuses, unless it already sits in one.
   const hidden = isDigital(order) || PAYMENT_STATUSES.includes(from) ? [] : PAYMENT_STATUSES;
+  const offered = (to: OrderStatus) => to !== from && !hidden.includes(to) && (to !== 'digital_delivered' || isDigital(order));
   const normal = ALL_STATUSES.filter((to) => {
-    if (to === from || hidden.includes(to)) return false;
+    if (!offered(to)) return false;
     if (tableAllows(order, from, to)) return roleAllows(order, actor, from, to);
     return isMachineActor(actor) && to !== 'digital_delivered';
   });
   const forced = opts.canForce && actor.kind === 'user'
-    ? ALL_STATUSES.filter((to) => to !== from && !normal.includes(to) && !hidden.includes(to)
-      && !(to === 'digital_delivered' && !isDigital(order)))
+    ? ALL_STATUSES.filter((to) => offered(to) && !normal.includes(to))
     : [];
   return { normal, forced };
 }

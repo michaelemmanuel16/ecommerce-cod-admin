@@ -33,5 +33,3 @@ export function reasonLabel(reason: string): string {
   return words[reason] ?? reason.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 }
 
-/** Older API answers grouped an empty place as "Unknown". Owner decision 2026-10-22: it reads "Not set". */
-export const placeName = (name: string): string => (name === 'Unknown' ? 'Not set' : name);

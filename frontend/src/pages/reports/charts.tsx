@@ -1,6 +1,6 @@
 // The charts of docs/mockups/v2/reports.html, drawn with recharts like the Dashboard chart. Every chart sits in a
 // role="img" box whose label tells a screen reader what the picture shows.
-import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { compactNumber } from '../dashboard/format';
 import { dayTick } from './format';
 
@@ -97,21 +97,23 @@ export function Donut({ slices, top, sub, summary }: { slices: Slice[]; top: str
 
 export interface TargetBar { label: string; value: number }
 
-/** Delivery success per city against the target line (the mockup's #chRegion). */
+/**
+ * Delivery success per state against the target line (the mockup's #chRegion). Horizontal bars, one row per state, so
+ * the 16 Ghana state names never overlap (COD-139). A full bar is 100%; the dark line is the target.
+ */
 export function TargetBars({ rows, target, summary }: { rows: TargetBar[]; target: number; summary: string }) {
   return (
-    <div role="img" aria-label={summary} className="chartbox">
-      <ResponsiveContainer width="100%" height={190}>
-        <BarChart data={rows} margin={{ top: 18, right: 10, bottom: 0, left: 0 }}>
-          <CartesianGrid vertical={false} stroke="var(--line)" />
-          <XAxis dataKey="label" axisLine={false} tickLine={false} interval={0} tick={AXIS} />
-          <YAxis width={44} axisLine={false} tickLine={false} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v: number) => `${v}%`} tick={AXIS} />
-          <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={44} isAnimationActive={false}>
-            {rows.map((r) => <Cell key={r.label} fill={r.value >= target ? 'var(--mint)' : 'var(--coral)'} />)}
-          </Bar>
-          <ReferenceLine y={target} stroke="var(--ink)" strokeDasharray="5 4" label={{ value: `Target ${target}%`, position: 'insideTopRight', fill: 'var(--ink-2)', fontSize: 11 }} />
-        </BarChart>
-      </ResponsiveContainer>
+    <div role="img" aria-label={summary} className="bars">
+      {rows.map((r) => (
+        <div className="bar-row" key={r.label}>
+          <span>{r.label}</span>
+          <div className="track">
+            <i style={{ width: `${Math.min(100, r.value)}%`, background: r.value >= target ? 'var(--mint)' : 'var(--coral)' }} />
+            <span className="pace" style={{ left: `${target}%` }} />
+          </div>
+          <span className="val num">{Math.round(r.value)}%</span>
+        </div>
+      ))}
     </div>
   );
 }

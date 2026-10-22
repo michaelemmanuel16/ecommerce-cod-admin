@@ -28,7 +28,6 @@ import { cashHeldByPartner, cashHeldByPartners, cashReceived, partnerPaysInDays 
 import { confirmedPlacedByDay, ordersPlacedByDay } from './kpi/daily';
 import { partnerRates } from './kpi/partners';
 import { productDeliveredUnits } from './kpi/products';
-import { baseState } from '../utils/regions';
 import { failureReasons, ordersByStatus, outForDelivery, successByState, waitingToDispatch } from './kpi/outcomes';
 import { changePercent, rateTag } from './kpi/status';
 import { DAY_MS, addDays, daysInMonth, endOfDay, getStoreTimeZone, localDate, parseYmd, shiftYmd, startOfDay } from './kpi/dates';
@@ -373,22 +372,14 @@ export async function salesReport(tenantId: string, r: ReportRange, access: Repo
   });
 
   const byState = () => isolate('byState', tenantId, async () => {
+    // one row per state, most revenue first; "Greater Accra (Tema)" is Greater Accra, blank is "Not set" (stateLabel)
     const states = await deliveredRevenueByState(tenantId, r.from, r.to);
-    // Blank and missing states are one "Not set" row; "Greater Accra (Tema)" counts as "Greater Accra" (baseState)
-    const merged = new Map<string, { revenue: Money.Money; delivered: number }>();
-    for (const a of states) {
-      const state = baseState(a.state) || 'Not set';
-      const m = merged.get(state) ?? { revenue: Money.ZERO, delivered: 0 };
-      merged.set(state, { revenue: Money.add(m.revenue, a.revenue), delivered: m.delivered + a.deliveredOrders });
-    }
-    const total = Money.sum([...merged.values()].map((m) => m.revenue));
-    const delivered = [...merged.values()].reduce((n, m) => n + m.delivered, 0);
-    const rows = [...merged.entries()]
-      .sort(([, a], [, b]) => Money.compare(b.revenue, a.revenue))
-      .map(([state, m]) => ({
-        state, delivered: m.delivered, revenue: Money.toApi(m.revenue),
-        averageOrder: average(m.revenue, m.delivered), sharePercent: sharePercent(Money.toApi(m.revenue), Money.toApi(total)),
-      }));
+    const total = Money.sum(states.map((a) => a.revenue));
+    const delivered = states.reduce((n, a) => n + a.deliveredOrders, 0);
+    const rows = states.map((a) => ({
+      state: a.state, delivered: a.deliveredOrders, revenue: a.revenue,
+      averageOrder: average(Money.parse(a.revenue), a.deliveredOrders), sharePercent: sharePercent(a.revenue, Money.toApi(total)),
+    }));
     return { label: 'State', rows, total: { delivered, revenue: Money.toApi(total), averageOrder: average(total, delivered) } };
   });
 

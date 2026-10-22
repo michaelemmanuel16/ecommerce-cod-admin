@@ -37,6 +37,7 @@ import { currencyOfTenant } from '../../utils/currency';
 import { Prisma } from '@prisma/client';
 import { getStoreTimeZone } from './dates';
 import { makeConverter } from '../fxService';
+import { stateLabel } from '../../utils/regions';
 
 export interface DeliveredRevenue {
   physical: KpiResult<string>;
@@ -108,8 +109,8 @@ export interface RevenueDay {
 }
 
 export interface RevenueState {
-  /** Delivery state of the order (Order.deliveryState), null when the order has none. Not normalised here. */
-  state: string | null;
+  /** Report row of the order's delivery state (stateLabel): "Greater Accra (Tema)" is Greater Accra, blank is "Not set". */
+  state: string;
   revenue: string;
   deliveredOrders: number;
 }
@@ -246,7 +247,7 @@ export async function deliveredRevenueByState(
   scope: RevenueScope = {},
 ): Promise<RevenueState[]> {
   const { rows } = await signedRevenueRowsInStoreCurrency(tenantId, from, to, scope);
-  return [...groupRows(rows, (r) => r.state).entries()]
+  return [...groupRows(rows, (r) => stateLabel(r.state)).entries()]
     .sort(([, a], [, b]) => Money.compare(b.revenue, a.revenue))
     .map(([state, a]) => ({ state, revenue: Money.toApi(a.revenue), deliveredOrders: a.orders }));
 }

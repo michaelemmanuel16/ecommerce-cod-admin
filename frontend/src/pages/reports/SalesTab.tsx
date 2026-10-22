@@ -5,7 +5,7 @@ import { Card, EmptyState, Tag, Tile } from '../../components/ui-v2';
 import { parseMoney } from '../../utils/money';
 import { DayBarChart, Donut } from './charts';
 import { percentChange, snapshotChange } from './delta';
-import { compactMoney, count, plural, placeName, rangeLabel, wholeMoney, wholePercent } from './format';
+import { compactMoney, count, plural, rangeLabel, wholeMoney, wholePercent } from './format';
 import { Part, type TabControl } from './Part';
 import type { SalesReport, SalesTiles } from './types';
 
@@ -113,7 +113,7 @@ export function SalesTab({ report, ctl }: { report: SalesReport | null; ctl: Tab
                   <tbody>
                     {c.rows.map((r) => (
                       <tr key={r.state}>
-                        <td><b>{placeName(r.state)}</b></td>
+                        <td><b>{r.state}</b></td>
                         <td className="r num">{count(r.delivered)}</td>
                         <td className="r num">{wholeMoney(r.revenue, currency)}</td>
                         <td className="r num">{r.averageOrder === null ? 'n/a' : wholeMoney(r.averageOrder, currency)}</td>
