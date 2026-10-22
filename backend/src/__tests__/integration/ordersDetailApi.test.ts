@@ -37,6 +37,13 @@ const mkOrder = async (status: string, extra: Record<string, unknown> = {}, tid 
       ...extra,
     } as any,
   })).id;
+/** An unused order id below 1,000,000. The test DB order sequence is past 7 digits, and 7 plain digits search as a phone first (F-105). */
+const freeOrderId = async (): Promise<number> => {
+  for (;;) {
+    const id = 100_000 + Math.floor(Math.random() * 900_000);
+    if (!(await prismaBase.order.findUnique({ where: { id }, select: { id: true } }))) return id;
+  }
+};
 const detail = (who: string, id: number) => request(app).get(`/api/orders/${id}`).set(bearer(U[who].token));
 const timeline = (who: string, id: number) => request(app).get(`/api/orders/${id}/timeline`).set(bearer(U[who].token));
 
@@ -214,7 +221,7 @@ describe('GET /api/orders/:id/timeline', () => {
 
 describe('Search and Kanban (F-300, F-327)', () => {
   it('finds the same order by 24118-style numbers with and without the #', async () => {
-    const id = await mkOrder('confirmed');
+    const id = await mkOrder('confirmed', { id: await freeOrderId() });
     const plain = await request(app).get('/api/orders').query({ search: String(id) }).set(bearer(U.owner.token));
     const hash = await request(app).get('/api/orders').query({ search: `#${id}` }).set(bearer(U.owner.token));
     expect(plain.body.orders.map((o: any) => o.id)).toContain(id);

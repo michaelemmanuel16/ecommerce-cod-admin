@@ -28,6 +28,13 @@ let perfToken: string;
 let pair: TwoTenants;
 let abenaId: number;
 let firstOrderId: number;
+/** An unused order id below 1,000,000. The test DB order sequence is past 7 digits, and 7 plain digits search as a phone first (F-105). */
+const freeOrderId = async (): Promise<number> => {
+  for (;;) {
+    const id = 100_000 + Math.floor(Math.random() * 900_000);
+    if (!(await prismaBase.order.findUnique({ where: { id }, select: { id: true } }))) return id;
+  }
+};
 
 const search = (token: string, q: string) => request(app).get('/api/search').query({ q }).set(bearer(token));
 const orderData = (tenantId: string, customerId: number, extra: Record<string, unknown> = {}) => ({
@@ -59,7 +66,7 @@ beforeAll(async () => {
   await prismaBase.order.createMany({
     data: Array.from({ length: ORDERS }, (_, i) => orderData(perfTenantId, ids[i % ids.length])) as any,
   });
-  firstOrderId = (await prismaBase.order.findFirstOrThrow({ where: { tenantId: perfTenantId }, orderBy: { id: 'asc' } })).id;
+  firstOrderId = (await prismaBase.order.create({ data: { ...orderData(perfTenantId, ids[0]), id: await freeOrderId() } as any })).id;
   await prismaBase.order.create({ data: orderData(perfTenantId, abenaId) as any });
   await prismaBase.$executeRawUnsafe('ANALYZE orders'); await prismaBase.$executeRawUnsafe('ANALYZE customers');
 
