@@ -353,51 +353,6 @@ describe('OrderService (extended branch coverage)', () => {
     });
   });
 
-  // ───────────────────────────── getKanbanView ─────────────────────────────
-  describe('getKanbanView - branch coverage', () => {
-    const kanbanResult = {
-      pending_confirmation: [],
-      confirmed: [],
-      processing: [],
-      ready_for_pickup: [],
-      dispatched: [],
-      delivered: [],
-      failed_delivery: [],
-      rescheduled: [],
-      returned: [],
-      cancelled: [],
-    };
-
-    beforeEach(() => {
-      (prismaMock.order.findMany as any).mockResolvedValue([] as any);
-    });
-
-    it('applies area filter when provided', async () => {
-      await orderService.getKanbanView({ area: 'Accra' });
-      expect(prismaMock.order.findMany).toHaveBeenCalled();
-    });
-
-    it('filters by agentId when provided and requester is admin', async () => {
-      await orderService.getKanbanView({ agentId: '5' }, adminRequester as any);
-      expect(prismaMock.order.findMany).toHaveBeenCalled();
-    });
-
-    it('scopes kanban for sales_rep role', async () => {
-      await orderService.getKanbanView({}, salesRepRequester as any);
-      expect(prismaMock.order.findMany).toHaveBeenCalled();
-    });
-
-    it('scopes kanban for delivery_agent role', async () => {
-      await orderService.getKanbanView({}, agentRequester as any);
-      expect(prismaMock.order.findMany).toHaveBeenCalled();
-    });
-
-    it('returns all statuses for admin with no filters', async () => {
-      const result = await orderService.getKanbanView({}, adminRequester as any);
-      expect(result).toBeDefined();
-    });
-  });
-
   // ───────────────────────────── getOrderStats (extended) ─────────────────────────────
   describe('getOrderStats - date filter branch', () => {
     it('applies date filter when start and end dates are provided', async () => {

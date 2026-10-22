@@ -1311,7 +1311,7 @@ export class OrderService {
       if (filters.dateTo) where.createdAt.lte = new Date(filters.dateTo);
     }
     if (filters.search) {
-      const searchNum = parseInt(filters.search);
+      const searchNum = parseInt(filters.search.replace(/^#/, ''));
       const phoneSearch = customerPhoneSearch(filters.search);
       where.OR = [
         ...(isNaN(searchNum) ? [] : [{ id: searchNum }]),
@@ -1653,63 +1653,6 @@ export class OrderService {
       }
     }
     return result;
-  }
-
-  /**
-   * Get Kanban board view
-   */
-  async getKanbanView(filters: { area?: string; agentId?: string }, requester?: Requester) {
-    const where: Prisma.OrderWhereInput = { deletedAt: null };
-    if (filters.area) where.deliveryArea = filters.area;
-
-    // Role-based filtering for Kanban
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      if (requester.role === 'sales_rep') {
-        where.customerRepId = requester.id;
-      } else if (requester.role === 'delivery_agent') {
-        where.deliveryAgentId = requester.id;
-      }
-    }
-
-    if (filters.agentId) where.deliveryAgentId = parseInt(filters.agentId, 10);
-
-    const orders = await prisma.order.findMany({
-      where,
-      include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true
-          }
-        },
-        orderItems: {
-          include: {
-            product: {
-              select: {
-                name: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: { priority: 'desc' }
-    });
-
-    const kanban = {
-      pending_confirmation: orders.filter((o) => o.status === 'pending_confirmation'),
-      confirmed: orders.filter((o) => o.status === 'confirmed'),
-      preparing: orders.filter((o) => o.status === 'preparing'),
-      ready_for_pickup: orders.filter((o) => o.status === 'ready_for_pickup'),
-      out_for_delivery: orders.filter((o) => o.status === 'out_for_delivery'),
-      delivered: orders.filter((o) => o.status === 'delivered'),
-      cancelled: orders.filter((o) => o.status === 'cancelled'),
-      returned: orders.filter((o) => o.status === 'returned'),
-      failed_delivery: orders.filter((o) => o.status === 'failed_delivery')
-    };
-
-    return kanban;
   }
 
   /**
