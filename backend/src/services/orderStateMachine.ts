@@ -419,7 +419,7 @@ async function move(
   const gl = await applySideEffects(tx, order, from, to, actor, options, history.id);
 
   const statusChanged: OrderStatusChangedEvent = {
-    orderId, tenantId, from, to,
+    orderId, tenantId, customerId: order.customerId, from, to,
     actor: { kind: actor.kind, userId: actor.userId },
     depth: options.workflowDepth ?? 0,
     deliveryDate: fields.deliveryDate !== undefined ? (fields.deliveryDate as Date | null) : order.deliveryDate,

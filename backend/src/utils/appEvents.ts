@@ -21,6 +21,8 @@ export enum AppEvent {
 interface OrderEventBase {
     orderId: number;
     tenantId: string;
+    /** The order's customer, so a listener needs no lookup. Optional: a listener falls back to a lookup when it is missing. */
+    customerId?: number;
     /** The order came in through a bulk or sheet import. */
     imported?: boolean;
     runWorkflows?: boolean;
@@ -68,11 +70,11 @@ export function emitOrderEvent<E extends keyof OrderEventMap>(event: E, payload:
  * `imported`; `runWorkflows` overrides the import skip rule.
  */
 export function emitOrderCreatedEvent(
-    order: { id: number; tenantId?: string | null; status: OrderStatus },
+    order: { id: number; tenantId?: string | null; status: OrderStatus; customerId?: number },
     opts: { imported?: boolean; runWorkflows?: boolean } = {},
 ): void {
     emitOrderEvent(AppEvent.ORDER_CREATED, {
-        orderId: order.id, tenantId: resolveTenantId(order.tenantId), status: order.status, ...opts,
+        orderId: order.id, tenantId: resolveTenantId(order.tenantId), customerId: order.customerId, status: order.status, ...opts,
     });
 }
 
