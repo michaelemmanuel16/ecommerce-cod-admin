@@ -13,5 +13,5 @@ export { Table, type Column } from './Table';
 export { Tabs, type TabItem } from './Tabs';
 export { Tag, type TagTone } from './Tag';
 export { Tile, type TileTone } from './Tile';
-export { Toast, ToastProvider, useToast } from './Toast';
+export { Toast, ToastProvider, useToast, type ToastAction } from './Toast';
 export { Tooltip } from './Tooltip';

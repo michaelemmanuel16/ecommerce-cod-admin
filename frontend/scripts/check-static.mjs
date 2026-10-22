@@ -34,6 +34,9 @@ export const SCANNED = [
   'src/pages/ForgotPassword.tsx',
   'src/pages/ResetPassword.tsx',
   'src/pages/NotFound.tsx',
+  'src/pages/Orders.tsx',
+  'src/pages/orders',
+  'src/styles/orders.css',
   // later tasks: 'src/pages/v2', ...
 ];
 

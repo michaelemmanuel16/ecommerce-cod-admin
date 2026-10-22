@@ -95,4 +95,23 @@ describe('stores re-fetch on order:status_changed', () => {
     expect(fetchDashboardMetrics).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => expect(ordersService.getOrders).toHaveBeenCalledTimes(1));
   });
+
+  // M3-T42: the store used to listen for the plural `orders:created`, which the backend never emits.
+  it('re-reads on the real names order:created, order:updated and orders:deleted, and keeps the toast handler', async () => {
+    vi.mocked(ordersService.getOrders).mockResolvedValue({ orders: [mockOrder], pagination: { page: 2, limit: 50, total: 1, pages: 1 } } as never);
+    const a = fakeSocket();
+    const toast = vi.fn();
+    a.on('order:created', toast); // the toast handler in services/socket.ts
+    vi.mocked(getSocket).mockReturnValue(a as never);
+    useOrdersStore.getState().setupSocketListeners();
+    useOrdersStore.getState().setupSocketListeners(); // twice: no duplicate handler
+
+    expect(a.handlers['orders:created']).toBeUndefined();
+    for (const name of ['order:created', 'order:updated', 'orders:deleted']) {
+      vi.mocked(ordersService.getOrders).mockClear();
+      a.emit(name, name === 'orders:deleted' ? { orderIds: [1] } : mockOrder);
+      await vi.waitFor(() => expect(ordersService.getOrders).toHaveBeenCalledTimes(1));
+    }
+    expect(toast).toHaveBeenCalledTimes(1);
+  });
 });

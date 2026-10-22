@@ -10,6 +10,90 @@ export interface StatusMoveExtras {
   reason?: string;
 }
 
+/** One row of GET /api/orders as the Orders list reads it (M3-T11: include=flags,reminder,threadCount). */
+export interface OrderListRow {
+  id: number;
+  status: OrderStatus;
+  /** Digital orders move differently from physical ones (F-301). */
+  orderType?: 'physical' | 'digital';
+  totalAmount: number;
+  createdAt: string;
+  customer: { id: number; firstName: string; lastName: string; phoneNumber: string; alternatePhone?: string | null };
+  /** null when nobody is assigned; also null for a removed user. */
+  customerRep: { id: number; firstName: string; lastName: string } | null;
+  deliveryAgent: { id: number; firstName: string; lastName: string } | null;
+  orderItems: Array<{
+    id: number;
+    quantity: number;
+    itemType?: string | null;
+    metadata?: { upsellName?: string } | null;
+    product: { id: number; name: string; sku?: string | null } | null;
+  }>;
+  flags?: Array<{ code: string; label: string }>;
+  /** null until M9 builds reminders. */
+  reminder?: { dueAt?: string } | null;
+  /** null until M9 builds team threads. */
+  threadCount?: number | null;
+}
+
+/** Query of GET /api/orders and GET /api/orders/counts (counts ignore the sort and page fields). */
+export interface OrderListParams {
+  status?: OrderStatus[];
+  search?: string;
+  sortBy?: 'id' | 'customer' | 'totalAmount' | 'createdAt';
+  sortOrder?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+  startDate?: string;
+  endDate?: string;
+  dateBasis?: 'created' | 'delivery';
+  productId?: number[];
+  deliveryAgentId?: number;
+  customerRepId?: number;
+  unassigned?: boolean;
+  flag?: 'any';
+}
+
+export interface OrderCounts {
+  all: number;
+  byStatus: Record<OrderStatus, number>;
+  waitingToDispatch: number;
+}
+
+/** Per-order result of a bulk status change or assign (orderService.BulkResult). */
+export interface BulkResult {
+  succeeded: number[];
+  failed: Array<{ id: number; code: string; message: string }>;
+}
+
+/** Reasons a bulk status move may carry (one for all the orders). */
+export interface BulkStatusBody extends StatusMoveExtras {
+  orderIds: number[];
+  status: OrderStatus;
+}
+
+/** Who a bulk assign gives the orders to: a call rep, a delivery agent, both, or `unassign: 'both'`. */
+export interface BulkAssignBody {
+  orderIds: number[];
+  customerRepId?: number;
+  deliveryAgentId?: number;
+  unassign?: 'both';
+  confirmBlocked?: boolean;
+}
+
+/** DELETE /api/orders/bulk: what was deleted and what the rules kept (F-315). */
+export interface BulkDeleteResult {
+  deleted: number;
+  skipped: Array<{ id: number; reason: string }>;
+}
+
+/** What the order state machine allows next for one order (GET /api/orders/:id/transitions). */
+export interface OrderTransitions {
+  status: OrderStatus;
+  normal: OrderStatus[];
+  forced: OrderStatus[];
+}
+
 const transformOrder = (order: any): Order => {
   try {
     // Transform orderItems to match frontend OrderItem interface
@@ -69,6 +153,21 @@ const transformOrder = (order: any): Order => {
 };
 
 export const ordersService = {
+  /** The Orders list page: raw rows with customer, call rep, delivery agent, items and flags. */
+  async listOrders(params: OrderListParams, skipCache = false): Promise<{ rows: OrderListRow[]; pagination: PaginationMeta }> {
+    const response = await apiClient.get('/api/orders', { params: { ...params, include: 'flags,reminder,threadCount' }, skipCache });
+    return {
+      rows: response.data.orders || [],
+      pagination: response.data.pagination || { page: 1, limit: 25, total: 0, pages: 0 },
+    };
+  },
+
+  async getCounts(params: OrderListParams, skipCache = false): Promise<OrderCounts> {
+    const { sortBy: _s, sortOrder: _o, page: _p, limit: _l, ...filters } = params;
+    const response = await apiClient.get('/api/orders/counts', { params: filters, skipCache });
+    return response.data;
+  },
+
   async getOrders(filters?: FilterOptions): Promise<{ orders: Order[]; pagination: PaginationMeta }> {
     const response = await apiClient.get('/api/orders', { params: filters });
     const orders = response.data.orders || [];
@@ -116,9 +215,39 @@ export const ordersService = {
     await apiClient.delete(`/api/orders/${id}`);
   },
 
-  async bulkDeleteOrders(ids: number[]): Promise<{ message: string; deletedCount: number }> {
+  async bulkDeleteOrders(ids: number[]): Promise<{ message: string; deletedCount: number } & BulkDeleteResult> {
     const response = await apiClient.delete('/api/orders/bulk', { data: { ids } });
     return response.data;
+  },
+
+  /** The moves the order can make now, for the row status menu (F-313). */
+  async getTransitions(id: number): Promise<OrderTransitions> {
+    const response = await apiClient.get(`/api/orders/${id}/transitions`, { skipCache: true });
+    return response.data;
+  },
+
+  async bulkStatus(body: BulkStatusBody): Promise<BulkResult> {
+    const { force: _force, reason: _reason, ...move } = body;
+    const response = await apiClient.patch('/api/orders/bulk/status', move);
+    return response.data;
+  },
+
+  async bulkAssign(body: BulkAssignBody): Promise<BulkResult> {
+    const response = await apiClient.patch('/api/orders/bulk/assign', body);
+    return response.data;
+  },
+
+  async assignRep(id: number, customerRepId: number): Promise<void> {
+    await apiClient.patch(`/api/orders/${id}/assign-rep`, { customerRepId });
+  },
+
+  async assignAgent(id: number, deliveryAgentId: number, confirmBlocked = false): Promise<void> {
+    await apiClient.patch(`/api/orders/${id}/assign-agent`, { deliveryAgentId, confirmBlocked });
+  },
+
+  /** "Unassign both" (F-314): clears the call rep and the delivery agent. */
+  async unassignBoth(id: number): Promise<void> {
+    await apiClient.patch(`/api/orders/${id}/assign-rep`, { unassign: 'both' });
   },
 
   async assignOrder(id: number, userId: number, role: 'rep' | 'agent' = 'rep'): Promise<Order> {
