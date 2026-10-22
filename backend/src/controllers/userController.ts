@@ -380,7 +380,7 @@ const auditContext = (req: AuthRequest) => ({ ip: req.ip ?? null, userAgent: req
 
 export const updateMe = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const user = await accountService.updateProfile(req.user!.id, req.body ?? {}, auditContext(req));
+    const user = await accountService.updateProfile(req.user!.id, req.body ?? {}, auditContext(req), req.user!.sid);
     res.json({ user });
   } catch (error) {
     next(error);

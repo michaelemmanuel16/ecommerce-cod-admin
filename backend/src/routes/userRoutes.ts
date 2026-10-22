@@ -3,6 +3,7 @@ import * as userController from '../controllers/userController';
 import * as payoutController from '../controllers/payoutController';
 import { authenticate, requirePermission, requireSelf } from '../middleware/auth';
 import { avatarUpload, handleAvatarErrors } from '../config/multer';
+import { changePasswordLimiter } from '../middleware/rateLimiter';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
@@ -24,7 +25,8 @@ router.get('/agents/performance', requirePermission(['super_admin', 'admin', 'ma
 router.get('/preferences', userController.getUserPreferences);
 router.put('/preferences', userController.updateUserPreferences);
 router.get('/me/payout-history', userController.getMyPayoutHistory);
-router.patch('/me', userController.updateMe);
+// An email change checks the password, so it shares the change-password try limit
+router.patch('/me', (req, res, next) => (req.body?.email !== undefined ? changePasswordLimiter(req, res, next) : next()), userController.updateMe);
 router.post('/me/photo', avatarUpload.single('photo'), handleAvatarErrors, userController.uploadMyPhoto);
 router.delete('/me/photo', userController.removeMyPhoto);
 router.get('/:id', requirePermission(['super_admin', 'admin', 'manager']), userController.getUser);

@@ -129,6 +129,18 @@ describe('POST /api/auth/change-password', () => {
     expect(JSON.stringify(audit)).not.toContain(NEW_PASSWORD);
   });
 
+  it('a reset token issued before the change no longer works', async () => {
+    const u = await mkUser('admin');
+    const raw = `raw-reset-${SUFFIX}-${u.id}`;
+    const hashed = require('crypto').createHash('sha256').update(raw).digest('hex');
+    await prismaBase.user.update({ where: { id: u.id }, data: { passwordResetToken: hashed, passwordResetExpires: new Date(Date.now() + 600_000) } });
+    const res = await request(app).post('/api/auth/change-password').set(bearer(u.token()))
+      .send({ currentPassword: OLD_PASSWORD, newPassword: NEW_PASSWORD });
+    expect(res.status).toBe(200);
+    const reset = await request(app).post('/api/auth/reset-password').send({ token: raw, password: 'Another1!pass' });
+    expect(reset.status).toBe(400);
+  });
+
   it('requires a signed-in user', async () => {
     const res = await request(app).post('/api/auth/change-password').send({ currentPassword: OLD_PASSWORD, newPassword: NEW_PASSWORD });
     expect(res.status).toBe(401);
@@ -164,15 +176,59 @@ describe('PATCH /api/users/me', () => {
     sentNotices.length = 0;
 
     const newEmail = `acct-new-${SUFFIX}-${u.id}@codadmin.test`.toUpperCase();
-    const res = await request(app).patch('/api/users/me').set(bearer(u.token())).send({ email: newEmail });
+    const res = await request(app).patch('/api/users/me').set(bearer(u.token())).send({ email: newEmail, currentPassword: OLD_PASSWORD });
     expect(res.status).toBe(200);
     expect(res.body.user.email).toBe(newEmail.toLowerCase());
     await new Promise((r) => setImmediate(r));
     expect(sentNotices).toEqual([{ to: u.email, newEmail: newEmail.toLowerCase() }]);
 
-    const dup = await request(app).patch('/api/users/me').set(bearer(u.token())).send({ email: taken.email });
+    // an old reset token no longer works after an email change
+    const raw = `raw-em-${SUFFIX}-${u.id}`;
+    const hashed = require('crypto').createHash('sha256').update(raw).digest('hex');
+    const row0 = await prismaBase.user.findUnique({ where: { id: u.id } });
+    expect(row0!.passwordResetToken).toBeNull();
+    expect((await request(app).post('/api/auth/reset-password').send({ token: raw, password: 'Another1!pass' })).status).toBe(400);
+    expect(hashed).toHaveLength(64);
+
+    const dup = await request(app).patch('/api/users/me').set(bearer(u.token())).send({ email: taken.email, currentPassword: OLD_PASSWORD });
     expect(dup.status).toBe(400);
-    expect((await request(app).patch('/api/users/me').set(bearer(u.token())).send({ email: 'not-an-email' })).status).toBe(400);
+    expect((await request(app).patch('/api/users/me').set(bearer(u.token())).send({ email: 'not-an-email', currentPassword: OLD_PASSWORD })).status).toBe(400);
+  });
+
+  it('an email change without the current password, or with a wrong one, gives 400 and changes nothing', async () => {
+    const u = await mkUser('manager');
+    const patch = (body: object) => request(app).patch('/api/users/me').set(bearer(u.token())).send(body);
+    const email = `acct-nopw-${SUFFIX}-${u.id}@codadmin.test`;
+    expect((await patch({ email })).status).toBe(400);
+    expect((await patch({ email, currentPassword: 'wrong-Pass1!' })).status).toBe(400);
+    expect((await prismaBase.user.findUnique({ where: { id: u.id } }))!.email).toBe(u.email);
+  });
+
+  it('wrong passwords on email change use the change-password try limit: the 6th gives 429', async () => {
+    const u = await mkUser('manager');
+    const patch = (body: object) => request(app).patch('/api/users/me').set(bearer(u.token())).send(body);
+    const email = `acct-rl-${SUFFIX}-${u.id}@codadmin.test`;
+    for (let i = 0; i < 3; i++) expect((await patch({ email, currentPassword: 'wrong-Pass1!' })).status).toBe(400);
+    for (let i = 0; i < 2; i++) {
+      const res = await request(app).post('/api/auth/change-password').set(bearer(u.token())).send({ currentPassword: 'wrong-Pass1!', newPassword: NEW_PASSWORD });
+      expect(res.status).toBe(400);
+    }
+    expect((await patch({ email, currentPassword: OLD_PASSWORD })).status).toBe(429);
+  });
+
+  it('an email change ends the other sessions, keeps the current one and clears the reset token', async () => {
+    const u = await mkUser('sales_rep');
+    await prismaBase.user.update({ where: { id: u.id }, data: { passwordResetToken: 'hashed-reset', passwordResetExpires: new Date(Date.now() + 600_000) } });
+    const mk = (n: string) => prismaBase.userSession.create({ data: { tenantId: pair.a.id, userId: u.id, tokenHash: `acct-em-${SUFFIX}-${n}-${u.id}` } });
+    const keep = await mk('keep');
+    await mk('other');
+
+    const res = await request(app).patch('/api/users/me').set(bearer(u.token(keep.id)))
+      .send({ email: `acct-em-${SUFFIX}-${u.id}@codadmin.test`, currentPassword: OLD_PASSWORD });
+    expect(res.status).toBe(200);
+    expect((await prismaBase.userSession.findMany({ where: { userId: u.id } })).map((x) => x.id)).toEqual([keep.id]);
+    const row = await prismaBase.user.findUnique({ where: { id: u.id } });
+    expect(row).toMatchObject({ passwordResetToken: null, passwordResetExpires: null });
   });
 
   it('two tenants: an update changes only the caller\'s own row', async () => {

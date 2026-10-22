@@ -67,11 +67,11 @@ export const accountService = {
   },
 
   /** Whitelist: name, displayName, email, phone (also accepted as phoneNumber). Any other field is ignored. */
-  async updateProfile(userId: number, body: Record<string, unknown>, ctx: AuditContext = {}) {
-    const current = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstName: true } });
+  async updateProfile(userId: number, body: Record<string, unknown>, ctx: AuditContext = {}, currentSessionId?: number) {
+    const current = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstName: true, password: true } });
     if (!current) throw new AppError('User not found', 404);
 
-    const data: Record<string, string | null> = {};
+    const data: Record<string, string | Date | null> = {};
 
     if (body.name !== undefined) {
       const name = typeof body.name === 'string' ? body.name.trim().replace(/\s+/g, ' ') : '';
@@ -103,12 +103,22 @@ export const accountService = {
       const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
       if (!email || email.length > 254 || !EMAIL_RE.test(email)) throw new AppError('Enter a valid email address', 400);
       if (email !== current.email.toLowerCase()) {
+        // The email is how a person resets a password, so changing it needs the password (F-1221).
+        if (typeof body.currentPassword !== 'string' || !body.currentPassword) {
+          throw new AppError('Current password is required to change your email', 400);
+        }
+        if (!(await bcrypt.compare(body.currentPassword, current.password))) {
+          throw new AppError('Current password is incorrect', 400);
+        }
         // Email is unique across the whole system and deactivated users keep theirs.
         const taken = await withoutTenant('account-email-check', () =>
           withSoftDeleted(() => prisma.user.findUnique({ where: { email }, select: { id: true } }))
         );
         if (taken && taken.id !== userId) throw new AppError('This email is already in use', 400);
         data.email = email;
+        // A reset link sent to the old address must stop working
+        data.passwordResetToken = null;
+        data.passwordResetExpires = null;
         newEmail = email;
       }
     }
@@ -123,7 +133,14 @@ export const accountService = {
       throw err;
     }
 
-    await auditSafe(userId, 'update_profile', ctx, { fields: Object.keys(data) });
+    if (newEmail) {
+      await prisma.userSession.deleteMany({
+        where: { userId, ...(currentSessionId !== undefined && { id: { not: currentSessionId } }) },
+      });
+      if (currentSessionId === undefined) await prisma.user.update({ where: { id: userId }, data: { refreshToken: null } });
+    }
+
+    await auditSafe(userId, 'update_profile', ctx, { fields: Object.keys(data).filter((k) => !k.startsWith('passwordReset')) });
 
     // The email changes at once; the old address is told (plan default for F-1221).
     if (newEmail) {
@@ -194,7 +211,7 @@ export const accountService = {
     await prisma.$transaction([
       prisma.user.update({
         where: { id: userId },
-        data: { password: hashed, ...(currentSessionId === undefined && { refreshToken: null }) },
+        data: { password: hashed, passwordResetToken: null, passwordResetExpires: null, ...(currentSessionId === undefined && { refreshToken: null }) },
       }),
       prisma.userSession.deleteMany({
         where: { userId, ...(currentSessionId !== undefined && { id: { not: currentSessionId } }) },
