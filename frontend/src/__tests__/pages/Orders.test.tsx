@@ -8,7 +8,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { COUNTS, ROWS } from '../fixtures/ordersList';
 import { ORDER_EVENTS, SOCKET_REFRESH_MS } from '../../pages/orders/useOrderList';
-import { SEARCH_DEBOUNCE_MS } from '../../pages/orders/urlState';
+import { SEARCH_DEBOUNCE_MS } from '../../utils/urlState';
 
 const listOrders = vi.fn();
 const getCounts = vi.fn();

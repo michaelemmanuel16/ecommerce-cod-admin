@@ -3,7 +3,8 @@ import { Search, Sparkles } from 'lucide-react';
 import { Button, Select } from '../../components/ui-v2';
 import { DateRange } from './DateRange';
 import type { Option } from './useFilterOptions';
-import { rangeOf, SEARCH_DEBOUNCE_MS, type ListView } from './urlState';
+import { SEARCH_DEBOUNCE_MS } from '../../utils/urlState';
+import { rangeOf, type ListView } from './urlState';
 
 interface FilterBarProps {
   view: ListView;

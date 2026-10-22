@@ -9,7 +9,8 @@ import { buildColumns } from './customers/columns';
 import { CustomerModal } from './customers/CustomerModal';
 import { FilterBar } from './customers/FilterBar';
 import { RISK_RULE, SEGMENT_TABS } from './customers/model';
-import { DEFAULT_SIZE, PAGE_SIZES, filterParams, listParams, parseView, writeView, type ListView } from './customers/urlState';
+import { DEFAULT_SIZE } from '../utils/urlState';
+import { PAGE_SIZES, filterParams, listParams, parseView, writeView, type ListView } from './customers/urlState';
 import { useCustomerList } from './customers/useCustomerList';
 
 const count = (n: number | undefined) => (n === undefined ? '—' : n.toLocaleString('en-GB'));
