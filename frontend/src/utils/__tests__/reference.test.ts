@@ -35,12 +35,15 @@ describe('currency list', () => {
     }
   });
 
-  it('Onboarding and Settings both read the one list and keep no list of their own', () => {
-    for (const source of [onboardingSource, settingsSource]) {
-      expect(source).toContain('SUPPORTED_CURRENCIES.map');
-      expect(source).toMatch(/import \{[^}]*SUPPORTED_CURRENCIES[^}]*\} from '..\/utils\/countries'/);
-      expect(source).not.toMatch(/<option value="(USD|GHS|NGN|KES|EUR|GBP|INR|CAD|AUD|JPY)"/);
-    }
+  it('Settings reads the one list and keeps no list of its own', () => {
+    expect(settingsSource).toContain('SUPPORTED_CURRENCIES.map');
+    expect(settingsSource).toMatch(/import \{[^}]*SUPPORTED_CURRENCIES[^}]*\} from '..\/utils\/countries'/);
+    expect(settingsSource).not.toMatch(/<option value="(USD|GHS|NGN|KES|EUR|GBP|INR|CAD|AUD|JPY)"/);
+  });
+
+  // M3-T67: the wizard has no currency picker. The currency follows the country; Settings changes it later.
+  it('Onboarding keeps no currency list of its own', () => {
+    expect(onboardingSource).not.toMatch(/<option value="(USD|GHS|NGN|KES|EUR|GBP|INR|CAD|AUD|JPY)"/);
   });
 });
 
