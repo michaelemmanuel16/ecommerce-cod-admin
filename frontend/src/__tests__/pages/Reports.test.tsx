@@ -329,7 +329,9 @@ describe('Team tab (F-1054)', () => {
       ['Nana Kyei', '170', '58', '58%', '26%13 of 50', '41 min', '9%', 'GH₵300', '26%13 of 50', '34'],
       ['All call reps', '2,310', '1,026', '71%', '48%376 of 778', '9 min', '20%', 'GH₵8,600', '52%376 of 723', '540'],
     ]);
-    expect(within(table).getByText('AI agent')).toBeInTheDocument();
+    // one header per body cell, so the columns line up
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(bodyRows(table)[0].length);
+    expect(within(table).getAllByText('AI agent')).toHaveLength(1);
     expect(within(table).getAllByText('Human')).toHaveLength(2);
     expect(screen.getByText('301 declined')).toBeInTheDocument();
   });

@@ -126,6 +126,10 @@ export function TeamTab({ report, delivery, ctl, deliveryCtl }: { report: TeamRe
                         <th scope="col">Rep</th><th scope="col" className="r">Calls</th><th scope="col" className="r">Confirmed</th>
                         <th scope="col" className="r">Confirmation rate</th>
                         <th scope="col" className="r">Delivered from confirmed<small>of closed</small></th>
+                        <th scope="col" className="r">Time to first call<small>median</small></th>
+                        <th scope="col" className="r">Upsell rate</th>
+                        <th scope="col" className="r">Extra value<small>on delivered</small></th>
+                        <th scope="col" className="r">Target hit<small>delivered of target</small></th>
                         <th scope="col" className="r">Not reachable</th>
                       </tr>
                     </thead>
