@@ -2,7 +2,8 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
-import { Requester } from '../utils/authUtils';
+import { isManagerUp, Requester } from '../utils/authUtils';
+import { fullName } from '../utils/nameUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
 import * as Money from '../utils/money';
@@ -63,10 +64,7 @@ interface CustomerFilters {
   sortOrder?: 'asc' | 'desc';
 }
 
-const isAdminRole = (requester?: Requester) =>
-  !requester || requester.role === 'super_admin' || requester.role === 'admin' || requester.role === 'manager';
-
-const fullName = (c: { firstName: string; lastName: string }) => `${c.firstName} ${c.lastName}`.trim();
+const isAdminRole = (requester?: Requester) => !requester || isManagerUp(requester);
 
 export class CustomerService {
   /**

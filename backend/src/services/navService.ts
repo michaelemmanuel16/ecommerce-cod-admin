@@ -1,7 +1,7 @@
 import { UserRole } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { getEffectivePermissions } from '../middleware/auth';
-import { Requester } from '../utils/authUtils';
+import { orderScope, Requester } from '../utils/authUtils';
 
 /** M3-T07: what the app shell needs per user: counts for the pills, menu keys, home route, role names (F-101, F-102, F-104). */
 
@@ -85,12 +85,12 @@ async function roleList(userId: number, role: UserRole): Promise<Array<{ id: num
 class NavService {
   /** Everything /api/auth/me adds for the shell. */
   async getShell(userId: number, role: UserRole) {
-    const permissions = await getEffectivePermissions(role);
+    const [permissions, roles] = await Promise.all([getEffectivePermissions(role), roleList(userId, role)]);
     return {
       permissions,
       homeRoute: homeRouteFor(role),
       menu: menuKeys(role, permissions),
-      roles: await roleList(userId, role),
+      roles,
     };
   }
 
@@ -103,14 +103,10 @@ class NavService {
     const permissions = await getEffectivePermissions(user.role);
     const has = hasIn(user.role, permissions);
 
-    const orderScope = user.role === 'sales_rep' ? { customerRepId: user.id }
-      : user.role === 'delivery_agent' ? { deliveryAgentId: user.id }
-      : {};
-
     const [inbox, ordersPending, financeOpen] = await Promise.all([
       prisma.notification.count({ where: { userId: user.id, isRead: false } }),
       has('orders', 'view')
-        ? prisma.order.count({ where: { status: 'pending_confirmation', deletedAt: null, ...orderScope } })
+        ? prisma.order.count({ where: { status: 'pending_confirmation', deletedAt: null, ...orderScope(user) } })
         : 0,
       has('financial', 'view') ? prisma.finding.count({ where: { status: 'open' } }) : 0,
     ]);
