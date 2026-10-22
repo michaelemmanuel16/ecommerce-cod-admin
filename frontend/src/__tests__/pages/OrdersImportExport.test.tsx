@@ -27,7 +27,6 @@ vi.mock('../../services/socket', () => ({ getSocket: () => null }));
 vi.mock('../../services/products.service', () => ({ productsService: { getProducts: () => Promise.resolve([]) } }));
 vi.mock('../../services/delivery-agents.service', () => ({ deliveryAgentsService: { getDeliveryAgents: () => Promise.resolve([]) } }));
 vi.mock('../../services/customer-reps.service', () => ({ customerRepsService: { getCustomerReps: () => Promise.resolve([]) } }));
-vi.mock('../../components/forms/OrderForm', () => ({ OrderForm: () => null }));
 
 function Where() {
   const loc = useLocation();

@@ -4,7 +4,6 @@ import { Plus, Upload } from 'lucide-react';
 import type { OrderListRow } from '../services/orders.service';
 import { useV2Page } from '../components/shell/useV2Page';
 import { Button, EmptyState, Pagination, Skeleton, Table, Tabs, useToast } from '../components/ui-v2';
-import { OrderForm } from '../components/forms/OrderForm';
 import { usePermissions } from '../hooks/usePermissions';
 import { buildColumns, type SortField } from './orders/columns';
 import { ColumnsMenu } from './orders/ColumnsMenu';
@@ -14,6 +13,7 @@ import { BulkBar } from './orders/BulkBar';
 import { ExportMenu } from './orders/ExportMenu';
 import { ImportModal } from './orders/ImportModal';
 import { RowAssignItems } from './orders/AssignItems';
+import { NewOrderSheet } from './orders/NewOrderSheet';
 import { RowStatus } from './orders/RowStatus';
 import { useOrderActions, type FocusSet } from './orders/useOrderActions';
 import { CLOSED, DELETABLE, orderNumber, tabCount, visibleTabs, type StatusTabId } from './orders/model';
@@ -49,6 +49,9 @@ export function Orders({ onOpen }: OrdersProps) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [importOpen, setImportOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  // `/orders?new=1&customerId=<id>` opens the New order sheet for that customer (the customer page links here)
+  const linkedCustomer = Number(search.get('customerId')) || null;
+  const sheetOpen = formOpen || search.get('new') === '1';
   const [assignFor, setAssignFor] = useState<{ row: OrderListRow; anchor: HTMLElement } | null>(null);
   const [focus, setFocus] = useState<FocusSet | null>(null);
 
@@ -72,6 +75,18 @@ export function Orders({ onOpen }: OrdersProps) {
   const selectedRows = useMemo(() => list.rows.filter((r) => selected.has(r.id)), [list.rows, selected]);
   const actions = useOrderActions({ setSelected, refetch: list.refetch, setFocus });
   const shownRows = focus ? list.rows.filter((r) => focus.ids.includes(r.id)) : list.rows;
+
+  const closeSheet = () => {
+    setFormOpen(false);
+    if (search.has('new') || search.has('customerId')) {
+      setSearch((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('new');
+        next.delete('customerId');
+        return next;
+      }, { replace: true });
+    }
+  };
 
   const open = (id: number) => (onOpen ? onOpen(id) : navigate(`/orders/${id}`));
 
@@ -239,7 +254,15 @@ export function Orders({ onOpen }: OrdersProps) {
         onImported={() => void list.refetch()}
         onShow={(ids) => go({ ...DEFAULT_VIEW, ids: ids.slice(0, MAX_IDS) })}
       />
-      <OrderForm isOpen={formOpen} onClose={() => setFormOpen(false)} order={null} onSuccess={() => void list.refetch()} />
+      <NewOrderSheet
+        open={sheetOpen}
+        onClose={closeSheet}
+        onCreated={() => void list.refetch()}
+        customerId={linkedCustomer}
+        canAssign={canAssign}
+        reps={options.reps}
+        agents={options.agents}
+      />
     </section>
   );
 }

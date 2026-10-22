@@ -219,6 +219,13 @@ export const ordersService = {
     return transformOrder(response.data.order || response.data);
   },
 
+  /** Creates a manual order (F-317) and returns the number to show in the toast. */
+  async createManualOrder(body: ManualOrderBody): Promise<{ id: number; orderNumber: string }> {
+    const response = await apiClient.post('/api/orders', body);
+    const order = response.data.order || response.data;
+    return { id: order.id, orderNumber: order.orderNumber };
+  },
+
   async updateOrder(id: number, order: Partial<Order>): Promise<Order> {
     console.log('[ordersService.updateOrder] Starting - ID:', id, 'Data:', order);
     console.log('[ordersService.updateOrder] apiClient:', apiClient);
@@ -351,3 +358,22 @@ export const ordersService = {
     return response.data;
   },
 };
+
+/** The body of `POST /api/orders` for a manual order (F-317). A status is never sent: the order starts at pending_confirmation. */
+export interface ManualOrderBody {
+  customerName: string;
+  customerPhone: string;
+  alternatePhone?: string;
+  customerEmail?: string;
+  deliveryAddress: string;
+  deliveryState: string;
+  deliveryArea: string;
+  orderItems: Array<{ productId: number; quantity: number; unitPrice: number }>;
+  subtotal: number;
+  discount: number;
+  totalAmount: number;
+  notes?: string;
+  customerConfirmed: boolean;
+  customerRepId?: number;
+  deliveryAgentId?: number;
+}
