@@ -26,7 +26,9 @@ export interface NavItem {
   oldPageFor?: (role: string) => boolean;
 }
 
-const MANAGER_UP = ['super_admin', 'admin', 'manager'];
+/** Owner, admin and manager: the roles that run the business. Same set as `usePermissions().isManager`. */
+export const MANAGER_UP = ['super_admin', 'admin', 'manager'];
+export const isManagerUp = (role: string): boolean => MANAGER_UP.includes(role);
 
 export interface NavGroup {
   label?: string;
@@ -76,7 +78,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'leaderboard', label: 'Leaderboard', icon: Trophy, to: null },
       { key: 'staff', label: 'Staff & roles', icon: UserCog, to: null },
       // Customer reps page: replaced by Staff & roles (M6). Old Sidebar: manager and above.
-      { key: 'customerReps', label: 'Customer reps', icon: Phone, to: '/customer-reps', oldPageFor: (r) => MANAGER_UP.includes(r) },
+      { key: 'customerReps', label: 'Customer reps', icon: Phone, to: '/customer-reps', oldPageFor: isManagerUp },
     ],
   },
   {

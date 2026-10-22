@@ -8,7 +8,7 @@ import { Loading } from './components/ui/Loading';
 import { ToastProvider } from './components/ui-v2';
 import { UpdatePrompt } from './components/pwa/UpdatePrompt';
 import { AccessGate } from './components/shell/AccessGate';
-import { canOpenPath } from './components/shell/navModel';
+import { canOpenPath, isManagerUp } from './components/shell/navModel';
 import { useConfigStore } from './stores/configStore';
 import { isPlatformDomain, platformLoginPath } from './utils/platformDomain';
 import { SaasRoute } from './components/auth/SaasRoute';
@@ -114,7 +114,6 @@ const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 // Finance clerk and stock keeper never get here: AccessGate sends "/" to their home. Call reps and delivery agents keep the
 // old per-role dashboard (DynamicDashboard with salesRepConfig / deliveryAgentConfig) until the rep app (M7) and the agent
 // app (M10) ship; the plan never leaves them on a placeholder.
-const OWNER_DASHBOARD_ROLES = ['super_admin', 'admin', 'manager'];
 
 // Platform admins have no tenant store — land them on the platform tree instead of
 // the tenant dashboard. On the platform subdomain this never fires (separate router);
@@ -122,14 +121,14 @@ const OWNER_DASHBOARD_ROLES = ['super_admin', 'admin', 'manager'];
 const DashboardIndex: React.FC = () => {
   const { user } = useAuthStore();
   if (user?.isPlatformAdmin) return <Navigate to="/platform" replace />;
-  if (user && OWNER_DASHBOARD_ROLES.includes(user.role)) return <Dashboard />;
+  if (user && isManagerUp(user.role)) return <Dashboard />;
   return <DynamicDashboard />;
 };
 
 // "/m" is the delivery agent's mobile home. Owner roles that open it by hand go to their Dashboard.
 const MobileIndex: React.FC = () => {
   const { user } = useAuthStore();
-  if (user && OWNER_DASHBOARD_ROLES.includes(user.role)) return <Navigate to="/" replace />;
+  if (user && isManagerUp(user.role)) return <Navigate to="/" replace />;
   return <DynamicDashboard />;
 };
 

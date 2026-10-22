@@ -8,6 +8,7 @@ import { customersService, type CustomerRow } from '../../services/customers.ser
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
+import { isManagerUp } from '../../components/shell/navModel';
 import { customerName, phoneProblem } from './model';
 import { formatPhoneLocal } from '../../utils/format';
 
@@ -60,9 +61,6 @@ interface Clash {
   name?: string;
   archived: boolean;
 }
-
-/** The roles that may restore a deleted customer (customerService isAdminRole). */
-const CAN_REACTIVATE = ['super_admin', 'admin', 'manager'];
 
 /** Add and edit customer (F-355). Look = the #av modal of docs/mockups/v2/customers.html, with all the PRD fields. */
 export function CustomerModal({ open, onClose, customer, onSaved }: CustomerModalProps) {
@@ -179,7 +177,7 @@ export function CustomerModal({ open, onClose, customer, onSaved }: CustomerModa
           {clash && (
             <p className="dup">
               {clash.id !== undefined && <Link to={`/customers/${clash.id}`} onClick={onClose}>Open {clash.name ?? 'this customer'}</Link>}
-              {clash.archived && role && CAN_REACTIVATE.includes(role) && (
+              {clash.archived && role && isManagerUp(role) && (
                 <Button size="mini" variant="primary" disabled={saving} onClick={() => void save(true)}>
                   Reactivate
                 </Button>
