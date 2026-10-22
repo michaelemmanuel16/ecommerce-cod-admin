@@ -76,7 +76,7 @@ export function useOrderActions({ setSelected, refetch, setFocus }: Deps) {
       }
       const result = await ordersService.bulkStatus({ orderIds: p.rows.map((r) => r.id), status: target, ...extras });
       const ok = result.succeeded.length;
-      report(result, `Changed ${orders(ok)} to ${label}`, `${ok.toLocaleString('en-GB')} moved. ${result.failed.length.toLocaleString('en-GB')} could not move`);
+      report(result, `Changed ${orders(ok)} to ${label}`, `${orders(ok)} moved to ${label}. ${result.failed.length.toLocaleString('en-GB')} could not move`);
     } catch (e) {
       say(whyNot(e, 'The status could not be changed.'));
     }

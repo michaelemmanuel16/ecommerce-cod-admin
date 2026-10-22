@@ -189,7 +189,7 @@ describe('Orders actions: bulk bar (M3-T44, F-313 to F-315)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Change status' }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Confirmed' }));
     await waitFor(() => expect(svc.bulkStatus).toHaveBeenCalledWith({ orderIds: twenty.map((r) => r.id), status: 'confirmed' }));
-    await waitFor(() => expect(toast()).toHaveTextContent('18 moved. 2 could not move'));
+    await waitFor(() => expect(toast()).toHaveTextContent('18 orders moved to Confirmed. 2 could not move'));
     expect(screen.getByText('2 selected')).toBeInTheDocument();
     expect(screen.getByLabelText('Select order #518')).toBeChecked();
     expect(screen.getByLabelText('Select order #500')).not.toBeChecked();
