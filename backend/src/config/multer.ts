@@ -89,3 +89,11 @@ export const handleUploadErrors = (err: any, _req: any, res: any, next: any) => 
   // Pass other errors to error handler
   next(err);
 };
+
+// Import upload (F-319): a file over the 10 MB limit is HTTP 413
+export const handleImportUploadErrors = (err: any, req: any, res: any, next: any) => {
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ message: 'File too large. The limit is 10 MB' });
+  }
+  return handleUploadErrors(err, req, res, next);
+};

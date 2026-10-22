@@ -375,7 +375,7 @@ describe('M2-T17 triggers come from the state machine', () => {
     let seq = 0;
     const upload = (runWorkflows?: string) => {
       const phone = `+23325${String(SUFFIX).slice(-5)}${String(seq++).padStart(2, '0')}1`;
-      const csv = `Phone,Customer Name,Address,Total Amount,Status\n${phone},Up Load,${seq} Upload Road Accra,40,pending_confirmation\n`;
+      const csv = `Phone,Customer Name,Address,Region,Product,Quantity,Price,Status\n${phone},Up Load,${seq} Upload Road Accra,Ashanti,WTS Product,1,40,pending_confirmation\n`;
       const req = request(app).post('/api/orders/upload').set(auth()).attach('file', Buffer.from(csv), 'orders.csv');
       return runWorkflows === undefined ? req : req.field('runWorkflows', runWorkflows);
     };

@@ -13,7 +13,6 @@ import {
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
 import { checkResourceOwnership, Requester } from '../utils/authUtils';
 import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
-import FinancialSyncService from './financialSyncService';
 import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
 import assignmentService from './assignmentService';
 import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
@@ -26,6 +25,7 @@ import orderFlagService, { OrderFlagCode } from './orderFlagService';
 import { classifyQuery, nameMatch } from './searchService';
 import { kpiWindow } from './kpi/dates';
 import { deliveredRevenue, revenueScope } from './kpi/revenue';
+import { duplicateCandidatesWhere, IMPORT_BLOCKED_STATUSES, isDuplicateOf, isForwardStatus } from './orderImportService';
 
 
 
@@ -73,6 +73,8 @@ export interface BulkImportOrderData {
   deliveryArea: string;
   notes?: string;
   productName?: string;
+  /** Set by the import check (F-319): the product the file row matched. Wins over `productName`. */
+  productId?: number;
   quantity?: number;
   unitPrice?: Money.MoneyInput;
   status?: OrderStatus;
@@ -81,6 +83,8 @@ export interface BulkImportOrderData {
   assignedAgentName?: string;
   // Order date from CSV
   orderDate?: Date;
+  /** Row number in the uploaded file, for the problems file. */
+  sourceRow?: number;
 }
 
 export const ORDER_SORT_FIELDS = ['id', 'customer', 'totalAmount', 'createdAt'] as const;
@@ -596,7 +600,9 @@ export class OrderService {
       success: 0,
       failed: 0,
       duplicates: 0,
-      errors: [] as Array<{ order: BulkImportOrderData; error: string }>
+      errors: [] as Array<{ order: BulkImportOrderData; error: string }>,
+      /** Orders created or moved forward, for the "Show the imported orders" link (F-319). */
+      orderIds: [] as number[]
     };
 
     // Track duplicates WITHIN the current import to catch them before they hit the DB
@@ -637,48 +643,20 @@ export class OrderService {
             continue;
           }
 
-          // 2. Check for duplicates in DB (User's Logic: same phone, address, amount, date)
-          const startOfCurrentDay = new Date(orderDateValue);
-          startOfCurrentDay.setHours(0, 0, 0, 0);
-          const endOfCurrentDay = new Date(orderDateValue);
-          endOfCurrentDay.setHours(23, 59, 59, 999);
+          if (orderData.status && IMPORT_BLOCKED_STATUSES.includes(orderData.status)) {
+            throw new Error(`Status ${orderData.status} cannot be imported`);
+          }
 
-          // Use prismaBase to include soft-deleted orders in duplicate check
+          // 2. Check for duplicates in DB: same phone, address and amount within 24 hours (F-319)
+          // Use prismaBase to include soft-deleted orders in duplicate check; the where holds the tenant
           const existingOrders = await prismaBase.order.findMany({
-            where: {
-              // Matches the number in the normalized or any old stored format.
-              customer: { phoneNumber: { in: phoneLookupVariants(orderData.customerPhone) } },
-              createdAt: {
-                gte: startOfCurrentDay,
-                lte: endOfCurrentDay
-              },
-              totalAmount: orderData.totalAmount
-            },
-            select: { id: true, deliveryAddress: true, deletedAt: true, status: true, tenantId: true },
+            where: duplicateCandidatesWhere(orderData, orderDateValue, orderDateValue),
+            select: { id: true, deliveryAddress: true, deletedAt: true, status: true, totalAmount: true, createdAt: true },
             orderBy: { createdAt: 'desc' },
-            take: 20
+            take: 50
           });
 
-          // Status progression order — higher index = further along
-          const STATUS_ORDER: OrderStatus[] = [
-            'pending_confirmation',
-            'confirmed',
-            'preparing',
-            'ready_for_pickup',
-            'out_for_delivery',
-            'delivered',
-          ];
-          const isForwardStatus = (current: OrderStatus, next: OrderStatus) => {
-            const ci = STATUS_ORDER.indexOf(current);
-            const ni = STATUS_ORDER.indexOf(next);
-            return ci !== -1 && ni !== -1 && ni > ci;
-          };
-
-          const matchingExisting = existingOrders.find(existing => {
-            const sameAddr = normalize(existing.deliveryAddress) === normalize(orderData.deliveryAddress);
-            const isRelevantRecord = !existing.deletedAt || (Date.now() - new Date(existing.deletedAt).getTime() < 5 * 60 * 1000);
-            return sameAddr && isRelevantRecord;
-          });
+          const matchingExisting = existingOrders.find(existing => isDuplicateOf(existing, orderData, orderDateValue));
 
           if (matchingExisting) {
             const newStatus = (orderData.status || 'pending_confirmation') as OrderStatus;
@@ -697,6 +675,7 @@ export class OrderService {
                 to: newStatus,
               });
               results.success++;
+              results.orderIds.push(matchingExisting.id);
             } else {
               // Same or earlier status — skip
               logger.warn('🚫 CANARY: DUPLICATE FOUND IN DB — status not advanced, skipping', {
@@ -710,7 +689,7 @@ export class OrderService {
             continue;
           }
 
-          const createdOrder = await prisma.$transaction(async (tx) => {
+          const { order: createdOrder, moved } = await prisma.$transaction(async (tx) => {
             // 3. Find or create customer by phone (tenant-scoped via Prisma extension).
             const customerPhone = normalizePhoneForStorage(orderData.customerPhone);
             const alternatePhone = normalizePhoneForStorage(orderData.customerAlternatePhone) || undefined;
@@ -745,9 +724,9 @@ export class OrderService {
 
             // 4. Handle product lookup
             let orderItemsData: any[] = [];
-            if (orderData.productName) {
+            if (orderData.productId || orderData.productName) {
               const product = await tx.product.findFirst({
-                where: {
+                where: orderData.productId ? { id: orderData.productId } : {
                   OR: [
                     { name: { contains: orderData.productName, mode: 'insensitive' } },
                     { sku: { contains: orderData.productName, mode: 'insensitive' } }
@@ -783,8 +762,8 @@ export class OrderService {
                 deliveryState: orderData.deliveryState,
                 deliveryArea: orderData.deliveryArea,
                 notes: orderData.notes,
-                status: orderData.status || 'pending_confirmation',
-                deliveryDate: orderData.status === 'delivered' ? orderDateValue : null,
+                // Created at the start; the machine moves it to the file's status below (F-301, F-319)
+                status: 'pending_confirmation',
                 source: 'bulk_import',
                 createdById,
                 customerRepId,
@@ -794,7 +773,7 @@ export class OrderService {
                 orderHistory: {
                   create: {
                     tenantId: resolveTenantId(),
-                    status: orderData.status || 'pending_confirmation',
+                    status: 'pending_confirmation',
                     notes: 'Order imported via bulk CSV',
                     changedBy: createdById
                   }
@@ -808,37 +787,32 @@ export class OrderService {
               }
             });
 
-            // 6. Auto-sync financial data if order is imported as delivered
-            if (newOrder.status === 'delivered' && Money.isNonZero(newOrder.codAmount)) {
-              try {
-                const syncResult = await FinancialSyncService.syncOrderFinancialData(
-                  tx as any,
-                  newOrder as any,
-                  createdById || undefined
-                );
-
-                if (syncResult.transaction || syncResult.journalEntry) {
-                  logger.info(`Financial data auto - synced for imported order ${newOrder.id} `, {
-                    transactionId: syncResult.transaction?.id,
-                    journalEntryNumber: syncResult.journalEntry?.entryNumber
-                  });
-                }
-              } catch (syncError: any) {
-                // Log error but don't fail the import
-                logger.error(`Failed to auto - sync financial data for imported order ${newOrder.id}: `, syncError);
-                // Continue - order is still created
-              }
-            }
-
-            return newOrder;
+            // 6. A history status runs through the machine in the same transaction: stock, revenue (once), dates.
+            // The importer is an integration actor, so the move needs no path check (F-301).
+            const target = orderData.status || 'pending_confirmation';
+            if (target === 'pending_confirmation') return { order: newOrder, moved: undefined };
+            const moved = await transitionOrder(newOrder.id, target, { kind: 'integration', userId: createdById }, {
+              note: 'Imported with this status',
+              deliveryDate: target === 'delivered' ? orderDateValue : undefined,
+              imported: true,
+              runWorkflows,
+              tx,
+            });
+            const current = await tx.order.findUniqueOrThrow({
+              where: { id: newOrder.id },
+              include: { orderItems: { include: { product: true } }, customer: true, deliveryAgent: true, customerRep: true },
+            });
+            return { order: current, moved };
           }, {
             maxWait: 10000,  // Wait max 10s to get transaction slot
             timeout: 15000   // Transaction must complete within 15s
           });
 
           // Success - track it and emit events
+          moved?.afterCommit?.();
           processedInImport.add(orderFingerprint);
           results.success++;
+          results.orderIds.push(createdOrder.id);
 
           if (!silent) {
             emitOrderCreated(getSocketInstance() as any, createdOrder);
