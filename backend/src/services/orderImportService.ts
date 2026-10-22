@@ -11,7 +11,7 @@ import { getRegionsForCountry } from '../utils/regions';
 import { currencyOfTenant } from '../utils/currency';
 import { resolveTenantId } from '../utils/tenantContext';
 import { withSoftDeleted } from '../utils/prismaExtensions';
-import { FORMULA_START } from './exportStream';
+import { csvCell } from './exportStream';
 import * as Money from '../utils/money';
 import type { BulkImportOrderData } from './orderService';
 
@@ -475,15 +475,10 @@ export async function prepareImport(file: { originalname: string; buffer: Buffer
 // Responses
 // ---------------------------------------------------------------------------------------------------------
 
-const csvCell = (value: string) => {
-  const text = FORMULA_START.test(value) ? `'${value}` : value;
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-};
-
 /** The rows that need a fix, with the file's own columns and a "problem" column (F-319). */
 export function problemsCsv(headers: string[], rows: Array<{ cells: Record<string, string>; problems: string[] }>): string {
-  const lines = [[...headers, 'problem'].map(csvCell).join(',')];
-  for (const r of rows) lines.push([...headers.map((h) => r.cells[h] ?? ''), r.problems.join('; ')].map(csvCell).join(','));
+  const lines = [[...headers, 'problem'].map((c) => csvCell(c, false)).join(',')];
+  for (const r of rows) lines.push([...headers.map((h) => r.cells[h] ?? ''), r.problems.join('; ')].map((c) => csvCell(c, false)).join(','));
   return `﻿${lines.join('\r\n')}\r\n`;
 }
 
