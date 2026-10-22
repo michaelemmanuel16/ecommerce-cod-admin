@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import type { Column } from '../../components/ui-v2';
 import type { OrderListRow } from '../../services/orders.service';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, formatPhoneLocal } from '../../utils/format';
 import { AVATAR_TONES, customerName, initials, orderNumber, personName, productSummary, shortDate } from './model';
 import { AssignButton, ResizeHandle } from './ColumnParts';
 import { COLUMN_LABELS } from './labels';
@@ -96,13 +96,13 @@ export function buildColumns(ctx: ColumnContext): Column<OrderListRow>[] {
             <div className={`a ${AVATAR_TONES[r.customer.id % AVATAR_TONES.length]}`} aria-hidden="true">{initials(name)}</div>
             <div>
               {name}
-              <small>{r.customer.phoneNumber}</small>
+              <small>{formatPhoneLocal(r.customer.phoneNumber)}</small>
             </div>
           </div>
         );
       },
     }],
-    ['altPhone', { key: 'altPhone', header: head('altPhone'), render: (r) => r.customer.alternatePhone || <span className="mut">—</span> }],
+    ['altPhone', { key: 'altPhone', header: head('altPhone'), render: (r) => (r.customer.alternatePhone ? formatPhoneLocal(r.customer.alternatePhone) : <span className="mut">—</span>) }],
     ['product', { key: 'product', header: head('product'), render: (r) => productSummary(r) }],
     ['status', { key: 'status', header: head('status'), render: (r) => ctx.renderStatus?.(r) ?? <StatusCell row={r} /> }],
     ['rep', {

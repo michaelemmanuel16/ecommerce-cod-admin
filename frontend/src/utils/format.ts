@@ -79,6 +79,15 @@ export const formatPhone = (phone: string): string => {
   return phone;
 };
 
+// Local display for a stored E.164 phone (F-362), same rule as backend formatPhoneLocal.
+export const formatPhoneLocal = (e164: string): string => {
+  const gh = /^\+233(\d{2})(\d{3})(\d{4})$/.exec(e164);
+  if (gh) return `0${gh[1]} ${gh[2]} ${gh[3]}`;
+  const ng = /^\+234(\d{3})(\d{3})(\d{4})$/.exec(e164);
+  if (ng) return `0${ng[1]} ${ng[2]} ${ng[3]}`;
+  return e164;
+};
+
 export const formatPercentage = (value: number, decimals: number = 1): string => {
   return `${value.toFixed(decimals)}%`;
 };
