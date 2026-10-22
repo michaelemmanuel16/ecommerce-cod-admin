@@ -182,7 +182,7 @@ test.describe('T44 actions', () => {
     for (const id of [24118, 24113, 24112]) await page.getByLabel(`Select order #${id}`).check();
     await page.getByRole('button', { name: 'Change status', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Confirmed' }).click();
-    await expect(page.getByRole('status')).toContainText('1 moved. 2 could not move');
+    await expect(page.getByRole('status')).toContainText('1 order moved to Confirmed. 2 could not move');
     await expect(page.getByText('2 selected')).toBeVisible();
     await expect(page.getByLabel('Select order #24113')).toBeChecked();
     await expect(page.getByLabel('Select order #24118')).not.toBeChecked();

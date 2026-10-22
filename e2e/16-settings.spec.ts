@@ -71,7 +71,7 @@ test.describe('T64 security', () => {
     });
     await a.goto('/settings?tab=security');
     await a.getByLabel('Current password').fill(PASSWORD);
-    await a.getByLabel('New password').fill('Newer#Pass9');
+    await a.getByLabel('New password', { exact: true }).fill('Newer#Pass9');
     await a.getByLabel('Repeat new password').fill('Newer#Pass9');
     await a.getByRole('button', { name: 'Change password' }).click();
     await expect(a.getByText('Password changed. Other devices are signed out.')).toBeVisible();
@@ -82,8 +82,15 @@ test.describe('T64 security', () => {
     await a.getByRole('button', { name: 'Sign out everywhere else' }).click();
     await expect(a.getByText(/Signed out of \d+ other place/)).toBeVisible();
 
-    // The second browser is signed out at its next refresh or call
+    // The second browser is signed out at its next refresh. Its access token lives 15 minutes, so let it expire first
     await b.goto('/settings?tab=security');
+    await b.evaluate(() => {
+      const raw = localStorage.getItem('auth-storage');
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      saved.state.accessToken = 'expired';
+      localStorage.setItem('auth-storage', JSON.stringify(saved));
+    });
     await b.reload();
     await expect(b).toHaveURL(/\/login/);
     await first.close();
@@ -107,14 +114,15 @@ test.describe('T64 security', () => {
 });
 
 test.describe('T66 old URLs and handover (F-1215, F-1237)', () => {
-  test('/connections opens Integrations and keeps section and oauth parameters', async ({ page }) => {
+  test('/connections opens Integrations and keeps the section; the WhatsApp card uses up oauth', async ({ page }) => {
     await signIn(page, 'admin@codadmin.com');
     await page.goto('/connections?section=whatsapp&oauth=success');
     await expect(page).toHaveURL(/\/settings\?/);
     const url = new URL(page.url());
     expect(url.searchParams.get('tab')).toBe('integrations');
     expect(url.searchParams.get('section')).toBe('whatsapp');
-    expect(url.searchParams.get('oauth')).toBe('success');
+    // The WhatsApp card consumes ?oauth= on purpose: it shows the toast and removes the parameter
+    await expect(page.getByText('WhatsApp OAuth authorized!')).toBeVisible();
   });
 
   test('/settings?tab=integrations and ?oauth= stay on Integrations', async ({ page }) => {

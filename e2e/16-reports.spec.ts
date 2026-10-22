@@ -103,7 +103,7 @@ test.describe('T60 shell and Overview', () => {
 });
 
 test.describe('T61 Sales and Delivery', () => {
-  test('Sales: values equal the API, the location table is City/Town and Region is not used', async ({ page }) => {
+  test('Sales: values equal the API, the location table is State and Region is not used', async ({ page }) => {
     await serve(page);
     await openReports(page, 'sales');
     const api = reportsFixture.sales();
@@ -112,10 +112,10 @@ test.describe('T61 Sales and Delivery', () => {
     await expect(tiles.getByText('GH₵245', { exact: true })).toBeVisible();
     await expect(tiles.getByText('GH₵68.6k', { exact: true })).toBeVisible();
     await expect(tiles.getByText('GH₵23.4k', { exact: true })).toBeVisible();
-    const table = page.getByRole('table', { name: 'Revenue by City/Town' });
-    await expect(table.getByRole('columnheader', { name: 'City/Town' })).toBeVisible();
-    for (const row of api.byCity.rows) {
-      await expect(table.getByRole('cell', { name: row.city, exact: true })).toBeVisible();
+    const table = page.getByRole('table', { name: 'Revenue by State' });
+    await expect(table.getByRole('columnheader', { name: 'State' })).toBeVisible();
+    for (const row of api.byState.rows) {
+      await expect(table.getByRole('cell', { name: row.state, exact: true })).toBeVisible();
     }
     await expect(table.locator('tr.tot')).toContainText('376');
     await expect(page.getByText(/region/i)).toHaveCount(0);
@@ -142,7 +142,8 @@ test.describe('T61 Sales and Delivery', () => {
     await expect(tiles.getByText('148', { exact: true })).toBeVisible();
     await expect(tiles.getByText('9.2 days', { exact: true })).toBeVisible();
 
-    const reasons = await page.locator('.bar-row').allInnerTexts();
+    const reasonsCard = page.locator('.card').filter({ has: page.getByRole('heading', { name: 'Failed deliveries by reason' }) });
+    const reasons = await reasonsCard.locator('.bar-row').allInnerTexts();
     expect(reasons.map((r) => r.replace(/\s+/g, ' ').trim())).toEqual(['Not reachable 41% 165', 'Refused 24% 96', 'Wrong address 21% 84', 'Rescheduled 14% 57']);
 
     const partners = page.getByRole('table', { name: 'Delivery partners' });
