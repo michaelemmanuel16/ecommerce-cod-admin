@@ -3,7 +3,7 @@ import { State } from 'country-state-city';
 import { getRegionsForCountry, SUPPORTED_CURRENCIES, getCurrencyOptionLabel, getCurrencySymbol } from '../countries';
 import { ORDER_STATUS_LABELS } from '../orderStatus';
 import { ORDER_STATUS_CONFIG } from '../constants';
-import settingsSource from '../../pages/Settings.tsx?raw';
+import settingsSource from '../../components/settings/LegacyBusinessPanel.tsx?raw';
 import onboardingSource from '../../pages/Onboarding.tsx?raw';
 
 // M1-T03. The GH and NG counts are the same as backend/src/__tests__/unit/regions.test.ts. If the two
@@ -37,7 +37,7 @@ describe('currency list', () => {
 
   it('Settings reads the one list and keeps no list of its own', () => {
     expect(settingsSource).toContain('SUPPORTED_CURRENCIES.map');
-    expect(settingsSource).toMatch(/import \{[^}]*SUPPORTED_CURRENCIES[^}]*\} from '..\/utils\/countries'/);
+    expect(settingsSource).toMatch(/import \{[^}]*SUPPORTED_CURRENCIES[^}]*\} from '..\/..\/utils\/countries'/);
     expect(settingsSource).not.toMatch(/<option value="(USD|GHS|NGN|KES|EUR|GBP|INR|CAD|AUD|JPY)"/);
   });
 
