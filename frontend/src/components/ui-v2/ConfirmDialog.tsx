@@ -14,6 +14,8 @@ interface ConfirmDialogProps {
   noun: string;
   /** Plural form; defaults to noun + "s". */
   plural?: string;
+  /** Replaces the counted title, for one named record ("Delete Abena Owusu?"). */
+  title?: string;
   /** One plain sentence under the title. */
   children?: ReactNode;
 }
@@ -23,7 +25,7 @@ interface ConfirmDialogProps {
  * Look = the confirm dialog in docs/mockups/v2/shell.js (.sx-veil / .sx-modal). Escape and a click on the veil cancel.
  * Focus starts on Cancel so a stray Enter never deletes; it returns to the opener on close.
  */
-export function ConfirmDialog({ open, onClose, onConfirm, action, count, noun, plural, children }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, onClose, onConfirm, action, count, noun, plural, title, children }: ConfirmDialogProps) {
   const ref = useRef<HTMLDivElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   useLayer(open, ref, onClose, cancel);
@@ -34,7 +36,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, action, count, noun, p
     <Portal>
       <div className="sx-veil" onClick={(e) => e.target === e.currentTarget && onClose()}>
         <div ref={ref} className="sx-modal" role="alertdialog" aria-modal="true" aria-label="Confirm" tabIndex={-1}>
-          <h3>{`${action} ${count.toLocaleString('en-GB')} ${what}?`}</h3>
+          <h3>{title ?? `${action} ${count.toLocaleString('en-GB')} ${what}?`}</h3>
           <p>{children ?? 'You cannot undo this.'}</p>
           <div className="sx-act">
             <button ref={cancel} type="button" className="btn" onClick={onClose}>
