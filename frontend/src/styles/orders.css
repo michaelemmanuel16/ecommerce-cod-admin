@@ -80,15 +80,13 @@
 .v2 .tagbtn svg.lucide{width:13px;height:13px;color:var(--ink-3)}
 .v2 .tagbtn:hover svg.lucide,.v2 .tagbtn[aria-expanded="true"] svg.lucide{color:var(--ink)}
 
-/* new: the New order sheet (index.html #sh-new). The mockup's .sec, .fg, .nl and .chk, scoped to the sheet body. */
+/* new: the New order sheet (index.html #sh-new). The mockup's .sec, .fg and .nl, scoped to the sheet body. */
 .v2 .sheet .sec>h4{font-size:12.5px;font-weight:600;color:var(--ink-3);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .v2 .sheet .fg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .v2 .sheet .fg .full{grid-column:1/-1}
 .v2 .sheet .nl{display:grid;grid-template-columns:1fr 70px 90px 34px;gap:8px;align-items:end;margin-bottom:10px}
 .v2 .sheet .nl .fl label{font-size:12px}
 .v2 .sheet .no-line .err{margin:-4px 0 10px}
-.v2 .sheet .chk{display:flex;align-items:center;gap:8px;font-weight:600}
-.v2 .sheet .chk input{width:16px;height:16px;accent-color:var(--pine)}
 .v2 .sheet .no-note{border:1px solid var(--line);border-radius:14px;padding:10px 14px;font-size:13px;color:var(--ink-2)}
 .v2 .sheet .no-note a{color:var(--pine);font-weight:700;text-decoration:underline}
 .v2 .sheet .no-cod{display:block;margin-top:4px;color:var(--warn-ink)}
