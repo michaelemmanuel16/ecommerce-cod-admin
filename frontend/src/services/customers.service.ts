@@ -1,5 +1,6 @@
 import apiClient from './api';
 import { Customer, PaginationMeta } from '../types';
+import { samePhone } from '../pages/orders/newOrder';
 
 export const customersService = {
   async getCustomers(params?: { page?: number; limit?: number; search?: string; area?: string; sortBy?: 'totalOrders' | 'totalSpent'; sortOrder?: 'asc' | 'desc' }): Promise<{ customers: Customer[]; pagination: PaginationMeta }> {
@@ -39,6 +40,29 @@ export const customersService = {
         country: 'US',
         phone: customer.phoneNumber
       } : undefined
+    };
+  },
+
+  /** The customer a typed phone belongs to, if any (F-362). The list search matches every phone format. */
+  async findByPhone(phone: string): Promise<{ id: number; name: string; totalOrders: number; codBlocked: boolean } | null> {
+    const response = await apiClient.get('/api/customers', { params: { search: phone, limit: 10 } });
+    const hit = (response.data.customers || []).find((c: any) => samePhone(c.phoneNumber, phone) || samePhone(c.alternatePhone, phone));
+    if (!hit) return null;
+    return { id: hit.id, name: `${hit.firstName} ${hit.lastName}`.trim(), totalOrders: hit.totalOrders ?? 0, codBlocked: hit.codBlocked === true };
+  },
+
+  /** The fields the New order sheet prefills from a customer (`/orders?new=1&customerId=`). */
+  async getForOrder(id: number) {
+    const response = await apiClient.get(`/api/customers/${id}`);
+    const c = response.data.customer || response.data;
+    return {
+      name: `${c.firstName} ${c.lastName}`.trim(),
+      phone: c.phoneNumber ?? '',
+      alternatePhone: c.alternatePhone ?? '',
+      email: c.email ?? '',
+      address: typeof c.address === 'string' ? c.address : '',
+      region: c.state ?? '',
+      town: c.area ?? '',
     };
   },
 

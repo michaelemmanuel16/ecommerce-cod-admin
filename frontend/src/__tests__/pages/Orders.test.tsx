@@ -28,8 +28,13 @@ vi.mock('../../services/socket', () => ({ getSocket: () => socket }));
 vi.mock('../../services/products.service', () => ({ productsService: { getProducts: () => Promise.resolve([{ id: 1, name: 'Copybook set', isActive: true }, { id: 2, name: 'Refill pens', isActive: true }]) } }));
 vi.mock('../../services/delivery-agents.service', () => ({ deliveryAgentsService: { getDeliveryAgents: () => Promise.resolve([{ id: '5', name: 'Kofi Appiah', isActive: true, isAvailable: true }]) } }));
 vi.mock('../../services/customer-reps.service', () => ({ customerRepsService: { getCustomerReps: () => Promise.resolve([{ id: '2', name: 'Adwoa Darko', isActive: true, isAvailable: true }]) } }));
+vi.mock('../../services/customers.service', () => ({
+  customersService: {
+    findByPhone: () => Promise.resolve(null),
+    getForOrder: () => Promise.resolve({ name: 'Abena Owusu', phone: '+233245550182', alternatePhone: '', email: '', address: '14 Adum Road', region: 'Ashanti', town: 'Adum' }),
+  },
+}));
 vi.mock('../../components/orders/BulkImportModal', () => ({ BulkImportModal: () => null }));
-vi.mock('../../components/forms/OrderForm', () => ({ OrderForm: () => null }));
 
 function Where() {
   const loc = useLocation();
@@ -352,5 +357,24 @@ describe('Orders list: dates and filters (M3-T43, F-311, F-312)', () => {
     expect(screen.getByLabelText('Rows per page')).toHaveValue('50');
     expect(screen.getByRole('button', { name: 'Date range: Custom' })).toBeInTheDocument();
     expect(screen.getByLabelText('From date')).toHaveValue('2026-09-03');
+  });
+});
+
+describe('Orders list: New order sheet link (M3-T45)', () => {
+  it('/orders?new=1&customerId=7 opens the sheet with that customer, and closing removes both params', async () => {
+    renderPage('/orders?new=1&customerId=7');
+    const sheet = await screen.findByRole('dialog', { name: 'New order' });
+    await waitFor(() => expect(within(sheet).getByLabelText('Customer name')).toHaveValue('Abena Owusu'));
+    expect(within(sheet).getByLabelText('Region')).toHaveValue('Ashanti');
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(/^\/orders$/));
+  });
+
+  it('the New order button opens an empty sheet', async () => {
+    useAuthStore.setState({ permissions: { orders: ['view', 'create'] } });
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /New order/ }));
+    const sheet = await screen.findByRole('dialog', { name: 'New order' });
+    expect(within(sheet).getByLabelText('Customer name')).toHaveValue('');
   });
 });
