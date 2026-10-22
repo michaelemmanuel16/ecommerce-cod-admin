@@ -21,14 +21,15 @@ import { AppError } from '../middleware/errorHandler';
 import { invalidRange } from '../utils/kpiRequest';
 import { currencyOfTenant } from '../utils/currency';
 import { OrderStatus } from '@prisma/client';
-import { deliveredAov, deliveredRevenue, deliveredRevenueByArea, deliveredRevenueByDay } from './kpi/revenue';
+import { deliveredAov, deliveredRevenue, deliveredRevenueByDay, deliveredRevenueByState } from './kpi/revenue';
 import { rates, ratePercent } from './kpi/rates';
 import { leadership } from './kpi/leadership';
 import { cashHeldByPartner, cashHeldByPartners, cashReceived, partnerPaysInDays } from './kpi/cash';
 import { confirmedPlacedByDay, ordersPlacedByDay } from './kpi/daily';
 import { partnerRates } from './kpi/partners';
 import { productDeliveredUnits } from './kpi/products';
-import { failureReasons, ordersByStatus, outForDelivery, successByCity, waitingToDispatch } from './kpi/outcomes';
+import { baseState } from '../utils/regions';
+import { failureReasons, ordersByStatus, outForDelivery, successByState, waitingToDispatch } from './kpi/outcomes';
 import { changePercent, rateTag } from './kpi/status';
 import { DAY_MS, addDays, daysInMonth, endOfDay, getStoreTimeZone, localDate, parseYmd, shiftYmd, startOfDay } from './kpi/dates';
 
@@ -371,29 +372,28 @@ export async function salesReport(tenantId: string, r: ReportRange, access: Repo
     };
   });
 
-  const byCity = () => isolate('byCity', tenantId, async () => {
-    const areas = await deliveredRevenueByArea(tenantId, r.from, r.to);
-    // Blank and missing areas are one "Unknown" row
+  const byState = () => isolate('byState', tenantId, async () => {
+    const states = await deliveredRevenueByState(tenantId, r.from, r.to);
+    // Blank and missing states are one "Not set" row; "Greater Accra (Tema)" counts as "Greater Accra" (baseState)
     const merged = new Map<string, { revenue: Money.Money; delivered: number }>();
-    for (const a of areas) {
-      const city = a.area?.trim() || 'Unknown';
-      const m = merged.get(city) ?? { revenue: Money.ZERO, delivered: 0 };
-      merged.set(city, { revenue: Money.add(m.revenue, a.revenue), delivered: m.delivered + a.deliveredOrders });
+    for (const a of states) {
+      const state = baseState(a.state) || 'Not set';
+      const m = merged.get(state) ?? { revenue: Money.ZERO, delivered: 0 };
+      merged.set(state, { revenue: Money.add(m.revenue, a.revenue), delivered: m.delivered + a.deliveredOrders });
     }
     const total = Money.sum([...merged.values()].map((m) => m.revenue));
     const delivered = [...merged.values()].reduce((n, m) => n + m.delivered, 0);
     const rows = [...merged.entries()]
       .sort(([, a], [, b]) => Money.compare(b.revenue, a.revenue))
-      .map(([city, m]) => ({
-        city, delivered: m.delivered, revenue: Money.toApi(m.revenue),
+      .map(([state, m]) => ({
+        state, delivered: m.delivered, revenue: Money.toApi(m.revenue),
         averageOrder: average(m.revenue, m.delivered), sharePercent: sharePercent(Money.toApi(m.revenue), Money.toApi(total)),
       }));
-    // Orders carry a city (delivery area), not a region, so the column is "City" until they do (F-1052).
-    return { label: 'City', rows, total: { delivered, revenue: Money.toApi(total), averageOrder: average(total, delivered) } };
+    return { label: 'State', rows, total: { delivered, revenue: Money.toApi(total), averageOrder: average(total, delivered) } };
   });
 
-  const [t, perDay, product, city] = await Promise.all([tiles(), revenuePerDay(), byProduct(), byCity()]);
-  return { ...head('sales', r, currency), tiles: t, revenuePerDay: perDay, byProduct: product, byCity: city };
+  const [t, perDay, product, state] = await Promise.all([tiles(), revenuePerDay(), byProduct(), byState()]);
+  return { ...head('sales', r, currency), tiles: t, revenuePerDay: perDay, byProduct: product, byState: state };
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -457,21 +457,21 @@ export async function deliveryReport(tenantId: string, r: ReportRange, access: R
     return { total, rows: why.map((x) => ({ ...x, percent: sharePercent(x.count, total) })) };
   });
 
-  const regionSuccess = () => isolate('successByCity', tenantId, async () => {
-    const [cities, t] = await Promise.all([successByCity(tenantId, r.from, r.to), targets()]);
+  const regionSuccess = () => isolate('successByState', tenantId, async () => {
+    const [states, t] = await Promise.all([successByState(tenantId, r.from, r.to), targets()]);
     return {
-      label: 'City',
+      label: 'State',
       target: t.successTarget,
-      rows: cities
+      rows: states
         .map((x) => ({
-          city: x.city, placed: x.placed,
+          state: x.state, placed: x.placed,
           delivered: x.deliverySuccessRate.detail?.delivered ?? 0,
           failed: x.deliverySuccessRate.detail?.failed ?? 0,
           returned: x.deliverySuccessRate.detail?.returned ?? 0,
           closed: x.deliverySuccessRate.detail?.closed ?? 0,
           successRate: x.deliverySuccessRate.value,
         }))
-        .sort((a, b) => b.closed - a.closed || a.city.localeCompare(b.city)),
+        .sort((a, b) => b.closed - a.closed || a.state.localeCompare(b.state)),
     };
   });
 
@@ -513,10 +513,10 @@ export async function deliveryReport(tenantId: string, r: ReportRange, access: R
     };
   });
 
-  const [t, perDay, why, city, waiting, table] = await Promise.all([
+  const [t, perDay, why, state, waiting, table] = await Promise.all([
     tiles(), deliveredPerDay(), reasonsBlock(), regionSuccess(), waitingAndReturns(), partnerTable(),
   ]);
-  return { ...head('delivery', r, currency), tiles: t, deliveredPerDay: perDay, reasons: why, successByCity: city, waitingAndReturns: waiting, partners: table };
+  return { ...head('delivery', r, currency), tiles: t, deliveredPerDay: perDay, reasons: why, successByState: state, waitingAndReturns: waiting, partners: table };
 }
 
 // ---------------------------------------------------------------------------------------------------------

@@ -10,7 +10,7 @@ import { orderNumber, STATUS_TONE } from './model';
 
 interface RowStatusProps {
   row: OrderListRow;
-  /** The person picked a move. `forced`: it is outside the normal flow and needs a written reason. */
+  /** The person picked a move. `forced`: it is outside the normal flow. */
   onPick: (target: OrderStatus, forced: boolean) => void;
 }
 
@@ -71,7 +71,7 @@ export function RowStatus({ row, onPick }: RowStatusProps) {
               {moves.forced.length > 0 && (
                 <>
                   {moves.normal.length > 0 && <hr />}
-                  <p>Outside the normal flow (needs a reason)</p>
+                  <p>Outside the normal flow</p>
                   {moves.forced.map((s) => (
                     <button key={s} type="button" role="menuitem" onClick={() => pick(s, true)}>
                       {ORDER_STATUS_LABELS[s]}

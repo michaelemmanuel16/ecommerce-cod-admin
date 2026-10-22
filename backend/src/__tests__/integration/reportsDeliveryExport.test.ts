@@ -189,11 +189,11 @@ describe('delivery on the fixture (F-1053)', () => {
     expect(tiles.slowestPaysIn).toMatchObject({ partnerId: kofiId, days: 3.5 });
   });
 
-  it('success by city: closed orders add up to 778; waiting and returns: 100 waiting, 48 returned; delivered per day adds up to 376', async () => {
-    const { successByCity, waitingAndReturns, deliveredPerDay } = (await get(adminToken, 'delivery')).body;
-    expect(successByCity.label).toBe('City');
-    expect(successByCity.rows.reduce((n: number, r: any) => n + r.closed, 0)).toBe(778);
-    expect(successByCity.rows.reduce((n: number, r: any) => n + r.delivered, 0)).toBe(376);
+  it('success by state: closed orders add up to 778; waiting and returns: 100 waiting, 48 returned; delivered per day adds up to 376', async () => {
+    const { successByState, waitingAndReturns, deliveredPerDay } = (await get(adminToken, 'delivery')).body;
+    expect(successByState.label).toBe('State');
+    expect(successByState.rows.reduce((n: number, r: any) => n + r.closed, 0)).toBe(778);
+    expect(successByState.rows.reduce((n: number, r: any) => n + r.delivered, 0)).toBe(376);
     expect(waitingAndReturns.waiting.count).toBe(100);
     expect(waitingAndReturns.waiting.oldestDays).toBeGreaterThanOrEqual(0);
     expect(waitingAndReturns.returned.count).toBe(48);
@@ -334,9 +334,9 @@ describe('export files carry the figures of the JSON (F-1057)', () => {
     sheet.ws.eachRow((row) => row.eachCell((cell) => { if (cell.numFmt === '0.00') formatted = true; }));
     expect(formatted).toBe(true);
 
-    const city = section(sheet.sections, 'Revenue by city');
-    expect(city.header[0]).toBe('City');
-    json.byCity.rows.forEach((r: any, i: number) => expect(city.rows[i].slice(0, 3)).toEqual([r.city, r.delivered, Number(r.revenue)]));
+    const state = section(sheet.sections, 'Revenue by state');
+    expect(state.header[0]).toBe('State');
+    json.byState.rows.forEach((r: any, i: number) => expect(state.rows[i].slice(0, 3)).toEqual([r.state, r.delivered, Number(r.revenue)]));
   });
 
   it('delivery CSV: the partner table and the reasons equal the JSON', async () => {

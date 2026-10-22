@@ -75,7 +75,7 @@ describe('Orders actions: row status menu (M3-T44, F-313)', () => {
     expect(svc.getTransitions).toHaveBeenCalledWith(24113);
     const menu = await screen.findByRole('menu', { name: 'Moves for #24113' });
     expect(await within(menu).findByRole('menuitem', { name: 'Confirmed' })).toBeInTheDocument();
-    expect(within(menu).getByText('Outside the normal flow (needs a reason)')).toBeInTheDocument();
+    expect(within(menu).getByText('Outside the normal flow')).toBeInTheDocument();
     await userEvent.click(within(menu).getByRole('menuitem', { name: 'Confirmed' }));
     await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'confirmed', undefined, {}));
     expect(toast()).toHaveTextContent('#24113 is now Confirmed');
@@ -87,16 +87,20 @@ describe('Orders actions: row status menu (M3-T44, F-313)', () => {
     expect(screen.queryByText('ORDER PAGE')).toBeNull();
   });
 
-  it('cancel opens the decline reason dialog; a pending order needs a reason', async () => {
+  it('cancel opens the decline reason dialog; the reason is optional', async () => {
     svc.updateOrderStatus.mockResolvedValue({});
     renderPage();
     await userEvent.click(await screen.findByRole('button', { name: /Change status of #24113/ }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Cancelled' }));
     const dialog = await screen.findByRole('dialog', { name: 'Move #24113 to Cancelled' });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Move to Cancelled' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('Choose why the order is cancelled.');
-    expect(svc.updateOrderStatus).not.toHaveBeenCalled();
-    await userEvent.selectOptions(within(dialog).getByLabelText('Why is it cancelled?'), 'Price too high');
+    await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'cancelled', undefined, {}));
+    svc.updateOrderStatus.mockClear();
+    await userEvent.click(await screen.findByRole('button', { name: /Change status of #24113/ }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Cancelled' }));
+    const again = await screen.findByRole('dialog', { name: 'Move #24113 to Cancelled' });
+    await userEvent.selectOptions(within(again).getByLabelText('Why is it cancelled? (optional)'), 'Price too high');
+    await userEvent.click(within(again).getByRole('button', { name: 'Move to Cancelled' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Move to Cancelled' }));
     await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'cancelled', undefined, { declineReason: 'price_too_high' }));
   });
@@ -108,27 +112,35 @@ describe('Orders actions: row status menu (M3-T44, F-313)', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Change status of #24112/ }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Failed delivery' }));
     const dialog = await screen.findByRole('dialog', { name: 'Move #24112 to Failed delivery' });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Move to Failed delivery' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('Choose why the delivery failed.');
-    await userEvent.selectOptions(within(dialog).getByLabelText('Why did the delivery fail?'), 'Rescheduled');
+    await userEvent.selectOptions(within(dialog).getByLabelText('Why did the delivery fail? (optional)'), 'Rescheduled');
     const next = within(dialog).getByLabelText(/Next attempt/) as HTMLInputElement;
     expect(next.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Move to Failed delivery' }));
     await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24112, 'failed_delivery', undefined, { failureReason: 'rescheduled', nextAttemptDate: next.value }));
   });
 
-  it('a forced move needs a written reason of 5 characters', async () => {
+  it('a forced move saves with an empty reason (COD-139)', async () => {
     svc.updateOrderStatus.mockResolvedValue({});
     renderPage();
     await userEvent.click(await screen.findByRole('button', { name: /Change status of #24113/ }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Delivered' }));
     const dialog = await screen.findByRole('dialog', { name: 'Move #24113 to Delivered' });
-    await userEvent.type(within(dialog).getByLabelText('Reason'), 'oops');
+    expect(within(dialog).getByLabelText('Reason (optional)')).toBeInTheDocument();
+    const save = within(dialog).getByRole('button', { name: 'Move to Delivered' });
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+    await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'delivered', undefined, { force: true }));
+  });
+
+  it('a forced move sends a short reason as typed', async () => {
+    svc.updateOrderStatus.mockResolvedValue({});
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /Change status of #24113/ }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delivered' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Move #24113 to Delivered' });
+    await userEvent.type(within(dialog).getByLabelText('Reason (optional)'), 'oops');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Move to Delivered' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('at least 5 characters');
-    await userEvent.type(within(dialog).getByLabelText('Reason'), ', fixed by hand');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Move to Delivered' }));
-    await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'delivered', undefined, { force: true, reason: 'oops, fixed by hand' }));
+    await waitFor(() => expect(svc.updateOrderStatus).toHaveBeenCalledWith(24113, 'delivered', undefined, { force: true, reason: 'oops' }));
   });
 
   it('a refused move shows the server sentence', async () => {
@@ -210,7 +222,7 @@ describe('Orders actions: bulk bar (M3-T44, F-313 to F-315)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Change status' }));
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Cancelled' }));
     const dialog = await screen.findByRole('dialog', { name: 'Move 2 orders to Cancelled' });
-    await userEvent.selectOptions(within(dialog).getByLabelText('Why is it cancelled?'), 'Wrong number');
+    await userEvent.selectOptions(within(dialog).getByLabelText('Why is it cancelled? (optional)'), 'Wrong number');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Move to Cancelled' }));
     await waitFor(() => expect(svc.bulkStatus).toHaveBeenCalledWith({ orderIds: [24113, 24112], status: 'cancelled', declineReason: 'wrong_number' }));
     await waitFor(() => expect(toast()).toHaveTextContent('Changed 2 orders to Cancelled'));

@@ -103,7 +103,7 @@ function salesSheet(b: ReportBody): Section[] {
   const t = open<any>(b.tiles, 'tiles');
   const perDay = open<any>(b.revenuePerDay, 'revenuePerDay');
   const product = open<any>(b.byProduct, 'byProduct');
-  const city = open<any>(b.byCity, 'byCity');
+  const state = open<any>(b.byState, 'byState');
   const items: Array<[string, Tile, CellType]> = [
     ['Delivered revenue', t.deliveredRevenue, 'money'],
     ['Delivered orders', t.deliveredOrders, 'int'],
@@ -126,10 +126,10 @@ function salesSheet(b: ReportBody): Section[] {
         [text('Total'), text(null), int(product.rows.reduce((n: number, r: any) => n + r.units, 0)), money(product.total), pct(product.rows.length ? 100 : null)]],
     },
     {
-      title: `Revenue by ${String(city.label).toLowerCase()}`,
-      header: [city.label, 'Delivered', 'Revenue', 'Average order', 'Share %'],
-      rows: [...city.rows.map((r: any) => [text(r.city), int(r.delivered), money(r.revenue), money(r.averageOrder), pct(r.sharePercent)]),
-        [text('Total'), int(city.total.delivered), money(city.total.revenue), money(city.total.averageOrder), pct(city.rows.length ? 100 : null)]],
+      title: `Revenue by ${String(state.label).toLowerCase()}`,
+      header: [state.label, 'Delivered', 'Revenue', 'Average order', 'Share %'],
+      rows: [...state.rows.map((r: any) => [text(r.state), int(r.delivered), money(r.revenue), money(r.averageOrder), pct(r.sharePercent)]),
+        [text('Total'), int(state.total.delivered), money(state.total.revenue), money(state.total.averageOrder), pct(state.rows.length ? 100 : null)]],
     },
   ];
 }
@@ -139,7 +139,7 @@ function deliverySheet(b: ReportBody): Section[] {
   const t = open<any>(b.tiles, 'tiles');
   const perDay = open<any>(b.deliveredPerDay, 'deliveredPerDay');
   const reasons = open<any>(b.reasons, 'reasons');
-  const city = open<any>(b.successByCity, 'successByCity');
+  const state = open<any>(b.successByState, 'successByState');
   const waiting = open<any>(b.waitingAndReturns, 'waitingAndReturns');
   const partners = open<any>(b.partners, 'partners');
   const withCash = partners.total.cashHeld !== undefined;
@@ -164,9 +164,9 @@ function deliverySheet(b: ReportBody): Section[] {
       rows: [...reasons.rows.map((r: any) => [text(r.reason), int(r.count), pct(r.percent)]), [text('Total'), int(reasons.total), pct(reasons.rows.length ? 100 : null)]],
     },
     {
-      title: `Delivery success by ${String(city.label).toLowerCase()}`,
-      header: [city.label, 'Placed', 'Delivered', 'Failed', 'Returned', 'Closed', 'Success rate %'],
-      rows: city.rows.map((r: any) => [text(r.city), int(r.placed), int(r.delivered), int(r.failed), int(r.returned), int(r.closed), pct(r.successRate)]),
+      title: `Delivery success by ${String(state.label).toLowerCase()}`,
+      header: [state.label, 'Placed', 'Delivered', 'Failed', 'Returned', 'Closed', 'Success rate %'],
+      rows: state.rows.map((r: any) => [text(r.state), int(r.placed), int(r.delivered), int(r.failed), int(r.returned), int(r.closed), pct(r.successRate)]),
     },
     {
       title: 'Waiting and returns',

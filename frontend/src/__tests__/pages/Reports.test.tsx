@@ -223,14 +223,14 @@ describe('Sales tab (F-1052, F-1064)', () => {
     expect(screen.queryByText('Cash still with partners')).toBeNull();
   });
 
-  it('the location table is City/Town, never Region, with Not set for an empty place and a total', async () => {
-    answer({ sales: (b) => { b.byCity.rows[4].city = 'Unknown'; return b; } });
+  it('the location table is State, with Not set for an empty place and a total', async () => {
+    answer({ sales: (b) => { b.byState.rows[4].state = 'Unknown'; return b; } });
     await openSales();
-    const table = await screen.findByRole('table', { name: 'Revenue by City/Town' });
-    expect(within(table).getByRole('columnheader', { name: 'City/Town' })).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Revenue by State' });
+    expect(within(table).getByRole('columnheader', { name: 'State' })).toBeInTheDocument();
     const cells = bodyRows(table);
-    expect(cells[0]).toEqual(['Accra', '176', 'GH₵43,100', 'GH₵245', '47%']);
-    expect(cells[3]).toEqual(['Takoradi', '26', 'GH₵6,300', 'GH₵242', '7%']);
+    expect(cells[0]).toEqual(['Greater Accra', '176', 'GH₵43,100', 'GH₵245', '47%']);
+    expect(cells[3]).toEqual(['Western', '26', 'GH₵6,300', 'GH₵242', '7%']);
     expect(cells[4]).toEqual(['Not set', '0', 'GH₵0', 'n/a', '0%']);
     expect(cells[5]).toEqual(['Total', '376', 'GH₵92,000', 'GH₵245', '100%']);
     expect(document.body.textContent).not.toMatch(/region/i);
@@ -289,19 +289,19 @@ describe('Delivery tab (F-1053, F-1064)', () => {
     expect(within(table).queryByRole('columnheader', { name: 'Cash held' })).toBeNull();
   });
 
-  it('waiting and returns: 100 orders, oldest 3 days, 48 returned; city chart is City/Town', async () => {
+  it('waiting and returns: 100 orders, oldest 3 days, 48 returned; state chart is State', async () => {
     await openDelivery();
     expect(await screen.findByText('100 orders')).toBeInTheDocument();
     expect(screen.getByText('Oldest has waited 3 days')).toBeInTheDocument();
-    expect(screen.getByText('Delivery success by City/Town')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: /Delivery success by city or town against the 60 percent target: Accra 48 percent/ })).toBeInTheDocument();
+    expect(screen.getByText('Delivery success by State')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /Delivery success by state against the 60 percent target: Greater Accra 48 percent/ })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/region/i);
   });
 
-  it('a partner with no closed orders in the city chart is left out, not drawn as 0%', async () => {
-    answer({ delivery: (b) => { b.successByCity.rows.push({ city: 'Cape Coast', placed: 8, delivered: 0, failed: 0, returned: 0, closed: 0, successRate: null }); return b; } });
+  it('a partner with no closed orders in the state chart is left out, not drawn as 0%', async () => {
+    answer({ delivery: (b) => { b.successByState.rows.push({ state: 'Central', placed: 8, delivered: 0, failed: 0, returned: 0, closed: 0, successRate: null }); return b; } });
     await openDelivery();
-    expect(screen.getByRole('img', { name: /Takoradi 37 percent/ }).getAttribute('aria-label')).not.toMatch(/Cape Coast/);
+    expect(screen.getByRole('img', { name: /Western 37 percent/ }).getAttribute('aria-label')).not.toMatch(/Central/);
   });
 });
 

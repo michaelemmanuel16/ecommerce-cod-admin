@@ -97,11 +97,11 @@ describe('Customers list: tiles and tabs (F-351)', () => {
 });
 
 describe('Customers list: rows (F-350)', () => {
-  it('shows phones in local format, city, counts, value, last order and the risk tags', async () => {
+  it('shows phones in local format, state, counts, value, last order and the risk tags', async () => {
     renderPage();
     const yaw = (await screen.findByText('Yaw Boateng')).closest('tr') as HTMLElement;
     expect(within(yaw).getByText('024 555 0103')).toBeInTheDocument();
-    expect(within(yaw).getByText('Kumasi')).toBeInTheDocument();
+    expect(within(yaw).getByText('Ashanti')).toBeInTheDocument();
     expect(within(yaw).getByText('GH₵249')).toBeInTheDocument();
     expect(within(yaw).getByText('High')).toBeInTheDocument();
     expect(within(yaw).getByText('Not reachable')).toBeInTheDocument();

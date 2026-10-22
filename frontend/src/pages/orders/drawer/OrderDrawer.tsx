@@ -219,7 +219,7 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
                   <option value={order.status}>{ORDER_STATUS_LABELS[order.status]}</option>
                   {moves?.normal.map((s) => <option key={s} value={s}>{ORDER_STATUS_LABELS[s]}</option>)}
                   {!!moves?.forced.length && (
-                    <optgroup label="Outside the normal flow (needs a reason)">
+                    <optgroup label="Outside the normal flow">
                       {moves.forced.map((s) => <option key={s} value={s}>{ORDER_STATUS_LABELS[s]}</option>)}
                     </optgroup>
                   )}

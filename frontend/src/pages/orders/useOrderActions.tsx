@@ -167,7 +167,6 @@ export function useOrderActions({ setSelected, refetch, setFocus }: Deps) {
           count: reason.rows.length,
           first: orderNumber(reason.rows[0].id),
           forced: reason.forced,
-          declineRequired: reason.rows.some((r) => r.status === 'pending_confirmation'),
         } : null}
         onClose={() => setReason(null)}
         onSubmit={(extras) => {

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import type { Column } from '../../components/ui-v2';
 import type { CustomerRow, CustomerSortField } from '../../services/customers.service';
+import { baseState } from '../../utils/baseState';
 import { formatCurrency, formatPhoneLocal } from '../../utils/format';
 import { AVATAR_TONES, customerName, initials, lastOrderDate } from './model';
 import { RiskTags } from './RiskTags';
@@ -46,7 +47,7 @@ export function buildColumns({ sort, onSort }: ColumnContext): Column<CustomerRo
         );
       },
     },
-    { key: 'city', header: 'City/Town', render: (c) => c.area || <span className="mut">—</span> },
+    { key: 'state', header: 'State', render: (c) => baseState(c.state) || <span className="mut">—</span> },
     { key: 'orders', header: head('orders', 'Orders'), right: true, render: (c) => <span className="num">{c.totalOrders}</span> },
     { key: 'delivered', header: 'Delivered', right: true, render: (c) => <span className="num">{c.deliveredOrders}</span> },
     {

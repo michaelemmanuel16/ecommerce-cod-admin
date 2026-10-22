@@ -225,12 +225,31 @@ describe('force (F-302)', () => {
       code: 'FORBIDDEN', statusCode: 403,
     });
   });
-  it('a 3-character reason is REASON_REQUIRED (400)', async () => {
+  it('a forced move with a blank or missing reason works and stores no reason (COD-139)', async () => {
     (hasPermission as jest.Mock<any>).mockResolvedValue(true);
     setOrder({ status: 'cancelled' });
-    await expect(transitionOrder(5, 'confirmed', SUPER, { force: true, reason: ' abc ' })).rejects.toMatchObject({
-      code: 'REASON_REQUIRED', statusCode: 400,
-    });
+    const res = await transitionOrder(5, 'confirmed', SUPER, { force: true, reason: '   ' });
+    expect(res).toMatchObject({ changed: true, forced: true });
+    const data = tx.orderHistory.create.mock.calls[0][0].data;
+    expect(data).toMatchObject({ forced: true, notes: null });
+    expect(data.metadata.reason).toBeUndefined();
+    expect(tx.auditLog.create.mock.calls[0][0].data.metadata.reason).toBeUndefined();
+    setOrder({ status: 'cancelled' });
+    expect((await transitionOrder(5, 'confirmed', SUPER, { force: true })).forced).toBe(true);
+  });
+  it('a short reason is kept as given (COD-139)', async () => {
+    (hasPermission as jest.Mock<any>).mockResolvedValue(true);
+    setOrder({ status: 'cancelled' });
+    await transitionOrder(5, 'confirmed', SUPER, { force: true, reason: ' abc ' });
+    expect(tx.orderHistory.create.mock.calls[0][0].data).toMatchObject({ forced: true, notes: 'abc', metadata: { reason: 'abc' } });
+  });
+  it('a forced move to digital_delivered on a physical order is INVALID_TRANSITION (COD-139)', async () => {
+    (hasPermission as jest.Mock<any>).mockResolvedValue(true);
+    setOrder({ status: 'cancelled' });
+    expect(await code(transitionOrder(5, 'digital_delivered', SUPER, { force: true, reason: 'owner asked' }))).toBe('INVALID_TRANSITION');
+    expect(tx.order.updateMany).not.toHaveBeenCalled();
+    setOrder({ status: 'cancelled', orderType: 'digital' });
+    expect(await code(transitionOrder(5, 'digital_delivered', SUPER, { force: true }))).toBe('ok');
   });
   it('a valid force works, marks the row forced and writes one AuditLog row', async () => {
     (hasPermission as jest.Mock<any>).mockResolvedValue(true);
@@ -389,14 +408,42 @@ describe('side effects', () => {
   });
 });
 
+describe('failure and decline reasons (COD-139)', () => {
+  it('failed_delivery without failureReason works', async () => {
+    setOrder({ status: 'out_for_delivery' });
+    expect(await code(transitionOrder(5, 'failed_delivery', ADMIN))).toBe('ok');
+  });
+  it('a rep cancelling from pending_confirmation without declineReason works', async () => {
+    setOrder({ status: 'pending_confirmation' });
+    const REP: TransitionActor = { kind: 'user', userId: 20, role: 'sales_rep' };
+    expect(await code(transitionOrder(5, 'cancelled', REP))).toBe('ok');
+  });
+});
+
 describe('allowedTransitions', () => {
   it('lists normal moves and, with canForce, the rest as forced', () => {
     const order: any = { status: 'delivered', orderType: 'physical' };
     const r = allowedTransitions(order, ADMIN, { canForce: true });
     expect(r.normal).toEqual(['returned']);
-    expect(r.forced).toHaveLength(10);
+    expect(r.forced).toHaveLength(7);
     expect(r.forced).not.toContain('delivered');
     expect(allowedTransitions(order, ADMIN).forced).toEqual([]);
+  });
+  it('a physical order is not offered digital_delivered, payment_pending or payment_failed (COD-139)', () => {
+    const hidden = ['digital_delivered', 'payment_pending', 'payment_failed'];
+    const r = allowedTransitions({ status: 'pending_confirmation', orderType: 'physical' } as any, ADMIN, { canForce: true });
+    expect(r.normal).toEqual(['confirmed', 'cancelled']);
+    for (const s of hidden) { expect(r.normal).not.toContain(s); expect(r.forced).not.toContain(s); }
+  });
+  it('a digital order keeps the payment statuses (COD-139)', () => {
+    const r = allowedTransitions({ status: 'pending_confirmation', orderType: 'digital' } as any, ADMIN, { canForce: true });
+    expect(r.normal).toContain('payment_pending');
+    expect(r.forced).toContain('payment_failed');
+  });
+  it('a physical order already in a payment status keeps the moves the table allows (COD-139)', () => {
+    const r = allowedTransitions({ status: 'payment_pending', orderType: 'physical' } as any, ADMIN, { canForce: true });
+    expect(r.normal).toEqual(expect.arrayContaining(['confirmed', 'payment_failed', 'cancelled']));
+    expect(r.forced).not.toContain('digital_delivered');
   });
   it('an integration actor sees the jumps', () => {
     const order: any = { status: 'confirmed', orderType: 'physical', deliveryAgentId: 1 };

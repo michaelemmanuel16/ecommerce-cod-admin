@@ -22,7 +22,7 @@ function aovChange(aov: SalesTiles['aov'], currency: string): ReactNode {
 
 const Empty = () => <EmptyState title="No delivered orders in this range" text="Pick a longer range to see more." />;
 
-/** Sales and revenue (F-1052, F-1064, mockup #t-sales). The location table is "City/Town" (owner decision 2026-10-22). */
+/** Sales and revenue (F-1052, F-1064, mockup #t-sales). The location table is "State" (COD-139). */
 export function SalesTab({ report, ctl }: { report: SalesReport | null; ctl: TabControl }) {
   const { compare } = ctl;
   const currency = report?.currency ?? '';
@@ -101,19 +101,19 @@ export function SalesTab({ report, ctl }: { report: SalesReport | null; ctl: Tab
         </Part>
       </div>
 
-      <Part name="Revenue by City/Town" block={report?.byCity} ctl={ctl} height={260}>
+      <Part name="Revenue by State" block={report?.byState} ctl={ctl} height={260}>
         {(c) => (
-          <Card title="Revenue by City/Town" aside={`Delivered orders, ${range}`} className="tcard">
+          <Card title="Revenue by State" aside={`Delivered orders, ${range}`} className="tcard">
             {c.rows.length === 0 ? <Empty /> : (
               <div className="tablewrap">
-                <table className="dt" aria-label="Revenue by City/Town">
+                <table className="dt" aria-label="Revenue by State">
                   <thead>
-                    <tr><th scope="col">City/Town</th><th scope="col" className="r">Delivered</th><th scope="col" className="r">Revenue</th><th scope="col" className="r">Average order</th><th scope="col" className="r">Share</th></tr>
+                    <tr><th scope="col">State</th><th scope="col" className="r">Delivered</th><th scope="col" className="r">Revenue</th><th scope="col" className="r">Average order</th><th scope="col" className="r">Share</th></tr>
                   </thead>
                   <tbody>
                     {c.rows.map((r) => (
-                      <tr key={r.city}>
-                        <td><b>{placeName(r.city)}</b></td>
+                      <tr key={r.state}>
+                        <td><b>{placeName(r.state)}</b></td>
                         <td className="r num">{count(r.delivered)}</td>
                         <td className="r num">{wholeMoney(r.revenue, currency)}</td>
                         <td className="r num">{r.averageOrder === null ? 'n/a' : wholeMoney(r.averageOrder, currency)}</td>

@@ -5,11 +5,12 @@
  *  - ordersByStatus: orders placed (createdAt) in [from, to), not deleted, per status. Every status is counted, digital
  *    ones included (the rate functions leave those out), so "Where orders ended up" can show them under Other.
  *  - failureReasons: failed_delivery and returned orders placed in the range, per Order.failureReason (null reads as 'unknown').
- *  - successByCity: orders placed in the range per delivery area (Order.deliveryArea; null reads as 'Unknown'), with the
- *    delivery success rate of that area. "City" until orders carry a region (decision F-1052, plan M3 "Decide at task time").
+ *  - successByState: orders placed in the range per delivery state (Order.deliveryState, "Greater Accra (Tema)" grouped as
+ *    "Greater Accra"; none reads as 'Not set'), with the delivery success rate of that state (COD-139).
  *  - waitingToDispatch / outForDelivery: right-now snapshots, not tied to a range.
  */
 import prisma from '../../utils/prisma';
+import { baseState } from '../../utils/regions';
 import { runInTenant } from '../../utils/tenantContext';
 import { OrderStatus } from '@prisma/client';
 import { DAY_MS } from './dates';
@@ -38,34 +39,34 @@ export async function failureReasons(tenantId: string, from: Date, to: Date): Pr
     .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
 }
 
-export interface CityRate {
-  city: string;
-  /** Orders placed in the range for this city, any status. */
+export interface StateRate {
+  state: string;
+  /** Orders placed in the range for this state, any status. */
   placed: number;
   deliverySuccessRate: Rates['deliverySuccessRate'];
 }
 
-export async function successByCity(tenantId: string, from: Date, to: Date): Promise<CityRate[]> {
+export async function successByState(tenantId: string, from: Date, to: Date): Promise<StateRate[]> {
   const meta = kpiMeta(from, to);
   const groups = await runInTenant(tenantId, () => prisma.order.groupBy({
-    by: ['deliveryArea', 'status'],
+    by: ['deliveryState', 'status'],
     where: { deletedAt: null, status: { notIn: DIGITAL }, createdAt: { gte: from, lt: to } },
     _count: { _all: true },
   }));
-  const cities = new Map<string, Map<OrderStatus, number>>();
+  const states = new Map<string, Map<OrderStatus, number>>();
   for (const g of groups) {
-    const city = g.deliveryArea?.trim() || 'Unknown';
-    const counts = cities.get(city) ?? new Map<OrderStatus, number>();
+    const state = baseState(g.deliveryState) || 'Not set';
+    const counts = states.get(state) ?? new Map<OrderStatus, number>();
     counts.set(g.status, (counts.get(g.status) ?? 0) + g._count._all);
-    cities.set(city, counts);
+    states.set(state, counts);
   }
-  return [...cities.entries()].map(([city, counts]) => {
+  return [...states.entries()].map(([state, counts]) => {
     const n = (s: OrderStatus) => counts.get(s) ?? 0;
     return {
-      city,
+      state,
       placed: [...counts.values()].reduce((a, b) => a + b, 0),
       deliverySuccessRate: closedOutcomeResult(
-        'Delivery success rate', 'city.deliverySuccess.cohort.v1', 'cohort',
+        'Delivery success rate', 'state.deliverySuccess.cohort.v1', 'cohort',
         { delivered: n('delivered'), failed: n('failed_delivery'), returned: n('returned') }, meta,
       ),
     };

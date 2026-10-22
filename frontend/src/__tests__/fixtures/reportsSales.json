@@ -227,39 +227,39 @@
   ],
   "total": "92000.00"
  },
- "byCity": {
-  "label": "City",
+ "byState": {
+  "label": "State",
   "rows": [
    {
-    "city": "Accra",
+    "state": "Greater Accra",
     "delivered": 176,
     "revenue": "43100.00",
     "averageOrder": "244.89",
     "sharePercent": 46.8
    },
    {
-    "city": "Tema",
+    "state": "Eastern",
     "delivered": 92,
     "revenue": "22500.00",
     "averageOrder": "244.57",
     "sharePercent": 24.5
    },
    {
-    "city": "Kumasi",
+    "state": "Ashanti",
     "delivered": 82,
     "revenue": "20100.00",
     "averageOrder": "245.12",
     "sharePercent": 21.8
    },
    {
-    "city": "Takoradi",
+    "state": "Western",
     "delivered": 26,
     "revenue": "6300.00",
     "averageOrder": "242.31",
     "sharePercent": 6.8
    },
    {
-    "city": "Cape Coast",
+    "state": "Central",
     "delivered": 0,
     "revenue": "0.00",
     "averageOrder": null,
