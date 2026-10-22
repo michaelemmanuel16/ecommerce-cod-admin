@@ -19,7 +19,7 @@ export interface StandardFieldMeta {
 
 // Aliases are matched exactly (after normalisation), not by substring, so an
 // unrelated label can't capture a slot. Ambiguous words are deliberately absent:
-// "city" is not an alias for region, because a form may carry both.
+// "city" is an alias for the town slot, not for the state slot, because a form may carry both.
 export const STANDARD_FIELDS: readonly StandardFieldMeta[] = [
   {
     key: 'fullName',
@@ -56,8 +56,18 @@ export const STANDARD_FIELDS: readonly StandardFieldMeta[] = [
   },
   {
     key: 'region',
-    label: 'Region / State',
+    label: 'State',
     aliases: ['region', 'region/state', 'state', 'state/region', 'province'],
+  },
+  {
+    key: 'town',
+    label: 'City/Town',
+    aliases: ['city/town', 'city / town', 'city', 'town', 'town or area', 'area'],
+  },
+  {
+    key: 'landmark',
+    label: 'Nearest landmark',
+    aliases: ['nearest landmark', 'landmark'],
   },
   {
     key: 'streetAddress',
@@ -141,10 +151,11 @@ export function mapFields(fields: FormField[]): MappedField[] {
   });
 }
 
-// Slots the order API rejects the submission without. Mirrors the required-field
-// check in backend/src/controllers/publicOrderController.ts — if that list
-// changes, change this one.
-const REQUIRED_PHYSICAL: StandardFieldKey[] = ['fullName', 'phone', 'streetAddress', 'region'];
+// Slots no form can do without. Mirrors the always-required part of the check in
+// backend/src/controllers/publicOrderController.ts. Town and landmark follow the
+// form's own settings (the renderer adds both to old forms) and the street
+// address is off by default, so none of the three is listed here.
+const REQUIRED_PHYSICAL: StandardFieldKey[] = ['fullName', 'phone', 'region'];
 const REQUIRED_DIGITAL: StandardFieldKey[] = ['fullName', 'phone', 'email'];
 
 /**

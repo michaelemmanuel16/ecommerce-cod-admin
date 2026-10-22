@@ -472,6 +472,8 @@ export interface ManualOrderBody {
   deliveryAddress: string;
   deliveryState: string;
   deliveryArea: string;
+  /** Nearest landmark: saved on the customer and added to the delivery address riders read. */
+  landmark?: string;
   orderItems: Array<{ productId: number; quantity: number; unitPrice: number }>;
   subtotal: number;
   discount: number;

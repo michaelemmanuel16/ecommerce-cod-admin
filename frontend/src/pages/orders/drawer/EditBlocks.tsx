@@ -28,8 +28,8 @@ export function CustomerEdit({ status, draft, set }: EditProps) {
           <label htmlFor="ed-addr">Delivery address</label>
           <textarea id="ed-addr" value={draft.address} disabled={!open} style={{ minHeight: 56 }} onChange={(e) => set({ address: e.target.value })} />
         </div>
-        <Input label="Region" value={draft.region} disabled={!open} onChange={(e) => set({ region: e.target.value })} />
-        <Input label="Town or area" value={draft.town} disabled={!open} onChange={(e) => set({ town: e.target.value })} />
+        <Input label="State" value={draft.region} disabled={!open} onChange={(e) => set({ region: e.target.value })} />
+        <Input label="City/Town" value={draft.town} disabled={!open} onChange={(e) => set({ town: e.target.value })} />
         <div className="fl full">
           <label htmlFor="ed-notes">Notes</label>
           <textarea id="ed-notes" value={draft.notes} style={{ minHeight: 56 }} onChange={(e) => set({ notes: e.target.value })} />

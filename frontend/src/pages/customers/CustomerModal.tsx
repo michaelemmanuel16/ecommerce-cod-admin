@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { Button, Input, Modal, Select, useToast } from '../../components/ui-v2';
+import { TownSelect } from '../../components/forms/TownSelect';
+import { useTowns } from '../../hooks/useTowns';
 import { customersService, type CustomerRow } from '../../services/customers.service';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
@@ -69,6 +71,7 @@ export function CustomerModal({ open, onClose, customer, onSaved }: CustomerModa
   const currency = useConfigStore((s) => s.currency);
   const regions = useMemo(() => getRegionsForCountry(getCountryByCurrency(currency)), [currency]);
   const [fields, setFields] = useState<Fields>(BLANK);
+  const { towns, loading: townsLoading } = useTowns(fields.state);
   const [errors, setErrors] = useState<Errors>({});
   const [clash, setClash] = useState<Clash | null>(null);
   const [saving, setSaving] = useState(false);
@@ -96,8 +99,8 @@ export function CustomerModal({ open, onClose, customer, onSaved }: CustomerModa
       const alt = phoneProblem('Alternate phone', fields.alternatePhone);
       if (alt) e.alternatePhone = alt;
     }
-    if (!fields.state) e.state = 'Region is required';
-    if (!fields.area.trim()) e.area = 'Town is required';
+    if (!fields.state) e.state = 'State is required';
+    if (!fields.area.trim()) e.area = 'City/Town is required';
     if (!fields.address.trim()) e.address = 'Address is required';
     return e;
   };
@@ -185,14 +188,22 @@ export function CustomerModal({ open, onClose, customer, onSaved }: CustomerModa
           )}
         </div>
         <Input label="Alternate phone" optional type="tel" value={fields.alternatePhone} onChange={set('alternatePhone')} error={errors.alternatePhone} autoComplete="off" />
-        <Select label="Region" value={fields.state} onChange={set('state')} error={errors.state}>
-          <option value="">Choose a region</option>
+        <Select label="State" value={fields.state} onChange={set('state')} error={errors.state}>
+          <option value="">Choose a state</option>
           {(fields.state && !regions.includes(fields.state) ? [...regions, fields.state] : regions).map((r) => <option key={r} value={r}>{r}</option>)}
         </Select>
-        <Input label="Town" value={fields.area} onChange={set('area')} error={errors.area} placeholder="Accra" autoComplete="off" />
+        <TownSelect
+          state={fields.state}
+          value={fields.area}
+          onChange={(v) => set('area')({ target: { value: v } })}
+          towns={towns}
+          loading={townsLoading}
+          error={errors.area}
+          typedClassName="span2"
+        />
         <Input className="span2" label="Email" optional type="email" value={fields.email} onChange={set('email')} autoComplete="off" />
         <Input className="span2" label="Street address" value={fields.address} onChange={set('address')} error={errors.address} autoComplete="off" />
-        <Input className="span2" label="Landmark" optional value={fields.landmark} onChange={set('landmark')} autoComplete="off" />
+        <Input className="span2" label="Nearest landmark" optional placeholder="e.g. Opposite Kasoa Total station" value={fields.landmark} onChange={set('landmark')} autoComplete="off" />
         <div className="fl span2">
           <label htmlFor="cm-notes">
             Internal notes <span className="opt">(optional)</span>

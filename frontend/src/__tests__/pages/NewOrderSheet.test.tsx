@@ -10,7 +10,9 @@ const svc = vi.hoisted(() => ({
   createManualOrder: vi.fn(),
   findByPhone: vi.fn(),
   getForOrder: vi.fn(),
+  getTowns: vi.fn(),
 }));
+vi.mock('../../services/locations.service', () => ({ locationsService: { getTowns: svc.getTowns } }));
 vi.mock('../../services/orders.service', () => ({ ordersService: { createManualOrder: svc.createManualOrder } }));
 vi.mock('../../services/customers.service', () => ({ customersService: { findByPhone: svc.findByPhone, getForOrder: svc.getForOrder } }));
 vi.mock('../../services/products.service', () => ({
@@ -49,8 +51,9 @@ async function fillBasics() {
   await u.type(screen.getByLabelText('Customer name'), 'Gifty Addo');
   await u.type(screen.getByLabelText('Phone'), '0245550182');
   await u.type(screen.getByLabelText('Delivery address'), '14 Adum Road');
-  await u.selectOptions(screen.getByLabelText('Region'), 'Ashanti');
-  await u.type(screen.getByLabelText('Town or area'), 'Adum');
+  await u.selectOptions(screen.getByLabelText('State'), 'Ashanti');
+  await screen.findByRole('option', { name: 'Adum' });
+  await u.selectOptions(screen.getByLabelText('City/Town'), 'Adum');
   await screen.findByRole('option', { name: 'Copybook set' });
   await u.selectOptions(screen.getByLabelText('Product'), 'Copybook set');
   return u;
@@ -61,6 +64,7 @@ beforeEach(() => {
   onClose.mockReset();
   onCreated.mockReset();
   svc.findByPhone.mockResolvedValue(null);
+  svc.getTowns.mockResolvedValue(['Adum', 'Kejetia']);
   useConfigStore.setState({ currency: 'GHS', loaded: true });
 });
 
@@ -138,7 +142,7 @@ describe('New order sheet (M3-T45, F-317)', () => {
     await u.click(screen.getByRole('button', { name: /Create order/ }));
     expect(screen.getByText('Enter the customer name.')).toBeInTheDocument();
     expect(screen.getByText('Phone number needs at least 9 digits.')).toBeInTheDocument();
-    expect(screen.getByText('Choose a region.')).toBeInTheDocument();
+    expect(screen.getByText('Choose a state.')).toBeInTheDocument();
     expect(screen.getByText('Choose a product.')).toBeInTheDocument();
     expect(svc.createManualOrder).not.toHaveBeenCalled();
   });
@@ -172,13 +176,24 @@ describe('New order sheet (M3-T45, F-317)', () => {
   });
 
   it('prefills name, phone, address, region and town from a linked customer', async () => {
-    svc.getForOrder.mockResolvedValue({ name: 'Abena Owusu', phone: '+233245550182', alternatePhone: '', email: '', address: '14 Adum Road', region: 'Ashanti', town: 'Adum' });
+    svc.getForOrder.mockResolvedValue({ name: 'Abena Owusu', phone: '+233245550182', alternatePhone: '', email: '', address: '14 Adum Road', region: 'Ashanti', town: 'Adum', landmark: 'Near the post office' });
     renderSheet({ customerId: 7 });
     await waitFor(() => expect(screen.getByLabelText('Customer name')).toHaveValue('Abena Owusu'));
     expect(svc.getForOrder).toHaveBeenCalledWith(7);
     expect(screen.getByLabelText('Phone')).toHaveValue('024 555 0182');
     expect(screen.getByLabelText('Delivery address')).toHaveValue('14 Adum Road');
-    expect(screen.getByLabelText('Region')).toHaveValue('Ashanti');
-    expect(screen.getByLabelText('Town or area')).toHaveValue('Adum');
+    expect(screen.getByLabelText('State')).toHaveValue('Ashanti');
+    await waitFor(() => expect(screen.getByLabelText('City/Town')).toHaveValue('Adum'));
+    expect(screen.getByLabelText(/^Nearest landmark/)).toHaveValue('Near the post office');
+  });
+
+  it('sends the nearest landmark when it is filled, and not when it is empty', async () => {
+    svc.createManualOrder.mockResolvedValue({ id: 9, orderNumber: 'ORD-0009' });
+    renderSheet();
+    const u = await fillBasics();
+    await u.type(screen.getByLabelText(/Nearest landmark/), 'Opposite Kejetia market');
+    await u.click(screen.getByRole('button', { name: /Create order/ }));
+    await waitFor(() => expect(svc.createManualOrder).toHaveBeenCalledTimes(1));
+    expect(svc.createManualOrder.mock.calls[0][0]).toMatchObject({ landmark: 'Opposite Kejetia market', deliveryArea: 'Adum' });
   });
 });

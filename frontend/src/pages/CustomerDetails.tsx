@@ -199,11 +199,11 @@ export function CustomerDetails() {
           <dl>
             <dt>Street</dt>
             <dd>{customer.address || dash}</dd>
-            <dt>Town</dt>
+            <dt>City/Town</dt>
             <dd>{customer.area || dash}</dd>
-            <dt>Region</dt>
+            <dt>State</dt>
             <dd>{customer.state || dash}</dd>
-            <dt>Landmark</dt>
+            <dt>Nearest landmark</dt>
             <dd>{customer.landmark || dash}</dd>
           </dl>
           {customer.notes && (

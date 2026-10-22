@@ -142,7 +142,7 @@ export function ImportModal({ open, onClose, onImported, onShow }: ImportModalPr
         <div className="ic" style={{ background: 'var(--pine-soft)', color: 'var(--pine)' }}><FileSpreadsheet /></div>
         <div style={{ flex: 1 }}>
           <b>Start from the template</b>
-          <div className="hint" style={{ marginTop: 0 }}>Same columns the importer reads: customer, phone, address, region, product, quantity, price, status.</div>
+          <div className="hint" style={{ marginTop: 0 }}>Same columns the importer reads: customer, phone, address, state, product, quantity, price, status.</div>
         </div>
         <a className="btn" download="order_import_template.csv" href={TEMPLATE_HREF} style={{ textDecoration: 'none' }}>
           <Download />

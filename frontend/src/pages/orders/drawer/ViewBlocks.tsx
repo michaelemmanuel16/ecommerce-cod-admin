@@ -73,11 +73,11 @@ export function CustomerView({ order }: { order: OrderDetail }) {
         )}
         <dt>Address</dt>
         <dd>{order.deliveryAddress || '—'}</dd>
-        <dt>Region</dt>
+        <dt>State</dt>
         <dd>{order.deliveryState || '—'}</dd>
         {order.deliveryArea && (
           <>
-            <dt>Town</dt>
+            <dt>City/Town</dt>
             <dd>{order.deliveryArea}</dd>
           </>
         )}

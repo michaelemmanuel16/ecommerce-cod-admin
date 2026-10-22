@@ -83,7 +83,7 @@ describe('write paths store E.164', () => {
     const res = await request(app)
       .post(`/api/public/forms/${formSlug}/orders`)
       .send({
-        formData: { name: 'Pub Buyer', phoneNumber: p.local, alternatePhone: alt.local, address: '1 St', state: 'Greater Accra' },
+        formData: { name: 'Pub Buyer', phoneNumber: p.local, alternatePhone: alt.local, address: '1 St', state: 'Greater Accra', town: 'Osu', landmark: 'Near the Total station' },
         selectedPackage: { name: 'One', price: 10, quantity: 1 },
         totalAmount: 10,
       });
@@ -102,7 +102,7 @@ describe('write paths store E.164', () => {
       .post(`/api/public/forms/${formSlug}/orders`)
       .set('X-Forwarded-For', '10.9.9.9')
       .send({
-        formData: { name: 'Old Format', phoneNumber: old.e164, address: '1 St', state: 'Greater Accra' },
+        formData: { name: 'Old Format', phoneNumber: old.e164, address: '1 St', state: 'Greater Accra', town: 'Osu', landmark: 'Near the Total station' },
         selectedPackage: { name: 'One', price: 10, quantity: 1 },
         totalAmount: 10,
       });

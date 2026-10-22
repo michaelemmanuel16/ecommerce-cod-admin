@@ -17,6 +17,8 @@ const data: CheckoutFormData = {
   fullName: '  Ama  ',
   phone: '233200000000',
   region: 'Greater Accra',
+  town: ' Madina ',
+  landmark: 'Near the mall',
   streetAddress: '12 High St',
   selectedPackageId: 2,
   selectedAddonIds: [9],
@@ -30,6 +32,13 @@ describe('buildOrderPayload', () => {
     expect(payload.formData.name).toBe('Ama');
     expect(payload.selectedPackage.id).toBe(2);
     expect(payload.selectedUpsells[0]).toMatchObject({ id: 9, productId: 77, quantity: 1 });
+  });
+
+  it('sends the town and landmark trimmed, and leaves an empty street address out', () => {
+    const { payload } = buildOrderPayload(form, data);
+    expect(payload.formData).toMatchObject({ state: 'Greater Accra', town: 'Madina', landmark: 'Near the mall', address: '12 High St' });
+    const none = buildOrderPayload(form, { ...data, streetAddress: '' }).payload.formData;
+    expect(none.address).toBeUndefined();
   });
 
   it('throws when the selected package is not on the form', () => {

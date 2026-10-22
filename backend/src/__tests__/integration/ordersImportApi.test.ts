@@ -90,7 +90,7 @@ describe('42-row file: 40 ready, 2 bad', () => {
     expect(res.body).toMatchObject({ fileName: 'orders.csv', total: 42, ready: 40, needFix: 2, duplicates: 0 });
     expect(res.body.readyRows).toHaveLength(40);
     expect(res.body.problems).toEqual([
-      expect.objectContaining({ row: 42, problems: ['Region "Ashante" is not in the list. Did you mean Ashanti?'] }),
+      expect.objectContaining({ row: 42, problems: ['State "Ashante" is not in the list. Did you mean Ashanti?'] }),
       expect.objectContaining({ row: 43, problems: ['Phone must have 9 to 15 digits'] }),
     ]);
     expect(res.body.problemsCsv).toContain('problem');

@@ -74,7 +74,7 @@ function physicalForm(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const buyer = { name: 'Ama Mensah', phoneNumber: '0241234567', address: '12 St', state: 'Greater Accra' };
+const buyer = { name: 'Ama Mensah', phoneNumber: '0241234567', address: '12 St', state: 'Greater Accra', town: 'Osu', landmark: 'Opposite the Total station' };
 
 describe('publicOrderController.createPublicOrder — payment-method enforcement (MAN-58)', () => {
   beforeEach(() => {
@@ -379,7 +379,9 @@ describe('publicOrderController.createPublicOrder — rejection logging', () => 
   });
 
   it('logs a missing required field with the keys the form did send', async () => {
-    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(physicalForm());
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(
+      physicalForm({ fields: [{ label: 'Delivery Address', standardKey: 'streetAddress', required: true, enabled: true }] }),
+    );
     const res = buildRes();
 
     await createPublicOrder(
@@ -390,6 +392,8 @@ describe('publicOrderController.createPublicOrder — rejection logging', () => 
           name: 'Ama Mensah',
           phoneNumber: '0241234567',
           state: 'Greater Accra',
+          town: 'Osu',
+          landmark: 'Near the post office',
           customFields: { 'Delivery Address': '12 Test Street' },
         },
         selectedPackage: { id: 10 },

@@ -24,6 +24,10 @@ vi.mock('../../services/customers.service', () => ({
   },
 }));
 
+vi.mock('../../services/locations.service', () => ({
+  locationsService: { getTowns: () => Promise.resolve(['Kumasi', 'Obuasi']) },
+}));
+
 function Where() {
   const loc = useLocation();
   return <output data-testid="where">{loc.pathname + loc.search}</output>;
@@ -150,20 +154,20 @@ describe('Customers list: search, filters, sort, paging (F-352, F-353)', () => {
     await waitFor(() => expect(screen.getByTestId('where')).not.toHaveTextContent('q='));
   });
 
-  it('the City filter lists the towns in use and sends area', async () => {
+  it('the City/Town filter lists the towns in use and sends area', async () => {
     renderPage();
     await screen.findByText('Yaw Boateng');
-    const city = screen.getByRole('combobox', { name: 'City' });
+    const city = screen.getByRole('combobox', { name: 'City/Town' });
     await waitFor(() => expect(within(city).getByRole('option', { name: 'Tema' })).toBeInTheDocument());
     await userEvent.selectOptions(city, 'Tema');
     await waitFor(() => expect(listCustomers).toHaveBeenLastCalledWith(expect.objectContaining({ area: 'Tema', page: 1 }), expect.anything()));
     expect(screen.getByTestId('where')).toHaveTextContent('town=Tema');
   });
 
-  it('Region, Risk, Blocked and Flagged send their filters, and the tiles get them too', async () => {
+  it('State, Risk, Blocked and Flagged send their filters, and the tiles get them too', async () => {
     renderPage();
     await screen.findByText('Yaw Boateng');
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Region' }), 'Ashanti');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'State' }), 'Ashanti');
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Risk' }), 'high');
     await userEvent.click(screen.getByRole('button', { name: 'Blocked' }));
     await userEvent.click(screen.getByRole('button', { name: /Flagged by agent/ }));
@@ -223,17 +227,17 @@ describe('Add customer (F-355)', () => {
 
   it('has every field of the form', async () => {
     const dlg = await open();
-    ['First name', 'Last name', 'Phone', 'Alternate phone', 'Email', 'Region', 'Town', 'Street address', 'Landmark', 'Internal notes'].forEach((label) =>
+    ['First name', 'Last name', 'Phone', 'Alternate phone', 'Email', 'State', 'City/Town', 'Street address', 'Nearest landmark', 'Internal notes'].forEach((label) =>
       expect(within(dlg).getByLabelText(new RegExp(`^${label}`))).toBeInTheDocument());
   });
 
-  it('requires first name, phone, region, town and address; letters in a phone are an error', async () => {
+  it('requires first name, phone, state, city/town and address; letters in a phone are an error', async () => {
     const dlg = await open();
     await userEvent.click(within(dlg).getByRole('button', { name: 'Add customer' }));
     expect(within(dlg).getByText('First name is required')).toBeInTheDocument();
     expect(within(dlg).getByText('Phone needs at least 9 digits')).toBeInTheDocument();
-    expect(within(dlg).getByText('Region is required')).toBeInTheDocument();
-    expect(within(dlg).getByText('Town is required')).toBeInTheDocument();
+    expect(within(dlg).getByText('State is required')).toBeInTheDocument();
+    expect(within(dlg).getByText('City/Town is required')).toBeInTheDocument();
     expect(within(dlg).getByText('Address is required')).toBeInTheDocument();
     expect(createCustomer).not.toHaveBeenCalled();
     await userEvent.type(within(dlg).getByLabelText('Phone'), '024abc5550100');
@@ -245,8 +249,9 @@ describe('Add customer (F-355)', () => {
     await userEvent.type(within(dlg).getByLabelText('First name'), 'Abena');
     await userEvent.type(within(dlg).getByLabelText(/^Last name/), 'Owusu');
     await userEvent.type(within(dlg).getByLabelText('Phone'), '024 555 0100');
-    await userEvent.selectOptions(within(dlg).getByLabelText('Region'), 'Ashanti');
-    await userEvent.type(within(dlg).getByLabelText('Town'), 'Kumasi');
+    await userEvent.selectOptions(within(dlg).getByLabelText('State'), 'Ashanti');
+    await within(dlg).findByRole('option', { name: 'Kumasi' });
+    await userEvent.selectOptions(within(dlg).getByLabelText('City/Town'), 'Kumasi');
     await userEvent.type(within(dlg).getByLabelText('Street address'), '12 Ring Road');
   };
 

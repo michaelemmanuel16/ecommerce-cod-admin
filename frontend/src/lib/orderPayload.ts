@@ -11,8 +11,10 @@ export interface BuiltOrder {
       phoneNumber: string;
       alternatePhone?: string;
       email: string;
-      address: string;
+      address?: string;
       state: string;
+      town: string;
+      landmark?: string;
       notes: null;
       customFields?: Record<string, string>;
     };
@@ -60,8 +62,10 @@ export function buildOrderPayload(form: PublicCheckoutForm, data: CheckoutFormDa
         phoneNumber: data.phone,
         alternatePhone: data.alternativePhone || undefined,
         email: data.email || '',
-        address: data.streetAddress,
+        address: data.streetAddress?.trim() || undefined,
         state: data.region,
+        town: data.town?.trim() ?? '',
+        landmark: data.landmark?.trim() || undefined,
         notes: null,
         customFields: data.customFields,
       },

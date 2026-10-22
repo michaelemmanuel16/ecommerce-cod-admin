@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { Check, Plus, X } from 'lucide-react';
 import { Button, Drawer, Input, Select, useToast } from '../../components/ui-v2';
+import { TownSelect } from '../../components/forms/TownSelect';
+import { useTowns } from '../../hooks/useTowns';
 import { customersService } from '../../services/customers.service';
 import { ordersService } from '../../services/orders.service';
 import { productsService } from '../../services/products.service';
@@ -43,6 +45,7 @@ interface Form {
   address: string;
   region: string;
   town: string;
+  landmark: string;
   discount: string;
   /** null: the total follows the lines. */
   total: string | null;
@@ -53,7 +56,7 @@ interface Form {
 }
 
 const EMPTY: Form = {
-  name: '', phone: '', alternatePhone: '', email: '', address: '', region: '', town: '',
+  name: '', phone: '', alternatePhone: '', email: '', address: '', region: '', town: '', landmark: '',
   discount: '', total: null, notes: '', repId: '', agentId: '', confirmed: false,
 };
 
@@ -73,6 +76,7 @@ export function NewOrderSheet({ open, onClose, onCreated, customerId, canAssign,
   const currency = useConfigStore((s) => s.currency);
   const regions = useMemo(() => getRegionsForCountry(getCountryByCurrency(currency)), [currency]);
   const [form, setForm] = useState<Form>(EMPTY);
+  const { towns, loading: townsLoading } = useTowns(form.region);
   const [lines, setLines] = useState<DraftLine[]>(() => [blankLine()]);
   const [products, setProducts] = useState<Product[]>([]);
   const [known, setKnown] = useState<Known | null>(null);
@@ -102,7 +106,7 @@ export function NewOrderSheet({ open, onClose, onCreated, customerId, canAssign,
       .catch(() => undefined);
     if (customerId) {
       customersService.getForOrder(customerId)
-        .then((c) => live && setForm((f) => ({ ...f, name: c.name, phone: formatPhoneLocal(c.phone), alternatePhone: c.alternatePhone && formatPhoneLocal(c.alternatePhone), email: c.email, address: c.address, region: c.region, town: c.town })))
+        .then((c) => live && setForm((f) => ({ ...f, name: c.name, phone: formatPhoneLocal(c.phone), alternatePhone: c.alternatePhone && formatPhoneLocal(c.alternatePhone), email: c.email, address: c.address, region: c.region, town: c.town, landmark: c.landmark })))
         .catch(() => undefined);
     }
     return () => {
@@ -155,8 +159,8 @@ export function NewOrderSheet({ open, onClose, onCreated, customerId, canAssign,
     name: !form.name.trim() ? 'Enter the customer name.' : '',
     phone: !phoneOk(form.phone) ? 'Phone number needs at least 9 digits.' : '',
     address: !form.address.trim() ? 'Enter the delivery address.' : '',
-    region: !form.region ? 'Choose a region.' : '',
-    town: !form.town.trim() ? 'Enter the town or area.' : '',
+    region: !form.region ? 'Choose a state.' : '',
+    town: !form.town.trim() ? 'Choose or type the city/town.' : '',
     total: form.total !== null && (form.total.trim() === '' || asNumber(form.total) < 0) ? 'Enter the order total.' : '',
   };
   const lineOk = (l: DraftLine) => !!l.productId && Number.isInteger(asNumber(l.qty)) && asNumber(l.qty) >= 1 && !stockProblem(l);
@@ -177,6 +181,7 @@ export function NewOrderSheet({ open, onClose, onCreated, customerId, canAssign,
         deliveryAddress: form.address.trim(),
         deliveryState: form.region,
         deliveryArea: form.town.trim(),
+        ...(form.landmark.trim() && { landmark: form.landmark.trim() }),
         orderItems: lines.map((l) => ({ productId: l.productId!, quantity: asNumber(l.qty), unitPrice: asNumber(l.price) })),
         subtotal: linesSum(lines),
         discount: asNumber(form.discount),
@@ -243,13 +248,14 @@ export function NewOrderSheet({ open, onClose, onCreated, customerId, canAssign,
             />
             {shown('address') && <p className="err">{shown('address')}</p>}
           </div>
-          <Select label="Region" value={form.region} onChange={(e) => set('region', e.target.value)} error={shown('region')}>
-            <option value="">Choose a region</option>
+          <Select label="State" value={form.region} onChange={(e) => set('region', e.target.value)} error={shown('region')}>
+            <option value="">Choose a state</option>
             {regionList.map((r) => (
               <option key={r} value={r}>{r}</option>
             ))}
           </Select>
-          <Input label="Town or area" placeholder="Osu" value={form.town} onChange={(e) => set('town', e.target.value)} error={shown('town')} />
+          <TownSelect state={form.region} value={form.town} onChange={(v) => set('town', v)} towns={towns} loading={townsLoading} error={shown('town')} />
+          <Input className="full" label="Nearest landmark" optional placeholder="e.g. Opposite Kasoa Total station" value={form.landmark} onChange={(e) => set('landmark', e.target.value)} />
         </div>
       </div>
 

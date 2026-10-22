@@ -1,5 +1,5 @@
 /** The template the Import modal offers (F-319): the columns the importer reads, and one example row. */
-export const TEMPLATE_COLUMNS = ['customer_name', 'phone', 'address', 'region', 'product', 'quantity', 'price', 'status'] as const;
+export const TEMPLATE_COLUMNS = ['customer_name', 'phone', 'address', 'state', 'product', 'quantity', 'price', 'status'] as const;
 const TEMPLATE_ROW = 'Abena Owusu,0245550182,14 Adum Road Kumasi,Ashanti,Magic Groove copybook set,1,249,pending_confirmation';
 export const TEMPLATE_HREF = `data:text/csv;charset=utf-8,${encodeURIComponent(`${TEMPLATE_COLUMNS.join(',')}\n${TEMPLATE_ROW}\n`)}`;
 

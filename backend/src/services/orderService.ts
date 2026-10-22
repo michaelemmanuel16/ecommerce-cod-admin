@@ -26,6 +26,7 @@ import { classifyQuery, nameMatch } from './searchService';
 import { kpiWindow } from './kpi/dates';
 import { deliveredRevenue, revenueScope } from './kpi/revenue';
 import { duplicateCandidatesWhere, IMPORT_BLOCKED_STATUSES, isDuplicateOf, isForwardStatus } from './orderImportService';
+import { cleanText, deliveryAddressOf } from '../utils/checkoutLocation';
 
 
 
@@ -50,6 +51,8 @@ interface CreateOrderData {
   deliveryAddress: string;
   deliveryState: string;
   deliveryArea: string;
+  /** Nearest landmark (COD-138): saved on the customer and added to the delivery address. */
+  landmark?: string;
   notes?: string;
   estimatedDelivery?: Date;
   createdById?: number;
@@ -421,6 +424,7 @@ export class OrderService {
             address: data.deliveryAddress,
             state: data.deliveryState,
             area: data.deliveryArea,
+            landmark: cleanText(data.landmark) || null,
           }
         });
       } else {
@@ -434,6 +438,8 @@ export class OrderService {
         if (alternatePhone && alternatePhone !== customer.alternatePhone) {
           customerUpdateData.alternatePhone = alternatePhone;
         }
+        const landmark = cleanText(data.landmark);
+        if (landmark && landmark !== customer.landmark) customerUpdateData.landmark = landmark;
         if (Object.keys(customerUpdateData).length > 0) {
           customer = await prisma.customer.update({
             where: { id: customer.id },
@@ -498,7 +504,7 @@ export class OrderService {
           discount: data.discount || 0,
           totalAmount: data.totalAmount,
           codAmount: data.totalAmount,
-          deliveryAddress: data.deliveryAddress,
+          deliveryAddress: deliveryAddressOf(data.deliveryAddress, data.landmark) ?? data.deliveryAddress,
           deliveryState: data.deliveryState,
           deliveryArea: data.deliveryArea,
           notes: data.notes,

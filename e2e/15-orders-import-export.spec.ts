@@ -36,7 +36,7 @@ const file42 = () => ({
   name: 'meta-leads.csv',
   mimeType: 'text/csv',
   buffer: Buffer.from(
-    ['customer_name,phone,address,region,product,quantity,price,status',
+    ['customer_name,phone,address,state,product,quantity,price,status',
       ...Array.from({ length: 42 }, (_, i) => `Buyer ${i},02455501${String(i).padStart(2, '0')},${i} Adum Road,Ashanti,Copybook set,1,249,pending_confirmation`)].join('\n'),
   ),
 });
