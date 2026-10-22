@@ -16,6 +16,10 @@ export interface User {
   role: 'super_admin' | 'admin' | 'manager' | 'sales_rep' | 'inventory_manager' | 'delivery_agent' | 'accountant' | 'customer_rep';
   isPlatformAdmin?: boolean;
   avatar?: string;
+  /** Shown to the team in notes and assignments (F-1221). */
+  displayName?: string | null;
+  photoUrl?: string | null;
+  phoneNumber?: string | null;
   preferences?: UserPreferences;
   commissionAmount?: number;
   deliveryRate?: number;

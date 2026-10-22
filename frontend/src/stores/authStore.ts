@@ -26,6 +26,8 @@ interface AuthState {
   registerTenant: (data: { companyName: string; adminEmail: string; adminPassword: string; adminName: string; planName?: string }) => Promise<void>;
   logout: (showToast?: boolean) => void;
   setAccessToken: (token: string, refreshToken?: string) => void;
+  /** Merge saved profile fields into the signed-in user, so the header shows them at once. */
+  patchUser: (fields: Partial<User>) => void;
   updatePreferences: (preferences: UserPreferences) => Promise<void>;
   refreshPermissions: () => Promise<void>;
   setupPermissionListener: () => void;
@@ -119,6 +121,11 @@ export const useAuthStore = create<AuthState>()(
       // The server rotates the refresh token on every refresh (M3-T23): keep the new one
       setAccessToken: (token: string, refreshToken?: string) => {
         set(refreshToken ? { accessToken: token, refreshToken } : { accessToken: token });
+      },
+
+      patchUser: (fields: Partial<User>) => {
+        const current = get().user;
+        if (current) set({ user: { ...current, ...fields } });
       },
 
       updatePreferences: async (preferences: UserPreferences) => {

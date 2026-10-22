@@ -12,6 +12,7 @@ import './styles/orders.css';
 import './styles/customers.css';
 import './styles/onboarding.css';
 import './styles/orderDrawer.css';
+import './styles/settings.css';
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
