@@ -34,6 +34,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Only the PWA plugin provides this module; tests replace it with vi.mock.
+      'virtual:pwa-register/react': path.resolve(__dirname, './src/__tests__/stubs/pwaRegisterReact.ts'),
     },
   },
 });
