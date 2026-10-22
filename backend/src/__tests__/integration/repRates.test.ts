@@ -227,7 +227,7 @@ describe('GET /api/reports/team', () => {
 
   it('tenant B sees none of A and A sees none of B targets', async () => {
     const a = await request(app).get(`/api/reports/team?${RANGE}`).set(auth(pair.a.users.admin.token));
-    expect(JSON.stringify(a.body)).not.toContain('777');
+    expect(JSON.stringify(a.body)).not.toContain('"target":777'); // a timestamped rep name can hold the digits 777
     const b = await request(app).get(`/api/reports/team?${RANGE}`).set(auth(pair.b.users.admin.token));
     expect(b.status).toBe(200);
     expect(b.body.reps.every((r: any) => r.repId !== repA)).toBe(true);
