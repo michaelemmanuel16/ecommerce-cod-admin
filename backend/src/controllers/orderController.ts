@@ -5,6 +5,7 @@ import orderService, { OrderFilters, OrderInclude, OrderSortField } from '../ser
 import { clearCache } from '../middleware/cache';
 import { readDateBound } from '../utils/kpiRequest';
 import { ALL_STATUSES } from '../services/orderStateMachine';
+import orderDetailService from '../services/orderDetailService';
 import { assertWithinCap, BatchRow, ExportColumn, exportDate, exportMoney, exportPhone, readFormat, streamExport } from '../services/exportStream';
 
 /** Filters shared by the list and the tab counts. Sort, page and include are read by the list only. */
@@ -172,11 +173,15 @@ export const bulkImportOrders = async (req: AuthRequest, res: Response): Promise
 export const getOrder = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const order = await orderService.getOrderById(Number(id), req.user);
+    const order = await orderDetailService.getDetail(Number(id), req.user!);
     res.json({ order });
   } catch (error) {
     throw error;
   }
+};
+
+export const getOrderTimeline = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ timeline: await orderDetailService.getTimeline(Number(req.params.id), req.user!) });
 };
 
 export const updateOrder = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -299,19 +304,6 @@ export const assignDeliveryAgent = async (req: AuthRequest, res: Response): Prom
     }
     const order = await orderService.assignDeliveryAgent(Number(id), Number(deliveryAgentId), req.user!, confirmBlocked === true);
     res.json({ order });
-  } catch (error) {
-    throw error;
-  }
-};
-
-export const getKanbanView = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { area, agentId } = req.query;
-    const kanban = await orderService.getKanbanView({
-      area: area as string | undefined,
-      agentId: agentId as string | undefined
-    }, req.user);
-    res.json({ kanban });
   } catch (error) {
     throw error;
   }

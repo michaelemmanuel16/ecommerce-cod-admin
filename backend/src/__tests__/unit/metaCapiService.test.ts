@@ -5,6 +5,7 @@ jest.mock('../../utils/logger', () => ({ info: jest.fn(), error: jest.fn(), warn
 
 import { prismaMock } from '../mocks/prisma.mock';
 import { metaCapiService } from '../../services/metaCapiService';
+import { formatOrderNumber } from '../../utils/orderNumber';
 
 const sha = (v: string) => createHash('sha256').update(v).digest('hex');
 
@@ -88,6 +89,17 @@ describe('metaCapiService.fireCapiPurchaseEvent (MAN-59)', () => {
 
     const body = JSON.parse((fetchMock.mock.calls[0] as any)[1].body);
     expect(body.data[0].event_id).toBe('42');
+  });
+
+  it('keeps the raw numeric order id as event_id; the #<id> display number never reaches Meta (F-300)', async () => {
+    (prismaMock.order.findUnique as any).mockResolvedValue(orderWith(capiForm, { paymentReference: null }));
+
+    await metaCapiService.fireCapiPurchaseEvent(42);
+
+    const body = JSON.parse((fetchMock.mock.calls[0] as any)[1].body);
+    expect(formatOrderNumber(42)).toBe('#42');
+    expect(body.data[0].event_id).toBe('42');
+    expect(JSON.stringify(body)).not.toContain('#42');
   });
 
   it('does not mark fired when Meta rejects the event (so it can retry)', async () => {
