@@ -7,6 +7,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useShellStore } from '../../stores/shellStore';
 import { getCurrencySymbol } from '../../utils/countries';
+import { initials, personName } from '../../utils/people';
 import { Skeleton } from '../ui-v2';
 import { PLATFORM_GROUP, isActive, visibleGroups, type NavGroup, type NavItem } from './navModel';
 
@@ -17,9 +18,6 @@ interface SidebarProps {
   mobileOpen: boolean;
   onNavigate: () => void;
 }
-
-const initials = (text: string) =>
-  text.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
 /** The country that uses this currency, or '' when several do (USD, EUR): the config API does not return the country yet. */
 function countryOf(currency: string): string {
@@ -41,7 +39,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onNavigate }
   }, [user, menu]);
 
   const country = useMemo(() => countryOf(currency), [currency]);
-  const fullName = user ? `${user.firstName} ${user.lastName}`.trim() : '';
+  const fullName = user ? personName(user) : '';
   const roleNames = roles?.map((r) => r.name).join(' · ') ?? '';
 
   const link = (item: NavItem) => {

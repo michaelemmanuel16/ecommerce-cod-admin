@@ -1,13 +1,9 @@
 import type { TagTone } from '../../components/ui-v2';
+import { phoneOk } from '../../utils/phone';
+import { personName } from '../../utils/people';
 import type { CustomerRisk, CustomerRow, CustomerSegment } from '../../services/customers.service';
 
-export const customerName = (c: Pick<CustomerRow, 'firstName' | 'lastName'>): string => `${c.firstName} ${c.lastName}`.trim();
-
-export const initials = (name: string): string =>
-  name.split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-
-/** Avatar tint per customer, the five tones of the mockup. */
-export const AVATAR_TONES = ['pine', 'gold', 'violet', 'coral', 'mint'] as const;
+export const customerName = (c: Pick<CustomerRow, 'firstName' | 'lastName'>): string => personName(c);
 
 /** Tabs of docs/mockups/v2/customers.html, in order. The ids are the URL values of `?segment=` (F-351). */
 export const SEGMENT_TABS: Array<{ id: CustomerSegment; label: string }> = [
@@ -42,6 +38,6 @@ export function lastOrderDate(iso: string | null, now: Date = new Date()): strin
 export function phoneProblem(label: string, value: string): string | null {
   const text = value.trim();
   if (/[a-z]/i.test(text)) return `${label} can only have digits, spaces, + and dashes`;
-  if (text.replace(/\D/g, '').length < 9) return `${label} needs at least 9 digits`;
+  if (!phoneOk(text)) return `${label} needs at least 9 digits`;
   return null;
 }

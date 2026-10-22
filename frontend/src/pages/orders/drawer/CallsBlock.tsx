@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { PhoneCall } from 'lucide-react';
 import { Button, Tag } from '../../../components/ui-v2';
 import type { OrderDetail } from '../../../services/orders.service';
-import { accraTime, CALL_OUTCOMES, fullName, outcomeLabel, outcomeTone } from './model';
+import { personName } from '../../../utils/people';
+import { accraTime, CALL_OUTCOMES, outcomeLabel, outcomeTone } from './model';
 
 interface CallsProps {
   calls: OrderDetail['calls'];
@@ -74,7 +75,7 @@ export function CallsBlock({ calls, onLog, me }: CallsProps) {
             <div className="call" key={c.id}>
               <div>
                 <Tag tone={outcomeTone(c.outcome)}>{outcomeLabel(c.outcome)}</Tag>
-                <b style={{ marginLeft: 6 }}>{fullName(c.salesRep)}</b>
+                <b style={{ marginLeft: 6 }}>{personName(c.salesRep)}</b>
               </div>
               <small>{accraTime(c.createdAt)}</small>
               {c.notes && <p>{c.notes}</p>}
