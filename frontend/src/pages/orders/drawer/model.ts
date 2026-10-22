@@ -5,7 +5,7 @@ import { formatPhoneLocal } from '../../../utils/format';
 import { personName } from '../../../utils/people';
 
 /** Which fields an edit may change, by status group (F-318). The server enforces the same table. */
-export type EditGroup = 'full' | 'dispatched' | 'notes';
+type EditGroup = 'full' | 'dispatched' | 'notes';
 
 export function editGroup(status: OrderStatus): EditGroup {
   if (status === 'out_for_delivery' || status === 'failed_delivery') return 'dispatched';

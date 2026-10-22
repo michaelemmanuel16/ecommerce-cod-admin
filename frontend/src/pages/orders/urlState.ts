@@ -28,7 +28,7 @@ export interface ListView {
 }
 
 export const PAGE_SIZES = [25, 50, 75, 100] as const;
-export const DEFAULT_SORT: SortState = { by: 'createdAt', dir: 'desc' };
+const DEFAULT_SORT: SortState = { by: 'createdAt', dir: 'desc' };
 
 export const DEFAULT_VIEW: ListView = {
   tab: 'all', page: 1, q: '', sort: DEFAULT_SORT, size: null, from: null, to: null, basis: 'created',

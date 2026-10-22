@@ -16,7 +16,7 @@ interface TabDef {
 }
 
 /** Tab order of docs/mockups/v2/index.html#orders. "Unpaid by agent" (F-309) ships in M5. */
-export const STATUS_TABS: TabDef[] = [
+const STATUS_TABS: TabDef[] = [
   { id: 'all', label: 'All', statuses: [] },
   { id: 'pending_confirmation', label: ORDER_STATUS_LABELS.pending_confirmation, statuses: ['pending_confirmation'] },
   { id: 'confirmed', label: ORDER_STATUS_LABELS.confirmed, statuses: ['confirmed'] },

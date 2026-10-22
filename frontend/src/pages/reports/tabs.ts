@@ -16,7 +16,7 @@ interface TabDef {
 }
 
 /** The six tabs of F-1050. Products and profit is M5 and Marketing is M8: they stay hidden until then. */
-export const REPORT_TABS: TabDef[] = [
+const REPORT_TABS: TabDef[] = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard, built: true, needs: ['analytics', 'view'] },
   { key: 'sales', label: 'Sales & revenue', icon: CircleDollarSign, built: true, needs: ['analytics', 'view'] },
   { key: 'delivery', label: 'Delivery & operations', icon: Truck, built: true, needs: ['analytics', 'view'] },

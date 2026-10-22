@@ -6,7 +6,7 @@ export type Theme = 'light' | 'dark';
 
 export const THEME_KEY = 'codadmin-theme';
 
-export function readStoredTheme(): Theme | null {
+function readStoredTheme(): Theme | null {
   try {
     const value = localStorage.getItem(THEME_KEY);
     return value === 'light' || value === 'dark' ? value : null;
@@ -15,7 +15,7 @@ export function readStoredTheme(): Theme | null {
   }
 }
 
-export function systemTheme(): Theme {
+function systemTheme(): Theme {
   try {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   } catch {

@@ -1,6 +1,6 @@
 /** Phone helpers shared by the New order sheet and the customer lookup (F-317, F-362). */
 
-export const phoneDigits = (phone: string): string => phone.replace(/\D/g, '');
+const phoneDigits = (phone: string): string => phone.replace(/\D/g, '');
 
 /** Fewer than 9 digits is an error; a 9-digit Ghana number without the leading 0 is accepted (F-317). */
 export const phoneOk = (phone: string): boolean => phoneDigits(phone).length >= 9;

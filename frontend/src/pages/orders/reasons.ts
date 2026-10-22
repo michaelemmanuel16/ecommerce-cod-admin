@@ -18,6 +18,6 @@ export const FAILURE_REASONS: Array<[FailureReason, string]> = [
 ];
 
 /** Which dialog a move to this status opens (F-306): a cancel asks why, a failed delivery asks why and when next. */
-export type ReasonKind = 'decline' | 'failure';
+type ReasonKind = 'decline' | 'failure';
 export const reasonKind = (target: OrderStatus): ReasonKind | null =>
   target === 'cancelled' ? 'decline' : target === 'failed_delivery' ? 'failure' : null;
