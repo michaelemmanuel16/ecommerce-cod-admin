@@ -67,9 +67,9 @@ export interface SalesReport extends ReportHead {
   tiles: Block<SalesTiles>;
   revenuePerDay: Block<{ rows: Array<{ date: string; revenue: Money; previous: { date: string; revenue: Money } | null }> }>;
   byProduct: Block<{ rows: Array<{ productId: number; name: string; units: number; revenue: Money; sharePercent: number | null }>; total: Money }>;
-  byCity: Block<{
+  byState: Block<{
     label: string;
-    rows: Array<{ city: string; delivered: number; revenue: Money; averageOrder: Money | null; sharePercent: number | null }>;
+    rows: Array<{ state: string; delivered: number; revenue: Money; averageOrder: Money | null; sharePercent: number | null }>;
     total: { delivered: number; revenue: Money; averageOrder: Money | null };
   }>;
 }
@@ -103,10 +103,10 @@ export interface DeliveryReport extends ReportHead {
   tiles: Block<DeliveryTiles>;
   deliveredPerDay: Block<{ rows: Array<{ date: string; delivered: number; previous: { date: string; delivered: number } | null }> }>;
   reasons: Block<{ total: number; rows: Array<{ reason: string; count: number; percent: number | null }> }>;
-  successByCity: Block<{
+  successByState: Block<{
     label: string;
     target: number;
-    rows: Array<{ city: string; placed: number; delivered: number; failed: number; returned: number; closed: number; successRate: number | null }>;
+    rows: Array<{ state: string; placed: number; delivered: number; failed: number; returned: number; closed: number; successRate: number | null }>;
   }>;
   waitingAndReturns: Block<{ waiting: { count: number; oldestDays: number | null }; returned: { count: number } }>;
   partners: Block<{

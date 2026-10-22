@@ -166,16 +166,16 @@ export function DeliveryTab({ report, ctl }: { report: DeliveryReport | null; ct
       </Part>
 
       <div className="grid two even">
-        <Part name="Delivery success by City/Town" block={report?.successByCity} ctl={ctl} height={240}>
+        <Part name="Delivery success by State" block={report?.successByState} ctl={ctl} height={240}>
           {(c) => {
-            const rows = c.rows.filter((r) => r.successRate !== null).map((r) => ({ label: placeName(r.city), value: r.successRate as number }));
+            const rows = c.rows.filter((r) => r.successRate !== null).map((r) => ({ label: placeName(r.state), value: r.successRate as number }));
             return (
-              <Card title="Delivery success by City/Town" aside={`Target ${c.target}%`}>
-                {rows.length === 0 ? <EmptyState title="No closed orders yet" text="Cities show once an order is delivered, failed or returned." /> : (
+              <Card title="Delivery success by State" aside={`Target ${c.target}%`}>
+                {rows.length === 0 ? <EmptyState title="No closed orders yet" text="States show once an order is delivered, failed or returned." /> : (
                   <div className="chart">
                     <TargetBars
                       rows={rows} target={c.target}
-                      summary={`Delivery success by city or town against the ${c.target} percent target: ${rows.map((r) => `${r.label} ${Math.round(r.value)} percent`).join(', ')}.`}
+                      summary={`Delivery success by state against the ${c.target} percent target: ${rows.map((r) => `${r.label} ${Math.round(r.value)} percent`).join(', ')}.`}
                     />
                   </div>
                 )}

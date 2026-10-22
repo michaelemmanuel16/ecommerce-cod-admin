@@ -211,14 +211,14 @@ describe('sales on the fixture (F-1052)', () => {
     expect(tiles.aov.previous).toMatch(/^\d+\.\d{2}$/);
   });
 
-  it('the city table is titled City and its rows and total equal the revenue and the 376 delivered orders', async () => {
-    const { byCity } = (await get(adminToken, 'sales')).body;
-    expect(byCity.label).toBe('City');
-    expect(byCity.total).toMatchObject({ delivered: 376, revenue: '92000.00', averageOrder: '244.68' });
-    expect(byCity.rows.reduce((n: number, r: any) => n + r.delivered, 0)).toBe(376);
-    expect(byCity.rows.reduce((n: number, r: any) => n + Number(r.revenue), 0).toFixed(2)).toBe('92000.00');
-    expect(byCity.rows.reduce((n: number, r: any) => n + r.sharePercent, 0)).toBeGreaterThan(99);
-    const accra = byCity.rows.find((r: any) => r.city === 'Accra');
+  it('the state table is titled State and its rows and total equal the revenue and the 376 delivered orders', async () => {
+    const { byState } = (await get(adminToken, 'sales')).body;
+    expect(byState.label).toBe('State');
+    expect(byState.total).toMatchObject({ delivered: 376, revenue: '92000.00', averageOrder: '244.68' });
+    expect(byState.rows.reduce((n: number, r: any) => n + r.delivered, 0)).toBe(376);
+    expect(byState.rows.reduce((n: number, r: any) => n + Number(r.revenue), 0).toFixed(2)).toBe('92000.00');
+    expect(byState.rows.reduce((n: number, r: any) => n + r.sharePercent, 0)).toBeGreaterThan(99);
+    const accra = byState.rows.find((r: any) => r.state === 'Greater Accra');
     expect(accra.averageOrder).toBe((Number(accra.revenue) / accra.delivered).toFixed(2));
   });
 
@@ -305,7 +305,7 @@ describe('a tenant with no orders', () => {
     expect(overview.endedUp.segments.every((s: any) => s.percent === null)).toBe(true);
     const sales = (await salesReport(emptyId, r)) as any;
     expect(sales.tiles.aov.value).toBeNull();
-    expect(sales.byCity.rows).toEqual([]);
+    expect(sales.byState.rows).toEqual([]);
     expect(JSON.stringify([overview, sales])).not.toContain('92000');
   });
 });

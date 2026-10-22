@@ -214,12 +214,12 @@
    }
   ]
  },
- "successByCity": {
-  "label": "City",
+ "successByState": {
+  "label": "State",
   "target": 60,
   "rows": [
    {
-    "city": "Accra",
+    "state": "Greater Accra",
     "placed": 255,
     "delivered": 176,
     "failed": 170,
@@ -228,7 +228,7 @@
     "successRate": 48.1
    },
    {
-    "city": "Tema",
+    "state": "Eastern",
     "placed": 140,
     "delivered": 92,
     "failed": 84,
@@ -237,7 +237,7 @@
     "successRate": 49.5
    },
    {
-    "city": "Kumasi",
+    "state": "Ashanti",
     "placed": 170,
     "delivered": 82,
     "failed": 62,
@@ -246,7 +246,7 @@
     "successRate": 52.6
    },
    {
-    "city": "Takoradi",
+    "state": "Western",
     "placed": 80,
     "delivered": 26,
     "failed": 38,

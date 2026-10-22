@@ -29,11 +29,11 @@ const get = (token: string, path: string, query = RANGE) =>
     });
 const json = async (token: string, path: string, query?: string) => JSON.parse(((await get(token, path, query)).body as Buffer).toString('utf8'));
 
-/** Delivered orders of `amount` each and one failed order, in the tenant's own city, plus a verified deposit and an approved collection. */
+/** Delivered orders of `amount` each and one failed order, in the tenant's own state, plus a verified deposit and an approved collection. */
 async function seed(t: TestTenant, delivered: number, amount: number, deposit: number) {
   const own = await prismaBase.order.findUniqueOrThrow({ where: { id: t.ids.order } });
   const base = {
-    customerId: own.customerId, createdAt: at, shippingCost: 0, deliveryAddress: 'x', deliveryState: 'Greater Accra',
+    customerId: own.customerId, createdAt: at, shippingCost: 0, deliveryAddress: 'x', deliveryState: `State-${t.marker}`,
     deliveryArea: `City-${t.marker}`, tenantId: t.id, deliveryAgentId: t.users.deliveryAgent.id, customerRepId: t.users.salesRep.id,
     subtotal: amount, totalAmount: amount, codAmount: amount, confirmedById: t.users.salesRep.id,
   };
@@ -60,7 +60,7 @@ afterAll(async () => {
   await prismaBase.$disconnect();
 });
 
-const leaks = (text: string) => [pair.b.marker, pair.b.amount, 'City-' + pair.b.marker, '4000.00', '2000.00', '999.00'].filter((x) => text.includes(x));
+const leaks = (text: string) => [pair.b.marker, pair.b.amount, 'State-' + pair.b.marker, '4000.00', '2000.00', '999.00'].filter((x) => text.includes(x));
 
 describe('two tenants: /api/reports', () => {
   it('overview: A sees its 3 October orders (the seeded one and two more) and 1,000.00 revenue; B sees its 4 and 4,000.00', async () => {
@@ -77,11 +77,11 @@ describe('two tenants: /api/reports', () => {
     expect(JSON.stringify(b)).not.toContain(pair.a.marker);
   });
 
-  it('sales: A has one city, its own revenue, and the cash received from its own deposit', async () => {
+  it('sales: A has one state, its own revenue, and the cash received from its own deposit', async () => {
     const a = await json(pair.a.users.admin.token, 'sales');
     expect(a.tiles.deliveredRevenue.value).toBe('1000.00');
     expect(a.tiles.cashReceived.value).toBe('111.00');
-    expect(a.byCity.rows.map((r: any) => r.city)).toEqual([`City-${pair.a.marker}`]);
+    expect(a.byState.rows.map((r: any) => r.state)).toEqual([`State-${pair.a.marker}`]);
     expect(a.byProduct.rows.every((r: any) => !r.name.includes(pair.b.marker))).toBe(true);
     expect(leaks(JSON.stringify(a))).toEqual([]);
     const b = await json(pair.b.users.admin.token, 'sales');
@@ -96,7 +96,7 @@ describe('two tenants: /api/reports', () => {
     expect(a.partners.rows[0]).toMatchObject({ delivered: 1, failedOrReturned: 1, paysInDays: 2 });
     expect(a.tiles.failed.value).toBe(1);
     expect(a.reasons.rows).toEqual([{ reason: 'refused', count: 1, percent: 100 }]);
-    expect(a.successByCity.rows.map((r: any) => r.city)).toEqual([`City-${pair.a.marker}`, 'Accra']); // Accra: the order every test tenant starts with
+    expect(a.successByState.rows.map((r: any) => r.state)).toEqual([`State-${pair.a.marker}`, 'Greater Accra']); // Greater Accra: the order every test tenant starts with
     expect(leaks(JSON.stringify(a))).toEqual([]);
     expect((await json(pair.b.users.admin.token, 'delivery')).partners.rows.map((r: any) => r.partnerId)).toEqual([pair.b.users.deliveryAgent.id]);
   });

@@ -9,12 +9,12 @@
  * Run: npx ts-node src/scripts/backfillTowns.ts [--apply] [--tenant <id>]
  */
 import { getTowns } from '../services/locationService';
+import { baseState } from '../utils/regions';
 
 const BATCH = 500;
 
 const norm = (s: string | null | undefined): string => (s ?? '').trim().toLowerCase();
-/** "Greater Accra (Tema)" is Greater Accra. */
-export const baseState = (state: string | null | undefined): string => (state ?? '').replace(/\s*\(.*\)\s*$/, '').trim();
+export { baseState };
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
