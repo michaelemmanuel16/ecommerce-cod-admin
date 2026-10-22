@@ -15,6 +15,9 @@ import { test, expect } from '@playwright/test';
  * Membrane verification (they need platform test keys + a logged-in super_admin).
  */
 
+// SaaS signup is off by default (F-123). Run these with VITE_SAAS_SIGNUP_ENABLED=true on the frontend and E2E_SAAS_SIGNUP=true.
+test.skip(process.env.E2E_SAAS_SIGNUP !== 'true', 'SaaS signup pages are off by default');
+
 test.describe('Pricing page (public, limits-only)', () => {
   test('renders the difference-first table with all three tiers in NGN', async ({ page }) => {
     await page.goto('/pricing');

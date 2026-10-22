@@ -63,9 +63,15 @@ export const getSubscription = async (_req: AuthRequest, res: Response, next: Ne
       // F2: lets the frontend render pricing/billing read-only and hide subscribe
       // CTAs when the platform keys are absent — never a 500.
       billingEnabled: isPlatformBillingConfigured(),
+      // Banner data: the plan a pending or past-due tenant still has to pay for (read from the plans table).
+      pendingPlan:
+        plan && (tenant.subscriptionStatus === SUBSCRIPTION_STATUS.PENDING || tenant.subscriptionStatus === SUBSCRIPTION_STATUS.PAST_DUE)
+          ? { name: plan.name, displayName: plan.displayName, priceNGN: plan.priceNGN, status: tenant.subscriptionStatus }
+          : null,
       usage: {
         ordersThisMonth: orderCount,
         maxOrders: plan?.maxOrders ?? null,
+        maxUsers: plan?.maxUsers ?? null,
       },
     });
   } catch (err) {

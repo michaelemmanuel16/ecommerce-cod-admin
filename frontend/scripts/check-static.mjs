@@ -26,6 +26,14 @@ export const SCANNED = [
   'src/pages/dashboard',
   'src/styles/dashboard.css',
   'src/services/dashboard.service.ts',
+  'src/styles/auth.css',
+  'src/components/auth',
+  'src/components/ErrorBoundary.tsx',
+  'src/components/pwa/UpdatePrompt.tsx',
+  'src/pages/Login.tsx',
+  'src/pages/ForgotPassword.tsx',
+  'src/pages/ResetPassword.tsx',
+  'src/pages/NotFound.tsx',
   // later tasks: 'src/pages/v2', ...
 ];
 

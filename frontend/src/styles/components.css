@@ -74,6 +74,8 @@
 
 /* confirm dialog and toast (shell.js components in app.css) */
 .v2 .sx-toast{position:fixed;left:50%;bottom:58px;transform:translateX(-50%);background:var(--pine);color:var(--on-pine);padding:9px 16px;border-radius:12px;font-weight:600;font-size:13px;z-index:90;box-shadow:var(--shadow)}
+.v2 .sx-toast.update{display:flex;align-items:center;gap:12px;bottom:20px;max-width:calc(100vw - 32px)}
+.v2 .sx-toast.update .mini{color:var(--ink)}
 .v2 .sx-veil{position:fixed;inset:0;background:var(--veil);backdrop-filter:blur(3px);z-index:80;display:flex;align-items:center;justify-content:center;padding:16px}
 .v2 .sx-modal{width:440px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:var(--shadow-pop)}
 .v2 .sx-modal h3{font-size:18px;font-weight:700} /* browser default bold; Tailwind preflight resets it */

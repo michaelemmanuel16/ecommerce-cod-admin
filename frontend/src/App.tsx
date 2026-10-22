@@ -10,6 +10,8 @@ import { AccessGate } from './components/shell/AccessGate';
 import { canOpenPath } from './components/shell/navModel';
 import { useConfigStore } from './stores/configStore';
 import { isPlatformDomain, platformLoginPath } from './utils/platformDomain';
+import { SaasRoute } from './components/auth/SaasRoute';
+import { NotFound } from './pages/NotFound';
 
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
@@ -187,9 +189,11 @@ function App() {
             </Suspense>
           } />
           <Route path="/pricing" element={
-            <Suspense fallback={<Loading />}>
-              <Pricing />
-            </Suspense>
+            <SaasRoute>
+              <Suspense fallback={<Loading />}>
+                <Pricing />
+              </Suspense>
+            </SaasRoute>
           } />
           <Route path="/checkout/payment/callback" element={
             <Suspense fallback={<Loading />}>
@@ -201,7 +205,7 @@ function App() {
           )}
           {/* Auth routes */}
           <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+          <Route path="/register" element={<SaasRoute><Register /></SaasRoute>} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           {/* Platform login on main domain — used by PlatformGuard redirect in local dev */}
@@ -321,7 +325,7 @@ function App() {
               <Suspense fallback={<Loading />}><Billing /></Suspense>
             } />
             <Route path="settings/billing/callback" element={
-              <Suspense fallback={<Loading />}><SubscriptionCallback /></Suspense>
+              <SaasRoute><Suspense fallback={<Loading />}><SubscriptionCallback /></Suspense></SaasRoute>
             } />
             <Route path="checkout-forms" element={
               <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
@@ -347,6 +351,7 @@ function App() {
             <Route path="platform/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
             <Route path="platform/announcements" element={platformRoute(PlatformAnnouncements)} />
             <Route path="platform/billing" element={platformRoute(PlatformBilling)} />
+            <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
       </BrowserRouter>
