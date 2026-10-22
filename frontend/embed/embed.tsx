@@ -166,6 +166,9 @@ function attachModeB(form: HTMLFormElement): void {
         alternativePhone: field(form, 'alternatePhone', 'altPhone') || undefined,
         email: field(form, 'email') || undefined,
         region: field(form, 'state', 'region'),
+        // COD-138: the server asks for these two unless the seller turned them off
+        town: field(form, 'town', 'city'),
+        landmark: field(form, 'landmark'),
         streetAddress: field(form, 'address', 'streetAddress', 'street_address'),
         selectedPackageId: pkgValue,
         selectedAddonIds: [],
