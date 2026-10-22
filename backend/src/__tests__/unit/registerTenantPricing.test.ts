@@ -8,6 +8,7 @@ jest.mock('../../utils/jwt', () => ({
 
 import { prismaMock } from '../mocks/prisma.mock';
 import { registerTenant } from '../../controllers/authController';
+import { generateAccessToken, generateRefreshToken } from '../../utils/jwt';
 
 function mockRes() {
   const res: any = {};
@@ -21,6 +22,9 @@ const next = jest.fn();
 describe('registerTenant — pricing-first plan selection (MAN-61)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // The session service hashes the refresh token, so the mocks must return strings
+    (generateAccessToken as any).mockReturnValue('access');
+    (generateRefreshToken as any).mockReturnValue('refresh');
     (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
     (prismaMock.user.findUnique as any).mockResolvedValue(null); // email free
     (prismaMock.tenant.findUnique as any).mockResolvedValue(null); // slug free
@@ -31,6 +35,7 @@ describe('registerTenant — pricing-first plan selection (MAN-61)', () => {
       id: 1, email: 'a@b.c', firstName: 'A', lastName: 'B', role: 'super_admin', tenantId: 'T1', preferences: {},
     });
     (prismaMock.user.update as any).mockResolvedValue({ id: 1 });
+    (prismaMock.userSession.create as any).mockResolvedValue({ id: 's1' });
   });
 
   const baseBody = { companyName: 'Acme', adminEmail: 'a@b.c', adminPassword: 'pw', adminName: 'A B' };
