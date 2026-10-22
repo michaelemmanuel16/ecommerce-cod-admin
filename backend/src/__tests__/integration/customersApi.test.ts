@@ -289,6 +289,39 @@ describe('create and edit (F-355)', () => {
     expect(back.body.customer).toMatchObject({ id: ids.gone, isActive: true, state: 'Ashanti' });
   });
 
+  it('a rep cannot reactivate a deleted customer: plain 409, the row stays inactive, no id; the owner can', async () => {
+    await addCustomer('archived', 'Archived', 40, { isActive: false });
+    const rep = await request(app).post('/api/customers').set(bearer(tokens.rep1)).send(body(40, { reactivate: true }));
+    expect(rep.status).toBe(409);
+    expect(rep.body.code).toBe('CUSTOMER_ARCHIVED');
+    expect(rep.body.customerId).toBeUndefined();
+    expect(rep.body.customerName).toBe('Archived T');
+    const row = await prismaBase.customer.findUniqueOrThrow({ where: { id: ids.archived } });
+    expect(row).toMatchObject({ isActive: false, state: 'Greater Accra' });
+
+    const owner = await request(app).post('/api/customers').set(bearer(tokens.owner)).send(body(40, { reactivate: true }));
+    expect(owner.status).toBe(201);
+    expect(owner.body.customer).toMatchObject({ id: ids.archived, isActive: true });
+  });
+
+  it('the 409 carries the customer id only when the requester can open that customer', async () => {
+    // Abena is outside rep1's scope: name in the message, no id
+    const out = await request(app).post('/api/customers').set(bearer(tokens.rep1)).send(body(6));
+    expect(out.status).toBe(409);
+    expect(out.body.message).toBe('This number belongs to Abena Owusu');
+    expect(out.body.customerId).toBeUndefined();
+    // Kofi is rep1's own customer: id included
+    const inside = await request(app).post('/api/customers').set(bearer(tokens.rep1)).send(body(1));
+    expect(inside.body).toMatchObject({ message: 'This number belongs to Kofi T', customerId: ids.kofi });
+    // Admin roles always get the id
+    const admin = await request(app).post('/api/customers').set(bearer(tokens.manager)).send(body(6));
+    expect(admin.body.customerId).toBe(ids.abena);
+    // Same on edit
+    const edit = await request(app).put(`/api/customers/${ids.kofi}`).set(bearer(tokens.rep1)).send({ phoneNumber: local(6) });
+    expect(edit.status).toBe(409);
+    expect(edit.body.customerId).toBeUndefined();
+  });
+
   it('edit writes before and after; a rep edits a visible customer, not another rep\'s', async () => {
     const res = await request(app).put(`/api/customers/${ids.kofi}`).set(bearer(tokens.rep1)).send({ landmark: 'By the bank', area: 'Kumasi', firstName: 'Kofi' });
     expect(res.status).toBe(200);

@@ -263,19 +263,23 @@ export class CustomerService {
   }
 
   /** A phone that already belongs to a customer blocks the save (F-355, F-362). `exceptId` is the customer being edited. */
-  private async assertPhoneFree(phoneNumber: string, exceptId?: number, reactivate = false) {
+  private async assertPhoneFree(phoneNumber: string, requester: Requester | undefined, exceptId?: number, reactivate = false) {
     // Archived customers included: they still hold the number in the unique index
     const owner = await findCustomerByPhoneIncludingArchived(prisma, phoneNumber);
     // The customer's own old-format number matches too; that is not a duplicate.
     if (!owner || owner.id === exceptId) return null;
-    if (owner.isActive === false && reactivate) return owner;
+    // Only the roles that can see deleted customers may restore one
+    if (owner.isActive === false && reactivate && isAdminRole(requester)) return owner;
     const archived = owner.isActive === false;
     const err = new AppError(
       archived ? `${fullName(owner)} was deleted and has this number. Restore that customer instead.` : `This number belongs to ${fullName(owner)}`,
       409,
       archived ? 'CUSTOMER_ARCHIVED' : 'PHONE_BELONGS_TO_OTHER_CUSTOMER'
     );
-    err.details = { customerId: owner.id, customerName: fullName(owner) };
+    // The name is in the message (F-355); the id (the link) only goes to a requester who can open that customer
+    const scope = this.scopeWhere(requester);
+    const canSee = !scope || (await prisma.customer.count({ where: { id: owner.id, AND: [scope] } })) > 0;
+    err.details = canSee ? { customerId: owner.id, customerName: fullName(owner) } : { customerName: fullName(owner) };
     throw err;
   }
 
@@ -299,7 +303,7 @@ export class CustomerService {
   async createCustomer(data: CreateCustomerData, requester?: Requester) {
     const phoneNumber = normalizePhoneForStorage(data.phoneNumber);
     const alternatePhone = normalizePhoneForStorage(data.alternatePhone);
-    const archived = await this.assertPhoneFree(phoneNumber, undefined, data.reactivate === true);
+    const archived = await this.assertPhoneFree(phoneNumber, requester, undefined, data.reactivate === true);
 
     const fields = {
       firstName: data.firstName || 'Unknown',
@@ -431,7 +435,7 @@ export class CustomerService {
     if (changes.alternatePhone) changes.alternatePhone = normalizePhoneForStorage(changes.alternatePhone);
 
     if (changes.phoneNumber && changes.phoneNumber !== customer.phoneNumber) {
-      await this.assertPhoneFree(changes.phoneNumber, id);
+      await this.assertPhoneFree(changes.phoneNumber, requester, id);
     }
 
     const updated = await prisma.customer.update({
