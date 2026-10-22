@@ -7,7 +7,7 @@ import { ToastProvider } from '../../components/ui-v2';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { COUNTS, ROWS } from '../fixtures/ordersList';
-import { ORDER_EVENTS, SOCKET_REFRESH_MS } from '../../pages/orders/useOrdersList';
+import { ORDER_EVENTS, SOCKET_REFRESH_MS } from '../../pages/orders/useOrderList';
 import { SEARCH_DEBOUNCE_MS } from '../../pages/orders/urlState';
 
 const listOrders = vi.fn();

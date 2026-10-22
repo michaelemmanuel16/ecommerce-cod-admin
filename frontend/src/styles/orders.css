@@ -6,7 +6,7 @@
 .v2 .otwrap .tablewrap{overflow-x:auto}
 .v2 .ot{table-layout:fixed;min-width:var(--ot-width,100%)}
 .v2 .ot td,.v2 .ot th{padding-left:10px;padding-right:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.v2 .ot td.stc{white-space:normal}
+.v2 .ot .stc{white-space:normal}
 .v2 .ot td:first-child,.v2 .ot th:first-child{padding-left:20px}
 .v2 .ot td:last-child,.v2 .ot th:last-child{padding-right:20px}
 .v2 .ot tbody tr.orow:has(.rc:checked){background:var(--pine-soft)}
@@ -74,3 +74,8 @@
 .v2 .sx-toast .sx-act-link{margin-left:12px;font-weight:700;text-decoration:underline}
 
 @media (max-width:760px){.v2 .srch{min-width:0;flex:1 1 100%}}
+
+/* new: the status tag as a button that opens the move menu */
+.v2 .tagbtn{display:inline-flex;align-items:center;gap:2px;border-radius:99px}
+.v2 .tagbtn svg.lucide{width:13px;height:13px;color:var(--ink-3)}
+.v2 .tagbtn:hover svg.lucide,.v2 .tagbtn[aria-expanded="true"] svg.lucide{color:var(--ink)}

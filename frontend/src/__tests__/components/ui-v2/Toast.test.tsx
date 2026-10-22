@@ -40,4 +40,20 @@ describe('ui-v2 Toast', () => {
     expect(() => render(<Say text="x" />)).toThrow('useToast needs a ToastProvider');
     spy.mockRestore();
   });
+  it('a toast can end with a link: it stays 8 s, runs the action and closes', () => {
+    vi.useFakeTimers();
+    const onClick = vi.fn();
+    function WithLink() {
+      const say = useToast();
+      return <button type="button" onClick={() => say('18 moved. 2 could not move', { label: 'Show the 2', onClick })}>say</button>;
+    }
+    render(<ToastProvider><WithLink /></ToastProvider>);
+    act(() => screen.getByText('say').click());
+    expect(screen.getByRole('status')).toHaveTextContent('18 moved. 2 could not move');
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    act(() => screen.getByRole('button', { name: 'Show the 2' }).click());
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
 });

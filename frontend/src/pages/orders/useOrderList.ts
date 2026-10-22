@@ -20,7 +20,7 @@ interface ListState {
 const EMPTY: PaginationMeta = { page: 1, limit: 25, total: 0, pages: 0 };
 
 /** The list and the tab counts for one view, refreshed on socket events without the table flashing. */
-export function useOrdersList(params: OrderListParams) {
+export function useOrderList(params: OrderListParams) {
   const [state, setState] = useState<ListState>({ rows: [], pagination: EMPTY, counts: null, loading: true, error: null });
   const paramsRef = useRef(params);
   paramsRef.current = params;

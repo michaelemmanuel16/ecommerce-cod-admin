@@ -86,3 +86,11 @@ export function shortDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
 }
+
+/** Orders that can be deleted (F-316). The others have money or stock effects. */
+export const DELETABLE: OrderStatus[] = [
+  'pending_confirmation', 'payment_pending', 'payment_failed', 'confirmed', 'preparing', 'ready_for_pickup', 'cancelled', 'failed_delivery',
+];
+
+/** Orders whose delivery agent can no longer change (F-314). */
+export const CLOSED: OrderStatus[] = ['delivered', 'digital_delivered', 'returned', 'cancelled'];

@@ -14,6 +14,8 @@ export interface StatusMoveExtras {
 export interface OrderListRow {
   id: number;
   status: OrderStatus;
+  /** Digital orders move differently from physical ones (F-301). */
+  orderType?: 'physical' | 'digital';
   totalAmount: number;
   createdAt: string;
   customer: { id: number; firstName: string; lastName: string; phoneNumber: string; alternatePhone?: string | null };
@@ -62,6 +64,27 @@ export interface OrderCounts {
 export interface BulkResult {
   succeeded: number[];
   failed: Array<{ id: number; code: string; message: string }>;
+}
+
+/** Reasons a bulk status move may carry (one for all the orders). */
+export interface BulkStatusBody extends StatusMoveExtras {
+  orderIds: number[];
+  status: OrderStatus;
+}
+
+/** Who a bulk assign gives the orders to: a call rep, a delivery agent, both, or `unassign: 'both'`. */
+export interface BulkAssignBody {
+  orderIds: number[];
+  customerRepId?: number;
+  deliveryAgentId?: number;
+  unassign?: 'both';
+  confirmBlocked?: boolean;
+}
+
+/** DELETE /api/orders/bulk: what was deleted and what the rules kept (F-315). */
+export interface BulkDeleteResult {
+  deleted: number;
+  skipped: Array<{ id: number; reason: string }>;
 }
 
 /** What the order state machine allows next for one order (GET /api/orders/:id/transitions). */
@@ -192,9 +215,39 @@ export const ordersService = {
     await apiClient.delete(`/api/orders/${id}`);
   },
 
-  async bulkDeleteOrders(ids: number[]): Promise<{ message: string; deletedCount: number }> {
+  async bulkDeleteOrders(ids: number[]): Promise<{ message: string; deletedCount: number } & BulkDeleteResult> {
     const response = await apiClient.delete('/api/orders/bulk', { data: { ids } });
     return response.data;
+  },
+
+  /** The moves the order can make now, for the row status menu (F-313). */
+  async getTransitions(id: number): Promise<OrderTransitions> {
+    const response = await apiClient.get(`/api/orders/${id}/transitions`, { skipCache: true });
+    return response.data;
+  },
+
+  async bulkStatus(body: BulkStatusBody): Promise<BulkResult> {
+    const { force: _force, reason: _reason, ...move } = body;
+    const response = await apiClient.patch('/api/orders/bulk/status', move);
+    return response.data;
+  },
+
+  async bulkAssign(body: BulkAssignBody): Promise<BulkResult> {
+    const response = await apiClient.patch('/api/orders/bulk/assign', body);
+    return response.data;
+  },
+
+  async assignRep(id: number, customerRepId: number): Promise<void> {
+    await apiClient.patch(`/api/orders/${id}/assign-rep`, { customerRepId });
+  },
+
+  async assignAgent(id: number, deliveryAgentId: number, confirmBlocked = false): Promise<void> {
+    await apiClient.patch(`/api/orders/${id}/assign-agent`, { deliveryAgentId, confirmBlocked });
+  },
+
+  /** "Unassign both" (F-314): clears the call rep and the delivery agent. */
+  async unassignBoth(id: number): Promise<void> {
+    await apiClient.patch(`/api/orders/${id}/assign-rep`, { unassign: 'both' });
   },
 
   async assignOrder(id: number, userId: number, role: 'rep' | 'agent' = 'rep'): Promise<Order> {

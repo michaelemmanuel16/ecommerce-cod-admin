@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Download, Plus, Upload } from 'lucide-react';
+import type { OrderListRow } from '../services/orders.service';
 import { useV2Page } from '../components/shell/useV2Page';
 import { Button, EmptyState, Pagination, Skeleton, Table, Tabs, useToast } from '../components/ui-v2';
 import { BulkImportModal } from '../components/orders/BulkImportModal';
@@ -10,12 +11,17 @@ import { ordersService } from '../services/orders.service';
 import { buildColumns, type SortField } from './orders/columns';
 import { ColumnsMenu } from './orders/ColumnsMenu';
 import { FilterBar } from './orders/FilterBar';
-import { STATUS_TABS, tabCount, visibleTabs, type StatusTabId } from './orders/model';
+import { FloatingMenu } from './orders/FloatingMenu';
+import { BulkBar } from './orders/BulkBar';
+import { RowAssignItems } from './orders/AssignItems';
+import { RowStatus } from './orders/RowStatus';
+import { useOrderActions, type FocusSet } from './orders/useOrderActions';
+import { CLOSED, DELETABLE, orderNumber, STATUS_TABS, tabCount, visibleTabs, type StatusTabId } from './orders/model';
 import { readPref, writePref } from './orders/prefs';
 import { DEFAULT_SIZE, PAGE_SIZES, listParams, parseView, rangeOf, rangePhrase, sizeOf, writeView, type ListView } from './orders/urlState';
 import { useColumnPrefs } from './orders/useColumnPrefs';
 import { useFilterOptions } from './orders/useFilterOptions';
-import { useOrdersList } from './orders/useOrdersList';
+import { useOrderList } from './orders/useOrderList';
 
 interface OrdersProps {
   /** A row click calls this. The default goes to /orders/:id; the order drawer (M3-T46) plugs in here. */
@@ -37,19 +43,36 @@ export function Orders({ onOpen }: OrdersProps) {
   const [savedSize, setSavedSize] = useState(() => readPref<number>('pageSize', DEFAULT_SIZE));
   const pageSize = sizeOf(view, (PAGE_SIZES as readonly number[]).includes(savedSize) ? savedSize : DEFAULT_SIZE);
   const params = useMemo(() => listParams(view, pageSize), [view, pageSize]);
-  const list = useOrdersList(params);
+  const list = useOrderList(params);
   const columnPrefs = useColumnPrefs();
   const options = useFilterOptions();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [importOpen, setImportOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [assignFor, setAssignFor] = useState<{ row: OrderListRow; anchor: HTMLElement } | null>(null);
+  const [focus, setFocus] = useState<FocusSet | null>(null);
 
   const go = useCallback((next: ListView, replace = false) => setSearch(writeView(next), { replace }), [setSearch]);
 
   // A new view starts with nothing selected; a silent refresh keeps the selection.
   const viewKey = JSON.stringify(params);
-  useEffect(() => setSelected(new Set()), [viewKey]);
+  useEffect(() => {
+    setSelected(new Set());
+    setFocus(null);
+  }, [viewKey]);
+  // Orders that left the page (moved to another tab, deleted by someone else) leave the selection.
+  useEffect(() => {
+    const here = new Set(list.rows.map((r) => r.id));
+    setSelected((s) => (s.size && [...s].some((id) => !here.has(id)) ? new Set([...s].filter((id) => here.has(id))) : s));
+  }, [list.rows]);
+
+  const canMove = can('orders', 'update');
+  const canAssign = can('orders', 'assign');
+  const canDelete = can('orders', 'delete');
+  const selectedRows = useMemo(() => list.rows.filter((r) => selected.has(r.id)), [list.rows, selected]);
+  const actions = useOrderActions({ setSelected, refetch: list.refetch, setFocus });
+  const shownRows = focus ? list.rows.filter((r) => focus.ids.includes(r.id)) : list.rows;
 
   const open = (id: number) => (onOpen ? onOpen(id) : navigate(`/orders/${id}`));
 
@@ -61,7 +84,7 @@ export function Orders({ onOpen }: OrdersProps) {
     () =>
       buildColumns({
         selected,
-        rows: list.rows,
+        rows: shownRows,
         onToggleRow: (id, on) =>
           setSelected((s) => {
             const next = new Set(s);
@@ -69,14 +92,16 @@ export function Orders({ onOpen }: OrdersProps) {
             else next.delete(id);
             return next;
           }),
-        onToggleAll: (on) => setSelected(on ? new Set(list.rows.map((r) => r.id)) : new Set()),
+        onToggleAll: (on) => setSelected(on ? new Set(shownRows.map((r) => r.id)) : new Set()),
         widthOf: columnPrefs.widthOf,
         setWidth: columnPrefs.setWidth,
         hidden: columnPrefs.hidden,
         sort: view.sort,
         onSort,
+        onAssign: canAssign ? (row, anchor) => setAssignFor((cur) => (cur?.row.id === row.id ? null : { row, anchor })) : undefined,
+        renderStatus: canMove ? (row) => <RowStatus row={row} onPick={(target, forced) => actions.moveStatus([row], target, { forced })} /> : undefined,
       }),
-    [selected, list.rows, columnPrefs.widthOf, columnPrefs.setWidth, columnPrefs.hidden, view],
+    [selected, shownRows, columnPrefs.widthOf, columnPrefs.setWidth, columnPrefs.hidden, view, canAssign, canMove],
   );
   const tableWidth = columns.reduce((sum, c) => sum + (typeof c.width === 'number' ? c.width : 0), 0);
 
@@ -141,6 +166,33 @@ export function Orders({ onOpen }: OrdersProps) {
           <ColumnsMenu hidden={columnPrefs.hidden} onToggle={columnPrefs.toggle} />
         </FilterBar>
 
+        {selectedRows.length > 0 && (
+          <BulkBar
+            rows={selectedRows}
+            reps={options.reps}
+            agents={options.agents}
+            canMove={canMove}
+            canAssign={canAssign}
+            canDelete={canDelete}
+            onStatus={(target) => actions.moveStatus(selectedRows, target, { bulk: true })}
+            onRep={(o) => actions.assign(selectedRows, { kind: 'rep', option: o }, { bulk: true })}
+            onAgent={(o) => actions.assign(selectedRows, { kind: 'agent', option: o }, { bulk: true })}
+            onDelete={() => actions.askDelete(selectedRows)}
+            onClear={() => setSelected(new Set())}
+          />
+        )}
+        {focus && (
+          <div className="shownote" role="status">
+            {focus.text}
+            <Button size="mini" onClick={() => setFocus(null)}>Show all</Button>
+            <ul>
+              {focus.reasons.slice(0, 5).map((r) => (
+                <li key={r.id}>{orderNumber(r.id)}: {r.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {list.loading ? (
           <div style={{ padding: 20 }} aria-busy="true" aria-label="Loading orders">
             <Skeleton height={44} />
@@ -152,11 +204,11 @@ export function Orders({ onOpen }: OrdersProps) {
             title={list.error}
             action={<Button onClick={() => void list.refetch()}>Try again</Button>}
           />
-        ) : list.rows.length === 0 ? (
+        ) : shownRows.length === 0 ? (
           <EmptyState title="No orders match." />
         ) : (
           <div style={{ '--ot-width': `${tableWidth}px` } as React.CSSProperties}>
-            <Table label="Orders" className="ot" columns={columns} rows={list.rows} rowKey={(r) => r.id} onRowClick={(r) => open(r.id)} />
+            <Table label="Orders" className="ot" columns={columns} rows={shownRows} rowKey={(r) => r.id} onRowClick={(r) => open(r.id)} />
           </div>
         )}
 
@@ -175,6 +227,22 @@ export function Orders({ onOpen }: OrdersProps) {
         />
       </div>
 
+      {assignFor && (
+        <FloatingMenu anchor={assignFor.anchor} label={`Assign ${orderNumber(assignFor.row.id)}`} onClose={() => setAssignFor(null)}>
+          <RowAssignItems
+            reps={options.reps}
+            agents={options.agents}
+            currentRepId={assignFor.row.customerRep?.id}
+            currentAgentId={assignFor.row.deliveryAgent?.id}
+            agentLocked={CLOSED.includes(assignFor.row.status)}
+            onRep={(o) => { const row = assignFor.row; setAssignFor(null); actions.assign([row], { kind: 'rep', option: o }); }}
+            onAgent={(o) => { const row = assignFor.row; setAssignFor(null); actions.assign([row], { kind: 'agent', option: o }); }}
+            onUnassign={() => { const row = assignFor.row; setAssignFor(null); actions.assign([row], { kind: 'both' }); }}
+            onDelete={canDelete && DELETABLE.includes(assignFor.row.status) ? () => { const row = assignFor.row; setAssignFor(null); actions.askDelete([row]); } : undefined}
+          />
+        </FloatingMenu>
+      )}
+      {actions.dialogs}
       <BulkImportModal isOpen={importOpen} onClose={() => setImportOpen(false)} onSuccess={() => void list.refetch()} />
       <OrderForm isOpen={formOpen} onClose={() => setFormOpen(false)} order={null} onSuccess={() => void list.refetch()} />
     </section>
