@@ -92,15 +92,12 @@ describe('PATCH /api/orders/bulk/status', () => {
     expect((await prismaBase.order.findMany({ where: { id: { in: bad } }, select: { status: true } })).map((o) => o.status).sort()).toEqual(['cancelled', 'delivered']);
   });
 
-  it('a missing order and a reason rule are listed with their codes', async () => {
+  it('a missing order is listed with its code; failed_delivery needs no reason (COD-139)', async () => {
     const out = await mkOrder('out_for_delivery', { deliveryAgentId: U.agent.id });
     const res = await bulkStatus('admin', { orderIds: [out, 999999999], status: 'failed_delivery' });
-    expect(res.body.succeeded).toEqual([]);
+    expect(res.body.succeeded).toEqual([out]);
     const codes = Object.fromEntries(res.body.failed.map((f: any) => [f.id, f.code]));
-    expect(codes).toEqual({ [out]: 'REASON_REQUIRED', 999999999: 'NOT_FOUND' });
-
-    const ok = await bulkStatus('admin', { orderIds: [out], status: 'failed_delivery', failureReason: 'not_reachable' });
-    expect(ok.body.succeeded).toEqual([out]);
+    expect(codes).toEqual({ 999999999: 'NOT_FOUND' });
   });
 
   it('a rep moves own orders only', async () => {
