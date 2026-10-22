@@ -20,7 +20,7 @@ async function signIn(page: Page, email: string) {
   await page.waitForFunction(() => !location.pathname.startsWith('/login'));
 }
 
-type Tab = 'overview';
+type Tab = 'overview' | 'sales' | 'delivery';
 
 /** Serves the fixture for each tab; compare=previous keeps the previous-period figures, otherwise they are null. */
 async function serve(page: Page, edit: (tab: Tab, body: any) => any = (_t, b) => b) {
@@ -61,7 +61,7 @@ test.describe('T60 shell and Overview', () => {
     await serve(page);
     await openReports(page);
     await expect(page.getByRole('group', { name: 'Date range' }).getByRole('button')).toHaveText(['Today', 'Last 7 days', 'This month', 'Last month', 'Custom']);
-    await expect(page.getByRole('tablist', { name: 'Reports' }).getByRole('tab')).toHaveText(['Overview', 'Team performance']);
+    await expect(page.getByRole('tablist', { name: 'Reports' }).getByRole('tab')).toHaveText(['Overview', 'Sales & revenue', 'Delivery & operations', 'Team performance']);
   });
 
   test('where orders ended up sums to 1,445; the daily table has 17 rows; the old pipeline chart is gone', async ({ page }) => {
@@ -99,5 +99,65 @@ test.describe('T60 shell and Overview', () => {
     await expect(page.getByText('Where 1,445 orders ended up')).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+  });
+});
+
+test.describe('T61 Sales and Delivery', () => {
+  test('Sales: values equal the API, the location table is City/Town and Region is not used', async ({ page }) => {
+    await serve(page);
+    await openReports(page, 'sales');
+    const api = reportsFixture.sales();
+    const tiles = page.locator('.kpis');
+    await expect(tiles.getByText('GH₵92,000', { exact: true })).toBeVisible();
+    await expect(tiles.getByText('GH₵245', { exact: true })).toBeVisible();
+    await expect(tiles.getByText('GH₵68.6k', { exact: true })).toBeVisible();
+    await expect(tiles.getByText('GH₵23.4k', { exact: true })).toBeVisible();
+    const table = page.getByRole('table', { name: 'Revenue by City/Town' });
+    await expect(table.getByRole('columnheader', { name: 'City/Town' })).toBeVisible();
+    for (const row of api.byCity.rows) {
+      await expect(table.getByRole('cell', { name: row.city, exact: true })).toBeVisible();
+    }
+    await expect(table.locator('tr.tot')).toContainText('376');
+    await expect(page.getByText(/region/i)).toHaveCount(0);
+  });
+
+  test('Sales without financial:view: no cash tiles', async ({ page }) => {
+    await serve(page, (tab, body) => {
+      if (tab === 'sales') { delete body.tiles.cashReceived; delete body.tiles.cashWithPartners; }
+      return body;
+    });
+    await openReports(page, 'sales');
+    await expect(page.getByText('Average order value')).toBeVisible();
+    await expect(page.getByText('Cash received')).toHaveCount(0);
+  });
+
+  test('Delivery: failed 354 and returned 48 apart, reasons, partners, waiting and returns', async ({ page }) => {
+    await serve(page);
+    await openReports(page, 'delivery');
+    const tiles = page.locator('.kpis');
+    await expect(tiles.getByText('354', { exact: true })).toBeVisible();
+    await expect(tiles.getByText('48 returned')).toBeVisible();
+    await expect(tiles.getByText('402')).toHaveCount(0);
+    await expect(tiles.getByText('48%', { exact: true })).toBeVisible();
+    await expect(tiles.getByText('148', { exact: true })).toBeVisible();
+    await expect(tiles.getByText('9.2 days', { exact: true })).toBeVisible();
+
+    const reasons = await page.locator('.bar-row').allInnerTexts();
+    expect(reasons.map((r) => r.replace(/\s+/g, ' ').trim())).toEqual(['Not reachable 41% 165', 'Refused 24% 96', 'Wrong address 21% 84', 'Rescheduled 14% 57']);
+
+    const partners = page.getByRole('table', { name: 'Delivery partners' });
+    await expect(partners.locator('tr.tot')).toContainText('926');
+    await expect(partners.getByText('No closed orders yet')).toBeVisible();
+    await expect(page.getByText('100 orders')).toBeVisible();
+    await expect(page.getByText('Oldest has waited 3 days')).toBeVisible();
+  });
+
+  test('the agent card opens the Delivery report and writes nothing', async ({ page }) => {
+    await serve(page);
+    await openReports(page);
+    await expect(page.getByText('Logiswift closes only 45% as delivered')).toBeVisible();
+    await page.getByRole('button', { name: 'Open Delivery report' }).click();
+    await expect(page).toHaveURL(/tab=delivery/);
+    await expect(page.getByRole('table', { name: 'Delivery partners' })).toBeVisible();
   });
 });

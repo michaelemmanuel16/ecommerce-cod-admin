@@ -1,0 +1,350 @@
+{
+ "tab": "delivery",
+ "range": {
+  "from": "2026-10-01",
+  "to": "2026-10-17",
+  "days": 17,
+  "timeZone": "Africa/Accra"
+ },
+ "compare": {
+  "from": "2026-09-01",
+  "to": "2026-09-17",
+  "days": 17
+ },
+ "generatedAt": "2026-10-17T06:42:00.000Z",
+ "currency": "GHS",
+ "tiles": {
+  "currency": "GHS",
+  "deliverySuccessRate": {
+   "value": 48,
+   "previous": 60,
+   "deltaPoints": -12,
+   "target": 60,
+   "tag": "off_track",
+   "basis": "cohort",
+   "delivered": 376,
+   "closed": 778
+  },
+  "failed": {
+   "value": 354,
+   "previous": 371,
+   "deltaPercent": -4.6
+  },
+  "returned": {
+   "value": 48,
+   "previous": 40,
+   "deltaPercent": 20.0
+  },
+  "notReachable": {
+   "count": 165,
+   "percentOfFailedAndReturned": 41.0
+  },
+  "outForDeliveryNow": {
+   "value": 148,
+   "partners": 5
+  },
+  "slowestPaysIn": {
+   "partnerId": 1,
+   "name": "Logiswift",
+   "days": 9.2
+  }
+ },
+ "deliveredPerDay": {
+  "rows": [
+   {
+    "date": "2026-10-01",
+    "delivered": 20,
+    "previous": {
+     "date": "2026-09-01",
+     "delivered": 22
+    }
+   },
+   {
+    "date": "2026-10-02",
+    "delivered": 24,
+    "previous": {
+     "date": "2026-09-02",
+     "delivered": 24
+    }
+   },
+   {
+    "date": "2026-10-03",
+    "delivered": 22,
+    "previous": {
+     "date": "2026-09-03",
+     "delivered": 23
+    }
+   },
+   {
+    "date": "2026-10-04",
+    "delivered": 25,
+    "previous": {
+     "date": "2026-09-04",
+     "delivered": 25
+    }
+   },
+   {
+    "date": "2026-10-05",
+    "delivered": 23,
+    "previous": {
+     "date": "2026-09-05",
+     "delivered": 24
+    }
+   },
+   {
+    "date": "2026-10-06",
+    "delivered": 18,
+    "previous": {
+     "date": "2026-09-06",
+     "delivered": 20
+    }
+   },
+   {
+    "date": "2026-10-07",
+    "delivered": 15,
+    "previous": {
+     "date": "2026-09-07",
+     "delivered": 18
+    }
+   },
+   {
+    "date": "2026-10-08",
+    "delivered": 21,
+    "previous": {
+     "date": "2026-09-08",
+     "delivered": 22
+    }
+   },
+   {
+    "date": "2026-10-09",
+    "delivered": 26,
+    "previous": {
+     "date": "2026-09-09",
+     "delivered": 25
+    }
+   },
+   {
+    "date": "2026-10-10",
+    "delivered": 24,
+    "previous": {
+     "date": "2026-09-10",
+     "delivered": 26
+    }
+   },
+   {
+    "date": "2026-10-11",
+    "delivered": 27,
+    "previous": {
+     "date": "2026-09-11",
+     "delivered": 27
+    }
+   },
+   {
+    "date": "2026-10-12",
+    "delivered": 22,
+    "previous": {
+     "date": "2026-09-12",
+     "delivered": 24
+    }
+   },
+   {
+    "date": "2026-10-13",
+    "delivered": 20,
+    "previous": {
+     "date": "2026-09-13",
+     "delivered": 22
+    }
+   },
+   {
+    "date": "2026-10-14",
+    "delivered": 17,
+    "previous": {
+     "date": "2026-09-14",
+     "delivered": 19
+    }
+   },
+   {
+    "date": "2026-10-15",
+    "delivered": 23,
+    "previous": {
+     "date": "2026-09-15",
+     "delivered": 24
+    }
+   },
+   {
+    "date": "2026-10-16",
+    "delivered": 24,
+    "previous": {
+     "date": "2026-09-16",
+     "delivered": 23
+    }
+   },
+   {
+    "date": "2026-10-17",
+    "delivered": 25,
+    "previous": {
+     "date": "2026-09-17",
+     "delivered": 19
+    }
+   }
+  ]
+ },
+ "reasons": {
+  "total": 402,
+  "rows": [
+   {
+    "reason": "not_reachable",
+    "count": 165,
+    "percent": 41.0
+   },
+   {
+    "reason": "refused",
+    "count": 96,
+    "percent": 23.9
+   },
+   {
+    "reason": "wrong_address",
+    "count": 84,
+    "percent": 20.9
+   },
+   {
+    "reason": "rescheduled",
+    "count": 57,
+    "percent": 14.2
+   }
+  ]
+ },
+ "successByCity": {
+  "label": "City",
+  "target": 60,
+  "rows": [
+   {
+    "city": "Accra",
+    "placed": 255,
+    "delivered": 176,
+    "failed": 170,
+    "returned": 20,
+    "closed": 366,
+    "successRate": 48.1
+   },
+   {
+    "city": "Tema",
+    "placed": 140,
+    "delivered": 92,
+    "failed": 84,
+    "returned": 10,
+    "closed": 186,
+    "successRate": 49.5
+   },
+   {
+    "city": "Kumasi",
+    "placed": 170,
+    "delivered": 82,
+    "failed": 62,
+    "returned": 12,
+    "closed": 156,
+    "successRate": 52.6
+   },
+   {
+    "city": "Takoradi",
+    "placed": 80,
+    "delivered": 26,
+    "failed": 38,
+    "returned": 6,
+    "closed": 70,
+    "successRate": 37.1
+   }
+  ]
+ },
+ "waitingAndReturns": {
+  "waiting": {
+   "count": 100,
+   "oldestDays": 3
+  },
+  "returned": {
+   "count": 48
+  }
+ },
+ "partners": {
+  "rows": [
+   {
+    "partnerId": 1,
+    "name": "Logiswift",
+    "assigned": 590,
+    "delivered": 220,
+    "failedOrReturned": 270,
+    "outNow": 100,
+    "closed": 490,
+    "successRate": 45,
+    "confirmedToDispatchedDays": 1.4,
+    "dispatchedToDeliveredDays": 3.8,
+    "cashHeld": "17300.00",
+    "paysInDays": 9.2
+   },
+   {
+    "partnerId": 2,
+    "name": "Kofi Appiah",
+    "assigned": 172,
+    "delivered": 82,
+    "failedOrReturned": 70,
+    "outNow": 20,
+    "closed": 152,
+    "successRate": 54,
+    "confirmedToDispatchedDays": 0.6,
+    "dispatchedToDeliveredDays": 1.2,
+    "cashHeld": "2900.00",
+    "paysInDays": 3.1
+   },
+   {
+    "partnerId": 3,
+    "name": "Esi Badu",
+    "assigned": 102,
+    "delivered": 48,
+    "failedOrReturned": 40,
+    "outNow": 14,
+    "closed": 88,
+    "successRate": 55,
+    "confirmedToDispatchedDays": 0.7,
+    "dispatchedToDeliveredDays": 1.5,
+    "cashHeld": "2100.00",
+    "paysInDays": 3.6
+   },
+   {
+    "partnerId": 4,
+    "name": "Kwesi Amoah",
+    "assigned": 54,
+    "delivered": 26,
+    "failedOrReturned": 22,
+    "outNow": 6,
+    "closed": 48,
+    "successRate": 54,
+    "confirmedToDispatchedDays": 0.9,
+    "dispatchedToDeliveredDays": 1.9,
+    "cashHeld": "1100.00",
+    "paysInDays": 4.2
+   },
+   {
+    "partnerId": 5,
+    "name": "Kasapa Express",
+    "assigned": 8,
+    "delivered": 0,
+    "failedOrReturned": 0,
+    "outNow": 8,
+    "closed": 0,
+    "successRate": null,
+    "confirmedToDispatchedDays": 1.0,
+    "dispatchedToDeliveredDays": null,
+    "cashHeld": "0.00",
+    "paysInDays": null
+   }
+  ],
+  "total": {
+   "assigned": 926,
+   "delivered": 376,
+   "failedOrReturned": 402,
+   "outNow": 148,
+   "successRate": 48,
+   "cashHeld": "23400.00"
+  }
+ }
+}

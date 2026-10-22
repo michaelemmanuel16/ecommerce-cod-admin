@@ -22,6 +22,7 @@ function renderPage(url = '/reports') {
       <Where />
       <Routes>
         <Route path="/reports" element={<Reports />} />
+        <Route path="/delivery-agents" element={<div>PARTNERS PAGE</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -88,19 +89,19 @@ describe('Reports shell (F-1050)', () => {
   it('the tab bar follows the permission: Team for owner roles only; Products and Marketing never', async () => {
     renderPage();
     const bar = within(await screen.findByRole('tablist', { name: 'Reports' }));
-    expect(bar.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Overview', 'Team performance']);
+    expect(bar.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Overview', 'Sales & revenue', 'Delivery & operations', 'Team performance']);
   });
 
-  it('a finance clerk has no Team tab', async () => {
+  it('a finance clerk has three tabs', async () => {
     asRole('accountant', { analytics: ['view'], financial: ['view'] });
     renderPage();
     const bar = within(await screen.findByRole('tablist', { name: 'Reports' }));
-    expect(bar.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Overview']);
+    expect(bar.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Overview', 'Sales & revenue', 'Delivery & operations']);
   });
 
   it('visibleTabs: marketing:view and financial:view do not show the unbuilt tabs', () => {
     const everything = () => true;
-    expect(visibleTabs('super_admin', everything).map((t) => t.key)).toEqual(['overview', 'team']);
+    expect(visibleTabs('super_admin', everything).map((t) => t.key)).toEqual(['overview', 'sales', 'delivery', 'team']);
     expect(visibleTabs('manager', () => false)).toEqual([]);
     expect(visibleTabs(undefined, everything)).toEqual([]);
   });
@@ -111,8 +112,20 @@ describe('Reports shell (F-1050)', () => {
     expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
   });
 
+  it('the agent card is read-only: it names the partner below target and has no write button', async () => {
+    renderPage();
+    expect(await screen.findByText('Logiswift closes only 45% as delivered')).toBeInTheDocument();
+    expect(screen.getByText(/Target 60%\. Logiswift takes 1\.4 days to dispatch and 3\.8 days to deliver\./)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Open Delivery report' }));
+    expect(screen.getByTestId('where')).toHaveTextContent('/reports?tab=delivery');
+    expect(await screen.findByText('Delivery partners')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'See partners' })).toHaveAttribute('href', '/delivery-agents');
+  });
+
   it('a range the server refuses shows its sentence', async () => {
-    get.mockRejectedValue({ response: { data: { message: 'The range is over 366 days. Narrow it.' } } });
+    get.mockImplementation((tab: string) => (tab === 'overview'
+      ? Promise.reject({ response: { data: { message: 'The range is over 366 days. Narrow it.' } } })
+      : Promise.resolve(reportsFixture.delivery())));
     renderPage();
     expect(await screen.findByText('The range is over 366 days. Narrow it.')).toBeInTheDocument();
   });
@@ -184,5 +197,111 @@ describe('Overview tab (F-1051)', () => {
     expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1);
     const tiles = screen.getByText('Delivered revenue').closest('.kpis') as HTMLElement;
     expect(within(tiles).getByText('1,026')).toBeInTheDocument();
+  });
+});
+
+describe('Sales tab (F-1052, F-1064)', () => {
+  const openSales = async () => {
+    renderPage('/reports?tab=sales');
+    await screen.findByText('Average order value');
+  };
+
+  it('tiles: delivered revenue, AOV, cash received, cash with partners', async () => {
+    await openSales();
+    const tiles = screen.getByText('Average order value').closest('.kpis') as HTMLElement;
+    expect(within(tiles).getByText('GH₵92,000')).toBeInTheDocument();
+    expect(within(tiles).getByText('GH₵245')).toBeInTheDocument();
+    expect(screen.getByText('Last 30 days GH₵248')).toBeInTheDocument();
+    expect(screen.getByText('GH₵68.6k')).toBeInTheDocument();
+    expect(screen.getByText('GH₵23.4k')).toBeInTheDocument();
+    expect(screen.getByText('376 delivered orders')).toBeInTheDocument();
+  });
+
+  it('without financial:view the response has no cash tiles and the page shows two', async () => {
+    answer({ sales: (b) => { delete b.tiles.cashReceived; delete b.tiles.cashWithPartners; return b; } });
+    await openSales();
+    expect(screen.queryByText('Cash received')).toBeNull();
+    expect(screen.queryByText('Cash still with partners')).toBeNull();
+  });
+
+  it('the location table is City/Town, never Region, with Not set for an empty place and a total', async () => {
+    answer({ sales: (b) => { b.byCity.rows[4].city = 'Unknown'; return b; } });
+    await openSales();
+    const table = await screen.findByRole('table', { name: 'Revenue by City/Town' });
+    expect(within(table).getByRole('columnheader', { name: 'City/Town' })).toBeInTheDocument();
+    const cells = bodyRows(table);
+    expect(cells[0]).toEqual(['Accra', '176', 'GH₵43,100', 'GH₵245', '47%']);
+    expect(cells[3]).toEqual(['Takoradi', '26', 'GH₵6,300', 'GH₵242', '7%']);
+    expect(cells[4]).toEqual(['Not set', '0', 'GH₵0', 'n/a', '0%']);
+    expect(cells[5]).toEqual(['Total', '376', 'GH₵92,000', 'GH₵245', '100%']);
+    expect(document.body.textContent).not.toMatch(/region/i);
+  });
+
+  it('revenue by product: the donut lists the five products', async () => {
+    await openSales();
+    const card = (await screen.findByText('Revenue by product')).closest('.card') as HTMLElement;
+    expect(within(card).getByText('Copybook set')).toBeInTheDocument();
+    expect(within(card).getByText('GH₵76,100')).toBeInTheDocument();
+    expect(within(card).getByText('Dictamni cream')).toBeInTheDocument();
+  });
+});
+
+describe('Delivery tab (F-1053, F-1064)', () => {
+  const openDelivery = async () => {
+    renderPage('/reports?tab=delivery');
+    await screen.findByText('Failed deliveries');
+  };
+
+  it('failed 354 and returned 48 are two numbers, not 402; success 48% of 778 closed', async () => {
+    await openDelivery();
+    const tiles = screen.getByText('Failed deliveries').closest('.kpis') as HTMLElement;
+    expect(within(tiles).getByText('354')).toBeInTheDocument();
+    expect(within(tiles).getByText('48 returned')).toBeInTheDocument();
+    expect(within(tiles).getByText('376 of 778 closed, target 60%')).toBeInTheDocument();
+    expect(within(tiles).getByText('48%')).toBeInTheDocument();
+    expect(within(tiles).getByText('148')).toBeInTheDocument();
+    expect(within(tiles).getByText('Logiswift pays in')).toBeInTheDocument();
+    expect(within(tiles).getByText('9.2 days')).toBeInTheDocument();
+    expect(within(tiles).queryByText('402')).toBeNull();
+    expect(within(tiles).getByText(/41% of failed and returned not reachable/)).toBeInTheDocument();
+  });
+
+  it('reasons: 165, 96, 84, 57 with their shares', async () => {
+    await openDelivery();
+    const card = (await screen.findByText('Failed deliveries by reason')).closest('.card') as HTMLElement;
+    const rows = [...card.querySelectorAll('.bar-row')].map((r) => r.textContent);
+    expect(rows).toEqual(['Not reachable41% 165', 'Refused24% 96', 'Wrong address21% 84', 'Rescheduled14% 57']);
+    expect(within(card).getByText('354 failed and 48 returned')).toBeInTheDocument();
+  });
+
+  it('partner table: Logiswift 45%, Kasapa has no closed orders yet, totals 926 / 376 / 402 / 148', async () => {
+    await openDelivery();
+    const table = await screen.findByRole('table', { name: 'Delivery partners' });
+    const rows = bodyRows(table);
+    expect(rows[0]).toEqual(['Logiswift', '590', '220', '270', '100', '45%', '1.4', '3.8', 'GH₵17,300', '9.2 days']);
+    expect(rows[4]).toEqual(['Kasapa Express', '8', '0', '0', '8', 'No closed orders yet', '1', 'n/a', 'GH₵0', 'No payout yet']);
+    expect(rows[5]).toEqual(['All partners', '926', '376', '402', '148', '48%', '', '', 'GH₵23,400', '']);
+  });
+
+  it('without financial:view the cash column is absent, not zero', async () => {
+    answer({ delivery: (b) => { b.partners.rows.forEach((r: any) => delete r.cashHeld); delete b.partners.total.cashHeld; return b; } });
+    await openDelivery();
+    const table = await screen.findByRole('table', { name: 'Delivery partners' });
+    expect(within(table).queryByRole('columnheader', { name: 'Cash held' })).toBeNull();
+  });
+
+  it('waiting and returns: 100 orders, oldest 3 days, 48 returned; city chart is City/Town', async () => {
+    await openDelivery();
+    expect(await screen.findByText('100 orders')).toBeInTheDocument();
+    expect(screen.getByText('Oldest has waited 3 days')).toBeInTheDocument();
+    expect(screen.getByText('Delivery success by City/Town')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /Delivery success by city or town against the 60 percent target: Accra 48 percent/ })).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/region/i);
+  });
+
+  it('a partner with no closed orders in the city chart is left out, not drawn as 0%', async () => {
+    answer({ delivery: (b) => { b.successByCity.rows.push({ city: 'Cape Coast', placed: 8, delivered: 0, failed: 0, returned: 0, closed: 0, successRate: null }); return b; } });
+    await openDelivery();
+    expect(screen.getByRole('img', { name: /Takoradi 37 percent/ }).getAttribute('aria-label')).not.toMatch(/Cape Coast/);
   });
 });

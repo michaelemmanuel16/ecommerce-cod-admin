@@ -4,14 +4,17 @@ import clsx from 'clsx';
 import { useV2Page } from '../components/shell/useV2Page';
 import { Tabs } from '../components/ui-v2';
 import { usePermissions } from '../hooks/usePermissions';
+import { AgentCards } from './reports/AgentCards';
 import { DateCard } from './reports/DateCard';
+import { DeliveryTab } from './reports/DeliveryTab';
 import { ExportSlot } from './reports/ExportSlot';
 import { rangeLabel } from './reports/format';
 import { OverviewTab } from './reports/OverviewTab';
 import { presetRange, type DayRange, type Preset } from './reports/range';
+import { SalesTab } from './reports/SalesTab';
 import { visibleTabs, type TabKey } from './reports/tabs';
 import { TeamTab } from './reports/TeamTab';
-import type { OverviewReport } from './reports/types';
+import type { DeliveryReport, OverviewReport, SalesReport } from './reports/types';
 import { useReport } from './reports/useReport';
 
 /**
@@ -35,8 +38,10 @@ export function Reports() {
   const range = preset === 'custom' ? custom : presetRange(preset);
   const params = { ...range, compare };
 
-  // Team has no body yet (M3-T62); the Overview answer still gives the page its range label
-  const overview = useReport<OverviewReport>('overview', params, tab === 'overview' || tab === 'team');
+  const overview = useReport<OverviewReport>('overview', params, tab === 'overview');
+  const sales = useReport<SalesReport>('sales', params, tab === 'sales');
+  // the Delivery numbers also feed the card on top, so they load whatever the open tab is
+  const delivery = useReport<DeliveryReport>('delivery', params, true);
 
   const open = (key: TabKey) => setSearch((prev) => { const next = new URLSearchParams(prev); next.set('tab', key); return next; }, { replace: true });
   const choosePreset = (next: Preset) => {
@@ -45,9 +50,9 @@ export function Reports() {
     setPreset(next);
   };
 
-  const current = overview;
+  const current = tab === 'overview' ? overview : tab === 'sales' ? sales : delivery;
   // the label comes from the answer (the server's days), until there is one from the days asked for
-  const answered = current.data;
+  const answered = (tab === 'team' ? delivery : current).data;
   const label = answered ? rangeLabel(answered.range.from, answered.range.to) : rangeLabel(range.from, range.to);
   const compareLabel = compare && answered?.compare ? `Previous period: ${rangeLabel(answered.compare.from, answered.compare.to)}` : null;
   const ctl = (r: { loading: boolean; failed: boolean; refetch: () => Promise<void> }) => ({ loading: r.loading, failed: r.failed, compare, onRetry: () => void r.refetch() });
@@ -68,6 +73,8 @@ export function Reports() {
       />
       {tab !== 'team' && current.failed && current.message && <p className="rangeerr" role="alert">{current.message}</p>}
 
+      <AgentCards delivery={delivery.data} onOpenDelivery={() => open('delivery')} />
+
       <Tabs
         className="pgtabs" label="Reports" value={tab} onChange={(id) => open(id as TabKey)}
         items={tabs.map((t) => ({ id: t.key, label: <><t.icon />{t.label}</> }))}
@@ -75,6 +82,8 @@ export function Reports() {
 
       <div role="tabpanel" aria-label={tabs.find((t) => t.key === tab)?.label}>
         {tab === 'overview' && <OverviewTab report={overview.data} ctl={ctl(overview)} />}
+        {tab === 'sales' && <SalesTab report={sales.data} ctl={ctl(sales)} />}
+        {tab === 'delivery' && <DeliveryTab report={delivery.data} ctl={ctl(delivery)} />}
         {tab === 'team' && <TeamTab />}
       </div>
     </section>

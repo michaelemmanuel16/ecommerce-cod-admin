@@ -19,8 +19,8 @@ const OWNER_ROLES = ['super_admin', 'admin', 'manager'];
 /** The six tabs of F-1050. Products and profit is M5 and Marketing is M8: they stay hidden until then. */
 export const REPORT_TABS: TabDef[] = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard, built: true, needs: ['analytics', 'view'] },
-  { key: 'sales', label: 'Sales & revenue', icon: CircleDollarSign, built: false, needs: ['analytics', 'view'] },
-  { key: 'delivery', label: 'Delivery & operations', icon: Truck, built: false, needs: ['analytics', 'view'] },
+  { key: 'sales', label: 'Sales & revenue', icon: CircleDollarSign, built: true, needs: ['analytics', 'view'] },
+  { key: 'delivery', label: 'Delivery & operations', icon: Truck, built: true, needs: ['analytics', 'view'] },
   { key: 'team', label: 'Team performance', icon: Users, built: true, needs: ['analytics', 'view'], roles: OWNER_ROLES },
   { key: 'products', label: 'Products & profit', icon: Package, built: false, needs: ['financial', 'view'] },
   // `marketing` is not in the Resource type until M8
