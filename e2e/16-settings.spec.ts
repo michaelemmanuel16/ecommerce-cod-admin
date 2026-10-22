@@ -53,3 +53,55 @@ test.describe('T63 settings shell and profile', () => {
     await expect(page.locator('.me b')).toHaveText('Adwoa');
   });
 });
+
+test.describe('T64 security', () => {
+  test('a sales rep changes the password; "everywhere else" signs out the second session', async ({ browser }) => {
+    const first = await browser.newContext();
+    const second = await browser.newContext();
+    const a = await first.newPage();
+    const b = await second.newPage();
+    await signIn(a, 'e2e-rep@codadmin.com');
+    await signIn(b, 'e2e-rep@codadmin.com');
+
+    // The password change is served here, so the dev user keeps its password
+    let changed: Record<string, unknown> | undefined;
+    await a.route('**/api/auth/change-password', async (route) => {
+      changed = route.request().postDataJSON();
+      return route.fulfill(json({ message: 'Password changed. Other devices were signed out.' }));
+    });
+    await a.goto('/settings?tab=security');
+    await a.getByLabel('Current password').fill(PASSWORD);
+    await a.getByLabel('New password').fill('Newer#Pass9');
+    await a.getByLabel('Repeat new password').fill('Newer#Pass9');
+    await a.getByRole('button', { name: 'Change password' }).click();
+    await expect(a.getByText('Password changed. Other devices are signed out.')).toBeVisible();
+    expect(changed).toEqual({ currentPassword: PASSWORD, newPassword: 'Newer#Pass9' });
+
+    // The real sessions route: two sessions, one marked "This device"
+    await expect(a.getByText('This device')).toBeVisible();
+    await a.getByRole('button', { name: 'Sign out everywhere else' }).click();
+    await expect(a.getByText(/Signed out of \d+ other place/)).toBeVisible();
+
+    // The second browser is signed out at its next refresh or call
+    await b.goto('/settings?tab=security');
+    await b.reload();
+    await expect(b).toHaveURL(/\/login/);
+    await first.close();
+    await second.close();
+  });
+
+  test('Delete everything stays disabled until DELETE is typed', async ({ page }) => {
+    await signIn(page, 'admin@codadmin.com');
+    await page.goto('/settings?tab=security');
+    await page.getByRole('button', { name: 'Delete account' }).click();
+    const go = page.getByRole('button', { name: 'Delete everything' });
+    await page.getByLabel('Your password').fill(PASSWORD);
+    await expect(go).toBeDisabled();
+    await page.getByLabel('Type DELETE to confirm').fill('DELET');
+    await expect(go).toBeDisabled();
+    await page.getByLabel('Type DELETE to confirm').fill('DELETE');
+    await expect(go).toBeEnabled();
+    await expect(page.getByText(/both stores/i)).toHaveCount(0);
+    // Do not press it: this is the dev owner account
+  });
+});
