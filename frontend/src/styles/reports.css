@@ -73,6 +73,7 @@
 .v2 .bar-row{display:grid;grid-template-columns:130px 1fr 92px;gap:14px;align-items:center}
 .v2 .bar-row .track{height:10px;border-radius:99px;background:var(--hover);overflow:hidden;position:relative}
 .v2 .bar-row .track i{display:block;height:100%;border-radius:99px}
+.v2 .bar-row .track .pace{position:absolute;top:0;bottom:0;width:2px;margin-left:-2px;background:var(--ink)} /* new: the target line on a partner bar */
 .v2 .bar-row .val{text-align:right;font-weight:700}
 .v2 .bar-row .val small{color:var(--ink-3);font-weight:500}
 .v2 .note{padding:0 20px 18px;color:var(--ink-2);font-size:13px}

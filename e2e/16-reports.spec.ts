@@ -2,7 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import { reportsFixture, withoutCompare } from '../frontend/src/__tests__/fixtures/reports';
 
 /**
- * M3-T60 and M3-T61 (F-1050 to F-1053, F-1064): the Reports page.
+ * M3-T60 to M3-T62 (F-1050 to F-1054, F-1057, F-1064): the Reports page.
  * The numbers come from frontend/src/__tests__/fixtures/reports*.json (the NUMBERS.md fixture, 1 to 17 Oct 2026, as
  * GET /api/reports/:tab returns it), served through a route, because the dev database does not hold that month.
  * The sign-in uses the real dev API. Needs the dev users (password123) and the frontend with the repApp and agentApp
@@ -20,7 +20,7 @@ async function signIn(page: Page, email: string) {
   await page.waitForFunction(() => !location.pathname.startsWith('/login'));
 }
 
-type Tab = 'overview' | 'sales' | 'delivery';
+type Tab = 'overview' | 'sales' | 'delivery' | 'team';
 
 /** Serves the fixture for each tab; compare=previous keeps the previous-period figures, otherwise they are null. */
 async function serve(page: Page, edit: (tab: Tab, body: any) => any = (_t, b) => b) {
@@ -159,5 +159,52 @@ test.describe('T61 Sales and Delivery', () => {
     await page.getByRole('button', { name: 'Open Delivery report' }).click();
     await expect(page).toHaveURL(/tab=delivery/);
     await expect(page.getByRole('table', { name: 'Delivery partners' })).toBeVisible();
+  });
+});
+
+test.describe('T62 Team tab and Export menu', () => {
+  test('Team: tiles and rep rates equal the API, call outcomes and decline reasons show', async ({ page }) => {
+    await serve(page);
+    await openReports(page, 'team');
+    const api = reportsFixture.team();
+    const tiles = page.locator('.kpis');
+    await expect(tiles.getByText('1,026', { exact: true })).toBeVisible();
+    await expect(tiles.getByText('2,310', { exact: true })).toBeVisible();
+    await expect(tiles.getByText('540', { exact: true })).toBeVisible();
+    await expect(tiles.getByText('64', { exact: true })).toBeVisible();
+    const table = page.getByRole('table', { name: 'Call reps' });
+    for (const rep of api.reps) {
+      await expect(table.getByRole('row', { name: new RegExp(rep.name) })).toContainText(`${rep.confirmationPercent}%`);
+    }
+    await expect(table.locator('tr.tot')).toContainText('1,026');
+    await expect(page.getByText('Why customers decline')).toBeVisible();
+    await expect(page.getByText('Delivery partners ranked')).toBeVisible();
+  });
+
+  test('Export: the menu has CSV, Excel and Download all, and no PDF', async ({ page }) => {
+    await serve(page);
+    await openReports(page);
+    await page.getByRole('button', { name: /Export/ }).click();
+    const menu = page.getByRole('menu', { name: 'Export' });
+    await expect(menu.getByRole('menuitem')).toHaveText(['CSV (this tab)', 'Excel (this tab)', 'Download all reports (Excel)']);
+    await expect(menu.getByText(/pdf/i)).toHaveCount(0);
+  });
+
+  test('Export: CSV of the Delivery tab downloads <report>-<from>-<to>.csv for the range on screen', async ({ page }) => {
+    await serve(page);
+    let asked = '';
+    await page.route('**/api/reports/delivery/export?*', (route) => {
+      asked = route.request().url();
+      return route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="delivery-2026-10-01-2026-10-17.csv"', 'access-control-expose-headers': 'Content-Disposition' },
+        body: 'Metric,This period\nFailed,354\n',
+      });
+    });
+    await openReports(page, 'delivery');
+    await page.getByRole('button', { name: /Export/ }).click();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'CSV (this tab)' }).click()]);
+    expect(download.suggestedFilename()).toMatch(/^delivery-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(new URL(asked).searchParams.get('format')).toBe('csv');
   });
 });

@@ -12,6 +12,7 @@ export const reportsFixture = {
   overview: () => read('reportsOverview.json'),
   sales: () => read('reportsSales.json'),
   delivery: () => read('reportsDelivery.json'),
+  team: () => read('reportsTeam.json'),
 };
 
 const CHANGE_KEYS = new Set(['previous', 'deltaPercent', 'deltaPoints', 'deltaAmount']);

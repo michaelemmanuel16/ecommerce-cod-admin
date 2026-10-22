@@ -4,8 +4,8 @@ import type { Block, Money, RateTag } from '../dashboard/types';
 
 export type { Block, Money, RateTag };
 
-/** The tabs the API answers for. Team has its own endpoint (M3-T62). */
-export type ReportTabId = 'overview' | 'sales' | 'delivery';
+/** The tabs the API answers for. */
+export type ReportTabId = 'overview' | 'sales' | 'delivery' | 'team';
 
 export interface ReportParams { from: string; to: string; compare: boolean }
 
@@ -17,7 +17,7 @@ export interface ReportHead {
   generatedAt: string;
   currency: string;
 }
-export type ReportBody = ReportHead;
+export type ReportBody = ReportHead | TeamReport;
 
 export interface Counted { value: number; previous: number | null; deltaPercent: number | null }
 export interface MoneyTile { value: Money; previous: Money | null; deltaPercent: number | null }
@@ -113,4 +113,46 @@ export interface DeliveryReport extends ReportHead {
     rows: PartnerRow[];
     total: { assigned: number; delivered: number; failedOrReturned: number; outNow: number; successRate: number | null; cashHeld?: Money };
   }>;
+}
+
+/* ---- Team (GET /api/reports/team: no blocks, no previous period) ---- */
+export interface CountedRate {
+  value: number | null;
+  detail?: Record<string, number>;
+}
+export interface TeamRates { confirmationRate: CountedRate; deliveredFromConfirmedRate: CountedRate }
+export interface TeamFigures {
+  calls: number;
+  confirmed: number;
+  notReachable: number;
+  /** Whole percents, rounded once from the counts by the API. */
+  confirmationPercent: number | null;
+  deliveredFromConfirmedPercent: number | null;
+  timeToFirstCallMinutes: number | null;
+  upsellRate: number | null;
+  extraValue: Money;
+  targetHit: { target: number; actual: number; percent: number | null } | null;
+}
+export interface TeamRepRow extends TeamRates, TeamFigures {
+  repId: number;
+  name: string;
+  /** 'ai_agent' for an AI agent, else 'person'. */
+  kind: string;
+}
+export interface TeamReport {
+  from: string;
+  to: string;
+  asOf: string;
+  tiles: {
+    ordersConfirmed: number;
+    callsMade: number;
+    callsPerConfirmation: number | null;
+    notReachable: { count: number; percentOfCalls: number | null };
+    totalDeclined: number;
+    queue: { pending: number; oldestWaitMinutes: number | null; withoutRep: number };
+  };
+  reps: TeamRepRow[];
+  all: TeamRates & TeamFigures;
+  callOutcomes: Array<{ outcome: string; count: number }>;
+  declineReasons: Array<{ reason: string; count: number; percent: number | null }>;
 }

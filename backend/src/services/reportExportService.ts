@@ -206,14 +206,21 @@ async function teamSheet(tenantId: string, r: ReportRange): Promise<Section[]> {
     },
     {
       title: 'Call reps',
-      header: ['Rep', 'Calls', 'Confirmed', 'Confirmation rate %', 'Delivered from confirmed %', 'Not reachable'],
+      header: ['Rep', 'Calls', 'Confirmed', 'Confirmation rate %', 'Delivered from confirmed %', 'Time to first call, minutes', 'Upsell rate %', 'Extra value', 'Target (confirmed orders delivered)', 'Delivered of target', 'Target hit %', 'Not reachable'],
       rows: [
-        ...t.reps.map((x) => [text(x.name), int(x.calls), int(x.confirmed), pct(x.confirmationRate.value), pct(x.deliveredFromConfirmedRate.value), int(x.notReachable)]),
-        [text('All call reps'), int(t.all.calls), int(t.all.confirmed), pct(t.all.confirmationRate.value), pct(t.all.deliveredFromConfirmedRate.value), int(t.all.notReachable)],
+        ...t.reps.map((x) => repRow(x.name, x)),
+        repRow('All call reps', t.all),
       ],
     },
   ];
 }
+
+type TeamRow = Awaited<ReturnType<typeof teamReport>>['all'];
+const repRow = (name: string, x: TeamRow): Cell[] => [
+  text(name), int(x.calls), int(x.confirmed), pct(x.confirmationPercent), pct(x.deliveredFromConfirmedPercent),
+  days(x.timeToFirstCallMinutes), pct(x.upsellRate), money(x.extraValue),
+  int(x.targetHit?.target), int(x.targetHit?.actual), pct(x.targetHit?.percent), int(x.notReachable),
+];
 
 export const SHEET_TITLES: Record<ExportTab, string> = { overview: 'Overview', sales: 'Sales and revenue', delivery: 'Delivery and operations', team: 'Team performance' };
 
