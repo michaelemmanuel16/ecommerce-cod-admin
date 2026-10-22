@@ -81,3 +81,7 @@
 .v2 .cmdk .it small{margin-left:auto;color:var(--ink-3);font-size:smaller} /* the mockup has no reset: <small> is 83%, Tailwind's preflight makes it 80% */
 .v2 .cmdk .it svg.accent{color:var(--violet)}
 .v2 .cmdk .list{max-height:60vh;overflow-y:auto}
+
+/* new: a profile photo inside the top-bar avatar (F-1222) */
+.v2 .avatar{overflow:hidden}
+.v2 .avatar .avatar-img{width:100%;height:100%;object-fit:cover}

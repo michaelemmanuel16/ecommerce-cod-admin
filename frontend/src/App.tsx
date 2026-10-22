@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Shell } from './components/shell/Shell';
 import { Toast } from './components/ui/Toast';
 import { Loading } from './components/ui/Loading';
+import { ToastProvider } from './components/ui-v2';
 import { UpdatePrompt } from './components/pwa/UpdatePrompt';
 import { AccessGate } from './components/shell/AccessGate';
 import { canOpenPath } from './components/shell/navModel';
@@ -253,9 +254,9 @@ function App() {
             <Route path="collections" element={
               <Suspense fallback={<Loading />}><MobileCollections /></Suspense>
             } />
-            {/* TODO: replace with mobile-optimized Settings */}
+            {/* TODO: replace with mobile-optimized Settings. The new Settings is a v2 page, so it brings the v2 scope and toasts with it. */}
             <Route path="settings" element={
-              <Suspense fallback={<Loading />}><Settings /></Suspense>
+              <Suspense fallback={<Loading />}><ToastProvider><div className="v2"><Settings /></div></ToastProvider></Suspense>
             } />
           </Route>
 
