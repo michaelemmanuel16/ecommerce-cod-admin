@@ -3,8 +3,10 @@ import axios from 'axios';
 import { Button, ConfirmDialog, Modal, useToast } from '../../components/ui-v2';
 import { ordersService, type BulkResult, type OrderListRow, type StatusMoveExtras } from '../../services/orders.service';
 import type { OrderStatus } from '../../types';
+import { apiErrorMessage } from '../../utils/apiError';
 import { ORDER_STATUS_LABELS } from '../../utils/orderStatus';
-import { orderNumber, personName } from './model';
+import { personName } from '../../utils/people';
+import { orderNumber } from './model';
 import { ReasonDialog } from './ReasonDialog';
 import { reasonKind } from './reasons';
 import type { Option } from './useFilterOptions';
@@ -29,9 +31,6 @@ interface Pending {
 }
 
 const orders = (n: number): string => `${n.toLocaleString('en-GB')} ${n === 1 ? 'order' : 'orders'}`;
-/** A refused change carries its own plain sentence (`error`); anything else gets the fallback. */
-const whyNot = (e: unknown, fallback: string): string =>
-  (axios.isAxiosError(e) && (e.response?.data?.error || e.response?.data?.message)) || fallback;
 const codeOf = (e: unknown): string | undefined => (axios.isAxiosError(e) ? e.response?.data?.code : undefined);
 
 /**
@@ -78,7 +77,7 @@ export function useOrderActions({ setSelected, refetch, setFocus }: Deps) {
       const ok = result.succeeded.length;
       report(result, `Changed ${orders(ok)} to ${label}`, `${orders(ok)} moved to ${label}. ${result.failed.length.toLocaleString('en-GB')} could not move`);
     } catch (e) {
-      say(whyNot(e, 'The status could not be changed.'));
+      say(apiErrorMessage(e, 'The status could not be changed.'));
     }
   }, [say, report, refetch, setSelected]);
 
@@ -118,7 +117,7 @@ export function useOrderActions({ setSelected, refetch, setFocus }: Deps) {
         setBlocked({ name: who.option.name, retry: () => void runAssign(p, who, true) });
         return;
       }
-      say(whyNot(e, 'The order could not be assigned.'));
+      say(apiErrorMessage(e, 'The order could not be assigned.'));
     }
   }, [say, report, refetch, setSelected]);
 
@@ -157,7 +156,7 @@ export function useOrderActions({ setSelected, refetch, setFocus }: Deps) {
       }
       void refetch();
     } catch (e) {
-      say(whyNot(e, 'The orders could not be deleted.'));
+      say(apiErrorMessage(e, 'The orders could not be deleted.'));
     }
   }, [say, setSelected, setFocus, refetch]);
 
