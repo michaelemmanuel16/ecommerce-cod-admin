@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { hasPermission } from '../middleware/auth';
-import { Requester } from '../utils/authUtils';
+import { orderScope, Requester } from '../utils/authUtils';
 import { looksLikePhone, phoneSearchConditions } from '../utils/phone';
 
 /** M3-T08: command palette search (F-105). Orders and customers, 5 each, tenant-scoped and permission-filtered. */
@@ -80,12 +80,8 @@ class SearchService {
     if (!or.length) return [];
 
     // Same row scope as the orders list: a rep sees own orders, an agent own deliveries.
-    const scope: Prisma.OrderWhereInput = requester.role === 'sales_rep' ? { customerRepId: requester.id }
-      : requester.role === 'delivery_agent' ? { deliveryAgentId: requester.id }
-      : {};
-
     return prisma.order.findMany({
-      where: { deletedAt: null, ...scope, OR: or },
+      where: { deletedAt: null, ...orderScope(requester), OR: or },
       orderBy: { createdAt: 'desc' },
       take: LIMIT,
       select: {

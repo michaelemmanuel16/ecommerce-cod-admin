@@ -24,7 +24,7 @@ function assertVisible<T extends { deletedAt: Date | null; customerRepId: number
 }
 
 /** The source line of the drawer (F-321): where the order came from. A webhook order does not store which webhook sent it. */
-export function sourceLabelOf(source: string, formName?: string | null): string {
+function sourceLabelOf(source: string, formName?: string | null): string {
   if (source === 'checkout_form') return formName ? `Checkout form: ${formName}` : 'Checkout form';
   if (source === 'manual') return 'Manual';
   if (source === 'import' || source === 'bulk_import') return 'Import';

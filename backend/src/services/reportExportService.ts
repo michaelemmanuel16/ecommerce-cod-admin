@@ -16,7 +16,7 @@ import ExcelJS from 'exceljs';
 import { AppError } from '../middleware/errorHandler';
 import { teamReport } from './teamReportService';
 import type { ReportBody, ReportRange, ReportTab } from './reportsService';
-import { FORMULA_START } from './exportStream';
+import { csvCell, FORMULA_START } from './exportStream';
 
 type CellType = 'text' | 'int' | 'money' | 'percent' | 'days' | 'date';
 type Cell = { v: string | number | null; t: CellType };
@@ -247,8 +247,8 @@ const fixed: Partial<Record<CellType, number>> = { money: 2, percent: 1, days: 1
 function csvValue(cell: Cell): string {
   if (cell.v === null) return '';
   const digits = fixed[cell.t];
-  const value = digits !== undefined && cell.v !== '' ? Number(cell.v).toFixed(digits) : cell.t === 'text' ? safeText(String(cell.v)) : String(cell.v);
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  if (digits !== undefined && cell.v !== '') return csvCell(Number(cell.v).toFixed(digits), true);
+  return csvCell(String(cell.v), cell.t !== 'text');
 }
 const csvLine = (values: string[]) => `${values.join(',')}\r\n`;
 

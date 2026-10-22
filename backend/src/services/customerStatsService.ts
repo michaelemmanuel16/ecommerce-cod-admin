@@ -79,7 +79,7 @@ export const customerStatsService = {
   /** Listener for `order.created` and `order.status_changed`. Never throws: the order is already saved. */
   async onOrderEvent(evt: OrderCreatedEvent | OrderStatusChangedEvent): Promise<void> {
     try {
-      const customerId = await this.customerIdOf(evt.orderId);
+      const customerId = evt.customerId ?? await this.customerIdOf(evt.orderId);
       if (customerId !== null) await this.recompute(customerId);
     } catch (error: any) {
       logger.error('Customer stats recompute failed', { orderId: evt.orderId, error: error?.message });

@@ -11,7 +11,8 @@ import {
   emitToTenant,
 } from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
-import { checkResourceOwnership, Requester } from '../utils/authUtils';
+import { checkResourceOwnership, isManagerUp, orderScope, Requester } from '../utils/authUtils';
+import { fullName } from '../utils/nameUtils';
 import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
 import assignmentService from './assignmentService';
@@ -125,13 +126,6 @@ export interface OrderListQuery extends OrderFilters {
 /** A search term is cut at 100 characters and 5 name words, as in the command palette search. */
 const SEARCH_MAX_LENGTH = 100;
 const SEARCH_MAX_WORDS = 5;
-
-/** Row scope: a rep sees orders where they are the call rep, a delivery agent their own deliveries. Other roles see all. */
-function orderScope(requester?: Requester): Prisma.OrderWhereInput {
-  if (requester?.role === 'sales_rep') return { customerRepId: requester.id };
-  if (requester?.role === 'delivery_agent') return { deliveryAgentId: requester.id };
-  return {};
-}
 
 /** The list `where`: tenant comes from the client extension. `withStatus: false` is the tab counts. */
 function listWhere(filters: OrderFilters, requester: Requester | undefined, withStatus: boolean): Prisma.OrderWhereInput {
@@ -1119,7 +1113,7 @@ export class OrderService {
     };
     const itemKey = (list: Array<{ productId: number; quantity: number; unitPrice: Money.MoneyInput }>) =>
       list.map((i) => `${i.productId}:${i.quantity}:${Money.toApi(i.unitPrice)}`).sort().join('|');
-    const customerName = `${customer.firstName} ${customer.lastName}`.trim();
+    const customerName = fullName(customer);
 
     // What differs from the stored order. Unknown keys always count as a change, so they are refused.
     const differs: Record<string, () => boolean> = {
@@ -1542,7 +1536,7 @@ export class OrderService {
    */
   async assignCustomerRep(orderId: number, customerRepId: number, requester: Requester) {
     // Only admin/manager can assign reps
-    if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+    if (!isManagerUp(requester)) {
       throw new AppError('Only administrators or managers can assign customer representatives', 403);
     }
     return assignmentService.assignByRole(orderId, customerRepId, 'sales_rep', actorOf(requester));
@@ -1554,7 +1548,7 @@ export class OrderService {
   async assignDeliveryAgent(orderId: number, deliveryAgentId: number, requester: Requester, confirmBlocked = false) {
     // Only admin/manager/sales_rep can assign delivery agent (sometimes sales reps do it after confirmation)
     // Actually, usually managers assign agents. Let's stick to manager+ for now, or check ownership.
-    if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+    if (!isManagerUp(requester)) {
       // Check if sales rep is assigned to this order
       const order = await prisma.order.findUnique({ where: { id: orderId } });
       if (!order || order.customerRepId !== requester.id) {
@@ -1571,7 +1565,7 @@ export class OrderService {
   }
 
   private assertCanAssign(requester: Requester) {
-    if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+    if (!isManagerUp(requester)) {
       throw new AppError('Only administrators or managers can assign orders', 403);
     }
   }
@@ -1645,13 +1639,7 @@ export class OrderService {
     const where: Prisma.OrderWhereInput = { deletedAt: null };
 
     // Role-based filtering for stats
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      if (requester.role === 'sales_rep') {
-        where.customerRepId = requester.id;
-      } else if (requester.role === 'delivery_agent') {
-        where.deliveryAgentId = requester.id;
-      }
-    }
+    Object.assign(where, orderScope(requester));
 
     if (filters.startDate || filters.endDate) {
       where.createdAt = {};

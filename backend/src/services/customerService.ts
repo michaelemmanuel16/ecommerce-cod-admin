@@ -2,7 +2,8 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
-import { Requester } from '../utils/authUtils';
+import { isManagerUp, Requester } from '../utils/authUtils';
+import { fullName } from '../utils/nameUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
 import * as Money from '../utils/money';
@@ -63,10 +64,7 @@ interface CustomerFilters {
   sortOrder?: 'asc' | 'desc';
 }
 
-const isAdminRole = (requester?: Requester) =>
-  !requester || requester.role === 'super_admin' || requester.role === 'admin' || requester.role === 'manager';
-
-const fullName = (c: { firstName: string; lastName: string }) => `${c.firstName} ${c.lastName}`.trim();
+const isAdminRole = (requester?: Requester) => !requester || isManagerUp(requester);
 
 export class CustomerService {
   /**
@@ -230,19 +228,20 @@ export class CustomerService {
    */
   async getSummary(filters: CustomerFilters, requester?: Requester) {
     const base = { ...filters, segment: undefined };
+    const baseWhere = await this.listWhere(base, requester);
     const count = async (extra: Partial<CustomerFilters>) =>
       prisma.customer.count({ where: await this.listWhere({ ...base, ...extra }, requester) });
 
     const zone = getStoreTimeZone(getTenantId());
     const monthStart = startOfDay(`${localDate(new Date(), zone).slice(0, 7)}-01`, zone);
     const [all, repeat, firstTime, refusedBefore, notReachable, blocked, newThisMonth] = await Promise.all([
-      count({}),
+      prisma.customer.count({ where: baseWhere }),
       count({ segment: 'repeat' }),
       count({ segment: 'first_time' }),
       count({ segment: 'refused_before' }),
       count({ segment: 'not_reachable' }),
       count({ blocked: true }),
-      prisma.customer.count({ where: { AND: [await this.listWhere(base, requester), { createdAt: { gte: monthStart } }] } }),
+      prisma.customer.count({ where: { AND: [baseWhere, { createdAt: { gte: monthStart } }] } }),
     ]);
 
     // First-time plus repeat are the customers with orders; the two percentages add up to 100

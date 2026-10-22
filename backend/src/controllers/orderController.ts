@@ -6,6 +6,7 @@ import { clearCache } from '../middleware/cache';
 import { readDateBound } from '../utils/kpiRequest';
 import { ALL_STATUSES } from '../services/orderStateMachine';
 import orderDetailService from '../services/orderDetailService';
+import { fullName } from '../utils/nameUtils';
 import { assertWithinCap, BatchRow, ExportColumn, exportDate, exportMoney, exportPhone, readFormat, streamExport } from '../services/exportStream';
 
 /** Filters shared by the list and the tab counts. Sort, page and include are read by the list only. */
@@ -54,7 +55,6 @@ export const getOrderCounts = async (req: AuthRequest, res: Response): Promise<v
 };
 
 type ExportOrder = BatchRow<ReturnType<typeof orderService.exportBatches>>;
-const fullName = (u: { firstName: string; lastName: string } | null) => (u ? `${u.firstName} ${u.lastName}`.trim() : '');
 
 /** F-320 columns. The order number is the id; the id the 3PL or store gave sits beside it. */
 const ORDER_EXPORT_COLUMNS: ExportColumn<ExportOrder>[] = [

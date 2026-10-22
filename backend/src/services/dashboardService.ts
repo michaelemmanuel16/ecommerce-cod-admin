@@ -29,7 +29,7 @@ import { leadership, type Leadership, type Period } from './kpi/leadership';
 import { cashHeldByPartners } from './kpi/cash';
 import { failedDeliveryCalls, failedDeliveryCallsTarget, ordersPlacedByDay } from './kpi/daily';
 import { changePercent, paceChip, progressTag, questPercent, questTone, rateTag } from './kpi/status';
-import { daysInMonth, endOfDay, getStoreTimeZone, localDate, parseYmd, shiftYmd, startOfDay, weekRange } from './kpi/dates';
+import { daysInMonth, endOfDay, getStoreTimeZone, hourInZone, localDate, parseYmd, shiftYmd, startOfDay, weekRange } from './kpi/dates';
 
 export const DASHBOARD_RANGES = ['today', 'week', 'month', 'last_7_days', 'last_30_days', 'quarter', 'year'] as const;
 export type DashboardRange = (typeof DASHBOARD_RANGES)[number];
@@ -119,7 +119,7 @@ function rangeDays(range: DashboardRange, asOfDate: string, zone: string): { fro
 }
 
 function greeting(zone: string): 'morning' | 'afternoon' | 'evening' {
-  const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+  const hour = hourInZone(new Date(), zone);
   return hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
 }
 
@@ -193,11 +193,11 @@ async function ladderBlock(c: Context) {
 }
 
 async function questsBlock(c: Context) {
-  const [l, today, target, days, callsTarget] = await Promise.all([
-    c.lead(), c.today(), c.todayTarget(), c.placedDays(), failedDeliveryCallsTarget(c.tenantId, c.asOfDate),
-  ]);
   const dayStart = startOfDay(c.asOfDate, c.zone);
-  const calls = await failedDeliveryCalls(c.tenantId, dayStart, endOfDay(c.asOfDate, c.zone));
+  const [l, today, target, days, callsTarget, calls] = await Promise.all([
+    c.lead(), c.today(), c.todayTarget(), c.placedDays(), failedDeliveryCallsTarget(c.tenantId, c.asOfDate),
+    failedDeliveryCalls(c.tenantId, dayStart, endOfDay(c.asOfDate, c.zone)),
+  ]);
 
   const ordersTarget = l.ordersNeededPerDay.value;
   const ordersToday = days.get(c.asOfDate) ?? 0;
