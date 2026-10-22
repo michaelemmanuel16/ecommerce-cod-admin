@@ -34,6 +34,10 @@ export const getCustomerSummary = async (req: AuthRequest, res: Response): Promi
   res.json(await customerService.getSummary(readFilters(req), req.user));
 };
 
+export const getCustomerTowns = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ towns: await customerService.getTowns(req.user) });
+};
+
 export const createCustomer = async (req: AuthRequest, res: Response): Promise<void> => {
   const customer = await customerService.createCustomer(req.body, req.user);
   res.status(201).json({ customer });
