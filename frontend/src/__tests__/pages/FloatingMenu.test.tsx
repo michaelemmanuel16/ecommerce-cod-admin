@@ -15,7 +15,7 @@ describe('FloatingMenu placement', () => {
   };
 
   const setup = () => {
-    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => menuHeight);
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => menuHeight);
     vi.stubGlobal('ResizeObserver', class {
       constructor(cb: () => void) { resize = cb; }
       observe() {}
@@ -51,6 +51,26 @@ describe('FloatingMenu placement', () => {
     act(() => resize?.());
     expect(menu.style.bottom).toBe(`${722 - 560 + 6}px`);
     expect(menu.style.top).toBe('');
+  });
+
+  it('a list taller than the space gets a height limit, so its last items stay on the screen', () => {
+    setup();
+    window.innerHeight = 400;
+    menuHeight = 600; // many call reps and delivery agents
+    render(<FloatingMenu anchor={anchorAt(150, 180)} label="Assign" onClose={() => {}}><button>Kofi</button></FloatingMenu>);
+    const menu = screen.getByRole('menu');
+    expect(menu.style.top).toBe('186px'); // more space below (208) than above (138)
+    expect(menu.style.maxHeight).toBe(`${400 - 180 - 12}px`);
+  });
+
+  it('a scroll inside the menu keeps it open; a scroll outside closes it', () => {
+    setup();
+    const onClose = vi.fn();
+    render(<FloatingMenu anchor={anchorAt(100, 130)} label="Assign" onClose={onClose}><button>Kofi</button></FloatingMenu>);
+    act(() => { screen.getByRole('menu').dispatchEvent(new Event('scroll')); });
+    expect(onClose).not.toHaveBeenCalled();
+    act(() => { document.dispatchEvent(new Event('scroll')); });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('puts no stray text on the page', () => {

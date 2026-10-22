@@ -14,20 +14,24 @@ interface FloatingMenuProps {
 
 /**
  * A menu fixed to the viewport (.menu.fixed of the mockup), so the table's scroll box cannot clip it.
- * Outside click, Escape, scrolling and a resize close it; Escape gives focus back to the button; Up and Down move between items.
+ * Outside click, Escape, scrolling outside it and a resize close it; a long list scrolls inside it; Escape gives focus back to the button; Up and Down move between items.
  */
 export function FloatingMenu({ anchor, label, align = 'right', width = 240, onClose, children }: FloatingMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number }>({ left: 8, top: 0 });
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; maxHeight?: number }>({ left: 8, top: 0 });
 
   useLayoutEffect(() => {
     const place = () => {
       const r = anchor.getBoundingClientRect();
       const left = align === 'right' ? Math.max(8, r.right - width) : Math.min(r.left, window.innerWidth - width - 8);
-      const height = ref.current?.offsetHeight ?? 320;
-      setPos(r.bottom + height + 12 > window.innerHeight && r.top > height
-        ? { left, bottom: window.innerHeight - r.top + 6 }
-        : { left, top: r.bottom + 6 });
+      // scrollHeight: the full content, also when maxHeight cuts the box
+      const height = ref.current?.scrollHeight ?? 320;
+      const below = window.innerHeight - r.bottom - 12;
+      const above = r.top - 12;
+      // A list longer than the space scrolls inside the menu, so its last items stay on the screen
+      setPos(height > below && above > below
+        ? { left, bottom: window.innerHeight - r.top + 6, maxHeight: above }
+        : { left, top: r.bottom + 6, maxHeight: below });
     };
     place();
     // The content can grow after it opens (the status moves load later): place it again when its size changes
@@ -40,6 +44,10 @@ export function FloatingMenu({ anchor, label, align = 'right', width = 240, onCl
     const items = () => Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not([disabled])') ?? []);
     items()[0]?.focus();
     const close = () => onClose();
+    // A scroll inside the menu (a long list) keeps it open
+    const scroll = (e: Event) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
     const down = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node) && !anchor.contains(e.target as Node)) onClose();
     };
@@ -57,12 +65,12 @@ export function FloatingMenu({ anchor, label, align = 'right', width = 240, onCl
     };
     document.addEventListener('mousedown', down);
     document.addEventListener('keydown', key, true);
-    window.addEventListener('scroll', close, true);
+    window.addEventListener('scroll', scroll, true);
     window.addEventListener('resize', close);
     return () => {
       document.removeEventListener('mousedown', down);
       document.removeEventListener('keydown', key, true);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', scroll, true);
       window.removeEventListener('resize', close);
     };
   }, [anchor, onClose]);
