@@ -41,7 +41,9 @@ const mkUser = async (label: string, extra: Record<string, unknown>) =>
     },
   });
 
+// register-tenant answers 404 unless the SaaS flag is on (M3-T26).
 beforeAll(async () => {
+  process.env.SAAS_SIGNUP_ENABLED = 'true';
   const tenant = await createTenant('Auth');
   tenantId = tenant.id;
   tenantUser = await mkUser('tenant', { tenantId });
@@ -50,6 +52,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  delete process.env.SAAS_SIGNUP_ENABLED;
   await prismaBase.user.deleteMany({ where: { id: { in: [tenantUser.id, platformUser.id, strayUser.id] } } });
   await deleteTenantRows([tenantId, ...(registeredTenantId ? [registeredTenantId] : [])]);
   await prismaBase.$disconnect();

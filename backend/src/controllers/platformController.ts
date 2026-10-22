@@ -4,6 +4,9 @@ import { AuthRequest } from '../types';
 import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import * as platformService from '../services/platformService';
+import { PLAN_NAMES } from '../config/billing';
+
+const PLAN_ORDER: string[] = [PLAN_NAMES.FREE, PLAN_NAMES.GROWTH, PLAN_NAMES.SCALE, PLAN_NAMES.ENTERPRISE];
 
 const createTenantSchema = z.object({
   name: z.string().min(1).max(255),
@@ -211,11 +214,12 @@ export const removeAnnouncement = async (req: AuthRequest, res: Response, next: 
 
 export const listPlans = async (_req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
+    // Free is inactive (hidden from pricing) but tenants sit on it, so the platform filter lists it too (F-140).
     const plans = await prisma.plan.findMany({
-      where: { isActive: true },
-      orderBy: { priceGHS: 'asc' },
-      select: { id: true, name: true, displayName: true, priceGHS: true },
+      where: { OR: [{ isActive: true }, { name: PLAN_NAMES.FREE }] },
+      select: { id: true, name: true, displayName: true, priceGHS: true, priceNGN: true, maxOrders: true, maxUsers: true, isActive: true },
     });
+    plans.sort((a, b) => PLAN_ORDER.indexOf(a.name) - PLAN_ORDER.indexOf(b.name));
     res.json({ plans });
   } catch (err) { next(err); }
 };
