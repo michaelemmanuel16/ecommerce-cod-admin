@@ -161,3 +161,35 @@ docs/
   snippet; a per-tenant widget bundle is backlog
 - Meta CAPI server-side events
 - Tenant-level brand palette overrides
+
+## COD-33 — Checkout forms API and public checkout rules (M3b T08–T09)
+
+- **Date:** 2026-10-23 · **Type:** feature · **Branch:** `feature/m3b-checkout-payments`
+- **Commits:** `3c21943` (T08), `23c7809` (upsell tenant check), `d4fdcac` (T09), `568d785` (duplicate reply), `98562b2` (town), `2b04a26` (review and simplify fixes)
+
+### Admin API (T08)
+- `GET /api/checkout-forms?archived=true|false`: archived forms are hidden by default. Each row has `ordersThisMonth`, `ordersTotal` (one grouped query) and `conversion: null` (visits come in M8, F-409).
+- `DELETE /:id` archives a form that has submissions or a payment in flight (`archivedAt`, inactive, slug kept) and answers `{ archived: true, ordersTotal }`. Any other form is deleted. Both add `warning: "No active form sells this product."` when the form was the product's last active form.
+- `POST /:id/restore` (super_admin, admin) clears `archivedAt`. The form stays off.
+- `POST /:id/clone` (super_admin, admin) copies the form, packages and upsells by omission: name `"<name> (copy)"`, a free slug (`-2` … `-50`, then a random suffix), inactive. The Conversion API token and test event code are not copied (`capiTokenNotCopied`).
+- Basics: thank-you page must be `https://`; allowed domains are hosts, stored as `https://host`; country is read-only and comes from the store (`countryNameOfTenant`). Pixel ids: Facebook digits only, GA4 `G-`, GTM `GTM-`.
+- Type follows the product (F-422): a mismatched `formType` is 400; a product change across types on a form with orders is 400; add-ons on a digital form must be digital products. Every add-on product must belong to the store (400 "Upsell product not found").
+- Required keys on activation (F-411): physical needs name, phone, street address and region; digital needs name, phone and email. Message: "This form can't take orders yet. Add: …". An empty fields list means the platform defaults and is not blocked.
+- Standard keys `city` (saved as `town`) and `notes`. A form without a town field leaves the town empty (existing rule).
+- Regions: the form's regions must be regions of its country; a new form starts with all of them. `GET /api/reference/regions` is public (`?country=` name or ISO code, or the store country from an optional login; `Cache-Control: public, max-age=86400`).
+- `POST /:id/test-event` (super_admin, admin) sends one test Purchase with the stored token and test event code through `postCapiEvent` (10 s timeout).
+- "Archived" means `archivedAt`, not `isActive=false`. Admin reads use `withSoftDeleted`, because the soft-delete extension still hides inactive forms.
+
+### Public checkout (T09)
+- Order of checks: form active → product active → sold out (physical `stockQuantity <= 0`: "This product is sold out") → package and add-ons → region in the form's list ("Choose a region from the list.") → server price → duplicate guard → create.
+- Add-ons whose product is off or out of stock are hidden on the public form and refused on submit.
+- Duplicate guard: same store, phone, package id and server total within 30 minutes. Only the submitter (same IP on the form submission) gets the order back with `orderId` and `orderNumber`. Anyone else gets a plain success. Neither creates an order or fires CAPI. The hosted page and the embed show the thank-you without an order number and fire no second browser Purchase.
+- The success payload adds `orderNumber` (`#<id>`).
+- `requiresManualCall` stays false: no customer block flag exists (rule comes in M7).
+
+### Key files
+- `backend/src/controllers/checkoutFormController.ts`, `publicOrderController.ts`, `referenceController.ts`
+- `backend/src/utils/checkoutFormRules.ts` (new), `checkoutLocation.ts`, `slugify.ts` (new)
+- `backend/src/middleware/auth.ts` (`optionalAuthenticate`), `services/metaCapiService.ts`, `services/locationService.ts`, `services/checkoutFormService.ts`
+- `frontend/src/pages/PublicCheckout.tsx`, `components/public/OrderSuccess.tsx`, `frontend/embed/*`
+- Tests: `integration/checkoutFormsApi.test.ts`, `integration/publicCheckoutRules.test.ts`
