@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
 import { normalizeMoney } from '../utils/money';
 import { refreshAccessToken, handleSessionExpired } from './tokenRefresh';
+import { isOwnMove } from './ownMoves';
 
 // Use relative URLs in production (when served by Nginx), absolute URLs in development
 const WS_URL = import.meta.env.VITE_WS_URL === 'relative'
@@ -62,9 +63,12 @@ export const connectSocket = () => {
   });
 
   socket.on('order:status_changed', (data) => {
+    // A move made in this tab has its own toast
+    if (isOwnMove(Number(data.orderId))) return;
     // The server sends `newStatus`; `status` is kept for older payloads.
     const statusText = String(data.newStatus ?? data.status ?? '').split('_').join(' ');
-    toast.success(`Order ${data.orderNumber} status changed to ${statusText}`);
+    // Orders are named by their number, as everywhere else
+    toast.success(`Order #${data.orderId} status changed to ${statusText}`);
   });
 
   return socket;

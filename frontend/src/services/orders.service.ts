@@ -1,4 +1,5 @@
 import apiClient from './api';
+import { markOwnMoves } from './ownMoves';
 import { Order, OrderStatus, FilterOptions, PaginationMeta, FailureReason, DeclineReason } from '../types';
 
 /** Reasons the order state machine can ask for with a status move (PATCH /api/orders/:id/status). */
@@ -355,6 +356,7 @@ export const ordersService = {
   },
 
   async updateOrderStatus(id: number, status: OrderStatus, notes?: string, extra: StatusMoveExtras = {}): Promise<Order> {
+    markOwnMoves([id]);
     const response = await apiClient.patch(`/api/orders/${id}/status`, { status, ...(notes && { note: notes }), ...extra });
     return transformOrder(response.data.order || response.data);
   },
@@ -376,6 +378,7 @@ export const ordersService = {
 
   async bulkStatus(body: BulkStatusBody): Promise<BulkResult> {
     const { force: _force, reason: _reason, ...move } = body;
+    markOwnMoves(body.orderIds);
     const response = await apiClient.patch('/api/orders/bulk/status', move);
     return response.data;
   },
