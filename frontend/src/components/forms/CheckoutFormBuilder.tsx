@@ -67,6 +67,9 @@ const savedRegions = (form: CheckoutForm | undefined, all: string[]): string[] =
   return Array.isArray(list) && list.length > 0 ? list.filter((r): r is string => typeof r === 'string') : all;
 };
 
+/** Keys the server sets on save; they are not part of what the admin edits. */
+const SERVER_KEYS = new Set(['id', 'createdAt', 'updatedAt', 'formId']);
+
 /** An upsell as the editor holds it: `quantity` is the UI copy of items.quantity. */
 const hydrateUpsell = (u: Upsell): Upsell => ({ ...u, quantity: u.items?.quantity || 1, isActive: u.isActive !== false });
 
@@ -243,8 +246,8 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   const hasMountedRef = useRef(false);
   const lastSnapshotRef = useRef<string>('');
   useEffect(() => {
-    // Ids are left out: saving gives new rows their real ids, which is not an edit.
-    const snapshot = JSON.stringify(draftPayload, (key, value) => (key === 'id' ? undefined : value));
+    // Server-owned keys are left out: saving recreates the packages, so the server sets new ids and dates. That is not an edit.
+    const snapshot = JSON.stringify(draftPayload, (key, value) => (SERVER_KEYS.has(key) ? undefined : value));
     if (!hasMountedRef.current) {
       hasMountedRef.current = true;
       lastSnapshotRef.current = snapshot;
