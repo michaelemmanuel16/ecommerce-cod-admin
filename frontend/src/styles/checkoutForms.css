@@ -51,8 +51,8 @@
 .v2 .regions input:disabled{opacity:.5}
 
 /* editor: Packages, Upsells, Payment, Tracking, Design (M3b-T12 to T14). From the mockup's .pt2 .pay .swatches .pvbar rules. */
-.v2 .pt2{width:100%;min-width:780px;border-collapse:collapse}
-.v2 .pt2 th,.v2 .pt2 td{padding:10px 8px;white-space:nowrap;vertical-align:top}
+.v2 .pt2{width:100%;min-width:560px;table-layout:fixed;border-collapse:collapse}
+.v2 .pt2 th,.v2 .pt2 td{padding:10px 4px;vertical-align:top}
 .v2 .pt2 th:first-child,.v2 .pt2 td:first-child{padding-left:0}
 .v2 .tablewrap.pt2wrap{overflow-x:auto}
 /* new: compact input and select inside a table cell or a payment row */
@@ -60,7 +60,10 @@
 .v2 .cin:focus-visible{outline:2px solid var(--pine);outline-offset:1px;border-color:var(--pine)}
 .v2 .cin:disabled{background:var(--hover);color:var(--ink-3)}
 .v2 .cin[aria-invalid="true"]{border-color:var(--coral)}
-.v2 .pt2 .money{display:flex;gap:6px;align-items:center}
+.v2 .pt2 .money{display:flex;gap:4px;align-items:center}
+.v2 .pt2 .badgectl{display:flex;gap:6px;align-items:center}
+.v2 .pt2 .badgectl .cin{min-width:0}
+.v2 .pt2 td .cin{padding:7px 6px}
 .v2 .pt2 .sub{display:block;color:var(--ink-3);font-size:12.5px;margin-top:3px;white-space:normal}
 .v2 .pt2 .err{display:block;color:var(--coral);font-size:12.5px;margin-top:3px;white-space:normal}
 .v2 .pt2 .checkline{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--ink-2);margin-top:6px}
@@ -76,10 +79,9 @@
 .v2 .banner-note.warn{border-color:var(--gold);background:var(--gold-soft);color:var(--ink)}
 .v2 .banner-note.bad{border-color:var(--coral);background:var(--coral-soft);color:var(--ink)}
 .v2 .swatches{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.v2 .swatches button{width:30px;height:30px;border-radius:50%;border:2px solid var(--card);box-shadow:0 0 0 1px var(--line);position:relative;display:grid;place-items:center}
-.v2 .swatches button.on{box-shadow:0 0 0 2px var(--ink)}
-.v2 .swatches .custom{width:30px;height:30px;border-radius:50%;border:2px solid var(--card);box-shadow:0 0 0 1px var(--line);position:relative;display:grid;place-items:center;cursor:pointer;background:var(--card);color:var(--ink-3)}
-.v2 .swatches .custom.on{box-shadow:0 0 0 2px var(--ink)}
+.v2 .swatches button,.v2 .swatches .custom{width:30px;height:30px;border-radius:50%;border:2px solid var(--card);box-shadow:0 0 0 1px var(--line);position:relative;display:grid;place-items:center}
+.v2 .swatches .custom{cursor:pointer;background:var(--card);color:var(--ink-3)}
+.v2 .swatches button.on,.v2 .swatches .custom.on{box-shadow:0 0 0 2px var(--ink)}
 .v2 .swatches .custom input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .v2 .swatches svg.lucide{width:14px;height:14px;color:white}
 .v2 .swatches .custom svg.lucide{color:var(--ink-3)}

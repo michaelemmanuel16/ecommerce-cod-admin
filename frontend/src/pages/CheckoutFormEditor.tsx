@@ -89,6 +89,7 @@ export const CheckoutFormEditor: React.FC = () => {
       if (formId !== null) {
         const updated = await checkoutFormsService.updateCheckoutForm(formId, data);
         setInitialForm(updated);
+        return updated;
       } else {
         const created = await checkoutFormsService.createCheckoutForm(data);
         navigate(`/checkout-forms/${created.id}/edit`, { replace: true });

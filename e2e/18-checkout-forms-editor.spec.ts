@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { API_URL, BASE_URL, createProduct, ownerToken, signIn, stamp, userFor, type TestProduct } from './helpers/m3';
+import { API_URL, BASE_URL, NO_ACCESS, createProduct, ownerToken, signIn, stamp, userFor, type TestProduct } from './helpers/m3';
 
 /**
  * M3b-T13 and T15 (COD-35): the form editor on the dev stack, with every outside call blocked or mocked.
@@ -150,11 +150,13 @@ test.describe.serial('M3b checkout form editor', () => {
     expect(posts.filter((u) => /\/api\/public\/|\/orders|initiate-checkout/.test(u)), 'order or tracking posts from the preview').toEqual([]);
   });
 
-  test('the preview route is closed to a sales rep', async ({ page, request }) => {
+  test('the preview route shows a sales rep no access', async ({ page, request }) => {
     const rep = await userFor(request, token, 'sales_rep');
     await signIn(page, rep.email);
     await page.goto(`/checkout-forms/${formId}/preview`);
-    await expect.poll(() => new URL(page.url()).pathname).not.toContain('/preview');
+    // Same guard as the forms list: the person sees "no access" and no form.
+    await expect(page.getByText(NO_ACCESS)).toBeVisible();
+    await expect(page.locator('iframe, form')).toHaveCount(0);
   });
 
   test('Preview opens from the list in a modal', async ({ page }) => {

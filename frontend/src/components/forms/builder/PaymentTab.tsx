@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
-import { currencyCheck, methodMatrix } from '../../../lib/paymentMatrix';
+import { currencyUntested, methodMatrix, unsupportedCurrencyMessage } from '../../../lib/paymentMatrix';
 
 const providerName = (id: string): string => id.charAt(0).toUpperCase() + id.slice(1);
 
@@ -51,8 +51,9 @@ export const PaymentTab: React.FC = () => {
     ctx.setValue(name, on, { shouldDirty: true });
 
   const showsOnline = matrix.online_deposit || matrix.online_full;
-  const check = showsOnline ? currencyCheck(connection, ctx.currency) : null;
-  const blocked = check === 'unsupported';
+  const currencyProblem = showsOnline ? unsupportedCurrencyMessage(connection, ctx.currency) : null;
+  const untested = showsOnline && currencyUntested(connection);
+  const blocked = currencyProblem !== null;
   const atMax = [cod, deposit, full].filter(Boolean).length >= 2;
   const paused = ctx.formType === 'physical' && !options.prepaidPhysical && (deposit || full);
   const percentBad = deposit && !(Number.isInteger(percent) && percent >= 1 && percent <= 99);
@@ -127,10 +128,8 @@ export const PaymentTab: React.FC = () => {
               <Link to="/connections">Connect a payment provider in Connections.</Link>
             </p>
           )}
-          {check === 'unsupported' && (
-            <p className="banner-note warn" role="alert">This payment account cannot take {ctx.currency}. Connect another account or provider.</p>
-          )}
-          {check === 'untested' && (
+          {currencyProblem && <p className="banner-note warn" role="alert">{currencyProblem}</p>}
+          {untested && (
             <p className="hint" style={{ margin: 0 }}>Test the connection in Connections to check which currencies it takes.</p>
           )}
         </div>

@@ -45,10 +45,10 @@ export function pixelConfigError(config: unknown): string | null {
 
 type UpsellStock = { productId?: number | null; product?: { isActive: boolean; stockQuantity: number; productType: string } | null };
 
-/** A product-linked upsell shows only while its product is active and, for a physical product, in stock. A manual upsell always shows. */
-export function isUpsellAvailable(upsell: UpsellStock & { items?: unknown }): boolean {
-  // The editor's on/off switch is kept in the items JSON (no column of its own).
-  if ((upsell.items as { off?: boolean } | null | undefined)?.off === true) return false;
+/** An upsell shows only while it is switched on. A product-linked upsell also needs its product active and, for a physical product, in stock. */
+export function isUpsellAvailable(upsell: UpsellStock & { isActive?: boolean }): boolean {
+  // The editor's on/off switch.
+  if (upsell.isActive === false) return false;
   const product = upsell.product;
   if (!upsell.productId || !product) return true;
   return product.isActive && (product.productType === 'digital' || product.stockQuantity > 0);

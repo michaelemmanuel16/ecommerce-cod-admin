@@ -39,6 +39,11 @@ export interface CheckoutFormFilters {
   limit?: number;
 }
 
+/** The reason an image file cannot be used, or null. One check for the banner and the upsell images. */
+export function validateImageFile(file: File, rule: { types: string[]; maxBytes: number; message: string }): string | null {
+  return rule.types.includes(file.type) && file.size <= rule.maxBytes ? null : rule.message;
+}
+
 /** Reply of GET /payment-options: the tenant flag and the payment account's state. Never a key. */
 export interface PaymentOptions {
   prepaidPhysical: boolean;
@@ -48,7 +53,7 @@ export interface PaymentOptions {
 /** Reply of GET /:id/upsell-stats. An upsell with no entry cannot be counted reliably (a manual upsell whose name repeats). */
 export interface UpsellStats {
   ordersTotal: number;
-  upsells: Array<{ upsellId: number; name?: string; orders: number }>;
+  upsells: Array<{ upsellId: number; orders: number }>;
 }
 
 /** Reply of POST /:id/test-event: Meta's answer as it came back. */

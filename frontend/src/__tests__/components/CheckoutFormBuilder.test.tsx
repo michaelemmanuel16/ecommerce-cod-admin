@@ -211,3 +211,31 @@ describe('CheckoutFormBuilder tabs (M3b-T13)', () => {
     expect(labels).toEqual(['Basics', 'Fields', 'Packages', 'Upsells', 'Payment', 'Tracking', 'Design']);
   });
 });
+
+describe('CheckoutFormBuilder upsell ids (COD-35)', () => {
+  it('sends the id of a saved upsell, takes the real id of a new one after a save, and sends both on the next save', async () => {
+    window.alert = vi.fn();
+    const saved = {
+      id: 5, name: 'F', slug: 'f', productId: 1, isActive: false,
+      packages: [{ id: 1, name: 'One', price: 249, quantity: 1, isDefault: true }],
+      upsells: [{ id: 70, name: 'Pens', price: 40, items: { quantity: 1 }, isPopular: true, isActive: true }],
+    } as unknown as CheckoutForm;
+    // The server's answer to the first save: the new upsell now has a real id.
+    onSave.mockImplementationOnce(async () => ({ ...saved, upsells: [...saved.upsells, { id: 71, name: 'Grip', price: 5, items: { quantity: 1 }, isPopular: false, isActive: true }] }) as never);
+    const ref = renderBuilder(saved);
+    goTo('Upsells');
+    fireEvent.click(screen.getByRole('button', { name: /Add upsell/ }));
+    fireEvent.change(screen.getAllByLabelText('Headline')[1], { target: { value: 'Grip' } });
+
+    await act(async () => ref.current?.submit());
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const first = (onSave.mock.calls[0] as unknown as [{ upsells: Array<{ id?: number; name: string; isPopular: boolean }> }])[0].upsells;
+    expect(first.map((u) => [u.id, u.name])).toEqual([[70, 'Pens'], [undefined, 'Grip']]);
+    expect(first[0].isPopular).toBe(true);
+
+    await act(async () => ref.current?.submit());
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+    const second = (onSave.mock.calls[1] as unknown as [{ upsells: Array<{ id?: number }> }])[0].upsells;
+    expect(second.map((u) => u.id)).toEqual([70, 71]);
+  });
+});

@@ -6,16 +6,14 @@ describe('isUpsellAvailable (F-415)', () => {
     expect(isUpsellAvailable({ productId: null, product: null })).toBe(true);
   });
 
-  it('an upsell switched off in the editor (items.off) is hidden, linked to a product or not', () => {
-    expect(isUpsellAvailable({ productId: null, items: { quantity: 1, off: true } })).toBe(false);
-    expect(
-      isUpsellAvailable({ productId: 1, product: { isActive: true, stockQuantity: 5, productType: 'physical' }, items: { quantity: 1, off: true } }),
-    ).toBe(false);
+  it('an upsell switched off in the editor (isActive false) is hidden, linked to a product or not', () => {
+    expect(isUpsellAvailable({ productId: null, isActive: false })).toBe(false);
+    expect(isUpsellAvailable({ productId: 1, product: { isActive: true, stockQuantity: 5, productType: 'physical' }, isActive: false })).toBe(false);
   });
 
-  it('items without the off flag, or with it false, still show', () => {
-    expect(isUpsellAvailable({ items: { quantity: 2 } })).toBe(true);
-    expect(isUpsellAvailable({ items: { quantity: 2, off: false } })).toBe(true);
+  it('isActive true or missing still shows', () => {
+    expect(isUpsellAvailable({ isActive: true })).toBe(true);
+    expect(isUpsellAvailable({})).toBe(true);
   });
 
   it('a product-linked upsell needs an active product with stock (digital needs no stock)', () => {

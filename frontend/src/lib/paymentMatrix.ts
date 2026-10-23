@@ -23,11 +23,15 @@ export interface PaymentConnectionInfo {
   lastCheckedAt: string | null;
 }
 
-/** 'unsupported': the account cannot take the currency (online switches stay off). 'untested': no currency list yet, nothing is blocked. */
-export function currencyCheck(connection: PaymentConnectionInfo | null, currency: string): 'unsupported' | 'untested' | null {
-  if (!connection) return null;
-  if (connection.supportedCurrencies.length === 0) return 'untested';
-  return connection.supportedCurrencies.includes(currency.toUpperCase()) ? null : 'unsupported';
+/** True when the account has never been tested, so it has no currency list and nothing is blocked. */
+export const currencyUntested = (connection: PaymentConnectionInfo | null): boolean => Boolean(connection && connection.supportedCurrencies.length === 0);
+
+/** F-401: the message when the account cannot take the currency (online switches stay off), else null. Word for word the server's `unsupportedCurrencyMessage`. */
+export function unsupportedCurrencyMessage(connection: PaymentConnectionInfo | null, currency: string): string | null {
+  if (!connection || connection.supportedCurrencies.length === 0) return null;
+  const code = currency.toUpperCase();
+  if (connection.supportedCurrencies.includes(code)) return null;
+  return `This payment account cannot take ${code}. Connect another account or provider.`;
 }
 
 export interface MethodToggles {

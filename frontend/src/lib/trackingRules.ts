@@ -1,10 +1,12 @@
 // Tracking id rules (F-416). Same checks and words as backend/src/utils/checkoutFormRules.ts `pixelConfigError`.
 import type { PixelConfig } from '../types/checkout-form';
+import { PIXEL_PATTERNS } from '../utils/pixelTracking';
 
+// The patterns are the ones the pixel loaders use; the server checks the same three (TikTok is not checked there).
 const RULES: Array<{ key: keyof PixelConfig; ok: RegExp; message: string }> = [
-  { key: 'facebookPixelId', ok: /^\d+$/, message: 'Facebook Pixel ID must be digits only.' },
-  { key: 'googleAnalyticsId', ok: /^G-[A-Z0-9]+$/, message: 'Google Analytics ID must start with G-.' },
-  { key: 'googleTagManagerId', ok: /^GTM-[A-Z0-9]+$/, message: 'Google Tag Manager ID must start with GTM-.' },
+  { key: 'facebookPixelId', ok: PIXEL_PATTERNS.facebook, message: 'Facebook Pixel ID must be digits only.' },
+  { key: 'googleAnalyticsId', ok: PIXEL_PATTERNS.ga4, message: 'Google Analytics ID must start with G-.' },
+  { key: 'googleTagManagerId', ok: PIXEL_PATTERNS.gtm, message: 'Google Tag Manager ID must start with GTM-.' },
 ];
 
 /** The error for one id, or null. An empty id is allowed. */

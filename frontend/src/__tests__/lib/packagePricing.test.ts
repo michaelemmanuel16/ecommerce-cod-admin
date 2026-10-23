@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { packageDiscountAmount, packageFinalPrice, packageIssue, packageOriginalPrice, withComputedPrices } from '../../lib/packagePricing';
+import { applyDiscount, packageDiscountAmount, packageFinalPrice, packageIssue, packageOriginalPrice, withComputedPrices } from '../../lib/packagePricing';
 import type { ProductPackage } from '../../types/checkout-form';
 
 const pkg = (over: Partial<ProductPackage>): ProductPackage =>
@@ -27,6 +27,17 @@ describe('packageFinalPrice (F-414)', () => {
 
   it('a negative discount value never raises the price', () => {
     expect(packageFinalPrice(249, pkg({ discountType: 'fixed', discountValue: -50 }))).toBe(249);
+  });
+});
+
+describe('applyDiscount', () => {
+  it('takes a percent or a fixed amount off, rounds to cents, and ignores a negative value', () => {
+    expect(applyDiscount(200, 'percentage', 25)).toBe(150);
+    expect(applyDiscount(199.99, 'percentage', 10)).toBe(179.99);
+    expect(applyDiscount(200, 'fixed', 30)).toBe(170);
+    expect(applyDiscount(200, 'none', 30)).toBe(200);
+    expect(applyDiscount(200, 'fixed', -30)).toBe(200);
+    expect(applyDiscount(20, 'fixed', 30)).toBe(-10);
   });
 });
 

@@ -60,6 +60,15 @@ export const PackagesTab: React.FC = () => {
       ) : (
         <div className="tablewrap pt2wrap">
           <table className="pt2">
+            <colgroup>
+              <col style={{ width: 52 }} />
+              <col />
+              <col style={{ width: 128 }} />
+              <col style={{ width: 84 }} />
+              <col style={{ width: 120 }} />
+              <col style={{ width: 44 }} />
+              <col style={{ width: 36 }} />
+            </colgroup>
             <thead>
               <tr>
                 <th>Sets</th>
@@ -81,7 +90,7 @@ export const PackagesTab: React.FC = () => {
                 const badgeOn = Boolean(pkg.showHighlight || pkg.isPopular);
                 return (
                   <tr key={pkg.id}>
-                    <td style={{ width: 80 }}>
+                    <td>
                       <input
                         className="cin"
                         type="number"
@@ -92,26 +101,26 @@ export const PackagesTab: React.FC = () => {
                         onChange={(e) => patch({ quantity: Number(e.target.value) })}
                       />
                     </td>
-                    <td style={{ width: 160 }}>
+                    <td>
                       <input className="cin" aria-label={`Name, package ${n}`} placeholder="e.g. 2 sets" value={pkg.name} onChange={(e) => patch({ name: e.target.value })} />
                     </td>
                     <td>
                       <div className="money">
                         <select
                           className="cin"
-                          style={{ width: 96 }}
+                          style={{ width: 64 }}
                           aria-label={`Discount type, package ${n}`}
                           value={type}
                           onChange={(e) => patch({ discountType: e.target.value as DiscountType, discountValue: e.target.value === 'none' ? 0 : pkg.discountValue || 0 })}
                         >
                           <option value="none">None</option>
-                          <option value="fixed">{symbol} off</option>
-                          <option value="percentage">% off</option>
+                          <option value="fixed">{symbol}</option>
+                          <option value="percentage">%</option>
                         </select>
                         {type !== 'none' && (
                           <input
                             className="cin"
-                            style={{ width: 84 }}
+                            style={{ width: 56 }}
                             type="number"
                             min={0}
                             aria-label={`Discount, package ${n}`}
@@ -133,25 +142,26 @@ export const PackagesTab: React.FC = () => {
                       {discount > 0 && <span className="sub">Was {money(packageOriginalPrice(price, pkg))}</span>}
                       {issue && <span className="err" role="alert">{issue}</span>}
                     </td>
-                    <td style={{ width: 190 }}>
-                      <input
-                        className="cin"
-                        aria-label={`Badge text, package ${n}`}
-                        placeholder="No badge"
-                        value={pkg.highlightText || ''}
-                        onChange={(e) => {
-                          const text = e.target.value;
-                          patch({ highlightText: text, showHighlight: text.trim() !== '' || pkg.isPopular, isPopular: text.trim() !== '' || pkg.isPopular });
-                        }}
-                      />
-                      <label className="checkline">
+                    <td>
+                      <div className="badgectl">
                         <input
                           type="checkbox"
+                          aria-label={`Popular badge, package ${n}`}
+                          title="Show a badge on this package"
                           checked={badgeOn}
                           onChange={(e) => patch({ isPopular: e.target.checked, showHighlight: e.target.checked && Boolean(pkg.highlightText?.trim()) })}
                         />
-                        Popular badge
-                      </label>
+                        <input
+                          className="cin"
+                          aria-label={`Badge text, package ${n}`}
+                          placeholder="Badge"
+                          value={pkg.highlightText || ''}
+                          onChange={(e) => {
+                            const text = e.target.value;
+                            patch({ highlightText: text, showHighlight: text.trim() !== '' || pkg.isPopular, isPopular: text.trim() !== '' || pkg.isPopular });
+                          }}
+                        />
+                      </div>
                     </td>
                     <td>
                       <input type="radio" name="default-package" aria-label={`Default, package ${n}`} checked={Boolean(pkg.isDefault)} onChange={() => patch({ isDefault: true })} />

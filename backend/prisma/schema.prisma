@@ -840,6 +840,8 @@ model FormUpsell {
   discountValue Decimal      @default(0) @map("discount_value") @db.Decimal(19, 4)
   originalPrice Decimal?     @map("original_price") @db.Decimal(19, 4)
   productId     Int?         @map("product_id")
+  isActive      Boolean      @default(true) @map("is_active")
+  isPopular     Boolean      @default(false) @map("is_popular")
   form          CheckoutForm @relation(fields: [formId], references: [id], onDelete: Cascade)
   product       Product?     @relation(fields: [productId], references: [id])
 

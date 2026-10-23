@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { currencyCheck, effectiveToggles, methodMatrix } from '../../lib/paymentMatrix';
+import { currencyUntested, effectiveToggles, methodMatrix, unsupportedCurrencyMessage } from '../../lib/paymentMatrix';
 
 const conn = (supportedCurrencies: string[]) => ({ provider: 'paystack', mode: 'live' as const, isEnabled: true, supportedCurrencies, lastCheckedAt: null });
 
@@ -17,16 +17,18 @@ describe('methodMatrix (mirror of the server rule)', () => {
   });
 });
 
-describe('currencyCheck', () => {
-  it('flags a currency the account cannot take', () => {
-    expect(currencyCheck(conn(['NGN']), 'GHS')).toBe('unsupported');
-    expect(currencyCheck(conn(['NGN', 'GHS']), 'ghs')).toBeNull();
+describe('unsupportedCurrencyMessage (the server\'s words)', () => {
+  it('names a currency the account cannot take, in upper case', () => {
+    expect(unsupportedCurrencyMessage(conn(['NGN']), 'ghs')).toBe('This payment account cannot take GHS. Connect another account or provider.');
+    expect(unsupportedCurrencyMessage(conn(['NGN', 'GHS']), 'ghs')).toBeNull();
   });
   it('does not block an account that was never tested', () => {
-    expect(currencyCheck(conn([]), 'GHS')).toBe('untested');
+    expect(unsupportedCurrencyMessage(conn([]), 'GHS')).toBeNull();
+    expect(currencyUntested(conn([]))).toBe(true);
   });
   it('has nothing to say without a connection', () => {
-    expect(currencyCheck(null, 'GHS')).toBeNull();
+    expect(unsupportedCurrencyMessage(null, 'GHS')).toBeNull();
+    expect(currencyUntested(null)).toBe(false);
   });
 });
 

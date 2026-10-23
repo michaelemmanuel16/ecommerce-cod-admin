@@ -102,7 +102,7 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
                   <div>
                     <h3 className="font-semibold text-gray-900">
                       {addon.name}
-                      {addon.items?.popular && (
+                      {addon.isPopular && (
                         <span className="ml-2 px-2 py-0.5 bg-gray-900 text-white text-xs font-medium rounded align-middle">Popular</span>
                       )}
                     </h3>

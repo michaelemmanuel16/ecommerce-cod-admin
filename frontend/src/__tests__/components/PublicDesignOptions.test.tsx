@@ -9,7 +9,7 @@ const form = (over: Partial<PublicCheckoutForm> = {}): PublicCheckoutForm =>
     fields: [{ id: 'a', label: 'Full name', type: 'text', required: true, enabled: true, standardKey: 'fullName' }],
     product: { name: 'Copybook', price: 200, productType: 'physical' } as never,
     packages: [{ id: 11, name: 'Starter', price: 200, quantity: 1, isPopular: false, isDefault: true, originalPrice: 200, discountType: 'none' }],
-    upsells: [{ id: 21, name: 'Refill pens', price: 40, items: { quantity: 1, popular: true }, isPopular: true }],
+    upsells: [{ id: 21, name: 'Refill pens', price: 40, items: { quantity: 1 }, isPopular: true }],
     country: 'Ghana', currency: 'GHS', regions: { available: [] }, formType: 'physical', design: {},
     ...over,
   }) as PublicCheckoutForm;
@@ -49,16 +49,10 @@ describe('public form reads the Design options (F-418)', () => {
     expect(screen.getByTestId('public-form-root').style.backgroundColor).toBe('');
   });
 
-  it('shows the banner above the form only when it is on the storage host', () => {
+  it('shows the banner above the form (the server only sends one that is on our storage)', () => {
     const banner = 'https://img.example.com/products/t/b.webp';
-    const { unmount } = render(<CheckoutForm formData={form({ storageHost: 'img.example.com', design: { page: { productBanner: banner } } })} onSubmit={vi.fn()} />);
-    expect(screen.getByTestId('form-banner')).toHaveAttribute('src', banner);
-    unmount();
-    const { unmount: u2 } = render(<CheckoutForm formData={form({ storageHost: 'img.example.com', design: { page: { productBanner: 'https://evil.example.org/b.png' } } })} onSubmit={vi.fn()} />);
-    expect(screen.queryByTestId('form-banner')).toBeNull();
-    u2();
     render(<CheckoutForm formData={form({ design: { page: { productBanner: banner } } })} onSubmit={vi.fn()} />);
-    expect(screen.queryByTestId('form-banner')).toBeNull();
+    expect(screen.getByTestId('form-banner')).toHaveAttribute('src', banner);
   });
 
   it('empty options keep today\'s defaults', () => {
@@ -89,6 +83,14 @@ describe('preview mode (F-419)', () => {
     render(<CheckoutForm preview formData={form()} onSubmit={onSubmit} />);
     expect(screen.queryByText('Preview only.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Place Order/i }));
+    expect(screen.getByText('Preview only.')).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('pressing Enter in a field does not submit either', () => {
+    const onSubmit = vi.fn();
+    const { container } = render(<CheckoutForm preview formData={form()} onSubmit={onSubmit} />);
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
     expect(screen.getByText('Preview only.')).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });

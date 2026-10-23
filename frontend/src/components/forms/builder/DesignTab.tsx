@@ -4,13 +4,11 @@ import { Button, Input } from '../../ui-v2';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
 import { BRAND_PALETTE, isValidHex } from '../../../lib/checkoutPalette';
 import { buttonContrastLow, DEFAULT_BUTTON_COLOR } from '../../../lib/contrast';
-import { checkoutFormsService } from '../../../services/checkout-forms.service';
+import { checkoutFormsService, validateImageFile } from '../../../services/checkout-forms.service';
 import { apiErrorMessage } from '../../../utils/apiError';
 import { CheckoutFormDesign } from '../../../types/checkout-form';
 
-const BANNER_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const BANNER_MAX_BYTES = 1024 * 1024;
-const BANNER_RULE = 'Use a JPEG, PNG or WebP image up to 1 MB.';
+const BANNER_RULE = { types: ['image/jpeg', 'image/png', 'image/webp'], maxBytes: 1024 * 1024, message: 'Use a JPEG, PNG or WebP image up to 1 MB.' };
 
 const ColorField: React.FC<{
   label: string;
@@ -97,6 +95,13 @@ const PillGroup = <T extends string>({
   </div>
 );
 
+const CheckLine: React.FC<{ label: string; checked: boolean; onChange: (on: boolean) => void }> = ({ label, checked, onChange }) => (
+  <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 600, fontSize: 13 }}>
+    <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    {label}
+  </label>
+);
+
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div>
     <div className="paneh">
@@ -139,8 +144,9 @@ export const DesignTab: React.FC = () => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (!BANNER_TYPES.includes(file.type) || file.size > BANNER_MAX_BYTES) {
-      setBannerError(BANNER_RULE);
+    const refusal = validateImageFile(file, BANNER_RULE);
+    if (refusal) {
+      setBannerError(refusal);
       return;
     }
     setBannerError(null);
@@ -219,26 +225,8 @@ export const DesignTab: React.FC = () => {
       </Section>
 
       <Section title="Layout">
-        <label className="regions" style={{ display: 'block', margin: 0 }}>
-          <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 600, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={design.page?.hideProductDisplay || false}
-              onChange={(e) => updatePage({ hideProductDisplay: e.target.checked || undefined })}
-            />
-            Hide product name + description on checkout
-          </span>
-        </label>
-        <label className="regions" style={{ display: 'block', margin: 0 }}>
-          <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 600, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={design.page?.showOrderSummary !== false}
-              onChange={(e) => updatePage({ showOrderSummary: e.target.checked ? undefined : false })}
-            />
-            Show order summary (price breakdown + total)
-          </span>
-        </label>
+        <CheckLine label="Hide product name + description on checkout" checked={design.page?.hideProductDisplay || false} onChange={(on) => updatePage({ hideProductDisplay: on || undefined })} />
+        <CheckLine label="Show order summary (price breakdown + total)" checked={design.page?.showOrderSummary !== false} onChange={(on) => updatePage({ showOrderSummary: on ? undefined : false })} />
         <PillGroup
           label="Offer position"
           value={design.page?.offerPosition}
@@ -252,7 +240,7 @@ export const DesignTab: React.FC = () => {
           <label>Product banner</label>
           <div className="bannerbox">
             {design.page?.productBanner && <img src={design.page.productBanner} alt="Product banner" />}
-            <input ref={bannerInput} type="file" hidden accept={BANNER_TYPES.join(',')} aria-label="Product banner file" onChange={pickBanner} />
+            <input ref={bannerInput} type="file" hidden accept={BANNER_RULE.types.join(',')} aria-label="Product banner file" onChange={pickBanner} />
             <Button disabled={uploading} onClick={() => bannerInput.current?.click()}>
               <ImagePlus /> {uploading ? 'Uploading…' : design.page?.productBanner ? 'Change banner' : 'Upload banner'}
             </Button>

@@ -6,6 +6,14 @@ type Priced = Pick<ProductPackage, 'quantity' | 'discountType' | 'discountValue'
 
 const money = (n: number): number => Math.round(n * 100) / 100;
 
+/** A price after a percent or fixed discount, rounded to cents. A negative discount value never raises the price. Not clamped at zero. */
+export function applyDiscount(price: number, type: ProductPackage['discountType'], value: number | undefined): number {
+  const v = Math.max(0, Number(value) || 0);
+  if (type === 'percentage') return money(price - (price * v) / 100);
+  if (type === 'fixed') return money(price - v);
+  return money(price);
+}
+
 /** Sets x product price, before any discount. */
 export function packageOriginalPrice(productPrice: number, pkg: Pick<ProductPackage, 'quantity'>): number {
   return money(productPrice * (Number(pkg.quantity) || 0));
@@ -14,10 +22,7 @@ export function packageOriginalPrice(productPrice: number, pkg: Pick<ProductPack
 /** The discount as money in the store currency. A percent discount shows as its computed amount. */
 export function packageDiscountAmount(productPrice: number, pkg: Priced): number {
   const original = packageOriginalPrice(productPrice, pkg);
-  const value = Math.max(0, Number(pkg.discountValue) || 0);
-  if (pkg.discountType === 'percentage') return money((original * value) / 100);
-  if (pkg.discountType === 'fixed') return money(value);
-  return 0;
+  return money(original - applyDiscount(original, pkg.discountType, pkg.discountValue));
 }
 
 /**
@@ -25,7 +30,7 @@ export function packageDiscountAmount(productPrice: number, pkg: Priced): number
  * number so the editor can say so and block the save (see `packageIssue`).
  */
 export function packageFinalPrice(productPrice: number, pkg: Priced): number {
-  return money(packageOriginalPrice(productPrice, pkg) - packageDiscountAmount(productPrice, pkg));
+  return applyDiscount(packageOriginalPrice(productPrice, pkg), pkg.discountType, pkg.discountValue);
 }
 
 /** The reason a package cannot be saved, or null. */

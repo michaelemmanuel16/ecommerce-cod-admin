@@ -8,6 +8,7 @@ import { randomBytes } from 'crypto';
 import { slugify } from '../utils/slugify';
 import checkoutFormService, { clearCheckoutFormConfigCache } from '../services/checkoutFormService';
 import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
+import { isStorageUrl } from '../config/r2';
 import { getPaymentProvider, DEFAULT_PAYMENT_PROVIDER, methodMatrix } from '../services/payments';
 import { loadProviderConfig, unsupportedCurrencyMessage } from '../services/payments/connectionConfig';
 import { getTenantFeatures } from '../services/tenantFeatures';
@@ -267,6 +268,35 @@ const validateDesign = (
   return { ok: true, value: parsed.data as Prisma.InputJsonValue };
 };
 
+const BANNER_HOST_MESSAGE = 'Upload the banner here; links to other sites are not used.';
+
+/**
+ * The product banner must be on our image storage (F-418), but only when this save changes it: an old banner that
+ * is already stored must not block other design edits. Returns the error text or null.
+ */
+const bannerError = (design: unknown, savedDesign: unknown): string | null => {
+  const banner = (design as { page?: { productBanner?: string } } | null | undefined)?.page?.productBanner;
+  if (!banner) return null;
+  const saved = (savedDesign as { page?: { productBanner?: string } } | null | undefined)?.page?.productBanner;
+  return banner !== saved && !isStorageUrl(banner) ? BANNER_HOST_MESSAGE : null;
+};
+
+/** The columns of one upsell row, from a request body or a form being saved. One place for create and update. */
+const upsellData = (u: any, index: number) => ({
+  name: u.name || '',
+  description: u.description || null,
+  imageUrl: u.imageUrl || null,
+  price: Money.tryParse(u.price) ?? Money.ZERO,
+  items: u.items || null,
+  discountType: u.discountType || 'none',
+  discountValue: Money.tryParse(u.discountValue) ?? Money.ZERO,
+  originalPrice: Money.tryParse(u.originalPrice),
+  isActive: u.isActive !== false,
+  isPopular: Boolean(u.isPopular),
+  productId: u.productId ? Number(u.productId) : null,
+  sortOrder: u.sortOrder !== undefined ? parseInt(u.sortOrder) : index,
+});
+
 export const getAllCheckoutForms = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { search, isActive, archived, page = 1, limit = 20 } = req.query;
@@ -406,6 +436,12 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
+    const bannerProblem = bannerError(designValidation.value, null);
+    if (bannerProblem) {
+      fail400(res, bannerProblem);
+      return;
+    }
+
     const basics = checkBasics(req.body);
     if ('error' in basics) {
       fail400(res, basics.error);
@@ -489,18 +525,7 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       sortOrder: pkg.sortOrder !== undefined ? parseInt(pkg.sortOrder) : index
     }));
 
-    const normalizedUpsells = upsells?.map((upsell: any, index: number) => ({
-      name: upsell.name || '',
-      description: upsell.description || null,
-      imageUrl: upsell.imageUrl || null,
-      price: Money.tryParse(upsell.price) ?? Money.ZERO,
-      items: upsell.items || null,
-      discountType: upsell.discountType || 'none',
-      discountValue: Money.tryParse(upsell.discountValue) ?? Money.ZERO,
-      originalPrice: Money.tryParse(upsell.originalPrice),
-      productId: upsell.productId ? Number(upsell.productId) : null,
-      sortOrder: upsell.sortOrder !== undefined ? parseInt(upsell.sortOrder) : index
-    }));
+    const normalizedUpsells = upsells?.map(upsellData);
 
     // Wrap Prisma.create in timeout to prevent hanging
     const createWithTimeout = async () => {
@@ -620,6 +645,19 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
 
     if (!existing) {
       res.status(404).json({ error: 'Checkout form not found' });
+      return;
+    }
+
+    const bannerProblem = bannerError(designValidation.value, existing.design);
+    if (bannerProblem) {
+      fail400(res, bannerProblem);
+      return;
+    }
+
+    // Upsells are updated in place, so an id in the body must be one of this form's upsells.
+    const savedUpsellIds = upsells ? new Set((await prisma.formUpsell.findMany({ where: { formId }, select: { id: true } })).map((u) => u.id)) : null;
+    if (upsells && upsells.some((u: any) => u?.id !== undefined && u?.id !== null && !savedUpsellIds!.has(Number(u.id)))) {
+      fail400(res, 'An upsell does not belong to this form.');
       return;
     }
 
@@ -755,27 +793,16 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       });
     }
 
-    // Update upsells if provided
+    // Update upsells in place so their ids stay the same across saves (orders and stats point at them): a row with one of
+    // this form's ids is updated, a row without an id is created, and a saved row missing from the body is removed.
     if (upsells) {
-      await prisma.formUpsell.deleteMany({
-        where: { formId: formId }
-      });
-
-      await prisma.formUpsell.createMany({
-        data: upsells.map((upsell: any, index: number) => ({
-          formId: formId,
-          name: upsell.name,
-          description: upsell.description,
-          imageUrl: upsell.imageUrl,
-          price: upsell.price,
-          items: upsell.items,
-          discountType: upsell.discountType || 'none',
-          discountValue: upsell.discountValue || 0,
-          originalPrice: upsell.originalPrice || null,
-          productId: upsell.productId ? Number(upsell.productId) : null,
-          sortOrder: upsell.sortOrder !== undefined ? upsell.sortOrder : index
-        }))
-      });
+      const kept = upsells.filter((u: any) => u.id).map((u: any) => Number(u.id));
+      await prisma.formUpsell.deleteMany({ where: { formId, id: { notIn: kept } } });
+      for (const [index, upsell] of (upsells as any[]).entries()) {
+        const data = upsellData(upsell, index);
+        if (upsell.id) await prisma.formUpsell.update({ where: { id: Number(upsell.id) }, data });
+        else await prisma.formUpsell.create({ data: { ...data, formId } });
+      }
     }
 
     // Invalidate the embed config cache only after all writes (form + packages +
@@ -965,23 +992,25 @@ export const getPaymentOptions = async (req: AuthRequest, res: Response): Promis
   try {
     const tenantId = resolveTenantId(req);
     const provider = DEFAULT_PAYMENT_PROVIDER;
-    const [features, config, row] = await Promise.all([
-      getTenantFeatures(tenantId),
-      tenantId ? loadProviderConfig(tenantId, provider) : null,
-      tenantId ? prisma.paymentConnection.findFirst({ where: { tenantId, provider }, select: { lastCheckedAt: true } }) : null,
-    ]);
-    res.json({
-      prepaidPhysical: features.prepaidPhysical,
-      connection: config
-        ? {
-            provider,
-            mode: config.mode,
-            isEnabled: config.isEnabled,
-            supportedCurrencies: config.supportedCurrencies,
-            lastCheckedAt: row?.lastCheckedAt ?? null,
-          }
-        : null,
-    });
+    const features = await getTenantFeatures(tenantId);
+    // One read of the safe columns only: nothing here decrypts a key. A usable row has a secret stored (checked in the filter, not read).
+    const row = tenantId
+      ? await prisma.paymentConnection.findFirst({
+          where: { tenantId, provider, secretKey: { not: null } },
+          select: { mode: true, isEnabled: true, supportedCurrencies: true, lastCheckedAt: true },
+        })
+      : null;
+    // Tenants that never re-saved their keys still have the old SystemConfig JSON (same fallback as loadProviderConfig, minus the decrypt).
+    const legacy =
+      !row && tenantId && provider === 'paystack'
+        ? ((await prisma.systemConfig.findUnique({ where: { tenantId }, select: { paystackProvider: true } }))?.paystackProvider as Record<string, unknown> | null)
+        : null;
+    const connection = row
+      ? { provider, mode: row.mode === 'live' ? 'live' : 'test', isEnabled: row.isEnabled, supportedCurrencies: row.supportedCurrencies, lastCheckedAt: row.lastCheckedAt }
+      : legacy?.secretKey
+        ? { provider, mode: legacy.mode === 'live' ? 'live' : 'test', isEnabled: legacy.isEnabled !== false, supportedCurrencies: [], lastCheckedAt: null }
+        : null;
+    res.json({ prepaidPhysical: features.prepaidPhysical, connection });
   } catch (error) {
     console.error('Error loading payment options:', error);
     res.status(500).json({ error: 'Failed to load the payment options. Please try again.' });
@@ -990,49 +1019,48 @@ export const getPaymentOptions = async (req: AuthRequest, res: Response): Promis
 
 /**
  * Orders of one form and, per upsell, the orders that contain it (F-415, the "35% of buyers also buy this" hint).
- * An order line of an upsell stores `upsellId` and `upsellName` in its metadata. The upsell rows of a form are rewritten
- * on every save, so the id only matches orders placed since the last save; the name carries older orders over. An upsell
- * is matched by its id or its name. One whose name is empty or shared with another upsell of the form cannot be told
- * apart reliably and gets no entry (so the editor shows no hint for it).
+ * An order line of an upsell stores `upsellId` and `upsellName` in its metadata. Upsell ids are stable now (saves update
+ * in place), so the id carries every order placed since then. The name only carries older lines, written when saves
+ * still recreated the rows. An upsell whose name is empty or shared with another upsell of the form is matched by id alone.
  */
 export const getUpsellStats = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const formId = parseFormId(req, res);
     if (formId === null) return;
-    const form = await findForm(formId, { upsells: { select: { id: true, name: true } } });
+    const tenantId = resolveTenantId(req);
+    const [form, rows] = await Promise.all([
+      findForm(formId, { upsells: { select: { id: true, name: true } } }),
+      prisma.$queryRaw<Array<{ kind: string; upsellId: string | null; name: string | null; orders: number }>>(Prisma.sql`
+        WITH f AS (
+          SELECT DISTINCT o.id
+          FROM form_submissions fs
+          JOIN orders o ON o.id = fs.order_id
+          WHERE fs.form_id = ${formId}
+            AND o.source = 'checkout_form' AND o.deleted_at IS NULL
+            ${tenantId ? Prisma.sql`AND o.tenant_id = ${tenantId}` : Prisma.empty}
+        )
+        SELECT 'total' AS kind, NULL::text AS "upsellId", NULL::text AS name, COUNT(*)::int AS orders FROM f
+        UNION ALL
+        SELECT 'line', oi.metadata->>'upsellId', oi.metadata->>'upsellName', COUNT(DISTINCT oi.order_id)::int
+        FROM order_items oi
+        JOIN f ON f.id = oi.order_id
+        WHERE oi.item_type = 'upsell'
+        GROUP BY 2, 3`),
+    ]);
     if (!form) {
       res.status(404).json({ error: 'Checkout form not found' });
       return;
     }
-    const tenantId = resolveTenantId(req);
-    const rows = await prisma.$queryRaw<Array<{ kind: string; upsellId: string | null; name: string | null; orders: number }>>(Prisma.sql`
-      WITH f AS (
-        SELECT DISTINCT o.id
-        FROM form_submissions fs
-        JOIN orders o ON o.id = fs.order_id
-        WHERE fs.form_id = ${formId}
-          AND o.source = 'checkout_form' AND o.deleted_at IS NULL
-          ${tenantId ? Prisma.sql`AND o.tenant_id = ${tenantId}` : Prisma.empty}
-      )
-      SELECT 'total' AS kind, NULL::text AS "upsellId", NULL::text AS name, COUNT(*)::int AS orders FROM f
-      UNION ALL
-      SELECT 'line', oi.metadata->>'upsellId', oi.metadata->>'upsellName', COUNT(DISTINCT oi.order_id)::int
-      FROM order_items oi
-      JOIN f ON f.id = oi.order_id
-      WHERE oi.item_type = 'upsell'
-      GROUP BY 2, 3`);
 
     const ordersTotal = rows.find((r) => r.kind === 'total')?.orders ?? 0;
     const lines = rows.filter((r) => r.kind === 'line');
     const nameCount = new Map<string, number>();
-    for (const u of form.upsells) nameCount.set(u.name.trim(), (nameCount.get(u.name.trim()) ?? 0) + 1);
-    const upsells = form.upsells
-      .filter((u) => u.name.trim() !== '' && nameCount.get(u.name.trim()) === 1)
-      .map((u) => ({
-        upsellId: u.id,
-        name: u.name,
-        orders: lines.filter((l) => l.upsellId === String(u.id) || l.name === u.name).reduce((sum, l) => sum + l.orders, 0),
-      }));
+    for (const u of form.upsells) nameCount.set(u.name, (nameCount.get(u.name) ?? 0) + 1);
+    const upsells = form.upsells.map((u) => {
+      const byName = u.name.trim() !== '' && nameCount.get(u.name) === 1;
+      const orders = lines.filter((l) => l.upsellId === String(u.id) || (byName && l.name === u.name)).reduce((sum, l) => sum + l.orders, 0);
+      return { upsellId: u.id, name: u.name, orders };
+    });
     res.json({ ordersTotal, upsells });
   } catch (error) {
     console.error('Error loading upsell stats:', error);

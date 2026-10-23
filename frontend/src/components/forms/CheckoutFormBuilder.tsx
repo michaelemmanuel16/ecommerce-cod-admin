@@ -15,7 +15,7 @@ import {
   PixelConfig,
 } from '../../types/checkout-form';
 import { Product } from '../../types';
-import { checkoutFormsService, type PaymentOptions } from '../../services/checkout-forms.service';
+import { checkoutFormsService, type PaymentOptions, type UpsellStats } from '../../services/checkout-forms.service';
 import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
 import { slugFromName, validateBasics } from '../../lib/checkoutBasics';
 import { missingKeysMessage } from '../../lib/standardFields';
@@ -44,7 +44,8 @@ export interface CheckoutFormBuilderHandle {
 }
 
 interface CheckoutFormBuilderProps {
-  onSave: (form: Partial<CheckoutForm>) => Promise<void> | void;
+  /** Returns the saved form (an update) so the editor can take the real ids of new rows. */
+  onSave: (form: Partial<CheckoutForm>) => Promise<CheckoutForm | void> | CheckoutForm | void;
   initialData?: CheckoutForm;
   products: Product[];
   onDirtyChange?: (dirty: boolean) => void;
@@ -64,12 +65,14 @@ const savedRegions = (form: CheckoutForm | undefined, all: string[]): string[] =
   return Array.isArray(list) && list.length > 0 ? list.filter((r): r is string => typeof r === 'string') : all;
 };
 
-/** An upsell as the editor holds it: the popular flag and the off switch live in the items JSON on the server. */
-const hydrateUpsell = (u: Upsell): Upsell => ({
-  ...u,
-  quantity: u.items?.quantity || 1,
-  isPopular: Boolean(u.items?.popular),
-  isActive: !u.items?.off,
+/** An upsell as the editor holds it: `quantity` is the UI copy of items.quantity. */
+const hydrateUpsell = (u: Upsell): Upsell => ({ ...u, quantity: u.items?.quantity || 1, isActive: u.isActive !== false });
+
+/** What the editor keeps of the saved Conversion API settings: the token itself never reaches the browser. */
+const capiOf = (form: CheckoutForm | undefined) => ({
+  stored: Boolean(form?.metaCapiAccessToken),
+  pixelId: form?.pixelConfig?.facebookPixelId ?? '',
+  testEventCode: form?.metaCapiTestEventCode ?? '',
 });
 
 /** Exactly one default package: the first one flagged, else the first. */
@@ -116,24 +119,28 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   const [pixelConfig, setPixelConfig] = useState<PixelConfig>(initialData?.pixelConfig || {});
   const [design, setDesign] = useState<CheckoutFormDesign>(initialData?.design || {});
   const [showErrors, setShowErrors] = useState(false);
-  const [paymentOptions, setPaymentOptions] = useState<PaymentOptions | null>(null);
-  const [paymentOptionsFailed, setPaymentOptionsFailed] = useState(false);
-  const [capiTokenStored, setCapiTokenStored] = useState(Boolean(initialData?.metaCapiAccessToken));
-  const [savedCapi, setSavedCapi] = useState({
-    pixelId: initialData?.pixelConfig?.facebookPixelId ?? '',
-    testEventCode: initialData?.metaCapiTestEventCode ?? '',
-  });
+  const [payment, setPayment] = useState<{ data: PaymentOptions | null; failed: boolean }>({ data: null, failed: false });
+  const [upsellStats, setUpsellStats] = useState<UpsellStats | null>(null);
+  const [savedCapi, setSavedCapi] = useState(() => capiOf(initialData));
 
+  // Read once per editor, not on every tab visit. Upsell numbers come from this form's orders, so a new form has none.
+  const savedFormId = initialData?.id;
   useEffect(() => {
     let cancelled = false;
     checkoutFormsService
       .getPaymentOptions()
-      .then((o) => !cancelled && setPaymentOptions(o))
-      .catch(() => !cancelled && setPaymentOptionsFailed(true));
+      .then((data) => !cancelled && setPayment({ data, failed: false }))
+      .catch(() => !cancelled && setPayment({ data: null, failed: true }));
+    if (savedFormId !== undefined) {
+      checkoutFormsService
+        .getUpsellStats(savedFormId)
+        .then((s) => !cancelled && setUpsellStats(s))
+        .catch(() => undefined);
+    }
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [savedFormId]);
 
   // Country and currency come from the store and cannot be changed on a form (F-411). A saved form keeps its own.
   const storeCurrency = useConfigStore((st) => st.currency);
@@ -152,8 +159,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       setFields(initialData.fields || NEW_FORM_FIELDS);
       setPackages(withOneDefault(initialData.packages || []));
       setUpsells(initialData.upsells?.map(hydrateUpsell) || []);
-      setCapiTokenStored(Boolean(initialData.metaCapiAccessToken));
-      setSavedCapi({ pixelId: initialData.pixelConfig?.facebookPixelId ?? '', testEventCode: initialData.metaCapiTestEventCode ?? '' });
+      setSavedCapi(capiOf(initialData));
       setPixelConfig(initialData.pixelConfig || {});
       setDesign(initialData.design || {});
     }
@@ -220,7 +226,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       // Prices are worked out the way the save does it, so the preview shows what the buyer will pay.
       packages: withComputedPrices(packages, productPrice),
       // An off upsell is hidden on the public form, so it is hidden here too.
-      upsells: upsells.filter((u) => u.isActive !== false).map((u) => ({ ...u, items: { quantity: u.quantity, popular: u.isPopular || undefined } })),
+      upsells: upsells.filter((u) => u.isActive !== false).map((u) => ({ ...u, items: { quantity: u.quantity } })),
       design,
       pixelConfig,
       formType,
@@ -234,7 +240,8 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   const hasMountedRef = useRef(false);
   const lastSnapshotRef = useRef<string>('');
   useEffect(() => {
-    const snapshot = JSON.stringify(draftPayload);
+    // Ids are left out: saving gives new rows their real ids, which is not an edit.
+    const snapshot = JSON.stringify(draftPayload, (key, value) => (key === 'id' ? undefined : value));
     if (!hasMountedRef.current) {
       hasMountedRef.current = true;
       lastSnapshotRef.current = snapshot;
@@ -376,6 +383,8 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
             }
           }
           return {
+            // A saved upsell keeps its id, so saving updates it in place; a new one has a temporary negative id.
+            id: upsell.id > 0 ? upsell.id : undefined,
             productId: upsell.productId,
             name: upsell.name,
             description: upsell.description,
@@ -384,8 +393,9 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
             discountType: upsell.discountType || 'none',
             discountValue: upsell.discountValue || 0,
             originalPrice: upsell.originalPrice || upsell.price,
-            // Quantity, the popular flag and the off switch have no columns of their own.
-            items: { quantity: upsell.quantity, ...(upsell.isPopular && { popular: true }), ...(upsell.isActive === false && { off: true }) },
+            isActive: upsell.isActive !== false,
+            isPopular: upsell.isPopular,
+            items: { quantity: upsell.quantity },
           };
         })
       );
@@ -438,12 +448,16 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         metaCapiTestEventCode: data.metaCapiTestEventCode?.trim() || null,
       };
 
-      await onSave(formData);
+      const saved = await onSave(formData);
+      // New rows now have their real ids: take them, or the next save would create them again.
+      if (saved) {
+        setPackages(withOneDefault(saved.packages || []));
+        setUpsells(saved.upsells?.map(hydrateUpsell) || []);
+      }
       // The typed token is gone from the screen once it is saved; only "Connected" stays.
       const sentToken = formData.metaCapiAccessToken as string;
-      setCapiTokenStored(sentToken !== '');
       setValue('metaCapiAccessToken', sentToken ? CAPI_MASK : '');
-      setSavedCapi({ pixelId: pixelConfig.facebookPixelId ?? '', testEventCode: formData.metaCapiTestEventCode ?? '' });
+      setSavedCapi({ stored: sentToken !== '', pixelId: pixelConfig.facebookPixelId ?? '', testEventCode: formData.metaCapiTestEventCode ?? '' });
       // Only revoke/clear after a successful save so a failed save can be
       // retried without re-uploading the images.
       upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
@@ -495,9 +509,10 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     showErrors,
     formId: initialData?.id ?? null,
     productPrice,
-    paymentOptions,
-    paymentOptionsFailed,
-    capiTokenStored,
+    paymentOptions: payment.data,
+    paymentOptionsFailed: payment.failed,
+    upsellStats,
+    capiTokenStored: savedCapi.stored,
     savedCapi,
     addField,
     updateField,
@@ -521,6 +536,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         aria-busy={isSubmitting}
       >
         <Tabs
+          compact
           tabs={[
             { id: 'basics', label: 'Basics', content: <BasicsTab /> },
             {

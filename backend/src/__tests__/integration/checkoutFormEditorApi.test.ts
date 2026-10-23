@@ -19,6 +19,8 @@ import { bearer, superAdminToken } from './helpers/superAdminToken';
 jest.setTimeout(120_000);
 
 process.env.PROVIDER_ENCRYPTION_KEY = 'ef'.repeat(32);
+const STORAGE = 'https://img.example.com';
+process.env.R2_PUBLIC_URL = STORAGE;
 const SECRET = 'sk_test_EDITOR_secret_value';
 let pair: TwoTenants;
 let ownerA: string;
@@ -156,13 +158,13 @@ describe('GET /:id/upsell-stats', () => {
     expect(by[upGrip]).toBe(1);
   });
 
-  it('gives no entry to upsells whose name is shared with another upsell of the form', async () => {
+  it('upsells that share a name are counted by id only, never by name', async () => {
     await order('a', formA, [{ upsellId: upTwin1, name: 'Twin' }]);
+    await order('a', formA, [{ upsellId: 999998, name: 'Twin' }]); // an old line: its id is gone and the name is ambiguous
     const res = await get(`/${formA}/upsell-stats`);
-    const ids = res.body.upsells.map((u: { upsellId: number }) => u.upsellId);
-    expect(ids).toContain(upPens);
-    expect(ids).not.toContain(upTwin1);
-    expect(ids).not.toContain(upTwin2);
+    const by = Object.fromEntries(res.body.upsells.map((u: { upsellId: number; orders: number }) => [u.upsellId, u.orders]));
+    expect(by[upTwin1]).toBe(1);
+    expect(by[upTwin2]).toBe(0);
   });
 
   it('never counts across tenants', async () => {
@@ -190,28 +192,87 @@ describe('GET /:id/upsell-stats', () => {
 });
 
 describe('upsells saved by the editor (F-415)', () => {
-  it('keeps the discount, and the popular flag and off switch in items; an off upsell is hidden on the public form', async () => {
-    const put = await request(app).put(`/api/checkout-forms/${formA}`).set(bearer(ownerA)).send({
+  const save = (body: Record<string, unknown>, id = formA, token = ownerA) =>
+    request(app).put(`/api/checkout-forms/${id}`).set(bearer(token)).send(body);
+  const rows = () => prismaBase.formUpsell.findMany({ where: { formId: formA }, orderBy: { sortOrder: 'asc' } });
+
+  it('keeps the discount, the popular flag and the off switch in columns; an off upsell is hidden on the public form', async () => {
+    const put = await save({
       packages: [{ name: 'One', price: 10, quantity: 1 }],
       upsells: [
-        { name: 'On pens', price: 30, originalPrice: 40, discountType: 'fixed', discountValue: 10, items: { quantity: 2, popular: true } },
-        { name: 'Off grip', price: 35, items: { quantity: 1, off: true } },
+        { name: 'On pens', price: 30, originalPrice: 40, discountType: 'fixed', discountValue: 10, isPopular: true, items: { quantity: 2 } },
+        { name: 'Off grip', price: 35, isActive: false, items: { quantity: 1 } },
       ],
     });
     expect(put.status).toBe(200);
+    const saved = await rows();
+    expect(saved.map((r) => r.name)).toEqual(['On pens', 'Off grip']);
+    expect(saved[0]).toMatchObject({ discountType: 'fixed', isActive: true, isPopular: true, items: { quantity: 2 } });
+    expect(Number(saved[0].discountValue)).toBe(10);
+    expect(Number(saved[0].originalPrice)).toBe(40);
+    expect(saved[1]).toMatchObject({ isActive: false, isPopular: false });
 
-    const rows = await prismaBase.formUpsell.findMany({ where: { formId: formA }, orderBy: { sortOrder: 'asc' } });
-    expect(rows.map((r) => r.name)).toEqual(['On pens', 'Off grip']);
-    expect(rows[0]).toMatchObject({ discountType: 'fixed', items: { quantity: 2, popular: true } });
-    expect(Number(rows[0].discountValue)).toBe(10);
-    expect(Number(rows[0].originalPrice)).toBe(40);
-    expect(rows[1].items).toEqual({ quantity: 1, off: true });
-
-    const slug = `editor-a-${pair.a.slug}`;
-    const pub = await request(app).get(`/api/public/forms/${slug}`);
+    const pub = await request(app).get(`/api/public/forms/editor-a-${pair.a.slug}`);
     expect(pub.status).toBe(200);
     const form = pub.body.form ?? pub.body;
     expect(form.upsells.map((u: { name: string }) => u.name)).toEqual(['On pens']);
-    expect('storageHost' in form).toBe(true);
+    expect(form.upsells[0].isPopular).toBe(true);
+    expect('isActive' in form.upsells[0]).toBe(false);
+    expect('storageHost' in form).toBe(false);
+  });
+
+  it('a second save keeps the ids; a rename keeps the order count; a missing row is removed; a new row is created', async () => {
+    const [pens, grip] = await rows();
+    const orderCount = async (id: number) =>
+      (await get(`/${formA}/upsell-stats`)).body.upsells.find((u: { upsellId: number }) => u.upsellId === id)?.orders;
+    await order('a', formA, [{ upsellId: pens.id, name: 'On pens' }]);
+
+    const body = (extra: unknown[]) => ({ packages: [{ name: 'One', price: 10, quantity: 1 }], upsells: extra });
+    expect((await save(body([{ id: pens.id, name: 'On pens', price: 30 }, { id: grip.id, name: 'Off grip', price: 35, isActive: false }]))).status).toBe(200);
+    expect((await rows()).map((r) => r.id)).toEqual([pens.id, grip.id]);
+
+    expect((await save(body([{ id: pens.id, name: 'Pens, renamed', price: 31 }, { id: grip.id, name: 'Off grip', price: 35 }]))).status).toBe(200);
+    expect((await rows()).map((r) => [r.id, r.name])).toEqual([[pens.id, 'Pens, renamed'], [grip.id, 'Off grip']]);
+    expect(await orderCount(pens.id)).toBe(1);
+
+    expect((await save(body([{ id: pens.id, name: 'Pens, renamed', price: 31 }, { name: 'Brand new', price: 5 }]))).status).toBe(200);
+    const after = await rows();
+    expect(after.map((r) => r.name)).toEqual(['Pens, renamed', 'Brand new']);
+    expect(after[0].id).toBe(pens.id);
+    expect(after.some((r) => r.id === grip.id)).toBe(false);
+  });
+
+  it('refuses an upsell id that belongs to another form or tenant', async () => {
+    const foreign = await prismaBase.formUpsell.create({ data: { formId: formB, name: 'B upsell', price: 1 } });
+    const res = await save({ upsells: [{ id: foreign.id, name: 'Stolen', price: 1 }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('An upsell does not belong to this form.');
+    expect((await prismaBase.formUpsell.findUniqueOrThrow({ where: { id: foreign.id } })).name).toBe('B upsell');
+  });
+
+  describe('product banner', () => {
+    it('refuses a banner off the storage host when it is set or changed, and accepts one on it', async () => {
+      const bad = await save({ design: { page: { productBanner: 'https://cdn.example.com/b.png' } } });
+      expect(bad.status).toBe(400);
+      expect(bad.body.error).toBe('Upload the banner here; links to other sites are not used.');
+      const ok = await save({ design: { page: { productBanner: `${STORAGE}/products/t/b.png` } } });
+      expect(ok.status).toBe(200);
+    });
+
+    it('an old banner that is not on the storage host does not block other design edits, and is not shown publicly', async () => {
+      await prismaBase.checkoutForm.update({ where: { id: formA }, data: { design: { page: { productBanner: 'https://old.example.org/b.png' } } } });
+      const res = await save({ design: { page: { productBanner: 'https://old.example.org/b.png', offerPosition: 'top' } } });
+      expect(res.status).toBe(200);
+      const pub = await request(app).get(`/api/public/forms/editor-a-${pair.a.slug}`);
+      const design = (pub.body.form ?? pub.body).design;
+      expect(design.page.productBanner).toBeUndefined();
+      expect(design.page.offerPosition).toBe('top');
+    });
+
+    it('a banner on the storage host is served', async () => {
+      await save({ design: { page: { productBanner: `${STORAGE}/products/t/ok.png` } } });
+      const pub = await request(app).get(`/api/public/forms/editor-a-${pair.a.slug}`);
+      expect((pub.body.form ?? pub.body).design.page.productBanner).toBe(`${STORAGE}/products/t/ok.png`);
+    });
   });
 });

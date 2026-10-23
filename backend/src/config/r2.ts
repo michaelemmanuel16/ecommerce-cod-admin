@@ -26,6 +26,18 @@ export const storageHost = (): string | null => {
   }
 };
 
+/** True when `value` is an https address on our image storage host. False while storage is not configured. */
+export const isStorageUrl = (value: unknown): boolean => {
+  const host = storageHost();
+  if (!host || typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
+};
+
 export const isR2Configured = (): boolean =>
   Boolean(accountId && accessKeyId && secretAccessKey && bucket && publicUrl);
 

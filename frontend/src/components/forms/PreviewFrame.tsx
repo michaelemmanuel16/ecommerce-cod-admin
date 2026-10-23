@@ -29,7 +29,10 @@ export const PreviewFrame = forwardRef<HTMLIFrameElement, PreviewFrameProps>(({ 
   useEffect(() => {
     const el = stage.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const measure = () => setSize({ w: el.clientWidth, h: height ?? el.clientHeight });
+    const measure = () => {
+      const next = { w: el.clientWidth, h: height ?? el.clientHeight };
+      setSize((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);

@@ -6,7 +6,7 @@ import logger from '../utils/logger';
 import * as Money from '../utils/money';
 import { townsForForm } from './locationService';
 import { isUpsellAvailable } from '../utils/checkoutFormRules';
-import { storageHost } from '../config/r2';
+import { isStorageUrl } from '../config/r2';
 
 // Shared PUBLIC render payload — the fields safe to expose on the public
 // checkout page and the embed widget config endpoint. Reused so the page and
@@ -68,7 +68,9 @@ const PUBLIC_FORM_SELECT = {
       originalPrice: true,
       discountType: true,
       discountValue: true,
+      isPopular: true,
       // Read to hide an upsell whose product is inactive or out of stock; removed again before the response.
+      isActive: true,
       productId: true,
       product: { select: { isActive: true, stockQuantity: true, productType: true } },
     },
@@ -80,10 +82,18 @@ type UpsellRow = Parameters<typeof isUpsellAvailable>[0];
 // Replace the raw stock quantity with a boolean in-stock flag.
 // `towns` (state -> towns) is added so the public form can fill its City/Town dropdown (COD-138).
 // Upsells whose linked product is inactive or out of stock are dropped (F-415).
+/** The design without a product banner that is not on our image storage (F-418). */
+function withStorageBanner<D>(design: D): D {
+  const banner = (design as { page?: { productBanner?: unknown } } | null)?.page?.productBanner;
+  if (banner === undefined || isStorageUrl(banner)) return design;
+  const { productBanner: _banner, ...page } = (design as { page: Record<string, unknown> }).page;
+  return { ...design, page } as D;
+}
+
 function sanitizePublicForm<T extends { product: { stockQuantity: number }; country: string | null; regions: unknown; upsells: UpsellRow[] }>(form: T) {
   const { stockQuantity, ...productData } = form.product;
-  const upsells = form.upsells.filter(isUpsellAvailable).map(({ productId: _productId, product: _product, ...visible }: any) => visible);
-  return { ...form, upsells, product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions), storageHost: storageHost() };
+  const upsells = form.upsells.filter(isUpsellAvailable).map(({ productId: _productId, product: _product, isActive: _isActive, ...visible }: any) => visible);
+  return { ...form, upsells, design: withStorageBanner((form as { design?: unknown }).design), product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions) };
 }
 
 // ---------- Public embed config cache ----------
@@ -462,6 +472,8 @@ export class CheckoutFormService {
             originalPrice: true,
             discountType: true,
             discountValue: true,
+            isActive: true,
+            isPopular: true,
           },
         },
       },
@@ -476,9 +488,9 @@ export class CheckoutFormService {
       ...form,
       // An upsell switched off in the editor is hidden here as on the public form.
       upsells: form.upsells.filter(isUpsellAvailable),
+      design: withStorageBanner(form.design),
       product: { ...productData, inStock: stockQuantity > 0 },
       towns: townsForForm(form.country, form.regions),
-      storageHost: storageHost(),
     };
   }
 

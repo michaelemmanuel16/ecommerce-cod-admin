@@ -1,10 +1,10 @@
 // WCAG 2.x contrast ratio between two hex colours (F-417). Used for the button warning on the Design tab.
 
 /** The text colour of the checkout button (white on the button colour). */
-export const BUTTON_TEXT_COLOR = '#ffffff';
+const BUTTON_TEXT_COLOR = '#ffffff';
 /** The button colour of a form with no CTA colour set (the public form's default). */
 export const DEFAULT_BUTTON_COLOR = '#0f172a';
-export const MIN_TEXT_CONTRAST = 4.5;
+const MIN_TEXT_CONTRAST = 4.5;
 
 function channels(hex: string): [number, number, number] | null {
   let h = hex.trim().replace(/^#/, '');

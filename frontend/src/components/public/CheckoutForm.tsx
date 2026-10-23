@@ -9,7 +9,7 @@ import { AddOnSelector } from './AddOnSelector';
 import { OrderSummary, PaymentMethodOption } from './OrderSummary';
 import { cn } from '../../utils/cn';
 import { TownSelect } from '../forms/TownSelect';
-import { isStorageUrl } from '../../lib/storageHost';
+import { DEFAULT_BUTTON_COLOR } from '../../lib/contrast';
 
 interface CheckoutFormProps {
   formData: PublicCheckoutForm;
@@ -155,15 +155,15 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   // Theme derived from the form's Design settings (live-streamed in preview).
   const design = formData.design || {};
   const colors = design.colors || {};
-  const ctaColor = colors.cta || '#0f172a';
+  const ctaColor = colors.cta || DEFAULT_BUTTON_COLOR;
   const surfaceColor = colors.surface || '#f97316';
   const primaryColor = colors.primary || ctaColor;
   const textColor = colors.text;
   const labelColor = design.input?.labelColor || textColor;
   const priceColor = design.input?.priceColor || undefined;
   const pageBackground = design.page?.background && design.page.background !== 'transparent' ? design.page.background : undefined;
-  // The banner must sit on our image storage; the server sends that host with the form.
-  const banner = isStorageUrl(design.page?.productBanner, formData.storageHost) ? design.page?.productBanner : undefined;
+  // The server drops a banner that is not on our image storage, so any banner that arrives here is ours.
+  const banner = design.page?.productBanner || undefined;
   const inputStyle = design.input?.style || 'outlined';
   const buttonShape = design.button?.shape || 'rounded';
   const buttonSize = design.button?.size || 'md';
@@ -371,10 +371,6 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   };
 
   const onFormSubmit = async (data: Partial<CheckoutFormData>) => {
-    if (preview) {
-      setPreviewNotice(true);
-      return;
-    }
     if (!selectedPackageId) {
       alert('Please select a package');
       return;
@@ -398,13 +394,13 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   // Captures which payment button was pressed, then runs validation + submit
   // (react-hook-form's handleSubmit doesn't carry the click target through).
   const submitWithMethod = (method: PaymentMethod) => {
-    if (preview) {
-      setPreviewNotice(true);
-      return;
-    }
     pendingMethodRef.current = method;
     handleSubmit(onFormSubmit)();
   };
+
+  // The preview never submits: both entry points (the payment buttons and the single CTA) say so and stop here.
+  const guardPreview = <A extends unknown[]>(submit: (...args: A) => void) =>
+    preview ? () => setPreviewNotice(true) : submit;
 
   return (
     // The public form keeps its own colours: it never reads the admin theme, so the admin's dark mode cannot change it.
@@ -427,7 +423,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
           </div>
         )}
 
-        <form onSubmit={handleSubmit(onFormSubmit)}>
+        <form onSubmit={preview ? (e) => { e.preventDefault(); setPreviewNotice(true); } : handleSubmit(onFormSubmit)}>
           {/* Single centered column on all breakpoints — form, then summary stacked */}
           <div className="space-y-6">
             {/* Form fields and selections */}
@@ -497,7 +493,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                 selectedAddons={selectedAddons}
                 currency={formData.currency}
                 isSubmitting={isSubmitting}
-                onSubmit={() => (preview ? setPreviewNotice(true) : handleSubmit(onFormSubmit)())}
+                onSubmit={guardPreview(() => handleSubmit(onFormSubmit)())}
                 buttonColor={ctaColor}
                 accentColor={surfaceColor}
                 textColor={textColor}
@@ -506,7 +502,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                 submitLabel={buttonLabelOverride || (isDigital ? 'Proceed to Payment' : 'Place Order')}
                 showSummary={showOrderSummary}
                 paymentMethods={paymentMethods}
-                onSelectMethod={submitWithMethod}
+                onSelectMethod={guardPreview(submitWithMethod)}
                 showRefundPolicy={showRefundPolicy}
                 priceColor={priceColor}
               />

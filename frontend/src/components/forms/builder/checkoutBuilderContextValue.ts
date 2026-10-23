@@ -2,7 +2,7 @@ import React, { createContext, useContext } from 'react';
 import { UseFormRegister, UseFormWatch, UseFormSetValue, FieldErrors } from 'react-hook-form';
 import { CheckoutFormDesign, FieldType, FormField, FormType, ProductPackage, Upsell, PixelConfig } from '../../../types/checkout-form';
 import { Product } from '../../../types';
-import type { PaymentOptions } from '../../../services/checkout-forms.service';
+import type { PaymentOptions, UpsellStats } from '../../../services/checkout-forms.service';
 
 export interface BuilderFormValues {
   name: string;
@@ -72,6 +72,8 @@ export interface CheckoutBuilderContextValue {
   /** Tenant payment settings for the Payment tab. null while loading or when they could not be loaded (`paymentOptionsFailed`). */
   paymentOptions: PaymentOptions | null;
   paymentOptionsFailed: boolean;
+  /** Orders of the saved form and per upsell, for the "x% of buyers also buy this" hint. null for a new form or until loaded. */
+  upsellStats: UpsellStats | null;
   /** The saved form holds a Conversion API token. The token itself never reaches the browser. */
   capiTokenStored: boolean;
   /** Pixel id and test event code as last saved: the test event uses these, not what is typed. */

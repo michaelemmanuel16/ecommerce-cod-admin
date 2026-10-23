@@ -1,28 +1,22 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Plus, Trash2, Upload, X } from 'lucide-react';
 import { Button, Input, Select } from '../../ui-v2';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
-import { checkoutFormsService, type UpsellStats } from '../../../services/checkout-forms.service';
-import { packageFinalPrice } from '../../../lib/packagePricing';
+import { validateImageFile, type UpsellStats } from '../../../services/checkout-forms.service';
+import { applyDiscount } from '../../../lib/packagePricing';
 import { upsellHint } from '../../../lib/upsellHint';
 import { formatCurrency } from '../../../utils/format';
 import { getCurrencySymbol } from '../../../utils/countries';
 import type { Upsell } from '../../../types/checkout-form';
 
 // The same limits the upload route had before this tab was rebuilt.
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+const IMAGE_RULE = {
+  types: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'],
+  maxBytes: 5 * 1024 * 1024,
+  message: 'Use a JPG, PNG, WebP or GIF image of 5 MB or less.',
+};
 
 type DiscountType = NonNullable<Upsell['discountType']>;
-
-const finalPrice = (original: number, type: DiscountType, value: number): number =>
-  packageFinalPrice(original, { quantity: 1, discountType: type, discountValue: value });
-
-/** The orders counted for one upsell: by its saved id, else by its name (saved ids change on every save). */
-const ordersFor = (stats: UpsellStats | null, upsell: Upsell): number | undefined => {
-  const hit = stats?.upsells.find((s) => (upsell.id > 0 && s.upsellId === upsell.id) || (s.name !== undefined && s.name === upsell.name));
-  return hit?.orders;
-};
 
 const UpsellCard: React.FC<{ upsell: Upsell; stats: UpsellStats | null }> = ({ upsell, stats }) => {
   const ctx = useCheckoutBuilder();
@@ -36,14 +30,14 @@ const UpsellCard: React.FC<{ upsell: Upsell; stats: UpsellStats | null }> = ({ u
   const preview = ctx.upsellImages.get(upsell.id)?.preview;
   const image = preview || upsell.imageUrl;
   const label = upsell.name || 'Untitled upsell';
-  const hint = stats ? upsellHint(stats.ordersTotal, ordersFor(stats, upsell)) : null;
+  const hint = stats ? upsellHint(stats.ordersTotal, stats.upsells.find((s) => s.upsellId === upsell.id)?.orders) : null;
   const patch = (changes: Partial<Upsell>) => ctx.updateUpsell(upsell.id, { ...upsell, ...changes });
   const setPricing = (nextOriginal: number, nextType: DiscountType, nextValue: number) =>
     patch({
       originalPrice: nextOriginal,
       discountType: nextType,
       discountValue: nextType === 'none' ? 0 : nextValue,
-      price: nextType === 'none' ? nextOriginal : finalPrice(nextOriginal, nextType, nextValue),
+      price: nextType === 'none' ? nextOriginal : applyDiscount(nextOriginal, nextType, nextValue),
     });
 
   const pickProduct = (id: string) => {
@@ -58,7 +52,7 @@ const UpsellCard: React.FC<{ upsell: Upsell; stats: UpsellStats | null }> = ({ u
       description: product.description,
       imageUrl: product.imageUrl,
       originalPrice: product.price,
-      price: type === 'none' ? product.price : finalPrice(product.price, type, value),
+      price: type === 'none' ? product.price : applyDiscount(product.price, type, value),
     });
   };
 
@@ -66,8 +60,8 @@ const UpsellCard: React.FC<{ upsell: Upsell; stats: UpsellStats | null }> = ({ u
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (file.size > MAX_IMAGE_BYTES) return setFileError('Use an image of 5 MB or less.');
-    if (!IMAGE_TYPES.includes(file.type)) return setFileError('Use a JPG, PNG, WebP or GIF image.');
+    const refusal = validateImageFile(file, IMAGE_RULE);
+    if (refusal) return setFileError(refusal);
     setFileError(null);
     ctx.handleUpsellImageSelect(upsell.id, file);
   };
@@ -120,7 +114,7 @@ const UpsellCard: React.FC<{ upsell: Upsell; stats: UpsellStats | null }> = ({ u
 
         <div className="upimg">
           {image && <img src={image} alt="" />}
-          <input ref={fileRef} type="file" hidden accept={IMAGE_TYPES.join(',')} aria-label={`Image for ${label}`} onChange={pickFile} />
+          <input ref={fileRef} type="file" hidden accept={IMAGE_RULE.types.join(',')} aria-label={`Image for ${label}`} onChange={pickFile} />
           <Button size="mini" onClick={() => fileRef.current?.click()}>
             <Upload size={14} /> {image ? 'Change image' : 'Add image'}
           </Button>
@@ -149,20 +143,7 @@ const UpsellCard: React.FC<{ upsell: Upsell; stats: UpsellStats | null }> = ({ u
 /** Upsells tab (M3b-T12, F-415): add-ons the customer can tick before they place the order. */
 export const UpsellsTab: React.FC = () => {
   const ctx = useCheckoutBuilder();
-  const [stats, setStats] = useState<UpsellStats | null>(null);
-
-  // The "x% of buyers also buy this" hint comes from this form's orders. No saved form, no hint.
-  useEffect(() => {
-    if (ctx.formId === null) return;
-    let cancelled = false;
-    checkoutFormsService
-      .getUpsellStats(ctx.formId)
-      .then((s) => !cancelled && setStats(s))
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [ctx.formId]);
+  const stats = ctx.upsellStats;
 
   return (
     <div className="stack">
