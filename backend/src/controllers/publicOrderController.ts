@@ -304,6 +304,13 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       });
 
       if (existingOrder) {
+        // Only the submitter of that order gets it back. Anyone else who knows the phone number sees a plain success,
+        // so an order id never leaves with a guessed phone (it would open /orders/track).
+        const sameSubmitter = !!req.ip && (await prisma.formSubmission.count({ where: { orderId: existingOrder.id, ipAddress: req.ip } })) > 0;
+        if (!sameSubmitter) {
+          res.status(201).json({ success: true, message: 'Order created successfully', deduplicated: true });
+          return;
+        }
         res.status(201).json({
           success: true,
           orderId: existingOrder.id,

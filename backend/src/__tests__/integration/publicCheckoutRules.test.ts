@@ -193,17 +193,30 @@ describe('duplicate guard', () => {
 
   it('the same buyer, package and server total within 30 minutes gets the same order, with no new order and no Meta event', async () => {
     const p = phone();
-    const first = await place(mainSlug, body(p, { totalAmount: 999 }));
+    const first = await place(mainSlug, body(p, { totalAmount: 999 }), '10.79.0.1');
     expect(first.status).toBe(201);
     const ordersBefore = await prismaBase.order.count({ where: { tenantId, source: 'checkout_form' } });
     const calls = capiSpy.mock.calls.length;
 
-    // a different client total changes nothing: the server total decides. Different IP and a local-style number for the same phone.
-    const second = await place(mainSlug, body(p.replace('+233', '0'), { totalAmount: 1 }));
+    // a different client total changes nothing: the server total decides. Same address, a local-style number for the same phone.
+    const second = await place(mainSlug, body(p.replace('+233', '0'), { totalAmount: 1 }), '10.79.0.1');
     expect(second.status).toBe(201);
     expect(second.body).toMatchObject({ success: true, orderId: first.body.orderId, orderNumber: first.body.orderNumber, deduplicated: true });
     expect(await prismaBase.order.count({ where: { tenantId, source: 'checkout_form' } })).toBe(ordersBefore);
     expect(capiSpy.mock.calls.length).toBe(calls);
+  });
+
+  it('another address that knows the phone gets a plain success: no order id, no new order, no Meta event', async () => {
+    const p = phone();
+    const first = await place(mainSlug, body(p), '10.78.0.1');
+    const ordersBefore = await prismaBase.order.count({ where: { tenantId, source: 'checkout_form' } });
+    const calls = capiSpy.mock.calls.length;
+    const other = await place(mainSlug, body(p), '10.78.0.2');
+    expect(other.status).toBe(201);
+    expect(other.body).toEqual({ success: true, message: 'Order created successfully', deduplicated: true });
+    expect(await prismaBase.order.count({ where: { tenantId, source: 'checkout_form' } })).toBe(ordersBefore);
+    expect(capiSpy.mock.calls.length).toBe(calls);
+    expect(JSON.stringify(other.body)).not.toContain(String(first.body.orderId));
   });
 
   it('a double tap from the same address gets the order, not a wait message', async () => {
