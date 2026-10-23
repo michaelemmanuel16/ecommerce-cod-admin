@@ -3,6 +3,7 @@ import { Tag, type Column } from '../../components/ui-v2';
 import type { PartnerRow, PartnerTotal } from '../../services/delivery-partners.service';
 import { initials } from '../../utils/people';
 import { count, DATA_SOURCE_LABEL, days, feeRuleText, rowTags, toneOf, TYPE_LABEL, TYPE_TONE } from './model';
+import { AvailabilitySwitch } from './AvailabilitySwitch';
 import { SuccessBar } from './SuccessBar';
 
 interface ColumnContext {
@@ -77,18 +78,7 @@ export function buildColumns({ target, total, canSwitch, onSwitch }: ColumnConte
       key: 'available',
       header: 'Available',
       render: (p) => (
-        // A click on the switch must not open the drawer
-        <label className="sw" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            role="switch"
-            checked={p.isAvailable}
-            disabled={!canSwitch || !p.isActive}
-            aria-label={`${p.name} available for new orders`}
-            onChange={(e) => onSwitch(p, e.target.checked)}
-          />
-          <span className="tg" />
-        </label>
+        <AvailabilitySwitch name={p.name} checked={p.isAvailable} label={false} disabled={!canSwitch || !p.isActive} onChange={(on) => onSwitch(p, on)} />
       ),
     },
   ];

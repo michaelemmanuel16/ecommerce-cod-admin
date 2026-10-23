@@ -1,12 +1,14 @@
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Clock, Gauge, Hourglass, PackageCheck, Truck } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import { useV2Page } from '../components/shell/useV2Page';
 import { Button, EmptyState, Skeleton, Table, Tabs, Tag, Tile } from '../components/ui-v2';
 import { formatCurrency } from '../utils/format';
 import { DateRange } from './orders/DateRange';
 import { presetOf, rangePhrase } from './orders/urlState';
 import { buildColumns } from './deliveries/columns';
+import { PartnerDrawer } from './deliveries/PartnerDrawer';
 import { ReasonsCard } from './deliveries/ReasonsCard';
 import { OutNowCard, WaitingCard } from './deliveries/WaitingCards';
 import { count, PARTNER_TABS } from './deliveries/model';
@@ -23,6 +25,7 @@ export function Deliveries() {
   const view = useMemo(() => parseView(search), [search]);
   const range = useMemo(() => rangeOf(view), [view]);
   const data = useDeliveries(range, view.tab);
+  const { isAdmin, isManager } = usePermissions();
 
   const go = useCallback((next: DeliveriesView, replace = false) => setSearch(writeView(next), { replace }), [setSearch]);
 
@@ -123,7 +126,7 @@ export function Deliveries() {
         ) : list && list.rows.length === 0 ? (
           <EmptyState title="No delivery partners match." />
         ) : list ? (
-          <Table label="Delivery partners" className="dt" columns={columns} rows={list.rows} rowKey={(r) => r.partnerId} />
+          <Table label="Delivery partners" className="dt" columns={columns} rows={list.rows} rowKey={(r) => r.partnerId} onRowClick={(r) => go({ ...view, partner: r.partnerId })} />
         ) : null}
 
         <p className="dnote">
@@ -139,6 +142,16 @@ export function Deliveries() {
           {list && <OutNowCard rows={list.rows} />}
         </div>
       </div>
+
+      <PartnerDrawer
+        id={view.partner}
+        row={list?.rows.find((r) => r.partnerId === view.partner) ?? null}
+        target={target}
+        canEdit={isAdmin}
+        canSwitch={isManager}
+        onClose={() => go({ ...view, partner: null })}
+        onChanged={() => void data.refetch()}
+      />
     </section>
   );
 }

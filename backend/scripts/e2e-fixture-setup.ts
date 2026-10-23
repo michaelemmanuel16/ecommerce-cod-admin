@@ -90,7 +90,7 @@ async function main() {
     if (!kofi) throw new Error('Kofi Appiah not found in the fixture');
     const order = await prisma.order.findFirst({
       where: { tenantId: tenant.id, deliveryAgentId: kofi.id, status: 'delivered' },
-      orderBy: { id: 'asc' },
+      orderBy: { createdAt: 'desc' }, // a recent one, so the first page of the drawer Orders tab holds it
       select: { id: true, deliveryDate: true },
     });
     if (!order) throw new Error('Kofi has no delivered order in the fixture');
