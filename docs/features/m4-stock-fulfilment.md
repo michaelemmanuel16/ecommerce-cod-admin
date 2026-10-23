@@ -42,3 +42,32 @@ Schema for stock per location and for delivery partners. A per-tenant script mov
 - `backend/src/__tests__/fixtures/numbersFixture.ts`, `backend/src/__tests__/integration/fixtureChecks/stock.ts` (new)
 - `backend/src/__tests__/integration/stockMigration.test.ts`, `m4StockSchema.test.ts` (new)
 - `backend/src/__tests__/integration/helpers/twoTenants.ts`, `backend/src/utils/prismaExtensions.ts`
+
+---
+
+## COD-42 — Delivery partners API, proof and attempts
+**Date:** 2026-10-24 | **Type:** feat | **Branch:** feature/m4-stock-fulfilment | **Commits:** 6c639ed, a77a024, 80dde3b, 8c2c193, 50bfc96, a3f925e (merge), 2884c85 (simplify)
+
+### Summary
+Read and write API for delivery partners (agents and 3PL companies), delivery proof with a signed photo URL, a delivery attempt row on each failed or rescheduled move, and the failure reason backfill. Plan tasks: M4-T18 to T20.
+
+### Changes
+- **Read API** (`/api/delivery-partners`): list with a total row (assigned, delivered, failed or returned, out now, success from `kpi.partnerRates`, medians, data source, fee rule read-only), `/summary` (5 tiles), `/waiting`, `/failure-reasons`, `/region-review`. Cash held and oldest unpaid show a dash until M5.
+- **Write API:** `POST /` creates the user, the stock location and the profile; `PATCH /:id` saves profile fields with an audit row; `PATCH /:id/availability` keeps the `agent:availability_changed` event. Assignment code skips an unavailable partner. No coverage or resolve route (O4).
+- **Regions:** new orders get the region of the store's country (O3); unknown values go to the review list.
+- **Proof and attempts:** `GET /api/deliveries/by-order/:orderId` (recipient, time, cash, photo by signed URL, attempts); `GET /api/deliveries/proof-photo/:deliveryId` serves the signed photo; the order machine writes one `DeliveryAttempt` per failed or rescheduled move.
+- **Removed:** dead `deliveryService` methods (`markDeliveryFailed`, `createDelivery`, `autoAssignAgent`, `getAgentStats`) and `GET /deliveries/routes/:agentId`.
+- **Script:** `backend/scripts/backfill-failure-reason.ts` maps free text to `Order.failureReason` (Other by default) and prints the counts.
+- **Fix:** `partnerTypeOf` reads the location type, so a 3PL linked to a user shows as a 3PL.
+
+### Verification
+- Integration 1324 pass on the milestone branch, unit 1607, frontend vitest 1057; builds and lints pass.
+- Fixture rows equal NUMBERS.md (Logiswift 590 / 220 / 270 / 100 / 45%; total 926 / 376 / 402 / 148 / 48%); reasons sum to 402.
+- API check on the production-dump copy: list, summary, failure reasons, waiting, region review and by-order answer; no token gives 401.
+- Simplify: 23 API responses equal before and after.
+
+### Key Files
+- `backend/src/routes/deliveryPartnerRoutes.ts`, `controllers/deliveryPartnerController.ts`, `controllers/deliveryProofPhotoController.ts` (new)
+- `backend/src/services/deliveryPartnerService.ts`, `deliveryPartnerAdminService.ts`, `deliveryProofService.ts`, `deliveryAttemptHook.ts`, `regionService.ts`, `failureReasonBackfill.ts` (new)
+- `backend/src/utils/failureReasonText.ts` (new), `utils/regions.ts`, `services/deliveryService.ts`, `services/orderStateMachine.ts`, `services/workflowService.ts`, `queues/workflowQueue.ts`
+
