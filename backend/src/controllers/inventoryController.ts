@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../types';
 import * as transfers from '../services/transferService';
 import * as counts from '../services/stockCountService';
+import * as reads from '../services/inventoryReadService';
 
 /** The signed-in user as the transfer service sees them. */
 const actorOf = (req: AuthRequest): transfers.TransferActor => ({ id: req.user!.id, role: req.user!.role });
@@ -52,4 +53,40 @@ export const getCount = async (req: AuthRequest, res: Response): Promise<void> =
 /** POST /api/inventory/counts/:id/lines/:lineId/apply */
 export const applyCountLine = async (req: AuthRequest, res: Response): Promise<void> => {
   res.json(await counts.applyLine({ id: req.user!.id }, Number(req.params.id), Number(req.params.lineId), req.body));
+};
+
+const intQuery = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v));
+const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
+
+/** GET /api/inventory/overview (F-652) */
+export const overview = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { product, type, onlyDifferences } = req.query;
+  res.json(await reads.overview({
+    productId: intQuery(product), type: text(type) as reads.OverviewFilters['type'], onlyDifferences: onlyDifferences === 'true',
+  }));
+};
+
+/** GET /api/inventory/levels */
+export const levels = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await reads.levels({ locationId: intQuery(req.query.locationId), productId: intQuery(req.query.productId) }));
+};
+
+/** GET /api/inventory/product/:productId/holders (F-603) */
+export const holders = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await reads.holders(Number(req.params.productId)));
+};
+
+/** GET /api/inventory/transfers: movement history (F-659) */
+export const listTransfers = async (req: AuthRequest, res: Response): Promise<void> => {
+  const q = req.query;
+  res.json(await reads.transfers({
+    type: text(q.type) as reads.TransferFilters['type'], status: text(q.status) as reads.TransferFilters['status'],
+    locationId: intQuery(q.locationId), productId: intQuery(q.productId), from: text(q.from), to: text(q.to),
+    page: intQuery(q.page) ?? 1, limit: intQuery(q.limit) ?? 20,
+  }));
+};
+
+/** GET /api/inventory/returns/summary (F-656) */
+export const returnsSummary = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await reads.returnsSummary({ from: text(req.query.from), to: text(req.query.to), partnerId: intQuery(req.query.partnerId) }));
 };

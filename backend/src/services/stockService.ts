@@ -19,7 +19,7 @@ type Db = TransactionClient | PrismaClientExtended;
 /** Location types that hold stock the seller can use. The in-transit system location holds none. */
 export const PHYSICAL: StockLocationType[] = ['own_store', 'partner_3pl', 'agent'];
 /** Orders whose units are reserved at the holder (F-651). */
-const RESERVING: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'];
+export const RESERVING: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'];
 
 export interface MovementInput {
   type: TransferType;

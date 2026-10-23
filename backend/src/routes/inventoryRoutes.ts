@@ -6,6 +6,7 @@ import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { AuthRequest } from '../types';
 import { COUNT_REASONS, COUNT_SOURCES } from '../services/stockCountService';
+import { TransferStatus, TransferType, StockLocationType } from '@prisma/client';
 import { ADJUST_REASONS, CREATE_TYPES, DISPUTE_REASONS, RETURN_REASONS } from '../services/transferService';
 
 const router = Router();
@@ -70,6 +71,30 @@ router.post(
   ],
   controller.adjustStock,
 );
+
+// Reads (F-651, F-652, F-603, F-659, F-656)
+const optInt = (name: string) => query(name).optional().isInt({ min: 1 }).withMessage(`${name} must be a whole number above 0`);
+const optDay = (name: string) => query(name).optional().matches(/^\d{4}-\d{2}-\d{2}$/).withMessage(`${name} must be a date, YYYY-MM-DD`);
+router.get(
+  '/overview',
+  canView,
+  [optInt('product'), query('type').optional().isIn(Object.values(StockLocationType)), query('onlyDifferences').optional().isBoolean(), validate],
+  controller.overview,
+);
+router.get('/levels', canView, [optInt('locationId'), optInt('productId'), validate], controller.levels);
+router.get('/product/:productId/holders', canView, [param('productId').isInt({ min: 1 }).withMessage('Invalid product ID').toInt(), validate], controller.holders);
+router.get(
+  '/transfers',
+  canView,
+  [
+    query('type').optional().isIn(Object.values(TransferType)).withMessage('Unknown type'),
+    query('status').optional().isIn(Object.values(TransferStatus)).withMessage('Unknown status'),
+    optInt('locationId'), optInt('productId'), optDay('from'), optDay('to'),
+    query('page').optional().isInt({ min: 1 }), query('limit').optional().isInt({ min: 1, max: 100 }), validate,
+  ],
+  controller.listTransfers,
+);
+router.get('/returns/summary', canView, [optDay('from'), optDay('to'), optInt('partnerId'), validate], controller.returnsSummary);
 
 // Stock counts (F-653)
 router.post(
