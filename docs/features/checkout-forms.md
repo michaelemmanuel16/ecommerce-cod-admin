@@ -283,3 +283,14 @@ docs/
 - `backend/src/controllers/paymentController.ts` (`publicVerifyPayment`), `controllers/publicOrderController.ts`, `middleware/publicTenant.ts`, `middleware/rateLimiter.ts`, `services/tenantLookupService.ts`, `services/checkoutFormService.ts`, `services/paymentSettlementService.ts`, `utils/thankYouUrl.ts`, `utils/mask.ts`, `utils/checkoutLocation.ts`
 - Tests: `PublicCheckoutPage`, `PublicScreens`, `PaymentCallback`, `placeOrder`, `paymentWebhook` (verify), `publicRoutesTenant`, `formStateLabelMigration`, `e2e/10-public-checkout.spec.ts`, `e2e/10b-public-checkout-mobile.spec.ts` (all public calls mocked)
 
+
+## COD-150 — Compact package rows and two-column desktop checkout (M3b, owner request 2026-10-23)
+
+Commits `8a80fe0`, `29dc88d`. Mockup: `docs/mockups/m3b-checkout-redesign.html` (owner picked option B, desktop two columns, today's buttons kept, no sticky bar).
+- Package rows (option B): radio, name with a "Qty N" line, price on the right with the old price struck through and the saving pill under it; "Most popular" or the owner's highlight text sits as a tag on the top border. Rows are about 68–76 px tall. `role="radiogroup"` / `role="radio"`.
+- One discount rule for the rows and the summary: `packageSaving(pkg, currency)` in `lib/packagePricing.ts` (`hasDiscount`, `saveLabel`).
+- Add-ons: compact rows; "Qty N" only when N > 1; description and image still expand.
+- Inputs at least 48 px (padding; selects `h-12`).
+- Hosted page from 1024 px: two columns, max 1080 px; the order summary with the payment buttons is sticky on the right and shows the product thumbnail (loaded only on wide screens, `hooks/useMediaQuery.ts`). Below 1024 px and in the embed: one column as before.
+- Unchanged: buttons, colours, labels, section order, tracking, payment flow, same-tab links.
+- Tests: `PublicCheckoutPage`, `packagePricing`, `e2e/10b` (row and input heights), `e2e/10c-public-checkout-desktop.spec.ts` (new; all public calls mocked).
