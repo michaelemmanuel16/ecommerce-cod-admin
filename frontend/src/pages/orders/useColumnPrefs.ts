@@ -4,7 +4,7 @@ import { readPref, writePref } from './prefs';
 export type ColumnId = 'select' | 'order' | 'customer' | 'altPhone' | 'product' | 'status' | 'rep' | 'agent' | 'amount' | 'date' | 'assign';
 
 const DEFAULT_WIDTHS: Record<ColumnId, number> = {
-  select: 48, order: 96, customer: 220, altPhone: 140, product: 210, status: 210, rep: 150, agent: 160, amount: 110, date: 130, assign: 64,
+  select: 48, order: 96, customer: 220, altPhone: 140, product: 180, status: 180, rep: 150, agent: 160, amount: 110, date: 130, assign: 64,
 };
 const MIN_WIDTH = 64;
 /** F-307: the alternate phone is off until the person turns it on from the column menu. */
