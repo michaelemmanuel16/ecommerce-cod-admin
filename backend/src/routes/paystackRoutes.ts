@@ -15,10 +15,12 @@ const router = Router();
 // verify callback in server.ts (which matches '/api/paystack/platform-webhook').
 router.post('/platform-webhook', handlePlatformWebhook);
 
-// Per-tenant webhook — raw body preserved via verify callback in server.ts.
+// Old per-tenant webhook URL, kept as an alias of POST /api/payments/webhook/paystack/:tenantSlug
+// (tenants have it saved in their Paystack dashboard). Same handler. Raw body preserved via verify callback in server.ts.
 // Slug → tenant lookup → HMAC verified with that tenant's secret.
 router.post('/webhook/:tenantSlug', handleWebhook);
 
+// Old verify paths, aliases of /api/payments/verify and /api/payments/admin/verify.
 // Public verification (used by PaymentCallback page)
 router.get('/verify/:reference', publicVerifyPayment);
 

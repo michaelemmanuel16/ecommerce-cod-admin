@@ -1,18 +1,38 @@
 import { Request, Response } from 'express';
 import { createHash } from 'crypto';
-import { getPaymentProvider } from '../services/payments';
-import { settlePaystackPayment } from '../services/paystackSettlementService';
+import { getPaymentProvider, type PaymentProvider } from '../services/payments';
+import { settlePayment } from '../services/paystackSettlementService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
 import { withWebhookDedup } from '../utils/webhookDedup';
 
+/** Thrown inside the dedup gate when the reference is another tenant's, so the gate removes its row. */
+class WrongTenantReference extends Error {}
+
+/** Provider the request names. The old Paystack URL has no `:provider`, so it is Paystack. */
+function providerOf(req: Request): PaymentProvider | null {
+  try {
+    return getPaymentProvider(req.params.provider ?? 'paystack');
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Paystack webhook handler — called by Paystack on charge.success.
- * Uses raw body for HMAC signature verification, scoped to the URL tenant.
+ * Payment webhook handler — called by a provider when a payment succeeds
+ * (`POST /api/payments/webhook/:provider/:tenantSlug`, and the old
+ * `POST /api/paystack/webhook/:tenantSlug` as an alias for Paystack).
+ * Uses raw body for signature verification, scoped to the URL tenant.
  */
 export async function handleWebhook(req: Request, res: Response): Promise<void> {
   try {
+    const provider = providerOf(req);
+    if (!provider) {
+      res.status(404).json({ error: 'Unknown payment provider' });
+      return;
+    }
+
     const tenantSlug = req.params.tenantSlug;
     if (!tenantSlug) {
       res.status(400).json({ error: 'Missing tenant slug' });
@@ -29,69 +49,86 @@ export async function handleWebhook(req: Request, res: Response): Promise<void> 
     }
 
     // Everything below runs inside the URL tenant's context
-    await runInTenant(tenant.id, () => processTenantWebhook(req, res, tenant.id));
+    await runInTenant(tenant.id, () => processTenantWebhook(req, res, provider, tenant.id));
   } catch (error: any) {
-    logger.error('Paystack webhook error', { error: error.message });
+    logger.error('Payment webhook error', { error: error.message });
     // Still return 200 to prevent retries for processing errors
     res.status(200).json({ received: true });
   }
 }
 
-async function processTenantWebhook(req: Request, res: Response, tenantId: string): Promise<void> {
-  // The legacy Paystack URL: the provider is fixed by the route. The neutral route (M3b-T06) takes it from the path.
-  const provider = getPaymentProvider('paystack');
-
+async function processTenantWebhook(req: Request, res: Response, provider: PaymentProvider, tenantId: string): Promise<void> {
   // Use rawBody preserved by the verify callback in server.ts (avoids express.json() parsing issue)
   const rawBody = (req as any).rawBody;
   if (!rawBody) {
-    logger.error('Paystack webhook: rawBody not available — check server.ts verify callback');
+    logger.error('Payment webhook: rawBody not available — check server.ts verify callback', { tenantId, provider: provider.id });
     res.status(500).json({ error: 'Server configuration error' });
     return;
   }
   const isValid = await provider.verifyWebhook(tenantId, rawBody, req.headers);
   if (!isValid) {
-    logger.warn('Invalid Paystack webhook signature', { tenantId });
+    logger.warn('Invalid payment webhook signature', { tenantId, provider: provider.id, event: null, result: 'bad_signature' });
     res.status(401).json({ error: 'Invalid signature' });
     return;
   }
 
   const event = provider.parseWebhook(rawBody);
-  logger.info('Paystack webhook received', { tenantId: tenantId, event: event.eventType });
+  const log = (result: string) => logger.info('Payment webhook', { tenantId, provider: provider.id, event: event.eventType, result });
 
-  await withWebhookDedup(
-    res,
-    {
-      provider: provider.id,
-      eventType: event.eventType,
-      reference: event.eventType ? event.reference ?? undefined : undefined,
-      payloadHash: createHash('sha256').update(rawBody).digest('hex'),
-      tenantId,
-    },
-    'Paystack',
-    async () => {
-      if (event.kind === 'payment_succeeded') {
-        await handleChargeSuccess(tenantId, event.reference);
-      }
-    }
-  );
-}
-
-/**
- * Webhook charge.success handler. Settlement is delegated to the shared
- * settlement service (deferred-creation model): the order is created from the
- * pending checkout the first time a confirmed payment arrives — here or via the
- * callback verify, whichever is first. Idempotent.
- */
-async function handleChargeSuccess(tenantId: string, reference: string | null): Promise<void> {
-  if (!reference) {
-    logger.error('Paystack charge.success missing reference', { tenantId });
+  if (event.kind !== 'payment_succeeded') {
+    log('ignored');
+    res.status(200).json({ received: true });
     return;
   }
 
-  const result = await settlePaystackPayment(reference, { webhookTenantId: tenantId });
-  if (result.status === 'not_found') {
-    logger.warn('Paystack charge.success with no matching pending checkout', { tenantId, reference });
+  let result = 'replay';
+  try {
+    await withWebhookDedup(
+      res,
+      {
+        provider: provider.id,
+        eventType: event.eventType,
+        reference: event.eventType ? event.reference ?? undefined : undefined,
+        payloadHash: createHash('sha256').update(rawBody).digest('hex'),
+        tenantId,
+      },
+      'Payment',
+      async () => {
+        result = await handleChargeSuccess(tenantId, event.reference);
+      }
+    );
+  } catch (error) {
+    if (error instanceof WrongTenantReference) {
+      log('wrong_tenant');
+      res.status(404).json({ error: 'Reference not found' });
+      return;
+    }
+    throw error;
   }
+  log(result);
+}
+
+/**
+ * Webhook payment_succeeded handler. Settlement is delegated to the shared
+ * settlement service (deferred-creation model): the order is created from the
+ * pending checkout the first time a confirmed payment arrives — here, via the
+ * callback verify or the sweep, whichever is first. Idempotent.
+ * Returns the result word for the webhook log line.
+ */
+async function handleChargeSuccess(tenantId: string, reference: string | null): Promise<string> {
+  if (!reference) {
+    logger.error('Payment webhook: success event without a reference', { tenantId });
+    return 'no_reference';
+  }
+
+  const result = await settlePayment(reference, { webhookTenantId: tenantId });
+  if (result.status === 'wrong_tenant') throw new WrongTenantReference();
+  if (result.status === 'not_found') {
+    // Unknown to every tenant: answer 200 so the provider stops retrying.
+    logger.warn('Payment webhook for a reference no checkout owns — ignored', { tenantId, reference });
+    return 'unknown_reference';
+  }
+  return result.status;
 }
 
 /**
@@ -106,9 +143,9 @@ export async function verifyPayment(req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const result = await settlePaystackPayment(reference);
+    const result = await settlePayment(reference);
     if (result.status === 'not_found' || !result.order) {
-      res.status(404).json({ error: 'No checkout found for this Paystack reference' });
+      res.status(404).json({ error: 'No checkout found for this payment reference' });
       return;
     }
 
@@ -125,10 +162,10 @@ export async function verifyPayment(req: Request, res: Response): Promise<void> 
 }
 
 /**
- * Public endpoint used by the PaymentCallback page after the Paystack redirect.
+ * Public endpoint used by the PaymentCallback page after the provider redirect.
  * Settles the payment — creating the confirmed order on success — so the buyer's
  * order is recorded even if the webhook never fires. The reference is the
- * unguessable secret; settlement re-verifies with Paystack before doing anything.
+ * unguessable secret; settlement re-verifies with the provider before doing anything.
  */
 export async function publicVerifyPayment(req: Request, res: Response): Promise<void> {
   try {
@@ -138,7 +175,7 @@ export async function publicVerifyPayment(req: Request, res: Response): Promise<
       return;
     }
 
-    const result = await settlePaystackPayment(reference);
+    const result = await settlePayment(reference);
     if (result.status === 'not_found') {
       res.status(404).json({ error: 'Payment not found' });
       return;

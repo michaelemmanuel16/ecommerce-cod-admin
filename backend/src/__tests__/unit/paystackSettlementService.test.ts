@@ -25,7 +25,7 @@ import * as paystackServiceModule from '../../services/paystackService';
 import workflowService from '../../services/workflowService';
 import { metaCapiService } from '../../services/metaCapiService';
 import { digitalDeliveryService } from '../../services/digitalDeliveryService';
-import { settlePaystackPayment } from '../../services/paystackSettlementService';
+import { settlePayment } from '../../services/paystackSettlementService';
 import { transitionOrder } from '../../services/orderStateMachine';
 import { tenantStorage, getTenantId } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
@@ -58,11 +58,12 @@ const pending = {
   userAgent: 'jest',
 };
 
-describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
+describe('settlePayment (issue #3 — paid → confirmed)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // jest config has resetMocks:true, so re-arm the fire-and-forget mocks each test.
     (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
+    (prismaMock.product.count as any).mockResolvedValue(1); // the snapshot's one product still exists
     (workflowService.triggerOrderCreatedWorkflows as any).mockResolvedValue(undefined);
     (metaCapiService.fireCapiPurchaseEvent as any).mockResolvedValue(undefined);
   });
@@ -78,7 +79,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     (prismaMock.order.create as any).mockResolvedValue(createdOrder);
     (prismaMock.order.findUnique as any).mockResolvedValue({ ...createdOrder });
 
-    const result = await settlePaystackPayment('ref_ok');
+    const result = await settlePayment('ref_ok');
 
     expect(result.status).toBe('success');
     expect(prismaMock.order.create).toHaveBeenCalledWith(
@@ -110,7 +111,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     (prismaMock.pendingCheckout.delete as any).mockResolvedValue(pending);
     (prismaMock.order.create as any).mockResolvedValue({ id: 55, tenantId: 'tenant-1', orderType, status: 'confirmed', customer: { id: 7 } });
 
-    await settlePaystackPayment('ref_ok');
+    await settlePayment('ref_ok');
 
     expect((prismaMock.order.create as any).mock.calls[0][0].data).toMatchObject({ paymentMethod: method, paymentStatus, paymentProvider: 'paystack' });
   });
@@ -122,7 +123,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
       data: { status: 'abandoned', reference: 'ref_ok', amount: 0, currency: 'GHS', fees: 0 },
     });
 
-    const result = await settlePaystackPayment('ref_ok');
+    const result = await settlePayment('ref_ok');
 
     expect(result.status).toBe('pending');
     expect(prismaMock.order.create).not.toHaveBeenCalled();
@@ -133,7 +134,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     const existing = { id: 55, status: 'confirmed', paymentStatus: 'paid' };
     (prismaMock.order.findFirst as any).mockResolvedValue(existing);
 
-    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('ref_ok'));
+    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePayment('ref_ok'));
 
     expect(result.status).toBe('success');
     expect(result.order).toBe(existing);
@@ -149,7 +150,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
       return { id: 55, status: 'confirmed', paymentStatus: 'paid' };
     });
 
-    const result = await settlePaystackPayment('ref_ok');
+    const result = await settlePayment('ref_ok');
 
     expect(result.status).toBe('success');
     // the tenant is the pending checkout's tenant for the settlement lookup
@@ -160,7 +161,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(null);
     (prismaMock.order.findFirst as any).mockResolvedValue(null);
 
-    const result = await settlePaystackPayment('ref_nope');
+    const result = await settlePayment('ref_nope');
 
     expect(result.status).toBe('not_found');
     expect(prismaMock.order.create).not.toHaveBeenCalled();
@@ -170,7 +171,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     (prismaMock.order.findFirst as any).mockResolvedValue(null);
     (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(null); // stop early after the lookup
 
-    await settlePaystackPayment('ref_ok', { webhookTenantId: 'tenant-1' });
+    await settlePayment('ref_ok', { webhookTenantId: 'tenant-1' });
 
     expect(prismaMock.order.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -186,7 +187,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
       data: { status: 'success', reference: 'ref_ok', amount: 10000, currency: 'GHS', fees: 0 },
     });
 
-    const result = await settlePaystackPayment('ref_ok');
+    const result = await settlePayment('ref_ok');
 
     expect(result.status).toBe('failed');
     expect(prismaMock.order.create).not.toHaveBeenCalled();
@@ -205,7 +206,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     (prismaMock.order.create as any).mockResolvedValue(createdOrder);
     (prismaMock.order.findUnique as any).mockResolvedValue({ ...createdOrder });
 
-    const result = await settlePaystackPayment('ref_ok');
+    const result = await settlePayment('ref_ok');
 
     expect(result.status).toBe('success');
     expect(prismaMock.order.create).toHaveBeenCalledWith(
@@ -235,7 +236,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     (prismaMock.order.create as any).mockResolvedValue(createdOrder);
     (prismaMock.order.findUnique as any).mockResolvedValue({ ...createdOrder });
 
-    const result = await settlePaystackPayment('ref_ok');
+    const result = await settlePayment('ref_ok');
 
     expect(result.status).toBe('success');
     const data = (prismaMock.order.create as any).mock.calls[0][0].data;
@@ -252,9 +253,9 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     (prismaMock.order.findFirst as any).mockResolvedValue(null);
     (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(pending); // tenant-1
 
-    const result = await settlePaystackPayment('ref_ok', { webhookTenantId: 'tenant-2' });
+    const result = await settlePayment('ref_ok', { webhookTenantId: 'tenant-2' });
 
-    expect(result.status).toBe('not_found');
+    expect(result.status).toBe('wrong_tenant');
     expect(mockedPaystack.verifyTransaction).not.toHaveBeenCalled();
     expect(prismaMock.order.create).not.toHaveBeenCalled();
   });
@@ -277,7 +278,7 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
       (digitalDeliveryService.generateDownloadToken as any).mockResolvedValue('tok');
       (digitalDeliveryService.sendDownloadLinks as any).mockResolvedValue(undefined);
 
-      await settlePaystackPayment('ref_ok');
+      await settlePayment('ref_ok');
 
       // M1-T11: the move goes through the state machine as the system actor, dated the settle time
       expect(transitionOrder).toHaveBeenCalledWith(57, 'digital_delivered', { kind: 'system' },

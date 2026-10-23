@@ -16,7 +16,7 @@ jest.mock('../../services/paystackService', () => ({
 // Settlement is delegated to the settlement service; the webhook only owns tenant
 // resolution, signature checks and dedup. We mock settlement and assert delegation.
 jest.mock('../../services/paystackSettlementService', () => ({
-  settlePaystackPayment: jest.fn(),
+  settlePayment: jest.fn(),
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
@@ -27,8 +27,8 @@ import { handleWebhook } from '../../controllers/paystackController';
 const mockedPaystack = paystackServiceModule.paystackService as jest.Mocked<
   typeof paystackServiceModule.paystackService
 >;
-const mockedSettle = settlementModule.settlePaystackPayment as jest.MockedFunction<
-  typeof settlementModule.settlePaystackPayment
+const mockedSettle = settlementModule.settlePayment as jest.MockedFunction<
+  typeof settlementModule.settlePayment
 >;
 
 function buildReq(rawBody: string, tenantSlug = 'tenant-1') {

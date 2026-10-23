@@ -4,8 +4,8 @@ import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { getPaymentProvider, normalizeMethod } from './payments';
 import { digitalDeliveryService } from './digitalDeliveryService';
-import { GLAutomationService } from './glAutomationService';
 import { transitionOrder } from './orderStateMachine';
+import { emitPaymentSettled } from './payments/settlementHooks';
 import { metaCapiService } from './metaCapiService';
 import { emitOrderCreatedEvent } from '../utils/appEvents';
 import { emitOrderCreated } from '../sockets';
@@ -13,7 +13,8 @@ import { getSocketInstance } from '../utils/socketInstance';
 import * as Money from '../utils/money';
 import { cleanText, deliveryAddressOf } from '../utils/checkoutLocation';
 
-export type SettlementStatus = 'success' | 'failed' | 'pending' | 'not_found';
+/** wrong_tenant: the reference belongs to another tenant than the webhook's (answered 404). */
+export type SettlementStatus = 'success' | 'failed' | 'pending' | 'not_found' | 'wrong_tenant';
 
 export interface SettlementResult {
   status: SettlementStatus;
@@ -21,10 +22,10 @@ export interface SettlementResult {
 }
 
 /**
- * Settle a Paystack payment by reference.
+ * Settle an online payment by reference (any provider in the registry).
  *
- * Deferred-creation model: a Paystack checkout never creates an Order up front —
- * it stores a {@link PendingCheckout} snapshot keyed by the Paystack reference.
+ * Deferred-creation model: an online checkout never creates an Order up front —
+ * it stores a {@link PendingCheckout} snapshot keyed by the provider reference.
  * This function is the ONLY place that turns a confirmed payment into a real
  * Order (status `confirmed`, paymentStatus `paid`/`deposited`). It is called from
  * both the webhook (`charge.success`) and the callback verify, so an order is
@@ -35,11 +36,11 @@ export interface SettlementResult {
  * delete it wins and creates the Order; a concurrent caller gets P2025 and
  * returns the already-created Order.
  *
- * @param reference  the Paystack transaction reference
+ * @param reference  the provider's transaction reference
  * @param opts.webhookTenantId  when called from a per-tenant webhook, the tenant
  *   that owns the webhook URL — must match the pending checkout's tenant.
  */
-export async function settlePaystackPayment(
+export async function settlePayment(
   reference: string,
   opts: { webhookTenantId?: string } = {},
 ): Promise<SettlementResult> {
@@ -58,7 +59,41 @@ export async function settlePaystackPayment(
       return { status: 'not_found' };
     }
   }
-  return runInTenant(tenantId, () => settleInTenant(reference, opts));
+  const result = await runInTenant(tenantId, () => settleInTenant(reference, opts));
+
+  // A webhook of tenant A never settles tenant B's checkout: the scoped lookup above found nothing, so check whether
+  // another tenant owns the reference. Yes: wrong_tenant (the webhook answers 404). No: nobody knows it.
+  if (result.status === 'not_found' && opts.webhookTenantId) {
+    const webhookTenantId = opts.webhookTenantId;
+    const owner = await withoutTenant('payment-webhook-owner', async () =>
+      (await prisma.pendingCheckout.findUnique({ where: { reference }, select: { tenantId: true } })) ??
+      (await prisma.order.findFirst({ where: { paymentReference: reference, tenantId: { not: webhookTenantId } }, select: { tenantId: true } })));
+    if (owner && owner.tenantId !== webhookTenantId) {
+      logger.warn('Payment webhook for a reference of another tenant — ignoring', { reference, webhookTenantId });
+      return { status: 'wrong_tenant' };
+    }
+  }
+  return result;
+}
+
+/** Keep the pending row for a human and open one `payment_unmatched` Finding for the reference. */
+async function flagNeedsReview(reference: string, tenantId: string, paid: Money.Money): Promise<void> {
+  await prisma.pendingCheckout.updateMany({ where: { reference }, data: { status: 'needs_review', lastCheckedAt: new Date() } });
+  const existing = await prisma.finding.findFirst({
+    where: { type: 'payment_unmatched', subjectType: 'pending_checkout', subjectId: reference },
+    select: { id: true },
+  });
+  if (existing) return;
+  await prisma.finding.create({
+    data: {
+      tenantId,
+      type: 'payment_unmatched',
+      subjectType: 'pending_checkout',
+      subjectId: reference,
+      amount: paid,
+      note: `Payment received but no order was created. Reference ${reference}.`,
+    },
+  });
 }
 
 async function settleInTenant(
@@ -107,12 +142,17 @@ async function settleInTenant(
       tenantId: pending.tenantId,
       status: verification.status,
     });
+    // initiated | pending | failed | expired (F-404); lastCheckedAt on every check.
+    const nextStatus = verification.status === 'failed' ? 'failed' : verification.status === 'abandoned' ? 'expired' : 'pending';
+    await prisma.pendingCheckout.updateMany({ where: { reference }, data: { status: nextStatus, lastCheckedAt: new Date() } });
     return { status: verification.status === 'failed' ? 'failed' : 'pending' };
   }
 
   // SECURITY: the provider must have charged in the currency we asked for, and the amount must cover the
   // expected charge (deposit portion or full total). Stops an underpaid/tampered initialize from fulfilling —
   // digital products auto-deliver. Minor against minor: the stored charge and the provider's figure use the provider's own unit.
+  // Money was taken but no order can be made: the row stays as needs_review and the owner gets a Finding (F-404).
+  const paid = verification.amount;
   if (verification.currency !== pending.currency) {
     logger.warn('Payment currency mismatch — not creating order', {
       reference,
@@ -120,9 +160,9 @@ async function settleInTenant(
       paidCurrency: verification.currency,
       expectedCurrency: pending.currency,
     });
+    await flagNeedsReview(reference, pending.tenantId, paid);
     return { status: 'failed' };
   }
-  const paid = verification.amount;
   if (verification.amountMinor < pending.paystackChargeMinor) {
     logger.warn('Payment underpayment — not creating order', {
       reference,
@@ -130,6 +170,15 @@ async function settleInTenant(
       paidMinor: verification.amountMinor,
       expectedMinor: pending.paystackChargeMinor,
     });
+    await flagNeedsReview(reference, pending.tenantId, paid);
+    return { status: 'failed' };
+  }
+
+  // Every product on the snapshot must still exist, or the order insert fails after the claim and the payment is lost.
+  const productIds = [...new Set((pending.orderItems as Array<{ productId: number }>).map((item) => item.productId))];
+  if (productIds.length > 0 && (await prisma.product.count({ where: { id: { in: productIds } } })) !== productIds.length) {
+    logger.warn('Payment for a missing product — not creating order', { reference, provider: provider.id, productIds });
+    await flagNeedsReview(reference, pending.tenantId, paid);
     return { status: 'failed' };
   }
 
@@ -149,6 +198,7 @@ async function settleInTenant(
 
   // Order money is in major units (F-405); the adapter already converted the provider's amounts.
   const providerFee = provider.fee(verification);
+  const paidAt = verification.paidAt ?? new Date();
   // Pending rows saved before the neutral names shipped still say paystack_*; the order gets the neutral name.
   const method = normalizeMethod(pending.paymentMethod) ?? 'online_full';
   const isDeposit = method === 'online_deposit';
@@ -217,6 +267,13 @@ async function settleInTenant(
         amount: paid,
         paymentMethod: provider.id,
         provider: provider.id,
+        channel: verification.channel,
+        currency: verification.currency,
+        // No fee from the provider: 0 and feeUnknown, so profit is not shown as better than it is (F-406).
+        feeAmount: providerFee,
+        feeUnknown: !verification.feeKnown,
+        providerReference: reference,
+        paidAt,
         status: 'paid',
         reference,
         metadata: {
@@ -236,24 +293,6 @@ async function settleInTenant(
         notes: `Payment confirmed via ${provider.displayName} (ref: ${reference})`,
       },
     });
-
-    if (order.orderType === 'digital') {
-      try {
-        const glService = new GLAutomationService();
-        await glService.createDigitalSaleEntry(
-          tx as any,
-          order.id,
-          paid,
-          providerFee,
-          order.customer?.id || 1,
-        );
-      } catch (glError: any) {
-        logger.warn('Failed to create GL entry for digital sale, continuing', {
-          orderId: order.id,
-          error: glError.message,
-        });
-      }
-    }
   });
 
   logger.info('Payment settled — order created', {
@@ -263,13 +302,29 @@ async function settleInTenant(
     amount: Money.toApi(paid),
   });
 
+  // Tell subscribers (the ledger poster) the payment is settled. After the commit; never awaited, never throws into settlement (F-406).
+  void emitPaymentSettled({
+    tenantId: pending.tenantId,
+    orderId: order.id,
+    provider: provider.id,
+    reference,
+    currency: verification.currency,
+    amount: paid,
+    fee: providerFee,
+    feeUnknown: !verification.feeKnown,
+    channel: verification.channel,
+    paidAt,
+    orderType: order.orderType,
+    method,
+  });
+
   // Workflows + realtime, now that the order exists.
   emitOrderCreatedEvent(order);
   emitOrderCreated(getSocketInstance() as any, order);
 
   // Server-side Meta Purchase event (best-effort, idempotent via capiEventFired).
   metaCapiService.fireCapiPurchaseEvent(order.id).catch((err) => {
-    logger.error('Failed to fire Meta CAPI event for settled Paystack order', {
+    logger.error('Failed to fire Meta CAPI event for settled online order', {
       orderId: order.id,
       error: err?.message,
     });

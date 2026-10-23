@@ -1,0 +1,505 @@
+/**
+ * M3b-T06 (COD-32, F-404, F-405): the neutral payment webhook, online order creation, the verify API and the sweep.
+ * Real database, real app; the provider is the fake one (and a signed Paystack body for the old URL). No live calls.
+ */
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from '@jest/globals';
+import '../mocks/logger.mock';
+import '../mocks/socketInstance.mock';
+import crypto from 'crypto';
+import request from 'supertest';
+
+jest.mock('../../services/metaCapiService', () => ({
+  metaCapiService: { fireCapiPurchaseEvent: () => Promise.resolve() },
+}));
+jest.mock('../../services/digitalDeliveryService', () => ({
+  digitalDeliveryService: {
+    generateDownloadToken: (...args: unknown[]) => (global as any).__digital.generate(...args),
+    sendDownloadLinks: (...args: unknown[]) => (global as any).__digital.send(...args),
+  },
+}));
+
+import app from '../../server';
+import logger from '../../utils/logger';
+import { prismaBase } from '../../utils/prisma';
+import { registerPaymentProvider, unregisterPaymentProvider, clearPaymentConfigCache } from '../../services/payments';
+import { createFakeProvider, FakeProvider } from '../../services/payments/fakeProvider';
+import { processCleanupStalePending, processSweepPendingCheckouts } from '../../queues/pendingCheckoutCleanupQueue';
+import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
+import { bearer, superAdminToken } from './helpers/superAdminToken';
+
+jest.setTimeout(120_000);
+
+process.env.PROVIDER_ENCRYPTION_KEY = 'cd'.repeat(32);
+const realFetch = global.fetch;
+let pair: TwoTenants;
+let fake: FakeProvider;
+let ownerToken: string;
+let refSeq = 0;
+let ipSeq = 1;
+
+const newRef = (label: string) => `ref_${label}_${Date.now()}_${refSeq++}`;
+const ip = () => `10.9.${ipSeq++ % 250}.${ipSeq % 250}`;
+
+type Side = 'a' | 'b';
+
+interface PendingOptions {
+  total?: string;
+  chargeMinor?: number;
+  method?: string;
+  orderType?: 'physical' | 'digital';
+  currency?: string;
+  status?: string;
+  ageMinutes?: number;
+  provider?: string;
+  codAmount?: string;
+  balanceDue?: string;
+  productId?: number;
+}
+
+/** A PendingCheckout row the way publicOrderController writes it. */
+async function seedPending(side: Side, reference: string, o: PendingOptions = {}) {
+  const t = pair[side];
+  return prismaBase.pendingCheckout.create({
+    data: {
+      reference,
+      tenantId: t.id,
+      provider: o.provider ?? 'fake',
+      customerId: t.ids.customer,
+      formId: t.ids.checkoutForm,
+      paymentMethod: o.method ?? 'online_full',
+      orderType: o.orderType ?? 'physical',
+      currency: o.currency ?? 'GHS',
+      subtotal: o.total ?? '50',
+      totalAmount: o.total ?? '50',
+      codAmount: o.codAmount ?? '0',
+      balanceDue: o.balanceDue ?? '0',
+      paystackChargeMinor: o.chargeMinor ?? 5000,
+      orderItems: [{ productId: o.productId ?? t.ids.product, quantity: 1, unitPrice: o.total ?? '50', totalPrice: o.total ?? '50', itemType: 'package' }],
+      formData: { name: 'Ama Mensah', phoneNumber: t.phone, address: '1 Test St', state: 'Greater Accra', town: 'Osu' },
+      selectedPackage: { name: 'One' },
+      status: o.status ?? 'initiated',
+      createdAt: new Date(Date.now() - (o.ageMinutes ?? 0) * 60_000),
+    },
+  });
+}
+
+const webhook = (side: Side, reference: string | null, opts: { sig?: string; type?: string; provider?: string } = {}) =>
+  request(app)
+    .post(`/api/payments/webhook/${opts.provider ?? 'fake'}/${pair[side].slug}`)
+    .set('X-Forwarded-For', ip())
+    .set('x-fake-signature', opts.sig ?? 'valid')
+    .send({ type: opts.type ?? 'payment.success', reference });
+
+const ordersFor = (reference: string) => prismaBase.order.findMany({ where: { paymentReference: reference } });
+const pendingFor = (reference: string) => prismaBase.pendingCheckout.findUnique({ where: { reference } });
+
+beforeAll(async () => {
+  pair = await createTwoTenants('payhook');
+  ownerToken = await superAdminToken(pair.a.id, pair.a.slug, 'payhook-owner');
+  fake = createFakeProvider('fake');
+  registerPaymentProvider(fake);
+  // A working Paystack connection for tenant A, to sign real Paystack bodies on the old URL.
+  await prismaBase.paymentConnection.updateMany({ where: { tenantId: pair.a.id }, data: { secretKey: 'sk_test_payhook', publicKey: 'pk_test_payhook' } });
+  clearPaymentConfigCache(pair.a.id);
+});
+
+beforeEach(() => {
+  (global as any).__digital = {
+    generate: async () => 'tok-digital',
+    send: async () => undefined,
+  };
+});
+
+afterEach(() => {
+  global.fetch = realFetch;
+});
+
+afterAll(async () => {
+  unregisterPaymentProvider('fake');
+  await pair.cleanup();
+  await prismaBase.$disconnect();
+});
+
+describe('POST /api/payments/webhook/:provider/:tenantSlug', () => {
+  it('a valid signature settles the payment and creates one confirmed, paid order', async () => {
+    const ref = newRef('ok');
+    await seedPending('a', ref);
+    fake.setPayment(ref, { status: 'success', amount: '50', fee: '0.75', channel: 'card' });
+
+    const res = await webhook('a', ref);
+    expect(res.status).toBe(200);
+
+    const orders = await ordersFor(ref);
+    expect(orders).toHaveLength(1);
+    expect(orders[0]).toMatchObject({ status: 'confirmed', paymentStatus: 'paid', paymentProvider: 'fake', tenantId: pair.a.id });
+    expect(await pendingFor(ref)).toBeNull();
+
+    // the transaction row carries the provider fee and channel (T07 step 3)
+    const txn = await prismaBase.transaction.findUniqueOrThrow({ where: { orderId: orders[0].id } });
+    expect(txn).toMatchObject({ provider: 'fake', channel: 'card', currency: 'GHS', feeUnknown: false, providerReference: ref });
+    expect(txn.feeAmount?.toString()).toBe('0.75');
+    expect(txn.paidAt).not.toBeNull();
+  });
+
+  it('a wrong signature is 401, logged, and creates nothing', async () => {
+    const ref = newRef('badsig');
+    await seedPending('a', ref);
+    fake.setPayment(ref, { status: 'success', amount: '50' });
+
+    const res = await webhook('a', ref, { sig: 'forged' });
+    expect(res.status).toBe(401);
+    expect(logger.warn).toHaveBeenCalledWith('Invalid payment webhook signature', expect.objectContaining({ tenantId: pair.a.id, provider: 'fake' }));
+    expect(await ordersFor(ref)).toHaveLength(0);
+    expect(await pendingFor(ref)).not.toBeNull();
+  });
+
+  it('a signature of the wrong length is 401 too, and a missing one', async () => {
+    const ref = newRef('shortsig');
+    await seedPending('a', ref);
+    fake.setPayment(ref, { status: 'success', amount: '50' });
+
+    const long = await webhook('a', ref, { sig: 'valid'.repeat(40) });
+    expect(long.status).toBe(401);
+    const short = await webhook('a', ref, { sig: 'v' });
+    expect(short.status).toBe(401);
+    expect(logger.warn).toHaveBeenCalledWith('Invalid payment webhook signature', expect.objectContaining({ tenantId: pair.a.id }));
+    expect(await ordersFor(ref)).toHaveLength(0);
+  });
+
+  it('the same event twice creates one order; the second answer is 200 and says duplicate', async () => {
+    const ref = newRef('replay');
+    await seedPending('a', ref);
+    fake.setPayment(ref, { status: 'success', amount: '50' });
+
+    const first = await webhook('a', ref);
+    const second = await webhook('a', ref);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body).toMatchObject({ duplicate: true });
+    expect(await ordersFor(ref)).toHaveLength(1);
+    expect(await prismaBase.webhookEvent.count({ where: { tenantId: pair.a.id, reference: ref } })).toBe(1);
+  });
+
+  it("a reference of another tenant is 404, logged, and tenant B's checkout stays untouched", async () => {
+    const ref = newRef('cross');
+    await seedPending('b', ref, { currency: 'NGN' });
+    fake.setPayment(ref, { status: 'success', amount: '50', currency: 'NGN' });
+
+    const res = await webhook('a', ref); // sent through tenant A's URL
+    expect(res.status).toBe(404);
+    expect(logger.warn).toHaveBeenCalledWith('Payment webhook for a reference of another tenant — ignoring', expect.objectContaining({ reference: ref, webhookTenantId: pair.a.id }));
+    expect(await ordersFor(ref)).toHaveLength(0);
+    expect(await pendingFor(ref)).not.toBeNull();
+    // no dedup row is left behind for tenant A, so tenant B's own webhook still works
+    expect(await prismaBase.webhookEvent.count({ where: { tenantId: pair.a.id, reference: ref } })).toBe(0);
+
+    const own = await webhook('b', ref);
+    expect(own.status).toBe(200);
+    expect(await ordersFor(ref)).toHaveLength(1);
+  });
+
+  it('a reference unknown to every tenant is 200 and ignored', async () => {
+    const res = await webhook('a', newRef('ghost'));
+    expect(res.status).toBe(200);
+  });
+
+  it('other events are logged and answered 200 without settling', async () => {
+    const ref = newRef('failedevt');
+    await seedPending('a', ref);
+    const res = await webhook('a', ref, { type: 'payment.failed' });
+    expect(res.status).toBe(200);
+    expect(logger.info).toHaveBeenCalledWith('Payment webhook', expect.objectContaining({ tenantId: pair.a.id, provider: 'fake', event: 'payment.failed', result: 'ignored' }));
+    expect(await ordersFor(ref)).toHaveLength(0);
+  });
+
+  it('logs tenant, provider, event and result for each call', async () => {
+    const ref = newRef('logline');
+    await seedPending('a', ref);
+    fake.setPayment(ref, { status: 'success', amount: '50' });
+    await webhook('a', ref);
+    expect(logger.info).toHaveBeenCalledWith('Payment webhook', expect.objectContaining({ tenantId: pair.a.id, provider: 'fake', event: 'payment.success', result: 'success' }));
+  });
+
+  it('an unknown provider is 404', async () => {
+    const res = await webhook('a', newRef('noprov'), { provider: 'nosuchpay' });
+    expect(res.status).toBe(404);
+  });
+
+  it('an unknown tenant slug is 404', async () => {
+    const res = await request(app).post('/api/payments/webhook/fake/no-such-slug').set('x-fake-signature', 'valid').send({ type: 'payment.success', reference: 'x' });
+    expect(res.status).toBe(404);
+  });
+
+  it('the old Paystack URL is an alias of the same handler: real HMAC, wrong length and valid', async () => {
+    const ref = newRef('alias');
+    await seedPending('a', ref, { provider: 'paystack' });
+    global.fetch = (async () => ({
+      ok: true, status: 200,
+      json: async () => ({ status: true, data: { status: 'success', reference: ref, amount: 5000, currency: 'GHS', fees: 75, channel: 'card', paid_at: new Date().toISOString() } }),
+    })) as never;
+
+    const body = JSON.stringify({ event: 'charge.success', data: { id: 9001, reference: ref } });
+    const url = `/api/paystack/webhook/${pair.a.slug}`;
+    const post = (sig: string) => request(app).post(url).set('X-Forwarded-For', ip()).set('Content-Type', 'application/json').set('x-paystack-signature', sig).send(body);
+
+    expect((await post('abc')).status).toBe(401);
+    expect((await post(crypto.createHmac('sha512', 'wrong-key').update(body).digest('hex'))).status).toBe(401);
+    expect(await ordersFor(ref)).toHaveLength(0);
+
+    const good = await post(crypto.createHmac('sha512', 'sk_test_payhook').update(body).digest('hex'));
+    expect(good.status).toBe(200);
+    const orders = await ordersFor(ref);
+    expect(orders).toHaveLength(1);
+    expect(orders[0].paymentProvider).toBe('paystack');
+
+    // and the neutral path with the same signature is the same handler (a replay now)
+    const neutral = await request(app).post(`/api/payments/webhook/paystack/${pair.a.slug}`).set('X-Forwarded-For', ip()).set('Content-Type', 'application/json')
+      .set('x-paystack-signature', crypto.createHmac('sha512', 'sk_test_payhook').update(body).digest('hex')).send(body);
+    expect(neutral.status).toBe(200);
+    expect(neutral.body).toMatchObject({ duplicate: true });
+    expect(await ordersFor(ref)).toHaveLength(1);
+  });
+
+  it('charge.success for a digital form in the store currency makes a digital_delivered, paid order and sends the link', async () => {
+    const ref = newRef('digital');
+    const sent: unknown[][] = [];
+    (global as any).__digital = { generate: async () => 'tok-1', send: async (...args: unknown[]) => { sent.push(args); } };
+    await seedPending('a', ref, { orderType: 'digital' });
+    fake.setPayment(ref, { status: 'success', amount: '50', fee: '0.75' });
+
+    const res = await webhook('a', ref);
+    expect(res.status).toBe(200);
+    const [order] = await ordersFor(ref);
+    expect(order).toMatchObject({ orderType: 'digital', status: 'digital_delivered', paymentStatus: 'paid' });
+    expect(order.deliveryDate).not.toBeNull();
+    expect(sent).toHaveLength(1);
+    expect(sent[0][0]).toBe(order.id);
+    expect(sent[0][1]).toBe('tok-1');
+  });
+});
+
+describe('needs_review (payment taken, no order possible)', () => {
+  const findings = (ref: string) => prismaBase.finding.findMany({ where: { tenantId: pair.a.id, type: 'payment_unmatched', subjectId: ref } });
+
+  it('an underpayment keeps the row as needs_review and opens one payment_unmatched Finding, not two', async () => {
+    const ref = newRef('under');
+    await seedPending('a', ref);
+    fake.setPayment(ref, { status: 'success', amount: '49.99' });
+
+    expect((await webhook('a', ref)).status).toBe(200);
+    expect(await ordersFor(ref)).toHaveLength(0);
+    const row = await pendingFor(ref);
+    expect(row?.status).toBe('needs_review');
+    expect(row?.lastCheckedAt).not.toBeNull();
+    let found = await findings(ref);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ status: 'open', subjectType: 'pending_checkout', note: `Payment received but no order was created. Reference ${ref}.` });
+    expect(found[0].amount?.toString()).toBe('49.99');
+
+    // the admin verify route runs it again: still one Finding
+    const again = await request(app).get(`/api/payments/admin/verify/${ref}`).set(bearer(ownerToken));
+    expect(again.status).toBe(404); // no order to return
+    found = await findings(ref);
+    expect(found).toHaveLength(1);
+  });
+
+  it('a currency mismatch and a missing product are needs_review too', async () => {
+    const wrongCurrency = newRef('curr');
+    await seedPending('a', wrongCurrency);
+    fake.setPayment(wrongCurrency, { status: 'success', amount: '50', currency: 'USD' });
+    await webhook('a', wrongCurrency);
+    expect((await pendingFor(wrongCurrency))?.status).toBe('needs_review');
+    expect(await findings(wrongCurrency)).toHaveLength(1);
+
+    const missing = newRef('noprod');
+    await seedPending('a', missing, { productId: 2_000_000_000 });
+    fake.setPayment(missing, { status: 'success', amount: '50' });
+    await webhook('a', missing);
+    expect(await ordersFor(missing)).toHaveLength(0);
+    expect((await pendingFor(missing))?.status).toBe('needs_review');
+    expect(await findings(missing)).toHaveLength(1);
+  });
+
+  it('the 24 hour clean-up deletes old unpaid rows but never a needs_review row', async () => {
+    const stuck = newRef('keep');
+    const stale = newRef('drop');
+    await seedPending('a', stuck, { status: 'needs_review', ageMinutes: 48 * 60 });
+    await seedPending('a', stale, { status: 'initiated', ageMinutes: 48 * 60 });
+    await processCleanupStalePending();
+    expect(await pendingFor(stuck)).not.toBeNull();
+    expect(await pendingFor(stale)).toBeNull();
+  });
+});
+
+describe('verify API', () => {
+  it('GET /api/payments/verify/:reference and the old path answer the same; pending sets lastCheckedAt', async () => {
+    const ref = newRef('verify');
+    await seedPending('a', ref);
+
+    for (const base of ['/api/payments/verify', '/api/paystack/verify']) {
+      const res = await request(app).get(`${base}/${ref}`).set('X-Forwarded-For', ip());
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ success: false, paymentStatus: 'pending', order: null });
+    }
+    const row = await pendingFor(ref);
+    expect(row?.status).toBe('pending');
+    expect(row?.lastCheckedAt).not.toBeNull();
+
+    fake.setPayment(ref, { status: 'success', amount: '50' });
+    const done = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
+    expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ success: true, paymentStatus: 'success', order: { status: 'confirmed', paymentStatus: 'paid' } });
+    expect(Object.keys(done.body.order).sort()).toEqual(['id', 'paymentStatus', 'status']);
+
+    // the old path, now that the order exists
+    const old = await request(app).get(`/api/paystack/verify/${ref}`).set('X-Forwarded-For', ip());
+    expect(old.status).toBe(200);
+    expect(old.body.order.id).toBe(done.body.order.id);
+  });
+
+  it('an unknown reference is 404 on both paths', async () => {
+    for (const base of ['/api/payments/verify', '/api/paystack/verify']) {
+      const res = await request(app).get(`${base}/${newRef('nope')}`).set('X-Forwarded-For', ip());
+      expect(res.status).toBe(404);
+    }
+  });
+
+  it("a callback never shows another tenant's order: B's reference is not found from A's admin verify", async () => {
+    const ref = newRef('adminx');
+    await seedPending('b', ref, { currency: 'NGN' });
+    fake.setPayment(ref, { status: 'success', amount: '50', currency: 'NGN' });
+    const res = await request(app).get(`/api/payments/admin/verify/${ref}`).set(bearer(ownerToken));
+    expect(res.status).toBe(404);
+    expect(await ordersFor(ref)).toHaveLength(0);
+  });
+
+  it('admin verify works on both paths for the signed-in tenant, and needs a login', async () => {
+    const ref = newRef('admin');
+    await seedPending('a', ref);
+    fake.setPayment(ref, { status: 'success', amount: '50' });
+
+    expect((await request(app).get(`/api/payments/admin/verify/${ref}`)).status).toBe(401);
+    const res = await request(app).get(`/api/payments/admin/verify/${ref}`).set(bearer(ownerToken));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ success: true, paymentStatus: 'success', reference: ref });
+    const old = await request(app).get(`/api/paystack/admin/verify/${ref}`).set(bearer(ownerToken));
+    expect(old.status).toBe(200);
+    expect(old.body.order.id).toBe(res.body.order.id);
+  });
+});
+
+describe('one order per payment', () => {
+  it('the webhook and the callback verify at the same time create one order', async () => {
+    for (let round = 0; round < 3; round++) {
+      const ref = newRef(`race${round}`);
+      await seedPending('a', ref);
+      fake.setPayment(ref, { status: 'success', amount: '50' });
+
+      const results = await Promise.all([
+        webhook('a', ref),
+        request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip()),
+        request(app).get(`/api/paystack/verify/${ref}`).set('X-Forwarded-For', ip()),
+      ]);
+      for (const r of results) expect(r.status).toBe(200);
+      expect(await ordersFor(ref)).toHaveLength(1);
+      expect(await prismaBase.transaction.count({ where: { reference: ref } })).toBe(1);
+    }
+  });
+});
+
+describe('order money is stored in major units (F-405)', () => {
+  it('a 249.00 order paid 30% up front: depositPaid, balanceDue, codAmount, totalAmount are all major units', async () => {
+    const ref = newRef('money');
+    await seedPending('a', ref, { total: '249', chargeMinor: 7470, method: 'online_deposit', codAmount: '174.30', balanceDue: '174.30' });
+    fake.setPayment(ref, { status: 'success', amount: '74.70' });
+
+    await webhook('a', ref);
+    const [order] = await ordersFor(ref);
+    expect(order.paymentStatus).toBe('deposited');
+    expect(order.depositPaid.toString()).toBe('74.7');
+    expect(order.balanceDue.toString()).toBe('174.3');
+    expect(order.codAmount?.toString()).toBe('174.3');
+    expect(order.totalAmount.toString()).toBe('249');
+  });
+});
+
+describe('pending-checkout sweep (every 10 minutes)', () => {
+  const rowsOf = (...refs: string[]) => prismaBase.pendingCheckout.findMany({ where: { reference: { in: refs } } });
+
+  it('settles a paid checkout, closes failed and abandoned ones, marks pending ones, and leaves the rest alone', async () => {
+    // a live provider must never be reached by rows left in the test database
+    global.fetch = (async () => { throw new Error('no network in tests'); }) as never;
+
+    const paid = newRef('swpaid');
+    const failed = newRef('swfail');
+    const abandoned = newRef('swabn');
+    const waiting = newRef('swwait');
+    const young = newRef('swyoung');
+    const review = newRef('swrev');
+    const otherTenantPaid = newRef('swb');
+    await seedPending('a', paid, { ageMinutes: 11 });
+    await seedPending('a', failed, { ageMinutes: 11 });
+    await seedPending('a', abandoned, { ageMinutes: 30, status: 'pending' });
+    await seedPending('a', waiting, { ageMinutes: 11 });
+    await seedPending('a', young, { ageMinutes: 2 });
+    await seedPending('a', review, { ageMinutes: 60, status: 'needs_review' });
+    await seedPending('b', otherTenantPaid, { ageMinutes: 15, currency: 'NGN' });
+    fake.setPayment(paid, { status: 'success', amount: '50', fee: '0.75' });
+    fake.setPayment(failed, { status: 'failed', amount: '50' });
+    fake.setPayment(abandoned, { status: 'abandoned', amount: '50' });
+    fake.setPayment(young, { status: 'success', amount: '50' });
+    fake.setPayment(review, { status: 'success', amount: '50' });
+    fake.setPayment(otherTenantPaid, { status: 'success', amount: '50', currency: 'NGN' });
+
+    await processSweepPendingCheckouts().catch(() => undefined); // leftover rows of other suites may fail; ours must not
+
+    // success settles: order exists, row is gone
+    expect(await ordersFor(paid)).toHaveLength(1);
+    expect(await pendingFor(paid)).toBeNull();
+    // failed and abandoned are kept with their new state
+    const byRef = new Map((await rowsOf(failed, abandoned, waiting, young, review)).map((r) => [r.reference, r]));
+    expect(byRef.get(failed)).toMatchObject({ status: 'failed' });
+    expect(byRef.get(failed)?.lastCheckedAt).not.toBeNull();
+    expect(byRef.get(abandoned)).toMatchObject({ status: 'expired' });
+    expect(byRef.get(abandoned)?.lastCheckedAt).not.toBeNull();
+    // a still-pending payment is marked pending
+    expect(byRef.get(waiting)).toMatchObject({ status: 'pending' });
+    expect(byRef.get(waiting)?.lastCheckedAt).not.toBeNull();
+    // younger than 10 minutes and needs_review are not asked about
+    expect(byRef.get(young)).toMatchObject({ status: 'initiated', lastCheckedAt: null });
+    expect(byRef.get(review)).toMatchObject({ status: 'needs_review', lastCheckedAt: null });
+    expect(await ordersFor(young)).toHaveLength(0);
+    // each tenant's rows settle in that tenant
+    const [orderB] = await ordersFor(otherTenantPaid);
+    expect(orderB.tenantId).toBe(pair.b.id);
+  });
+
+  it('the sweep and a webhook for the same checkout still make one order', async () => {
+    const ref = newRef('swrace');
+    await seedPending('a', ref, { ageMinutes: 20 });
+    fake.setPayment(ref, { status: 'success', amount: '50' });
+    global.fetch = (async () => { throw new Error('no network in tests'); }) as never;
+
+    await Promise.all([processSweepPendingCheckouts().catch(() => undefined), webhook('a', ref)]);
+    expect(await ordersFor(ref)).toHaveLength(1);
+  });
+});
+
+describe('two tenants', () => {
+  it('each tenant webhook and Finding stay inside the tenant', async () => {
+    const refA = newRef('isoa');
+    const refB = newRef('isob');
+    await seedPending('a', refA);
+    await seedPending('b', refB, { currency: 'NGN' });
+    fake.setPayment(refA, { status: 'success', amount: '10' }); // underpaid: needs_review for A
+    fake.setPayment(refB, { status: 'success', amount: '10', currency: 'NGN' }); // underpaid for B
+
+    await webhook('a', refA);
+    await webhook('b', refB);
+    for (const [t, ref] of [[pair.a, refA], [pair.b, refB]] as const) {
+      const found = await prismaBase.finding.findMany({ where: { type: 'payment_unmatched', subjectId: ref } });
+      expect(found).toHaveLength(1);
+      expect(found[0].tenantId).toBe(t.id);
+    }
+  });
+});

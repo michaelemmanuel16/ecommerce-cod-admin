@@ -15,6 +15,7 @@ const files = [
   'services/paystackSettlementService.ts',
   'services/adminService.ts', // seller payment settings (cache invalidation)
   'routes/paystackRoutes.ts',
+  'routes/paymentRoutes.ts',
 ];
 
 describe('payment code outside the adapter', () => {

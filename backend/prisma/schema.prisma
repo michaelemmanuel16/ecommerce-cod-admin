@@ -1285,6 +1285,9 @@ enum FindingType {
   cash_gap
   unpaid_term
   repeat_refuser
+  payment_unmatched
+  ledger_post_failed
+  paystack_unsettled
 }
 
 enum FindingStatus {
@@ -1345,6 +1348,7 @@ enum JournalSourceType {
   inventory_purchase
   period_close
   digital_sale
+  paystack_payout
 }
 
 enum MessageChannel {

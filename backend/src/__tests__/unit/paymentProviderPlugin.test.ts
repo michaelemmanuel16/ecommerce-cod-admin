@@ -26,7 +26,7 @@ jest.mock('../../utils/logger', () => ({
 import { prismaMock } from '../mocks/prisma.mock';
 import { clearTenantFeaturesCache } from '../../services/tenantFeatures';
 import { createPublicOrder } from '../../controllers/publicOrderController';
-import { settlePaystackPayment } from '../../services/paystackSettlementService';
+import { settlePayment } from '../../services/paystackSettlementService';
 import { registerPaymentProvider, unregisterPaymentProvider } from '../../services/payments';
 import { createFakeProvider } from '../../services/payments/fakeProvider';
 import { metaCapiService } from '../../services/metaCapiService';
@@ -53,6 +53,7 @@ describe('a second payment provider', () => {
     clearTenantFeaturesCache();
   (prismaMock.systemConfig.findUnique as any).mockResolvedValue({ features: { prepaidPhysical: true } });
     (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
+    (prismaMock.product.count as any).mockResolvedValue(1);
   });
   afterEach(() => unregisterPaymentProvider('stub'));
 
@@ -94,7 +95,7 @@ describe('a second payment provider', () => {
     (prismaMock.pendingCheckout.delete as any).mockResolvedValue(pending);
     (prismaMock.order.create as any).mockResolvedValue({ id: 55, tenantId: 'tenant-1', orderType: 'physical', status: 'confirmed', customer: { id: 7 } });
 
-    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('stub_ref_9'));
+    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePayment('stub_ref_9'));
 
     expect(result.status).toBe('success');
     const data = (prismaMock.order.create as any).mock.calls[0][0].data;
@@ -111,7 +112,7 @@ describe('a second payment provider', () => {
     (prismaMock.order.findFirst as any).mockResolvedValue(null);
     (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(pending);
 
-    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('stub_ref_10'));
+    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePayment('stub_ref_10'));
 
     expect(result.status).toBe('failed');
     expect(prismaMock.order.create).not.toHaveBeenCalled();
@@ -123,7 +124,7 @@ describe('a second payment provider', () => {
     (prismaMock.order.findFirst as any).mockResolvedValue(null);
     (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(pending);
 
-    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('stub_ref_11'));
+    const result = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePayment('stub_ref_11'));
 
     expect(result.status).toBe('failed');
     expect(prismaMock.pendingCheckout.delete).not.toHaveBeenCalled();
@@ -139,14 +140,14 @@ describe('a second payment provider', () => {
     (prismaMock.order.findFirst as any).mockResolvedValue(null);
     (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(pending);
     stub.setPayment('r', { status: 'success', amount: '249.99' });
-    const short = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('r'));
+    const short = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePayment('r'));
     expect(short.status).toBe('failed');
     expect(prismaMock.pendingCheckout.delete).not.toHaveBeenCalled();
 
     stub.setPayment('r', { status: 'success', amount: '250.00' });
     (prismaMock.pendingCheckout.delete as any).mockResolvedValue(pending);
     (prismaMock.order.create as any).mockResolvedValue({ id: 1, tenantId: 'tenant-1', orderType: 'physical', status: 'confirmed', customer: { id: 7 } });
-    const exact = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePaystackPayment('r'));
+    const exact = await tenantStorage.run({ tenantId: 'tenant-1' }, () => settlePayment('r'));
     expect(exact.status).toBe('success');
   });
 });
