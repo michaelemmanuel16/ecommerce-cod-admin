@@ -1,0 +1,57 @@
+/* Checkout forms list and editor (M3b-T10, T11, F-408, F-410 to F-413). Copied from the style block of
+   docs/mockups/v2/checkout-forms.html (.lnkcell .icn .frow .types .pane), with the `.v2` scope added.
+   Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
+
+.v2 .cforms .headtools{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.v2 .cforms .tablewrap td,.v2 .cforms .tablewrap th{white-space:nowrap}
+.v2 .cforms .who b{display:inline}
+.v2 .icn{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;background:var(--pine-soft);color:var(--pine)}
+.v2 .icn svg.lucide{width:17px;height:17px}
+/* new: the Digital and Archived tags sit after the form name */
+.v2 .cforms .formtag{margin-left:8px;font-size:11px;vertical-align:1px}
+.v2 .lnkcell{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.v2 .lnkcell .ibtn.sm{border-color:transparent;background:transparent;color:var(--ink-3)}
+.v2 .lnkcell .ibtn.sm:hover{background:var(--hover);color:var(--ink)}
+.v2 .lnkcell svg.lucide{width:14px;height:14px}
+.v2 .lnkmenu{right:auto;left:0;width:auto;min-width:220px}
+.v2 .rowact{display:inline-flex;gap:4px;justify-content:flex-end}
+.v2 .rowact .ibtn.sm{border-color:transparent;background:transparent}
+.v2 .rowact .ibtn.sm:hover{background:var(--hover);color:var(--ink)}
+.v2 .ibtn.sm.dng:hover{background:var(--coral-soft);color:var(--coral)}
+.v2 .rowact .ibtn.sm:disabled{opacity:.5;cursor:default}
+.v2 .cforms .mut{color:var(--ink-3)}
+.v2 .cforms .cfoot{border-top:1px solid var(--line)}
+
+/* editor: Basics, Fields, regions */
+.v2 .stack{display:grid;gap:16px}
+.v2 .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:760px){.v2 .row2{grid-template-columns:1fr}}
+.v2 .linkrow{display:flex;align-items:center;gap:8px}
+.v2 .linkrow .mut{color:var(--ink-3);white-space:nowrap}
+.v2 .fl input[readonly]{background:var(--hover);color:var(--ink-2)}
+/* new: a notice line under a field (product change, "helps Meta match buyers") */
+.v2 .fnote{font-size:12.5px;color:var(--warn-ink);margin-top:5px}
+.v2 .banner-warn{display:flex;gap:12px;border:1px solid var(--gold);background:var(--gold-soft);border-radius:12px;padding:12px 14px;color:var(--ink)}
+.v2 .banner-warn svg.lucide{width:18px;height:18px;color:var(--warn-ink);flex:none;margin-top:2px}
+.v2 .banner-warn b{display:block}
+.v2 .frow{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.v2 .frow .gr{color:var(--ink-3);cursor:grab;touch-action:none;display:grid;place-items:center}
+.v2 .frow .sp{flex:1;min-width:0}
+.v2 .frow .sp b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v2 .frow small{display:block;color:var(--ink-3);font-size:12.5px}
+.v2 .frow .ibtn.sm{border-color:transparent;background:transparent}
+.v2 .frow .ibtn.sm:hover{background:var(--hover);color:var(--ink)}
+.v2 .frow .ibtn.sm:disabled{opacity:.35;cursor:default}
+.v2 .frow-list{display:grid;gap:8px}
+.v2 .types{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.v2 .types button{border:1px dashed var(--line);border-radius:11px;padding:9px 10px;display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;color:var(--ink-2)}
+.v2 .types button:hover{border-color:var(--pine);color:var(--pine);background:var(--pine-soft)}
+.v2 .types svg.lucide{width:16px;height:16px}
+.v2 .types button:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+@media (max-width:760px){.v2 .types{grid-template-columns:repeat(2,1fr)}}
+.v2 .paneh h3{font-size:18px;font-weight:800;margin-bottom:2px}
+.v2 .paneh p{color:var(--ink-2);margin-bottom:18px}
+.v2 .regions{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px 14px;margin-top:10px}
+.v2 .regions label{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
+.v2 .regions input{width:16px;height:16px;accent-color:var(--pine)}
+.v2 .regions input:disabled{opacity:.5}

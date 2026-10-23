@@ -3,7 +3,7 @@ import { Trash2, Percent, DollarSign, Link2, Check, Code2 } from 'lucide-react';
 import { ProductPackage } from '../../types/checkout-form';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
-import { useCopyToClipboard } from './CopyActions';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 interface PackageEditorProps {
   package: ProductPackage;

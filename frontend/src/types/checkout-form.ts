@@ -23,7 +23,8 @@ export type StandardFieldKey =
   | 'region'
   | 'town'
   | 'landmark'
-  | 'streetAddress';
+  | 'streetAddress'
+  | 'notes';
 
 export interface FormField {
   id: string; // UI-only ID, not from database
@@ -124,12 +125,14 @@ export interface PixelConfig {
   googleTagManagerId?: string;  // GTM-XXXXX
 }
 
+export type FormType = 'physical' | 'digital';
+
 export interface CheckoutForm {
   id: number; // Database ID (changed from CUID string to Int)
   name: string; // Changed from 'productName' to match database schema
   slug: string; // Added to match database schema
   productId: number; // Database ID (changed from CUID string to Int)
-  product?: { name: string }; // Related product info from backend
+  product?: { name: string; productType?: FormType }; // Related product info from backend
   description: string;
   fields: FormField[];
   packages: ProductPackage[];
@@ -152,6 +155,17 @@ export interface CheckoutForm {
   metaCapiAccessToken?: string | null;
   metaCapiTestEventCode?: string | null;
   isActive: boolean;
+  /** Set by the server from the product (F-422); never sent by the editor. */
+  formType?: FormType;
+  /** Set when the form was archived instead of deleted (F-408). */
+  archivedAt?: string | null;
+  /** List rows only: orders from this form this store month and all time (F-408). */
+  ordersThisMonth?: number;
+  ordersTotal?: number;
+  /** List rows only: null until visits are counted (M8, F-409). */
+  conversion?: number | null;
+  /** Single-form read only: submissions count, used to warn before a product change. */
+  _count?: { submissions: number };
   createdAt: string;
   updatedAt: string;
 }

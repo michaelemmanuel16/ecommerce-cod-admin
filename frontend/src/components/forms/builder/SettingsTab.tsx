@@ -7,7 +7,7 @@ import { Button } from '../../ui/Button';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
 import { getSupportedCountries } from '../../../utils/countries';
 import { buildWidgetSnippet } from '../../../lib/embedSnippet';
-import { useCopyToClipboard } from '../CopyActions';
+import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
 
 export const SettingsTab: React.FC = () => {
   const ctx = useCheckoutBuilder();

@@ -8,6 +8,7 @@ import { Loading } from './components/ui/Loading';
 import { ToastProvider } from './components/ui-v2';
 import { UpdatePrompt } from './components/pwa/UpdatePrompt';
 import { AccessGate } from './components/shell/AccessGate';
+import { ManagerUpGate } from './components/shell/ManagerUpGate';
 import { canOpenPath, isManagerUp } from './components/shell/navModel';
 import { useConfigStore } from './stores/configStore';
 import { isPlatformDomain, platformLoginPath } from './utils/platformDomain';
@@ -326,15 +327,18 @@ function App() {
             <Route path="settings/billing/callback" element={
               <SaasRoute><Suspense fallback={<Loading />}><SubscriptionCallback /></Suspense></SaasRoute>
             } />
-            <Route path="checkout-forms" element={
-              <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
-            } />
-            <Route path="checkout-forms/new" element={
-              <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
-            } />
-            <Route path="checkout-forms/:id/edit" element={
-              <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
-            } />
+            {/* Owner, admin and manager only (M3b-T10). */}
+            <Route element={<ManagerUpGate />}>
+              <Route path="checkout-forms" element={
+                <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
+              } />
+              <Route path="checkout-forms/new" element={
+                <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
+              } />
+              <Route path="checkout-forms/:id/edit" element={
+                <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
+              } />
+            </Route>
             <Route path="webhooks" element={
               <Suspense fallback={<Loading />}><Webhooks /></Suspense>
             } />
