@@ -3,6 +3,7 @@ import prisma, { prismaBase, TransactionClient } from '../src/utils/prisma';
 import { runInTenant } from '../src/utils/tenantContext';
 import { withSoftDeleted } from '../src/utils/prismaExtensions';
 import { getSystemUserId } from '../src/services/systemUserService';
+import { fullName } from '../src/utils/nameUtils';
 import { assertNotProduction, hasFlag, option } from './lib/scriptArgs';
 
 // M4-T03 / M4-T04 (COD-38, F-650, F-660, F-657). Moves the legacy stock numbers into StockLocation / StockLevel.
@@ -33,7 +34,7 @@ const NOTE_A = 'Migration: stock moved from out-for-delivery to delivery';
 const NOTE_B = 'Migration: checkout decrement moved to delivery';
 const NOTE_OPEN = 'Migration: opening balance';
 
-export interface MigrateOptions {
+interface MigrateOptions {
   dryRun: boolean;
   defaultLocation: string;
   log?: (line: string) => void;
@@ -41,7 +42,7 @@ export interface MigrateOptions {
   beforeVerify?: (tx: TransactionClient, tenantId: string) => Promise<void>;
 }
 
-export interface ProductRow {
+interface ProductRow {
   productId: number;
   name: string;
   warehouse: number;
@@ -54,7 +55,7 @@ export interface ProductRow {
   inTransitCounter: number;
 }
 
-export interface TenantReport {
+interface TenantReport {
   tenantId: string;
   alreadyMigrated: boolean;
   ok: boolean;
@@ -72,9 +73,8 @@ export interface TenantReport {
   estimateDeliveredDoubleDecrement: number;
 }
 
-type Loc = { key: string; name: string; type: 'partner_3pl' | 'agent' | 'in_transit'; userId: number | null; id?: number };
+type Loc = { key: string; name: string; type: 'partner_3pl' | 'agent' | 'in_transit'; userId: number | null; id?: number; needsLink?: boolean };
 
-const fullName = (u: { firstName: string; lastName: string }) => `${u.firstName} ${u.lastName}`.trim();
 const add = (m: Map<number, number>, k: number, v: number) => m.set(k, (m.get(k) ?? 0) + v);
 
 export async function migrateTenant(tenantId: string, opts: MigrateOptions): Promise<TenantReport> {
@@ -114,31 +114,32 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
       if (meta && typeof meta === 'object' && (meta as Record<string, unknown>).deliveryId != null) viaDelivery.add(orderId);
     }
   }
-  type Correction = { orderId: number; holderUserId: number | null; productId: number; quantity: number; note: string; status: OrderStatus };
+  type Correction = { orderId: number; holderUserId: number | null; productId: number; quantity: number; note: string };
   const corrections: Correction[] = [];
+  /** Adds the corrections of one kind; returns its order count, units per product and units by the order's status now. */
   const orderSet = (orders: typeof openOrders, note: string, pick: (o: (typeof openOrders)[number]) => Array<{ productId: number; quantity: number }>) => {
-    const out = new Set<number>();
+    const ids = new Set<number>();
+    const units = new Map<number, number>();
+    const byStatus: Record<string, number> = {};
     for (const o of orders) {
       const perProduct = new Map<number, number>();
       for (const l of pick(o)) add(perProduct, l.productId, l.quantity);
       for (const [productId, quantity] of perProduct) {
-        if (quantity > 0) corrections.push({ orderId: o.id, holderUserId: o.deliveryAgentId, productId, quantity, note, status: o.status });
+        if (quantity <= 0) continue;
+        corrections.push({ orderId: o.id, holderUserId: o.deliveryAgentId, productId, quantity, note });
+        add(units, productId, quantity);
+        byStatus[o.status] = (byStatus[o.status] ?? 0) + quantity;
       }
-      if (perProduct.size) out.add(o.id);
+      if (perProduct.size) ids.add(o.id);
     }
-    return out.size;
+    return { orders: ids.size, units, byStatus };
   };
-  const ofdTaken = ofd.filter((o) => !viaDelivery.has(o.id));
-  const ordersA = orderSet(ofdTaken, NOTE_A, (o) => o.orderItems);
-  const publicCod = openOrders.filter((o) => o.source === 'checkout_form' && o.paymentProvider == null && o.formSubmissions.length > 0);
-  const ordersB = orderSet(publicCod, NOTE_B, (o) => o.orderItems.filter((i) => i.itemType === 'package'));
-  const unitsA = new Map<number, number>();
-  const unitsB = new Map<number, number>();
-  const unitsBByStatus: Record<string, number> = {};
-  for (const c of corrections) {
-    add(c.note === NOTE_A ? unitsA : unitsB, c.productId, c.quantity);
-    if (c.note === NOTE_B) unitsBByStatus[c.status] = (unitsBByStatus[c.status] ?? 0) + c.quantity;
-  }
+  const kindA = orderSet(ofd.filter((o) => !viaDelivery.has(o.id)), NOTE_A, (o) => o.orderItems);
+  const kindB = orderSet(
+    openOrders.filter((o) => o.source === 'checkout_form' && o.paymentProvider == null && o.formSubmissions.length > 0),
+    NOTE_B, (o) => o.orderItems.filter((i) => i.itemType === 'package'));
+  const unitsA = kindA.units;
+  const unitsB = kindB.units;
 
   // Delivered COD checkout orders were lowered at creation and again at delivery. Printed as a note, never changed.
   const deliveredPublic = await prisma.orderItem.aggregate({
@@ -152,26 +153,25 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
   const locByUser = new Map(existingLocs.filter((l) => l.userId != null).map((l) => [l.userId as number, l]));
   const locs: Loc[] = [];
   const keyOfUser = new Map<number, string>();
-  const claimed = new Set<number>();
   const threePl: Array<{ location: string; user: string | null }> = [];
   for (const name of [...new Set([opts.defaultLocation, KASAPA])]) {
     const existing = locByName.get(name);
     let userId = existing?.userId ?? null;
     if (userId == null) {
-      const match = users.find((u) => !claimed.has(u.id) && !locByUser.has(u.id) && fullName(u).toLowerCase().startsWith(name.toLowerCase()));
+      const match = users.find((u) => !keyOfUser.has(u.id) && !locByUser.has(u.id) && fullName(u).toLowerCase().startsWith(name.toLowerCase()));
       userId = match?.id ?? null;
     }
-    if (userId != null) { claimed.add(userId); keyOfUser.set(userId, `3pl:${name}`); }
-    locs.push({ key: `3pl:${name}`, name, type: 'partner_3pl', userId, id: existing?.id });
+    if (userId != null) keyOfUser.set(userId, `3pl:${name}`);
+    locs.push({ key: `3pl:${name}`, name, type: 'partner_3pl', userId, id: existing?.id, needsLink: existing != null && existing.userId == null && userId != null });
     const linked = userId != null ? userById.get(userId) : undefined;
     threePl.push({ location: name, user: linked ? `${fullName(linked)} (user ${linked.id})` : null });
   }
   const defaultKey = `3pl:${opts.defaultLocation}`;
 
   const needAgent = new Set<number>();
-  for (const u of users) if (!claimed.has(u.id) && u.isActive) needAgent.add(u.id);
-  for (const s of agentStocks) if (!claimed.has(s.agentId)) needAgent.add(s.agentId);
-  for (const c of corrections) if (c.holderUserId != null && !claimed.has(c.holderUserId)) needAgent.add(c.holderUserId);
+  for (const u of users) if (!keyOfUser.has(u.id) && u.isActive) needAgent.add(u.id);
+  for (const s of agentStocks) if (!keyOfUser.has(s.agentId)) needAgent.add(s.agentId);
+  for (const c of corrections) if (c.holderUserId != null && !keyOfUser.has(c.holderUserId)) needAgent.add(c.holderUserId);
   const missingUsers = [...needAgent].filter((id) => !userById.has(id));
   if (missingUsers.length) {
     const more = await prisma.user.findMany({ where: { id: { in: missingUsers } }, select: { id: true, firstName: true, lastName: true, isActive: true } });
@@ -206,9 +206,7 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
   for (const c of corrections) bump(holderKey(c.holderUserId), c.productId, 'extra', c.quantity);
 
   // ---- Sums ----
-  const inTransitRows = await prisma.inventoryTransfer.findMany({ where: { status: 'in_transit' }, select: { productId: true, quantity: true } });
-  const openTransit = new Map<number, number>();
-  for (const t of inTransitRows) add(openTransit, t.productId, t.quantity);
+  const openTransit = await sumInTransit(prisma);
   const warehouse = new Map(products.map((p) => [p.id, p.stockQuantity]));
   const agentQty = new Map<number, number>();
   const counter = new Map<number, number>();
@@ -229,7 +227,7 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
 
   const report: TenantReport = {
     tenantId, alreadyMigrated, ok: true, linked3pl: threePl, locations: locs.map((l) => `${l.name} [${l.type}${l.id ? '' : ', new'}]`),
-    rows: [], ordersA, ordersB, unitsBByStatus, unitsA, unitsB, skippedDeliveryDispatch: viaDelivery.size, oldTransfersToUpdate,
+    rows: [], ordersA: kindA.orders, ordersB: kindB.orders, unitsBByStatus: kindB.byStatus, unitsA, unitsB, skippedDeliveryDispatch: viaDelivery.size, oldTransfersToUpdate,
     estimateDeliveredDoubleDecrement: deliveredPublic._sum.quantity ?? 0,
   };
 
@@ -249,8 +247,7 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
     for (const l of locs) {
       if (l.id) {
         idOf.set(l.key, l.id);
-        const current = existingLocs.find((e) => e.id === l.id);
-        if (current && current.userId == null && l.userId != null) await tx.stockLocation.update({ where: { id: l.id }, data: { userId: l.userId } });
+        if (l.needsLink) await tx.stockLocation.update({ where: { id: l.id }, data: { userId: l.userId } });
       } else {
         const created = await tx.stockLocation.create({ data: { tenantId, type: l.type, name: l.name, userId: l.userId } });
         idOf.set(l.key, created.id);
@@ -273,10 +270,9 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
 
     if (opts.beforeVerify) await opts.beforeVerify(tx, tenantId);
     const sums = await tx.stockLevel.groupBy({ by: ['productId'], _sum: { quantity: true } });
-    const transit = await tx.inventoryTransfer.findMany({ where: { status: 'in_transit' }, select: { productId: true, quantity: true } });
     const after = new Map<number, number>();
     for (const s of sums) add(after, s.productId, s._sum.quantity ?? 0);
-    for (const t of transit) add(after, t.productId, t.quantity);
+    for (const [productId, quantity] of await sumInTransit(tx)) add(after, productId, quantity);
     const wrong: string[] = [];
     for (const id of new Set([...verifyBefore.keys(), ...after.keys()])) {
       const b = verifyBefore.get(id) ?? 0;
@@ -286,6 +282,12 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
     if (wrong.length) throw new Error(`Stock sums differ after the write, rolled back: ${wrong.join('; ')}`);
   }, { timeout: 600_000, maxWait: 30_000 });
   return report;
+}
+
+/** Units of open in_transit transfers per product. */
+async function sumInTransit(client: Pick<TransactionClient, 'inventoryTransfer'>): Promise<Map<number, number>> {
+  const rows = await client.inventoryTransfer.groupBy({ by: ['productId'], where: { status: 'in_transit' }, _sum: { quantity: true } });
+  return new Map(rows.map((r) => [r.productId, r._sum.quantity ?? 0]));
 }
 
 /** Old rows: from / to location from the agent ids; the warehouse side (no agent) is the default location. Status stays `received`. */
@@ -306,7 +308,7 @@ async function backfillTransfers(client: TransactionClient, locOfUser: Map<numbe
   }
 }
 
-export function printReport(r: TenantReport, opts: MigrateOptions, log: (s: string) => void) {
+function printReport(r: TenantReport, opts: MigrateOptions, log: (s: string) => void) {
   log(`\nTenant ${r.tenantId}${r.alreadyMigrated ? ' - already migrated (levels exist), nothing written' : ''}`);
   log(`  default location (old warehouse number goes here): ${opts.defaultLocation}`);
   for (const t of r.linked3pl) log(`  3PL "${t.location}" linked to user: ${t.user ?? 'none (no matching delivery agent user)'}`);

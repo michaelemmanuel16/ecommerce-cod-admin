@@ -5,6 +5,9 @@
 import { describe, it, expect } from '@jest/globals';
 import { prismaBase } from '../../../utils/prisma';
 
+/** Statuses whose units are reserved at the holder (F-651). */
+const OPEN_STATUSES = "('confirmed','preparing','ready_for_pickup','out_for_delivery')";
+
 export function stockFixtureChecks(getTenantId: () => string): void {
   describe('stock fixture (M4-T05)', () => {
     const rows = <T>(sql: string) => prismaBase.$queryRawUnsafe<T[]>(sql, getTenantId());
@@ -46,7 +49,7 @@ export function stockFixtureChecks(getTenantId: () => string): void {
       const reserved = byName(await rows(`
         SELECT u.first_name || ' ' || p.sku AS k, SUM(i.quantity) AS n FROM orders o
         JOIN order_items i ON i.order_id = o.id JOIN products p ON p.id = i.product_id JOIN users u ON u.id = o.delivery_agent_id
-        WHERE o.tenant_id = $1 AND o.status IN ('confirmed','preparing','ready_for_pickup','out_for_delivery') AND u.first_name IN ('Logiswift','Kofi') GROUP BY 1`));
+        WHERE o.tenant_id = $1 AND o.status IN ${OPEN_STATUSES} AND u.first_name IN ('Logiswift','Kofi') GROUP BY 1`));
       expect(reserved).toEqual({ 'Logiswift MG-COPYBOOK-SET': 116, 'Kofi MG-COPYBOOK-SET': 21 });
     });
 
@@ -56,7 +59,7 @@ export function stockFixtureChecks(getTenantId: () => string): void {
                COALESCE((SELECT SUM(s.quantity) FROM stock_levels s WHERE s.product_id = p.id), 0) AS on_hand,
                COALESCE((SELECT SUM(i.quantity) FROM order_items i JOIN orders o ON o.id = i.order_id
                          WHERE i.product_id = p.id AND o.delivery_agent_id IS NOT NULL
-                           AND o.status IN ('confirmed','preparing','ready_for_pickup','out_for_delivery')), 0) AS reserved
+                           AND o.status IN ${OPEN_STATUSES}), 0) AS reserved
         FROM products p WHERE p.tenant_id = $1`);
       expect(rowsAts.length).toBeGreaterThan(0);
       for (const r of rowsAts) expect([r.sku, Number(r.on_hand) - Number(r.reserved) >= 0]).toEqual([r.sku, true]);

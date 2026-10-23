@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import '../mocks/logger.mock';
 import { prismaBase } from '../../utils/prisma';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
+import { makeCustomer } from './helpers/kpiOrders';
 import { migrateTenant } from '../../../scripts/migrate-stock-to-levels';
 
 const db = prismaBase;
@@ -39,7 +40,7 @@ beforeAll(async () => {
   ]);
   p1 = a.id;
   p2 = b.id;
-  const customer = await db.customer.create({ data: { firstName: 'C', lastName: 'B', phoneNumber: `+23324${Date.now().toString().slice(-7)}`, address: 'x', state: 'Greater Accra', area: 'Accra', tenantId } });
+  const customer = await makeCustomer(tenantId);
   // Agent stock. Kofi's totalInTransit counter (20) must NOT become a transfer.
   await db.agentStock.createMany({ data: [
     { agentId: logiswiftUser, productId: p1, quantity: 20, tenantId },
@@ -67,7 +68,6 @@ beforeAll(async () => {
 }, 60000);
 
 afterAll(async () => {
-  await db.agentStock.deleteMany({ where: { tenantId } }); // deleteTenantRows does not know the legacy table
   await deleteTenantRows([tenantId]);
   await prismaBase.$disconnect();
 });

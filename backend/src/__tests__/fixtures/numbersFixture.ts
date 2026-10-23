@@ -999,10 +999,11 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
   const count = await prisma.stockCount.create({
     data: { tenantId, locationId: locationId['Logiswift'], countDate: new Date(Date.UTC(2026, 9, 15)), source: 'three_pl_dashboard', countedById: admin.id, createdAt: new Date(Date.UTC(2026, 9, 15, 9, 0, 0)) },
   });
-  const counted: Array<[Sku, number]> = [['MG-COPYBOOK-SET', 188], ['MG-REFILL-PENS', 62], ['MG-GRIP-TRAINER', 180]];
+  const counted: Partial<Record<Sku, number>> = { ...STOCK_AT.logiswift, 'MG-COPYBOOK-SET': 188 };
   await prisma.stockCountLine.createMany({
-    data: counted.map(([sku, countedQuantity]) => {
-      const systemQuantity = STOCK_AT.logiswift[sku] as number;
+    data: (Object.keys(STOCK_AT.logiswift) as Sku[]).map((sku) => {
+      const systemQuantity = STOCK_AT.logiswift[sku] ?? 0;
+      const countedQuantity = counted[sku] ?? 0;
       return { tenantId, countId: count.id, productId: productId[sku], systemQuantity, countedQuantity, difference: countedQuantity - systemQuantity };
     }),
   });

@@ -368,6 +368,7 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.role.deleteMany({ where: t }),
   ]);
   await inSequence([
+    db.agentStock.deleteMany({ where: t }),
     db.product.deleteMany({ where: t }),
     db.customer.deleteMany({ where: t }),
     db.account.deleteMany({ where: t }),
