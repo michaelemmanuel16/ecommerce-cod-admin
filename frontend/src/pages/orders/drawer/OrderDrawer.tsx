@@ -64,7 +64,10 @@ export function OrderDrawer({ id, onClose }: OrderDrawerProps) {
       setTimeline(rows);
       setFailed(null);
     } catch (e) {
-      setFailed(reasonOf(e).status === 404 ? reasonOf(e).message ?? 'Order not found' : 'The order could not load.');
+      const { status, message } = reasonOf(e);
+      // A specific 404 sentence from the server ("This order was deleted.") stays; the plain not-found and 403 get one no-access line
+      if (status === 404 && message && message !== 'Order not found') setFailed(message);
+      else setFailed(status === 404 || status === 403 ? 'You have no access to this order, or it does not exist.' : 'The order could not load.');
     }
   }, [id]);
 

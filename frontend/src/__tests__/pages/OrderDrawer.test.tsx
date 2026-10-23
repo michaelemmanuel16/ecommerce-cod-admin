@@ -55,6 +55,16 @@ const openEdit = async () => {
   return user;
 };
 
+describe('Order drawer: an order the person cannot open (QA-02)', () => {
+  it.each([404, 403])('shows one no-access state for HTTP %i and a way back', async (status) => {
+    getOrderDetail.mockRejectedValue(axiosError(status, { error: 'Order not found' }));
+    const onClose = renderDrawer();
+    expect(await screen.findByText('You have no access to this order, or it does not exist.')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Back to orders' }));
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+
 describe('Order drawer: frame and blocks (M3-T46, F-321)', () => {
   it('shows the number, the date and source line, the payment tag and the blocks in order', async () => {
     renderDrawer();

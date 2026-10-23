@@ -310,12 +310,12 @@ export const ordersService = {
 
   /** The order drawer (F-321): the whole order in one read. */
   async getOrderDetail(id: number): Promise<OrderDetail> {
-    const response = await apiClient.get(`/api/orders/${id}`, { skipCache: true });
+    const response = await apiClient.get(`/api/orders/${id}`, { skipCache: true, quiet: true });
     return response.data.order;
   },
 
   async getTimeline(id: number): Promise<TimelineEntry[]> {
-    const response = await apiClient.get(`/api/orders/${id}/timeline`, { skipCache: true });
+    const response = await apiClient.get(`/api/orders/${id}/timeline`, { skipCache: true, quiet: true });
     return response.data.timeline;
   },
 

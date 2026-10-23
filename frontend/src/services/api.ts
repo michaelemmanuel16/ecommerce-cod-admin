@@ -23,6 +23,8 @@ declare module 'axios' {
   interface AxiosRequestConfig {
     /** GET only: do not answer from the 5 second request cache. Refresh buttons and socket refetches set it. */
     skipCache?: boolean;
+    /** The screen shows a failed call itself: the interceptor raises no error toast for it. */
+    quiet?: boolean;
   }
 }
 
@@ -177,7 +179,7 @@ apiClient.interceptors.response.use(
     }
 
     // Show error toast for non-401 errors
-    if (error.response?.status !== 401) {
+    if (error.response?.status !== 401 && !error.config?.quiet) {
       const errorMessage =
         (error.response?.data as any)?.message ||
         // express-validator 400s carry the specific rule message here (e.g. a
