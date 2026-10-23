@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth';
+import { publicVerifyLimiter } from '../middleware/rateLimiter';
 import {
   handleWebhook,
   verifyPayment,
@@ -22,7 +23,7 @@ router.post('/webhook/:tenantSlug', handleWebhook);
 
 // Old verify paths, aliases of /api/payments/verify and /api/payments/admin/verify.
 // Public verification (used by PaymentCallback page)
-router.get('/verify/:reference', publicVerifyPayment);
+router.get('/verify/:reference', publicVerifyLimiter, publicVerifyPayment);
 
 // Admin-only verification
 router.get('/admin/verify/:reference', authenticate, requireRole('super_admin', 'admin'), verifyPayment);

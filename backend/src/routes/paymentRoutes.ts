@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth';
+import { publicVerifyLimiter } from '../middleware/rateLimiter';
 import { handleWebhook, verifyPayment, publicVerifyPayment } from '../controllers/paystackController';
 
 const router = Router();
@@ -9,7 +10,7 @@ const router = Router();
 router.post('/webhook/:provider/:tenantSlug', handleWebhook);
 
 // Public verification (used by the PaymentCallback page)
-router.get('/verify/:reference', publicVerifyPayment);
+router.get('/verify/:reference', publicVerifyLimiter, publicVerifyPayment);
 
 // Admin-only verification
 router.get('/admin/verify/:reference', authenticate, requireRole('super_admin', 'admin'), verifyPayment);

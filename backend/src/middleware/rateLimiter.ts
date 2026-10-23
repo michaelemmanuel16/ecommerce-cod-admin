@@ -84,3 +84,7 @@ export const publicOrderLimiter = publicLookupLimiter('Too many order tracking a
 
 // Digital download links are guessable only by token, but a leaked link can be hammered
 export const publicDownloadLimiter = publicLookupLimiter('Too many download attempts. Please try again later.');
+
+// The payment callback page asks every 5 seconds while a payment is pending, so this one is not the order-tracking limiter:
+// its own budget of 30 per 15 minutes per IP (F-403).
+export const publicVerifyLimiter = publicLookupLimiter('Too many payment checks. Please try again in a few minutes.');

@@ -287,14 +287,15 @@ describe('needs_review (payment taken, no order possible)', () => {
 });
 
 describe('verify API', () => {
-  it('GET /api/payments/verify/:reference and the old path answer the same; pending sets lastCheckedAt', async () => {
+  it('answers only the outcome: pending, then success with the order number, the form and no customer data; the old path answers the same', async () => {
     const ref = newRef('verify');
     await seedPending('a', ref);
+    const formSlug = (await prismaBase.checkoutForm.findUniqueOrThrow({ where: { id: pair.a.ids.checkoutForm }, select: { slug: true } })).slug;
 
     for (const base of ['/api/payments/verify', '/api/paystack/verify']) {
       const res = await request(app).get(`${base}/${ref}`).set('X-Forwarded-For', ip());
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ success: false, paymentStatus: 'pending', order: null });
+      expect(res.body).toEqual({ status: 'pending', orderType: 'physical', formSlug });
     }
     const row = await pendingFor(ref);
     expect(row?.status).toBe('pending');
@@ -303,19 +304,66 @@ describe('verify API', () => {
     fake.setPayment(ref, { status: 'success', amount: '50' });
     const done = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
     expect(done.status).toBe(200);
-    expect(done.body).toMatchObject({ success: true, paymentStatus: 'success', order: { status: 'confirmed', paymentStatus: 'paid' } });
-    expect(Object.keys(done.body.order).sort()).toEqual(['id', 'paymentStatus', 'status']);
+    const [order] = await ordersFor(ref);
+    expect(done.body).toEqual({ status: 'success', orderNumber: `#${order.id}`, orderType: 'physical', formSlug });
+    // no customer data, amounts or ids anywhere in the body
+    const text = JSON.stringify(done.body);
+    expect(text).not.toContain(pair.a.phone);
+    expect(text).not.toContain('Ama');
 
     // the old path, now that the order exists
     const old = await request(app).get(`/api/paystack/verify/${ref}`).set('X-Forwarded-For', ip());
-    expect(old.status).toBe(200);
-    expect(old.body.order.id).toBe(done.body.order.id);
+    expect(old.body).toEqual(done.body);
   });
 
-  it('an unknown reference is 404 on both paths', async () => {
+  it('a failed payment answers failed with the form to go back to', async () => {
+    const ref = newRef('failed');
+    await seedPending('a', ref);
+    fake.setPayment(ref, { status: 'failed', amount: '50' });
+    const res = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('failed');
+    expect(res.body.formSlug).toEqual(expect.any(String));
+    expect(res.body.orderNumber).toBeUndefined();
+    expect(await ordersFor(ref)).toHaveLength(0);
+  });
+
+  it('a paid digital order adds the masked email; a physical one never does', async () => {
+    await prismaBase.customer.update({ where: { id: pair.a.ids.customer }, data: { email: 'ama.mensah@gmail.com' } });
+    const digital = newRef('digital');
+    await seedPending('a', digital, { orderType: 'digital' });
+    fake.setPayment(digital, { status: 'success', amount: '50' });
+    const res = await request(app).get(`/api/payments/verify/${digital}`).set('X-Forwarded-For', ip());
+    expect(res.body).toMatchObject({ status: 'success', orderType: 'digital', email: 'a***@gmail.com' });
+    expect(JSON.stringify(res.body)).not.toContain('ama.mensah');
+
+    const physical = newRef('physical');
+    await seedPending('a', physical);
+    fake.setPayment(physical, { status: 'success', amount: '50' });
+    const other = await request(app).get(`/api/payments/verify/${physical}`).set('X-Forwarded-For', ip());
+    expect(other.body.email).toBeUndefined();
+  });
+
+  it('a form with a thank-you page returns it on success only', async () => {
+    await prismaBase.checkoutForm.update({ where: { id: pair.a.ids.checkoutForm }, data: { redirectUrl: 'https://shop.example.com/thanks' } });
+    try {
+      const ref = newRef('redir');
+      await seedPending('a', ref);
+      const waiting = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
+      expect(waiting.body.redirectUrl).toBeUndefined();
+      fake.setPayment(ref, { status: 'success', amount: '50' });
+      const done = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
+      expect(done.body.redirectUrl).toBe('https://shop.example.com/thanks');
+    } finally {
+      await prismaBase.checkoutForm.update({ where: { id: pair.a.ids.checkoutForm }, data: { redirectUrl: null } });
+    }
+  });
+
+  it('an unknown reference is not_found (200) on both paths, with nothing else', async () => {
     for (const base of ['/api/payments/verify', '/api/paystack/verify']) {
       const res = await request(app).get(`${base}/${newRef('nope')}`).set('X-Forwarded-For', ip());
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ status: 'not_found', orderType: null, formSlug: null });
     }
   });
 
