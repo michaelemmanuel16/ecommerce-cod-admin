@@ -15,10 +15,13 @@ import {
   PixelConfig,
 } from '../../types/checkout-form';
 import { Product } from '../../types';
-import apiClient from '../../services/api';
+import { checkoutFormsService, type PaymentOptions } from '../../services/checkout-forms.service';
 import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
 import { slugFromName, validateBasics } from '../../lib/checkoutBasics';
 import { missingKeysMessage } from '../../lib/standardFields';
+import { packageIssue, withComputedPrices } from '../../lib/packagePricing';
+import { effectiveToggles } from '../../lib/paymentMatrix';
+import { CAPI_MASK, pixelConfigError } from '../../lib/trackingRules';
 import { NEW_FORM_FIELDS } from '../../lib/defaultFields';
 import { useConfigStore } from '../../stores/configStore';
 import { CheckoutBuilderProvider } from './builder/CheckoutBuilderContext';
@@ -31,7 +34,8 @@ import { FieldsTab } from './builder/FieldsTab';
 import { createFieldOfType } from './builder/fieldTypes';
 import { PackagesTab } from './builder/PackagesTab';
 import { UpsellsTab } from './builder/UpsellsTab';
-import { SettingsTab } from './builder/SettingsTab';
+import { PaymentTab } from './builder/PaymentTab';
+import { TrackingTab } from './builder/TrackingTab';
 import { DesignTab } from './builder/DesignTab';
 import { getStoreCurrency } from '../../utils/format';
 
@@ -60,6 +64,20 @@ const savedRegions = (form: CheckoutForm | undefined, all: string[]): string[] =
   return Array.isArray(list) && list.length > 0 ? list.filter((r): r is string => typeof r === 'string') : all;
 };
 
+/** An upsell as the editor holds it: the popular flag and the off switch live in the items JSON on the server. */
+const hydrateUpsell = (u: Upsell): Upsell => ({
+  ...u,
+  quantity: u.items?.quantity || 1,
+  isPopular: Boolean(u.items?.popular),
+  isActive: !u.items?.off,
+});
+
+/** Exactly one default package: the first one flagged, else the first. */
+const withOneDefault = (list: ProductPackage[]): ProductPackage[] => {
+  const at = list.findIndex((p) => p.isDefault);
+  return list.map((p, i) => ({ ...p, isDefault: i === (at < 0 ? 0 : at) }));
+};
+
 const initialValues = (form: CheckoutForm | undefined): BuilderFormValues => ({
   name: form?.name || '',
   slug: form?.slug || '',
@@ -73,7 +91,8 @@ const initialValues = (form: CheckoutForm | undefined): BuilderFormValues => ({
   paystackDepositEnabled: form?.paystackDepositEnabled ?? false,
   paystackFullEnabled: form?.paystackFullEnabled ?? false,
   depositPercent: form?.depositPercent ?? 50,
-  metaCapiAccessToken: form?.metaCapiAccessToken || '',
+  // The saved token never reaches the browser; the server sends a mask, which stands for "keep the saved token".
+  metaCapiAccessToken: form?.metaCapiAccessToken ? CAPI_MASK : '',
   metaCapiTestEventCode: form?.metaCapiTestEventCode || '',
 });
 
@@ -90,15 +109,31 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   });
 
   const [fields, setFields] = useState<FormField[]>(initialData?.fields || NEW_FORM_FIELDS);
-  const [packages, setPackages] = useState<ProductPackage[]>(initialData?.packages || []);
-  const [upsells, setUpsells] = useState<Upsell[]>(
-    initialData?.upsells?.map((u) => ({ ...u, quantity: u.items?.quantity || 1 })) || []
-  );
+  const [packages, setPackages] = useState<ProductPackage[]>(withOneDefault(initialData?.packages || []));
+  const [upsells, setUpsells] = useState<Upsell[]>(initialData?.upsells?.map(hydrateUpsell) || []);
   const [upsellImages, setUpsellImages] = useState<Map<number, { file: File; preview: string }>>(new Map());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pixelConfig, setPixelConfig] = useState<PixelConfig>(initialData?.pixelConfig || {});
   const [design, setDesign] = useState<CheckoutFormDesign>(initialData?.design || {});
   const [showErrors, setShowErrors] = useState(false);
+  const [paymentOptions, setPaymentOptions] = useState<PaymentOptions | null>(null);
+  const [paymentOptionsFailed, setPaymentOptionsFailed] = useState(false);
+  const [capiTokenStored, setCapiTokenStored] = useState(Boolean(initialData?.metaCapiAccessToken));
+  const [savedCapi, setSavedCapi] = useState({
+    pixelId: initialData?.pixelConfig?.facebookPixelId ?? '',
+    testEventCode: initialData?.metaCapiTestEventCode ?? '',
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    checkoutFormsService
+      .getPaymentOptions()
+      .then((o) => !cancelled && setPaymentOptions(o))
+      .catch(() => !cancelled && setPaymentOptionsFailed(true));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Country and currency come from the store and cannot be changed on a form (F-411). A saved form keeps its own.
   const storeCurrency = useConfigStore((st) => st.currency);
@@ -115,8 +150,10 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       reset(initialValues(initialData));
       setRegions(savedRegions(initialData, allRegions));
       setFields(initialData.fields || NEW_FORM_FIELDS);
-      setPackages(initialData.packages || []);
-      setUpsells(initialData.upsells?.map((u) => ({ ...u, quantity: u.items?.quantity || 1 })) || []);
+      setPackages(withOneDefault(initialData.packages || []));
+      setUpsells(initialData.upsells?.map(hydrateUpsell) || []);
+      setCapiTokenStored(Boolean(initialData.metaCapiAccessToken));
+      setSavedCapi({ pixelId: initialData.pixelConfig?.facebookPixelId ?? '', testEventCode: initialData.metaCapiTestEventCode ?? '' });
       setPixelConfig(initialData.pixelConfig || {});
       setDesign(initialData.design || {});
     }
@@ -167,6 +204,8 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     };
   }, [products, productIdValue]);
   const formType: FormType = previewProduct?.productType === 'digital' ? 'digital' : 'physical';
+  const productPrice = Number(previewProduct?.price) || 0;
+  const toggles = effectiveToggles(formType, { cod: Boolean(codEnabledValue), deposit: Boolean(depositEnabledValue), full: Boolean(fullEnabledValue) });
   const draftPayload = React.useMemo(
     () => ({
       name,
@@ -178,16 +217,19 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       fields,
       // Streamed so the State field's dropdown updates live when the country changes.
       regions: { available: regions },
-      packages,
-      upsells,
+      // Prices are worked out the way the save does it, so the preview shows what the buyer will pay.
+      packages: withComputedPrices(packages, productPrice),
+      // An off upsell is hidden on the public form, so it is hidden here too.
+      upsells: upsells.filter((u) => u.isActive !== false).map((u) => ({ ...u, items: { quantity: u.quantity, popular: u.isPopular || undefined } })),
       design,
       pixelConfig,
-      codEnabled: codEnabledValue,
-      paystackDepositEnabled: depositEnabledValue,
-      paystackFullEnabled: fullEnabledValue,
+      formType,
+      codEnabled: toggles.cod,
+      paystackDepositEnabled: toggles.deposit,
+      paystackFullEnabled: toggles.full,
       depositPercent: depositPercentValue,
     }),
-    [name, description, currency, country, productIdValue, previewProduct, fields, regions, packages, upsells, design, pixelConfig, codEnabledValue, depositEnabledValue, fullEnabledValue, depositPercentValue]
+    [name, description, currency, country, productIdValue, previewProduct, productPrice, formType, fields, regions, packages, upsells, design, pixelConfig, toggles.cod, toggles.deposit, toggles.full, depositPercentValue]
   );
   const hasMountedRef = useRef(false);
   const lastSnapshotRef = useRef<string>('');
@@ -227,7 +269,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     const selectedProductId = watch('productId');
     const selectedProduct = products.find((p) => p.id === Number(selectedProductId));
     const productPrice = selectedProduct?.price || 0;
-    setPackages([
+    setPackages(withOneDefault([
       ...packages,
       {
         id: -Date.now(),
@@ -239,12 +281,12 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         originalPrice: productPrice,
         productPrice,
         isPopular: false,
-        isDefault: false,
+        isDefault: packages.length === 0,
         showHighlight: false,
         highlightText: '',
         showDiscount: true,
       },
-    ]);
+    ]));
   };
   const updatePackage = (id: number, updated: ProductPackage) => {
     if (updated.isDefault) {
@@ -253,13 +295,13 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       setPackages(packages.map((p) => (p.id === id ? updated : p)));
     }
   };
-  const deletePackage = (id: number) => setPackages(packages.filter((p) => p.id !== id));
+  const deletePackage = (id: number) => setPackages(withOneDefault(packages.filter((p) => p.id !== id)));
 
   // Upsell actions
   const addUpsell = () =>
     setUpsells([
       ...upsells,
-      { id: -Date.now(), name: '', price: 0, quantity: 1, isPopular: false },
+      { id: -Date.now(), name: '', price: 0, quantity: 1, isPopular: false, isActive: true },
     ]);
   const updateUpsell = (id: number, updated: Upsell) =>
     setUpsells(upsells.map((u) => (u.id === id ? updated : u)));
@@ -310,31 +352,23 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       alert('Please add at least one package. Packages define what products/quantities customers can purchase.');
       return;
     }
+    const packageProblem = packages.map((p) => packageIssue(productPrice, p)).find(Boolean);
+    const trackingProblem = pixelConfigError(pixelConfig);
+    if (packageProblem || trackingProblem) {
+      toast.error((packageProblem || trackingProblem) as string);
+      return;
+    }
 
     setIsSubmitting(true);
     onSubmittingChange?.(true);
     try {
       const uploadedUpsells = await Promise.all(
         upsells.map(async (upsell) => {
+          let imageUrl = upsell.imageUrl;
           const imageData = upsellImages.get(upsell.id);
           if (imageData?.file) {
-            const formData = new FormData();
-            formData.append('image', imageData.file);
             try {
-              const response = await apiClient.post('/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-              });
-              return {
-                productId: upsell.productId,
-                name: upsell.name,
-                description: upsell.description,
-                imageUrl: response.data.imageUrl,
-                price: upsell.price,
-                discountType: upsell.discountType || 'none',
-                discountValue: upsell.discountValue || 0,
-                originalPrice: upsell.originalPrice || upsell.price,
-                items: { quantity: upsell.quantity },
-              };
+              imageUrl = await checkoutFormsService.uploadImage(imageData.file);
             } catch (error) {
               console.error('Failed to upload image for upsell:', upsell.name, error);
               alert(`Failed to upload image for "${upsell.name}". Please try again.`);
@@ -345,12 +379,13 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
             productId: upsell.productId,
             name: upsell.name,
             description: upsell.description,
-            imageUrl: upsell.imageUrl,
+            imageUrl,
             price: upsell.price,
             discountType: upsell.discountType || 'none',
             discountValue: upsell.discountValue || 0,
             originalPrice: upsell.originalPrice || upsell.price,
-            items: { quantity: upsell.quantity },
+            // Quantity, the popular flag and the off switch have no columns of their own.
+            items: { quantity: upsell.quantity, ...(upsell.isPopular && { popular: true }), ...(upsell.isActive === false && { off: true }) },
           };
         })
       );
@@ -363,7 +398,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         fields,
         currency,
         regions: { available: regions },
-        packages: packages.map((pkg) => ({
+        packages: withComputedPrices(packages, productPrice).map((pkg) => ({
           name: pkg.name,
           description: '',
           price: pkg.price,
@@ -392,9 +427,9 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
           .split('\n')
           .map((o) => o.trim())
           .filter(Boolean),
-        codEnabled: Boolean(data.codEnabled),
-        paystackDepositEnabled: Boolean(data.paystackDepositEnabled),
-        paystackFullEnabled: Boolean(data.paystackFullEnabled),
+        codEnabled: toggles.cod,
+        paystackDepositEnabled: toggles.deposit,
+        paystackFullEnabled: toggles.full,
         depositPercent: Number(data.depositPercent) || null,
         // Write-only secret: send only when the admin typed a new value (an
         // untouched field still holds the "••••••••" mask, which the server
@@ -404,6 +439,11 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       };
 
       await onSave(formData);
+      // The typed token is gone from the screen once it is saved; only "Connected" stays.
+      const sentToken = formData.metaCapiAccessToken as string;
+      setCapiTokenStored(sentToken !== '');
+      setValue('metaCapiAccessToken', sentToken ? CAPI_MASK : '');
+      setSavedCapi({ pixelId: pixelConfig.facebookPixelId ?? '', testEventCode: formData.metaCapiTestEventCode ?? '' });
       // Only revoke/clear after a successful save so a failed save can be
       // retried without re-uploading the images.
       upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
@@ -453,6 +493,12 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     regions,
     setRegions,
     showErrors,
+    formId: initialData?.id ?? null,
+    productPrice,
+    paymentOptions,
+    paymentOptionsFailed,
+    capiTokenStored,
+    savedCapi,
     addField,
     updateField,
     deleteField,
@@ -513,12 +559,9 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
               ),
               content: <UpsellsTab />,
             },
-            {
-              id: 'design',
-              label: 'Design',
-              content: <DesignTab />,
-            },
-            { id: 'settings', label: 'Settings', content: <SettingsTab /> },
+            { id: 'payment', label: 'Payment', content: <PaymentTab /> },
+            { id: 'tracking', label: 'Tracking', content: <TrackingTab /> },
+            { id: 'design', label: 'Design', content: <DesignTab /> },
           ]}
           defaultTab="basics"
         />

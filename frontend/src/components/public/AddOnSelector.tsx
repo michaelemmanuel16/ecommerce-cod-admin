@@ -10,6 +10,7 @@ interface AddOnSelectorProps {
   selectedAddons: Set<number>;
   currency: string;
   onToggleAddon: (addonId: number) => void;
+  priceColor?: string;
 }
 
 export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
@@ -17,6 +18,7 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
   selectedAddons,
   currency,
   onToggleAddon,
+  priceColor,
 }) => {
   const hasExpandableContent = (addon: Upsell) => {
     return !!(addon.description || addon.imageUrl);
@@ -98,14 +100,19 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
                   onClick={() => expandable && toggleExpand(addon.id)}
                 >
                   <div>
-                    <h3 className="font-semibold text-gray-900">{addon.name}</h3>
+                    <h3 className="font-semibold text-gray-900">
+                      {addon.name}
+                      {addon.items?.popular && (
+                        <span className="ml-2 px-2 py-0.5 bg-gray-900 text-white text-xs font-medium rounded align-middle">Popular</span>
+                      )}
+                    </h3>
                     <p className="text-sm text-gray-600 mt-1">
                       Quantity: {addon.items?.quantity || 1}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-2 ml-4">
-                    <p className="text-lg font-bold text-gray-900">
+                    <p className="text-lg font-bold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
                       {currency} {addon.price.toFixed(2)}
                     </p>
                     {expandable && (

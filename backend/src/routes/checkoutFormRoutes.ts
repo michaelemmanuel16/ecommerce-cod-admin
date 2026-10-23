@@ -112,6 +112,21 @@ router.get(
   checkoutFormController.getAllCheckoutForms
 );
 
+// Before '/:id', or "payment-options" would be read as a form id.
+router.get(
+  '/payment-options',
+  requirePermission(['super_admin', 'admin', 'manager']),
+  checkoutFormController.getPaymentOptions
+);
+
+router.get(
+  '/:id/upsell-stats',
+  requirePermission(['super_admin', 'admin', 'manager']),
+  param('id').notEmpty().withMessage('Form ID is required'),
+  validate,
+  checkoutFormController.getUpsellStats
+);
+
 router.get(
   '/:id',
   requirePermission(['super_admin', 'admin', 'manager']),

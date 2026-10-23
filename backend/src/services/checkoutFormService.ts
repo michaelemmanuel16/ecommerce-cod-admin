@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import * as Money from '../utils/money';
 import { townsForForm } from './locationService';
 import { isUpsellAvailable } from '../utils/checkoutFormRules';
+import { storageHost } from '../config/r2';
 
 // Shared PUBLIC render payload — the fields safe to expose on the public
 // checkout page and the embed widget config endpoint. Reused so the page and
@@ -82,7 +83,7 @@ type UpsellRow = Parameters<typeof isUpsellAvailable>[0];
 function sanitizePublicForm<T extends { product: { stockQuantity: number }; country: string | null; regions: unknown; upsells: UpsellRow[] }>(form: T) {
   const { stockQuantity, ...productData } = form.product;
   const upsells = form.upsells.filter(isUpsellAvailable).map(({ productId: _productId, product: _product, ...visible }: any) => visible);
-  return { ...form, upsells, product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions) };
+  return { ...form, upsells, product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions), storageHost: storageHost() };
 }
 
 // ---------- Public embed config cache ----------
@@ -473,8 +474,11 @@ export class CheckoutFormService {
     const { stockQuantity, ...productData } = form.product;
     return {
       ...form,
+      // An upsell switched off in the editor is hidden here as on the public form.
+      upsells: form.upsells.filter(isUpsellAvailable),
       product: { ...productData, inStock: stockQuantity > 0 },
       towns: townsForForm(form.country, form.regions),
+      storageHost: storageHost(),
     };
   }
 

@@ -200,3 +200,14 @@ describe('CheckoutFormBuilder, Fields and regions (F-411, F-413)', () => {
     expect(sent.regions.available.length).toBeGreaterThan(1);
   });
 });
+
+describe('CheckoutFormBuilder tabs (M3b-T13)', () => {
+  it('lists Basics, Fields, Packages, Upsells, Payment, Tracking, Design in that order, with no Settings tab', () => {
+    renderBuilder();
+    const labels = screen
+      .getAllByRole('button')
+      .map((b) => b.textContent?.replace(/\d+$/, '').trim())
+      .filter((t) => ['Basics', 'Fields', 'Packages', 'Upsells', 'Payment', 'Tracking', 'Design', 'Settings'].includes(t ?? ''));
+    expect(labels).toEqual(['Basics', 'Fields', 'Packages', 'Upsells', 'Payment', 'Tracking', 'Design']);
+  });
+});

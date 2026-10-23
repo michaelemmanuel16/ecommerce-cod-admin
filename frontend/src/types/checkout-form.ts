@@ -69,8 +69,11 @@ export interface Upsell {
   discountValue?: number;
   originalPrice?: number;
   quantity: number; // UI field for convenience
-  items?: { quantity: number }; // Database schema uses items JSON
-  isPopular: boolean; // Changed from 'popular' to match database schema
+  /** The database keeps quantity, the popular flag and the off switch in the items JSON (no extra columns). */
+  items?: { quantity: number; popular?: boolean; off?: boolean };
+  isPopular: boolean; // UI field, saved as items.popular
+  /** UI field, saved as items.off. An off upsell stays in the editor and is hidden on the public form. Absent means on. */
+  isActive?: boolean;
 }
 
 export interface CheckoutFormSettings {

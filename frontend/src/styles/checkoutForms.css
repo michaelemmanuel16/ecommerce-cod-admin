@@ -49,3 +49,58 @@
 .v2 .regions label{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
 .v2 .regions input{width:16px;height:16px;accent-color:var(--pine)}
 .v2 .regions input:disabled{opacity:.5}
+
+/* editor: Packages, Upsells, Payment, Tracking, Design (M3b-T12 to T14). From the mockup's .pt2 .pay .swatches .pvbar rules. */
+.v2 .pt2{width:100%;min-width:780px;border-collapse:collapse}
+.v2 .pt2 th,.v2 .pt2 td{padding:10px 8px;white-space:nowrap;vertical-align:top}
+.v2 .pt2 th:first-child,.v2 .pt2 td:first-child{padding-left:0}
+.v2 .tablewrap.pt2wrap{overflow-x:auto}
+/* new: compact input and select inside a table cell or a payment row */
+.v2 .cin{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:500 14px "Plus Jakarta Sans",system-ui,sans-serif}
+.v2 .cin:focus-visible{outline:2px solid var(--pine);outline-offset:1px;border-color:var(--pine)}
+.v2 .cin:disabled{background:var(--hover);color:var(--ink-3)}
+.v2 .cin[aria-invalid="true"]{border-color:var(--coral)}
+.v2 .pt2 .money{display:flex;gap:6px;align-items:center}
+.v2 .pt2 .sub{display:block;color:var(--ink-3);font-size:12.5px;margin-top:3px;white-space:normal}
+.v2 .pt2 .err{display:block;color:var(--coral);font-size:12.5px;margin-top:3px;white-space:normal}
+.v2 .pt2 .checkline{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--ink-2);margin-top:6px}
+.v2 .pt2 .checkline input{accent-color:var(--pine)}
+.v2 .pt2 input[type=radio]{accent-color:var(--pine);width:18px;height:18px;margin-top:8px}
+.v2 .pay{display:flex;gap:14px;padding:14px;border:1px solid var(--line);border-radius:14px;align-items:flex-start;background:var(--card)}
+.v2 .pay+.pay{margin-top:10px}
+.v2 .pay.off{opacity:.55}
+.v2 .pay b{display:block}
+.v2 .pay small{color:var(--ink-2)}
+.v2 .pay .sw input:disabled+.tg{opacity:.6;cursor:not-allowed}
+.v2 .banner-note{border:1px solid var(--line);background:var(--hover);border-radius:12px;padding:10px 14px;color:var(--ink-2);font-size:13.5px}
+.v2 .banner-note.warn{border-color:var(--gold);background:var(--gold-soft);color:var(--ink)}
+.v2 .banner-note.bad{border-color:var(--coral);background:var(--coral-soft);color:var(--ink)}
+.v2 .swatches{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.v2 .swatches button{width:30px;height:30px;border-radius:50%;border:2px solid var(--card);box-shadow:0 0 0 1px var(--line);position:relative;display:grid;place-items:center}
+.v2 .swatches button.on{box-shadow:0 0 0 2px var(--ink)}
+.v2 .swatches .custom{width:30px;height:30px;border-radius:50%;border:2px solid var(--card);box-shadow:0 0 0 1px var(--line);position:relative;display:grid;place-items:center;cursor:pointer;background:var(--card);color:var(--ink-3)}
+.v2 .swatches .custom.on{box-shadow:0 0 0 2px var(--ink)}
+.v2 .swatches .custom input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.v2 .swatches svg.lucide{width:14px;height:14px;color:white}
+.v2 .swatches .custom svg.lucide{color:var(--ink-3)}
+.v2 .hexrow{display:flex;gap:8px;align-items:center;margin-top:8px}
+.v2 .fl .hexrow .cin{width:110px;font-family:ui-monospace,monospace}
+.v2 .bannerbox{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.v2 .bannerbox img{width:160px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+.v2 .testbox{border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:var(--hover);font-size:13px;word-break:break-word}
+.v2 .testbox.ok{border-color:var(--ok-ink)}
+.v2 .testbox.bad{border-color:var(--coral)}
+.v2 .testbox pre{margin:6px 0 0;white-space:pre-wrap;font:500 12px ui-monospace,monospace}
+.v2 .upcard{display:flex;gap:14px;padding:14px;border:1px solid var(--line);border-radius:14px;align-items:flex-start;background:var(--card)}
+.v2 .upcard+.upcard{margin-top:10px}
+.v2 .upcard.off .upbody{opacity:.55}
+.v2 .upcard .upbody{flex:1;min-width:0;display:grid;gap:12px}
+.v2 .upcard .uphead{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}
+.v2 .upimg{display:flex;gap:10px;align-items:center}
+.v2 .upimg img{width:56px;height:56px;border-radius:10px;object-fit:cover;border:1px solid var(--line)}
+
+/* live preview pane and the list preview modal (M3b-T15) */
+.v2 .pvbar{display:flex;align-items:center;justify-content:space-between;padding:0 0 10px;gap:8px;flex-wrap:wrap}
+.v2 .pvstage{background:var(--hover);border-radius:14px;overflow:hidden;flex:1;min-height:0;display:flex;justify-content:center;align-items:flex-start;border:1px solid var(--line)}
+.v2 .pvclip{overflow:hidden;position:relative}
+.v2 .pvclip iframe{border:0;background:var(--card);transform-origin:top left;position:absolute;top:0;left:0}

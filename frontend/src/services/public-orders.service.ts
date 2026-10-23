@@ -51,7 +51,7 @@ export interface PublicCheckoutForm {
     description?: string;
     imageUrl?: string;
     price: number;
-    items?: { quantity: number };
+    items?: { quantity: number; popular?: boolean };
     isPopular: boolean;
     originalPrice?: number;
     discountType?: 'none' | 'percentage' | 'fixed';
@@ -62,6 +62,8 @@ export interface PublicCheckoutForm {
   regions: any;
   /** Towns of each state, by state name (COD-138). */
   towns?: Record<string, string[]>;
+  /** Host of our image storage. The product banner is shown only when it is on this host (F-418). */
+  storageHost?: string | null;
   design?: {
     colors?: {
       primary?: string;

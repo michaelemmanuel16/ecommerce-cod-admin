@@ -1,5 +1,6 @@
 import apiClient from './api';
 import { CheckoutForm as CheckoutFormType } from '../types/checkout-form';
+import type { PaymentConnectionInfo } from '../lib/paymentMatrix';
 
 export type CheckoutForm = CheckoutFormType;
 
@@ -36,6 +37,25 @@ export interface CheckoutFormFilters {
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
+}
+
+/** Reply of GET /payment-options: the tenant flag and the payment account's state. Never a key. */
+export interface PaymentOptions {
+  prepaidPhysical: boolean;
+  connection: PaymentConnectionInfo | null;
+}
+
+/** Reply of GET /:id/upsell-stats. An upsell with no entry cannot be counted reliably (a manual upsell whose name repeats). */
+export interface UpsellStats {
+  ordersTotal: number;
+  upsells: Array<{ upsellId: number; name?: string; orders: number }>;
+}
+
+/** Reply of POST /:id/test-event: Meta's answer as it came back. */
+export interface TestEventResult {
+  ok: boolean;
+  status: number;
+  metaResponse: unknown;
 }
 
 export const checkoutFormsService = {
@@ -81,6 +101,30 @@ export const checkoutFormsService = {
   /** The list's active switch: the screen shows a refusal (the required-key guard) itself. */
   async setCheckoutFormActive(id: number, isActive: boolean): Promise<void> {
     await apiClient.put(`/api/checkout-forms/${id}`, { isActive }, { quiet: true });
+  },
+
+  /** Uploads one image through the shared upload route and returns its public address. */
+  async uploadImage(file: File): Promise<string> {
+    const body = new FormData();
+    body.append('image', file);
+    const response = await apiClient.post('/api/upload', body, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return response.data.imageUrl;
+  },
+
+  async getPaymentOptions(): Promise<PaymentOptions> {
+    const response = await apiClient.get('/api/checkout-forms/payment-options', { quiet: true, skipCache: true });
+    return response.data;
+  },
+
+  async getUpsellStats(id: number): Promise<UpsellStats> {
+    const response = await apiClient.get(`/api/checkout-forms/${id}/upsell-stats`, { quiet: true, skipCache: true });
+    return response.data;
+  },
+
+  /** Sends one test Purchase to Meta with the form's stored token and test event code. Owner and admin only. */
+  async sendTestEvent(id: number): Promise<TestEventResult> {
+    const response = await apiClient.post(`/api/checkout-forms/${id}/test-event`, undefined, { quiet: true });
+    return response.data;
   },
 
   async getFormStats(id: number): Promise<CheckoutFormStats> {

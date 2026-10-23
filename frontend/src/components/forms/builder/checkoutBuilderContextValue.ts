@@ -2,6 +2,7 @@ import React, { createContext, useContext } from 'react';
 import { UseFormRegister, UseFormWatch, UseFormSetValue, FieldErrors } from 'react-hook-form';
 import { CheckoutFormDesign, FieldType, FormField, FormType, ProductPackage, Upsell, PixelConfig } from '../../../types/checkout-form';
 import { Product } from '../../../types';
+import type { PaymentOptions } from '../../../services/checkout-forms.service';
 
 export interface BuilderFormValues {
   name: string;
@@ -63,6 +64,18 @@ export interface CheckoutBuilderContextValue {
   setRegions: React.Dispatch<React.SetStateAction<string[]>>;
   /** Set after a failed save attempt: empty required fields then show their error. */
   showErrors: boolean;
+
+  /** The saved form's id; null while the form is new. */
+  formId: number | null;
+  /** The chosen product's price: what a package's final price is worked out from. 0 until a product is chosen. */
+  productPrice: number;
+  /** Tenant payment settings for the Payment tab. null while loading or when they could not be loaded (`paymentOptionsFailed`). */
+  paymentOptions: PaymentOptions | null;
+  paymentOptionsFailed: boolean;
+  /** The saved form holds a Conversion API token. The token itself never reaches the browser. */
+  capiTokenStored: boolean;
+  /** Pixel id and test event code as last saved: the test event uses these, not what is typed. */
+  savedCapi: { pixelId: string; testEventCode: string };
 
   addField: (type: FieldType) => void;
   updateField: (id: string, updated: FormField) => void;

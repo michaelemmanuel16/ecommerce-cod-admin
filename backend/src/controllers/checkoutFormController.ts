@@ -495,6 +495,9 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       imageUrl: upsell.imageUrl || null,
       price: Money.tryParse(upsell.price) ?? Money.ZERO,
       items: upsell.items || null,
+      discountType: upsell.discountType || 'none',
+      discountValue: Money.tryParse(upsell.discountValue) ?? Money.ZERO,
+      originalPrice: Money.tryParse(upsell.originalPrice),
       productId: upsell.productId ? Number(upsell.productId) : null,
       sortOrder: upsell.sortOrder !== undefined ? parseInt(upsell.sortOrder) : index
     }));
@@ -766,6 +769,9 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
           imageUrl: upsell.imageUrl,
           price: upsell.price,
           items: upsell.items,
+          discountType: upsell.discountType || 'none',
+          discountValue: upsell.discountValue || 0,
+          originalPrice: upsell.originalPrice || null,
           productId: upsell.productId ? Number(upsell.productId) : null,
           sortOrder: upsell.sortOrder !== undefined ? upsell.sortOrder : index
         }))
@@ -948,6 +954,89 @@ export const cloneCheckoutForm = async (req: AuthRequest, res: Response): Promis
   } catch (error) {
     console.error('Error cloning checkout form:', error);
     res.status(500).json({ error: 'Failed to copy the checkout form. Please try again.' });
+  }
+};
+
+/**
+ * What the form editor's Payment tab needs (F-402, F-401): the store's prepaid-physical switch and the state of the payment
+ * account. Only safe fields: no key, no secret, in any form.
+ */
+export const getPaymentOptions = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const tenantId = resolveTenantId(req);
+    const provider = DEFAULT_PAYMENT_PROVIDER;
+    const [features, config, row] = await Promise.all([
+      getTenantFeatures(tenantId),
+      tenantId ? loadProviderConfig(tenantId, provider) : null,
+      tenantId ? prisma.paymentConnection.findFirst({ where: { tenantId, provider }, select: { lastCheckedAt: true } }) : null,
+    ]);
+    res.json({
+      prepaidPhysical: features.prepaidPhysical,
+      connection: config
+        ? {
+            provider,
+            mode: config.mode,
+            isEnabled: config.isEnabled,
+            supportedCurrencies: config.supportedCurrencies,
+            lastCheckedAt: row?.lastCheckedAt ?? null,
+          }
+        : null,
+    });
+  } catch (error) {
+    console.error('Error loading payment options:', error);
+    res.status(500).json({ error: 'Failed to load the payment options. Please try again.' });
+  }
+};
+
+/**
+ * Orders of one form and, per upsell, the orders that contain it (F-415, the "35% of buyers also buy this" hint).
+ * An order line of an upsell stores `upsellId` and `upsellName` in its metadata. The upsell rows of a form are rewritten
+ * on every save, so the id only matches orders placed since the last save; the name carries older orders over. An upsell
+ * is matched by its id or its name. One whose name is empty or shared with another upsell of the form cannot be told
+ * apart reliably and gets no entry (so the editor shows no hint for it).
+ */
+export const getUpsellStats = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const formId = parseFormId(req, res);
+    if (formId === null) return;
+    const form = await findForm(formId, { upsells: { select: { id: true, name: true } } });
+    if (!form) {
+      res.status(404).json({ error: 'Checkout form not found' });
+      return;
+    }
+    const tenantId = resolveTenantId(req);
+    const rows = await prisma.$queryRaw<Array<{ kind: string; upsellId: string | null; name: string | null; orders: number }>>(Prisma.sql`
+      WITH f AS (
+        SELECT DISTINCT o.id
+        FROM form_submissions fs
+        JOIN orders o ON o.id = fs.order_id
+        WHERE fs.form_id = ${formId}
+          AND o.source = 'checkout_form' AND o.deleted_at IS NULL
+          ${tenantId ? Prisma.sql`AND o.tenant_id = ${tenantId}` : Prisma.empty}
+      )
+      SELECT 'total' AS kind, NULL::text AS "upsellId", NULL::text AS name, COUNT(*)::int AS orders FROM f
+      UNION ALL
+      SELECT 'line', oi.metadata->>'upsellId', oi.metadata->>'upsellName', COUNT(DISTINCT oi.order_id)::int
+      FROM order_items oi
+      JOIN f ON f.id = oi.order_id
+      WHERE oi.item_type = 'upsell'
+      GROUP BY 2, 3`);
+
+    const ordersTotal = rows.find((r) => r.kind === 'total')?.orders ?? 0;
+    const lines = rows.filter((r) => r.kind === 'line');
+    const nameCount = new Map<string, number>();
+    for (const u of form.upsells) nameCount.set(u.name.trim(), (nameCount.get(u.name.trim()) ?? 0) + 1);
+    const upsells = form.upsells
+      .filter((u) => u.name.trim() !== '' && nameCount.get(u.name.trim()) === 1)
+      .map((u) => ({
+        upsellId: u.id,
+        name: u.name,
+        orders: lines.filter((l) => l.upsellId === String(u.id) || l.name === u.name).reduce((sum, l) => sum + l.orders, 0),
+      }));
+    res.json({ ordersTotal, upsells });
+  } catch (error) {
+    console.error('Error loading upsell stats:', error);
+    res.status(500).json({ error: 'Failed to load the upsell numbers. Please try again.' });
   }
 };
 
