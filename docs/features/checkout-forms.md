@@ -221,3 +221,39 @@ docs/
 - `frontend/src/lib/checkoutBasics.ts`, `standardFields.ts`, `defaultFields.ts` (new), `orderPayload.ts`, `embedSnippet.ts`; `hooks/useCopyToClipboard.ts`; `services/checkout-forms.service.ts`
 - `backend/src/services/navService.ts`, `utils/checkoutLocation.ts`
 - Tests: `CheckoutForms.test.tsx`, `CheckoutFormBuilder` and `FieldsTab` tests, `checkoutBasics.test.ts`, `accessGate.test.tsx`, `unit/navMenuCheckoutForms.test.ts`, `e2e/17-checkout-forms-list.spec.ts`
+
+## COD-35 — Packages, Upsells, Payment, Tracking, Design and Preview (M3b T12–T15)
+
+- **Date:** 2026-10-23 · **Type:** feature · **Branch:** `feature/m3b-checkout-payments`
+- **Commits:** `0bd1ba8` (T12), `bae6d52` (T13), `9ef4897` (T14), `f9ff831` (T15), `f04d474` (review and simplify fixes)
+- **Migration:** `20261023180000_form_upsell_flags` adds `form_upsells.is_active` (default true) and `is_popular` (default false). Additive.
+
+### Packages and upsells (T12)
+- Packages tab is a table: Sets, Name, Discount (store currency; none, % or fixed), Final price (with "Was"), Badge, Default (one radio), remove. `packageFinalPrice()` and `applyDiscount()` in `lib/packagePricing.ts` are used by the table and the preview (249 × 2 − 49 = 449; 249 × 3 − 118 = 629). Save is blocked when sets < 1 or the final price is below zero.
+- Upsells tab: source product or manual, headline, description, image, quantity, price, discount, popular, on/off. Images go through `/api/upload` (the old builder posted to a missing `/upload` route).
+- Upsell ids are stable: a save updates rows in place, creates new ones and removes missing ones; an id of another form gets 400.
+- Hint: `GET /api/checkout-forms/:id/upsell-stats` (manager-up, tenant-scoped, one query) returns `{ ordersTotal, upsells: [{ upsellId, name, orders }] }`. An upsell order line is matched by `metadata.upsellId`, and by `metadata.upsellName` for lines written before ids were stable. The editor shows "<n>% of buyers also buy this." only from 30 orders. Fetched once per editor load.
+
+### Payment and Tracking (T13)
+- The Settings tab is split into Payment and Tracking (tab order: Basics, Fields, Packages, Upsells, Payment, Tracking, Design).
+- `GET /api/checkout-forms/payment-options` (manager-up) returns `{ prepaidPhysical, connection: { provider, mode, isEnabled, supportedCurrencies, lastCheckedAt } | null }`. It reads safe columns only and decrypts nothing.
+- Payment tab follows `lib/paymentMatrix.ts` (mirror of `services/payments/paymentMethods.ts`): physical with the flag off shows Cash on delivery only, locked; with the flag on, all three with the max-two rule and deposit 1–99; digital shows online in full only, locked. Currency warning uses the server text and disables the online switches; an untested connection only shows a hint. Test mode adds "Real customers cannot pay yet."; flag off with an online method stored shows "Online payment is paused for physical products." "(Nigeria only)" is gone.
+- Tracking tab: Facebook, GA4, TikTok, GTM, CAPI token, test event code. Inline checks from `PIXEL_PATTERNS` with the server messages. The token is write-only: "Connected" + Replace; its value is never in the page. "Send a test event" posts `/:id/test-event` and shows Meta's reply; mocked in every test.
+
+### Design (T14)
+- "Field style" (renamed), label colour, price colour, page background, product banner (JPEG, PNG or WebP up to 1 MB, through `/api/upload`), and "Button text may be hard to read on this colour." under 4.5:1 (`lib/contrast.ts`).
+- The server refuses a banner off the storage host (`R2_PUBLIC_URL`, `isStorageUrl()` in `config/r2.ts`) only when the save changes it; the public and preview payloads drop an off-host banner. In local dev without R2 no banner can be saved.
+- The public form and embed read the new options; empty values keep the old look. The form root sets `color-scheme: light`, so the admin dark mode does not reach it.
+
+### Preview (T15)
+- Live preview at 390 px (Mobile) and 1024 px (Desktop, scaled to the pane). Store currency.
+- `preview` on `CheckoutForm`: every submit path shows "Preview only." and sends nothing. The preview route renders no pixel, GA, TikTok, GTM or CAPI code (those live in `PublicCheckout` and `EmbedCheckout`).
+- `/checkout-forms/:id/preview` sits behind `AccessGate` (manager-up). The list's Preview opens a modal with the same view and a Mobile/Desktop toggle.
+- Not built: a new unsaved form cannot preview an uploaded banner until it is saved.
+
+### Key files
+- `frontend/src/components/forms/CheckoutFormBuilder.tsx`, `PreviewFrame.tsx`, `CheckoutFormPreviewPane.tsx`, `builder/PackagesTab.tsx`, `UpsellsTab.tsx`, `PaymentTab.tsx`, `TrackingTab.tsx`, `DesignTab.tsx`
+- `frontend/src/lib/packagePricing.ts`, `paymentMatrix.ts`, `trackingRules.ts`, `contrast.ts`, `upsellHint.ts`, `previewWidth.ts`; `pages/checkoutForms/PreviewModal.tsx`; `components/public/CheckoutForm.tsx`
+- `backend/src/controllers/checkoutFormController.ts` (`getPaymentOptions`, `getUpsellStats`, `upsellData`, `bannerError`), `routes/checkoutFormRoutes.ts`, `services/checkoutFormService.ts`, `config/r2.ts`, `utils/checkoutFormRules.ts`
+- Removed: `components/forms/PackageEditor.tsx`, `UpsellEditor.tsx`, `builder/SettingsTab.tsx`
+- Tests: Packages/Upsells/Payment/Tracking/Design tab tests, `PublicDesignOptions`, `CheckoutFormPreviewSafety`, `previewRouteGuard`, lib tests, `checkoutFormEditorApi`, `checkoutFormRulesUpsell`, `e2e/18-checkout-forms-editor.spec.ts`
