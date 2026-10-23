@@ -46,7 +46,7 @@ interface JournalEntryCreateData {
   entryDate: Date;
   description: string;
   sourceType: JournalSourceType;
-  sourceId: number;
+  sourceId?: number;
   createdBy: number;
   // Tenant that owns this entry. Pass explicitly (e.g. order.tenantId) so the
   // GL write is correct regardless of execution context. Background callers
@@ -1084,6 +1084,7 @@ export class GLAutomationService {
     totalAmount: Money.MoneyInput,
     paystackFee: Money.MoneyInput,
     userId: number,
+    entryDate: Date = new Date(),
   ): Promise<JournalEntry> {
     const paystackReceivableId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PAYSTACK_RECEIVABLE);
     const digitalRevenueId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DIGITAL_REVENUE);
@@ -1125,13 +1126,43 @@ export class GLAutomationService {
     }
 
     return await GLAutomationService.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate,
       description: `Digital product sale - order #${orderId}`,
       sourceType: JournalSourceType.digital_sale,
       sourceId: orderId,
       createdBy: userId,
       transactions: {
         create: transactions,
+      },
+    });
+  }
+
+  /**
+   * Paystack pays out to the bank (F-934). Clears the Paystack receivable:
+   *   DR  Cash in Hand (1010)           amount
+   *   CR  Paystack Receivable (1030)    amount
+   */
+  async createPaystackPayoutEntry(
+    tx: Prisma.TransactionClient,
+    amount: Money.MoneyInput,
+    entryDate: Date,
+    description: string,
+    userId: number,
+  ): Promise<JournalEntry> {
+    const cashId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND);
+    const paystackReceivableId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PAYSTACK_RECEIVABLE);
+    const amountDec = new Decimal(amount);
+
+    return await GLAutomationService.createJournalEntryWithRetry(tx, {
+      entryDate,
+      description,
+      sourceType: JournalSourceType.paystack_payout,
+      createdBy: userId,
+      transactions: {
+        create: [
+          { accountId: cashId, debitAmount: amountDec, creditAmount: Money.ZERO, description: 'Paystack payout received in bank' },
+          { accountId: paystackReceivableId, debitAmount: Money.ZERO, creditAmount: amountDec, description: 'Paystack payout clears receivable' },
+        ],
       },
     });
   }

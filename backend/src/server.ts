@@ -75,6 +75,7 @@ import smsRoutes from './routes/smsRoutes';
 import emailRoutes from './routes/emailRoutes';
 import paystackRoutes from './routes/paystackRoutes';
 import paymentRoutes from './routes/paymentRoutes';
+import { registerLedgerPoster } from './services/payments/ledgerPoster';
 import paymentConnectionRoutes from './routes/paymentConnectionRoutes';
 import communicationRoutes from './routes/communicationRoutes';
 import onboardingRoutes from './routes/onboardingRoutes';
@@ -339,6 +340,9 @@ if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, async () => {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+
+    // Book settled online payments to the ledger (F-406). Registered once.
+    registerLedgerPoster();
 
     // Setup Agent Aging Cron Job
     await setupAgingCron();

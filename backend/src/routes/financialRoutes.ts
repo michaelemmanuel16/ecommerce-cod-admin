@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as financialController from '../controllers/financialController';
 import { getFinancialHealth } from '../controllers/ledgerHealthController';
-import { authenticate, requireResourcePermission, requireRole } from '../middleware/auth';
+import { authenticate, requirePermission, requireResourcePermission, requireRole } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { paginationValidation } from '../utils/validators';
@@ -38,6 +38,9 @@ router.post('/expenses', requireResourcePermission('financial', 'create'), finan
 router.get('/expenses/breakdown', requireResourcePermission('financial', 'view'), financialController.getExpenseBreakdown);
 router.put('/expenses/:id', requireResourcePermission('financial', 'update'), financialController.updateExpense);
 router.delete('/expenses/:id', requireResourcePermission('financial', 'delete'), financialController.deleteExpense);
+
+// Paystack payout to the bank: DR 1010, CR 1030 (F-934)
+router.post('/paystack-payouts', requirePermission(['super_admin', 'admin']), financialController.postPaystackPayout);
 
 // Agent reconciliation
 router.get('/agent-cash-holdings', requireResourcePermission('financial', 'view'), financialController.getAgentCashHoldings);

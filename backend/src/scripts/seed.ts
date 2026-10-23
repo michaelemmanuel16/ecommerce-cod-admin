@@ -164,7 +164,7 @@ async function seedChartOfAccounts() {
     // Assets (1000-1999) - Debit Normal Balance
     { code: '1010', name: 'Cash in Hand', description: 'Bank account cash balances', accountType: AccountType.asset, normalBalance: NormalBalance.debit, isSystem: true },
     { code: '1020', name: 'Cash in Transit', description: 'Cash collected by delivery agents, not yet deposited', accountType: AccountType.asset, normalBalance: NormalBalance.debit, isSystem: true },
-    { code: '1030', name: 'Accounts Receivable - Agents', description: 'Amounts owed by delivery agents for COD collections', accountType: AccountType.asset, normalBalance: NormalBalance.debit, isSystem: true },
+    { code: '1030', name: 'Paystack Receivable', description: 'Amounts owed by delivery agents for COD collections', accountType: AccountType.asset, normalBalance: NormalBalance.debit, isSystem: true },
     { code: '1040', name: 'Inventory', description: 'Value of products in stock', accountType: AccountType.asset, normalBalance: NormalBalance.debit, isSystem: true },
 
     // Liabilities (2000-2999) - Credit Normal Balance
