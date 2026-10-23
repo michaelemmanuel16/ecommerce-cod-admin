@@ -262,5 +262,39 @@ async function fireCapiInitiateCheckoutEvent(params: {
   }
 }
 
-export const metaCapiService = { fireCapiPurchaseEvent, fireCapiInitiateCheckoutEvent };
+/**
+ * Send one test Purchase to Meta for the form editor's "Send a test event" button (F-416). It carries the form's
+ * `test_event_code`, so Meta shows it in Test Events and counts no conversion. Returns Meta's answer as it came back.
+ */
+async function sendTestEvent(params: {
+  pixelId: string;
+  accessToken: string;
+  testEventCode: string;
+  currency: string | null;
+  productId: number;
+}): Promise<{ ok: boolean; status: number; metaResponse: unknown }> {
+  const event = {
+    event_name: 'Purchase',
+    event_time: Math.floor(Date.now() / 1000),
+    action_source: 'website',
+    event_id: `test-${Date.now()}`,
+    user_data: compact({ em: hash('test@example.com'), ph: hashPhone('233200000000') }),
+    custom_data: { value: 1, currency: params.currency || 'GHS', content_ids: [params.productId], content_type: 'product' },
+  };
+  try {
+    const res = await fetch(GRAPH_URL(params.pixelId, params.accessToken), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: [event], test_event_code: params.testEventCode }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const metaResponse = await res.json().catch(() => null);
+    return { ok: res.ok, status: res.status, metaResponse };
+  } catch (err: any) {
+    logger.warn('Meta CAPI test event failed', { error: err?.message });
+    return { ok: false, status: 0, metaResponse: { error: { message: err?.name === 'TimeoutError' ? 'Meta did not answer in 10 seconds.' : 'Could not reach Meta.' } } };
+  }
+}
+
+export const metaCapiService = { fireCapiPurchaseEvent, fireCapiInitiateCheckoutEvent, sendTestEvent };
 export default metaCapiService;

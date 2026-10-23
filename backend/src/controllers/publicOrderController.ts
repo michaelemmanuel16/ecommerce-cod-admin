@@ -189,13 +189,17 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         if (slotRule(form.fields, slot) === 'required') requiredFields.push(key);
       }
     }
+    // A `city` field is the town slot under its new name (COD-33): the payload may carry it as `city`.
+    if (formData && typeof formData === 'object' && !cleanText(formData.town) && cleanText(formData.city)) formData.town = formData.city;
     for (const field of requiredFields) {
       if (!cleanText(formData[field])) {
         reject(`Missing required field: ${field}`);
         return;
       }
     }
-    const town = cleanText(formData.town, 100);
+    // A form that does not ask for a town (field off, or an embed without one) takes the state as its town.
+    const town = cleanText(formData.town, 100)
+      || (!isDigital && (locationFieldsAbsent || slotRule(form.fields, 'town') === 'off') ? cleanText(formData.state, 100) : '');
     const landmark = cleanText(formData.landmark);
 
     // Paystack orders settle into the form's tenant Paystack account; without
@@ -254,6 +258,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
       // A returning buyer's newest town and landmark replace the old ones.
       if (town && town !== customer.area) updateData.area = town;
+      if (formData.state && formData.state !== customer.state) updateData.state = formData.state;
       if (landmark && landmark !== customer.landmark) updateData.landmark = landmark;
       if (Object.keys(updateData).length > 0) {
         customer = await prisma.customer.update({
@@ -473,7 +478,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
             unitPrice: item.unitPrice.toString(),
             totalPrice: item.totalPrice.toString(),
           })),
-          formData,
+          formData: { ...formData, town },
           selectedPackage,
           selectedUpsells: selectedUpsells ?? Prisma.JsonNull,
           ipAddress: req.ip,

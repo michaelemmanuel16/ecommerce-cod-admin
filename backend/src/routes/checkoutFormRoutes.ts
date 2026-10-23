@@ -4,6 +4,7 @@ import { authenticate, requirePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { body, query, param } from 'express-validator';
+import { STANDARD_KEYS } from '../utils/checkoutLocation';
 
 const router = Router();
 
@@ -24,6 +25,7 @@ const createFormValidation = [
   body('fields').isArray().withMessage('Fields must be an array'),
   body('fields.*.label').optional().isString().trim().isLength({ min: 1, max: 100 }).withMessage('Field label must be between 1 and 100 characters'),
   body('fields.*.type').optional().isIn(FIELD_TYPES).withMessage('Invalid field type'),
+  body('fields.*.standardKey').optional({ nullable: true }).isIn(STANDARD_KEYS as unknown as string[]).withMessage('Invalid "Sends to" key'),
   body('fields.*.enabled').optional().isBoolean().withMessage('Field enabled must be a boolean'),
   body('fields.*.required').optional().isBoolean().withMessage('Field required must be a boolean'),
   body('fields.*.placeholder').optional().isString().trim().isLength({ max: 100 }).withMessage('Field placeholder must be at most 100 characters'),
@@ -53,9 +55,7 @@ const createFormValidation = [
   }),
   body('upsells.*.price').optional().isFloat({ min: 0 }).withMessage('Upsell price must be positive'),
   body('upsells.*.items').optional().isObject().withMessage('Upsell items must be an object'),
-  body('redirectUrl').optional({ nullable: true, checkFalsy: true }).isURL({ require_protocol: true }).withMessage('Redirect URL must be a valid URL (including http:// or https://)'),
-  body('allowedOrigins').optional().isArray().withMessage('Allowed origins must be an array'),
-  body('allowedOrigins.*').optional().isURL({ require_protocol: true }).withMessage('Enter a valid domain URL e.g http://yourbrand.com')
+  body('allowedOrigins').optional().isArray().withMessage('Allowed origins must be an array')
 ];
 
 const updateFormValidation = [
@@ -66,6 +66,7 @@ const updateFormValidation = [
   body('fields').optional().isArray().withMessage('Fields must be an array'),
   body('fields.*.label').optional().isString().trim().isLength({ min: 1, max: 100 }).withMessage('Field label must be between 1 and 100 characters'),
   body('fields.*.type').optional().isIn(FIELD_TYPES).withMessage('Invalid field type'),
+  body('fields.*.standardKey').optional({ nullable: true }).isIn(STANDARD_KEYS as unknown as string[]).withMessage('Invalid "Sends to" key'),
   body('fields.*.enabled').optional().isBoolean().withMessage('Field enabled must be a boolean'),
   body('fields.*.required').optional().isBoolean().withMessage('Field required must be a boolean'),
   body('fields.*.placeholder').optional().isString().trim().isLength({ max: 100 }).withMessage('Field placeholder must be at most 100 characters'),
@@ -89,9 +90,7 @@ const updateFormValidation = [
     }
     return true;
   }),
-  body('redirectUrl').optional({ nullable: true, checkFalsy: true }).isURL({ require_protocol: true }).withMessage('Redirect URL must be a valid URL (including http:// or https://)'),
-  body('allowedOrigins').optional().isArray().withMessage('Allowed origins must be an array'),
-  body('allowedOrigins.*').optional().isURL({ require_protocol: true }).withMessage('Enter a valid domain URL e.g http://yourbrand.com')
+  body('allowedOrigins').optional().isArray().withMessage('Allowed origins must be an array')
 ];
 
 const paginationValidation = [
@@ -152,6 +151,30 @@ router.delete(
   param('id').notEmpty().withMessage('Form ID is required'),
   validate,
   checkoutFormController.deleteCheckoutForm
+);
+
+router.post(
+  '/:id/restore',
+  requirePermission(['super_admin', 'admin']),
+  param('id').notEmpty().withMessage('Form ID is required'),
+  validate,
+  checkoutFormController.restoreCheckoutForm
+);
+
+router.post(
+  '/:id/clone',
+  requirePermission(['super_admin', 'admin']),
+  param('id').notEmpty().withMessage('Form ID is required'),
+  validate,
+  checkoutFormController.cloneCheckoutForm
+);
+
+router.post(
+  '/:id/test-event',
+  requirePermission(['super_admin', 'admin']),
+  param('id').notEmpty().withMessage('Form ID is required'),
+  validate,
+  checkoutFormController.sendTestEvent
 );
 
 router.get(

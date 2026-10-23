@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
 import { townsForForm } from './locationService';
+import { isUpsellAvailable } from '../utils/checkoutFormRules';
 
 // Shared PUBLIC render payload — the fields safe to expose on the public
 // checkout page and the embed widget config endpoint. Reused so the page and
@@ -66,15 +67,22 @@ const PUBLIC_FORM_SELECT = {
       originalPrice: true,
       discountType: true,
       discountValue: true,
+      // Read to hide an upsell whose product is inactive or out of stock; removed again before the response.
+      productId: true,
+      product: { select: { isActive: true, stockQuantity: true, productType: true } },
     },
   },
 } satisfies Prisma.CheckoutFormSelect;
 
+type UpsellRow = Parameters<typeof isUpsellAvailable>[0];
+
 // Replace the raw stock quantity with a boolean in-stock flag.
 // `towns` (state -> towns) is added so the public form can fill its City/Town dropdown (COD-138).
-function sanitizePublicForm<T extends { product: { stockQuantity: number }; country: string | null; regions: unknown }>(form: T) {
+// Upsells whose linked product is inactive or out of stock are dropped (F-415).
+function sanitizePublicForm<T extends { product: { stockQuantity: number }; country: string | null; regions: unknown; upsells: UpsellRow[] }>(form: T) {
   const { stockQuantity, ...productData } = form.product;
-  return { ...form, product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions) };
+  const upsells = form.upsells.filter(isUpsellAvailable).map(({ productId: _productId, product: _product, ...visible }: any) => visible);
+  return { ...form, upsells, product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions) };
 }
 
 // ---------- Public embed config cache ----------
@@ -169,7 +177,7 @@ export class CheckoutFormService {
 
     if (existingForm) {
       throw new AppError(
-        existingForm.isActive === false
+        existingForm.archivedAt
           ? 'An archived checkout form already uses this slug. Restore it or pick another slug.'
           : 'Checkout form with this slug already exists',
         400
@@ -398,7 +406,8 @@ export class CheckoutFormService {
     // Guard explicitly: empty-string tenantId from a misconfigured token must
     // not skip the scope filter and leak cross-tenant data.
     if (tenantId != null && tenantId !== '') where.tenantId = tenantId;
-    const form = await prisma.checkoutForm.findFirst({
+    // Drafts and inactive forms preview too, so opt out of the isActive filter.
+    const form = await withSoftDeleted(() => prisma.checkoutForm.findFirst({
       where,
       select: {
         id: true,
@@ -455,7 +464,7 @@ export class CheckoutFormService {
           },
         },
       },
-    });
+    }));
 
     if (!form) {
       throw new AppError('Checkout form not found', 404);
@@ -497,7 +506,7 @@ export class CheckoutFormService {
 
       if (slugExists) {
         throw new AppError(
-          slugExists.isActive === false
+          slugExists.archivedAt
             ? 'An archived checkout form already uses this slug. Restore it or pick another slug.'
             : 'Slug already in use',
           400
