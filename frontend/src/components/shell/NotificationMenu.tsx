@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import { useNotificationsStore } from '../../stores/notificationsStore';
 import { usePopover } from './usePopover';
+import { notificationText } from './notificationText';
 
 /** The bell. The count is read from the database (GET /api/notifications/unread-count) on load and again on every
  *  socket event `notification`. The popover keeps what the old header bell did (the latest notifications, mark as read)
@@ -42,18 +43,21 @@ export function NotificationMenu() {
           {notifications.length === 0 ? (
             <div className="sx-empty">No notifications</div>
           ) : (
-            notifications.slice(0, 10).map((n) => (
-              <button
-                type="button"
-                role="menuitem"
-                key={n.id}
-                className={n.read ? 'sx-note read' : 'sx-note'}
-                onClick={() => markAsRead(n.id)}
-              >
-                <b>{n.title}</b>
-                <small>{n.message}</small>
-              </button>
-            ))
+            notifications.slice(0, 10).map((n) => {
+              const text = notificationText(n);
+              return (
+                <button
+                  type="button"
+                  role="menuitem"
+                  key={n.id}
+                  className={n.read ? 'sx-note read' : 'sx-note'}
+                  onClick={() => markAsRead(n.id)}
+                >
+                  <b>{text.title}</b>
+                  <small>{text.message}</small>
+                </button>
+              );
+            })
           )}
         </div>
       )}
