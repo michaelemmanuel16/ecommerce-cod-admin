@@ -13,6 +13,10 @@
  * and, in `meta-spend.json` next to this file, the five Meta campaigns (no spend model exists before M8).
  * They come from their own random seed (FIXTURE_SEED + 1), so the October plan is unchanged.
  *
+ * Part 3 (M4-T05, F-651 to F-656) adds the stock of docs/mockups/v2/inventory.html: locations, levels, the 9 October
+ * shipment received 288 of 300, a 3PL count of 88 on 15 October, 20 copybook sets in transit to Kofi, and the
+ * returns sent 41 / received 36. Reserved is never stored: it comes from the orders (see STOCK_AT).
+ *
  * `buildFixturePlan()` is pure (no database): it makes every row in memory from a fixed random seed.
  * `seedFixture(prisma, opts)` writes the plan. Integration tests call it in beforeAll; the script
  * `backend/scripts/seed-fixture.ts` calls it from the command line.
@@ -106,6 +110,27 @@ const PRICE: Record<Sku, number> = Object.fromEntries(PRODUCTS.map((p) => [p.sku
 const DELIVERED_UNITS: Record<Sku, number> = { 'MG-COPYBOOK-SET': 306, 'MG-REFILL-PENS': 172, 'MG-GRIP-TRAINER': 89, 'MG-PARENT-GUIDE': 58, 'DT-CREAM': 10 };
 const DELIVERED_REVENUE = 92000;
 const FIRST_ORDER_NUMBER = 23001;
+
+/**
+ * On hand at the two stock holders of F-652 (inventory.html). Products not listed hold 0 and have no level row.
+ * Reserved is not stored; it is read from the orders at each holder. NOTE: the mockup's reserved samples (Logiswift
+ * 34 / 11 / 14, Kofi copybook 11) cannot come from these orders: 148 orders are out for delivery (100 at Logiswift,
+ * 20 at Kofi) and each holds at least one copybook set, so reserved copybooks are 116 at Logiswift and 21 at Kofi.
+ */
+export const STOCK_AT: Record<'logiswift' | 'kofi', Partial<Record<Sku, number>>> = {
+  logiswift: { 'MG-COPYBOOK-SET': 100, 'MG-REFILL-PENS': 62, 'MG-GRIP-TRAINER': 180 },
+  kofi: { 'MG-COPYBOOK-SET': 36, 'MG-REFILL-PENS': 18, 'MG-GRIP-TRAINER': 45 },
+};
+/** Product.stockQuantity is the cached sum of on-hand over active physical locations (F-651). */
+const stockCache = (sku: Sku) => (STOCK_AT.logiswift[sku] ?? 0) + (STOCK_AT.kofi[sku] ?? 0);
+const STOCK_LOCATIONS: Array<{ key: string; name: string; type: 'partner_3pl' | 'agent' | 'in_transit'; partner: PartnerKey | null; address: string | null }> = [
+  { key: 'logiswift', name: 'Logiswift', type: 'partner_3pl', partner: 'logiswift', address: 'Tema' },
+  { key: 'kasapa', name: 'Kasapa Express', type: 'partner_3pl', partner: 'kasapa', address: 'Cape Coast' },
+  { key: 'kofi', name: 'Kofi Appiah', type: 'agent', partner: 'kofi', address: 'Kumasi' },
+  { key: 'esi', name: 'Esi Badu', type: 'agent', partner: 'esi', address: 'Accra' },
+  { key: 'kwesi', name: 'Kwesi Amoah', type: 'agent', partner: 'kwesi', address: 'Takoradi' },
+  { key: 'transit', name: 'In transit', type: 'in_transit', partner: null, address: null },
+];
 
 // ---------------------------------------------------------------------------------------------------------
 // Seeded random numbers (mulberry32). No Math.random anywhere in this file.
@@ -596,6 +621,12 @@ const chunks = <T>(items: T[], size: number): T[][] => {
 /** Deletes every row of the fixture tenant (children first). Touches no other tenant. Keeps the tenant row. */
 export async function deleteFixtureRows(prisma: PrismaClient, tenantId: string): Promise<void> {
   const t = { tenantId };
+  await prisma.stockCountLine.deleteMany({ where: t });
+  await prisma.stockCount.deleteMany({ where: t });
+  await prisma.inventoryTransfer.deleteMany({ where: t });
+  await prisma.inventoryShipment.deleteMany({ where: t });
+  await prisma.stockLevel.deleteMany({ where: t });
+  await prisma.stockLocation.deleteMany({ where: t });
   await prisma.target.deleteMany({ where: { ...t, parentId: { not: null } } });
   await prisma.target.deleteMany({ where: t });
   await prisma.expense.deleteMany({ where: t });
@@ -650,6 +681,19 @@ async function fixtureHash(prisma: PrismaClient, tenantId: string): Promise<stri
   for (const t of targets) hash.update(`target|${t.scope}|${t.metric}|${t.periodStart.toISOString()}|${t.value.toFixed(4)}\n`);
   for (const b of balances) hash.update(`balance|${b.agent.email}|${b.currentBalance.toFixed(4)}\n`);
   for (const c of collections) hash.update(`collection|${c.order.externalOrderId}|${c.status}|${c.amount.toFixed(4)}|${c.allocatedAmount.toFixed(4)}|${c.collectionDate.toISOString()}\n`);
+  // Part 3 rows: locations, levels, shipments, counts and movements (no ids).
+  const [locations, levels, shipments, counts, movements] = await Promise.all([
+    prisma.stockLocation.findMany({ where: { tenantId }, orderBy: { name: 'asc' }, select: { name: true, type: true, user: { select: { email: true } } } }),
+    prisma.stockLevel.findMany({ where: { tenantId }, orderBy: [{ location: { name: 'asc' } }, { product: { sku: 'asc' } }], select: { quantity: true, location: { select: { name: true } }, product: { select: { sku: true } } } }),
+    prisma.inventoryShipment.findMany({ where: { tenantId }, orderBy: { createdAt: 'asc' }, select: { quantity: true, totalCost: true, status: true, quantityCounted: true, shortQuantity: true, landedCostPerUnit: true, claimStatus: true, claimAmount: true, receivedAt: true } }),
+    prisma.stockCountLine.findMany({ where: { tenantId }, orderBy: [{ count: { countDate: 'asc' } }, { product: { sku: 'asc' } }], select: { systemQuantity: true, countedQuantity: true, difference: true, count: { select: { countDate: true, source: true, location: { select: { name: true } } } }, product: { select: { sku: true } } } }),
+    prisma.inventoryTransfer.findMany({ where: { tenantId }, orderBy: [{ createdAt: 'asc' }, { transferType: 'asc' }, { productId: 'asc' }, { quantity: 'asc' }], select: { transferType: true, status: true, quantity: true, receivedQuantity: true, createdAt: true, product: { select: { sku: true } }, fromLocation: { select: { name: true } }, toLocation: { select: { name: true } } } }),
+  ]);
+  for (const l of locations) hash.update(`location|${l.name}|${l.type}|${l.user?.email ?? ''}\n`);
+  for (const l of levels) hash.update(`level|${l.location.name}|${l.product.sku}|${l.quantity}\n`);
+  for (const x of shipments) hash.update(`shipment|${x.quantity}|${x.totalCost.toFixed(4)}|${x.status}|${x.quantityCounted}|${x.shortQuantity}|${x.landedCostPerUnit?.toFixed(4)}|${x.claimStatus}|${x.claimAmount.toFixed(4)}|${x.receivedAt?.toISOString()}\n`);
+  for (const c of counts) hash.update(`count|${c.count.location.name}|${c.count.countDate.toISOString()}|${c.count.source}|${c.product.sku}|${c.systemQuantity}|${c.countedQuantity}|${c.difference}\n`);
+  for (const m of movements) hash.update(`move|${m.transferType}|${m.status}|${m.product.sku}|${m.quantity}|${m.receivedQuantity ?? ''}|${m.fromLocation?.name ?? ''}|${m.toLocation?.name ?? ''}|${m.createdAt.toISOString()}\n`);
   return hash.digest('hex');
 }
 
@@ -688,7 +732,7 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
 
   await prisma.product.createMany({
     data: PRODUCTS.map((p) => ({
-      sku: p.sku, name: p.name, category: p.category, price: money(p.price), cogs: p.cogs, stockQuantity: 1000, tenantId,
+      sku: p.sku, name: p.name, category: p.category, price: money(p.price), cogs: p.cogs, stockQuantity: stockCache(p.sku), tenantId,
     })),
   });
   const productId = Object.fromEntries(
@@ -890,6 +934,76 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
       allocatedAmount: money(status === 'deposited' || status === 'reconciled' ? order.total : part ? Math.round(order.total / 2) : 0),
       status, collectionDate: new Date(order.deliveryDate as number), tenantId,
     })),
+  });
+
+  // Part 3 (M4-T05): stock. Rows are written directly because no stock service exists yet (stockService arrives in M4-T06).
+  log('Creating stock locations, levels, the 9 October shipment, the 15 October count and the returns');
+  await prisma.stockLocation.createMany({
+    data: STOCK_LOCATIONS.map((l) => ({ tenantId, type: l.type, name: l.name, address: l.address, userId: l.partner ? partnerIds[l.partner] : null })),
+  });
+  const locationId = Object.fromEntries(
+    (await prisma.stockLocation.findMany({ where: { tenantId }, select: { id: true, name: true } })).map((l) => [l.name, l.id]),
+  ) as Record<string, number>;
+  const at1Oct = new Date(START + 8 * HOUR);
+  const holders = [['Logiswift', STOCK_AT.logiswift], ['Kofi Appiah', STOCK_AT.kofi]] as const;
+  const levelRows = holders.flatMap(([name, bySku]) => (Object.entries(bySku) as Array<[Sku, number]>).map(([sku, quantity]) => ({
+    tenantId, locationId: locationId[name], productId: productId[sku], quantity,
+  })));
+  await prisma.stockLevel.createMany({ data: levelRows });
+  await prisma.inventoryTransfer.createMany({
+    data: levelRows.map((l) => ({
+      tenantId, productId: l.productId, quantity: l.quantity, transferType: 'opening' as const, toLocationId: l.locationId,
+      status: 'received' as const, createdById: admin.id, createdAt: at1Oct, notes: 'Fixture opening balance',
+    })),
+  });
+
+  // The 9 October shipment: 300 shipped at GH₵27.00, shipping 450, other 150 (total 8,700); 288 counted, 12 short;
+  // landed cost 8,700 / 288 = 30.2083; open supplier claim 12 x 27 = 324. No ledger entry here (the receive service posts it, M4-T08).
+  const received9Oct = new Date(Date.UTC(2026, 9, 9, 10, 0, 0));
+  const shipment = await prisma.inventoryShipment.create({
+    data: {
+      tenantId, productId: productId['MG-COPYBOOK-SET'], supplier: 'Accra Print House', quantity: 300,
+      unitCost: money(27), shippingCost: money(450), customsDuties: money(0), otherCosts: money(150), totalCost: money(8700),
+      status: 'received', arrivedAt: received9Oct, receivedAt: received9Oct, receivedById: admin.id, createdById: admin.id,
+      createdAt: new Date(Date.UTC(2026, 9, 2, 9, 0, 0)), expectedArrivalDate: received9Oct,
+      currency: 'GHS', totalCostStore: money(8700), landedCostPerUnit: money(8700 / 288),
+      quantityCounted: 288, shortQuantity: 12, destinationLocationId: locationId['Logiswift'],
+      claimStatus: 'open', claimAmount: money(12 * 27), claimNote: 'Short on arrival: 12 units',
+    },
+  });
+  await prisma.inventoryTransfer.create({
+    data: {
+      tenantId, productId: productId['MG-COPYBOOK-SET'], quantity: 288, transferType: 'receipt', toLocationId: locationId['Logiswift'],
+      shipmentId: shipment.id, status: 'received', receivedQuantity: 288, receivedAt: received9Oct, receivedById: admin.id,
+      createdById: admin.id, createdAt: received9Oct, notes: 'Shipment received, 12 short',
+    },
+  });
+  // 20 copybook sets from Logiswift to Kofi, sent 17 Oct 11:20, not yet received.
+  await prisma.inventoryTransfer.create({
+    data: {
+      tenantId, productId: productId['MG-COPYBOOK-SET'], quantity: 20, transferType: 'allocation',
+      fromLocationId: locationId['Logiswift'], toLocationId: locationId['Kofi Appiah'], status: 'in_transit',
+      createdById: admin.id, createdAt: new Date(Date.UTC(2026, 9, 17, 11, 20, 0)),
+    },
+  });
+  // Returns: Logiswift sent back 41 units, we received 36 (5 missing). The destination (own store) is not set up in the fixture.
+  await prisma.inventoryTransfer.create({
+    data: {
+      tenantId, productId: productId['MG-COPYBOOK-SET'], quantity: 41, transferType: 'return_to_warehouse',
+      fromLocationId: locationId['Logiswift'], status: 'disputed', receivedQuantity: 36, receivedAt: new Date(Date.UTC(2026, 9, 16, 12, 0, 0)),
+      receivedById: admin.id, reason: 'not_received', createdById: admin.id, createdAt: new Date(Date.UTC(2026, 9, 14, 12, 0, 0)),
+    },
+  });
+  // 3PL count of Logiswift on 15 October: copybook 88 against our 100 (12 off); pens and grip trainer match.
+  const count = await prisma.stockCount.create({
+    data: { tenantId, locationId: locationId['Logiswift'], countDate: new Date(Date.UTC(2026, 9, 15)), source: 'three_pl_dashboard', countedById: admin.id, createdAt: new Date(Date.UTC(2026, 9, 15, 9, 0, 0)) },
+  });
+  const counted: Array<[Sku, number]> = [['MG-COPYBOOK-SET', 88], ['MG-REFILL-PENS', 62], ['MG-GRIP-TRAINER', 180]];
+  await prisma.stockCountLine.createMany({
+    data: counted.map(([sku, countedQuantity]) => {
+      const systemQuantity = STOCK_AT.logiswift[sku] as number;
+      return { tenantId, countId: count.id, productId: productId[sku], systemQuantity, countedQuantity, difference: countedQuantity - systemQuantity };
+    }),
   });
 
   // One revenue journal entry per delivered order, posted by the same function the delivery path calls
