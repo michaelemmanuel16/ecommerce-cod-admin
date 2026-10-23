@@ -470,9 +470,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       const buyerEmail =
         formData.email || `${String(formData.phoneNumber).replace(/\D/g, '')}@codadminpro.com`;
       // The provider appends reference (and trxref) to the callback URL on redirect; the PaymentCallback page settles by
-      // that reference. `form` is the slug, so the page can show the store's colours and support number even when the
-      // reference is unknown.
-      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback?form=${encodeURIComponent(slug)}`;
+      // that reference. The form slug is in the path, not the query, so the URL has no query string for the provider to
+      // append to, and the page can show the store's colours and support number even when the reference is unknown.
+      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback/${encodeURIComponent(slug)}`;
 
       const provider = getPaymentProvider(form.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER);
       // PendingCheckout stores the charge in the provider's minor units (legacy column, replaced in M3b-T06); the provider owns the conversion.

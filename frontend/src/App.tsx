@@ -194,11 +194,14 @@ function App() {
               </Suspense>
             </SaasRoute>
           } />
-          <Route path="/checkout/payment/callback" element={
-            <Suspense fallback={<Loading />}>
-              <PaymentCallback />
-            </Suspense>
-          } />
+          {/* The slug path is what the checkout gives the provider; the bare path stays for older payment links. */}
+          {['/checkout/payment/callback', '/checkout/payment/callback/:formSlug'].map((path) => (
+            <Route key={path} path={path} element={
+              <Suspense fallback={<Loading />}>
+                <PaymentCallback />
+              </Suspense>
+            } />
+          ))}
           {UiGallery && (
             <Route path="/dev/ui-v2" element={<Suspense fallback={<Loading />}><UiGallery /></Suspense>} />
           )}

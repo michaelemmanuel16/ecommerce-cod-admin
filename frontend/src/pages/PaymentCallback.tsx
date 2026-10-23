@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { CheckCircle, XCircle, Clock, Loader2, SearchX } from 'lucide-react';
 import { publicOrdersService, type PaymentOutcome, type PublicCheckoutForm } from '../services/public-orders.service';
 import { PublicScreen, StatusIcon, SupportLine } from '../components/public/PublicScreen';
@@ -26,9 +26,9 @@ async function loadTheme(slug: string): Promise<FormTheme> {
 export const PaymentCallback: React.FC = () => {
   const [searchParams] = useSearchParams();
   const reference = searchParams.get('reference') || searchParams.get('trxref');
-  // The checkout adds ?form=<slug> to the callback URL it gives the provider, so the page knows the store even when the
+  // The checkout gives the provider /checkout/payment/callback/<slug>, so the page knows the store even when the
   // reference is unknown.
-  const formParam = searchParams.get('form');
+  const { formSlug: formParam = null } = useParams<{ formSlug?: string }>();
   const [view, setView] = useState<View>(reference ? 'confirming' : 'not_found');
   const [outcome, setOutcome] = useState<PaymentOutcome | null>(null);
   const [theme, setTheme] = useState<FormTheme>({});

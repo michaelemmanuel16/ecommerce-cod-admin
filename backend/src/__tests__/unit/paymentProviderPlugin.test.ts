@@ -74,7 +74,7 @@ describe('a second payment provider', () => {
 
     expect(stub.initialized).toEqual([expect.objectContaining({ tenantId: 'tenant-1', amount: '250.00', currency: 'GHS' })]);
     // the callback URL names the form, so the page can theme itself even for an unknown reference
-    expect(stub.initialized[0].callbackUrl).toMatch(/\/checkout\/payment\/callback\?form=form-1$/);
+    expect(stub.initialized[0].callbackUrl).toMatch(/\/checkout\/payment\/callback\/form-1$/);
     const pending = (prismaMock.pendingCheckout.create as any).mock.calls[0][0].data;
     expect(pending).toMatchObject({ provider: 'stub', reference: stub.initialized[0].reference });
     expect(res.json).toHaveBeenCalledWith(

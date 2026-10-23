@@ -2,7 +2,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 const verifyPayment = vi.fn();
 const getPublicForm = vi.fn();
@@ -16,10 +16,13 @@ vi.mock('../../services/public-orders.service', () => ({
 import { PaymentCallback } from '../../pages/PaymentCallback';
 import { POLL_MS, POLL_LIMIT_MS, REDIRECT_DELAY_MS } from '../../lib/paymentPolling';
 
-const open = (search = '?reference=ref_1') =>
+const open = (search = '?reference=ref_1', slug = '') =>
   render(
-    <MemoryRouter initialEntries={[`/checkout/payment/callback${search}`]}>
-      <PaymentCallback />
+    <MemoryRouter initialEntries={[`/checkout/payment/callback${slug ? `/${slug}` : ''}${search}`]}>
+      <Routes>
+        <Route path="/checkout/payment/callback" element={<PaymentCallback />} />
+        <Route path="/checkout/payment/callback/:formSlug" element={<PaymentCallback />} />
+      </Routes>
     </MemoryRouter>,
   );
 
@@ -131,9 +134,9 @@ describe('PaymentCallback (F-403)', () => {
     expect(screen.getByRole('link', { name: /WhatsApp/ })).toHaveAttribute('href', 'https://wa.me/233245550103');
   });
 
-  it('Not found: "We could not find this payment." and the support number of the form named in ?form=', async () => {
+  it('Not found: "We could not find this payment." and the support number of the form named in the path', async () => {
     verifyPayment.mockResolvedValue({ status: 'not_found', orderType: null, formSlug: null });
-    open('?reference=ref_1&form=my-form');
+    open('?reference=ref_1', 'my-form');
     await flush();
     expect(screen.getByRole('heading', { name: 'We could not find this payment.' })).toBeInTheDocument();
     expect(getPublicForm).toHaveBeenCalledWith('my-form');
@@ -141,8 +144,8 @@ describe('PaymentCallback (F-403)', () => {
     expect(screen.getByRole('link', { name: /WhatsApp/ })).toHaveAttribute('href', 'https://wa.me/233245550103');
   });
 
-  it('a link with no reference is Not found, asks the server nothing, and still shows the support number of ?form=', async () => {
-    open('?form=my-form');
+  it('a link with no reference is Not found, asks the server nothing, and still shows the support number of the form in the path', async () => {
+    open('', 'my-form');
     await flush();
     await flush();
     expect(screen.getByRole('link', { name: /WhatsApp/ })).toBeInTheDocument();
