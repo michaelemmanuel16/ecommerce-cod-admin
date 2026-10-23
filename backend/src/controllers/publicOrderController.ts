@@ -94,6 +94,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // Purchase CAPI event (COD fires now; Paystack carries them via PendingCheckout).
     const fbp = clampTracking(req.body.fbp);
     const fbc = clampTracking(req.body.fbc);
+    // Only a literal true skips the town/landmark required check (embed Mode B, host form without those inputs).
+    const locationFieldsAbsent = req.body.locationFieldsAbsent === true;
 
     // Rejects this submission with a 400 and logs why.
     //
@@ -179,6 +181,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     const slotFields: Array<[CheckoutSlot, string]> = [['streetAddress', 'address'], ['town', 'town'], ['landmark', 'landmark']];
     if (!isDigital) {
       for (const [slot, key] of slotFields) {
+        // Embed Mode B sets locationFieldsAbsent when the host form has no town/landmark input at all.
+        if (locationFieldsAbsent && (slot === 'town' || slot === 'landmark')) continue;
         if (slotRule(form.fields, slot) === 'required') requiredFields.push(key);
       }
     }
