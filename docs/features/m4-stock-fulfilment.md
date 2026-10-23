@@ -58,7 +58,7 @@ Read and write API for delivery partners (agents and 3PL companies), delivery pr
 - **Proof and attempts:** `GET /api/deliveries/by-order/:orderId` (recipient, time, cash, photo by signed URL, attempts); `GET /api/deliveries/proof-photo/:deliveryId` serves the signed photo; the order machine writes one `DeliveryAttempt` per failed or rescheduled move.
 - **Removed:** dead `deliveryService` methods (`markDeliveryFailed`, `createDelivery`, `autoAssignAgent`, `getAgentStats`) and `GET /deliveries/routes/:agentId`.
 - **Script:** `backend/scripts/backfill-failure-reason.ts` maps free text to `Order.failureReason` (Other by default) and prints the counts.
-- **Fix:** `partnerTypeOf` reads the location type, so a 3PL linked to a user shows as a 3PL.
+- **Known point:** the partner type comes from `User.kind`. A 3PL user without `kind = company` shows as an agent; the COD-39 stock migration sets it for users it links to a 3PL location.
 
 ### Verification
 - Integration 1324 pass on the milestone branch, unit 1607, frontend vitest 1057; builds and lints pass.
