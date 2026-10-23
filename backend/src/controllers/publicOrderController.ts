@@ -26,6 +26,29 @@ import { formatOrderNumber } from '../utils/orderNumber';
 const clampTracking = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() ? v.trim().slice(0, 255) : null;
 
+/** An order placed through a checkout form in the last 30 minutes by this phone for this package at this total, and whether `ip` submitted it. */
+async function findRecentDuplicate(params: {
+  tenantId: string | null; phone: string; packageId: number; total: Prisma.Decimal; ip: string | undefined;
+}) {
+  const order = await prisma.order.findFirst({
+    where: {
+      source: 'checkout_form',
+      totalAmount: params.total,
+      deletedAt: null,
+      createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) },
+      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      customer: { phoneNumber: { in: phoneLookupVariants(params.phone) } },
+      orderItems: { some: { itemType: 'package', metadata: { path: ['packageId'], equals: params.packageId } } },
+    },
+    // No address, no match: an undefined filter would match every submission.
+    select: {
+      id: true, totalAmount: true, status: true,
+      formSubmissions: { where: { ipAddress: params.ip ?? '' }, select: { id: true }, take: 1 },
+    },
+  });
+  return order && { ...order, sameSubmitter: !!params.ip && order.formSubmissions.length > 0 };
+}
+
 export const getPublicForm = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { slug } = req.params;
@@ -196,8 +219,6 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         if (slotRule(form.fields, slot) === 'required') requiredFields.push(key);
       }
     }
-    // A `city` field is the town slot under its new name (COD-33): the payload may carry it as `city`.
-    if (formData && typeof formData === 'object' && !cleanText(formData.town) && cleanText(formData.city)) formData.town = formData.city;
     for (const field of requiredFields) {
       if (!cleanText(formData[field])) {
         reject(`Missing required field: ${field}`);
@@ -284,45 +305,23 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     // Duplicate guard (F-420): the same buyer, package and server total within 30 minutes gets the order already placed.
     // The total is the one computed above, never the client's. No new order, no CAPI event.
-    {
-      const dedupeFrom = new Date(Date.now() - 30 * 60 * 1000);
-      const existingOrder = await prisma.order.findFirst({
-        where: {
-          source: 'checkout_form',
-          totalAmount: finalTotal,
-          deletedAt: null,
-          createdAt: { gte: dedupeFrom },
-          ...(formTenantId ? { tenantId: formTenantId } : {}),
-          customer: { phoneNumber: { in: phoneLookupVariants(formData.phoneNumber) } },
-          orderItems: {
-            some: { itemType: 'package', metadata: { path: ['packageId'], equals: selectedDbPackage.id } }
-          }
-        },
-        select: { id: true, totalAmount: true, status: true }
+    const duplicate = await findRecentDuplicate({
+      tenantId: formTenantId, phone: formData.phoneNumber, packageId: selectedDbPackage.id, total: finalTotal, ip: req.ip,
+    });
+    if (duplicate) {
+      // Only the submitter of that order gets it back. Anyone else who knows the phone number sees a plain success,
+      // so an order id never leaves with a guessed phone (it would open /orders/track).
+      res.status(201).json({
+        success: true,
+        ...(duplicate.sameSubmitter && {
+          orderId: duplicate.id,
+          orderNumber: formatOrderNumber(duplicate.id),
+          order: { id: duplicate.id, totalAmount: Money.toApi(duplicate.totalAmount), status: duplicate.status },
+        }),
+        message: 'Order created successfully',
+        deduplicated: true
       });
-
-      if (existingOrder) {
-        // Only the submitter of that order gets it back. Anyone else who knows the phone number sees a plain success,
-        // so an order id never leaves with a guessed phone (it would open /orders/track).
-        const sameSubmitter = !!req.ip && (await prisma.formSubmission.count({ where: { orderId: existingOrder.id, ipAddress: req.ip } })) > 0;
-        if (!sameSubmitter) {
-          res.status(201).json({ success: true, message: 'Order created successfully', deduplicated: true });
-          return;
-        }
-        res.status(201).json({
-          success: true,
-          orderId: existingOrder.id,
-          orderNumber: formatOrderNumber(existingOrder.id),
-          order: {
-            id: existingOrder.id,
-            totalAmount: Money.toApi(existingOrder.totalAmount),
-            status: existingOrder.status
-          },
-          message: 'Order created successfully',
-          deduplicated: true
-        });
-        return;
-      }
+      return;
     }
 
     // Store phones normalized; unparseable input stays as typed (a real order must not fail on it).

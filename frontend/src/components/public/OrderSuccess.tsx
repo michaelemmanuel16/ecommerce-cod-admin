@@ -5,15 +5,17 @@ import { trackPurchase } from '../../utils/pixelTracking';
 import { getStoreCurrency } from '../../utils/format';
 
 interface OrderSuccessProps {
-  orderId: number;
+  orderId?: number;
+  /** A repeat of an order already placed: the Purchase event fired the first time, so it does not fire again. */
+  repeatOrder?: boolean;
   orderTotal?: number;
   currency?: string;
   pixelConfig?: PixelConfig;
 }
 
-export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal, currency = getStoreCurrency(), pixelConfig }) => {
+export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, repeatOrder, orderTotal, currency = getStoreCurrency(), pixelConfig }) => {
   useEffect(() => {
-    if (pixelConfig) {
+    if (pixelConfig && !repeatOrder) {
       trackPurchase(pixelConfig, orderTotal ?? 0, currency, orderId);
     }
   }, []); // intentionally empty — fires once on mount
@@ -37,12 +39,14 @@ export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal,
         </p>
 
         {/* Order ID */}
-        <div className="bg-gray-50 rounded-lg p-6 mb-8 border-2 border-gray-200">
-          <p className="text-sm text-gray-600 mb-2">Your Order ID</p>
-          <p className="text-2xl font-bold text-[#0f172a] font-mono">
-            #{orderId}
-          </p>
-        </div>
+        {orderId != null && (
+          <div className="bg-gray-50 rounded-lg p-6 mb-8 border-2 border-gray-200">
+            <p className="text-sm text-gray-600 mb-2">Your Order ID</p>
+            <p className="text-2xl font-bold text-[#0f172a] font-mono">
+              #{orderId}
+            </p>
+          </div>
+        )}
 
         {/* Instructions */}
         <div className="text-left space-y-4 mb-8">

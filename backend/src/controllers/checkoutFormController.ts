@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import prisma, { prismaBase } from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { withoutTenant } from '../utils/tenantContext';
+import { randomBytes } from 'crypto';
+import { slugify } from '../utils/slugify';
 import checkoutFormService, { clearCheckoutFormConfigCache } from '../services/checkoutFormService';
 import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
 import { getPaymentProvider, DEFAULT_PAYMENT_PROVIDER, methodMatrix } from '../services/payments';
@@ -13,7 +15,7 @@ import { encryptString, decryptString, SECRET_MASK } from '../utils/providerCryp
 import * as Money from '../utils/money';
 import { readDateBound } from '../utils/kpiRequest';
 import { redirectUrlError, normalizeAllowedOrigins, pixelConfigError } from '../utils/checkoutFormRules';
-import { missingRequiredLabels } from '../utils/checkoutLocation';
+import { missingRequiredLabels, canonicalFields } from '../utils/checkoutLocation';
 import { getRegionsForCountry } from '../utils/regions';
 import { countryCodeOf, countryNameOfTenant } from '../services/locationService';
 import { getStoreTimeZone, localDate, monthRange } from '../services/kpi/dates';
@@ -159,7 +161,21 @@ const fail400 = (res: Response, text: string, extra: Record<string, unknown> = {
 };
 
 // Admin reads and writes see inactive forms too (a new clone starts inactive); the isActive filter is for the public routes.
-const findForm = (formId: number) => withSoftDeleted(() => prisma.checkoutForm.findUnique({ where: { id: formId } }));
+function findForm(formId: number): Promise<Prisma.CheckoutFormGetPayload<object> | null>;
+function findForm<const I extends Prisma.CheckoutFormInclude>(formId: number, include: I): Promise<Prisma.CheckoutFormGetPayload<{ include: I }> | null>;
+function findForm(formId: number, include?: Prisma.CheckoutFormInclude): Promise<any> {
+  return withSoftDeleted(() => prisma.checkoutForm.findUnique({ where: { id: formId }, include: include as never }));
+}
+
+// The form id of the route, or null after answering 400.
+const parseFormId = (req: AuthRequest, res: Response): number | null => {
+  const formId = parseInt(req.params.id, 10);
+  if (isNaN(formId)) {
+    res.status(400).json({ message: 'Invalid form ID' });
+    return null;
+  }
+  return formId;
+};
 
 /**
  * Basics rules (F-411): https thank-you page, allowed domains as `https://host`, tracking ids. Only what the body sends is checked.
@@ -178,14 +194,13 @@ const checkBasics = (body: any): { error: string } | { origins: string[] | undef
 
 /**
  * Regions a form offers must be regions of its country (F-413). Names are stored in the library's spelling, at least one
- * stays. A new form that names none starts with every region of the country. Returns the error text or the value to store.
+ * stays. Returns the error text or the value to store.
  */
-const checkRegions = (country: string, regions: any, isNew: boolean): { error: string } | { value: any } => {
+const checkRegions = (country: string, regions: any): { error: string } | { value: any } => {
   const code = countryCodeOf(country);
   const list = code ? getRegionsForCountry(code) : [];
   const given = regions?.available;
-  if (!Array.isArray(given)) return { value: isNew && list.length > 0 ? { ...(regions ?? {}), available: list } : regions };
-  if (list.length === 0) return { value: regions };
+  if (!Array.isArray(given) || list.length === 0) return { value: regions };
   const chosen: string[] = [];
   for (const name of given) {
     const match = list.find((r) => r.toLowerCase() === String(name).trim().toLowerCase());
@@ -204,19 +219,15 @@ const missingKeysError = (fields: unknown, formType: string): string | null => {
 
 const UPSELL_PRODUCT_NOT_FOUND = 'Upsell product not found';
 
-// Every product an add-on points at must be one of this tenant's (the scoped client only sees its own).
-const upsellProductsAreOwn = async (upsells: any[] | undefined): Promise<boolean> => {
+// Every product an add-on points at must be one of this tenant's (the scoped client only sees its own), and on a
+// digital form it must be a digital product (F-422). Returns the error text or null.
+const upsellError = async (upsells: any[] | undefined, formType: string): Promise<string | null> => {
   const ids = [...new Set((upsells ?? []).map((u) => u?.productId).filter((id) => id !== undefined && id !== null).map(Number))];
-  return ids.length === 0 || (await withSoftDeleted(() => prisma.product.count({ where: { id: { in: ids } } }))) === ids.length;
-};
-
-// An upsell on a digital form that names a product must name a digital one (F-422).
-const digitalUpsellError = async (upsells: any[] | undefined): Promise<string | null> => {
-  const ids = (upsells ?? []).map((u) => u?.productId).filter((id) => id !== undefined && id !== null).map(Number);
   if (ids.length === 0) return null;
-  const products = await prisma.product.findMany({ where: { id: { in: ids } }, select: { id: true, productType: true } });
-  const digital = new Set(products.filter((p) => p.productType === 'digital').map((p) => p.id));
-  return ids.every((id) => digital.has(id)) ? null : 'Add-ons on a digital form must be digital products.';
+  const products = await withSoftDeleted(() => prisma.product.findMany({ where: { id: { in: ids } }, select: { id: true, productType: true } }));
+  if (products.length !== ids.length) return UPSELL_PRODUCT_NOT_FOUND;
+  if (formType === 'digital' && products.some((p) => p.productType !== 'digital')) return 'Add-ons on a digital form must be digital products.';
+  return null;
 };
 
 const TYPE_MISMATCH = 'Form type must match the product (digital/physical).';
@@ -327,20 +338,12 @@ export const getCheckoutForm = async (req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    const form = await withSoftDeleted(() => prisma.checkoutForm.findUnique({ where: { id: formId },
-      include: {
-        product: true,
-        packages: {
-          orderBy: { sortOrder: 'asc' }
-        },
-        upsells: {
-          orderBy: { sortOrder: 'asc' }
-        },
-        _count: {
-          select: { submissions: true }
-        }
-      }
-    }));
+    const form = await findForm(formId, {
+      product: true,
+      packages: { orderBy: { sortOrder: 'asc' } },
+      upsells: { orderBy: { sortOrder: 'asc' } },
+      _count: { select: { submissions: true } }
+    });
 
     if (!form) {
       res.status(404).json({ error: 'Checkout form not found' });
@@ -425,11 +428,16 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
 
     // Country is read-only: it comes from the store (F-411). A new form starts with all regions of that country.
     const storeCountry = await countryNameOfTenant(resolveTenantId(req));
-    const regionCheck = checkRegions(storeCountry, regions, true);
+    const regionCheck = checkRegions(storeCountry, regions);
     if ('error' in regionCheck) {
       fail400(res, regionCheck.error);
       return;
     }
+    // A new form that names no regions starts with every region of the store country.
+    const storeRegions = countryCodeOf(storeCountry);
+    const regionsValue = Array.isArray(regions?.available) || !storeRegions
+      ? regionCheck.value
+      : { ...(regions ?? {}), available: getRegionsForCountry(storeRegions) };
 
     const willBeActive = isActive !== undefined ? Boolean(isActive) : true;
     const keysError = willBeActive ? missingKeysError(fields, formType) : null;
@@ -438,13 +446,9 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    if (!(await upsellProductsAreOwn(upsells))) {
-      fail400(res, UPSELL_PRODUCT_NOT_FOUND);
-      return;
-    }
-    const upsellError = formType === 'digital' ? await digitalUpsellError(upsells) : null;
-    if (upsellError) {
-      fail400(res, upsellError);
+    const upsellProblem = await upsellError(upsells, formType);
+    if (upsellProblem) {
+      fail400(res, upsellProblem);
       return;
     }
 
@@ -504,12 +508,12 @@ export const createCheckoutForm = async (req: AuthRequest, res: Response): Promi
             slug,
             productId,
             description,
-            fields,
+            fields: canonicalFields(fields),
             styling,
             design: designValidation.value,
             country: storeCountry,
             currency: currency || 'GHS',
-            regions: regionCheck.value,
+            regions: regionsValue,
             formType,
             isActive: willBeActive,
             pixelConfig: pixelConfig && typeof pixelConfig === 'object' ? pixelConfig : undefined,
@@ -609,7 +613,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     }
 
     // Check if form exists
-    const existing = await withSoftDeleted(() => prisma.checkoutForm.findUnique({ where: { id: formId }, include: { product: { select: { productType: true } } } }));
+    const existing = await findForm(formId, { product: { select: { productType: true } } });
 
     if (!existing) {
       res.status(404).json({ error: 'Checkout form not found' });
@@ -634,7 +638,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     }
 
     // The form type follows the product (F-422). A product of the other type is not allowed once the form has orders.
-    const productType = (newProduct ?? (existing as any).product)?.productType as string | undefined;
+    const productType = (newProduct ?? existing.product)?.productType as string | undefined;
     if (req.body.formType !== undefined && productType && req.body.formType !== productType) {
       fail400(res, TYPE_MISMATCH);
       return;
@@ -657,7 +661,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     // Country is read-only, so a `country` in the body is ignored. Regions must belong to it.
     let regionsValue = regions;
     if (regions !== undefined) {
-      const regionCheck = checkRegions(existing.country, regions, false);
+      const regionCheck = checkRegions(existing.country, regions);
       if ('error' in regionCheck) {
         fail400(res, regionCheck.error);
         return;
@@ -679,13 +683,9 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    if (!(await upsellProductsAreOwn(upsells))) {
-      fail400(res, UPSELL_PRODUCT_NOT_FOUND);
-      return;
-    }
-    const upsellError = formType === 'digital' && upsells ? await digitalUpsellError(upsells) : null;
-    if (upsellError) {
-      fail400(res, upsellError);
+    const upsellProblem = await upsellError(upsells, formType);
+    if (upsellProblem) {
+      fail400(res, upsellProblem);
       return;
     }
 
@@ -708,7 +708,7 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     if (productId !== undefined) updateData.productId = productId;
     if (formType !== existing.formType) updateData.formType = formType;
     if (description !== undefined) updateData.description = description;
-    if (fields !== undefined) updateData.fields = fields;
+    if (fields !== undefined) updateData.fields = canonicalFields(fields);
     if (styling !== undefined) updateData.styling = styling;
     if (design !== undefined) updateData.design = designValidation.value;
     if (currency !== undefined) updateData.currency = currency;
@@ -779,17 +779,11 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
     if (slug && slug !== existing.slug) clearCheckoutFormConfigCache(slug);
 
     // Fetch updated form with all relations
-    const updatedForm = await withSoftDeleted(() => prisma.checkoutForm.findUnique({ where: { id: formId },
-      include: {
-        product: true,
-        packages: {
-          orderBy: { sortOrder: 'asc' }
-        },
-        upsells: {
-          orderBy: { sortOrder: 'asc' }
-        }
-      }
-    }));
+    const updatedForm = await findForm(formId, {
+      product: true,
+      packages: { orderBy: { sortOrder: 'asc' } },
+      upsells: { orderBy: { sortOrder: 'asc' } }
+    });
 
     res.json({ form: updatedForm ? maskCapiToken(updatedForm) : updatedForm });
   } catch (error) {
@@ -828,25 +822,23 @@ export const updateCheckoutForm = async (req: AuthRequest, res: Response): Promi
  */
 export const deleteCheckoutForm = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
-    const formId = parseInt(id, 10);
+    const formId = parseFormId(req, res);
+    if (formId === null) return;
 
-    if (isNaN(formId)) {
-      res.status(400).json({ message: 'Invalid form ID' });
-      return;
-    }
-
-    const form = await withSoftDeleted(() => prisma.checkoutForm.findUnique({ where: { id: formId }, include: { _count: { select: { submissions: true } } } }));
+    const form = await findForm(formId, { _count: { select: { submissions: true } } });
 
     if (!form) {
       res.status(404).json({ error: 'Checkout form not found' });
       return;
     }
 
-    const warning = (await lastActiveFormOfProduct(form)) ? { warning: NO_ACTIVE_FORM } : {};
-    const hasHistory = form._count.submissions > 0 || (await prisma.pendingCheckout.count({ where: { formId } })) > 0;
+    const [lastActive, pending] = await Promise.all([
+      lastActiveFormOfProduct(form),
+      prisma.pendingCheckout.count({ where: { formId } }),
+    ]);
+    const warning = lastActive ? { warning: NO_ACTIVE_FORM } : {};
 
-    if (hasHistory) {
+    if (form._count.submissions > 0 || pending > 0) {
       await prisma.checkoutForm.update({ where: { id: formId }, data: { archivedAt: new Date(), isActive: false } });
       clearCheckoutFormConfigCache(form.slug);
       const ordersTotal = (await ordersByForm([formId], resolveTenantId(req))).get(formId)?.total ?? 0;
@@ -883,92 +875,76 @@ export const deleteCheckoutForm = async (req: AuthRequest, res: Response): Promi
 
 /** Bring an archived form back. It stays inactive; the owner switches it on. */
 export const restoreCheckoutForm = async (req: AuthRequest, res: Response): Promise<void> => {
-  const formId = parseInt(req.params.id, 10);
-  if (isNaN(formId)) {
-    res.status(400).json({ message: 'Invalid form ID' });
-    return;
+  try {
+    const formId = parseFormId(req, res);
+    if (formId === null) return;
+    const form = await findForm(formId);
+    if (!form || !form.archivedAt) {
+      res.status(404).json({ error: 'Checkout form not found' });
+      return;
+    }
+    const restored = await prisma.checkoutForm.update({ where: { id: formId }, data: { archivedAt: null } });
+    clearCheckoutFormConfigCache(form.slug);
+    res.json({ form: maskCapiToken(restored) });
+  } catch (error) {
+    console.error('Error restoring checkout form:', error);
+    res.status(500).json({ error: 'Failed to restore the checkout form. Please try again.' });
   }
-  const form = await findForm(formId);
-  if (!form || !form.archivedAt) {
-    res.status(404).json({ error: 'Checkout form not found' });
-    return;
-  }
-  const restored = await prisma.checkoutForm.update({ where: { id: formId }, data: { archivedAt: null } });
-  clearCheckoutFormConfigCache(form.slug);
-  res.json({ form: maskCapiToken(restored) });
 };
 
-const slugify = (text: string): string =>
-  text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'form';
+const CLONE_SLUG_TRIES = 50;
+
+// First free slug of base, base-2 ... base-50 (slugs are unique across tenants and archived forms keep theirs); past that a short random suffix.
+const freeSlug = async (base: string): Promise<string> => {
+  const candidates = [base, ...Array.from({ length: CLONE_SLUG_TRIES - 1 }, (_, i) => `${base}-${i + 2}`)];
+  const taken = new Set(
+    (await withoutTenant('clone slug check', () => withSoftDeleted(() =>
+      prisma.checkoutForm.findMany({ where: { slug: { in: candidates } }, select: { slug: true } }),
+    ))).map((f) => f.slug),
+  );
+  return candidates.find((c) => !taken.has(c)) ?? `${base}-${randomBytes(3).toString('hex')}`;
+};
 
 /**
- * Copy a form (F-408): fields, packages, upsells, design, regions, payment settings and tracking ids. It starts inactive,
- * named "<name> (copy)", with a free slug. The Conversion API token and test event code are secrets and are not copied.
+ * Copy a form (F-408): everything but the id, slug, name, timestamps, active/archived state and the Conversion API token
+ * and test event code (secrets). It starts inactive, named "<name> (copy)", with a free slug. A field added to the model later copies by default.
  */
 export const cloneCheckoutForm = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const formId = parseInt(req.params.id, 10);
-    if (isNaN(formId)) {
-      res.status(400).json({ message: 'Invalid form ID' });
-      return;
-    }
-    const source = await withSoftDeleted(() => prisma.checkoutForm.findUnique({ where: { id: formId }, include: { packages: true, upsells: true } }));
+    const formId = parseFormId(req, res);
+    if (formId === null) return;
+    const source = await findForm(formId, { packages: true, upsells: true });
     if (!source) {
       res.status(404).json({ error: 'Checkout form not found' });
       return;
     }
-
-    if (!(await upsellProductsAreOwn(source.upsells))) {
-      fail400(res, UPSELL_PRODUCT_NOT_FOUND);
+    const upsellProblem = await upsellError(source.upsells, source.formType);
+    if (upsellProblem) {
+      fail400(res, upsellProblem);
       return;
     }
 
+    const {
+      id: _id, slug: _slug, name: _name, createdAt: _createdAt, updatedAt: _updatedAt, isActive: _isActive, archivedAt: _archivedAt,
+      metaCapiAccessToken, metaCapiTestEventCode: _testEventCode, packages, upsells, design, pixelConfig, ...rest
+    } = source;
     const name = `${source.name} (copy)`;
-    const base = slugify(name);
-    // Slugs are unique across all tenants and archived forms keep theirs, so look at every form.
-    const taken = new Set(
-      (await withoutTenant('clone slug check', () => withSoftDeleted(() =>
-        prisma.checkoutForm.findMany({ where: { slug: { startsWith: base } }, select: { slug: true } }),
-      ))).map((f) => f.slug),
-    );
-    let slug = base;
-    for (let n = 2; taken.has(slug); n++) slug = `${base}-${n}`;
-
     const json = (v: Prisma.JsonValue | null) => (v === null ? undefined : (v as Prisma.InputJsonValue));
     const form = await prisma.checkoutForm.create({
       data: {
+        ...(rest as unknown as Prisma.CheckoutFormUncheckedCreateInput),
         name,
-        slug,
-        productId: source.productId,
-        description: source.description,
-        fields: json(source.fields) as Prisma.InputJsonValue,
-        styling: json(source.styling) as Prisma.InputJsonValue,
-        design: json(source.design),
-        country: source.country,
-        currency: source.currency,
-        regions: json(source.regions) as Prisma.InputJsonValue,
-        formType: source.formType,
-        pixelConfig: json(source.pixelConfig),
-        redirectUrl: source.redirectUrl,
-        allowedOrigins: source.allowedOrigins,
-        codEnabled: source.codEnabled,
-        paystackDepositEnabled: source.paystackDepositEnabled,
-        paystackFullEnabled: source.paystackFullEnabled,
-        depositPercent: source.depositPercent,
-        paymentProvider: source.paymentProvider,
+        slug: await freeSlug(slugify(name) || 'form'),
+        design: json(design),
+        pixelConfig: json(pixelConfig),
         isActive: false,
-        archivedAt: null,
-        packages: {
-          create: source.packages.map(({ id: _id, formId: _formId, createdAt: _createdAt, ...pkg }) => pkg),
-        },
-        upsells: {
-          create: source.upsells.map(({ id: _id, formId: _formId, createdAt: _createdAt, items, ...upsell }) => ({ ...upsell, items: json(items) })),
-        },
+        packages: { create: packages.map(({ id: _pid, formId: _pformId, createdAt: _pcreatedAt, ...pkg }) => pkg) },
+        upsells: { create: upsells.map(({ id: _uid, formId: _uformId, createdAt: _ucreatedAt, items, ...upsell }) => ({ ...upsell, items: json(items) })) },
       },
       include: { product: true, packages: true, upsells: true },
     });
 
-    res.status(201).json({ form: maskCapiToken(form), capiTokenNotCopied: Boolean(source.metaCapiAccessToken) });
+    res.status(201).json({ form: maskCapiToken(form), capiTokenNotCopied: Boolean(metaCapiAccessToken) });
   } catch (error) {
     console.error('Error cloning checkout form:', error);
     res.status(500).json({ error: 'Failed to copy the checkout form. Please try again.' });
@@ -977,33 +953,35 @@ export const cloneCheckoutForm = async (req: AuthRequest, res: Response): Promis
 
 /** Send one test Purchase to Meta with the form's stored token and test event code (F-416). */
 export const sendTestEvent = async (req: AuthRequest, res: Response): Promise<void> => {
-  const formId = parseInt(req.params.id, 10);
-  if (isNaN(formId)) {
-    res.status(400).json({ message: 'Invalid form ID' });
-    return;
+  try {
+    const formId = parseFormId(req, res);
+    if (formId === null) return;
+    const form = await findForm(formId);
+    if (!form) {
+      res.status(404).json({ error: 'Checkout form not found' });
+      return;
+    }
+    const accessToken = decryptString(form.metaCapiAccessToken);
+    if (!accessToken || !form.metaCapiTestEventCode) {
+      fail400(res, 'Add a Conversion API token and a test event code first.');
+      return;
+    }
+    const pixelId = (form.pixelConfig as { facebookPixelId?: string } | null)?.facebookPixelId;
+    if (!pixelId) {
+      fail400(res, 'Add a Facebook Pixel ID first.');
+      return;
+    }
+    res.json(await metaCapiService.sendTestEvent({
+      pixelId,
+      accessToken,
+      testEventCode: form.metaCapiTestEventCode,
+      currency: form.currency,
+      productId: form.productId,
+    }));
+  } catch (error) {
+    console.error('Error sending test event:', error);
+    res.status(500).json({ error: 'Failed to send the test event. Please try again.' });
   }
-  const form = await findForm(formId);
-  if (!form) {
-    res.status(404).json({ error: 'Checkout form not found' });
-    return;
-  }
-  const accessToken = decryptString(form.metaCapiAccessToken);
-  if (!accessToken || !form.metaCapiTestEventCode) {
-    fail400(res, 'Add a Conversion API token and a test event code first.');
-    return;
-  }
-  const pixelId = (form.pixelConfig as { facebookPixelId?: string } | null)?.facebookPixelId;
-  if (!pixelId) {
-    fail400(res, 'Add a Facebook Pixel ID first.');
-    return;
-  }
-  res.json(await metaCapiService.sendTestEvent({
-    pixelId,
-    accessToken,
-    testEventCode: form.metaCapiTestEventCode,
-    currency: form.currency,
-    productId: form.productId,
-  }));
 };
 
 export const getFormStats = async (req: AuthRequest, res: Response): Promise<void> => {

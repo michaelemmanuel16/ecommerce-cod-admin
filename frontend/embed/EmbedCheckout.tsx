@@ -15,7 +15,7 @@ interface EmbedCheckoutProps {
 export const EmbedCheckout: React.FC<EmbedCheckoutProps> = ({ apiBase, slug, lockedPackageId }) => {
   const [form, setForm] = useState<EmbedFormConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<{ orderId: number; total: number } | null>(null);
+  const [success, setSuccess] = useState<{ orderId?: number; total: number } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -48,6 +48,11 @@ export const EmbedCheckout: React.FC<EmbedCheckoutProps> = ({ apiBase, slug, loc
       // Paystack methods: hand off to Paystack (order created after payment).
       if (res.authorization_url) {
         window.location.href = res.authorization_url;
+        return;
+      }
+      // A repeat submit is a placed order: thank-you without a number, no redirect to the merchant's purchase page.
+      if (res.deduplicated && res.orderId == null) {
+        setSuccess({ total: totalAmount });
         return;
       }
       // COD: the order was created immediately and carries an orderId.
@@ -83,7 +88,7 @@ export const EmbedCheckout: React.FC<EmbedCheckoutProps> = ({ apiBase, slug, loc
       <div className="p-8 text-center">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Order placed!</h2>
         <p className="text-gray-600">
-          Your order #{success.orderId} has been received. We'll be in touch shortly.
+          Your order{success.orderId != null ? ` #${success.orderId}` : ''} has been received. We'll be in touch shortly.
         </p>
       </div>
     );

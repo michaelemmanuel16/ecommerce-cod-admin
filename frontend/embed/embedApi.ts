@@ -28,6 +28,8 @@ export interface OrderResponse {
   // Present for COD only. Paystack defers order creation until payment is
   // confirmed and returns authorization_url instead.
   orderId?: number;
+  // Same buyer, same order within 30 minutes: no new order; orderId only for the same submitter.
+  deduplicated?: boolean;
   message?: string;
   authorization_url?: string;
   paymentReference?: string;

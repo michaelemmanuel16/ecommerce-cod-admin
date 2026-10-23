@@ -212,6 +212,22 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   }
 };
 
+/**
+ * For public routes that can use a login when there is one: the same token check as `authenticate`, but a missing or
+ * bad token only means no `req.user` and the request goes on. It never answers 401 and does not enter a tenant context.
+ */
+export const optionalAuthenticate = (req: AuthRequest, _res: Response, next: NextFunction): void => {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      req.user = verifyAccessToken(authHeader.substring(7));
+    } catch {
+      // treated as not logged in
+    }
+  }
+  next();
+};
+
 export const requireRole = (...roles: UserRole[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {

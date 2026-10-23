@@ -133,6 +133,8 @@ export interface PublicOrderResponse {
   // Present for COD orders (created immediately). Omitted for Paystack, which
   // defers order creation until payment is confirmed and redirects instead.
   orderId?: number;
+  // The same buyer just ordered the same thing: no new order was made. orderId is present only for the same submitter.
+  deduplicated?: boolean;
   order?: {
     id: number;
     totalAmount: number;

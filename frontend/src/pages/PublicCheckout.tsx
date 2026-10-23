@@ -41,6 +41,8 @@ export const PublicCheckout: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<number | null>(null);
+  // A repeat of an order already placed: thank-you screen, no order number (the server sends none to a new address), no Purchase event.
+  const [repeatOrder, setRepeatOrder] = useState(false);
   const [submittedTotal, setSubmittedTotal] = useState<number>(0);
 
   // the public config route needs this form's slug to find the tenant
@@ -153,6 +155,15 @@ export const PublicCheckout: React.FC = () => {
           return;
         }
 
+        // A repeat submit is a placed order, not a failure; the original order already fired its Purchase.
+        if (response.deduplicated) {
+          setSubmittedTotal(totalAmount);
+          setOrderId(response.orderId ?? null);
+          setRepeatOrder(true);
+          toast.success('Order placed successfully!');
+          return;
+        }
+
         // COD: order was created immediately and carries an orderId.
         if (!response.orderId) {
           toast.error('Order could not be completed. Please try again.');
@@ -236,10 +247,11 @@ export const PublicCheckout: React.FC = () => {
   }
 
   // Success state
-  if (orderId) {
+  if (orderId || repeatOrder) {
     return (
       <OrderSuccess
-        orderId={orderId}
+        orderId={orderId ?? undefined}
+        repeatOrder={repeatOrder}
         orderTotal={submittedTotal}
         currency={formData?.currency}
         pixelConfig={formData?.pixelConfig as PixelConfig | undefined}

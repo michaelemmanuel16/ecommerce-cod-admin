@@ -35,6 +35,8 @@ const FULL_FIELDS = [
   { label: 'Street Address', type: 'textarea', enabled: true, required: true, standardKey: 'streetAddress' },
   { label: 'Notes', type: 'textarea', enabled: true, required: false, standardKey: 'notes' },
 ];
+// `city` is accepted as a "Sends to" key and stored as `town`.
+const SAVED_FIELDS = FULL_FIELDS.map((f) => (f.standardKey === 'city' ? { ...f, standardKey: 'town' } : f));
 const NO_ADDRESS = FULL_FIELDS.filter((f) => f.standardKey !== 'streetAddress');
 const DIGITAL_FIELDS = [
   { label: 'Full Name', type: 'text', enabled: true, required: true, standardKey: 'fullName' },
@@ -133,11 +135,12 @@ describe('create: basics, country, regions, type', () => {
     const ok = await create(formBody({ allowedOrigins: ['shop.example.com', 'https://Brand.example.com/', 'shop.example.com'] }));
     expect(ok.status).toBe(201);
     expect(ok.body.form.allowedOrigins).toEqual(['https://shop.example.com', 'https://brand.example.com']);
-    for (const bad of ['http://shop.example.com', 'shop.example.com/page', '*.example.com', 'not a host']) {
-      const res = await create(formBody({ allowedOrigins: ['shop.example.com', bad] }));
-      expect(res.status).toBe(400);
-      expect(res.body.error).toContain(`"${bad}"`);
-    }
+  });
+
+  it.each(['http://shop.example.com', 'shop.example.com/page', '*.example.com', 'not a host'])('allowed domain %j is refused and named', async (bad) => {
+    const res = await create(formBody({ allowedOrigins: ['shop.example.com', bad] }));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain(`"${bad}"`);
   });
 
   it('a form type that differs from the product type is refused; the type follows the product', async () => {
@@ -223,7 +226,7 @@ describe('required keys on activation', () => {
     const res = await put(id, { fields: off });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("This form can't take orders yet. Add: State.");
-    expect((await stored(id)).fields).toEqual(FULL_FIELDS);
+    expect((await stored(id)).fields).toEqual(SAVED_FIELDS);
   });
 
   it('a digital form needs an email, not an address', async () => {
@@ -338,6 +341,7 @@ describe('clone', () => {
   it('copies the form into an inactive "(copy)" with a free slug, without the Conversion API token', async () => {
     const source = (await create(formBody({
       name: 'Clone me',
+      description: 'Copied description',
       pixelConfig: { facebookPixelId: '123456789' },
       metaCapiAccessToken: 'EAAB-secret-token',
       metaCapiTestEventCode: 'TEST123',
@@ -364,7 +368,9 @@ describe('clone', () => {
     expect(copy.allowedOrigins).toEqual(['https://shop.example.com']);
     expect(copy.design).toEqual((await stored(source.id)).design);
     expect(copy.design).not.toBeNull();
-    expect(copy.fields).toEqual(FULL_FIELDS);
+    expect(copy.fields).toEqual(SAVED_FIELDS);
+    expect(copy.description).toBe('Copied description'); // fields nobody listed copy by omission
+    expect(copy.currency).toBe(source.currency);
     expect(copy.packages.map((p) => [p.name, Number(p.price), p.quantity, p.isDefault]).sort()).toEqual([['One', 10, 1, false], ['Two', 18, 2, true]]);
     expect(copy.upsells.map((u) => [u.name, Number(u.price), u.productId])).toEqual([['Extra', 5, pair.a.ids.product]]);
     expect(JSON.stringify(res.body)).not.toContain('EAAB-secret-token');
@@ -390,11 +396,15 @@ describe('clone', () => {
 });
 
 describe('tracking', () => {
-  it('pixel ids are checked: digits, G-, GTM-; empty is fine', async () => {
-    const bad = (pixelConfig: Record<string, string>) => create(formBody({ pixelConfig }));
-    expect((await bad({ facebookPixelId: '12ab' })).status).toBe(400);
-    expect((await bad({ googleAnalyticsId: 'UA-1' })).status).toBe(400);
-    expect((await bad({ googleTagManagerId: 'G-1' })).status).toBe(400);
+  it.each([
+    [{ facebookPixelId: '12ab' }],
+    [{ googleAnalyticsId: 'UA-1' }],
+    [{ googleTagManagerId: 'G-1' }],
+  ])('a bad tracking id is refused: %j', async (pixelConfig) => {
+    expect((await create(formBody({ pixelConfig }))).status).toBe(400);
+  });
+
+  it('good tracking ids are kept, empty ones are fine, and an update is checked too', async () => {
     const ok = await create(formBody({ pixelConfig: { facebookPixelId: '123', googleAnalyticsId: 'G-AB12', googleTagManagerId: 'GTM-AB12', tiktokPixelId: '' } }));
     expect(ok.status).toBe(201);
     expect((await put(ok.body.form.id, { pixelConfig: { facebookPixelId: 'abc' } })).status).toBe(400);
@@ -418,7 +428,7 @@ describe('tracking', () => {
 
     await put(id, { metaCapiTestEventCode: 'TEST4242' });
     const metaAnswer = { events_received: 1, messages: [], fbtrace_id: 'trace' };
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => metaAnswer }) as never;
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify(metaAnswer) }) as never;
     const res = await request(app).post(`/api/checkout-forms/${id}/test-event`).set(bearer(ownerA));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, status: 200, metaResponse: metaAnswer });
@@ -431,7 +441,7 @@ describe('tracking', () => {
     expect(JSON.stringify(res.body)).not.toContain('EAAB-test-token');
 
     // Meta refusing the event is passed on, not hidden
-    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: { message: 'Invalid token' } }) }) as never;
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 400, text: async () => JSON.stringify({ error: { message: 'Invalid token' } }) }) as never;
     const refused = await request(app).post(`/api/checkout-forms/${id}/test-event`).set(bearer(ownerA));
     expect(refused.body).toEqual({ ok: false, status: 400, metaResponse: { error: { message: 'Invalid token' } } });
 
@@ -480,7 +490,8 @@ describe('order fields: city, region and notes', () => {
 
   it('city fills the delivery area and the customer area, region fills the state, notes fill the order notes', async () => {
     const form = (await create(formBody({ regions: { available: ['Greater Accra', 'Ashanti'] } }))).body.form;
-    const res = await orderOn(form.slug, buyer({ city: 'Osu', notes: 'Call before you come' }));
+    expect((await stored(form.id)).fields).toEqual(SAVED_FIELDS); // the city field was saved as town
+    const res = await orderOn(form.slug, buyer({ town: 'Osu', notes: 'Call before you come' }));
     expect(res.status).toBe(201);
     const order = await prismaBase.order.findUniqueOrThrow({ where: { id: res.body.orderId }, include: { customer: true } });
     expect(order).toMatchObject({ deliveryArea: 'Osu', deliveryState: 'Greater Accra', notes: 'Call before you come' });

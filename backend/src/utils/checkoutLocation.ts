@@ -4,11 +4,14 @@ type FormFieldLike = { label?: unknown; enabled?: unknown; required?: unknown; s
 export type CheckoutSlot = 'town' | 'landmark' | 'streetAddress';
 
 // Label aliases for forms saved before `standardKey` existed (mirrors frontend/src/lib/standardFields.ts).
-const ALIASES: Record<CheckoutSlot, string[]> = {
+const ALIASES: Record<string, string[]> = {
   town: ['city/town', 'city', 'town', 'city / town'],
   landmark: ['nearest landmark', 'landmark'],
   streetAddress: ['address', 'street address', 'delivery address', 'shipping address', 'home address', 'house address', 'residential address', 'full address'],
 };
+
+/** Lowercase, drop the required marker and trailing colon, collapse whitespace (mirrors the frontend's normalizeLabel). */
+const normLabel = (label: string): string => label.toLowerCase().replace(/[*:]/g, ' ').replace(/\s+/g, ' ').trim();
 
 /** A saved form with no fields array uses the platform defaults: town + landmark on, street address off. */
 const DEFAULT_RULE: Record<CheckoutSlot, 'required' | 'optional' | 'off'> = {
@@ -25,9 +28,8 @@ const DEFAULT_RULE: Record<CheckoutSlot, 'required' | 'optional' | 'off'> = {
 export function slotRule(fields: unknown, slot: CheckoutSlot): 'required' | 'optional' | 'off' {
   if (!Array.isArray(fields) || fields.length === 0) return DEFAULT_RULE[slot];
   const match = (fields as FormFieldLike[]).find((f) => {
-    // `city` is the same slot as `town` (COD-33); older forms and the payload still say town.
-    if (typeof f?.standardKey === 'string') return f.standardKey === slot || (slot === 'town' && f.standardKey === 'city');
-    return typeof f?.label === 'string' && ALIASES[slot].includes(f.label.toLowerCase().replace(/[*:]/g, ' ').replace(/\s+/g, ' ').trim());
+    if (typeof f?.standardKey === 'string') return f.standardKey === slot;
+    return typeof f?.label === 'string' && ALIASES[slot].includes(normLabel(f.label));
   });
   if (!match) return slot === 'streetAddress' ? 'off' : 'required';
   if (match.enabled === false) return 'off';
@@ -50,13 +52,13 @@ export const STANDARD_KEYS = [
   'fullName', 'phone', 'alternativePhone', 'email', 'region', 'town', 'city', 'landmark', 'streetAddress', 'notes', 'custom',
 ] as const;
 
-// Label aliases for the keys the required-key guard checks (mirrors frontend/src/lib/standardFields.ts).
+// Label aliases for the keys the required-key guard checks: the slot aliases above plus the four the guard adds.
 const GUARD_ALIASES: Record<string, string[]> = {
+  ...ALIASES,
   fullName: ['name', 'full name', 'fullname', 'customer name', 'your name'],
   phone: ['phone', 'phone number', 'mobile', 'mobile number', 'telephone', 'contact number'],
   email: ['email', 'e-mail', 'email address'],
   region: ['region', 'region/state', 'state', 'state/region', 'province'],
-  streetAddress: ALIASES.streetAddress,
 };
 const GUARD_LABELS: Record<string, string> = { fullName: 'Name', phone: 'Phone number', streetAddress: 'Street address', region: 'State', email: 'Email' };
 const REQUIRED_KEYS = {
@@ -78,11 +80,17 @@ export function missingRequiredLabels(fields: unknown, formType: string): string
       present.add(f.standardKey);
       continue;
     }
-    const label = typeof f?.label === 'string' ? f.label.toLowerCase().replace(/[*:]/g, ' ').replace(/\s+/g, ' ').trim() : '';
+    const label = typeof f?.label === 'string' ? normLabel(f.label) : '';
     const byAlias = Object.keys(GUARD_ALIASES).find((k) => GUARD_ALIASES[k].includes(label));
     if (byAlias) present.add(byAlias);
     else if (f?.type === 'email') present.add('email');
     else if (f?.type === 'state') present.add('region');
   }
   return REQUIRED_KEYS[formType === 'digital' ? 'digital' : 'physical'].filter((k) => !present.has(k)).map((k) => GUARD_LABELS[k]);
+}
+
+/** `city` is accepted as a "Sends to" key but stored as `town`, the one slot the order reads (COD-33). */
+export function canonicalFields<T>(fields: T): T {
+  if (!Array.isArray(fields)) return fields;
+  return fields.map((f) => (f && typeof f === 'object' && (f as FormFieldLike).standardKey === 'city' ? { ...f, standardKey: 'town' } : f)) as T;
 }
