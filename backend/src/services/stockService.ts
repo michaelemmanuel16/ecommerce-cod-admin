@@ -261,14 +261,19 @@ export async function fulfilOrder(tx: TransactionClient, order: FulfilOrder, act
     }
   }
   for (const productId of moved) await refreshCache(tx, productId);
+  // F-611: the cost of the units that left, at the product cost of this moment. The revenue entry books the same amount.
+  const landed = Money.sum(lines.map((l) => Money.mul(Money.orZero(l.product.cogs), l.quantity)));
+  await tx.order.updateMany({ where: { id: order.id, landedCostTotal: null }, data: { landedCostTotal: landed } });
 }
 
 /**
  * An order leaves `delivered` (returned, or moved back, F-657): every active fulfilment goes back to the location it came
  * from as an `order_reversal` movement, and the fulfilment is marked reversed. A repeat finds nothing to reverse.
- * An order delivered before M4 has no fulfilment row and reverses nothing.
+ * An order delivered before M4 has no fulfilment row and reverses no stock.
  */
 export async function reverseOrder(tx: TransactionClient, order: FulfilOrder, actorUserId?: number | null): Promise<void> {
+  // The booked landed cost goes with the delivery (F-611); the ledger reversal reads the amount from the entry it reverses.
+  await tx.order.updateMany({ where: { id: order.id, landedCostTotal: { not: null } }, data: { landedCostTotal: null } });
   const active = await tx.inventoryTransfer.findMany({
     where: { orderId: order.id, transferType: 'order_fulfillment', reversedAt: null },
     orderBy: { id: 'asc' },

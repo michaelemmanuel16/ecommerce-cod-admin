@@ -243,6 +243,23 @@ export class GLAutomationService {
   }
 
   /**
+   * The COGS of an order being delivered: the landed cost booked on the order when it entered delivered (F-611), else the
+   * items at the product cost now (orders delivered before M4, and an order with no physical line).
+   */
+  static cogsOfOrder(order: { landedCostTotal?: Decimal | null; orderItems: OrderItemWithProduct[] }): Decimal {
+    return order.landedCostTotal != null ? Money.parse(order.landedCostTotal) : this.calculateTotalCOGS(order.orderItems);
+  }
+
+  /**
+   * The COGS leg of an entry, read from its lines: what the entry booked, not what the product costs today.
+   * Null when the lines were not loaded.
+   */
+  static cogsBooked(entry: JournalEntryWithTransactions | undefined | null): Decimal | null {
+    if (!entry?.transactions) return null;
+    return Money.sum(entry.transactions.filter((t) => t.account?.code === GL_ACCOUNTS.COGS).map((t) => t.debitAmount));
+  }
+
+  /**
    * Validate that all products have COGS set
    *
    * @param orderItems - Array of order items with product information
@@ -494,8 +511,8 @@ export class GLAutomationService {
     const deliveryCommission = Money.orZero(deliveryAgent?.commissionAmount);
     const salesRepCommission = Money.orZero(salesRep?.commissionAmount);
 
-    // Calculate total COGS to determine if we need to reverse COGS/inventory
-    const totalCOGS = this.calculateTotalCOGS(order.orderItems);
+    // COGS to reverse: the amount the original entry booked (F-611), so a later cost change never makes the ledger uneven.
+    const totalCOGS = this.cogsBooked(originalEntry) ?? this.calculateTotalCOGS(order.orderItems);
 
     // Build reversal transactions (flip debits/credits from original entry)
     const agentComm = deliveryCommission;
