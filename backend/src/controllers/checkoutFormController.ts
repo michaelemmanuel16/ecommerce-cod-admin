@@ -4,8 +4,9 @@ import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import checkoutFormService, { clearCheckoutFormConfigCache } from '../services/checkoutFormService';
 import { checkoutFormDesignSchema } from '../validators/checkoutFormDesignSchema';
-import { getPaymentProvider, DEFAULT_PAYMENT_PROVIDER } from '../services/payments';
+import { getPaymentProvider, DEFAULT_PAYMENT_PROVIDER, methodMatrix } from '../services/payments';
 import { loadProviderConfig, unsupportedCurrencyMessage } from '../services/payments/connectionConfig';
+import { getTenantFeatures } from '../services/tenantFeatures';
 import { encryptString, SECRET_MASK } from '../utils/providerCrypto';
 import * as Money from '../utils/money';
 import { readDateBound } from '../utils/kpiRequest';
@@ -40,6 +41,7 @@ interface PaymentToggleState {
   depositPercent?: number | null;
   paymentProvider?: string | null;
   currency?: string | null;
+  formType?: string | null;
 }
 
 // True when the request touches any payment-method field, so we only validate
@@ -79,6 +81,24 @@ const validatePaymentConfig = async (
     status: 400,
     body: { error: text, message: text, ...extra },
   });
+
+  // Method matrix (F-402): form type x tenant flag. A method the matrix forbids cannot be switched on. A toggle
+  // that is already stored on stays as it is, so turning the flag off never makes a saved form unsavable;
+  // the public checkout still refuses the method.
+  const formType = (body.formType ?? existing?.formType) === 'digital' ? 'digital' : 'physical';
+  const matrix = methodMatrix(formType, (await getTenantFeatures(tenantId)).prepaidPhysical);
+  const switchedOn = (now: boolean, was: boolean | null | undefined) => now && !was;
+  if (
+    (switchedOn(cod, existing?.codEnabled) && !matrix.cod) ||
+    (switchedOn(deposit, existing?.paystackDepositEnabled) && !matrix.online_deposit) ||
+    (switchedOn(full, existing?.paystackFullEnabled) && !matrix.online_full)
+  ) {
+    return fail(
+      formType === 'digital'
+        ? 'Digital products are paid online in full.'
+        : 'Online payment is paused for physical products.',
+    );
+  }
 
   if (enabledCount < 1) return fail('At least one payment method must be enabled');
   if (enabledCount > 2) return fail('At most two payment methods can be enabled at once');

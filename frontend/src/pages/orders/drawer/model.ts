@@ -28,6 +28,8 @@ const METHODS: Record<string, string> = {
   paystack: 'Online payment',
   paystack_full: 'Online payment',
   paystack_deposit: 'Online deposit, rest on delivery',
+  online_full: 'Online payment',
+  online_deposit: 'Online deposit, rest on delivery',
 };
 export const methodLabel = (method: string): string => METHODS[method] ?? method.replace(/_/g, ' ');
 

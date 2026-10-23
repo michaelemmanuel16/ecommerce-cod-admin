@@ -9,18 +9,15 @@ import prisma from '../utils/prisma';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 import { normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import logger from '../utils/logger';
-import { getPaymentProvider, DEFAULT_PAYMENT_PROVIDER } from '../services/payments';
+import { getPaymentProvider, DEFAULT_PAYMENT_PROVIDER, normalizeMethod, methodMatrix, isOnlineMethod, PaymentMethodName } from '../services/payments';
+import { getTenantFeatures } from '../services/tenantFeatures';
 import { metaCapiService } from '../services/metaCapiService';
 import * as Money from '../utils/money';
 import { cleanText, deliveryAddressOf, slotRule, CheckoutSlot } from '../utils/checkoutLocation';
 
-/**
- * Buyer-selectable payment methods. `cod` settles on delivery; the two Paystack
- * methods charge online against the form tenant's own Paystack account —
- * `paystack_full` for the whole total, `paystack_deposit` for a percentage with
- * the balance collected on delivery.
- */
-type PaymentMethod = 'cod' | 'paystack_deposit' | 'paystack_full';
+// Buyer-selectable payment methods (F-402). `cod` settles on delivery; the two online methods charge through the
+// form's payment provider on the tenant's own account: `online_full` for the whole total, `online_deposit` for a
+// percentage with the balance collected on delivery. The old names (paystack_full, ...) are accepted too, see paymentMethods.ts.
 
 // Meta click ids (fbp/fbc) arrive from the browser; keep only non-empty strings
 // and cap length defensively before they touch the DB or the CAPI payload.
@@ -155,28 +152,30 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     const isDigital = form.product.productType === 'digital';
 
-    // Resolve the payment method. Digital products always pay full via Paystack
-    // (unchanged). Physical products honor the form's toggle matrix and the
-    // buyer's choice; the server cross-checks the chosen method against the
-    // form's enabled toggles, so a tampered request body can't pay through a
-    // method the merchant disabled.
-    const requestedMethod = req.body.paymentMethod as PaymentMethod | undefined;
-    let paymentMethod: PaymentMethod;
+    // Resolve the payment method. Digital products always pay in full online. Physical products take COD, and
+    // the online methods only while the tenant flag features.prepaidPhysical is on (F-402). The server checks the
+    // buyer's choice against that matrix AND the form's own toggles, so a tampered request body can't pay through
+    // a method the merchant or the plan has switched off. Old method names are accepted (see paymentMethods.ts).
+    let paymentMethod: PaymentMethodName;
     if (isDigital) {
-      paymentMethod = 'paystack_full';
+      paymentMethod = 'online_full';
     } else {
-      paymentMethod = requestedMethod ?? 'cod';
-      const enabledFor: Record<PaymentMethod, boolean> = {
+      const requested = req.body.paymentMethod === undefined ? 'cod' : normalizeMethod(req.body.paymentMethod);
+      // A form with no tenant has no flag; the no-tenant guard below refuses its online methods.
+      const prepaidPhysical = formTenantId ? (await getTenantFeatures(formTenantId)).prepaidPhysical : true;
+      const allowed = methodMatrix('physical', prepaidPhysical);
+      const enabledFor: Record<PaymentMethodName, boolean> = {
         cod: form.codEnabled,
-        paystack_deposit: form.paystackDepositEnabled,
-        paystack_full: form.paystackFullEnabled,
+        online_deposit: form.paystackDepositEnabled,
+        online_full: form.paystackFullEnabled,
       };
-      if (!enabledFor[paymentMethod]) {
+      if (!requested || !allowed[requested] || !enabledFor[requested]) {
         reject('Selected payment method is not available for this form');
         return;
       }
+      paymentMethod = requested;
     }
-    const isPaystack = paymentMethod === 'paystack_deposit' || paymentMethod === 'paystack_full';
+    const isPaystack = isOnlineMethod(paymentMethod);
 
     // Validate required fields — digital products don't need address/state
     // Address, town and landmark follow the form's own field config (COD-138): a field the seller turned off
@@ -363,7 +362,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     const upsellsTotal = Money.sum(resolvedUpsells.map((u) => u.price));
 
     const subtotal = Money.add(packageTotal, upsellsTotal);
-    const shippingCost = Money.ZERO; // Can be calculated based on region
+    const shippingCost = Money.ZERO; // Checkout orders carry no shipping charge; the price includes delivery (F-423)
     const discount = Money.ZERO;
     const finalTotal = Money.sub(Money.add(subtotal, shippingCost), discount);
 
@@ -374,7 +373,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // now and the remaining balance is collected on delivery (COD-style).
     let paystackCharge = finalTotal;
     let balanceDue = Money.ZERO;
-    if (paymentMethod === 'paystack_deposit') {
+    if (paymentMethod === 'online_deposit') {
       const pct = form.depositPercent ?? 0;
       paystackCharge = Money.roundHalfUp(Money.div(Money.mul(finalTotal, pct), 100), 2);
       balanceDue = Money.sub(finalTotal, paystackCharge);
@@ -465,7 +464,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           discount,
           totalAmount: finalTotal,
           // What the agent collects on delivery: the balance for a deposit, 0 for full.
-          codAmount: paymentMethod === 'paystack_deposit' ? balanceDue : Money.ZERO,
+          codAmount: paymentMethod === 'online_deposit' ? balanceDue : Money.ZERO,
           balanceDue,
           paystackChargeMinor,
           // JSON column: money goes in as exact strings; Decimal accepts them back on settlement.

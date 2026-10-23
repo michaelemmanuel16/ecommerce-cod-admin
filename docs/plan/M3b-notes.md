@@ -24,3 +24,15 @@ Collected while building M3b-T02 to T05 (COD-31). Dates are 2026-10-23.
   - first real run: Created 1; scanned 2, already connected 0, no secret 1.
   - second real run: Created 0; scanned 2, already connected 1, no secret 1 (idempotent).
   - Dev has no real Paystack JSON (0 rows in `system_config` and in the production-dump copy `ecommerce_cod_m3copy`). Not run against production.
+
+## T05: form payment rules
+
+- Migration `20261023150000_form_payment_rules`: adds `system_config.features` (JSONB, default `{}`; holds `prepaidPhysical`) and drops `tenants.default_delivery_fee`. Applied on dev, test and the production-dump copy. Empty database: `migrate deploy` then `migrate diff --exit-code` printed "No difference detected." (exit 0); test DB exit 0.
+- `Tenant.defaultDeliveryFee` query (`select count(*) as tenants, count(default_delivery_fee) as non_null, count(*) filter (where default_delivery_fee <> 0) as non_zero from tenants`), run through `docker exec ecommerce-postgres-dev psql` before the drop:
+  - dev `ecommerce_cod`: tenants 4, non_null 0, non_zero 0.
+  - production-dump copy `ecommerce_cod_m3copy`: tenants 4, non_null 0, non_zero 0.
+  - test `ecommerce_cod_test`: tenants 18, non_null 0, non_zero 0.
+  - Readers in code: none (`grep -rn defaultDeliveryFee backend/src frontend/src e2e` found only `moneySchema.test.ts` and `scripts/verify-money-migration.ts`, both lists of money columns). Decision: dropped. Not checked against live production: run the same query there before deploy (read-only).
+- Removed: the `Tenant.defaultDeliveryFee` column and its entries in the money-column lists, and the stale comment "Can be calculated based on region" next to the fixed `shippingCost = 0` in `publicOrderController`. Kept on purpose (F-423): `Order.shippingCost` and `PendingCheckout.shippingCost`, always 0 for checkout orders. `scripts/rollback-money-decimal.sql` still names the column; it is a historical rollback and was not touched.
+- Behaviour change to flag for deploy: with `features.prepaidPhysical` off (the default), existing physical forms that have Paystack deposit or full on are refused at the public order route (400), as the plan says. The public form payload still lists those buttons until the Payment tab and public page work (T13, T16).
+- The setting is saved with `PUT /api/admin/settings` (`features`, merged over the stored object); that route is owner (super_admin) only today.

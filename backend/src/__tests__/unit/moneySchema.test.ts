@@ -4,7 +4,6 @@ import * as path from 'path';
 // F-154 money fields (M0-T21). Not in the list on purpose: User.deliveryRate (removed, F1)
 // and Product.weight (not money).
 const F154: Record<string, string[]> = {
-  Tenant: ['defaultDeliveryFee'],
   User: ['commissionAmount', 'totalEarnings'],
   Customer: ['totalSpent'],
   Product: ['price'],

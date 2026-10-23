@@ -199,6 +199,7 @@ export const adminService = {
     whatsappProvider?: any;
     paystackProvider?: any;
     notificationTemplates?: any;
+    features?: { prepaidPhysical?: boolean };
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
     const tenantId = getTenantId();
@@ -226,6 +227,22 @@ export const adminService = {
     }
     if (data.timeZone !== undefined && !isValidTimeZone(data.timeZone)) {
       throw new AppError('Time zone must be an IANA name, for example Africa/Accra', 400, 'INVALID_TIME_ZONE');
+    }
+
+    // Tenant feature switches (F-402): only the known boolean keys, merged over what is stored so one switch never wipes another.
+    if (data.features !== undefined) {
+      const sent = data.features as Record<string, unknown> | null;
+      if (!sent || typeof sent !== 'object' || Array.isArray(sent)) {
+        throw new AppError('features must be an object', 400, 'INVALID_FEATURES');
+      }
+      if (sent.prepaidPhysical !== undefined && typeof sent.prepaidPhysical !== 'boolean') {
+        throw new AppError('features.prepaidPhysical must be true or false', 400, 'INVALID_FEATURES');
+      }
+      const stored = (config.features ?? {}) as Record<string, unknown>;
+      data.features = {
+        ...stored,
+        ...(sent.prepaidPhysical !== undefined ? { prepaidPhysical: sent.prepaidPhysical } : {}),
+      };
     }
 
     // Operating hours drive the time-to-first-call clock (M1-T22, F-755): reject a bad shape now, not at read time.

@@ -31,6 +31,10 @@ function buildRes() {
   } as any;
 }
 
+// features.prepaidPhysical for the tenant (F-402); the matrix lets physical forms take online methods only when it is on.
+const prepaidPhysical = (on: boolean) =>
+  (prismaMock.systemConfig.findUnique as any).mockResolvedValue({ features: { prepaidPhysical: on } });
+
 const baseCreateBody = {
   name: 'Form',
   slug: 'form',
@@ -44,6 +48,7 @@ describe('checkoutFormController — payment-method toggle validation (MAN-58)',
   beforeEach(() => {
     jest.clearAllMocks();
     mockedPaystack.isConfigured.mockResolvedValue(true);
+    prepaidPhysical(true);
   });
 
   it('rejects when all three payment methods are enabled (max two)', async () => {

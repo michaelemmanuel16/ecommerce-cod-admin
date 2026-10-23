@@ -18,7 +18,6 @@ import { Prisma, PrismaClient } from '@prisma/client';
 // Keep in sync with prisma/migrations/20261020150000_money_columns_to_decimal and
 // scripts/rollback-money-decimal.sql.
 export const MONEY_COLUMNS: Record<string, string[]> = {
-  tenants: ['default_delivery_fee'],
   users: ['commission_amount', 'total_earnings'],
   customers: ['total_spent'],
   products: ['price'],

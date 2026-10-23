@@ -95,6 +95,26 @@ describe('settlePaystackPayment (issue #3 — paid → confirmed)', () => {
     expect(prismaMock.pendingCheckout.delete).toHaveBeenCalledWith({ where: { reference: 'ref_ok' } });
   });
 
+  it.each([
+    ['paystack_full', 'physical', 'online_full', 'paid'],
+    ['paystack_deposit', 'physical', 'online_deposit', 'deposited'],
+    ['online_full', 'physical', 'online_full', 'paid'],
+    ['online_deposit', 'physical', 'online_deposit', 'deposited'],
+    ['paystack_full', 'digital', 'online_full', 'paid'],
+  ])('pending method %s (%s) becomes order method %s, payment %s', async (pendingMethod, orderType, method, paymentStatus) => {
+    (prismaMock.order.findFirst as any).mockResolvedValue(null);
+    (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue({ ...pending, paymentMethod: pendingMethod, orderType, paystackChargeMinor: 25000 });
+    (mockedPaystack.verifyTransaction as any).mockResolvedValue({
+      data: { status: 'success', reference: 'ref_ok', amount: 25000, currency: 'GHS', fees: 375 },
+    });
+    (prismaMock.pendingCheckout.delete as any).mockResolvedValue(pending);
+    (prismaMock.order.create as any).mockResolvedValue({ id: 55, tenantId: 'tenant-1', orderType, status: 'confirmed', customer: { id: 7 } });
+
+    await settlePaystackPayment('ref_ok');
+
+    expect((prismaMock.order.create as any).mock.calls[0][0].data).toMatchObject({ paymentMethod: method, paymentStatus, paymentProvider: 'paystack' });
+  });
+
   it('does NOT create an order when Paystack reports the payment was not successful (issue #4)', async () => {
     (prismaMock.order.findFirst as any).mockResolvedValue(null);
     (prismaMock.pendingCheckout.findUnique as any).mockResolvedValue(pending);

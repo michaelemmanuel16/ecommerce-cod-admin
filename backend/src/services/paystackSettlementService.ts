@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { getPaymentProvider } from './payments';
+import { getPaymentProvider, normalizeMethod } from './payments';
 import { digitalDeliveryService } from './digitalDeliveryService';
 import { GLAutomationService } from './glAutomationService';
 import { transitionOrder } from './orderStateMachine';
@@ -149,7 +149,9 @@ async function settleInTenant(
 
   // Order money is in major units (F-405); the adapter already converted the provider's amounts.
   const providerFee = provider.fee(verification);
-  const isDeposit = pending.paymentMethod === 'paystack_deposit';
+  // Pending rows saved before the neutral names shipped still say paystack_*; the order gets the neutral name.
+  const method = normalizeMethod(pending.paymentMethod) ?? 'online_full';
+  const isDeposit = method === 'online_deposit';
   const formData = pending.formData as Record<string, any>;
 
   const order = await prisma.order.create({
@@ -158,9 +160,7 @@ async function settleInTenant(
       status: 'confirmed',
       paymentStatus: isDeposit ? 'deposited' : 'paid',
       orderType: pending.orderType,
-      // Digital keeps the generic 'paystack' label for back-compat; physical
-      // keeps the granular deposit/full method.
-      paymentMethod: pending.orderType === 'digital' ? 'paystack' : pending.paymentMethod,
+      paymentMethod: method,
       subtotal: pending.subtotal,
       shippingCost: pending.shippingCost,
       discount: pending.discount,

@@ -192,6 +192,8 @@ describe('currency check on forms (F-401)', () => {
 
   it('PUT /api/checkout-forms/:id refuses online payment for a currency the account cannot take', async () => {
     await prismaBase.paymentConnection.updateMany({ where: { tenantId: pair.a.id }, data: { supportedCurrencies: ['GHS'] } });
+    // physical forms take online methods only with the tenant flag on (M3b-T05)
+    await prismaBase.systemConfig.updateMany({ where: { tenantId: pair.a.id }, data: { features: { prepaidPhysical: true } } });
     const formId = pair.a.ids.checkoutForm;
 
     const refused = await request(app).put(`/api/checkout-forms/${formId}`).set(tokenA())

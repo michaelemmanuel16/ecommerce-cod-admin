@@ -14,7 +14,6 @@ model Tenant {
   logo                      String?
   region                    String?
   currency                  String    @default("GHS")
-  defaultDeliveryFee        Decimal?  @map("default_delivery_fee") @db.Decimal(19, 4)
   currentPlanId             String?   @map("current_plan_id")
   subscriptionStatus        String    @default("active") @map("subscription_status")
   trialEndsAt               DateTime? @map("trial_ends_at")
@@ -748,6 +747,8 @@ model SystemConfig {
   paystackProvider      Json?    @map("paystack_provider")
   notificationTemplates Json?    @map("notification_templates")
   rolePermissions       Json?    @map("role_permissions")
+  // Tenant switches. features.prepaidPhysical (default off) lets physical forms take online payment (F-402).
+  features              Json     @default("{}")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
   tenantId              String?  @unique @map("tenant_id")

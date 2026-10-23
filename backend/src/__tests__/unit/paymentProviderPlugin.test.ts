@@ -49,6 +49,7 @@ describe('a second payment provider', () => {
     registerPaymentProvider(stub);
     // jest config has resetMocks:true, so re-arm the fire-and-forget mock each test.
     (metaCapiService.fireCapiPurchaseEvent as any).mockResolvedValue(undefined);
+    (prismaMock.systemConfig.findUnique as any).mockResolvedValue({ features: { prepaidPhysical: true } });
     (prismaMock.$transaction as any).mockImplementation(async (cb: any) => cb(prismaMock));
   });
   afterEach(() => unregisterPaymentProvider('stub'));
