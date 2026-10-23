@@ -80,7 +80,7 @@ export function Donut({ slices, top, sub, summary }: { slices: Slice[]; top: str
     <div className="donutrow">
       <div role="img" aria-label={summary} className="donutbox">
         <PieChart width={160} height={160}>
-          <Pie data={slices} dataKey="value" innerRadius={42} outerRadius={62} startAngle={90} endAngle={-270} stroke="none" isAnimationActive={false}>
+          <Pie data={slices} dataKey="value" innerRadius={48} outerRadius={62} startAngle={90} endAngle={-270} stroke="none" isAnimationActive={false}>
             {slices.map((s) => <Cell key={s.name} fill={s.color} />)}
           </Pie>
         </PieChart>
