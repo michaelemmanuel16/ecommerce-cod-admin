@@ -105,20 +105,18 @@ describe('PATCH /api/orders/:id/status accepts all 12 statuses', () => {
 });
 
 describe('reason rules', () => {
-  it('a move to failed_delivery without failureReason is 400 REASON_REQUIRED', async () => {
+  it('a move to failed_delivery without failureReason works (COD-139)', async () => {
     const id = await mkOrder('out_for_delivery', { deliveryAgentId: U.agent.id });
     const res = await patch(U.admin, id, { status: 'failed_delivery' });
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('REASON_REQUIRED');
-    expect((await prismaBase.order.findUniqueOrThrow({ where: { id } })).status).toBe('out_for_delivery');
+    expect(res.status).toBe(200);
+    expect((await prismaBase.order.findUniqueOrThrow({ where: { id } })).status).toBe('failed_delivery');
   });
 
-  it('a sales rep cancelling from pending_confirmation needs declineReason; an admin does not', async () => {
-    const id = await mkOrder('pending_confirmation', { customerRepId: U.rep.id });
-    const refused = await patch(U.rep, id, { status: 'cancelled' });
-    expect(refused.status).toBe(400);
-    expect(refused.body.code).toBe('REASON_REQUIRED');
+  it('a sales rep cancelling from pending_confirmation may leave declineReason out (COD-139); an admin too', async () => {
+    const bare = await mkOrder('pending_confirmation', { customerRepId: U.rep.id });
+    expect((await patch(U.rep, bare, { status: 'cancelled' })).status).toBe(200);
 
+    const id = await mkOrder('pending_confirmation', { customerRepId: U.rep.id });
     const ok = await patch(U.rep, id, { status: 'cancelled', declineReason: 'price_too_high' });
     expect(ok.status).toBe(200);
     expect((await prismaBase.order.findUniqueOrThrow({ where: { id } })).declineReason).toBe('price_too_high');
@@ -157,7 +155,7 @@ describe('error body and transitions', () => {
     const id = await mkOrder('delivered', { deliveryAgentId: U.agent.id });
     const res = await request(app).get(`/api/orders/${id}/transitions`).set(auth(U.superAdmin));
     expect(res.body.normal).toEqual(['returned']);
-    expect(res.body.forced.length).toBe(10);
+    expect(res.body.forced.length).toBe(7);
     expect(res.body.forced).not.toContain('delivered');
     expect(res.body.forced).not.toContain('returned');
   });

@@ -18,7 +18,7 @@ registerToolDef(defineTool({
   handler: async (input) => {
     const { period } = input;
     const { from, to } = storeRange(period);
-    const [products, delivered] = await Promise.all([
+    const [{ products, hasMore }, delivered] = await Promise.all([
       toolQueryService.activeProducts(input.productId),
       productDeliveredUnits(resolveTenantId(), input.productId ?? 'all', from, to),
     ]);
@@ -42,6 +42,8 @@ registerToolDef(defineTool({
       dateRange: dateRangeOut(from, to),
       products: results,
       totalProducts: results.length,
+      // True when the tenant has more than 200 active products and this list is only the first 200 by name.
+      truncated: hasMore,
       lowStockCount: results.filter((p) => p.isLowStock).length,
     });
   },

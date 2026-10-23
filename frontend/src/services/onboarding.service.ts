@@ -1,63 +1,52 @@
-import { usersService } from './users.service';
-import { UserPreferences } from '../types';
+import { apiClient } from './api';
 
+export interface OnboardingStep {
+  step: number;
+  key: string;
+  done: boolean;
+  skipped?: boolean;
+}
+
+export interface OnboardingStatus {
+  onboardingCompleted: boolean;
+  country: string | null;
+  currency: string | null;
+  steps: OnboardingStep[];
+}
+
+export interface StoreInput {
+  businessName: string;
+  country: string;
+  currency: string;
+  businessEmail?: string;
+  businessPhone?: string;
+  businessAddress?: string;
+  taxId?: string;
+}
+
+export interface PartnerInput {
+  name: string;
+  type: '3pl' | 'agent';
+  email: string;
+  phone?: string;
+}
+
+/** The first-run wizard API (F-124): step 1 "Your store", step 2 "Connect your 3PL", and the done state of each step. */
 export const onboardingService = {
-  /**
-   * Get the current onboarding status for the logged-in user
-   * @returns true if onboarding has been completed, false otherwise
-   */
-  async getStatus(): Promise<boolean> {
-    try {
-      const preferences = await usersService.getUserPreferences();
-      return preferences?.onboardingCompleted ?? false;
-    } catch (error) {
-      console.error('Error fetching onboarding status:', error);
-      return false;
-    }
+  async getStatus(): Promise<OnboardingStatus> {
+    const { data } = await apiClient.get<OnboardingStatus>('/api/onboarding/status', { skipCache: true });
+    return data;
   },
 
-  /**
-   * Mark onboarding as complete for the logged-in user
-   * Merges with existing preferences to avoid overwriting other settings
-   */
-  async markComplete(): Promise<void> {
-    try {
-      // Get current preferences first to merge
-      const currentPreferences = await usersService.getUserPreferences();
-
-      // Merge onboarding completion with existing preferences
-      const updatedPreferences: UserPreferences = {
-        ...currentPreferences,
-        onboardingCompleted: true,
-        onboardingCompletedAt: new Date().toISOString(),
-      };
-
-      await usersService.updateUserPreferences(updatedPreferences);
-    } catch (error) {
-      console.error('Error marking onboarding complete:', error);
-      throw error;
-    }
+  async saveStore(input: StoreInput): Promise<void> {
+    await apiClient.post('/api/onboarding/setup', { step: 1, ...input });
   },
 
-  /**
-   * Reset onboarding status (useful for testing or retaking the tour)
-   */
-  async reset(): Promise<void> {
-    try {
-      // Get current preferences first to merge
-      const currentPreferences = await usersService.getUserPreferences();
+  async addPartner(input: PartnerInput): Promise<void> {
+    await apiClient.post('/api/onboarding/setup', { step: 2, ...input });
+  },
 
-      // Remove onboarding flags while preserving other preferences
-      const updatedPreferences: UserPreferences = {
-        ...currentPreferences,
-        onboardingCompleted: false,
-        onboardingCompletedAt: undefined,
-      };
-
-      await usersService.updateUserPreferences(updatedPreferences);
-    } catch (error) {
-      console.error('Error resetting onboarding:', error);
-      throw error;
-    }
+  async skipPartner(): Promise<void> {
+    await apiClient.post('/api/onboarding/setup', { step: 2, skip: true });
   },
 };

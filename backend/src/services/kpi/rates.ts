@@ -64,6 +64,15 @@ export function ratePercent(numerator: number, denominator: number): number | nu
   return Money.roundHalfUp(Money.mul(Money.div(numerator, denominator), 100), 1).toNumber();
 }
 
+/**
+ * Whole percent for screens that show no decimals: rounded once from the counts, half up. Rounding the 1-decimal rate
+ * again gives the wrong whole number at .5 (1,469 of 2,000 is 73.45, stored 73.5, and 73.5 would show as 74 instead of 73).
+ */
+export function wholeRate(numerator: number, denominator: number): number | null {
+  if (denominator <= 0) return null;
+  return Money.roundHalfUp(Money.mul(Money.div(numerator, denominator), 100), 0).toNumber();
+}
+
 /** A rate with its counts. */
 type CountedRate = KpiResult<number | null> & { detail: Record<string, number> };
 

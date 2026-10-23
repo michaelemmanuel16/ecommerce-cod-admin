@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import toast from 'react-hot-toast';
 import { useAuthStore } from '../../stores/authStore';
+import { markOwnMoves } from '../../services/ownMoves';
+
+vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }));
 
 const handlers: Record<string, (arg?: any) => any> = {};
 const fakeSocket = { prependAny: vi.fn(), on: vi.fn((e: string, h: any) => { handlers[e] = h; }), connect: vi.fn(), off: vi.fn(), disconnect: vi.fn() };
@@ -62,5 +66,25 @@ describe('socket connect_error handling', () => {
   it('other connect errors are ignored', async () => {
     await handlers.connect_error(new Error('xhr poll error'));
     expect(refreshAccessToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('order:status_changed toast', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ accessToken: 't', refreshToken: 'r', isAuthenticated: true });
+    connectSocket();
+    vi.mocked(toast.success).mockClear();
+  });
+
+  it('names the order by its id and says it once for a move made elsewhere', () => {
+    handlers['order:status_changed']({ orderId: 21515, newStatus: 'confirmed' });
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    expect(toast.success).toHaveBeenCalledWith('Order #21515 status changed to confirmed');
+  });
+
+  it('stays silent for a move this tab made itself', () => {
+    markOwnMoves([21516]);
+    handlers['order:status_changed']({ orderId: 21516, newStatus: 'confirmed' });
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

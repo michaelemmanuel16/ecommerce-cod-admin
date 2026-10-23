@@ -60,7 +60,8 @@ export async function submitOrder(
   apiBase: string,
   slug: string,
   // fbp/fbc are optional best-effort Meta click ids merged in by the caller.
-  payload: ReturnType<typeof buildOrderPayload>['payload'] & { fbp?: string; fbc?: string },
+  // locationFieldsAbsent: Mode B host form has no town/landmark input (COD-138).
+  payload: ReturnType<typeof buildOrderPayload>['payload'] & { fbp?: string; fbc?: string; locationFieldsAbsent?: boolean },
 ): Promise<OrderResponse> {
   const res = await fetch(`${apiBase}/api/public/forms/${encodeURIComponent(slug)}/orders`, {
     method: 'POST',

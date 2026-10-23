@@ -109,4 +109,28 @@ describe('overdue notifications are per tenant', () => {
     expect(rows.map((r) => r.userId)).toEqual([adminAId]);
     expect(rows[0].tenantId).toBe(tenantAId);
   });
+
+  it('a second run refreshes the unread alert; after it is read, the next run adds a new one (COD-148)', async () => {
+    const notify = (amount: number) =>
+      runInTenant(tenantAId, () =>
+        notifyAdminsOverdueCollections([
+          { agentId: agentAId, agentName: 'Agent A', totalBalance: Money.parse(amount), warningAmount: Money.ZERO, criticalAmount: Money.parse(amount) },
+        ])
+      );
+    const rowsOfA = () =>
+      withoutTenant('test', () =>
+        prisma.notification.findMany({ where: { userId: adminAId, type: 'overdue_collections' }, orderBy: { id: 'asc' } })
+      );
+
+    await notify(700);
+    let rows = await rowsOfA();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].message).toContain('GHS 700');
+
+    await withoutTenant('test', () => prisma.notification.update({ where: { id: rows[0].id }, data: { isRead: true } }));
+    await notify(800);
+    rows = await rowsOfA();
+    expect(rows).toHaveLength(2);
+    expect(rows[1].isRead).toBe(false);
+  });
 });

@@ -99,7 +99,8 @@ export interface TransitionResult {
   afterCommit?: () => void;
 }
 
-const ALL_STATUSES = Object.values(OrderStatus);
+/** The 12 order statuses, in schema order. GET /api/orders/statuses returns this list. */
+export const ALL_STATUSES = Object.values(OrderStatus);
 
 const PRE_DISPATCH: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup'];
 const isPreDispatch = (s: OrderStatus) => PRE_DISPATCH.includes(s);
@@ -128,6 +129,9 @@ const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 };
 
 const isDigital = (order: { orderType?: string | null }) => order.orderType === 'digital';
+
+/** Statuses only a digital order uses (COD-139). */
+const PAYMENT_STATUSES: OrderStatus[] = ['digital_delivered', 'payment_pending', 'payment_failed'];
 
 /** Is `from -> to` in the F-301 table for this order? */
 function tableAllows(order: { orderType?: string | null }, from: OrderStatus, to: OrderStatus): boolean {
@@ -197,13 +201,16 @@ export function allowedTransitions(
   opts: { canForce?: boolean } = {},
 ): { normal: OrderStatus[]; forced: OrderStatus[] } {
   const from = order.status;
+  // COD-139: a physical order is never offered the digital and payment statuses, unless it already sits in one.
+  const hidden = isDigital(order) || PAYMENT_STATUSES.includes(from) ? [] : PAYMENT_STATUSES;
+  const offered = (to: OrderStatus) => to !== from && !hidden.includes(to) && (to !== 'digital_delivered' || isDigital(order));
   const normal = ALL_STATUSES.filter((to) => {
-    if (to === from) return false;
+    if (!offered(to)) return false;
     if (tableAllows(order, from, to)) return roleAllows(order, actor, from, to);
     return isMachineActor(actor) && to !== 'digital_delivered';
   });
   const forced = opts.canForce && actor.kind === 'user'
-    ? ALL_STATUSES.filter((to) => to !== from && !normal.includes(to))
+    ? ALL_STATUSES.filter((to) => offered(to) && !normal.includes(to))
     : [];
   return { normal, forced };
 }
@@ -339,15 +346,16 @@ async function move(
     if (!ownsOrder(order, actor)) {
       throw new OrderTransitionError('FORBIDDEN', 'You can only override the status of your own orders.', { from, to });
     }
-    reason = (options.reason ?? '').trim();
-    if (reason.length < 5) {
-      throw new OrderTransitionError('REASON_REQUIRED', 'Give a reason of at least 5 characters.', { from, to });
+    // COD-139: the reason is optional. A blank one stores no reason; the forced flag stays on the history row.
+    reason = (options.reason ?? '').trim() || undefined;
+    if (to === 'digital_delivered' && !isDigital(order)) {
+      throw new OrderTransitionError('INVALID_TRANSITION', 'Only a digital order can move to digital delivered.', { from, to });
     }
     if (to === 'delivered' && !order.deliveryAgentId) {
       throw new OrderTransitionError('INVALID_TRANSITION', 'Assign a delivery partner first', { from, to });
     }
     forced = true;
-    meta.reason = reason;
+    if (reason) meta.reason = reason;
   } else if (tableAllows(order, from, to)) {
     if (!roleAllows(order, actor, from, to)) {
       throw new OrderTransitionError('FORBIDDEN', 'You cannot make this status change.', { from, to });
@@ -362,15 +370,6 @@ async function move(
     throw new OrderTransitionError('INVALID_TRANSITION', 'Only a digital order can move to digital delivered.', { from, to });
   } else {
     throw invalidTransition(from, to);
-  }
-
-  if (actor.kind === 'user') {
-    if (to === 'failed_delivery' && !options.failureReason) {
-      throw new OrderTransitionError('REASON_REQUIRED', 'Give a failure reason for a failed delivery.', { from, to });
-    }
-    if (to === 'cancelled' && from === 'pending_confirmation' && actor.role === 'sales_rep' && !options.declineReason) {
-      throw new OrderTransitionError('REASON_REQUIRED', 'Give a decline reason to cancel an order that is not yet confirmed.', { from, to });
-    }
   }
 
   if (from === 'delivered') {
@@ -420,7 +419,7 @@ async function move(
   const gl = await applySideEffects(tx, order, from, to, actor, options, history.id);
 
   const statusChanged: OrderStatusChangedEvent = {
-    orderId, tenantId, from, to,
+    orderId, tenantId, customerId: order.customerId, from, to,
     actor: { kind: actor.kind, userId: actor.userId },
     depth: options.workflowDepth ?? 0,
     deliveryDate: fields.deliveryDate !== undefined ? (fields.deliveryDate as Date | null) : order.deliveryDate,

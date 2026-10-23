@@ -10,7 +10,11 @@ import { setOrderPriorityAndNotes } from './orderService';
  * WorkflowService's synchronous one). Neither file writes the order itself (M2-T16).
  */
 
-/** The status an `update_order` action sets: the editor writes `config.status`; older shapes are still read. */
+/**
+ * The status an `update_order` action sets: the editor writes `config.status`. `action.status` and
+ * `config.updates.status` are older saved shapes; keep reading them or old workflows stop moving orders.
+ * (Priority and notes never read `config.updates`.)
+ */
 export function workflowStatus(action: any): OrderStatus | undefined {
   return action.config?.status ?? action.status ?? action.config?.updates?.status;
 }
@@ -20,13 +24,13 @@ const PRIORITY_WORDS: Record<string, number> = { low: 1, normal: 5, medium: 5, h
 const MAX_NOTE_LENGTH = 1000;
 
 function parsePriority(raw: unknown): number {
-  if (typeof raw === 'number' && Number.isInteger(raw)) return raw;
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) return raw;
   if (typeof raw === 'string') {
     const text = raw.trim().toLowerCase();
     if (text in PRIORITY_WORDS) return PRIORITY_WORDS[text];
-    if (/^-?\d+$/.test(text)) return Number(text);
+    if (/^\d+$/.test(text)) return Number(text);
   }
-  throw new Error(`update_order priority must be an integer or one of ${Object.keys(PRIORITY_WORDS).join(', ')}`);
+  throw new Error(`update_order priority must be a whole number 0 or more, or one of ${Object.keys(PRIORITY_WORDS).join(', ')}`);
 }
 
 function parseNotes(raw: unknown): string {

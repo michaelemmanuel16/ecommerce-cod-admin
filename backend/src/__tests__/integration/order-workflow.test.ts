@@ -131,16 +131,5 @@ describe.skip('[COD-2] Order Workflow Integration Tests (skipped: needs seeded t
       expect(response.body.order.orderHistory).toBeInstanceOf(Array);
       expect(response.body.order.orderHistory.length).toBeGreaterThan(0);
     });
-
-    it('should get kanban view with orders grouped by status', async () => {
-      const response = await request(app)
-        .get('/api/orders/kanban')
-        .set('Authorization', `Bearer ${authToken}`);
-
-      expect(response.status).toBe(200);
-      expect(response.body.kanban).toHaveProperty('pending_confirmation');
-      expect(response.body.kanban).toHaveProperty('confirmed');
-      expect(response.body.kanban).toHaveProperty('delivered');
-    });
   });
 });

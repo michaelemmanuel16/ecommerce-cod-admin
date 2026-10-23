@@ -60,6 +60,8 @@ export interface PublicCheckoutForm {
   country: string;
   currency: string;
   regions: any;
+  /** Towns of each state, by state name (COD-138). */
+  towns?: Record<string, string[]>;
   design?: {
     colors?: {
       primary?: string;

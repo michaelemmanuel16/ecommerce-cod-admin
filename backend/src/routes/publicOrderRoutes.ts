@@ -31,7 +31,7 @@ const createOrderValidation = [
     .matches(/^\+?[0-9]{8,15}$/).withMessage('Invalid alternate phone number format'),
   body('formData.email').optional({ nullable: true, checkFalsy: true }).isEmail().withMessage('Invalid email format'),
   // Address and state are optional for digital products — validated in controller
-  body('formData.address').optional().notEmpty().withMessage('Address is required'),
+  body('formData.address').optional({ nullable: true, checkFalsy: true }).notEmpty().withMessage('Address is required'),
   body('formData.state').optional().notEmpty().withMessage('State is required'),
   body('selectedPackage').isObject().withMessage('Package selection is required'),
   body('selectedPackage.name').notEmpty().withMessage('Package name is required'),

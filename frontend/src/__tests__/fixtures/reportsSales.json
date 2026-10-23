@@ -1,0 +1,275 @@
+{
+ "tab": "sales",
+ "range": {
+  "from": "2026-10-01",
+  "to": "2026-10-17",
+  "days": 17,
+  "timeZone": "Africa/Accra"
+ },
+ "compare": {
+  "from": "2026-09-01",
+  "to": "2026-09-17",
+  "days": 17
+ },
+ "generatedAt": "2026-10-17T06:42:00.000Z",
+ "currency": "GHS",
+ "tiles": {
+  "currency": "GHS",
+  "deliveredRevenue": {
+   "value": "92000.00",
+   "previous": "96000.00",
+   "deltaPercent": -4.2
+  },
+  "deliveredOrders": {
+   "value": 376,
+   "previous": 387,
+   "deltaPercent": -2.8
+  },
+  "aov": {
+   "value": "244.68",
+   "previous": "248.06",
+   "deltaAmount": "-3.38"
+  },
+  "thirtyDayAov": {
+   "value": "248.00",
+   "from": "2026-09-17",
+   "to": "2026-10-17",
+   "deliveredOrders": 650
+  },
+  "cashReceived": {
+   "value": "68600.00",
+   "previous": "71000.00",
+   "deltaPercent": -3.4,
+   "percentOfDeliveredRevenue": 74.6
+  },
+  "cashWithPartners": {
+   "value": "23400.00",
+   "partners": 4
+  }
+ },
+ "revenuePerDay": {
+  "rows": [
+   {
+    "date": "2026-10-01",
+    "revenue": "4894.00",
+    "previous": {
+     "date": "2026-09-01",
+     "revenue": "5457.00"
+    }
+   },
+   {
+    "date": "2026-10-02",
+    "revenue": "5872.00",
+    "previous": {
+     "date": "2026-09-02",
+     "revenue": "5954.00"
+    }
+   },
+   {
+    "date": "2026-10-03",
+    "revenue": "5383.00",
+    "previous": {
+     "date": "2026-09-03",
+     "revenue": "5705.00"
+    }
+   },
+   {
+    "date": "2026-10-04",
+    "revenue": "6117.00",
+    "previous": {
+     "date": "2026-09-04",
+     "revenue": "6202.00"
+    }
+   },
+   {
+    "date": "2026-10-05",
+    "revenue": "5628.00",
+    "previous": {
+     "date": "2026-09-05",
+     "revenue": "5954.00"
+    }
+   },
+   {
+    "date": "2026-10-06",
+    "revenue": "4404.00",
+    "previous": {
+     "date": "2026-09-06",
+     "revenue": "4961.00"
+    }
+   },
+   {
+    "date": "2026-10-07",
+    "revenue": "3670.00",
+    "previous": {
+     "date": "2026-09-07",
+     "revenue": "4465.00"
+    }
+   },
+   {
+    "date": "2026-10-08",
+    "revenue": "5138.00",
+    "previous": {
+     "date": "2026-09-08",
+     "revenue": "5457.00"
+    }
+   },
+   {
+    "date": "2026-10-09",
+    "revenue": "6362.00",
+    "previous": {
+     "date": "2026-09-09",
+     "revenue": "6202.00"
+    }
+   },
+   {
+    "date": "2026-10-10",
+    "revenue": "5872.00",
+    "previous": {
+     "date": "2026-09-10",
+     "revenue": "6450.00"
+    }
+   },
+   {
+    "date": "2026-10-11",
+    "revenue": "6606.00",
+    "previous": {
+     "date": "2026-09-11",
+     "revenue": "6698.00"
+    }
+   },
+   {
+    "date": "2026-10-12",
+    "revenue": "5383.00",
+    "previous": {
+     "date": "2026-09-12",
+     "revenue": "5954.00"
+    }
+   },
+   {
+    "date": "2026-10-13",
+    "revenue": "4894.00",
+    "previous": {
+     "date": "2026-09-13",
+     "revenue": "5457.00"
+    }
+   },
+   {
+    "date": "2026-10-14",
+    "revenue": "4160.00",
+    "previous": {
+     "date": "2026-09-14",
+     "revenue": "4713.00"
+    }
+   },
+   {
+    "date": "2026-10-15",
+    "revenue": "5628.00",
+    "previous": {
+     "date": "2026-09-15",
+     "revenue": "5953.00"
+    }
+   },
+   {
+    "date": "2026-10-16",
+    "revenue": "5872.00",
+    "previous": {
+     "date": "2026-09-16",
+     "revenue": "5705.00"
+    }
+   },
+   {
+    "date": "2026-10-17",
+    "revenue": "6117.00",
+    "previous": {
+     "date": "2026-09-17",
+     "revenue": "4713.00"
+    }
+   }
+  ]
+ },
+ "byProduct": {
+  "rows": [
+   {
+    "productId": 1,
+    "name": "Copybook set",
+    "units": 0,
+    "revenue": "76100.00",
+    "sharePercent": 82.7
+   },
+   {
+    "productId": 2,
+    "name": "Refill pens",
+    "units": 0,
+    "revenue": "6900.00",
+    "sharePercent": 7.5
+   },
+   {
+    "productId": 3,
+    "name": "Study guide",
+    "units": 0,
+    "revenue": "3400.00",
+    "sharePercent": 3.7
+   },
+   {
+    "productId": 4,
+    "name": "Grip trainer",
+    "units": 0,
+    "revenue": "3100.00",
+    "sharePercent": 3.4
+   },
+   {
+    "productId": 5,
+    "name": "Dictamni cream",
+    "units": 0,
+    "revenue": "2500.00",
+    "sharePercent": 2.7
+   }
+  ],
+  "total": "92000.00"
+ },
+ "byState": {
+  "label": "State",
+  "rows": [
+   {
+    "state": "Greater Accra",
+    "delivered": 176,
+    "revenue": "43100.00",
+    "averageOrder": "244.89",
+    "sharePercent": 46.8
+   },
+   {
+    "state": "Eastern",
+    "delivered": 92,
+    "revenue": "22500.00",
+    "averageOrder": "244.57",
+    "sharePercent": 24.5
+   },
+   {
+    "state": "Ashanti",
+    "delivered": 82,
+    "revenue": "20100.00",
+    "averageOrder": "245.12",
+    "sharePercent": 21.8
+   },
+   {
+    "state": "Western",
+    "delivered": 26,
+    "revenue": "6300.00",
+    "averageOrder": "242.31",
+    "sharePercent": 6.8
+   },
+   {
+    "state": "Central",
+    "delivered": 0,
+    "revenue": "0.00",
+    "averageOrder": null,
+    "sharePercent": 0.0
+   }
+  ],
+  "total": {
+   "delivered": 376,
+   "revenue": "92000.00",
+   "averageOrder": "244.68"
+  }
+ }
+}

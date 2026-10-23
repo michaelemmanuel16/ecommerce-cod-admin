@@ -23,6 +23,7 @@ import { runInTenant } from '../../utils/tenantContext';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { GLAutomationService, ORDER_GL_INCLUDE } from '../../services/glAutomationService';
 import { GLAccountService } from '../../services/glAccountService';
+import { CASH_OVERDUE_DAYS } from '../../services/kpi/cash';
 
 export const FIXTURE_SLUG = 'fixture-numbers';
 const FIXTURE_NAME = 'Fixture (NUMBERS.md)';
@@ -462,6 +463,13 @@ const COPYBOOK_PRICE = 249;
 const COPYBOOK_COGS = 30;
 /** Cash held by partners, net of fees (NUMBERS.md): Logiswift 17,300, Kofi 2,900, Esi 2,100, Kwesi 1,100, Kasapa 0. */
 export const PARTNER_CASH_HELD: Record<PartnerKey, number> = { logiswift: 17300, kofi: 2900, esi: 2100, kwesi: 1100, kasapa: 0 };
+/** Open (draft, verified, approved) collections older than 8 days: the Dashboard's "38 orders unpaid over 8 days" (NUMBERS.md, DESIGN-SPEC rule 7). */
+export const OVERDUE_OPEN_COLLECTIONS = 38;
+/** How the 38 split across partners; the rest of the collection rows are the ones that must not count (see seedFixture). */
+const OVERDUE_OPEN_BY_PARTNER: Partial<Record<PartnerKey, number>> = { logiswift: 20, kofi: 8, esi: 6, kwesi: 4 };
+const OPEN_RECENT_COLLECTIONS = 6;
+const DEPOSITED_COLLECTIONS = 4;
+const RECONCILED_COLLECTIONS = 3;
 /** How each month's expense pool is split. */
 const EXPENSE_SHARES: Array<[string, number]> = [['Meta ads', 0.62], ['Delivery fees', 0.2], ['Rep commission', 0.06], ['Other expenses', 0.12]];
 
@@ -632,14 +640,16 @@ async function fixtureHash(prisma: PrismaClient, tenantId: string): Promise<stri
   }
   hash.update(`totals|${rows.length}|${delivered}|${revenue.toFixed(2)}`);
   // Part 2 rows: expenses, targets and partner cash (no ids).
-  const [expenses, targets, balances] = await Promise.all([
+  const [expenses, targets, balances, collections] = await Promise.all([
     prisma.expense.findMany({ where: { tenantId }, orderBy: [{ expenseDate: 'asc' }, { category: 'asc' }], select: { category: true, amount: true, expenseDate: true } }),
     prisma.target.findMany({ where: { tenantId }, orderBy: [{ scope: 'asc' }, { metric: 'asc' }, { periodStart: 'asc' }], select: { scope: true, metric: true, periodStart: true, value: true } }),
     prisma.agentBalance.findMany({ where: { tenantId }, orderBy: { currentBalance: 'desc' }, select: { currentBalance: true, agent: { select: { email: true } } } }),
+    prisma.agentCollection.findMany({ where: { tenantId }, orderBy: { order: { externalOrderId: 'asc' } }, select: { status: true, amount: true, allocatedAmount: true, collectionDate: true, order: { select: { externalOrderId: true } } } }),
   ]);
   for (const e of expenses) hash.update(`expense|${e.category}|${e.amount.toFixed(4)}|${e.expenseDate.toISOString()}\n`);
   for (const t of targets) hash.update(`target|${t.scope}|${t.metric}|${t.periodStart.toISOString()}|${t.value.toFixed(4)}\n`);
   for (const b of balances) hash.update(`balance|${b.agent.email}|${b.currentBalance.toFixed(4)}\n`);
+  for (const c of collections) hash.update(`collection|${c.order.externalOrderId}|${c.status}|${c.amount.toFixed(4)}|${c.allocatedAmount.toFixed(4)}|${c.collectionDate.toISOString()}\n`);
   return hash.digest('hex');
 }
 
@@ -845,6 +855,40 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
   await prisma.agentBalance.createMany({
     data: PARTNER_KEYS.map((key) => ({
       agentId: partnerIds[key], totalCollected: money(PARTNER_CASH_HELD[key]), totalDeposited: money(0), currentBalance: money(PARTNER_CASH_HELD[key]), tenantId,
+    })),
+  });
+
+  // One AgentCollection per order (collectionDate = deliveryDate, amount = total) on delivered fixture orders of the right partner.
+  // The 38 open ones older than 8 days are what the cash tile's "orders over 8 days" counts; the rest must not count.
+  const cutoff = FIXTURE_NOW - CASH_OVERDUE_DAYS * DAY;
+  const deliveredByPartner = (key: PartnerKey, old: boolean) => plan
+    .filter((o) => o.status === 'delivered' && o.partner === key && o.deliveryDate !== null && (o.deliveryDate < cutoff) === old)
+    .sort((a, b) => (a.orderNumber < b.orderNumber ? -1 : 1));
+  const oldPool = Object.fromEntries(PARTNER_KEYS.map((k) => [k, deliveredByPartner(k, true)])) as Record<PartnerKey, PlannedOrder[]>;
+  const newPool = Object.fromEntries(PARTNER_KEYS.map((k) => [k, deliveredByPartner(k, false)])) as Record<PartnerKey, PlannedOrder[]>;
+  const take = (pool: PlannedOrder[], n: number) => {
+    if (pool.length < n) throw new Error(`The fixture plan has too few delivered orders for the collection rows (need ${n}, have ${pool.length})`);
+    return pool.splice(0, n);
+  };
+  const openStatuses = ['draft', 'verified', 'approved'] as const;
+  const collectionRows: Array<{ order: PlannedOrder; status: 'draft' | 'verified' | 'approved' | 'deposited' | 'reconciled'; part: boolean }> = [];
+  let n = 0;
+  for (const key of PARTNER_KEYS) {
+    for (const order of take(oldPool[key], OVERDUE_OPEN_BY_PARTNER[key] ?? 0)) {
+      const status = openStatuses[n % 3];
+      collectionRows.push({ order, status, part: status === 'approved' && n % 6 === 2 }); // every other approved one is part-paid
+      n++;
+    }
+  }
+  const spread = PARTNER_KEYS.filter((k) => OVERDUE_OPEN_BY_PARTNER[k]);
+  for (let i = 0; i < OPEN_RECENT_COLLECTIONS; i++) collectionRows.push({ order: take(newPool[spread[i % spread.length]], 1)[0], status: openStatuses[i % 3], part: false });
+  for (let i = 0; i < DEPOSITED_COLLECTIONS; i++) collectionRows.push({ order: take(oldPool[spread[i % spread.length]], 1)[0], status: 'deposited', part: false });
+  for (let i = 0; i < RECONCILED_COLLECTIONS; i++) collectionRows.push({ order: take(oldPool[spread[i % spread.length]], 1)[0], status: 'reconciled', part: false });
+  await prisma.agentCollection.createMany({
+    data: collectionRows.map(({ order, status, part }) => ({
+      orderId: idOf(order), agentId: partnerIds[order.partner as PartnerKey], amount: money(order.total),
+      allocatedAmount: money(status === 'deposited' || status === 'reconciled' ? order.total : part ? Math.round(order.total / 2) : 0),
+      status, collectionDate: new Date(order.deliveryDate as number), tenantId,
     })),
   });
 

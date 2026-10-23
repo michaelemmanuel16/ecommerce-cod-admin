@@ -1,0 +1,87 @@
+/* App shell additions (M3-T32, F-100, F-101, F-104, F-108). Scoped under `.v2`, tokens only, no hex colours.
+   The shell itself (.app .side .brand .store .navgroup .nav .me .top .search .ibtn .agentbtn .avatar .content)
+   is in components.css, copied from docs/mockups/v2/app.css. This file holds only what the mockup does not have:
+   the collapsed sidebar, the mobile drawer button, the account menu, banners and loading placeholders. */
+
+/* text blocks that must shrink so a long store name or role list gets an ellipsis, not a wider sidebar */
+.v2 .store .txt,.v2 .me .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v2 .store .txt small,.v2 .me .lv{overflow:hidden;text-overflow:ellipsis}
+.v2 .me .avatar{flex:none;background:rgba(255,255,255,.2);color:inherit} /* products.html writes this inline */
+.v2 .brand .sidetoggle{margin-left:auto}
+.v2 .store .av{flex:none}
+.v2 .navskel{margin:0 10px 8px;width:auto!important;border-radius:10px}
+
+/* collapsed sidebar (desktop only): icons, pills as corner dots */
+@media (min-width:761px){
+  .v2 .app.collapsed{grid-template-columns:72px 1fr}
+  .v2 .app.collapsed .side{padding:18px 10px;overflow-x:hidden}
+  .v2 .app.collapsed .brand{flex-direction:column;gap:10px;padding:4px 0 14px}
+  .v2 .app.collapsed .brand b,.v2 .app.collapsed .store .txt,.v2 .app.collapsed .navgroup p,.v2 .app.collapsed .nav .lbl,.v2 .app.collapsed .me .txt{display:none}
+  .v2 .app.collapsed .brand .sidetoggle{margin-left:0}
+  .v2 .app.collapsed .store{justify-content:center;padding:6px}
+  .v2 .app.collapsed .navgroup{padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .v2 .app.collapsed .nav{position:relative;justify-content:center;padding:9px 0}
+  .v2 .app.collapsed .nav .pill{position:absolute;top:1px;right:4px;margin:0;font-size:10px;padding:0 5px}
+  .v2 .app.collapsed .me{padding:8px}
+  .v2 .app.collapsed .me .row{justify-content:center}
+}
+
+/* mobile drawer (under 760px): the toggle button sits first in the top bar; the sidebar is `.side.open` from components.css */
+.v2 .top .spacer{flex:1}
+.v2 .menubtn{display:none}
+.v2 .side-scrim{display:none}
+@media (max-width:760px){
+  .v2 .menubtn{display:grid}
+  .v2 .brand .sidetoggle{display:none}
+  .v2 .side-scrim{display:block;position:fixed;inset:0;z-index:49;background:var(--veil);backdrop-filter:blur(2px)}
+}
+
+/* account menu and bell (app.css .sx-menu, shell.js) */
+.v2 .popwrap{position:relative}
+.v2 .sx-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:85;width:230px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:6px}
+.v2 .sx-menu.wide{width:320px;max-width:calc(100vw - 32px)}
+.v2 .sx-menu .sx-who{padding:8px 10px 10px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.v2 .sx-menu .sx-who small{display:block;color:var(--ink-3)}
+.v2 .sx-menu .sx-who.sx-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.v2 .sx-menu a,.v2 .sx-menu button.sx-note,.v2 .sx-menu > button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:9px;color:var(--ink);text-decoration:none}
+.v2 .sx-menu a:hover,.v2 .sx-menu button.sx-note:hover,.v2 .sx-menu > button:hover{background:var(--hover)}
+.v2 .sx-note small{display:block;color:var(--ink-3);font-size:12.5px}
+.v2 .sx-note.read{opacity:.6}
+.v2 .sx-empty{padding:18px 10px;text-align:center;color:var(--ink-3)}
+
+/* banners (F-108): announcement types and the plan banner, on the soft tokens of .tag */
+.v2 .banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin-bottom:12px;border:1px solid var(--line);border-radius:12px;font-size:13.5px;background:var(--card);color:var(--ink)}
+.v2 .banner.info{background:var(--violet-soft);color:var(--violet)}
+.v2 .banner.warning{background:var(--gold-soft);color:var(--warn-ink)}
+.v2 .banner.maintenance{background:var(--coral-soft);color:var(--coral)}
+.v2 .banner.plan{background:var(--pine-soft);color:var(--pine)}
+.v2 .banner .ibtn.sm{flex:none;color:inherit}
+.v2 .banner a.mini{text-decoration:none;color:var(--on-pine);flex:none}
+
+/* content skeleton while the store config loads */
+.v2 .skelgap{margin-top:10px}
+.v2 .skelcard{border-radius:18px}
+
+/* 561-760px: the toggle button takes 50px of the top bar. Without this the wrapped search text grows to 3 lines
+   (the mockup already wraps to 2 here); the search takes the spacer's room instead and stays on one line. */
+@media (min-width:561px) and (max-width:760px){
+  .v2 .top .spacer{display:none}
+}
+
+/* command palette (M3-T35): index.html .veil / .cmdk, same values. The only addition is .list, which caps a long
+   "Go to" list at 60vh and scrolls it; the mockup's nine rows are shorter than that, so the pixels match. */
+.v2 .veil{position:fixed;inset:0;background:var(--veil);backdrop-filter:blur(3px);z-index:60;display:flex;align-items:flex-start;justify-content:center;padding-top:12vh}
+.v2 .cmdk{width:620px;max-width:92vw;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-pop);overflow:hidden}
+.v2 .cmdk .in{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line);font-size:16px}
+.v2 .cmdk .in input{flex:1;border:0;background:transparent;color:var(--ink);font:500 16px "Plus Jakarta Sans";outline:0}
+.v2 .cmdk .in input:focus-visible{outline:0}
+.v2 .cmdk p{font-size:12px;color:var(--ink-3);font-weight:600;padding:12px 18px 4px}
+.v2 .cmdk .it{display:flex;align-items:center;gap:12px;padding:10px 18px;width:100%;text-align:left}
+.v2 .cmdk .it:hover,.v2 .cmdk .it.sel{background:var(--hover)}
+.v2 .cmdk .it small{margin-left:auto;color:var(--ink-3);font-size:smaller} /* the mockup has no reset: <small> is 83%, Tailwind's preflight makes it 80% */
+.v2 .cmdk .it svg.accent{color:var(--violet)}
+.v2 .cmdk .list{max-height:60vh;overflow-y:auto}
+
+/* new: a profile photo inside the top-bar avatar (F-1222) */
+.v2 .avatar{overflow:hidden}
+.v2 .avatar .avatar-img{width:100%;height:100%;object-fit:cover}

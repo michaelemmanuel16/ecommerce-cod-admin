@@ -1,97 +1,92 @@
 import React from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
-import { Input } from '../components/ui/Input';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
+import { features } from '../config/features';
+import { Button, Input } from '../components/ui-v2';
+import { AuthLayout } from '../components/auth/AuthLayout';
 
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  email: z.string().email('Enter a valid email address'),
+  password: z.string().min(1, 'Enter your password'),
 });
 
-type LoginFormData = z.infer<typeof loginSchema>;
+const LOGIN_FAILED = 'Email or password is wrong';
+
+/**
+ * One text for every refusal (F-120): an unknown email, a wrong password and a deactivated account look the same.
+ * Only a rate limit or a server problem says something else.
+ */
+function loginErrorText(error: unknown): string {
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  if (status === 429) return 'Too many attempts. Wait a few minutes and try again.';
+  if (status === undefined || status >= 500) return 'Something went wrong. Try again.';
+  return LOGIN_FAILED;
+}
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, isLoading } = useAuthStore();
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema),
-  });
-
+  const notice = (location.state as { message?: string } | null)?.message;
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [errors, setErrors] = React.useState<{ email?: string; password?: string }>({});
   const [errorMessage, setErrorMessage] = React.useState<string>('');
 
-  const onSubmit = async (data: LoginFormData) => {
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMessage('');
+    const parsed = loginSchema.safeParse({ email: email.trim(), password });
+    if (!parsed.success) {
+      const fields = parsed.error.flatten().fieldErrors;
+      setErrors({ email: fields.email?.[0], password: fields.password?.[0] });
+      return;
+    }
+    setErrors({});
     try {
-      console.log('Attempting login with:', data.email);
-      await login(data);
+      await login(parsed.data);
       navigate('/');
-    } catch (error: any) {
-      console.error('Login failed:', error);
-      const message = error?.response?.data?.message || error?.message || 'Login failed';
-      setErrorMessage(message);
+    } catch (error) {
+      setErrorMessage(loginErrorText(error));
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">COD Admin</h1>
-          <p className="text-gray-600 mt-2">Sign in to your account</p>
+    <AuthLayout title="Sign in" subtitle="Welcome back. Sign in to your store.">
+      <form onSubmit={onSubmit} noValidate>
+        {notice && <div className="authnote ok" role="status">{notice}</div>}
+        {errorMessage && <div className="authnote bad" role="alert">{errorMessage}</div>}
+        <Input
+          label="Email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          error={errors.email}
+          placeholder="you@example.com"
+        />
+        <Input
+          label="Password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          error={errors.password}
+          placeholder="Enter your password"
+        />
+        <div className="authlinks">
+          <Link to="/forgot-password">Forgot password?</Link>
         </div>
-        <Card>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {errorMessage && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
-                <strong className="font-bold">Error: </strong>
-                <span className="block sm:inline">{errorMessage}</span>
-              </div>
-            )}
-            <Input
-              label="Email"
-              type="email"
-              {...register('email')}
-              error={errors.email?.message}
-              placeholder="you@example.com"
-            />
-            <Input
-              label="Password"
-              type="password"
-              {...register('password')}
-              error={errors.password?.message}
-              placeholder="Enter your password"
-            />
-            <div className="text-right">
-              <Link to="/forgot-password" className="text-sm text-blue-600 hover:underline">
-                Forgot password?
-              </Link>
-            </div>
-            <Button
-              type="submit"
-              variant="primary"
-              className="w-full"
-              isLoading={isLoading}
-            >
-              Sign In
-            </Button>
-          </form>
-          <p className="text-center text-sm text-gray-600 mt-4">
-            Don't have an account?{' '}
-            <Link to="/pricing" className="text-blue-600 hover:underline">
-              Sign up
-            </Link>
-          </p>
-        </Card>
-      </div>
-    </div>
+        <Button type="submit" variant="primary" disabled={isLoading}>
+          {isLoading ? 'Signing in…' : 'Sign in'}
+        </Button>
+      </form>
+      {features.saasSignup && (
+        <p className="authfoot">
+          Don't have an account? <Link to="/pricing">Sign up</Link>
+        </p>
+      )}
+    </AuthLayout>
   );
 };

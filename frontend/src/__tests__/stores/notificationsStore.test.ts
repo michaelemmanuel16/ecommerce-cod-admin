@@ -1,233 +1,105 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useNotificationsStore } from '../../stores/notificationsStore';
+import { notificationsService } from '../../services/notifications.service';
+import { getSocket } from '../../services/socket';
 import { Notification } from '../../types';
 
-describe('Notifications Store', () => {
+vi.mock('../../services/notifications.service', () => ({
+  notificationsService: {
+    getUnreadCount: vi.fn(),
+    getNotifications: vi.fn(),
+    markAsRead: vi.fn(),
+    markAllAsRead: vi.fn(),
+  },
+}));
+vi.mock('../../services/socket', () => ({ getSocket: vi.fn() }));
+
+const row = (id: number, read = false): Notification => ({
+  id, type: 'system', title: `Title ${id}`, message: 'm', read, createdAt: '2026-10-21T10:00:00.000Z',
+});
+
+describe('Notifications store (M3-T36)', () => {
   beforeEach(() => {
-    // Reset store before each test
-    useNotificationsStore.setState({
-      notifications: [],
-      unreadCount: 0,
-    });
+    vi.clearAllMocks();
+    useNotificationsStore.setState({ notifications: [], unreadCount: 0 });
   });
 
-  describe('addNotification', () => {
-    it('should add notification and increment unread count', () => {
-      const notification: Notification = {
-        id: 1,
-        title: 'Test Notification',
-        message: 'This is a test',
-        type: 'info',
-        read: false,
-        createdAt: new Date(),
-      };
-
-      useNotificationsStore.getState().addNotification(notification);
-
-      const state = useNotificationsStore.getState();
-      expect(state.notifications).toHaveLength(1);
-      expect(state.notifications[0]).toEqual(notification);
-      expect(state.unreadCount).toBe(1);
-    });
-
-    it('should add multiple notifications in correct order (newest first)', () => {
-      const notification1: Notification = {
-        id: 1,
-        title: 'First',
-        message: 'First message',
-        type: 'info',
-        read: false,
-        createdAt: new Date(),
-      };
-
-      const notification2: Notification = {
-        id: 2,
-        title: 'Second',
-        message: 'Second message',
-        type: 'success',
-        read: false,
-        createdAt: new Date(),
-      };
-
-      useNotificationsStore.getState().addNotification(notification1);
-      useNotificationsStore.getState().addNotification(notification2);
-
-      const state = useNotificationsStore.getState();
-      expect(state.notifications).toHaveLength(2);
-      expect(state.notifications[0].id).toBe(2); // Newest first
-      expect(state.notifications[1].id).toBe(1);
-      expect(state.unreadCount).toBe(2);
-    });
+  it('reads the unread count from the API, not from memory (survives a reload)', async () => {
+    vi.mocked(notificationsService.getUnreadCount).mockResolvedValue(4);
+    // a reload gives a fresh store: count 0 in memory
+    expect(useNotificationsStore.getState().unreadCount).toBe(0);
+    await useNotificationsStore.getState().fetchUnreadCount();
+    expect(useNotificationsStore.getState().unreadCount).toBe(4);
   });
 
-  describe('markAsRead', () => {
-    beforeEach(() => {
-      const notifications: Notification[] = [
-        {
-          id: 1,
-          title: 'Notification 1',
-          message: 'Message 1',
-          type: 'info',
-          read: false,
-          createdAt: new Date(),
-        },
-        {
-          id: 2,
-          title: 'Notification 2',
-          message: 'Message 2',
-          type: 'warning',
-          read: false,
-          createdAt: new Date(),
-        },
-        {
-          id: 3,
-          title: 'Notification 3',
-          message: 'Message 3',
-          type: 'error',
-          read: false,
-          createdAt: new Date(),
-        },
-      ];
-
-      useNotificationsStore.setState({
-        notifications,
-        unreadCount: 3,
-      });
-    });
-
-    it('should mark notification as read and decrement unread count', () => {
-      useNotificationsStore.getState().markAsRead(2);
-
-      const state = useNotificationsStore.getState();
-      expect(state.notifications[1].read).toBe(true);
-      expect(state.unreadCount).toBe(2);
-    });
-
-    it('should not decrement unread count below 0', () => {
-      useNotificationsStore.setState({ unreadCount: 0 });
-      useNotificationsStore.getState().markAsRead(1);
-
-      const state = useNotificationsStore.getState();
-      expect(state.unreadCount).toBe(0);
-    });
-
-    it('should not affect other notifications', () => {
-      useNotificationsStore.getState().markAsRead(2);
-
-      const state = useNotificationsStore.getState();
-      expect(state.notifications[0].read).toBe(false);
-      expect(state.notifications[1].read).toBe(true);
-      expect(state.notifications[2].read).toBe(false);
-    });
+  it('keeps the last count when the read fails', async () => {
+    useNotificationsStore.setState({ unreadCount: 3 });
+    vi.mocked(notificationsService.getUnreadCount).mockRejectedValue(new Error('offline'));
+    await useNotificationsStore.getState().fetchUnreadCount();
+    expect(useNotificationsStore.getState().unreadCount).toBe(3);
   });
 
-  describe('markAllAsRead', () => {
-    beforeEach(() => {
-      const notifications: Notification[] = [
-        {
-          id: 1,
-          title: 'Notification 1',
-          message: 'Message 1',
-          type: 'info',
-          read: false,
-          createdAt: new Date(),
-        },
-        {
-          id: 2,
-          title: 'Notification 2',
-          message: 'Message 2',
-          type: 'success',
-          read: false,
-          createdAt: new Date(),
-        },
-        {
-          id: 3,
-          title: 'Notification 3',
-          message: 'Message 3',
-          type: 'warning',
-          read: true, // Already read
-          createdAt: new Date(),
-        },
-      ];
-
-      useNotificationsStore.setState({
-        notifications,
-        unreadCount: 2,
-      });
-    });
-
-    it('should mark all notifications as read', () => {
-      useNotificationsStore.getState().markAllAsRead();
-
-      const state = useNotificationsStore.getState();
-      expect(state.notifications.every(n => n.read)).toBe(true);
-    });
-
-    it('should set unread count to 0', () => {
-      useNotificationsStore.getState().markAllAsRead();
-
-      const state = useNotificationsStore.getState();
-      expect(state.unreadCount).toBe(0);
-    });
-
-    it('should work with empty notifications', () => {
-      useNotificationsStore.setState({ notifications: [], unreadCount: 0 });
-      useNotificationsStore.getState().markAllAsRead();
-
-      const state = useNotificationsStore.getState();
-      expect(state.notifications).toHaveLength(0);
-      expect(state.unreadCount).toBe(0);
-    });
+  it('fetchNotifications sets the rows and the count from the database', async () => {
+    vi.mocked(notificationsService.getNotifications).mockResolvedValue({ notifications: [row(2), row(1, true)], unreadCount: 1 });
+    await useNotificationsStore.getState().fetchNotifications();
+    const s = useNotificationsStore.getState();
+    expect(s.notifications.map((n) => n.id)).toEqual([2, 1]);
+    expect(s.unreadCount).toBe(1);
   });
 
-  describe('clearNotifications', () => {
-    beforeEach(() => {
-      const notifications: Notification[] = [
-        {
-          id: 1,
-          title: 'Notification 1',
-          message: 'Message 1',
-          type: 'info',
-          read: false,
-          createdAt: new Date(),
-        },
-        {
-          id: 2,
-          title: 'Notification 2',
-          message: 'Message 2',
-          type: 'success',
-          read: true,
-          createdAt: new Date(),
-        },
-      ];
+  it('a socket "notification" event re-reads the count (it is not incremented in memory)', async () => {
+    const handlers: Record<string, () => void> = {};
+    vi.mocked(getSocket).mockReturnValue({
+      off: vi.fn(),
+      on: vi.fn((e: string, h: () => void) => { handlers[e] = h; }),
+    } as never);
+    vi.mocked(notificationsService.getUnreadCount).mockResolvedValue(2);
+    useNotificationsStore.getState().setupSocketListeners();
+    await vi.waitFor(() => expect(useNotificationsStore.getState().unreadCount).toBe(2));
 
-      useNotificationsStore.setState({
-        notifications,
-        unreadCount: 1,
-      });
-    });
+    vi.mocked(notificationsService.getUnreadCount).mockResolvedValue(3);
+    handlers.notification();
+    await vi.waitFor(() => expect(useNotificationsStore.getState().unreadCount).toBe(3));
+  });
 
-    it('should clear all notifications', () => {
-      useNotificationsStore.getState().clearNotifications();
+  it('markAsRead lowers the count at once and tells the server', async () => {
+    useNotificationsStore.setState({ notifications: [row(1), row(2)], unreadCount: 2 });
+    vi.mocked(notificationsService.markAsRead).mockResolvedValue();
+    await useNotificationsStore.getState().markAsRead(1);
+    const s = useNotificationsStore.getState();
+    expect(s.notifications.find((n) => n.id === 1)?.read).toBe(true);
+    expect(s.unreadCount).toBe(1);
+    expect(notificationsService.markAsRead).toHaveBeenCalledWith(1);
+  });
 
-      const state = useNotificationsStore.getState();
-      expect(state.notifications).toHaveLength(0);
-    });
+  it('markAsRead on an already read row does not lower the count', async () => {
+    useNotificationsStore.setState({ notifications: [row(1, true)], unreadCount: 1 });
+    vi.mocked(notificationsService.markAsRead).mockResolvedValue();
+    await useNotificationsStore.getState().markAsRead(1);
+    expect(useNotificationsStore.getState().unreadCount).toBe(1);
+  });
 
-    it('should reset unread count to 0', () => {
-      useNotificationsStore.getState().clearNotifications();
+  it('a failed markAsRead re-reads the truth from the server', async () => {
+    useNotificationsStore.setState({ notifications: [row(1)], unreadCount: 1 });
+    vi.mocked(notificationsService.markAsRead).mockRejectedValue(new Error('x'));
+    vi.mocked(notificationsService.getNotifications).mockResolvedValue({ notifications: [row(1)], unreadCount: 1 });
+    await useNotificationsStore.getState().markAsRead(1);
+    expect(useNotificationsStore.getState().unreadCount).toBe(1);
+    expect(notificationsService.getNotifications).toHaveBeenCalled();
+  });
 
-      const state = useNotificationsStore.getState();
-      expect(state.unreadCount).toBe(0);
-    });
+  it('markAllAsRead zeroes the count and calls the server', async () => {
+    useNotificationsStore.setState({ notifications: [row(1), row(2)], unreadCount: 2 });
+    vi.mocked(notificationsService.markAllAsRead).mockResolvedValue();
+    await useNotificationsStore.getState().markAllAsRead();
+    expect(useNotificationsStore.getState().unreadCount).toBe(0);
+    expect(useNotificationsStore.getState().notifications.every((n) => n.read)).toBe(true);
+    expect(notificationsService.markAllAsRead).toHaveBeenCalled();
+  });
 
-    it('should work when already empty', () => {
-      useNotificationsStore.setState({ notifications: [], unreadCount: 0 });
-      useNotificationsStore.getState().clearNotifications();
-
-      const state = useNotificationsStore.getState();
-      expect(state.notifications).toHaveLength(0);
-      expect(state.unreadCount).toBe(0);
-    });
+  it('clearNotifications empties the store (sign out)', () => {
+    useNotificationsStore.setState({ notifications: [row(1)], unreadCount: 1 });
+    useNotificationsStore.getState().clearNotifications();
+    expect(useNotificationsStore.getState()).toMatchObject({ notifications: [], unreadCount: 0 });
   });
 });

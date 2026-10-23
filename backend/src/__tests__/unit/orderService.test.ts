@@ -44,6 +44,7 @@ jest.mock('../../utils/appEvents', () => ({
     emit: jest.fn(),
   },
   emitOrderCreatedEvent: jest.fn(),
+  emitOrderDeletedEvent: jest.fn(),
   AppEvent: {
     BULK_ORDERS_IMPORTED: 'BULK_ORDERS_IMPORTED',
     AGENT_COLLECTION_RECONCILED: 'AGENT_COLLECTION_RECONCILED',
@@ -528,17 +529,19 @@ describe('OrderService', () => {
 
       (prismaMock.$transaction as any).mockImplementation(async (callback: any) => {
         return callback({
-          product: { update: jest.fn().mockResolvedValue({}) as any },
           customer: { update: jest.fn().mockResolvedValue({}) as any },
           orderHistory: { createMany: jest.fn().mockResolvedValue({ count: 2 }) as any },
           order: { updateMany: jest.fn().mockResolvedValue({ count: 2 }) as any },
-          $executeRawUnsafe: jest.fn().mockResolvedValue(1) as any
+          agentCollection: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) as any },
+          auditLog: { create: jest.fn().mockResolvedValue({}) as any },
         });
       });
 
       const result = await orderService.bulkDeleteOrders([1, 2], 1);
 
       expect(result.message).toContain('Successfully deleted 2 order(s)');
+      expect(result.deleted).toBe(2);
+      expect(result.skipped).toEqual([]);
       expect(prismaMock.$transaction).toHaveBeenCalled();
     });
 
@@ -548,21 +551,21 @@ describe('OrderService', () => {
       );
     });
 
-    it('should throw error if no valid orders found', async () => {
+    it('should skip ids that are not found and delete nothing', async () => {
       (prismaMock.order.findMany as any).mockResolvedValue([]);
-      await expect(orderService.bulkDeleteOrders([999])).rejects.toThrow(
-        new AppError('No valid orders found to delete', 404)
-      );
+      const result = await orderService.bulkDeleteOrders([999]);
+      expect(result).toMatchObject({ deleted: 0, skipped: [{ id: 999, reason: 'Order not found' }] });
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
 
-    it('should throw error if trying to delete delivered order', async () => {
+    it('should skip an order that cannot be deleted', async () => {
       (prismaMock.order.findMany as any).mockResolvedValue([
-        { ...mockOrders[0], status: 'delivered' as OrderStatus }
+        { ...mockOrders[0], status: 'out_for_delivery' as OrderStatus }
       ] as any);
 
-      await expect(orderService.bulkDeleteOrders([1])).rejects.toThrow(
-        /Cannot delete delivered order #1/
-      );
+      const result = await orderService.bulkDeleteOrders([1]);
+      expect(result.skipped).toEqual([{ id: 1, reason: 'Cancel or return the order first.' }]);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
   });
 

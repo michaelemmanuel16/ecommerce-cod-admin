@@ -251,7 +251,7 @@ describe('M2-T16 workflow actions go through the services', () => {
 
     it('rejects a bad priority or notes and writes nothing, not even the status', async () => {
       const id = await mkOrder('pending_confirmation', { notes: 'keep' });
-      for (const bad of ['abc', 1.5, '2.5', true, {}]) {
+      for (const bad of ['abc', 1.5, '2.5', true, {}, -1, '-5']) {
         await expect(viaQueue({ type: 'update_order', config: { status: 'confirmed', priority: bad } }, id)).rejects.toThrow('priority');
       }
       await expect(viaQueue({ type: 'update_order', config: { notes: '   ' } }, id)).rejects.toThrow('notes');
@@ -375,7 +375,7 @@ describe('M2-T17 triggers come from the state machine', () => {
     let seq = 0;
     const upload = (runWorkflows?: string) => {
       const phone = `+23325${String(SUFFIX).slice(-5)}${String(seq++).padStart(2, '0')}1`;
-      const csv = `Phone,Customer Name,Address,Total Amount,Status\n${phone},Up Load,${seq} Upload Road Accra,40,pending_confirmation\n`;
+      const csv = `Phone,Customer Name,Address,Region,Product,Quantity,Price,Status\n${phone},Up Load,${seq} Upload Road Accra,Ashanti,WTS Product,1,40,pending_confirmation\n`;
       const req = request(app).post('/api/orders/upload').set(auth()).attach('file', Buffer.from(csv), 'orders.csv');
       return runWorkflows === undefined ? req : req.field('runWorkflows', runWorkflows);
     };

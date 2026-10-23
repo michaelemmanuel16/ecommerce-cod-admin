@@ -1,115 +1,64 @@
-import React, { useEffect } from 'react';
-import { ShoppingBag, DollarSign, TrendingUp, CheckCircle } from 'lucide-react';
-import { StatCard } from '../components/common/StatCard';
-import { SalesTrendChart } from '../components/charts/SalesTrendChart';
-import { OrderFunnelChart } from '../components/charts/OrderFunnelChart';
-import { Card } from '../components/ui/Card';
-import { useAnalyticsStore } from '../stores/analyticsStore';
-import { useAuthStore } from '../stores/authStore';
+import { useState } from 'react';
+import clsx from 'clsx';
+import { useV2Page } from '../components/shell/useV2Page';
+import { PageHeader } from './dashboard/blocks/Header';
+import { BlockError, BlockFrame, SkeletonCard } from './dashboard/blocks/Frame';
+import { LadderCard } from './dashboard/blocks/Ladder';
+import { QuestsRow } from './dashboard/blocks/Quests';
+import { TilesRow } from './dashboard/blocks/Tiles';
+import { ChartCard } from './dashboard/blocks/ChartCard';
+import { RecentOrdersCard } from './dashboard/blocks/RecentOrders';
+import { useOwnerDashboard } from './dashboard/useOwnerDashboard';
+import { isBlockError, type DashboardRange } from './dashboard/types';
+import { Skeleton } from '../components/ui-v2';
+import { getStoreCurrency } from '../utils/format';
 
-export const Dashboard: React.FC = () => {
-  const { user } = useAuthStore();
-  const {
-    metrics,
-    trends,
-    conversionFunnel,
-    fetchDashboardMetrics,
-    fetchSalesTrends,
-    fetchConversionFunnel,
-    isLoading
-  } = useAnalyticsStore();
+/**
+ * The owner Dashboard (M3-T39 to T41, F-200 to F-210), built from docs/mockups/v2/index.html#dash.
+ * One call returns every block. Each block has its own skeleton and its own error with Retry. The page does no KPI
+ * arithmetic: every figure, percentage, pace and tag comes from the API (services/dashboardService.ts).
+ *
+ * Not on the page yet because the API has no data for them: the margin chip (M5), the agent cards (M11) and
+ * "Top this month" (M6). Their slots are left out, so the chart and the recent orders take the full width.
+ */
+export function Dashboard() {
+  useV2Page();
+  const [range, setRange] = useState<DashboardRange>('month');
+  const { data, failed, loading, refetch } = useOwnerDashboard(range);
 
-  useEffect(() => {
-    // Fetch all dashboard data in parallel
-    Promise.all([
-      fetchDashboardMetrics(),
-      fetchSalesTrends('daily', 7),
-      fetchConversionFunnel()
-    ]);
-  }, [fetchDashboardMetrics, fetchSalesTrends, fetchConversionFunnel]);
-
-  // Use server-side computed metrics
-  const totalOrders = metrics?.totalOrders ?? 0;
-  const totalRevenue = metrics?.totalRevenue ?? 0;
-  const pendingOrders = metrics?.pendingOrders ?? 0;
-  const deliveredOrders = metrics?.deliveredOrders ?? 0;
-
-  // Transform trends data for chart
-  const performanceData = trends.length > 0
-    ? trends.map(t => ({
-      date: t.date.split('-').pop() || t.date,
-      assigned: t.orders,
-      delivered: t.delivered
-    }))
-    : [
-      { date: 'Mon', assigned: 0, delivered: 0 },
-      { date: 'Tue', assigned: 0, delivered: 0 },
-      { date: 'Wed', assigned: 0, delivered: 0 },
-      { date: 'Thu', assigned: 0, delivered: 0 },
-      { date: 'Fri', assigned: 0, delivered: 0 },
-      { date: 'Sat', assigned: 0, delivered: 0 },
-      { date: 'Sun', assigned: 0, delivered: 0 },
-    ];
-
-  // Transform funnel data for chart
-  const funnelData = conversionFunnel.length > 0
-    ? conversionFunnel.map(f => ({ status: f.status, count: f.count }))
-    : [
-      { status: 'New', count: 0 },
-      { status: 'Confirmed', count: 0 },
-      { status: 'Preparing', count: 0 },
-      { status: 'Delivery', count: 0 },
-      { status: 'Delivered', count: 0 },
-    ];
+  const headerBlock = data?.header;
+  const header = headerBlock && !isBlockError(headerBlock) ? headerBlock : null;
+  const asOfDate = header?.asOfDate ?? null;
+  const busy = loading && data !== null;
+  // the store currency, for blocks that do not carry their own
+  const currency = header?.currency ?? getStoreCurrency();
+  const frame = { loading, failed, onRetry: refetch };
+  // recentOrders is missing from the response when the viewer has no orders:view: the block is not shown at all
+  const showOrders = !data || data.recentOrders !== undefined;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+    <section className={clsx('dash', busy && 'busy')}>
+      <PageHeader header={header} loading={loading} range={range} onRange={setRange} onRefresh={refetch} refreshing={loading} />
+      {headerBlock && isBlockError(headerBlock) && <BlockError name="Header" onRetry={refetch} errorId={headerBlock.error.errorId} />}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Total Orders"
-          value={isLoading ? '...' : totalOrders}
-          icon={ShoppingBag}
-          trend={12}
-          iconColor="text-blue-600"
-        />
-        <StatCard
-          title="Total Revenue"
-          value={isLoading ? '...' : `$${totalRevenue.toFixed(2)}`}
-          icon={DollarSign}
-          trend={8}
-          iconColor="text-green-600"
-        />
-        <StatCard
-          title="Pending Orders"
-          value={isLoading ? '...' : pendingOrders}
-          icon={TrendingUp}
-          trend={-3}
-          iconColor="text-orange-600"
-        />
-        <StatCard
-          title="Delivered Orders"
-          value={isLoading ? '...' : deliveredOrders}
-          icon={CheckCircle}
-          trend={15}
-          iconColor="text-purple-600"
-        />
-      </div>
+      <BlockFrame name="Target ladder" block={data?.ladder} {...frame} skeleton={<SkeletonCard height={196} />}>
+        {(ladder) => <LadderCard ladder={ladder} asOfDate={asOfDate} />}
+      </BlockFrame>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <h3 className="text-lg font-semibold mb-4">
-            {user?.role === 'sales_rep' ? 'My Performance (Assigned vs Delivered)' : 'Orders Performance'}
-          </h3>
-          <SalesTrendChart data={performanceData} />
-        </Card>
-        <Card>
-          <h3 className="text-lg font-semibold mb-4">Order Funnel</h3>
-          <OrderFunnelChart data={funnelData} />
-        </Card>
-      </div>
-    </div>
+      <BlockFrame name="Today's targets" block={data?.quests} {...frame} skeleton={<SkeletonCard height={92} />}>
+        {(quests) => <QuestsRow quests={quests} currency={currency} />}
+      </BlockFrame>
+
+      <BlockFrame
+        name="Driver tiles" block={data?.tiles} {...frame}
+        skeleton={<div className="grid kpis">{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={132} className="skelcard" />)}</div>}
+      >
+        {(tiles) => <TilesRow tiles={tiles} />}
+      </BlockFrame>
+
+      <ChartCard chart={data?.chart} drivers={data?.drivers} {...frame} asOfDate={asOfDate} />
+
+      {showOrders && <RecentOrdersCard orders={data?.recentOrders} {...frame} />}
+    </section>
   );
-};
-
+}

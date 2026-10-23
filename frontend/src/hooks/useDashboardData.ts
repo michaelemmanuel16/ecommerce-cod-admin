@@ -21,6 +21,17 @@ interface UseDashboardDataResult {
   refetch: () => Promise<void>;
 }
 
+/** Unpaid delivered orders x the rep's commission rate. Missing rate or count counts as 0. */
+export function computeRepEarnings(repPerformance: any, user: any) {
+  const unpaidCount = Number(repPerformance?.unpaidDeliveredOrders) || 0;
+  const rate = Number(user?.commissionAmount) || 0;
+  return {
+    myCommission: (unpaidCount * rate).toFixed(2),
+    commissionAmount: rate,
+    unpaidDeliveredCount: unpaidCount,
+  };
+}
+
 /**
  * Hook to fetch and manage dashboard data
  * @param config - Dashboard configuration
@@ -40,13 +51,9 @@ export function useDashboardData(
   // These are stable and won't cause re-renders
   const fetchDashboardMetrics = useAnalyticsStore(state => state.fetchDashboardMetrics);
   const fetchSalesTrends = useAnalyticsStore(state => state.fetchSalesTrends);
-  const fetchConversionFunnel = useAnalyticsStore(state => state.fetchConversionFunnel);
   const fetchRepPerformance = useAnalyticsStore(state => state.fetchRepPerformance);
   const fetchAgentPerformance = useAnalyticsStore(state => state.fetchAgentPerformance);
-  const fetchCustomerInsights = useAnalyticsStore(state => state.fetchCustomerInsights);
-  const fetchPendingOrders = useAnalyticsStore(state => state.fetchPendingOrders);
   const fetchReadyForPickup = useAnalyticsStore(state => state.fetchReadyForPickup);
-  const fetchRecentActivity = useAnalyticsStore(state => state.fetchRecentActivity);
   const fetchOrdersByStatus = useAnalyticsStore(state => state.fetchOrdersByStatus);
 
   const { user } = useAuthStore();
@@ -73,13 +80,9 @@ export function useDashboardData(
       const storeMethods = {
         fetchDashboardMetrics,
         fetchSalesTrends,
-        fetchConversionFunnel,
         fetchRepPerformance,
         fetchAgentPerformance,
-        fetchCustomerInsights,
-        fetchPendingOrders,
         fetchReadyForPickup,
-        fetchRecentActivity,
         fetchOrdersByStatus,
       };
 
@@ -143,14 +146,9 @@ export function useDashboardData(
           ).toFixed(1);
         }
 
-        // Earnings (for sales reps)
-        if (dashboardData.repPerformance && (user as any)?.commissionAmount) {
-          const unpaidCount = (dashboardData.repPerformance as any).unpaidDeliveredOrders || 0;
-          calculated.myCommission = (
-            unpaidCount * (user as any).commissionAmount
-          ).toFixed(2);
-          calculated.commissionAmount = (user as any).commissionAmount;
-          calculated.unpaidDeliveredCount = unpaidCount;
+        // Earnings (for sales reps). A rep with no rate or no unpaid orders earns 0, not a blank card.
+        if (dashboardData.repPerformance) {
+          Object.assign(calculated, computeRepEarnings(dashboardData.repPerformance, user));
         }
 
         // Conversion rate (for sales reps)
@@ -193,13 +191,9 @@ export function useDashboardData(
     user,
     fetchDashboardMetrics,
     fetchSalesTrends,
-    fetchConversionFunnel,
     fetchRepPerformance,
     fetchAgentPerformance,
-    fetchCustomerInsights,
-    fetchPendingOrders,
     fetchReadyForPickup,
-    fetchRecentActivity,
     fetchOrdersByStatus,
   ]);
 
@@ -298,14 +292,6 @@ async function executeFetcher(
       dashboardData.salesTrends = useAnalyticsStore.getState().trends;
       break;
 
-    case 'fetchConversionFunnel':
-      await storeMethods.fetchConversionFunnel(
-        dateRange?.startDate,
-        dateRange?.endDate
-      );
-      dashboardData.conversionFunnel = useAnalyticsStore.getState().conversionFunnel;
-      break;
-
     case 'fetchRepPerformance':
       await storeMethods.fetchRepPerformance(
         dateRange?.startDate,
@@ -380,68 +366,9 @@ async function executeFetcher(
       }
       break;
 
-    case 'fetchCustomerInsights':
-      try {
-        await storeMethods.fetchCustomerInsights();
-        dashboardData.customerInsights = useAnalyticsStore.getState().customerInsights;
-      } catch (error) {
-        console.error('Failed to fetch customer insights:', error);
-        // Provide fallback data so dashboard still renders
-        dashboardData.customerInsights = {
-          totalCustomers: 0,
-          topCustomers: [],
-          customersByArea: [],
-          avgOrderValue: 0
-        };
-      }
-      break;
-
-    case 'fetchPendingOrders':
-      await storeMethods.fetchPendingOrders();
-      dashboardData.pendingOrders = useAnalyticsStore.getState().pendingOrders;
-      break;
-
     case 'fetchReadyForPickup':
       await storeMethods.fetchReadyForPickup();
       dashboardData.readyForPickup = useAnalyticsStore.getState().readyForPickup;
-      break;
-
-    case 'fetchRecentActivity':
-      await storeMethods.fetchRecentActivity();
-      dashboardData.recentActivity = useAnalyticsStore.getState().recentActivity;
-      break;
-
-    case 'fetchAreaDistribution':
-      // Create mock geographic distribution based on total orders
-      const analyticsStoreForArea = useAnalyticsStore.getState();
-      const metricsForArea = analyticsStoreForArea.metrics;
-      const totalOrders = metricsForArea?.totalOrders || 76;
-
-      // Mock geographic distribution - Ghana regions
-      dashboardData.areaDistribution = [
-        { area: 'Greater Accra', orderCount: Math.floor(totalOrders * 0.35) },
-        { area: 'Ashanti', orderCount: Math.floor(totalOrders * 0.25) },
-        { area: 'Eastern', orderCount: Math.floor(totalOrders * 0.15) },
-        { area: 'Western', orderCount: Math.floor(totalOrders * 0.10) },
-        { area: 'Central', orderCount: Math.floor(totalOrders * 0.08) },
-        { area: 'Northern', orderCount: Math.floor(totalOrders * 0.04) },
-        { area: 'Volta', orderCount: Math.floor(totalOrders * 0.03) },
-      ].filter(item => item.orderCount > 0);
-      break;
-
-    case 'fetchProductPerformance':
-      // Aggregate revenue by product - use mock data for now
-      const analyticsStoreForProducts = useAnalyticsStore.getState();
-      const metricsForProducts = analyticsStoreForProducts.metrics;
-
-      // Create mock product performance data
-      dashboardData.productPerformance = [
-        { productName: 'Product A', revenue: metricsForProducts?.totalRevenue ? metricsForProducts.totalRevenue * 0.3 : 5000 },
-        { productName: 'Product B', revenue: metricsForProducts?.totalRevenue ? metricsForProducts.totalRevenue * 0.25 : 4000 },
-        { productName: 'Product C', revenue: metricsForProducts?.totalRevenue ? metricsForProducts.totalRevenue * 0.2 : 3000 },
-        { productName: 'Product D', revenue: metricsForProducts?.totalRevenue ? metricsForProducts.totalRevenue * 0.15 : 2000 },
-        { productName: 'Product E', revenue: metricsForProducts?.totalRevenue ? metricsForProducts.totalRevenue * 0.1 : 1000 },
-      ];
       break;
 
     case 'fetchOrdersByStatus':
@@ -450,34 +377,6 @@ async function executeFetcher(
         dateRange?.endDate
       );
       dashboardData.ordersByStatus = useAnalyticsStore.getState().ordersByStatus;
-      break;
-
-    case 'fetchTopProducts':
-    case 'fetchRevenueByRegion':
-    case 'fetchRecentOrders':
-    case 'fetchCustomerAcquisition':
-    case 'fetchRecentCustomers':
-    case 'fetchEarningsTrends':
-    case 'fetchDeliveriesByStatus':
-    case 'fetchPerformanceMetrics':
-    case 'fetchDailyDeliveries':
-    case 'fetchDeliveryTimeAnalysis':
-    case 'fetchRecentDeliveries':
-    case 'fetchFinancialMetrics':
-    case 'fetchCollectionsTrends':
-    case 'fetchPaymentsByStatus':
-    case 'fetchCashFlowData':
-    case 'fetchTopRevenueSources':
-    case 'fetchPendingReconciliation':
-    case 'fetchInventoryMetrics':
-    case 'fetchStockByCategory':
-    case 'fetchTopSellingProducts':
-    case 'fetchInventoryTurnover':
-    case 'fetchStockMovement':
-    case 'fetchLowStockItemsList':
-      // These methods don't exist yet - return empty data to prevent crashes
-      console.warn(`Data fetcher not implemented: ${fetcherName}`);
-      dashboardData[fetcherName.replace('fetch', '').toLowerCase()] = [];
       break;
 
     default:

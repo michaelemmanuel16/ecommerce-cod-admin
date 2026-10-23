@@ -1,30 +1,20 @@
 import React from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { Check, Circle } from 'lucide-react';
 import { authService } from '../services/auth.service';
-import { Input } from '../components/ui/Input';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
+import { Button, Input } from '../components/ui-v2';
+import { AuthLayout } from '../components/auth/AuthLayout';
 
-const resetPasswordSchema = z
-  .object({
-    password: z
-      .string()
-      .min(8, 'Password must be at least 8 characters')
-      .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
-      .regex(/[a-z]/, 'Must contain at least one lowercase letter')
-      .regex(/[0-9]/, 'Must contain at least one number')
-      .regex(/[!@#$%^&*(),.?":{}|<>]/, 'Must contain at least one special character'),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: 'Passwords do not match',
-    path: ['confirmPassword'],
-  });
+// F-121: at least 8 characters with upper case, lower case, a digit and a special character.
+const RULES = [
+  { id: 'len', text: 'At least 8 characters', test: (v: string) => v.length >= 8 },
+  { id: 'upper', text: 'One upper case letter', test: (v: string) => /[A-Z]/.test(v) },
+  { id: 'lower', text: 'One lower case letter', test: (v: string) => /[a-z]/.test(v) },
+  { id: 'digit', text: 'One number', test: (v: string) => /[0-9]/.test(v) },
+  { id: 'special', text: 'One special character', test: (v: string) => /[!@#$%^&*(),.?":{}|<>]/.test(v) },
+];
 
-type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
+const EXPIRED_LINK = 'This reset link has expired or was already used.';
 
 export const ResetPassword: React.FC = () => {
   const navigate = useNavigate();
@@ -33,95 +23,82 @@ export const ResetPassword: React.FC = () => {
 
   const [isLoading, setIsLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
+  const [expired, setExpired] = React.useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<ResetPasswordFormData>({
-    resolver: zodResolver(resetPasswordSchema),
-  });
+  const [password, setPassword] = React.useState('');
+  const [confirm, setConfirm] = React.useState('');
+  const [errors, setErrors] = React.useState<{ password?: string; confirm?: string }>({});
 
-  if (!token) {
+  if (!token || expired) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
-        <div className="max-w-md w-full">
-          <Card>
-            <div className="text-center space-y-4">
-              <p className="text-red-600">Invalid reset link. No token provided.</p>
-              <Link to="/forgot-password" className="text-sm text-blue-600 hover:underline block">
-                Request a new reset link
-              </Link>
-            </div>
-          </Card>
-        </div>
-      </div>
+      <AuthLayout title="Link not valid">
+        <div className="authnote bad" role="alert" style={{ marginTop: 20 }}>{EXPIRED_LINK}</div>
+        <p className="authfoot"><Link to="/forgot-password">Request a new reset link</Link></p>
+      </AuthLayout>
     );
   }
 
-  const onSubmit = async (data: ResetPasswordFormData) => {
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMessage('');
+    const next = {
+      password: RULES.every((r) => r.test(password)) ? undefined : 'The password does not meet the rules below',
+      confirm: password === confirm ? undefined : 'Passwords do not match',
+    };
+    setErrors(next);
+    if (next.password || next.confirm) return;
     setIsLoading(true);
     try {
-      await authService.resetPassword(token, data.password);
-      navigate('/login', { state: { message: 'Password reset successful. Please log in with your new password.' } });
-    } catch (error: any) {
-      const message = error?.response?.data?.message || 'Something went wrong. Please try again.';
-      setErrorMessage(message);
+      await authService.resetPassword(token, password);
+      navigate('/login', { state: { message: 'Password changed. Sign in with your new password.' } });
+    } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      // 400 from the API means the token is unknown, expired or used.
+      if (status === 400) setExpired(true);
+      else setErrorMessage('Something went wrong. Try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">COD Admin</h1>
-          <p className="text-gray-600 mt-2">Set a new password</p>
-        </div>
-        <Card>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {errorMessage && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded" role="alert">
-                <span>{errorMessage}</span>
-                {errorMessage.includes('expired') && (
-                  <Link to="/forgot-password" className="block mt-2 text-sm text-blue-600 hover:underline">
-                    Request a new reset link
-                  </Link>
-                )}
-              </div>
-            )}
-            <Input
-              label="New Password"
-              type="password"
-              {...register('password')}
-              error={errors.password?.message}
-              placeholder="Enter new password"
-            />
-            <Input
-              label="Confirm Password"
-              type="password"
-              {...register('confirmPassword')}
-              error={errors.confirmPassword?.message}
-              placeholder="Confirm new password"
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              className="w-full"
-              isLoading={isLoading}
-            >
-              Reset Password
-            </Button>
-          </form>
-          <p className="text-center text-sm text-gray-600 mt-4">
-            <Link to="/login" className="text-blue-600 hover:underline">
-              Back to login
-            </Link>
-          </p>
-        </Card>
-      </div>
-    </div>
+    <AuthLayout title="Set a new password">
+      <form onSubmit={onSubmit} noValidate>
+        {errorMessage && <div className="authnote bad" role="alert">{errorMessage}</div>}
+        <Input
+          label="New password"
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          error={errors.password}
+          placeholder="Enter new password"
+        />
+        <ul className="rules" aria-label="Password rules">
+          {RULES.map((r) => {
+            const met = r.test(password);
+            return (
+              <li key={r.id} className={met ? 'met' : undefined}>
+                {met ? <Check aria-hidden="true" /> : <Circle aria-hidden="true" />}
+                {r.text}
+              </li>
+            );
+          })}
+        </ul>
+        <Input
+          label="Confirm password"
+          type="password"
+          autoComplete="new-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          error={errors.confirm}
+          placeholder="Confirm new password"
+        />
+        <Button type="submit" variant="primary" disabled={isLoading}>
+          {isLoading ? 'Saving…' : 'Reset password'}
+        </Button>
+      </form>
+      <p className="authfoot"><Link to="/login">Back to sign in</Link></p>
+    </AuthLayout>
   );
 };

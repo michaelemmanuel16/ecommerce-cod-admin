@@ -87,6 +87,22 @@ describe('BillingController', () => {
       );
     });
 
+    it('counts the store-zone month (Africa/Accra), not the server-zone month (COD-30 QA-04)', async () => {
+      (prismaMock.tenant.findUnique as any).mockResolvedValue({ ...mockTenant, currentPlan: mockPlan });
+      (prismaMock.order.count as any).mockResolvedValue(1);
+      // 00:30 UTC on 1 Oct is already October in Accra; a server in New York is still on 30 Sep
+      jest.useFakeTimers({ now: new Date('2026-10-01T00:30:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+      try {
+        await getSubscription({} as any, makeRes(), makeNext());
+      } finally {
+        jest.useRealTimers();
+      }
+      expect((prismaMock.order.count as any).mock.calls[0][0].where.createdAt).toEqual({
+        gte: new Date('2026-10-01T00:00:00Z'),
+        lt: new Date('2026-11-01T00:00:00Z'),
+      });
+    });
+
     it('should throw 404 when tenant not found', async () => {
       (prismaMock.tenant.findUnique as any).mockResolvedValue(null);
       const next = makeNext();

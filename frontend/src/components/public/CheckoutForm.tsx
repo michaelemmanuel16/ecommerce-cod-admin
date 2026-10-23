@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { useForm, RegisterOptions, FieldError } from 'react-hook-form';
+import { useForm, Controller, RegisterOptions, FieldError } from 'react-hook-form';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
 import { FormField, PaymentMethod } from '../../types/checkout-form';
 import { MappedField, mapFields } from '../../lib/standardFields';
@@ -7,6 +7,7 @@ import { PackageSelector } from './PackageSelector';
 import { AddOnSelector } from './AddOnSelector';
 import { OrderSummary, PaymentMethodOption } from './OrderSummary';
 import { cn } from '../../utils/cn';
+import { TownSelect } from '../forms/TownSelect';
 
 interface CheckoutFormProps {
   formData: PublicCheckoutForm;
@@ -25,7 +26,9 @@ export interface CheckoutFormData {
   alternativePhone?: string;
   email?: string;
   region: string;
-  streetAddress: string;
+  town: string;
+  landmark: string;
+  streetAddress?: string;
   selectedPackageId: number;
   selectedAddonIds: number[];
   customFields?: Record<string, string>;
@@ -37,17 +40,32 @@ export interface CheckoutFormData {
 // Which slots default to required when the field itself doesn't say. Not the same
 // thing as `REQUIRED_PHYSICAL` in lib/standardFields (which is what the server
 // rejects a submission without) — this one also applies to digital forms, where
-// address and region are still asked for but the server doesn't demand them.
-const DEFAULT_REQUIRED_KEYS: ReadonlySet<string> = new Set(['fullName', 'phone', 'region', 'streetAddress']);
+// address and state are still asked for but the server doesn't demand them.
+const DEFAULT_REQUIRED_KEYS: ReadonlySet<string> = new Set(['fullName', 'phone', 'region', 'town', 'landmark', 'streetAddress']);
 
 const DEFAULT_FIELDS: FormField[] = [
   { id: 'fullName', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
   { id: 'phone', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
-  { id: 'altPhone', label: 'Alt Phone', type: 'phone', required: false, enabled: true, standardKey: 'alternativePhone' },
-  { id: 'email', label: 'Email Address', type: 'email', required: false, enabled: true, standardKey: 'email' },
-  { id: 'region', label: 'Region/State', type: 'select', required: true, enabled: true, standardKey: 'region' },
-  { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: true, enabled: true, standardKey: 'streetAddress' },
+  { id: 'region', label: 'State', type: 'select', required: true, enabled: true, standardKey: 'region' },
+  { id: 'town', label: 'City/Town', type: 'text', required: true, enabled: true, standardKey: 'town' },
+  { id: 'landmark', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' },
+  { id: 'email', label: 'Email Address', type: 'email', required: false, enabled: false, standardKey: 'email' },
+  { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: false, enabled: false, standardKey: 'streetAddress' },
 ];
+
+const TOWN_FIELD: FormField = { id: 'town', label: 'City/Town', type: 'text', required: true, enabled: true, standardKey: 'town' };
+const LANDMARK_FIELD: FormField = { id: 'landmark', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' };
+
+// Forms saved before City/Town and Nearest landmark existed get both (required) right after the State field.
+// A saved field that is switched off still counts as present, so a seller's choice is kept. A form with no
+// State field is left alone: there is nothing to put them after.
+function withTownAndLandmark(fields: FormField[]): FormField[] {
+  const keys = mapFields(fields).map((m) => m.standardKey);
+  const add = [!keys.includes('town') && TOWN_FIELD, !keys.includes('landmark') && LANDMARK_FIELD].filter(Boolean) as FormField[];
+  if (add.length === 0) return fields;
+  const at = keys.indexOf('region');
+  return at < 0 ? fields : [...fields.slice(0, at + 1), ...add, ...fields.slice(at + 1)];
+}
 
 interface FieldWrapperProps {
   fieldKey: string;
@@ -91,9 +109,12 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
 
   const {
     register,
+    control: formControl,
+    watch,
     handleSubmit,
     formState: { errors },
   } = useForm<CheckoutFormData>();
+  const chosenState = watch('region') ?? '';
 
   useEffect(() => {
     if (lockedPackage) {
@@ -109,10 +130,19 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   const selectedPackage = formData.packages.find((p) => p.id === selectedPackageId) || null;
 
   function getFieldsToRender(): MappedField[] {
-    const fields = formData.fields?.length
-      ? formData.fields.filter((f: FormField) => f.enabled !== false)
-      : DEFAULT_FIELDS;
-    return mapFields(fields);
+    let fields: FormField[];
+    if (formData.fields?.length) {
+      fields = isDigital ? formData.fields : withTownAndLandmark(formData.fields);
+    } else if (isDigital) {
+      // Digital orders need an email and no town or landmark.
+      fields = DEFAULT_FIELDS.filter((f) => f.standardKey !== 'town' && f.standardKey !== 'landmark')
+        .map((f) => (f.standardKey === 'email' ? { ...f, enabled: true } : f));
+    } else {
+      fields = DEFAULT_FIELDS;
+    }
+    // Forms saved with the old "Region" wording show the new one.
+    const named = fields.map((f) => (/^region(\s*\/\s*state)?$/i.test(f.label.trim()) ? { ...f, label: 'State' } : f));
+    return mapFields(named.filter((f: FormField) => f.enabled !== false));
   }
 
   function getFieldError(formKey: string): FieldError | undefined {
@@ -171,7 +201,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
     const error = getFieldError(formKey);
     const hasError = !!error;
     const validation: RegisterOptions | undefined = isRequired ? requiredRule(field.label) : undefined;
-    const placeholder = field.placeholder || `Enter ${field.label.toLowerCase()}`;
+    const placeholder = field.placeholder || (standardKey === 'landmark' ? 'e.g. Opposite Kasoa Total station' : `Enter ${field.label.toLowerCase()}`);
     const wrapKey = field.id || field.label;
 
     // Each branch builds only the inner control; the shared FieldWrapper (label,
@@ -187,6 +217,29 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
             <option key={region} value={region}>{region}</option>
           ))}
         </select>
+      );
+    } else if (standardKey === 'town') {
+      // City/Town: the towns of the chosen state, with "Other – type it" last. Native select, so it stays easy on a phone.
+      control = (
+        <Controller
+          name="town"
+          control={formControl}
+          rules={validation as any}
+          defaultValue=""
+          render={({ field: f }) => (
+            <TownSelect
+              variant="plain"
+              label={field.label}
+              state={chosenState}
+              value={f.value ?? ''}
+              onChange={f.onChange}
+              towns={formData.towns?.[chosenState] ?? []}
+              selectClassName={selectClassName(hasError)}
+              inputClassName={inputClassName(hasError)}
+              controlStyle={fieldStyle}
+            />
+          )}
+        />
       );
     } else if (standardKey === 'streetAddress' || (!standardKey && field.type === 'textarea')) {
       control = (

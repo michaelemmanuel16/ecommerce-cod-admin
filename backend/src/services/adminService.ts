@@ -1,4 +1,5 @@
 import prisma from '../utils/prisma';
+import { sessionService } from './sessionService';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import bcrypt from 'bcrypt';
 import { UserRole } from '@prisma/client';
@@ -19,6 +20,8 @@ import { tenantIdForFormSlug } from './tenantLookupService';
 import { currencyOfTenant, getCurrency } from '../utils/currency';
 import { changeStoreCurrency } from './fxService';
 import { parseOperatingHours } from './kpi/workingTime';
+import { normalizeInternationalPhone } from '../utils/phone';
+import { isValidTimeZone } from '../utils/timeZone';
 
 export const adminService = {
   /**
@@ -184,6 +187,9 @@ export const adminService = {
     businessEmail?: string;
     businessPhone?: string;
     businessAddress?: string;
+    supportWhatsapp?: string | null;
+    contactPerson?: string | null;
+    timeZone?: string;
     taxId?: string;
     currency?: string;
     operatingHours?: any;
@@ -195,15 +201,31 @@ export const adminService = {
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
     const tenantId = getTenantId();
-    const config = tenantId
-      ? await prisma.systemConfig.findUnique({ where: { tenantId } })
-      : await prisma.systemConfig.findFirst({ where: { tenantId: null } });
+    const findConfig = () => tenantId
+      ? prisma.systemConfig.findUnique({ where: { tenantId } })
+      : prisma.systemConfig.findFirst({ where: { tenantId: null } });
+    // A new tenant has no row until the first read seeds it; a save before that read must work too.
+    let config = await findConfig();
+    if (!config) {
+      await this.getSystemConfig();
+      config = await findConfig();
+    }
     if (!config) throw new Error('System config not found');
 
     // The store currency is Tenant.currency, not a SystemConfig column (M1-T31). The owner can change it at any time.
     const { currency, ...configData } = data;
     data = configData;
     if (currency !== undefined && tenantId) await changeStoreCurrency(tenantId, currency);
+
+    // Business details (M3-T25, F-1230): the support WhatsApp is an international number, the time zone an IANA name.
+    if (data.supportWhatsapp) {
+      const whatsapp = normalizeInternationalPhone(data.supportWhatsapp);
+      if (!whatsapp) throw new AppError('Support WhatsApp must be an international number, for example +233245550103', 400, 'INVALID_WHATSAPP');
+      data.supportWhatsapp = whatsapp;
+    }
+    if (data.timeZone !== undefined && !isValidTimeZone(data.timeZone)) {
+      throw new AppError('Time zone must be an IANA name, for example Africa/Accra', 400, 'INVALID_TIME_ZONE');
+    }
 
     // Operating hours drive the time-to-first-call clock (M1-T22, F-755): reject a bad shape now, not at read time.
     if (data.operatingHours !== undefined && data.operatingHours !== null) {
@@ -327,10 +349,11 @@ export const adminService = {
       super_admin: {
         users: ['create', 'view', 'update', 'delete'],
         orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status'],
-        customers: ['create', 'view', 'update', 'delete'],
+        customers: ['create', 'view', 'update', 'delete', 'export'],
         products: ['create', 'view', 'update', 'delete', 'update_stock'],
         financial: ['view', 'create', 'update', 'delete'],
-        analytics: ['view'],
+        analytics: ['view', 'export'],
+        marketing: ['view'],
         workflows: ['create', 'view', 'update', 'delete', 'execute'],
         settings: ['view', 'update'],
         audit: ['view'],
@@ -338,10 +361,11 @@ export const adminService = {
       admin: {
         users: ['create', 'view', 'update', 'delete'],
         orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status'],
-        customers: ['create', 'view', 'update', 'delete'],
+        customers: ['create', 'view', 'update', 'delete', 'export'],
         products: ['create', 'view', 'update', 'delete'],
         financial: ['view', 'create'],
-        analytics: ['view'],
+        analytics: ['view', 'export'],
+        marketing: ['view'],
         workflows: ['create', 'view', 'update', 'delete', 'execute'],
         settings: ['view'],
         audit: ['view'],
@@ -349,20 +373,22 @@ export const adminService = {
       manager: {
         users: [],
         orders: ['view', 'update', 'bulk_import', 'assign'],
-        customers: ['create', 'view', 'update', 'delete'],
+        customers: ['create', 'view', 'update', 'delete', 'export'],
         products: ['view'],
         financial: ['view'],
-        analytics: ['view'],
+        analytics: ['view', 'export'],
+        marketing: ['view'],
         workflows: ['view', 'execute'],
         settings: [],
       },
       sales_rep: {
         users: [],
         orders: ['create', 'view', 'update'],
-        customers: ['create', 'view', 'update', 'delete'],
+        customers: ['create', 'view', 'update'],
         products: ['view'],
         financial: [],
         analytics: ['view'],
+        marketing: [],
         workflows: [],
         settings: [],
       },
@@ -373,6 +399,7 @@ export const adminService = {
         products: ['create', 'view', 'update', 'delete', 'update_stock'],
         financial: [],
         analytics: ['view'],
+        marketing: [],
         workflows: [],
         settings: [],
       },
@@ -383,6 +410,7 @@ export const adminService = {
         products: ['view'],
         financial: ['create'],
         analytics: ['view'],
+        marketing: [],
         workflows: [],
         settings: [],
       },
@@ -392,7 +420,8 @@ export const adminService = {
         customers: ['view'],
         products: ['view'],
         financial: ['view', 'create'],
-        analytics: ['view'],
+        analytics: ['view', 'export'],
+        marketing: [],
         workflows: [],
         settings: [],
       },
@@ -613,6 +642,9 @@ export const adminService = {
       } as any,
     });
 
+    // Deactivating signs the user out of every device at once (F-1224)
+    if (data.isActive === false) await sessionService.revokeAll(userId);
+
     await this.createAuditLog(requester, 'update', 'user', userId.toString(), { changes: Object.keys(data) });
 
     return updatedUser;
@@ -644,6 +676,8 @@ export const adminService = {
       },
     });
 
+    await sessionService.revokeAll(userId);
+
     await this.createAuditLog(requester, 'reset_password', 'user', userId.toString());
 
     return updatedUser;
@@ -669,6 +703,8 @@ export const adminService = {
       where: { id: userId },
       data: { isActive: false },
     });
+
+    await sessionService.revokeAll(userId);
 
     await this.createAuditLog(requester, 'deactivate', 'user', userId.toString());
 

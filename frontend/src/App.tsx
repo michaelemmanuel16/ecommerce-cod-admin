@@ -2,16 +2,17 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Layout } from './components/layout/Layout';
+import { Shell } from './components/shell/Shell';
 import { Toast } from './components/ui/Toast';
 import { Loading } from './components/ui/Loading';
+import { ToastProvider } from './components/ui-v2';
 import { UpdatePrompt } from './components/pwa/UpdatePrompt';
-import { OnboardingProvider } from './components/onboarding';
-import { CustomerRepOnboarding, OnboardingWelcomeModal } from './components/onboarding';
-import { useIsMobile } from './hooks/useIsMobile';
-import { DESKTOP_FLAG, MOBILE_OPT_IN } from './constants/mobile';
+import { AccessGate } from './components/shell/AccessGate';
+import { canOpenPath, isManagerUp } from './components/shell/navModel';
 import { useConfigStore } from './stores/configStore';
 import { isPlatformDomain, platformLoginPath } from './utils/platformDomain';
+import { SaasRoute } from './components/auth/SaasRoute';
+import { NotFound } from './pages/NotFound';
 
 // Eager load authentication pages (critical path)
 import { Login } from './pages/Login';
@@ -20,10 +21,11 @@ import { Onboarding } from './pages/Onboarding';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { DynamicDashboard } from './pages/DynamicDashboard';
+import { Dashboard } from './pages/Dashboard';
+import { SettingsTabRedirect } from './pages/settings/SettingsTabRedirect';
 // Lazy load all other pages for better initial load performance
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
-const Orders = lazy(() => import('./pages/Orders').then(m => ({ default: m.Orders })));
-const OrderDetails = lazy(() => import('./pages/OrderDetails').then(m => ({ default: m.OrderDetails })));
+const OrdersRoute = lazy(() => import('./pages/orders/OrdersRoute').then(m => ({ default: m.OrdersRoute })));
 const Products = lazy(() => import('./pages/Products').then(m => ({ default: m.Products })));
 const ProductForm = lazy(() => import('./pages/ProductForm').then(m => ({ default: m.ProductForm })));
 const Customers = lazy(() => import('./pages/Customers').then(m => ({ default: m.Customers })));
@@ -31,7 +33,7 @@ const CustomerDetails = lazy(() => import('./pages/CustomerDetails').then(m => (
 const DeliveryAgents = lazy(() => import('./pages/DeliveryAgents').then(m => ({ default: m.DeliveryAgents })));
 const CustomerReps = lazy(() => import('./pages/CustomerReps').then(m => ({ default: m.CustomerReps })));
 const Financial = lazy(() => import('./pages/Financial').then(m => ({ default: m.Financial })));
-const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })));
+const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
 const Workflows = lazy(() => import('./pages/Workflows').then(m => ({ default: m.Workflows })));
 const WorkflowWizard = lazy(() => import('./pages/WorkflowWizard').then(m => ({ default: m.WorkflowWizard })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
@@ -41,11 +43,12 @@ const CheckoutFormPreview = lazy(() => import('./pages/CheckoutFormPreview').the
 const Webhooks = lazy(() => import('./pages/Webhooks').then(m => ({ default: m.Webhooks })));
 const PublicCheckout = lazy(() => import('./pages/PublicCheckout').then(m => ({ default: m.PublicCheckout })));
 const PaymentCallback = lazy(() => import('./pages/PaymentCallback').then(m => ({ default: m.PaymentCallback })));
+// Dev-only design-system gallery. The DEV flag is replaced at build time, so production bundles drop the import.
+const UiGallery = import.meta.env.DEV ? lazy(() => import('./pages/dev/UiGallery')) : null;
 const EarningsHistory = lazy(() => import('./pages/EarningsHistory'));
 const AgentMyInventory = lazy(() => import('./pages/AgentMyInventory'));
 const AgentInventoryManagement = lazy(() => import('./pages/AgentInventoryManagement'));
 const Communications = lazy(() => import('./pages/Communications'));
-const Billing = lazy(() => import('./pages/Billing').then(m => ({ default: m.Billing })));
 const SubscriptionCallback = lazy(() => import('./pages/SubscriptionCallback').then(m => ({ default: m.SubscriptionCallback })));
 const PlatformLogin = lazy(() => import('./pages/PlatformLogin').then(m => ({ default: m.PlatformLogin })));
 const PlatformDashboard = lazy(() => import('./pages/PlatformDashboard').then(m => ({ default: m.PlatformDashboard })));
@@ -81,13 +84,12 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; skipOnboardingCheck?
   return <>{children}</>;
 };
 
-const RoleGuard: React.FC<{ children: React.ReactNode; allowedRoles: string[] }> = ({ children, allowedRoles }) => {
-  const { user } = useAuthStore();
-
-  if (!user || !allowedRoles.includes(user.role)) {
+// Legacy /m pages (retired in M10-T08). They need the same access as the agent stock page, which the menu decides.
+const MobileGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, menu, homeRoute } = useAuthStore();
+  if (!user || !menu || !canOpenPath('/agent-inventory', menu, user.role, homeRoute)) {
     return <Navigate to="/" replace />;
   }
-
   return <>{children}</>;
 };
 
@@ -108,34 +110,26 @@ const PlatformGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   return <>{children}</>;
 };
 
+// Owner, admin and manager see the owner Dashboard (M3-T41, F-210); the API trims the blocks a manager may not see.
+// Finance clerk and stock keeper never get here: AccessGate sends "/" to their home. Call reps and delivery agents keep the
+// old per-role dashboard (DynamicDashboard with salesRepConfig / deliveryAgentConfig) until the rep app (M7) and the agent
+// app (M10) ship; the plan never leaves them on a placeholder.
+
 // Platform admins have no tenant store — land them on the platform tree instead of
 // the tenant dashboard. On the platform subdomain this never fires (separate router);
 // on the main domain it keeps their landing consistent with their (platform-only) menu.
 const DashboardIndex: React.FC = () => {
   const { user } = useAuthStore();
   if (user?.isPlatformAdmin) return <Navigate to="/platform" replace />;
+  if (user && isManagerUp(user.role)) return <Dashboard />;
   return <DynamicDashboard />;
 };
 
-const MobileRedirect: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+// "/m" is the delivery agent's mobile home. Owner roles that open it by hand go to their Dashboard.
+const MobileIndex: React.FC = () => {
   const { user } = useAuthStore();
-  const isMobile = useIsMobile();
-  const location = useLocation();
-
-  // Only auto-redirect when the user has explicitly opted in via the "Mobile View"
-  // sidebar button (which sets MOBILE_OPT_IN). Without opt-in, mobile agents stay on
-  // the desktop view because key mobile pages (Deliveries) are still stubs.
-  if (
-    user?.role === 'delivery_agent' &&
-    isMobile &&
-    !location.pathname.startsWith('/m') &&
-    localStorage.getItem(DESKTOP_FLAG) !== 'true' &&
-    localStorage.getItem(MOBILE_OPT_IN) === 'true'
-  ) {
-    return <Navigate to="/m/" replace />;
-  }
-
-  return <>{children}</>;
+  if (user && isManagerUp(user.role)) return <Navigate to="/" replace />;
+  return <DynamicDashboard />;
 };
 
 function App() {
@@ -185,190 +179,183 @@ function App() {
   // Main tenant domain — full app
   return (
     <ErrorBoundary>
-      <OnboardingProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* Public routes - no authentication required */}
-            <Route path="/form/:slug" element={
-              <Suspense fallback={<Loading />}>
-                <PublicCheckout />
-              </Suspense>
-            } />
-            <Route path="/pricing" element={
+      <BrowserRouter>
+        <Routes>
+          {/* Public routes - no authentication required */}
+          <Route path="/form/:slug" element={
+            <Suspense fallback={<Loading />}>
+              <PublicCheckout />
+            </Suspense>
+          } />
+          <Route path="/pricing" element={
+            <SaasRoute>
               <Suspense fallback={<Loading />}>
                 <Pricing />
               </Suspense>
-            } />
-            <Route path="/checkout/payment/callback" element={
-              <Suspense fallback={<Loading />}>
-                <PaymentCallback />
-              </Suspense>
-            } />
-            {/* Auth routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            {/* Platform login on main domain — used by PlatformGuard redirect in local dev */}
-            <Route path="/platform/login" element={
-              <Suspense fallback={<Loading />}><PlatformLogin /></Suspense>
-            } />
-            <Route path="/onboarding" element={
-              <ProtectedRoute skipOnboardingCheck>
-                <Onboarding />
-              </ProtectedRoute>
-            } />
-            {/* Admin-only preview route — bare shell so the editor iframe
-                doesn't render the sidebar/header inside itself. Auth is
-                enforced by the backend /preview-config endpoint. */}
-            <Route path="/checkout-forms/:id/preview" element={
+            </SaasRoute>
+          } />
+          <Route path="/checkout/payment/callback" element={
+            <Suspense fallback={<Loading />}>
+              <PaymentCallback />
+            </Suspense>
+          } />
+          {UiGallery && (
+            <Route path="/dev/ui-v2" element={<Suspense fallback={<Loading />}><UiGallery /></Suspense>} />
+          )}
+          {/* Auth routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<SaasRoute><Register /></SaasRoute>} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          {/* Platform login on main domain — used by PlatformGuard redirect in local dev */}
+          <Route path="/platform/login" element={
+            <Suspense fallback={<Loading />}><PlatformLogin /></Suspense>
+          } />
+          <Route path="/onboarding" element={
+            <ProtectedRoute skipOnboardingCheck>
+              <Onboarding />
+            </ProtectedRoute>
+          } />
+          {/* Admin-only preview route — bare shell so the editor iframe
+              doesn't render the sidebar/header inside itself. Auth is
+              enforced by the backend /preview-config endpoint. */}
+          <Route path="/checkout-forms/:id/preview" element={
+            <ProtectedRoute>
+              <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
+            </ProtectedRoute>
+          } />
+          {/* Mobile routes for delivery agents */}
+          <Route
+            path="/m"
+            element={
               <ProtectedRoute>
-                <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
+                <MobileGate>
+                  <Suspense fallback={<Loading />}>
+                    <MobileLayout />
+                  </Suspense>
+                </MobileGate>
               </ProtectedRoute>
+            }
+          >
+            <Route index element={<MobileIndex />} />
+            <Route path="deliveries" element={
+              <Suspense fallback={<Loading />}><MobileDeliveries /></Suspense>
             } />
-            {/* Mobile routes for delivery agents */}
-            <Route
-              path="/m"
-              element={
-                <ProtectedRoute>
-                  <RoleGuard allowedRoles={['delivery_agent']}>
-                    <Suspense fallback={<Loading />}>
-                      <MobileLayout />
-                    </Suspense>
-                  </RoleGuard>
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<DynamicDashboard />} />
-              <Route path="deliveries" element={
-                <Suspense fallback={<Loading />}><MobileDeliveries /></Suspense>
-              } />
-              <Route path="deliveries/:id" element={
-                <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
-              } />
-              <Route path="deliveries/order/:orderId" element={
-                <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
-              } />
-              <Route path="inventory" element={
-                <Suspense fallback={<Loading />}><AgentMyInventory /></Suspense>
-              } />
-              <Route path="collections" element={
-                <Suspense fallback={<Loading />}><MobileCollections /></Suspense>
-              } />
-              {/* TODO: replace with mobile-optimized Settings */}
-              <Route path="settings" element={
-                <Suspense fallback={<Loading />}><Settings /></Suspense>
-              } />
-            </Route>
+            <Route path="deliveries/:id" element={
+              <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
+            } />
+            <Route path="deliveries/order/:orderId" element={
+              <Suspense fallback={<Loading />}><MobileDeliveryDetail /></Suspense>
+            } />
+            <Route path="inventory" element={
+              <Suspense fallback={<Loading />}><AgentMyInventory /></Suspense>
+            } />
+            <Route path="collections" element={
+              <Suspense fallback={<Loading />}><MobileCollections /></Suspense>
+            } />
+            {/* TODO: replace with mobile-optimized Settings. The new Settings is a v2 page, so it brings the v2 scope and toasts with it. */}
+            <Route path="settings" element={
+              <Suspense fallback={<Loading />}><ToastProvider><div className="v2"><Settings /></div></ToastProvider></Suspense>
+            } />
+          </Route>
 
-            {/* Desktop routes */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <MobileRedirect>
-                    <Layout />
-                  </MobileRedirect>
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<DashboardIndex />} />
-              <Route path="orders" element={
-                <Suspense fallback={<Loading />}><Orders /></Suspense>
-              } />
-              <Route path="orders/:id" element={
-                <Suspense fallback={<Loading />}><OrderDetails /></Suspense>
-              } />
-              <Route path="products" element={
-                <Suspense fallback={<Loading />}><Products /></Suspense>
-              } />
-              <Route path="products/new" element={
-                <Suspense fallback={<Loading />}><ProductForm /></Suspense>
-              } />
-              <Route path="products/:id/edit" element={
-                <Suspense fallback={<Loading />}><ProductForm /></Suspense>
-              } />
-              <Route path="customers" element={
-                <Suspense fallback={<Loading />}><Customers /></Suspense>
-              } />
-              <Route path="customers/:id" element={
-                <Suspense fallback={<Loading />}><CustomerDetails /></Suspense>
-              } />
-              <Route path="delivery-agents" element={
-                <Suspense fallback={<Loading />}><DeliveryAgents /></Suspense>
-              } />
-              <Route path="customer-reps" element={
-                <Suspense fallback={<Loading />}><CustomerReps /></Suspense>
-              } />
-              <Route path="financial" element={
-                <Suspense fallback={<Loading />}><Financial /></Suspense>
-              } />
-              <Route path="analytics" element={
-                <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'accountant']}>
-                  <Suspense fallback={<Loading />}><Analytics /></Suspense>
-                </RoleGuard>
-              } />
-              <Route path="workflows" element={
-                <Suspense fallback={<Loading />}><Workflows /></Suspense>
-              } />
-              <Route path="workflows/new" element={
-                <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
-              } />
-              <Route path="workflows/:id" element={
-                <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
-              } />
-              <Route path="communications" element={
-                <RoleGuard allowedRoles={['super_admin', 'admin', 'manager']}>
-                  <Suspense fallback={<Loading />}><Communications /></Suspense>
-                </RoleGuard>
-              } />
-              <Route path="settings" element={
-                <Suspense fallback={<Loading />}><Settings /></Suspense>
-              } />
-              <Route path="settings/billing" element={
-                <Suspense fallback={<Loading />}><Billing /></Suspense>
-              } />
-              <Route path="settings/billing/callback" element={
-                <Suspense fallback={<Loading />}><SubscriptionCallback /></Suspense>
-              } />
-              <Route path="checkout-forms" element={
-                <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
-              } />
-              <Route path="checkout-forms/new" element={
-                <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
-              } />
-              <Route path="checkout-forms/:id/edit" element={
-                <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
-              } />
-              <Route path="webhooks" element={
-                <RoleGuard allowedRoles={['super_admin', 'admin']}>
-                  <Suspense fallback={<Loading />}><Webhooks /></Suspense>
-                </RoleGuard>
-              } />
-              <Route path="agent-inventory" element={
-                <RoleGuard allowedRoles={['super_admin', 'admin', 'manager', 'inventory_manager', 'delivery_agent']}>
-                  <Suspense fallback={<Loading />}><AgentInventoryRoute /></Suspense>
-                </RoleGuard>
-              } />
-              <Route path="earnings-history" element={
-                <RoleGuard allowedRoles={['sales_rep']}>
-                  <Suspense fallback={<Loading />}><EarningsHistory /></Suspense>
-                </RoleGuard>
-              } />
-              <Route path="platform" element={platformRoute(PlatformDashboard)} />
-              <Route path="platform/tenants" element={platformRoute(PlatformTenants)} />
-              <Route path="platform/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
-              <Route path="platform/announcements" element={platformRoute(PlatformAnnouncements)} />
-              <Route path="platform/billing" element={platformRoute(PlatformBilling)} />
+          {/* Desktop routes */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Shell />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="financial" element={<Navigate to="/finance" replace />} />
+            {/* The old Analytics page is gone (M3-T60): old links and bookmarks land on Reports. */}
+            <Route path="analytics" element={<Navigate to="/reports" replace />} />
+            {/* /connections is the future Connections page (M9); until then it opens Integrations with its query (M3-T66). */}
+            <Route path="connections" element={<SettingsTabRedirect tab="integrations" />} />
+            {/* Every page below needs its menu item (F-102); platform pages use PlatformGuard instead. */}
+            <Route element={<AccessGate />}>
+            <Route index element={<DashboardIndex />} />
+            <Route path="orders/:id?" element={
+              <Suspense fallback={<Loading />}><OrdersRoute /></Suspense>
+            } />
+            <Route path="products" element={
+              <Suspense fallback={<Loading />}><Products /></Suspense>
+            } />
+            <Route path="products/new" element={
+              <Suspense fallback={<Loading />}><ProductForm /></Suspense>
+            } />
+            <Route path="products/:id/edit" element={
+              <Suspense fallback={<Loading />}><ProductForm /></Suspense>
+            } />
+            <Route path="customers" element={
+              <Suspense fallback={<Loading />}><Customers /></Suspense>
+            } />
+            <Route path="customers/:id" element={
+              <Suspense fallback={<Loading />}><CustomerDetails /></Suspense>
+            } />
+            <Route path="delivery-agents" element={
+              <Suspense fallback={<Loading />}><DeliveryAgents /></Suspense>
+            } />
+            <Route path="customer-reps" element={
+              <Suspense fallback={<Loading />}><CustomerReps /></Suspense>
+            } />
+            <Route path="finance" element={
+              <Suspense fallback={<Loading />}><Financial /></Suspense>
+            } />
+            <Route path="reports" element={
+              <Suspense fallback={<Loading />}><Reports /></Suspense>
+            } />
+            <Route path="workflows" element={
+              <Suspense fallback={<Loading />}><Workflows /></Suspense>
+            } />
+            <Route path="workflows/new" element={
+              <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
+            } />
+            <Route path="workflows/:id" element={
+              <Suspense fallback={<Loading />}><WorkflowWizard /></Suspense>
+            } />
+            <Route path="communications" element={
+              <Suspense fallback={<Loading />}><Communications /></Suspense>
+            } />
+            <Route path="settings" element={
+              <Suspense fallback={<Loading />}><Settings /></Suspense>
+            } />
+            {/* Billing is a Settings tab now (M3-T65); old links and the Paystack return land there. */}
+            <Route path="settings/billing" element={<SettingsTabRedirect tab="billing" />} />
+            <Route path="settings/billing/callback" element={
+              <SaasRoute><Suspense fallback={<Loading />}><SubscriptionCallback /></Suspense></SaasRoute>
+            } />
+            <Route path="checkout-forms" element={
+              <Suspense fallback={<Loading />}><CheckoutForms /></Suspense>
+            } />
+            <Route path="checkout-forms/new" element={
+              <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
+            } />
+            <Route path="checkout-forms/:id/edit" element={
+              <Suspense fallback={<Loading />}><CheckoutFormEditor /></Suspense>
+            } />
+            <Route path="webhooks" element={
+              <Suspense fallback={<Loading />}><Webhooks /></Suspense>
+            } />
+            <Route path="agent-inventory" element={
+              <Suspense fallback={<Loading />}><AgentInventoryRoute /></Suspense>
+            } />
+            <Route path="earnings-history" element={
+              <Suspense fallback={<Loading />}><EarningsHistory /></Suspense>
+            } />
             </Route>
-          </Routes>
-          {/* Onboarding Tour Components - Only visible for sales_rep role */}
-          <CustomerRepOnboarding />
-          <OnboardingWelcomeModal />
-        </BrowserRouter>
-        <Toast />
-        <UpdatePrompt />
-      </OnboardingProvider>
+            <Route path="platform" element={platformRoute(PlatformDashboard)} />
+            <Route path="platform/tenants" element={platformRoute(PlatformTenants)} />
+            <Route path="platform/tenants/:id" element={platformRoute(PlatformTenantDetail)} />
+            <Route path="platform/announcements" element={platformRoute(PlatformAnnouncements)} />
+            <Route path="platform/billing" element={platformRoute(PlatformBilling)} />
+            <Route path="*" element={<NotFound />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+      <Toast />
+      <UpdatePrompt />
     </ErrorBoundary>
   );
 }

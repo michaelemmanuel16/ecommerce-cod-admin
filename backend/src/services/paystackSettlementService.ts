@@ -11,6 +11,7 @@ import { emitOrderCreatedEvent } from '../utils/appEvents';
 import { emitOrderCreated } from '../sockets';
 import { getSocketInstance } from '../utils/socketInstance';
 import * as Money from '../utils/money';
+import { cleanText, deliveryAddressOf } from '../utils/checkoutLocation';
 
 export type SettlementStatus = 'success' | 'failed' | 'pending' | 'not_found';
 
@@ -157,9 +158,9 @@ async function settleInTenant(
       balanceDue: pending.balanceDue,
       depositPaid: paid,
       paymentReference: reference,
-      deliveryAddress: formData.address || null,
+      deliveryAddress: deliveryAddressOf(formData.address, formData.landmark),
       deliveryState: formData.state || null,
-      deliveryArea: formData.state || null,
+      deliveryArea: cleanText(formData.town, 100) || null,
       notes: formData.notes || null,
       source: 'checkout_form',
       tenantId: pending.tenantId,

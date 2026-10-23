@@ -1,10 +1,11 @@
-import { ActorKind, User } from '@prisma/client';
+import { ActorKind, OrderStatus, User } from '@prisma/client';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderAssigned, emitOrderUpdated } from '../sockets';
+import { createNotification } from './notificationService';
 
 /**
  * Assignment weights for weighted user selection
@@ -31,7 +32,12 @@ export interface AssignmentActor {
 /** `checkAvailable`: also refuse an agent who is not available. The manual path asks for it. */
 interface AssignOptions {
   checkAvailable?: boolean;
+  /** The owner confirmed a partner who is blocked for unpaid cash. */
+  confirmBlocked?: boolean;
 }
+
+/** A delivery agent can change in every open state. */
+const CLOSED_STATUSES: OrderStatus[] = ['delivered', 'digital_delivered', 'returned', 'cancelled'];
 
 export type AssignRole = 'delivery_agent' | 'sales_rep';
 
@@ -307,20 +313,13 @@ export class AssignmentService {
   }
 
   /**
-   * Assign a delivery agent or a sales rep to an order: updates the order, writes the OrderHistory row and the
-   * audit log, and notifies over the socket. The one path for the manual endpoints and the workflow actions
-   * (`assign_agent`, `assign_user`). The user must exist and have the role.
+   * The user an order is about to be assigned to, or an error: they must exist and hold the role. A deactivated user is not found: the client hides inactive users.
+   * `checkAvailable` also refuses an agent who is not available. An agent whose cash is blocked is refused unless
+   * `confirmBlocked` (F-314: the owner may pick a blocked partner after a confirm).
    */
-  async assignByRole(orderId: number, userId: number, role: AssignRole, actor: AssignmentActor, { checkAvailable = false }: AssignOptions = {}) {
+  async loadAssignee(userId: number, role: AssignRole, { checkAvailable = false, confirmBlocked = false }: AssignOptions = {}) {
     const kind = ASSIGN_KINDS[role];
-    const [order, user] = await Promise.all([
-      prisma.order.findUnique({ where: { id: orderId, deletedAt: null } }),
-      prisma.user.findUnique({ where: { id: userId } })
-    ]);
-
-    if (!order) {
-      throw new AppError('Order not found', 404);
-    }
+    const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new AppError(`${kind.label} not found`, 404);
     }
@@ -328,8 +327,103 @@ export class AssignmentService {
       throw new AppError(`Invalid ${kind.noun}`, 400);
     }
     if (checkAvailable && !user.isAvailable) {
-      throw new AppError('Delivery agent is not available', 400);
+      throw new AppError('Delivery agent is not available', 400, 'PARTNER_UNAVAILABLE');
     }
+    if (role === 'delivery_agent' && !confirmBlocked) {
+      const balance = await prisma.agentBalance.findUnique({ where: { agentId: userId }, select: { isBlocked: true } });
+      if (balance?.isBlocked) {
+        throw new AppError(`${user.firstName} ${user.lastName} is blocked for unpaid cash`, 409, 'PARTNER_BLOCKED');
+      }
+    }
+    return user;
+  }
+
+  /**
+   * "Unassign both" (F-314): clears the call rep and the delivery agent. One history row and one audit row, no
+   * notification. A closed order keeps its people, as for an agent change.
+   */
+  async unassignBoth(orderId: number, actor: AssignmentActor) {
+    const order = await prisma.order.findUnique({ where: { id: orderId, deletedAt: null } });
+    if (!order) {
+      throw new AppError('Order not found', 404);
+    }
+    if (CLOSED_STATUSES.includes(order.status)) {
+      throw new AppError('This order is closed. Its delivery agent cannot change.', 409, 'ORDER_CLOSED');
+    }
+
+    const actorUser = actor.kind === 'user' && actor.userId
+      ? await prisma.user.findUnique({ where: { id: actor.userId }, select: { firstName: true, lastName: true } })
+      : null;
+    const actorName = actorUser ? `${actorUser.firstName} ${actorUser.lastName}` : 'the system';
+    const tenantId = resolveTenantId(order.tenantId);
+    const updated = await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        customerRepId: null,
+        deliveryAgentId: null,
+        orderHistory: {
+          create: {
+            tenantId,
+            status: order.status,
+            notes: `Call rep and delivery agent removed by ${actorName}`,
+            changedBy: actor.userId,
+            actorKind: actor.kind,
+            metadata: { removedRepId: order.customerRepId, removedAgentId: order.deliveryAgentId }
+          }
+        }
+      },
+      include: {
+        customerRep: { select: { id: true, firstName: true, lastName: true } },
+        deliveryAgent: { select: { id: true, firstName: true, lastName: true } },
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        userId: actor.userId,
+        action: 'unassign_both',
+        resource: 'order',
+        resourceId: orderId.toString(),
+        metadata: { removedRepId: order.customerRepId, removedAgentId: order.deliveryAgentId },
+        ...(actor.kind === 'user' && { actorKind: 'person' as const, channel: 'app' as const }),
+        ...(actor.kind === 'system' && { actorKind: 'system' as const, channel: 'system' as const })
+      }
+    });
+
+    emitOrderUpdated(getSocketInstance() as any, updated);
+    return updated;
+  }
+
+  /**
+   * Assign a delivery agent or a sales rep to an order: updates the order, writes the OrderHistory row and the
+   * audit log, notifies the assignee (inbox and socket) and the order room. The one path for the manual endpoints,
+   * the bulk assign and the workflow actions (`assign_agent`, `assign_user`). The delivery agent of a closed order
+   * (delivered, digital delivered, returned, cancelled) does not change.
+   */
+  async assignByRole(orderId: number, userId: number, role: AssignRole, actor: AssignmentActor, options: AssignOptions = {}) {
+    const kind = ASSIGN_KINDS[role];
+    const [order, user] = await Promise.all([
+      prisma.order.findUnique({ where: { id: orderId, deletedAt: null } }),
+      this.loadAssignee(userId, role, options),
+    ]);
+
+    if (!order) {
+      throw new AppError('Order not found', 404);
+    }
+    if (role === 'delivery_agent' && CLOSED_STATUSES.includes(order.status)) {
+      throw new AppError('This order is closed. Its delivery agent cannot change.', 409, 'ORDER_CLOSED');
+    }
+
+    // The history note names the person who assigned and, on a change, who held the order before.
+    const previousId = role === 'delivery_agent' ? order.deliveryAgentId : order.customerRepId;
+    const [previous, actorUser] = await Promise.all([
+      previousId && previousId !== userId ? prisma.user.findUnique({ where: { id: previousId }, select: { firstName: true, lastName: true } }) : null,
+      actor.kind === 'user' && actor.userId ? prisma.user.findUnique({ where: { id: actor.userId }, select: { firstName: true, lastName: true } }) : null,
+    ]);
+    const actorName = actorUser ? `${actorUser.firstName} ${actorUser.lastName}` : 'the system';
+    const note = `${kind.label} assigned: ${user.firstName} ${user.lastName} by ${actorName}`
+      + (previous ? ` (was ${previous.firstName} ${previous.lastName})` : '');
 
     const metaKey = `assigned${kind.short[0].toUpperCase()}${kind.short.slice(1)}Id`;
     const tenantId = resolveTenantId(order.tenantId);
@@ -341,7 +435,7 @@ export class AssignmentService {
           create: {
             tenantId,
             status: order.status,
-            notes: `${kind.label} assigned: ${user.firstName} ${user.lastName} `,
+            notes: note,
             changedBy: actor.userId,
             actorKind: actor.kind,
             metadata: { [metaKey]: userId }
@@ -377,6 +471,15 @@ export class AssignmentService {
         ...(actor.kind === 'system' && { actorKind: 'system' as const, channel: 'system' as const })
       }
     });
+
+    // Inbox notification for the new holder (F-314); nobody is told about their own assignment.
+    if (actor.userId !== userId) {
+      try {
+        await createNotification(String(userId), 'order', 'Order assigned to you', `Order #${orderId} was assigned to you by ${actorName}`, { orderId, role });
+      } catch (error) {
+        logger.warn('Assignment notification failed', { orderId, userId, error: (error as Error).message });
+      }
+    }
 
     // Emit socket events for real-time updates
     const ioInstance = getSocketInstance() as any;

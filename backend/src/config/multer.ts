@@ -89,3 +89,36 @@ export const handleUploadErrors = (err: any, _req: any, res: any, next: any) => 
   // Pass other errors to error handler
   next(err);
 };
+
+// Profile photo (F-1222): jpeg, png, webp, up to 5 MB. Over the limit is 413, not 400.
+export const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+
+export const avatarUpload = multer({
+  storage,
+  fileFilter: (_req, file, cb) => {
+    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new AppError('Photo must be a JPEG, PNG or WebP image', 400));
+    }
+  },
+  limits: { fileSize: AVATAR_MAX_BYTES, files: 1, fields: 5, parts: 10 }
+});
+
+export const handleAvatarErrors = (err: any, _req: any, _res: any, next: any) => {
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+    return next(new AppError('Photo is too large (max 5 MB)', 413));
+  }
+  if (err instanceof multer.MulterError) {
+    return next(new AppError(`Upload error: ${err.message}`, 400));
+  }
+  next(err);
+};
+
+// Import upload (F-319): a file over the 10 MB limit is HTTP 413
+export const handleImportUploadErrors = (err: any, req: any, res: any, next: any) => {
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ message: 'File too large. The limit is 10 MB' });
+  }
+  return handleUploadErrors(err, req, res, next);
+};

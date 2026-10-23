@@ -1,5 +1,8 @@
 import { body, param, query, ValidationChain } from 'express-validator';
 import { DeclineReason, FailureReason, OrderStatus } from '@prisma/client';
+import { ORDER_FLAG_CODES } from '../services/orderFlagService';
+import { ORDER_SORT_FIELDS } from '../services/orderService';
+import { CUSTOMER_RISKS, CUSTOMER_SEGMENTS, CUSTOMER_SORT_FIELDS } from '../services/customerService';
 
 /**
  * Password validation utility
@@ -56,14 +59,29 @@ export const loginValidation: ValidationChain[] = [
   body('password').notEmpty()
 ];
 
+/** F-355: a phone with letters is an error; fewer than 9 digits is too short. Spaces, + and dashes are fine (F-362). */
+const customerPhone = (field: string) => (v: unknown) => {
+  const text = String(v ?? '');
+  if (/[a-z]/i.test(text)) throw new Error(`${field} can only have digits, spaces, + and dashes`);
+  if (text.replace(/\D/g, '').length < 9) throw new Error(`${field} needs at least 9 digits`);
+  return true;
+};
+
 export const createCustomerValidation: ValidationChain[] = [
   body('firstName').notEmpty().trim(),
   body('lastName').optional().trim(),
-  body('phoneNumber').isMobilePhone('any'),
+  body('phoneNumber').custom(customerPhone('Phone number')),
+  body('alternatePhone').optional({ values: 'falsy' }).custom(customerPhone('Alternate phone')),
   body('address').notEmpty(),
   body('state').notEmpty(),
   body('area').notEmpty()
 ];
+
+export const updateCustomerValidation: ValidationChain[] = [
+  body('phoneNumber').optional().custom(customerPhone('Phone number')),
+  body('alternatePhone').optional({ values: 'falsy' }).custom(customerPhone('Alternate phone')),
+];
+
 
 export const createProductValidation: ValidationChain[] = [
   body('sku').notEmpty(),
@@ -76,12 +94,17 @@ export const createProductValidation: ValidationChain[] = [
 
 export const createOrderValidation: ValidationChain[] = [
   body('customerId').optional(),
-  body('customerPhone').optional(),
+  // F-317: fewer than 9 digits is an error
+  body('customerPhone').optional().custom((v) => String(v).replace(/\D/g, '').length >= 9).withMessage('Phone number needs at least 9 digits'),
   body('orderItems').isArray({ min: 1 }),
   body('orderItems.*.productId').notEmpty(),
   body('orderItems.*.quantity').isInt({ min: 1 }),
-  body('subtotal').isFloat({ min: 0 }),
+  body('subtotal').optional().isFloat({ min: 0 }),
+  body('discount').optional().isFloat({ min: 0 }),
   body('totalAmount').isFloat({ min: 0 }),
+  body('customerRepId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('deliveryAgentId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('customerConfirmed').optional().isBoolean().toBoolean(),
   body('deliveryAddress').notEmpty(),
   body('deliveryState').notEmpty(),
   body('deliveryArea').notEmpty()
@@ -102,17 +125,67 @@ export const updateOrderStatusValidation: ValidationChain[] = [
 
 export const assignRepValidation: ValidationChain[] = [
   param('id').isInt({ min: 1 }).withMessage('Order id must be a number'),
-  body('customerRepId').isInt({ min: 1 }).withMessage('customerRepId must be a number')
+  body('unassign').optional().equals('both'),
+  body('customerRepId').if(body('unassign').not().equals('both')).isInt({ min: 1 }).withMessage('customerRepId must be a number')
 ];
 
 export const assignAgentValidation: ValidationChain[] = [
   param('id').isInt({ min: 1 }).withMessage('Order id must be a number'),
-  body('deliveryAgentId').isInt({ min: 1 }).withMessage('deliveryAgentId must be a number')
+  body('unassign').optional().equals('both'),
+  body('deliveryAgentId').if(body('unassign').not().equals('both')).isInt({ min: 1 }).withMessage('deliveryAgentId must be a number'),
+  body('confirmBlocked').optional().isBoolean().toBoolean()
 ];
 
 export const paginationValidation: ValidationChain[] = [
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 100 })
+];
+
+/** Customers list, tiles and export filters (F-350 to F-353). */
+export const customerListValidation: ValidationChain[] = [
+  ...paginationValidation,
+  query('sortBy').optional().isIn([...CUSTOMER_SORT_FIELDS]).withMessage(`Sort by ${CUSTOMER_SORT_FIELDS.join(', ')}`),
+  query('sortOrder').optional().isIn(['asc', 'desc']),
+  query('search').optional().isString().isLength({ max: 100 }),
+  query('segment').optional().isIn([...CUSTOMER_SEGMENTS]),
+  query('risk').optional().isIn([...CUSTOMER_RISKS]),
+  query('blocked').optional().isBoolean(),
+  query('flagged').optional().isBoolean(),
+];
+
+/** Orders list and tab counts (F-310 to F-312). Counts ignore the sort and page fields. */
+export const orderListValidation: ValidationChain[] = [
+  ...paginationValidation,
+  query('sortBy').optional().isIn([...ORDER_SORT_FIELDS]).withMessage(`Sort by ${ORDER_SORT_FIELDS.join(', ')}`),
+  query('search').optional().isString().isLength({ max: 100 }),
+  query('sortOrder').optional().isIn(['asc', 'desc']),
+  query('dateBasis').optional().isIn(['created', 'delivery']),
+  query('flag').optional().isIn([...ORDER_FLAG_CODES, 'any']),
+  // The orders an import made (F-319): a comma list of ids, numbers only, at most 2,000
+  query('ids').optional().isString().matches(/^\d+(,\d+)*$/).withMessage('ids must be a comma list of numbers')
+    .custom((v: string) => v.split(',').length <= 2000).withMessage('ids can hold at most 2,000 numbers'),
+];
+
+/** `orderIds` length is limited in the service (413 above 200). */
+const orderIdsValidation = body('orderIds').isArray({ min: 1 }).withMessage('Select at least one order')
+  .custom((ids) => ids.every((id: any) => Number.isInteger(id) && id > 0)).withMessage('All order IDs must be numbers');
+
+export const bulkStatusValidation: ValidationChain[] = [
+  orderIdsValidation,
+  body('status').isIn(ORDER_STATUS_VALUES),
+  body('note').optional().isString().isLength({ max: 500 }),
+  body('declineReason').optional().isIn(Object.values(DeclineReason)),
+  body('failureReason').optional().isIn(Object.values(FailureReason)),
+  body('nextAttemptDate').optional({ nullable: true }).isISO8601()
+];
+
+export const bulkAssignValidation: ValidationChain[] = [
+  orderIdsValidation,
+  body('customerRepId').optional().isInt({ min: 1 }).withMessage('customerRepId must be a number'),
+  body('deliveryAgentId').optional().isInt({ min: 1 }).withMessage('deliveryAgentId must be a number'),
+  body('unassign').optional().equals('both'),
+  body().custom((b) => b.unassign === 'both' || b.customerRepId !== undefined || b.deliveryAgentId !== undefined).withMessage('Choose a call rep or a delivery agent.'),
+  body('confirmBlocked').optional().isBoolean().toBoolean(),
 ];
 
 export const bulkDeleteValidation: ValidationChain[] = [

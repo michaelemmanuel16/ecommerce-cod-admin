@@ -18,12 +18,16 @@ jest.mock('../../queues/workflowQueue', () => ({
 }));
 
 // Mock orderService
+jest.mock('../../services/orderDetailService', () => ({
+  __esModule: true,
+  default: { getDetail: jest.fn() },
+}));
+
 jest.mock('../../services/orderService', () => ({
   __esModule: true,
   default: {
     getAllOrders: jest.fn(),
     createOrder: jest.fn(),
-    getOrderById: jest.fn(),
     updateOrderStatus: jest.fn(),
   },
 }));
@@ -35,6 +39,7 @@ import {
   updateOrderStatus,
 } from '../../controllers/orderController';
 import orderService from '../../services/orderService';
+import orderDetailService from '../../services/orderDetailService';
 
 describe('Orders Controller', () => {
   let mockReq: any;
@@ -171,17 +176,17 @@ describe('Orders Controller', () => {
       };
 
       mockReq.params = { id: '123' };
-      (orderService.getOrderById as jest.Mock).mockResolvedValue(mockOrder);
+      (orderDetailService.getDetail as jest.Mock).mockResolvedValue(mockOrder);
 
       await getOrder(mockReq, mockRes);
 
       expect(mockRes.json).toHaveBeenCalledWith({ order: mockOrder });
-      expect(orderService.getOrderById).toHaveBeenCalledWith(123, expect.anything());
+      expect(orderDetailService.getDetail).toHaveBeenCalledWith(123, expect.anything());
     });
 
     it('should throw error if order not found', async () => {
       mockReq.params = { id: '999' };
-      (orderService.getOrderById as jest.Mock).mockRejectedValue(
+      (orderDetailService.getDetail as jest.Mock).mockRejectedValue(
         new Error('Order not found')
       );
 

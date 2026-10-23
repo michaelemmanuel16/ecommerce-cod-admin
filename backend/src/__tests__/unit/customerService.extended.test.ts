@@ -48,6 +48,8 @@ describe('CustomerService (extended branch coverage)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // The "not reachable" lookup (raw SQL) finds nobody
+    (prismaMock.$queryRaw as any).mockResolvedValue([] as any);
     customerService = new CustomerService();
   });
 
@@ -64,7 +66,7 @@ describe('CustomerService (extended branch coverage)', () => {
     });
 
     it('applies search filter', async () => {
-      const customer = makeCustomer({ orders: [{ id: 1, totalAmount: 100 }] });
+      const customer = makeCustomer();
       (prismaMock.customer.findMany as any).mockResolvedValue([customer] as any);
       (prismaMock.customer.count as any).mockResolvedValue(1);
 
@@ -87,18 +89,13 @@ describe('CustomerService (extended branch coverage)', () => {
       expect(prismaMock.customer.findMany).toHaveBeenCalled();
     });
 
-    it('calculates totalOrders and totalSpent from orders', async () => {
-      const customer = makeCustomer({
-        orders: [
-          { id: 1, totalAmount: 100 },
-          { id: 2, totalAmount: 200 },
-        ],
-      });
+    it('returns the stored stats with the derived risk and COD block', async () => {
+      const customer = makeCustomer({ totalOrders: 2, refusedOrders: 3, deliveredValue: 300 });
       (prismaMock.customer.findMany as any).mockResolvedValue([customer] as any);
       (prismaMock.customer.count as any).mockResolvedValue(1);
 
       const result = await customerService.getAllCustomers({});
-      expect(result.customers[0].totalOrders).toBe(2);
+      expect(result.customers[0]).toMatchObject({ totalOrders: 2, risk: 'high', codBlocked: true, notReachable: false });
     });
 
     it('calculates correct pagination', async () => {
@@ -131,17 +128,17 @@ describe('CustomerService (extended branch coverage)', () => {
       expect(result.id).toBe(1);
     });
 
-    it('throws 403 for sales_rep without any order with this customer', async () => {
+    it('throws 403 for sales_rep who did not create the customer and has no order with them', async () => {
       (prismaMock.customer.findUnique as any).mockResolvedValue(makeCustomer() as any);
-      (prismaMock.order.findFirst as any).mockResolvedValue(null);
+      (prismaMock.customer.count as any).mockResolvedValue(0);
 
       await expect(customerService.getCustomerById('1', salesRepRequester as any)).rejects.toThrow(AppError);
     });
 
-    it('returns customer for sales_rep with at least one order', async () => {
+    it('returns customer for sales_rep inside the row scope', async () => {
       const customer = makeCustomer();
       (prismaMock.customer.findUnique as any).mockResolvedValue(customer as any);
-      (prismaMock.order.findFirst as any).mockResolvedValue({ id: 1, customerId: 1 } as any);
+      (prismaMock.customer.count as any).mockResolvedValue(1);
       (prismaMock.order.findMany as any).mockResolvedValue([{ id: 1, status: 'delivered', totalAmount: 100, createdAt: new Date() }] as any);
 
       const result = await customerService.getCustomerById('1', salesRepRequester as any);
@@ -202,9 +199,9 @@ describe('CustomerService (extended branch coverage)', () => {
       await expect(customerService.updateCustomer('999', {})).rejects.toThrow(AppError);
     });
 
-    it('throws 403 for sales_rep without any order with this customer', async () => {
+    it('throws 403 for sales_rep outside the row scope', async () => {
       (prismaMock.customer.findUnique as any).mockResolvedValue(makeCustomer() as any);
-      (prismaMock.order.findFirst as any).mockResolvedValue(null);
+      (prismaMock.customer.count as any).mockResolvedValue(0);
 
       await expect(
         customerService.updateCustomer('1', { firstName: 'Kofi' }, salesRepRequester as any)

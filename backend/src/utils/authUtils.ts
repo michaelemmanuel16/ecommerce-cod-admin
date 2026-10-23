@@ -1,8 +1,34 @@
-import { UserRole } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 
 export interface Requester {
     id: number;
     role: UserRole;
+}
+
+/** Owner, admin and manager: the roles that see and manage every row. */
+export const isManagerUp = (requester: { role: UserRole | string }): boolean =>
+    requester.role === 'super_admin' || requester.role === 'admin' || requester.role === 'manager';
+
+/** Order row scope: a rep sees orders where they are the call rep, a delivery agent their own deliveries. Other roles see all. */
+export function orderScope(requester?: Requester): Prisma.OrderWhereInput {
+    if (requester?.role === 'sales_rep') return { customerRepId: requester.id };
+    if (requester?.role === 'delivery_agent') return { deliveryAgentId: requester.id };
+    return {};
+}
+
+/**
+ * Customer row scope (F-350): owner, admin and manager see all, and so do accountant and inventory manager (like orderScope).
+ * A call rep sees customers they created or have an order with; a delivery agent sees customers of their own deliveries.
+ * Returns null when the requester is unscoped.
+ */
+export function customerScope(requester?: Requester): Prisma.CustomerWhereInput | null {
+    if (!requester) return null;
+    const { id, role } = requester;
+    if (role === 'sales_rep') {
+        return { OR: [{ createdById: id }, { orders: { some: { customerRepId: id, deletedAt: null } } }] };
+    }
+    if (role === 'delivery_agent') return { orders: { some: { deliveryAgentId: id, deletedAt: null } } };
+    return null;
 }
 
 /**
@@ -15,7 +41,7 @@ export const checkResourceOwnership = (
     resourceType: 'order' | 'customer' | 'user' | 'expense' | 'transaction' | 'financial'
 ): boolean => {
     // Super Admins, Admins, and Managers bypass ownership checks
-    if (requester.role === 'super_admin' || requester.role === 'admin' || requester.role === 'manager') {
+    if (isManagerUp(requester)) {
         return true;
     }
 

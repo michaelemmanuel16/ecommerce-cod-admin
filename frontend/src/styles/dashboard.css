@@ -1,0 +1,120 @@
+/* Owner Dashboard (M3-T39 to T41, F-200 to F-210). Copied from docs/mockups/v2/app.css (target ladder, quests, drivers,
+   legend) and the style block of docs/mockups/v2/index.html (.ontarget, .headtools, .who), with the `.v2` scope added.
+   Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
+
+/* header */
+.v2 .ontarget{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-weight:700;font-size:13px;margin-top:6px}
+.v2 .ontarget svg.lucide{width:16px;height:16px;color:var(--mint);flex:none}
+.v2 .headtools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+/* new: "Updated 06:42" and the refresh icon */
+.v2 .updated{color:var(--ink-3);font-size:13px}
+.v2 .headtools .ibtn.sm:disabled{opacity:1;cursor:default}
+.v2 .spin{animation:dashspin 1s linear infinite}
+@keyframes dashspin{to{transform:rotate(360deg)}}
+.v2 .dash > * + *{margin-top:16px}
+.v2 .dash > .head + *{margin-top:0}
+/* new: a range change keeps the old figures on screen, dimmed, until the new answer arrives */
+.v2 .dash.busy .kpis,.v2 .dash.busy .chart,.v2 .dash.busy .rtable{opacity:.6;transition:opacity .15s}
+
+/* target ladder hero */
+.v2 .ladder{display:grid;grid-template-columns:1.15fr 2fr;overflow:hidden;position:relative}
+.v2 .ns{padding:22px;background:radial-gradient(120% 120% at 0% 0%,var(--pine-2),var(--pine));color:var(--white);position:relative}
+[data-theme="dark"] .v2 .ns{color:var(--on-pine)}
+.v2 .ns small{opacity:.8;font-weight:600}
+.v2 .ns .big{font-size:44px;font-weight:800;line-height:1;margin:8px 0 4px}
+.v2 .ns .of{opacity:.85}
+.v2 .nsring{position:absolute;right:18px;top:18px}
+.v2 .ns .chip{display:inline-flex;align-items:center;gap:6px;margin-top:16px;padding:5px 10px;border-radius:99px;background:rgba(255,255,255,.18);color:var(--white);font-size:12px;font-weight:600}
+.v2 .rungs{display:grid;grid-template-columns:repeat(3,1fr)}
+.v2 .rung{padding:20px 22px;border-left:1px solid var(--line)}
+.v2 .rung small{color:var(--ink-3);font-weight:600}
+.v2 .rung .v{font-size:24px;font-weight:700;margin:6px 0 2px}
+.v2 .rung .t{color:var(--ink-3);font-size:13px}
+.v2 .prog{height:8px;border-radius:99px;background:var(--hover);overflow:hidden;margin-top:12px;position:relative}
+.v2 .prog i{display:block;height:100%;border-radius:99px;background:var(--mint)}
+.v2 .prog i.gold{background:var(--gold)}
+.v2 .prog i.coral{background:var(--coral)}
+.v2 .prog .pace{position:absolute;top:-3px;width:2px;height:14px;background:var(--ink);border-radius:2px}
+
+/* quests */
+.v2 .quests{display:grid;grid-template-columns:auto repeat(3,1fr);gap:12px;align-items:stretch}
+.v2 .qhead{padding:16px 18px;display:flex;flex-direction:column;justify-content:center;min-width:180px}
+.v2 .qhead h3{font-size:16px;font-weight:700}
+.v2 .quest{padding:14px 16px;display:flex;gap:12px;align-items:center}
+.v2 .quest .ck{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;border:2px dashed var(--line);color:var(--ink-3)}
+.v2 .quest.done .ck{border:0;background:var(--mint);color:var(--white)}
+.v2 .quest .qbody{flex:1;min-width:0}
+.v2 .quest b{display:block;font-size:13.5px}
+.v2 .quest small{color:var(--ink-3);font-size:smaller} /* the mockup has no reset: <small> is 83%, Tailwind's preflight makes it 80% */
+.v2 .quest .prog{margin-top:8px}
+
+/* tiles: three when the viewer has no financial:view (new) */
+.v2 .kpis.three{grid-template-columns:repeat(3,1fr)}
+.v2 .kpi .l a.plain{color:inherit}
+
+/* chart card */
+.v2 .chart{padding:8px 16px 16px}
+.v2 .legend{display:flex;gap:14px;color:var(--ink-2);font-size:12.5px}
+.v2 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.v2 .legend i.dl{background:var(--pine)}
+.v2 .legend i.tp{background:var(--ink-3)}
+.v2 .chartbox{width:100%}
+/* new: the hover pill, the dark pill of the mockup's chart tooltip */
+.v2 .ctip{background:var(--ink);color:var(--bg);padding:8px 12px;border-radius:10px;font-family:"Plus Jakarta Sans",system-ui,sans-serif}
+.v2 .ctip small{display:block;font-size:11px}
+.v2 .ctip b{display:block;font-size:13px;font-weight:700}
+.v2 .drivers3{display:grid;gap:10px;margin-top:6px}
+.v2 .drivers3.n3{grid-template-columns:repeat(3,1fr)}
+.v2 .drivers3.n2{grid-template-columns:repeat(2,1fr)}
+.v2 .drivers3.n1{grid-template-columns:1fr}
+.v2 .drv{border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.v2 .drv small{color:var(--ink-3)}
+.v2 .drv b{display:block;font-family:"Bricolage Grotesque",sans-serif;font-size:20px;font-weight:700}
+.v2 .drv em{font-style:normal;font-size:12px;color:var(--ink-3)}
+
+/* recent orders */
+.v2 .rtable table{margin-top:8px}
+.v2 .who{display:flex;align-items:center;gap:10px}
+.v2 .who .a{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+.v2 .who .a.pine{background:var(--pine-soft);color:var(--pine)}
+.v2 .who .a.gold{background:var(--gold-soft);color:var(--gold)}
+.v2 .who .a.violet{background:var(--violet-soft);color:var(--violet)}
+.v2 .who .a.coral{background:var(--coral-soft);color:var(--coral)}
+.v2 .who small{display:block;color:var(--ink-3);font-size:12px}
+.v2 a.mini{color:var(--ink);text-decoration:none}
+/* new: the "Not reachable" note under a pending status */
+.v2 td small.note{display:block;color:var(--ink-3);font-size:12px;margin-top:2px}
+.v2 .emptyrow{padding:24px 20px;color:var(--ink-3)}
+
+/* new: links inside labels look like the label, and the tooltip bubble */
+.v2 a.plain{color:inherit;text-decoration:none}
+.v2 a.plain:hover{text-decoration:underline}
+/* new: a label with a tooltip (name, formula, date basis); no icon, only the help cursor */
+.v2 .tiplabel{cursor:help}
+.v2 .ct h3 .tiplabel{color:inherit;font-size:inherit} /* .ct span would grey a title */
+.v2 .infobubble{position:fixed;width:280px;max-width:calc(100vw - 16px);z-index:95;display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:12px;background:var(--ink);color:var(--bg);box-shadow:var(--shadow);font:500 12.5px/1.45 "Plus Jakarta Sans",system-ui,sans-serif;pointer-events:none}
+.v2 .infobubble b{font-weight:700;font-size:13px}
+.v2 .infobubble em{font-style:normal;font-weight:700;opacity:.7;margin-right:4px}
+
+/* new: the inline error of one block, with Retry */
+.v2 .blockerr{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;color:var(--ink-2)}
+.v2 .blockerr b{display:block;color:var(--ink)}
+.v2 .blockerr .errid{color:var(--ink-3)}
+
+@media (max-width:1100px){
+  .v2 .ladder{grid-template-columns:1fr}
+  .v2 .quests{grid-template-columns:1fr 1fr}
+  .v2 .kpis.three{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:760px){
+  /* the range menu stays on the greeting row, at the right, as in the mockup; the "Updated" text gives way */
+  .v2 .dash .head{flex-wrap:nowrap;align-items:flex-start}
+  .v2 .dash .head > div:first-child{flex:1 1 0;min-width:0}
+  .v2 .dash .headtools{flex:none;flex-wrap:nowrap}
+  .v2 .updated{display:none}
+  .v2 .rungs,.v2 .quests{grid-template-columns:1fr}
+  .v2 .kpis.three{grid-template-columns:1fr}
+}
+@media (max-width:560px){
+  .v2 .drivers3.n3,.v2 .drivers3.n2{grid-template-columns:1fr}
+}

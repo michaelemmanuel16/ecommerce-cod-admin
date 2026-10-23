@@ -8,6 +8,7 @@ import { useAnalyticsStore } from './analyticsStore';
 import { useDeliveryAgentsStore } from './deliveryAgentsStore';
 import { useCustomerRepsStore } from './customerRepsStore';
 import { useOrdersStore } from './ordersStore';
+import { useNotificationsStore } from './notificationsStore';
 import toast from 'react-hot-toast';
 
 interface AuthState {
@@ -15,12 +16,18 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   permissions: Permissions | null;
+  /** From /api/auth/me. null until the first answer; the sidebar shows placeholders meanwhile. */
+  menu: string[] | null;
+  homeRoute: string | null;
+  roles: Array<{ id: number | null; name: string }> | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
   registerTenant: (data: { companyName: string; adminEmail: string; adminPassword: string; adminName: string; planName?: string }) => Promise<void>;
   logout: (showToast?: boolean) => void;
-  setAccessToken: (token: string) => void;
+  setAccessToken: (token: string, refreshToken?: string) => void;
+  /** Merge saved profile fields into the signed-in user, so the header shows them at once. */
+  patchUser: (fields: Partial<User>) => void;
   updatePreferences: (preferences: UserPreferences) => Promise<void>;
   refreshPermissions: () => Promise<void>;
   setupPermissionListener: () => void;
@@ -35,6 +42,9 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       permissions: null,
+      menu: null,
+      homeRoute: null,
+      roles: null,
       isAuthenticated: false,
       isLoading: false,  // This should not be persisted
 
@@ -96,16 +106,26 @@ export const useAuthStore = create<AuthState>()(
           accessToken: null,
           refreshToken: null,
           permissions: null,
+          menu: null,
+          homeRoute: null,
+          roles: null,
           isAuthenticated: false,
         });
         disconnectSocket();
+        useNotificationsStore.getState().clearNotifications(); // the next person to sign in must not see this count
         if (showToast) {
           toast.success('Logged out successfully');
         }
       },
 
-      setAccessToken: (token: string) => {
-        set({ accessToken: token });
+      // The server rotates the refresh token on every refresh (M3-T23): keep the new one
+      setAccessToken: (token: string, refreshToken?: string) => {
+        set(refreshToken ? { accessToken: token, refreshToken } : { accessToken: token });
+      },
+
+      patchUser: (fields: Partial<User>) => {
+        const current = get().user;
+        if (current) set({ user: { ...current, ...fields } });
       },
 
       updatePreferences: async (preferences: UserPreferences) => {
@@ -133,8 +153,8 @@ export const useAuthStore = create<AuthState>()(
             return;
           }
 
-          const { permissions } = await authService.getMe();
-          set({ permissions: permissions || null });
+          const { permissions, menu, homeRoute, roles } = await authService.getMe();
+          set({ permissions: permissions || null, menu: menu ?? null, homeRoute: homeRoute ?? null, roles: roles ?? null });
           console.log('[AuthStore] Permissions refreshed successfully');
         } catch (error) {
           console.error('[AuthStore] Failed to refresh permissions:', error);
@@ -194,6 +214,7 @@ export const useAuthStore = create<AuthState>()(
         useDeliveryAgentsStore.getState().setupSocketListeners();
         useCustomerRepsStore.getState().setupSocketListeners();
         useOrdersStore.getState().setupSocketListeners();
+        useNotificationsStore.getState().setupSocketListeners();
 
         console.log('[AuthStore] All socket listeners initialized');
       },
@@ -205,6 +226,9 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         permissions: state.permissions,
+        menu: state.menu,
+        homeRoute: state.homeRoute,
+        roles: state.roles,
         isAuthenticated: state.isAuthenticated,
         // Exclude isLoading from persistence
       }),

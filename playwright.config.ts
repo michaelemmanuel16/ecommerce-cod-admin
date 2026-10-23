@@ -33,7 +33,7 @@ export default defineConfig({
 
   use: {
     // Base URL for navigation
-    baseURL: 'http://localhost:5173',
+    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173',
 
     // Collect trace on first retry
     trace: 'on-first-retry',

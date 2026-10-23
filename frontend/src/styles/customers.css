@@ -1,0 +1,56 @@
+/* Customers list and detail (M3-T49, T50, F-350 to F-361). Copied from the style block of docs/mockups/v2/customers.html
+   (.ct2 .refs .tags2 .foot), with the `.v2` scope added. Colours come from tokens.css only.
+   Rules with no mockup counterpart are marked "new". */
+
+.v2 .ct2 td,.v2 .ct2 th{padding-left:14px;padding-right:14px;white-space:nowrap}
+.v2 .ct2 td:first-child,.v2 .ct2 th:first-child{padding-left:20px}
+.v2 .ct2 td:last-child,.v2 .ct2 th:last-child{padding-right:20px}
+.v2 .ct2 .mut,.v2 .cdetail .mut{color:var(--ink-3)}
+.v2 .ct2 .num{font-variant-numeric:tabular-nums}
+.v2 .ct2 .r .sorth{justify-content:flex-end}
+.v2 .refs{color:var(--coral);font-weight:700}
+.v2 .tags2{display:flex;gap:6px;align-items:center}
+.v2 .cfoot{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px;gap:12px;flex-wrap:wrap}
+/* new: the table scrolls sideways in the card instead of breaking the page */
+.v2 .ctwrap .tablewrap{overflow-x:auto}
+/* new: clear button inside the search box */
+.v2 .srchx{display:grid;place-items:center;color:var(--ink-3);flex:none}
+.v2 .srchx svg.lucide{width:14px;height:14px}
+.v2 .srchx:hover{color:var(--ink)}
+/* #av: two-column form grid (the mockup's inline grid) */
+.v2 .cform{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.v2 .cform .span2{grid-column:1/-1}
+.v2 .cform .fl textarea{min-height:72px;resize:vertical}
+.v2 .cform .dup{margin-top:5px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px}
+.v2 .cform .dup a{color:var(--pine);font-weight:700}
+
+/* new: customer detail, built from the same cards, tiles and tags as the Dashboard and Orders */
+.v2 .cdetail > * + *{margin-top:16px}
+.v2 .cdetail > .head + *{margin-top:0}
+.v2 .cdetail .back{display:inline-flex;align-items:center;gap:6px;color:var(--ink-3);font-weight:600;font-size:13px;margin-bottom:10px}
+.v2 .cdetail .back svg.lucide{width:15px;height:15px}
+.v2 .cdetail .back:hover{color:var(--ink)}
+.v2 .cdetail .who .a.big{width:48px;height:48px;font-size:16px}
+.v2 .cdetail .nm{display:flex;align-items:center;gap:14px}
+.v2 .cdetail .nm h1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.v2 .cdetail .nm small{display:block;color:var(--ink-3);margin-top:4px;font-size:13.5px}
+.v2 .cdetail .hact{display:flex;gap:8px;flex-wrap:wrap}
+.v2 .cdetail .kpis{grid-template-columns:repeat(6,1fr);margin-top:0}
+.v2 .cdetail .kpis .v{font-size:24px}
+.v2 .cdetail .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.v2 .cdetail dl{padding:4px 20px 18px;display:grid;grid-template-columns:130px 1fr;gap:10px 12px}
+.v2 .cdetail dt{color:var(--ink-3);font-size:13px}
+.v2 .cdetail dd{font-weight:500;overflow-wrap:anywhere}
+.v2 .cdetail .notes{padding:0 20px 18px;white-space:pre-wrap}
+.v2 .cdetail .bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-radius:12px;font-size:13.5px}
+.v2 .cdetail .bar.bad{background:var(--coral-soft);color:var(--coral)}
+.v2 .cdetail .bar.warn{background:var(--gold-soft);color:var(--warn-ink)}
+.v2 .cdetail .bar b{font-weight:700}
+.v2 .cdetail .orow td:first-child{padding-left:20px}
+@media (max-width:1100px){.v2 .cdetail .kpis{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:760px){
+  .v2 .cform{grid-template-columns:1fr}
+  .v2 .cdetail .kpis{grid-template-columns:repeat(2,1fr)}
+  .v2 .cdetail .cols{grid-template-columns:1fr}
+  .v2 .cdetail dl{grid-template-columns:110px 1fr}
+}

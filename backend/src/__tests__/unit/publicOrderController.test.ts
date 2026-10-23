@@ -74,7 +74,7 @@ function physicalForm(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const buyer = { name: 'Ama Mensah', phoneNumber: '0241234567', address: '12 St', state: 'Greater Accra' };
+const buyer = { name: 'Ama Mensah', phoneNumber: '0241234567', address: '12 St', state: 'Greater Accra', town: 'Osu', landmark: 'Opposite the Total station' };
 
 describe('publicOrderController.createPublicOrder — payment-method enforcement (MAN-58)', () => {
   beforeEach(() => {
@@ -379,7 +379,9 @@ describe('publicOrderController.createPublicOrder — rejection logging', () => 
   });
 
   it('logs a missing required field with the keys the form did send', async () => {
-    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(physicalForm());
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(
+      physicalForm({ fields: [{ label: 'Delivery Address', standardKey: 'streetAddress', required: true, enabled: true }] }),
+    );
     const res = buildRes();
 
     await createPublicOrder(
@@ -390,6 +392,8 @@ describe('publicOrderController.createPublicOrder — rejection logging', () => 
           name: 'Ama Mensah',
           phoneNumber: '0241234567',
           state: 'Greater Accra',
+          town: 'Osu',
+          landmark: 'Near the post office',
           customFields: { 'Delivery Address': '12 Test Street' },
         },
         selectedPackage: { id: 10 },
@@ -409,5 +413,59 @@ describe('publicOrderController.createPublicOrder — rejection logging', () => 
         customFieldKeys: ['Delivery Address'],
       }),
     );
+  });
+});
+
+describe('publicOrderController.createPublicOrder — locationFieldsAbsent (embed Mode B)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const noLocation = { name: 'Ama Mensah', phoneNumber: '0241234567', state: 'Greater Accra', town: '' };
+
+  it('still rejects a missing town when the flag is absent', async () => {
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(physicalForm());
+    const res = buildRes();
+
+    await createPublicOrder(
+      buildReq({ formData: noLocation, selectedPackage: { id: 10 }, paymentMethod: 'cod', totalAmount: 250 }),
+      res,
+      jest.fn(),
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Missing required field: town' });
+  });
+
+  it('does not demand town or landmark when locationFieldsAbsent is true', async () => {
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(physicalForm());
+    const res = buildRes();
+
+    await createPublicOrder(
+      buildReq({
+        formData: noLocation,
+        selectedPackage: { id: 10 },
+        paymentMethod: 'cod',
+        totalAmount: 250,
+        locationFieldsAbsent: true,
+      }),
+      res,
+      jest.fn(),
+    ).catch(() => undefined);
+
+    expect(res.json).not.toHaveBeenCalledWith({ error: expect.stringMatching(/Missing required field: (town|landmark)/) });
+  });
+
+  it('ignores a non-boolean locationFieldsAbsent', async () => {
+    (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(physicalForm());
+    const res = buildRes();
+
+    await createPublicOrder(
+      buildReq({ formData: noLocation, selectedPackage: { id: 10 }, paymentMethod: 'cod', totalAmount: 250, locationFieldsAbsent: 'true' }),
+      res,
+      jest.fn(),
+    );
+
+    expect(res.json).toHaveBeenCalledWith({ error: 'Missing required field: town' });
   });
 });

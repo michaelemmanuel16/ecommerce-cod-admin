@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { PixelConfig } from '../../types/checkout-form';
 import { trackPurchase } from '../../utils/pixelTracking';
+import { getStoreCurrency } from '../../utils/format';
 
 interface OrderSuccessProps {
   orderId: number;
@@ -10,7 +11,7 @@ interface OrderSuccessProps {
   pixelConfig?: PixelConfig;
 }
 
-export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal, currency = 'GHS', pixelConfig }) => {
+export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal, currency = getStoreCurrency(), pixelConfig }) => {
   useEffect(() => {
     if (pixelConfig) {
       trackPurchase(pixelConfig, orderTotal ?? 0, currency, orderId);

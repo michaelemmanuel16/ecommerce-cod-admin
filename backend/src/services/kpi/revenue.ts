@@ -37,6 +37,7 @@ import { currencyOfTenant } from '../../utils/currency';
 import { Prisma } from '@prisma/client';
 import { getStoreTimeZone } from './dates';
 import { makeConverter } from '../fxService';
+import { stateLabel } from '../../utils/regions';
 
 export interface DeliveredRevenue {
   physical: KpiResult<string>;
@@ -84,10 +85,32 @@ export async function deliveredRevenue(
   };
 }
 
+/**
+ * Average order value (F-1052): delivered revenue / delivered orders of the same result, 2 decimals, null when nothing
+ * was delivered. Reports shows this; the planned AOV (leadership.ts) is the same ratio over 30 days rounded to a whole unit.
+ */
+export function deliveredAov(revenue: DeliveredRevenue): KpiResult<string | null> {
+  const orders = revenue.deliveredOrders.value;
+  const { from, to, asOf } = revenue.total;
+  return {
+    name: 'Average order value', unit: 'money', dateBasis: 'deliveryDate', formulaId: 'revenue.aov.v1',
+    from, to, asOf, currency: revenue.total.currency,
+    value: orders > 0 ? Money.toApi(Money.roundHalfUp(Money.div(revenue.total.value, orders), 2)) : null,
+    detail: { deliveredOrders: orders },
+  };
+}
+
 export interface RevenueDay {
   /** Store-zone day, YYYY-MM-DD. */
   date: string;
   /** Delivered revenue booked on that day (money string, can be negative on a day with more returns than deliveries). */
+  revenue: string;
+  deliveredOrders: number;
+}
+
+export interface RevenueState {
+  /** Report row of the order's delivery state (stateLabel): "Greater Accra (Tema)" is Greater Accra, blank is "Not set". */
+  state: string;
   revenue: string;
   deliveredOrders: number;
 }
@@ -102,6 +125,7 @@ export interface RevenueArea {
 interface SignedRevenueRow {
   day: string;
   area: string | null;
+  state: string | null;
   repId: number | null;
   /** Physical orders (delivered, and returns of them) or paid digital orders. */
   kind: 'physical' | 'digital';
@@ -127,21 +151,21 @@ async function signedRevenueRows(tenantId: string, from: Date, to: Date, scope: 
     WITH moves AS (
       SELECT COALESCE(o.delivery_date, o.updated_at) AS at, NULL::timestamp AS rate_at, o.delivery_area AS area, o.customer_rep_id AS rep_id,
              CASE WHEN o.status::text = 'delivered' THEN 'physical' ELSE 'digital' END AS kind,
-             o.total_amount AS amount, 1 AS orders, o.currency AS currency
+             o.total_amount AS amount, 1 AS orders, o.currency AS currency, o.delivery_state AS state
       FROM orders o
       WHERE o.tenant_id = ${tenantId} AND o.deleted_at IS NULL ${rep} ${agent}
         AND COALESCE(o.delivery_date, o.updated_at) >= ${from} AND COALESCE(o.delivery_date, o.updated_at) < ${to}
         AND (o.status::text = 'delivered'
              OR (o.status::text = 'digital_delivered' AND o.payment_status::text = 'paid' AND o.total_amount > 0))
       UNION ALL
-      SELECT b.booked_at, NULL, o.delivery_area, o.customer_rep_id, 'physical', o.total_amount, 1, o.currency
+      SELECT b.booked_at, NULL, o.delivery_area, o.customer_rep_id, 'physical', o.total_amount, 1, o.currency, o.delivery_state
       FROM orders o
       JOIN LATERAL (SELECT MAX(h.created_at) AS booked_at FROM order_history h WHERE h.order_id = o.id AND h.status::text = 'delivered') b
         ON b.booked_at IS NOT NULL
       WHERE o.tenant_id = ${tenantId} AND o.deleted_at IS NULL ${rep} ${agent} AND o.status::text = 'returned'
         AND b.booked_at >= ${from} AND b.booked_at < ${to}
       UNION ALL
-      SELECT o.returned_at, b.booked_at, o.delivery_area, o.customer_rep_id, 'physical', -o.total_amount, -1, o.currency
+      SELECT o.returned_at, b.booked_at, o.delivery_area, o.customer_rep_id, 'physical', -o.total_amount, -1, o.currency, o.delivery_state
       FROM orders o
       JOIN LATERAL (SELECT MAX(h.created_at) AS booked_at FROM order_history h WHERE h.order_id = o.id AND h.status::text = 'delivered') b
         ON b.booked_at IS NOT NULL
@@ -150,9 +174,9 @@ async function signedRevenueRows(tenantId: string, from: Date, to: Date, scope: 
     )
     SELECT TO_CHAR((at AT TIME ZONE 'UTC') AT TIME ZONE ${zone}, 'YYYY-MM-DD') AS day,
            TO_CHAR((COALESCE(rate_at, at) AT TIME ZONE 'UTC') AT TIME ZONE ${zone}, 'YYYY-MM-DD') AS "rateDay",
-           currency, area, rep_id AS "repId", kind, SUM(amount)::text AS amount, SUM(orders)::int AS orders
+           currency, area, rep_id AS "repId", kind, state, SUM(amount)::text AS amount, SUM(orders)::int AS orders
     FROM moves
-    GROUP BY 1, 2, 3, 4, 5, 6`);
+    GROUP BY 1, 2, 3, 4, 5, 6, 7`);
 }
 
 interface StoreCurrencyRow extends Omit<SignedRevenueRow, 'amount'> {
@@ -213,6 +237,19 @@ export async function deliveredRevenueByArea(
   return [...groupRows(rows, (r) => r.area).entries()]
     .sort(([, a], [, b]) => Money.compare(b.revenue, a.revenue))
     .map(([area, a]) => ({ area, revenue: Money.toApi(a.revenue), deliveredOrders: a.orders }));
+}
+
+/** Delivered revenue per delivery state (Order.deliveryState), most revenue first. Same rules and total as deliveredRevenueByDay. */
+export async function deliveredRevenueByState(
+  tenantId: string,
+  from: Date,
+  to: Date,
+  scope: RevenueScope = {},
+): Promise<RevenueState[]> {
+  const { rows } = await signedRevenueRowsInStoreCurrency(tenantId, from, to, scope);
+  return [...groupRows(rows, (r) => stateLabel(r.state)).entries()]
+    .sort(([, a], [, b]) => Money.compare(b.revenue, a.revenue))
+    .map(([state, a]) => ({ state, revenue: Money.toApi(a.revenue), deliveredOrders: a.orders }));
 }
 
 /**

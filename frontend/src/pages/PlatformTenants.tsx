@@ -9,14 +9,7 @@ import { Select } from '../components/ui/Select';
 import { Pagination } from '../components/ui/Pagination';
 import { usePlatformStore } from '../stores/platformStore';
 import { platformPath } from '../utils/platformDomain';
-
-const PLAN_OPTIONS = [
-  { value: '', label: 'All Plans' },
-  { value: 'free', label: 'Free' },
-  { value: 'starter', label: 'Starter' },
-  { value: 'pro', label: 'Pro' },
-  { value: 'enterprise', label: 'Enterprise' },
-];
+import { getStoreCurrency } from '../utils/format';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -40,9 +33,17 @@ export const PlatformTenants: React.FC = () => {
     tenantsPage,
     tenantsTotalPages,
     isLoading,
+    plans,
+    fetchPlans,
     fetchTenants,
     createTenant,
   } = usePlatformStore();
+
+  // The filter lists the live plans (F-140): free, growth, scale, enterprise.
+  const planOptions = [{ value: '', label: 'All Plans' }, ...plans.map((p) => ({ value: p.name, label: p.displayName }))];
+  useEffect(() => {
+    fetchPlans();
+  }, [fetchPlans]);
 
   const [search, setSearch] = useState('');
   const [plan, setPlan] = useState('');
@@ -56,7 +57,7 @@ export const PlatformTenants: React.FC = () => {
     slug: '',
     planName: '',
     region: '',
-    currency: 'GHS',
+    currency: getStoreCurrency(),
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -102,10 +103,10 @@ export const PlatformTenants: React.FC = () => {
         slug: form.slug,
         planName: form.planName || undefined,
         region: form.region || undefined,
-        currency: form.currency || 'GHS',
+        currency: form.currency || getStoreCurrency(),
       });
       setShowCreate(false);
-      setForm({ name: '', slug: '', planName: '', region: '', currency: 'GHS' });
+      setForm({ name: '', slug: '', planName: '', region: '', currency: getStoreCurrency() });
       load(1);
     } finally {
       setSubmitting(false);
@@ -142,7 +143,7 @@ export const PlatformTenants: React.FC = () => {
             onChange={(e) => setPlan(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {PLAN_OPTIONS.map((o) => (
+            {planOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
@@ -277,7 +278,7 @@ export const PlatformTenants: React.FC = () => {
             label="Currency"
             value={form.currency}
             onChange={(e) => setForm({ ...form, currency: e.target.value })}
-            placeholder="GHS"
+            placeholder="Currency code"
           />
           <div className="flex justify-end gap-3 pt-2">
             <button

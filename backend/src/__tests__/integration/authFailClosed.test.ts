@@ -41,7 +41,9 @@ const mkUser = async (label: string, extra: Record<string, unknown>) =>
     },
   });
 
+// register-tenant answers 404 unless the SaaS flag is on (M3-T26).
 beforeAll(async () => {
+  process.env.SAAS_SIGNUP_ENABLED = 'true';
   const tenant = await createTenant('Auth');
   tenantId = tenant.id;
   tenantUser = await mkUser('tenant', { tenantId });
@@ -50,6 +52,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  delete process.env.SAAS_SIGNUP_ENABLED;
   await prismaBase.user.deleteMany({ where: { id: { in: [tenantUser.id, platformUser.id, strayUser.id] } } });
   await deleteTenantRows([tenantId, ...(registeredTenantId ? [registeredTenantId] : [])]);
   await prismaBase.$disconnect();
@@ -83,7 +86,8 @@ describe('auth under fail-closed', () => {
     registeredTenantId = res.body.tenant.id;
     const user = await prismaBase.user.findUnique({ where: { email: body.adminEmail } });
     expect(user!.tenantId).toBe(registeredTenantId);
-    expect(user!.refreshToken).toBeTruthy();
+    // register-tenant starts a session (M3-T23); the old column stays empty
+    expect(await prismaBase.userSession.count({ where: { userId: user!.id } })).toBe(1);
 
     const dup = await request(app).post('/api/auth/register-tenant').send({ ...body, companyName: `Reg Co 2 ${SUFFIX}` });
     expect(dup.status).toBe(400);

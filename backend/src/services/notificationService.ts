@@ -67,22 +67,32 @@ export async function notifyAdminsOverdueCollections(
 
   const totalOverdue = Money.sum(agents.map(a => a.totalBalance));
 
+  const message = `${agents.length} agent(s) have overdue collections totaling GHS ${Money.toApi(totalOverdue)}: ${agentSummary}`;
+  const data = {
+    agents: agents.map(a => ({
+      ...a,
+      totalBalance: Money.toApi(a.totalBalance),
+      warningAmount: Money.toApi(a.warningAmount),
+      criticalAmount: Money.toApi(a.criticalAmount)
+    })),
+    totalOverdue: Money.toApi(totalOverdue)
+  };
+
   for (const admin of admins) {
-    await createNotification(
-      admin.id.toString(),
-      'overdue_collections',
-      'Overdue Agent Collections',
-      `${agents.length} agent(s) have overdue collections totaling GHS ${Money.toApi(totalOverdue)}: ${agentSummary}`,
-      {
-        agents: agents.map(a => ({
-          ...a,
-          totalBalance: Money.toApi(a.totalBalance),
-          warningAmount: Money.toApi(a.warningAmount),
-          criticalAmount: Money.toApi(a.criticalAmount)
-        })),
-        totalOverdue: Money.toApi(totalOverdue)
-      }
-    );
+    // The job runs daily: refresh the admin's unread alert instead of adding a copy each day (COD-148)
+    const unread = await prisma.notification.findFirst({
+      where: { userId: admin.id, type: 'overdue_collections', isRead: false },
+      select: { id: true }
+    });
+    if (unread) {
+      const notification = await prisma.notification.update({
+        where: { id: unread.id },
+        data: { message, data, createdAt: new Date() }
+      });
+      emitNotification(getSocketInstance() as any, admin.id.toString(), notification);
+    } else {
+      await createNotification(admin.id.toString(), 'overdue_collections', 'Overdue Agent Collections', message, data);
+    }
   }
 }
 

@@ -83,7 +83,7 @@ describe('write paths store E.164', () => {
     const res = await request(app)
       .post(`/api/public/forms/${formSlug}/orders`)
       .send({
-        formData: { name: 'Pub Buyer', phoneNumber: p.local, alternatePhone: alt.local, address: '1 St', state: 'Greater Accra' },
+        formData: { name: 'Pub Buyer', phoneNumber: p.local, alternatePhone: alt.local, address: '1 St', state: 'Greater Accra', town: 'Osu', landmark: 'Near the Total station' },
         selectedPackage: { name: 'One', price: 10, quantity: 1 },
         totalAmount: 10,
       });
@@ -102,7 +102,7 @@ describe('write paths store E.164', () => {
       .post(`/api/public/forms/${formSlug}/orders`)
       .set('X-Forwarded-For', '10.9.9.9')
       .send({
-        formData: { name: 'Old Format', phoneNumber: old.e164, address: '1 St', state: 'Greater Accra' },
+        formData: { name: 'Old Format', phoneNumber: old.e164, address: '1 St', state: 'Greater Accra', town: 'Osu', landmark: 'Near the Total station' },
         selectedPackage: { name: 'One', price: 10, quantity: 1 },
         totalAmount: 10,
       });
@@ -193,21 +193,21 @@ describe('write paths store E.164', () => {
     // Duplicate in another format of the same number
     await expect(
       inTenant(() => customerService.createCustomer({ firstName: 'Dup', phoneNumber: `233${p.slice(1)}`, address: 'x', state: 'x', area: 'x' } as any))
-    ).rejects.toThrow(/already exists/);
+    ).rejects.toThrow(/belongs to/);
 
     // Old-format customer: creating the same number in E.164 is a duplicate
     const old = num(1).local.replace(/^0245/, '0249');
     await prismaBase.customer.create({ data: { firstName: 'Old', lastName: 'F', phoneNumber: old, address: 'x', state: 'x', area: 'x', tenantId } });
     await expect(
       inTenant(() => customerService.createCustomer({ firstName: 'Dup', phoneNumber: `+233${old.slice(1)}`, address: 'x', state: 'x', area: 'x' } as any))
-    ).rejects.toThrow(/already exists/);
+    ).rejects.toThrow(/belongs to/);
 
     // Update normalizes; an old-format customer can be re-saved with its own number
     const oldRow = await customerByPhone(old);
     const updated = await inTenant(() => customerService.updateCustomer(String(oldRow!.id), { phoneNumber: old }));
     expect(updated.phoneNumber).toBe(`+233${old.slice(1)}`);
     // ...but not with another customer's number
-    await expect(inTenant(() => customerService.updateCustomer(String(oldRow!.id), { phoneNumber: p }))).rejects.toThrow(/already in use/);
+    await expect(inTenant(() => customerService.updateCustomer(String(oldRow!.id), { phoneNumber: p }))).rejects.toThrow(/belongs to/);
   });
 });
 

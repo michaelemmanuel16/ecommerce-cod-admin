@@ -23,7 +23,8 @@ async function getPermissionsFromDatabase() {
 
   let permissions: any;
   try {
-    const config = await prisma.systemConfig.findFirst();
+    // The tenant's own row only (SystemConfig.tenantId is unique). No tenant reads the tenantId-null row.
+    const config = await prisma.systemConfig.findFirst({ where: { tenantId: getTenantId() ?? null } });
 
     if (!config || !config.rolePermissions) {
       logger.info('[auth.getPermissionsFromDatabase] No config or rolePermissions found, using defaults');
@@ -61,10 +62,11 @@ function getDefaultPermissions() {
     super_admin: {
       users: ['create', 'view', 'update', 'delete'],
       orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'force_status'],
-      customers: ['create', 'view', 'update', 'delete'],
+      customers: ['create', 'view', 'update', 'delete', 'export'],
       products: ['create', 'view', 'update', 'delete', 'update_stock'],
       financial: ['view', 'create', 'update', 'delete'],
-      analytics: ['view'],
+      analytics: ['view', 'export'],
+      marketing: ['view'],
       workflows: ['create', 'view', 'update', 'delete', 'execute'],
       settings: ['view', 'update'],
       calls: ['create', 'view', 'update', 'delete'],
@@ -74,10 +76,11 @@ function getDefaultPermissions() {
     admin: {
       users: ['create', 'view', 'update', 'delete'],
       orders: ['create', 'view', 'update', 'delete', 'bulk_import', 'assign', 'update_status'],
-      customers: ['create', 'view', 'update', 'delete'],
+      customers: ['create', 'view', 'update', 'delete', 'export'],
       products: ['create', 'view', 'update', 'delete'],
       financial: ['view', 'create'],
-      analytics: ['view'],
+      analytics: ['view', 'export'],
+      marketing: ['view'],
       workflows: ['create', 'view', 'update', 'delete', 'execute'],
       settings: ['view'],
       calls: ['create', 'view', 'update', 'delete'],
@@ -87,10 +90,11 @@ function getDefaultPermissions() {
     manager: {
       users: [],
       orders: ['view', 'update', 'bulk_import', 'assign'],
-      customers: ['create', 'view', 'update', 'delete'],
+      customers: ['create', 'view', 'update', 'delete', 'export'],
       products: ['view'],
       financial: ['view'],
-      analytics: ['view'],
+      analytics: ['view', 'export'],
+      marketing: ['view'],
       workflows: ['view', 'execute'],
       settings: [],
       calls: ['view'],
@@ -99,10 +103,11 @@ function getDefaultPermissions() {
     sales_rep: {
       users: [],
       orders: ['create', 'view', 'update'],
-      customers: ['create', 'view', 'update', 'delete'],
+      customers: ['create', 'view', 'update'],
       products: ['view'],
       financial: [],
       analytics: ['view'],
+      marketing: [],
       workflows: [],
       settings: [],
       calls: ['create', 'view'],
@@ -115,6 +120,7 @@ function getDefaultPermissions() {
       products: ['create', 'view', 'update', 'delete', 'update_stock'],
       financial: [],
       analytics: ['view'],
+      marketing: [],
       workflows: [],
       settings: [],
       calls: [],
@@ -127,6 +133,7 @@ function getDefaultPermissions() {
       products: ['view'],
       financial: ['create'],
       analytics: ['view'],
+      marketing: [],
       workflows: [],
       settings: [],
       calls: ['view'],
@@ -138,7 +145,8 @@ function getDefaultPermissions() {
       customers: ['view'],
       products: ['view'],
       financial: ['view', 'create'],
-      analytics: ['view'],
+      analytics: ['view', 'export'],
+      marketing: [],
       workflows: [],
       calls: [],
       settings: [],
@@ -251,6 +259,12 @@ export async function hasPermission(
   const permissions = await getPermissionsFromDatabase();
   const list = permissions[user.role]?.[resource];
   return Array.isArray(list) && list.includes(action);
+}
+
+/** The role's permissions as the checks above see them: the tenant's saved matrix merged over the defaults. */
+export async function getEffectivePermissions(role: UserRole | string): Promise<Record<string, string[]>> {
+  const permissions = await getPermissionsFromDatabase();
+  return permissions[role] ?? {};
 }
 
 // Resource-action permission middleware (SystemConfig.rolePermissions). Several actions mean "any of them".

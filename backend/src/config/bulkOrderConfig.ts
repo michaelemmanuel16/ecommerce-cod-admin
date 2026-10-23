@@ -4,7 +4,7 @@
 
 export const BULK_ORDER_CONFIG = {
   // Export limits
-  EXPORT_MAX_RECORDS: 500, // Maximum records per export to prevent memory issues
+  EXPORT_MAX_RECORDS: 50000, // Rows per export (F-320, F-361). Above it the user narrows the date range; the file streams, so this is no memory limit
 
   // Import processing
   IMPORT_BATCH_SIZE: 50, // Number of orders to process in each batch

@@ -3,7 +3,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma, OrderStatus, DeclineReason, FailureReason } from '@prisma/client';
 import logger from '../utils/logger';
-import appEvents, { AppEvent, emitOrderCreatedEvent } from '../utils/appEvents';
+import appEvents, { AppEvent, emitOrderCreatedEvent, emitOrderDeletedEvent } from '../utils/appEvents';
 import { getSocketInstance } from '../utils/socketInstance';
 import {
   emitOrderCreated,
@@ -11,19 +11,23 @@ import {
   emitToTenant,
 } from '../sockets';
 import { BULK_ORDER_CONFIG } from '../config/bulkOrderConfig';
-import { checkResourceOwnership, Requester } from '../utils/authUtils';
+import { checkResourceOwnership, isManagerUp, orderScope, Requester } from '../utils/authUtils';
+import { fullName } from '../utils/nameUtils';
 import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
-import FinancialSyncService from './financialSyncService';
-import agentInventoryService from './agentInventoryService';
 import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
 import assignmentService from './assignmentService';
 import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
 import { hasPermission } from '../middleware/auth';
-import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
+import { findAndReactivateCustomerByPhone, findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
+import { auditService } from './auditService';
 import * as Money from '../utils/money';
 import { roleScope } from '../utils/kpiRequest';
+import orderFlagService, { OrderFlagCode } from './orderFlagService';
+import { classifyQuery, nameMatch } from './searchService';
 import { kpiWindow } from './kpi/dates';
 import { deliveredRevenue, revenueScope } from './kpi/revenue';
+import { duplicateCandidatesWhere, IMPORT_BLOCKED_STATUSES, isDuplicateOf, isForwardStatus } from './orderImportService';
+import { cleanText, deliveryAddressOf } from '../utils/checkoutLocation';
 
 
 
@@ -40,16 +44,25 @@ interface CreateOrderData {
     itemType?: 'package' | 'upsell';
     metadata?: any;
   }>;
-  subtotal: Money.MoneyInput;
+  /** Default: the sum of the lines. */
+  subtotal?: Money.MoneyInput;
   shippingCost?: Money.MoneyInput;
   discount?: Money.MoneyInput;
   totalAmount: Money.MoneyInput;
   deliveryAddress: string;
   deliveryState: string;
   deliveryArea: string;
+  /** Nearest landmark (COD-138): saved on the customer and added to the delivery address. */
+  landmark?: string;
   notes?: string;
   estimatedDelivery?: Date;
   createdById?: number;
+  /** F-317: the call rep and delivery agent. A sales_rep requester is always the call rep; only `orders:assign` roles may set either. */
+  customerRepId?: number;
+  deliveryAgentId?: number;
+  /** F-317: "Customer already confirmed on this call". The order moves to confirmed through the machine and a manual `Call` is saved. */
+  customerConfirmed?: boolean;
+  requester?: Requester;
 }
 
 export interface BulkImportOrderData {
@@ -64,6 +77,8 @@ export interface BulkImportOrderData {
   deliveryArea: string;
   notes?: string;
   productName?: string;
+  /** Set by the import check (F-319): the product the file row matched. Wins over `productName`. */
+  productId?: number;
   quantity?: number;
   unitPrice?: Money.MoneyInput;
   status?: OrderStatus;
@@ -72,20 +87,91 @@ export interface BulkImportOrderData {
   assignedAgentName?: string;
   // Order date from CSV
   orderDate?: Date;
+  /** Row number in the uploaded file, for the problems file. */
+  sourceRow?: number;
 }
 
-interface OrderFilters {
+export const ORDER_SORT_FIELDS = ['id', 'customer', 'totalAmount', 'createdAt'] as const;
+export type OrderSortField = typeof ORDER_SORT_FIELDS[number];
+export type OrderInclude = 'flags' | 'reminder' | 'threadCount';
+
+/** Filters shared by the list and the tab counts (F-308: counts use every filter except status). */
+export interface OrderFilters {
   status?: OrderStatus[];
   customerId?: number;
   customerRepId?: number;
+  /** Orders with no call rep. Wins over `customerRepId`. */
+  unassigned?: boolean;
   deliveryAgentId?: number;
+  productIds?: number[];
   area?: string;
+  flag?: OrderFlagCode | 'any';
+  /** What startDate and endDate filter on: order date (default) or delivery date. */
+  dateBasis?: 'created' | 'delivery';
   startDate?: Date;
   endDate?: Date;
   search?: string;
+  /** Only these order ids (the orders an import made, F-319). Tenant and row scope still apply. */
+  ids?: number[];
+}
+
+export interface OrderListQuery extends OrderFilters {
+  sortBy?: OrderSortField;
+  sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
+  include?: OrderInclude[];
 }
+
+/** A search term is cut at 100 characters and 5 name words, as in the command palette search. */
+const SEARCH_MAX_LENGTH = 100;
+const SEARCH_MAX_WORDS = 5;
+
+/** The list `where`: tenant comes from the client extension. `withStatus: false` is the tab counts. */
+function listWhere(filters: OrderFilters, requester: Requester | undefined, withStatus: boolean): Prisma.OrderWhereInput {
+  const and: Prisma.OrderWhereInput[] = [orderScope(requester)];
+  if (withStatus && filters.status?.length) and.push({ status: { in: filters.status } });
+  if (filters.customerId) and.push({ customerId: filters.customerId });
+  if (filters.ids?.length) and.push({ id: { in: filters.ids } });
+  if (filters.unassigned) and.push({ customerRepId: null });
+  else if (filters.customerRepId) and.push({ customerRepId: filters.customerRepId });
+  if (filters.deliveryAgentId) and.push({ deliveryAgentId: filters.deliveryAgentId });
+  if (filters.area) and.push({ deliveryArea: filters.area });
+  if (filters.productIds?.length) and.push({ orderItems: { some: { productId: { in: filters.productIds } } } });
+  if (filters.flag) and.push(orderFlagService.where(filters.flag));
+
+  if (filters.startDate || filters.endDate) {
+    const range = { ...(filters.startDate && { gte: filters.startDate }), ...(filters.endDate && { lte: filters.endDate }) };
+    // Delivery date is set only by a delivery, so this basis shows delivered orders only (F-311).
+    and.push(filters.dateBasis === 'delivery'
+      ? { deliveryDate: range, status: { in: ['delivered', 'digital_delivered'] } }
+      : { createdAt: range });
+  }
+
+  if (filters.search?.trim()) {
+    // `#23001` is an order number; a phone matches in any format; words match the customer's names (F-310).
+    const q = classifyQuery(filters.search.trim().slice(0, SEARCH_MAX_LENGTH));
+    const customerMatch: Prisma.CustomerWhereInput[] = [
+      ...q.phone.map((p) => p as Prisma.CustomerWhereInput),
+      ...(q.nameWords.length ? [nameMatch(q.nameWords.slice(0, SEARCH_MAX_WORDS))] : []),
+    ];
+    // An empty OR matches nothing, as wanted for a term that is neither.
+    and.push({
+      OR: [
+        ...(q.orderId !== null ? [{ id: q.orderId }] : []),
+        ...(customerMatch.length ? [{ customer: { OR: customerMatch } }] : []),
+      ],
+    });
+  }
+  return { deletedAt: null, AND: and };
+}
+
+const SORT_ORDER_BY: Record<OrderSortField, (dir: Prisma.SortOrder) => Prisma.OrderOrderByWithRelationInput[]> = {
+  id: (dir) => [{ id: dir }],
+  customer: (dir) => [{ customer: { lastName: dir } }, { customer: { firstName: dir } }, { id: 'desc' }],
+  totalAmount: (dir) => [{ totalAmount: dir }, { id: 'desc' }],
+  createdAt: (dir) => [{ createdAt: dir }, { id: 'desc' }],
+};
 
 interface UpdateOrderStatusData {
   status: OrderStatus;
@@ -107,68 +193,76 @@ interface UpdateOrderStatusData {
 }
 
 
+/** One order line as sent by an edit. */
+interface ItemInput {
+  productId: number;
+  quantity: number;
+  unitPrice: Money.MoneyInput;
+  itemType?: 'package' | 'upsell';
+  metadata?: any;
+}
+
+const itemSnapshot = (i: { productId: number; quantity: number; unitPrice: Money.MoneyInput }) =>
+  ({ productId: i.productId, quantity: i.quantity, unitPrice: Money.toApi(i.unitPrice) });
+
+/**
+ * F-318: the fields an edit may change, by status. Before dispatch: everything. On the road: contact, address
+ * and notes. Done or closed: notes only. (`payment_failed` has nothing dispatched, so it edits like the first group.)
+ */
+function editableFields(status: OrderStatus): string[] {
+  if (status === 'out_for_delivery' || status === 'failed_delivery') {
+    return ['customerPhone', 'alternatePhone', 'deliveryAddress', 'deliveryState', 'deliveryArea', 'notes'];
+  }
+  if (['delivered', 'digital_delivered', 'returned', 'cancelled'].includes(status)) return ['notes'];
+  return ['customerName', 'customerPhone', 'alternatePhone', 'customerEmail', 'deliveryAddress', 'deliveryState', 'deliveryArea', 'orderItems', 'discount', 'totalAmount', 'notes'];
+}
+
+/** F-316: states that can be deleted. The others have money or stock effects. */
+const DELETABLE_STATUSES: OrderStatus[] = [
+  'pending_confirmation', 'payment_pending', 'payment_failed', 'confirmed', 'preparing', 'ready_for_pickup', 'cancelled', 'failed_delivery',
+];
+
+/** One bulk request covers up to 200 orders (F-313, F-314). */
+export const BULK_ORDER_LIMIT = 200;
+
+/** Per-order result of a bulk status change or assign. */
+export interface BulkResult {
+  succeeded: number[];
+  failed: Array<{ id: number; code: string; message: string }>;
+}
+
+/** The ids of a bulk request without repeats, or HTTP 413 above the limit. */
+function limitBulk(orderIds: number[]): number[] {
+  const ids = [...new Set(orderIds)];
+  if (ids.length > BULK_ORDER_LIMIT) {
+    throw new AppError(`Select ${BULK_ORDER_LIMIT} orders or fewer.`, 413, 'TOO_MANY_ORDERS');
+  }
+  return ids;
+}
+
+/** One failed order of a bulk request: the error's code and message. An unexpected error is logged, not shown. */
+function bulkFailure(id: number, error: unknown): BulkResult['failed'][number] {
+  if (error instanceof AppError) {
+    return { id, code: error.errorCode ?? (error.statusCode === 404 ? 'NOT_FOUND' : 'ERROR'), message: error.message };
+  }
+  logger.error('Bulk order change failed', { orderId: id, error: (error as Error).message });
+  return { id, code: 'ERROR', message: 'This order could not be changed.' };
+}
+
 export class OrderService {
   /**
-   * Get all orders with filters and pagination
+   * Orders list (F-307, F-310 to F-312): filters, server sort and pagination. `include` adds `flags`, `reminder`
+   * and `threadCount` to each row; reminder and thread count are null until M9.
    */
-  async getAllOrders(filters: OrderFilters, requester?: Requester) {
-    const {
-      status,
-      customerId,
-      customerRepId,
-      deliveryAgentId,
-      area,
-      startDate,
-      endDate,
-      search,
-      page = 1,
-      limit = 20
-    } = filters;
-
-    const where: Prisma.OrderWhereInput = {
-      deletedAt: null, // Filter out soft-deleted orders
-    };
-
-    if (status && status.length > 0) where.status = { in: status };
-    if (customerId) where.customerId = customerId;
-    if (customerRepId) where.customerRepId = customerRepId;
-    if (deliveryAgentId) where.deliveryAgentId = deliveryAgentId;
-    if (area) where.deliveryArea = area;
-
-    // Role-based filtering
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      if (requester.role === 'sales_rep') {
-        where.customerRepId = requester.id;
-      } else if (requester.role === 'delivery_agent') {
-        where.deliveryAgentId = requester.id;
-      }
-    }
-
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = startDate;
-      if (endDate) where.createdAt.lte = endDate;
-    }
-
-    if (search) {
-      // Try to parse as number for ID search
-      const searchNum = parseInt(search);
-      const phoneSearch = customerPhoneSearch(search);
-      where.OR = [
-        // A phone typed as +233... parses to a number beyond Int4; it is not an order id.
-        ...(isNaN(searchNum) || searchNum > 2147483647 ? [] : [{ id: searchNum }]),
-        ...(phoneSearch ? [phoneSearch] : []),
-        { customer: { firstName: { contains: search, mode: 'insensitive' } } },
-        { customer: { lastName: { contains: search, mode: 'insensitive' } } }
-      ];
-    }
-
-    const skip = (page - 1) * limit;
+  async getAllOrders(query: OrderListQuery, requester?: Requester) {
+    const { sortBy = 'createdAt', sortOrder = 'desc', page = 1, limit = 20, include = [] } = query;
+    this.checkRange(query);
+    const where = listWhere(query, requester, true);
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
         where,
-        skip,
+        skip: (page - 1) * limit,
         take: limit,
         include: {
           customer: {
@@ -206,13 +300,21 @@ export class OrderService {
             }
           }
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: SORT_ORDER_BY[sortBy](sortOrder)
       }),
       prisma.order.count({ where })
     ]);
 
+    const flags = include.includes('flags') ? await orderFlagService.forOrders(orders.map((o) => o.id)) : null;
+    const rows = orders.map((o) => ({
+      ...o,
+      ...(flags && { flags: flags.get(o.id) ?? [] }),
+      ...(include.includes('reminder') && { reminder: null }),
+      ...(include.includes('threadCount') && { threadCount: null }),
+    }));
+
     return {
-      orders,
+      orders: rows,
       pagination: {
         page,
         limit,
@@ -220,6 +322,61 @@ export class OrderService {
         pages: Math.ceil(total / limit)
       }
     };
+  }
+
+  /**
+   * Tab counts (F-308): every filter of the list except status, same row scope. `all` is the sum of the 12 statuses;
+   * `waitingToDispatch` is confirmed + preparing + ready_for_pickup.
+   */
+  async getOrderCounts(filters: OrderFilters, requester?: Requester) {
+    this.checkRange(filters);
+    const groups = await prisma.order.groupBy({
+      by: ['status'],
+      where: listWhere(filters, requester, false),
+      _count: { _all: true },
+    });
+    const byStatus = Object.fromEntries(Object.values(OrderStatus).map((s) => [s, 0])) as Record<OrderStatus, number>;
+    for (const g of groups) byStatus[g.status] = g._count._all;
+    return {
+      all: Object.values(byStatus).reduce((sum, n) => sum + n, 0),
+      byStatus,
+      waitingToDispatch: byStatus.confirmed + byStatus.preparing + byStatus.ready_for_pickup,
+    };
+  }
+
+  /** Rows the export would write (F-320): the list rows for the same filters. */
+  async exportCount(filters: OrderFilters, requester?: Requester) {
+    this.checkRange(filters);
+    return prisma.order.count({ where: listWhere(filters, requester, true) });
+  }
+
+  /** The export rows in batches of `size`, newest id first, one cursor read per batch (never the whole set at once). */
+  async *exportBatches(filters: OrderFilters, requester?: Requester, size = 1000) {
+    const where = listWhere(filters, requester, true);
+    let last: number | undefined;
+    for (;;) {
+      const rows = await prisma.order.findMany({
+        where: last === undefined ? where : { AND: [where, { id: { lt: last } }] },
+        orderBy: { id: 'desc' },
+        take: size,
+        include: {
+          customer: { select: { firstName: true, lastName: true, phoneNumber: true, alternatePhone: true } },
+          customerRep: { select: { firstName: true, lastName: true } },
+          deliveryAgent: { select: { firstName: true, lastName: true } },
+          orderItems: { include: { product: { select: { name: true } } } },
+        },
+      });
+      if (rows.length === 0) return;
+      yield rows;
+      last = rows[rows.length - 1].id;
+      if (rows.length < size) return;
+    }
+  }
+
+  private checkRange({ startDate, endDate }: OrderFilters) {
+    if (startDate && endDate && startDate > endDate) {
+      throw new AppError('The start date is after the end date.', 400, 'INVALID_RANGE');
+    }
   }
 
   /**
@@ -261,6 +418,7 @@ export class OrderService {
             address: data.deliveryAddress,
             state: data.deliveryState,
             area: data.deliveryArea,
+            landmark: cleanText(data.landmark) || null,
           }
         });
       } else {
@@ -274,6 +432,8 @@ export class OrderService {
         if (alternatePhone && alternatePhone !== customer.alternatePhone) {
           customerUpdateData.alternatePhone = alternatePhone;
         }
+        const landmark = cleanText(data.landmark);
+        if (landmark && landmark !== customer.landmark) customerUpdateData.landmark = landmark;
         if (Object.keys(customerUpdateData).length > 0) {
           customer = await prisma.customer.update({
             where: { id: customer.id },
@@ -283,6 +443,21 @@ export class OrderService {
       }
     } else {
       throw new AppError('Either customerId or customerPhone must be provided', 400);
+    }
+
+    // Call rep and delivery agent (F-317). A rep's own order is theirs; the assign fields need `orders:assign`.
+    let customerRepId = data.customerRepId;
+    let deliveryAgentId = data.deliveryAgentId;
+    if (data.requester?.role === 'sales_rep') {
+      customerRepId = data.requester.id;
+      if (deliveryAgentId) throw new AppError('You cannot assign a delivery agent.', 403, 'FORBIDDEN');
+    } else if ((customerRepId || deliveryAgentId) && data.requester && !(await hasPermission(data.requester, 'orders', 'assign'))) {
+      throw new AppError('You do not have permission to assign this order.', 403, 'FORBIDDEN');
+    }
+    if (customerRepId && customerRepId !== data.requester?.id) await assignmentService.loadAssignee(customerRepId, 'sales_rep');
+    if (deliveryAgentId) await assignmentService.loadAssignee(deliveryAgentId, 'delivery_agent', { checkAvailable: true });
+    if (data.customerConfirmed && !data.createdById) {
+      throw new AppError('A confirmed order needs the person who took the call.', 400);
     }
 
     // Validate products and check stock (batch query to avoid N+1)
@@ -297,8 +472,11 @@ export class OrderService {
       }
     }
 
+    const subtotal = data.subtotal ?? Money.sum(data.orderItems.map((item) => Money.mul(item.quantity, item.unitPrice)));
+    let confirmMove: Awaited<ReturnType<typeof transitionOrder>> | undefined;
+
     // Create order in transaction
-    const order = await prisma.$transaction(async (tx) => {
+    const created = await prisma.$transaction(async (tx) => {
       // Validate product availability (optional, as we already checked existence)
       for (const item of data.orderItems) {
         const product = productMap.get(item.productId);
@@ -315,18 +493,20 @@ export class OrderService {
       const newOrder = await tx.order.create({
         data: {
           customerId: customer.id,
-          subtotal: data.subtotal,
+          subtotal,
           shippingCost: data.shippingCost || 0,
           discount: data.discount || 0,
           totalAmount: data.totalAmount,
           codAmount: data.totalAmount,
-          deliveryAddress: data.deliveryAddress,
+          deliveryAddress: deliveryAddressOf(data.deliveryAddress, data.landmark) ?? data.deliveryAddress,
           deliveryState: data.deliveryState,
           deliveryArea: data.deliveryArea,
           notes: data.notes,
           estimatedDelivery: data.estimatedDelivery || null,
           createdById: data.createdById,
-                    orderItems: {
+          customerRepId,
+          deliveryAgentId,
+          orderItems: {
             create: data.orderItems.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
@@ -364,8 +544,33 @@ export class OrderService {
         }
       });
 
+      if (data.customerConfirmed) {
+        // F-317: created, then moved by the machine; the call row is what the pay rule reads
+        confirmMove = await transitionOrder(newOrder.id, 'confirmed', actorOf(data.requester, data.createdById), {
+          tx,
+          note: 'Customer confirmed on the call',
+        });
+        const calledAt = new Date();
+        await tx.call.create({
+          data: {
+            tenantId: resolveTenantId(customer.tenantId),
+            customerId: customer.id,
+            orderId: newOrder.id,
+            salesRepId: data.createdById!,
+            outcome: 'confirmed',
+            source: 'manual',
+            startedAt: calledAt,
+          },
+        });
+        await tx.order.updateMany({ where: { id: newOrder.id, firstContactAt: null }, data: { firstContactAt: calledAt } });
+      }
+
       return newOrder;
     });
+    confirmMove?.afterCommit?.();
+    const order = confirmMove
+      ? await prisma.order.findUniqueOrThrow({ where: { id: created.id }, include: { customer: true, orderItems: { include: { product: true } } } })
+      : created;
 
     logger.info(`Order created`, { orderId: order.id });
 
@@ -398,7 +603,9 @@ export class OrderService {
       success: 0,
       failed: 0,
       duplicates: 0,
-      errors: [] as Array<{ order: BulkImportOrderData; error: string }>
+      errors: [] as Array<{ order: BulkImportOrderData; error: string }>,
+      /** Orders created or moved forward, for the "Show the imported orders" link (F-319). */
+      orderIds: [] as number[]
     };
 
     // Track duplicates WITHIN the current import to catch them before they hit the DB
@@ -439,48 +646,20 @@ export class OrderService {
             continue;
           }
 
-          // 2. Check for duplicates in DB (User's Logic: same phone, address, amount, date)
-          const startOfCurrentDay = new Date(orderDateValue);
-          startOfCurrentDay.setHours(0, 0, 0, 0);
-          const endOfCurrentDay = new Date(orderDateValue);
-          endOfCurrentDay.setHours(23, 59, 59, 999);
+          if (orderData.status && IMPORT_BLOCKED_STATUSES.includes(orderData.status)) {
+            throw new Error(`Status ${orderData.status} cannot be imported`);
+          }
 
-          // Use prismaBase to include soft-deleted orders in duplicate check
+          // 2. Check for duplicates in DB: same phone, address and amount within 24 hours (F-319)
+          // Use prismaBase to include soft-deleted orders in duplicate check; the where holds the tenant
           const existingOrders = await prismaBase.order.findMany({
-            where: {
-              // Matches the number in the normalized or any old stored format.
-              customer: { phoneNumber: { in: phoneLookupVariants(orderData.customerPhone) } },
-              createdAt: {
-                gte: startOfCurrentDay,
-                lte: endOfCurrentDay
-              },
-              totalAmount: orderData.totalAmount
-            },
-            select: { id: true, deliveryAddress: true, deletedAt: true, status: true, tenantId: true },
+            where: duplicateCandidatesWhere(orderData, orderDateValue, orderDateValue),
+            select: { id: true, deliveryAddress: true, deletedAt: true, status: true, totalAmount: true, createdAt: true },
             orderBy: { createdAt: 'desc' },
-            take: 20
+            take: 50
           });
 
-          // Status progression order — higher index = further along
-          const STATUS_ORDER: OrderStatus[] = [
-            'pending_confirmation',
-            'confirmed',
-            'preparing',
-            'ready_for_pickup',
-            'out_for_delivery',
-            'delivered',
-          ];
-          const isForwardStatus = (current: OrderStatus, next: OrderStatus) => {
-            const ci = STATUS_ORDER.indexOf(current);
-            const ni = STATUS_ORDER.indexOf(next);
-            return ci !== -1 && ni !== -1 && ni > ci;
-          };
-
-          const matchingExisting = existingOrders.find(existing => {
-            const sameAddr = normalize(existing.deliveryAddress) === normalize(orderData.deliveryAddress);
-            const isRelevantRecord = !existing.deletedAt || (Date.now() - new Date(existing.deletedAt).getTime() < 5 * 60 * 1000);
-            return sameAddr && isRelevantRecord;
-          });
+          const matchingExisting = existingOrders.find(existing => isDuplicateOf(existing, orderData, orderDateValue));
 
           if (matchingExisting) {
             const newStatus = (orderData.status || 'pending_confirmation') as OrderStatus;
@@ -499,6 +678,7 @@ export class OrderService {
                 to: newStatus,
               });
               results.success++;
+              results.orderIds.push(matchingExisting.id);
             } else {
               // Same or earlier status — skip
               logger.warn('🚫 CANARY: DUPLICATE FOUND IN DB — status not advanced, skipping', {
@@ -512,7 +692,7 @@ export class OrderService {
             continue;
           }
 
-          const createdOrder = await prisma.$transaction(async (tx) => {
+          const { order: createdOrder, moved } = await prisma.$transaction(async (tx) => {
             // 3. Find or create customer by phone (tenant-scoped via Prisma extension).
             const customerPhone = normalizePhoneForStorage(orderData.customerPhone);
             const alternatePhone = normalizePhoneForStorage(orderData.customerAlternatePhone) || undefined;
@@ -547,9 +727,9 @@ export class OrderService {
 
             // 4. Handle product lookup
             let orderItemsData: any[] = [];
-            if (orderData.productName) {
+            if (orderData.productId || orderData.productName) {
               const product = await tx.product.findFirst({
-                where: {
+                where: orderData.productId ? { id: orderData.productId } : {
                   OR: [
                     { name: { contains: orderData.productName, mode: 'insensitive' } },
                     { sku: { contains: orderData.productName, mode: 'insensitive' } }
@@ -585,8 +765,8 @@ export class OrderService {
                 deliveryState: orderData.deliveryState,
                 deliveryArea: orderData.deliveryArea,
                 notes: orderData.notes,
-                status: orderData.status || 'pending_confirmation',
-                deliveryDate: orderData.status === 'delivered' ? orderDateValue : null,
+                // Created at the start; the machine moves it to the file's status below (F-301, F-319)
+                status: 'pending_confirmation',
                 source: 'bulk_import',
                 createdById,
                 customerRepId,
@@ -596,7 +776,7 @@ export class OrderService {
                 orderHistory: {
                   create: {
                     tenantId: resolveTenantId(),
-                    status: orderData.status || 'pending_confirmation',
+                    status: 'pending_confirmation',
                     notes: 'Order imported via bulk CSV',
                     changedBy: createdById
                   }
@@ -610,37 +790,32 @@ export class OrderService {
               }
             });
 
-            // 6. Auto-sync financial data if order is imported as delivered
-            if (newOrder.status === 'delivered' && Money.isNonZero(newOrder.codAmount)) {
-              try {
-                const syncResult = await FinancialSyncService.syncOrderFinancialData(
-                  tx as any,
-                  newOrder as any,
-                  createdById || undefined
-                );
-
-                if (syncResult.transaction || syncResult.journalEntry) {
-                  logger.info(`Financial data auto - synced for imported order ${newOrder.id} `, {
-                    transactionId: syncResult.transaction?.id,
-                    journalEntryNumber: syncResult.journalEntry?.entryNumber
-                  });
-                }
-              } catch (syncError: any) {
-                // Log error but don't fail the import
-                logger.error(`Failed to auto - sync financial data for imported order ${newOrder.id}: `, syncError);
-                // Continue - order is still created
-              }
-            }
-
-            return newOrder;
+            // 6. A history status runs through the machine in the same transaction: stock, revenue (once), dates.
+            // The importer is an integration actor, so the move needs no path check (F-301).
+            const target = orderData.status || 'pending_confirmation';
+            if (target === 'pending_confirmation') return { order: newOrder, moved: undefined };
+            const moved = await transitionOrder(newOrder.id, target, { kind: 'integration', userId: createdById }, {
+              note: 'Imported with this status',
+              deliveryDate: target === 'delivered' ? orderDateValue : undefined,
+              imported: true,
+              runWorkflows,
+              tx,
+            });
+            const current = await tx.order.findUniqueOrThrow({
+              where: { id: newOrder.id },
+              include: { orderItems: { include: { product: true } }, customer: true, deliveryAgent: true, customerRep: true },
+            });
+            return { order: current, moved };
           }, {
             maxWait: 10000,  // Wait max 10s to get transaction slot
             timeout: 15000   // Transaction must complete within 15s
           });
 
           // Success - track it and emit events
+          moved?.afterCommit?.();
           processedInImport.add(orderFingerprint);
           results.success++;
+          results.orderIds.push(createdOrder.id);
 
           if (!silent) {
             emitOrderCreated(getSocketInstance() as any, createdOrder);
@@ -805,7 +980,9 @@ export class OrderService {
   }
 
   /**
-   * Update order details
+   * Edit an order (F-318). Which fields may change depends on the status (`editableFields`); a locked field
+   * that really changes is refused, one sent back unchanged is ignored. A status in the body is a move through
+   * the machine. `statusVersion` / `updatedAt` in the body is the version check (STALE_ORDER, 409).
    */
   async updateOrder(orderId: number, updateData: any, requester?: Requester) {
     const order = await prisma.order.findUnique({
@@ -817,26 +994,15 @@ export class OrderService {
       throw new AppError('Order not found', 404);
     }
 
-    // Enforce ownership
-    if (requester) {
-      const isOwner = checkResourceOwnership(requester, {
-        assignedRepId: order.customerRepId,
-        deliveryAgentId: order.deliveryAgentId,
-        customerId: order.customerId
-      }, 'order');
-
-      if (!isOwner) {
-        throw new AppError('You do not have permission to update this order', 403);
-      }
+    // The delivery agent cannot edit; a rep edits own orders only (call rep, not delivery agent)
+    if (requester?.role === 'delivery_agent') {
+      throw new AppError('You do not have permission to update this order', 403);
+    }
+    if (requester?.role === 'sales_rep' && order.customerRepId !== requester.id) {
+      throw new AppError('You do not have permission to update this order', 403);
     }
 
-    // Extract fields that need special handling
     const {
-      alternatePhone,
-      orderItems,
-      customerName,
-      customerEmail,
-      customerPhone,
       // D9: a status in this body is a move; it goes through the state machine and never into the generic update
       status: requestedStatus,
       force,
@@ -844,131 +1010,231 @@ export class OrderService {
       declineReason,
       failureReason,
       nextAttemptDate,
-      ...orderUpdateData
+      statusVersion,
+      updatedAt: clientUpdatedAt,
+      confirmTotalChange,
+      confirmPhoneChange,
+      subtotal: _subtotal, // always the sum of the lines
+      ...fields
     } = updateData;
 
+    if (
+      (statusVersion !== undefined && Number(statusVersion) !== order.statusVersion)
+      || (clientUpdatedAt && new Date(clientUpdatedAt).getTime() !== order.updatedAt.getTime())
+    ) {
+      throw new AppError('This order changed. Reload to see the new data.', 409, 'STALE_ORDER');
+    }
+
+    const targetStatus: OrderStatus = requestedStatus ?? order.status;
+    const plan = await this.planEdit(order, fields, targetStatus, requester, { confirmTotalChange, confirmPhoneChange });
+
     // First the move (its own transaction, so a refused move changes nothing), then the other fields.
+    let moved = false;
     if (requestedStatus && requestedStatus !== order.status) {
-      const actor = actorOf(requester);
-      await transitionOrder(orderId, requestedStatus, actor, this.moveOptions({
+      await transitionOrder(orderId, requestedStatus, actorOf(requester), this.moveOptions({
         force,
         reason,
         declineReason,
         failureReason,
         nextAttemptDate: nextAttemptDate ? new Date(nextAttemptDate) : undefined,
       }));
-      order.status = requestedStatus; // the item stock adjustment below depends on the current status
+      moved = true;
     }
 
-    // Update order and customer in a transaction
+    if (plan.changed.length === 0) {
+      return prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { customer: true, orderItems: { include: { product: true } } } });
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
-      // Update customer information if provided
-      if (order.customer) {
-        const customerUpdateData: any = {};
-
-        // Handle customer name
-        if (customerName !== undefined) {
-          const nameParts = customerName.trim().split(' ');
-          customerUpdateData.firstName = nameParts[0] || 'Unknown';
-          customerUpdateData.lastName = nameParts.slice(1).join(' ') || '';
-        }
-
-        // Handle customer email
-        if (customerEmail !== undefined) {
-          customerUpdateData.email = customerEmail;
-        }
-
-        // Handle customer phone number
-        if (customerPhone !== undefined) {
-          customerUpdateData.phoneNumber = normalizePhoneForStorage(customerPhone);
-        }
-
-        // Handle alternate phone
-        if (alternatePhone !== undefined) {
-          customerUpdateData.alternatePhone = normalizePhoneForStorage(alternatePhone);
-        }
-
-        // Only update if there are fields to update
-        if (Object.keys(customerUpdateData).length > 0) {
-          await tx.customer.update({
-            where: { id: order.customerId },
-            data: customerUpdateData
-          });
-        }
+      // The lock: nobody saved since we read the row (after a move the row changed on purpose, so the move is the check)
+      const locked = await tx.order.updateMany({
+        where: { id: orderId, ...(!moved && { updatedAt: order.updatedAt }) },
+        data: { ...plan.orderData, updatedAt: new Date() },
+      });
+      if (locked.count === 0) {
+        throw new AppError('This order changed. Reload to see the new data.', 409, 'STALE_ORDER');
       }
-
-      // If orderItems are provided, update them and adjust stock if needed
-      if (orderItems && Array.isArray(orderItems)) {
-        // Only adjust stock if the order status is 'out_for_delivery' or further
-        const statusesWithStockDeduction = ['out_for_delivery', 'delivered'];
-        const shouldAdjustStock = statusesWithStockDeduction.includes(order.status);
-
-        if (shouldAdjustStock) {
-          const oldItems = order.orderItems;
-          const newItems = orderItems;
-
-          // Restore old stock
-          for (const oldItem of oldItems) {
-            await tx.product.update({
-              where: { id: oldItem.productId },
-              data: { stockQuantity: { increment: oldItem.quantity } }
-            });
-          }
-
-          // Deduct new stock and validate atomically
-          for (const newItem of newItems) {
-            const result = await tx.product.updateMany({
-              where: {
-                id: newItem.productId,
-                stockQuantity: { gte: newItem.quantity }
-              },
-              data: {
-                stockQuantity: { decrement: newItem.quantity }
-              }
-            });
-
-            if (result.count === 0) {
-              throw new AppError(`Insufficient stock for product ID ${newItem.productId} `, 400);
-            }
-          }
-        }
-
-        // Delete existing order items
-        await tx.orderItem.deleteMany({
-          where: { orderId: orderId }
-        });
-
-        // Create new order items
+      if (Object.keys(plan.customerData).length > 0) {
+        await tx.customer.update({ where: { id: order.customerId }, data: plan.customerData });
+      }
+      if (plan.items) {
+        await tx.orderItem.deleteMany({ where: { orderId } });
         await tx.orderItem.createMany({
-          data: orderItems.map((item: any) => ({
-            orderId: orderId,
+          data: plan.items.map((item) => ({
+            orderId,
             productId: item.productId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             totalPrice: Money.roundHalfUp(Money.mul(item.unitPrice, item.quantity), 4),
-            itemType: item.itemType || 'package',
-            metadata: item.metadata || null
+            itemType: item.itemType,
+            metadata: item.metadata,
           }))
         });
       }
-
-      // Update order
-      return await tx.order.update({
+      return tx.order.findUniqueOrThrow({
         where: { id: orderId },
-        data: orderUpdateData,
-        include: {
-          customer: true,
-          orderItems: {
-            include: {
-              product: true
-            }
-          }
-        }
+        include: { customer: true, orderItems: { include: { product: true } } },
       });
+    });
+
+    await auditService.record({
+      actorId: requester?.id,
+      actorKind: requester ? 'person' : 'system',
+      channel: requester ? 'app' : 'system',
+      action: 'update_order',
+      resource: 'order',
+      resourceId: String(orderId),
+      before: plan.before,
+      after: plan.after,
+      metadata: { fields: plan.changed },
     });
 
     logger.info(`Order updated: ${orderId} `, { orderId: orderId });
     return updated;
+  }
+
+  /**
+   * The checks and the write set of one edit: what really changes, whether the status allows it, the phone,
+   * total and item rules. Throws before anything is written.
+   */
+  private async planEdit(
+    order: Prisma.OrderGetPayload<{ include: { customer: true; orderItems: true } }>,
+    fields: Record<string, any>,
+    status: OrderStatus,
+    requester: Requester | undefined,
+    confirm: { confirmTotalChange?: boolean; confirmPhoneChange?: boolean },
+  ) {
+    const customer = order.customer;
+    const items: ItemInput[] | undefined = Array.isArray(fields.orderItems) ? fields.orderItems : undefined;
+    const sameText = (a: unknown, b: unknown) => String(a ?? '').trim() === String(b ?? '').trim();
+    const samePhone = (input: unknown, stored: string | null) => {
+      const wanted = String(input ?? '').trim();
+      return wanted === '' ? !stored : !!stored && phoneLookupVariants(wanted).includes(stored);
+    };
+    const itemKey = (list: Array<{ productId: number; quantity: number; unitPrice: Money.MoneyInput }>) =>
+      list.map((i) => `${i.productId}:${i.quantity}:${Money.toApi(i.unitPrice)}`).sort().join('|');
+    const customerName = fullName(customer);
+
+    // What differs from the stored order. Unknown keys always count as a change, so they are refused.
+    const differs: Record<string, () => boolean> = {
+      customerName: () => !sameText(fields.customerName, customerName),
+      customerEmail: () => !sameText(fields.customerEmail, customer.email),
+      customerPhone: () => !samePhone(fields.customerPhone, customer.phoneNumber),
+      alternatePhone: () => !samePhone(fields.alternatePhone, customer.alternatePhone),
+      deliveryAddress: () => !sameText(fields.deliveryAddress, order.deliveryAddress),
+      deliveryState: () => !sameText(fields.deliveryState, order.deliveryState),
+      deliveryArea: () => !sameText(fields.deliveryArea, order.deliveryArea),
+      notes: () => !sameText(fields.notes, order.notes),
+      discount: () => Money.compare(fields.discount ?? 0, order.discount) !== 0,
+      totalAmount: () => Money.compare(fields.totalAmount, order.totalAmount) !== 0,
+      orderItems: () => !!items && itemKey(items) !== itemKey(order.orderItems),
+    };
+    const changed = Object.keys(fields).filter((key) => fields[key] !== undefined && (differs[key]?.() ?? true));
+
+    const allowed = editableFields(status);
+    const locked = changed.filter((key) => !allowed.includes(key));
+    if (locked.length > 0) {
+      throw new AppError(`You cannot change ${locked.join(', ')} on an order that is ${status.replace(/_/g, ' ')}.`, 400, 'FIELD_NOT_EDITABLE');
+    }
+
+    const orderData: Prisma.OrderUncheckedUpdateManyInput = {};
+    const customerData: Prisma.CustomerUpdateInput = {};
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    const note = (key: string, was: unknown, now: unknown) => { before[key] = was; after[key] = now; };
+
+    for (const key of ['deliveryAddress', 'deliveryState', 'deliveryArea', 'notes'] as const) {
+      if (changed.includes(key)) { orderData[key] = fields[key]; note(key, order[key], fields[key]); }
+    }
+    if (changed.includes('customerName')) {
+      const parts = String(fields.customerName).trim().split(' ');
+      customerData.firstName = parts[0] || 'Unknown';
+      customerData.lastName = parts.slice(1).join(' ') || '';
+      note('customerName', customerName, fields.customerName);
+    }
+    if (changed.includes('customerEmail')) {
+      customerData.email = fields.customerEmail || null;
+      note('customerEmail', customer.email, customerData.email);
+    }
+    if (changed.includes('alternatePhone')) {
+      customerData.alternatePhone = normalizePhoneForStorage(fields.alternatePhone) || null;
+      note('alternatePhone', customer.alternatePhone, customerData.alternatePhone);
+    }
+
+    if (changed.includes('customerPhone')) {
+      const phone = normalizePhoneForStorage(fields.customerPhone);
+      if (!phone) throw new AppError('Enter the customer phone number.', 400, 'PHONE_REQUIRED');
+      const owner = await findCustomerByPhoneIncludingArchived(prisma, phone);
+      if (owner && owner.id !== customer.id) {
+        const name = `${owner.firstName} ${owner.lastName}`.trim();
+        const err = new AppError(`This number belongs to ${name}`, 409, 'PHONE_BELONGS_TO_OTHER_CUSTOMER');
+        err.details = { customerId: owner.id, customerName: name };
+        throw err;
+      }
+      // The number is the customer's, so it changes for their other orders too: that needs a Yes
+      const otherOrders = await prisma.order.count({ where: { customerId: order.customerId, id: { not: order.id }, deletedAt: null } });
+      if (otherOrders > 0 && confirm.confirmPhoneChange !== true) {
+        const err = new AppError("Update the number for all of this customer's orders?", 409, 'PHONE_CHANGE_NEEDS_CONFIRMATION');
+        err.details = { otherOrders };
+        throw err;
+      }
+      customerData.phoneNumber = phone;
+      note('customerPhone', customer.phoneNumber, phone);
+    }
+
+    // Lines, discount and total (F-318): lines first, then the total the user typed or the one the lines give
+    let newItems: ItemInput[] | undefined;
+    if (items && changed.includes('orderItems')) {
+      newItems = await this.checkEditedItems(items, order.orderItems, requester);
+      orderData.subtotal = Money.sum(newItems.map((i) => Money.mul(i.quantity, i.unitPrice)));
+      note('orderItems', order.orderItems.map(itemSnapshot), newItems.map(itemSnapshot));
+    }
+    const discount = changed.includes('discount') ? Money.parse(fields.discount ?? 0) : Money.parse(order.discount);
+    if (changed.includes('discount')) { orderData.discount = discount; note('discount', Money.toApi(order.discount), Money.toApi(discount)); }
+
+    if (newItems || changed.includes('discount') || changed.includes('totalAmount')) {
+      const subtotal = Money.parse((orderData.subtotal as Money.MoneyInput | undefined) ?? order.subtotal);
+      const total = fields.totalAmount !== undefined
+        ? Money.parse(fields.totalAmount)
+        : Money.add(Money.sub(subtotal, discount), order.shippingCost);
+      if (total.isNegative()) throw new AppError('The total cannot be below zero.', 400, 'INVALID_TOTAL');
+      if (Money.compare(total, order.totalAmount) !== 0) {
+        if (status === 'confirmed' && confirm.confirmTotalChange !== true) {
+          const err = new AppError(`The customer confirmed ${Money.toApi(order.totalAmount)}. The new total is ${Money.toApi(total)}.`, 400, 'TOTAL_CHANGE_NOT_CONFIRMED');
+          err.details = { oldTotal: Money.toApi(order.totalAmount), newTotal: Money.toApi(total) };
+          throw err;
+        }
+        orderData.totalAmount = total;
+        // The cash to collect follows the total while it followed it before
+        if (order.codAmount && Money.compare(order.codAmount, order.totalAmount) === 0) orderData.codAmount = total;
+        note('totalAmount', Money.toApi(order.totalAmount), Money.toApi(total));
+      }
+    }
+
+    return { changed, orderData, customerData, items: newItems, before, after };
+  }
+
+  /** Lines of an edit: at least one, known products, whole quantities, and stock for any line that is new or bigger. */
+  private async checkEditedItems(items: ItemInput[], current: Array<{ productId: number; quantity: number; unitPrice: Money.MoneyInput }>, requester?: Requester): Promise<ItemInput[]> {
+    if (items.length === 0) throw new AppError('An order needs at least one item', 400, 'ITEMS_REQUIRED');
+    const products = await prisma.product.findMany({ where: { id: { in: [...new Set(items.map((i) => i.productId))] } } });
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const canGiveAway = !requester || requester.role === 'super_admin' || requester.role === 'admin';
+    for (const item of items) {
+      const product = productMap.get(item.productId);
+      if (!product) throw new AppError(`Product ID ${item.productId} not found`, 404);
+      if (!Number.isInteger(item.quantity) || item.quantity < 1) throw new AppError('Quantity must be a whole number above 0.', 400, 'INVALID_QUANTITY');
+      if (Money.tryParse(item.unitPrice)?.isNegative() ?? true) throw new AppError('Enter a price for each item.', 400, 'INVALID_PRICE');
+      const was = current.find((c) => c.productId === item.productId);
+      if (Money.parse(item.unitPrice).isZero() && !canGiveAway && !(was && Money.parse(was.unitPrice).isZero())) {
+        throw new AppError('Only the owner and admins can set a price to 0.', 403, 'PRICE_ZERO_ADMIN_ONLY');
+      }
+      // Current stock number until M4 (available to sell); a line that did not grow is not checked again
+      if ((!was || item.quantity > was.quantity) && product.stockQuantity < item.quantity) {
+        throw new AppError(`Insufficient stock for product ${product.name}. Current stock: ${product.stockQuantity} `, 400);
+      }
+    }
+    return items.map((item) => ({ ...item, itemType: item.itemType || 'package', metadata: item.metadata || null }));
   }
 
   /**
@@ -1022,7 +1288,7 @@ export class OrderService {
       if (filters.dateTo) where.createdAt.lte = new Date(filters.dateTo);
     }
     if (filters.search) {
-      const searchNum = parseInt(filters.search);
+      const searchNum = parseInt(filters.search.replace(/^#/, ''));
       const phoneSearch = customerPhoneSearch(filters.search);
       where.OR = [
         ...(isNaN(searchNum) ? [] : [{ id: searchNum }]),
@@ -1154,344 +1420,216 @@ export class OrderService {
   }
 
   /**
-   * Soft delete order (set deletedAt timestamp)
+   * Soft delete one order (F-316). A thin wrapper over `softDeleteOrders`: a refusal becomes the error.
    */
   async deleteOrder(orderId: number, userId?: number, requester?: Requester) {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId, deletedAt: null },
-      include: { orderItems: true, customer: true }
-    });
-
-    if (!order) {
-      throw new AppError('Order not found', 404);
+    const { skipped } = await this.softDeleteOrders([orderId], userId, requester);
+    if (skipped.length) {
+      throw new AppError(skipped[0].reason, skipped[0].httpStatus, skipped[0].code);
     }
-
-    // Enforce ownership
-    if (requester) {
-      const isOwner = checkResourceOwnership(requester, {
-        assignedRepId: order.customerRepId,
-        deliveryAgentId: order.deliveryAgentId,
-        customerId: order.customerId
-      }, 'order');
-
-      if (!isOwner) {
-        throw new AppError('You do not have permission to delete this order', 403);
-      }
-    }
-
-    if (order.deletedAt) {
-      throw new AppError('Order already deleted', 400);
-    }
-
-    if (order.status === 'delivered') {
-      throw new AppError('Cannot delete delivered orders', 400);
-    }
-
-    // Soft delete with transaction (restock products, update customer stats)
-    await prisma.$transaction(async (tx) => {
-      // Restock products ONLY if they were deducted (out_for_delivery, delivered)
-      if (["out_for_delivery", "delivered"].includes(order.status)) {
-        let reversedFromAgent: number[] = [];
-        if (order.deliveryAgentId) {
-          reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
-            tx,
-            orderId,
-            order.deliveryAgentId,
-            userId ?? order.deliveryAgentId,
-            order.status === 'delivered'
-          );
-        }
-        for (const item of order.orderItems) {
-          if (reversedFromAgent.includes(item.productId)) continue;
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stockQuantity: { increment: item.quantity } }
-          });
-        }
-      }
-      // Update customer stats
-      await tx.customer.update({
-        where: { id: order.customerId },
-        data: {
-          totalOrders: { decrement: 1 },
-          totalSpent: { decrement: order.totalAmount }
-        }
-      });
-
-      // Create audit trail
-      await tx.orderHistory.create({
-        data: {
-          tenantId: resolveTenantId(order.tenantId),
-          orderId: order.id,
-          status: order.status,
-          notes: `Order deleted by user ${userId || 'system'} `,
-          changedBy: userId
-        }
-      });
-
-      // Soft delete the order
-      await tx.order.update({
-        where: { id: orderId },
-        data: { deletedAt: new Date() }
-      });
-
-      // Remove any associated AgentCollection record that isn't yet fully processed
-      // (If it's already 'deposited', we might want to keep it or handle it separately, 
-      // but usually deleting an order means its collection is invalid)
-      await (tx as any).agentCollection.deleteMany({
-        where: {
-          orderId,
-          status: { in: ['draft', 'verified', 'approved'] }
-        }
-      });
-    });
-
-    // Trigger proactive aging refresh (non-blocking)
-    appEvents.emit(AppEvent.ORDERS_DELETED);
-
-    logger.info(`Order soft deleted: ${order.id} `, { orderId, userId });
     return { message: 'Order deleted successfully' };
   }
+
   /**
-   * Bulk soft delete orders
+   * Bulk soft delete (F-315): deletes what the rules allow and lists the rest in `skipped`.
    */
   async bulkDeleteOrders(orderIds: number[], userId?: number, requester?: Requester) {
     if (!orderIds || orderIds.length === 0) {
       throw new AppError('No order IDs provided', 400);
     }
+    const { deleted, skipped } = await this.softDeleteOrders(orderIds, userId, requester);
+    return {
+      message: `Successfully deleted ${deleted.length} order(s)`,
+      deletedCount: deleted.length,
+      deleted: deleted.length,
+      skipped: skipped.map(({ id, reason }) => ({ id, reason })),
+    };
+  }
 
-    // Fetch orders with items to check permissions and status
-    const orders = await prisma.order.findMany({
-      where: {
-        id: { in: orderIds },
-        deletedAt: null
-      },
-      include: {
-        orderItems: true
+  /**
+   * The one delete path. Orders in a state with money or stock effects (out for delivery, delivered, digital delivered,
+   * returned) are refused, as are ids that are missing or not the requester's. The rest are soft deleted in one
+   * transaction with one history row each, a draft AgentCollection removed and ONE audit row holding the id list.
+   */
+  private async softDeleteOrders(orderIds: number[], userId?: number, requester?: Requester) {
+    const found = await prisma.order.findMany({ where: { id: { in: orderIds }, deletedAt: null } });
+    const byId = new Map(found.map((o) => [o.id, o]));
+
+    const deleted: typeof found = [];
+    const skipped: Array<{ id: number; reason: string; httpStatus: number; code: string }> = [];
+    for (const id of [...new Set(orderIds)]) {
+      const order = byId.get(id);
+      if (!order) {
+        skipped.push({ id, reason: 'Order not found', httpStatus: 404, code: 'NOT_FOUND' });
+      } else if (requester && !checkResourceOwnership(requester, {
+        assignedRepId: order.customerRepId,
+        deliveryAgentId: order.deliveryAgentId,
+        customerId: order.customerId
+      }, 'order')) {
+        skipped.push({ id, reason: 'You do not have permission to delete this order', httpStatus: 403, code: 'FORBIDDEN' });
+      } else if (!DELETABLE_STATUSES.includes(order.status)) {
+        skipped.push({ id, reason: 'Cancel or return the order first.', httpStatus: 409, code: 'ORDER_NOT_DELETABLE' });
+      } else {
+        deleted.push(order);
       }
-    });
-
-    if (orders.length === 0) {
-      throw new AppError('No valid orders found to delete', 404);
     }
+    if (!deleted.length) return { deleted, skipped };
 
-    // Validate each order
-    for (const order of orders) {
-      // Enforce ownership
-      if (requester) {
-        const isOwner = checkResourceOwnership(requester, {
-          assignedRepId: order.customerRepId,
-          deliveryAgentId: order.deliveryAgentId,
-          customerId: order.customerId
-        }, 'order');
-
-        if (!isOwner) {
-          throw new AppError(`You do not have permission to delete order #${order.id} `, 403);
-        }
-      }
-
-      if (order.status === 'delivered') {
-        throw new AppError(`Cannot delete delivered order #${order.id} `, 400);
-      }
-    }
-
-    // Aggregate updates for performance
+    const deletedIds = deleted.map((o) => o.id);
     const customerUpdates = new Map<number, { count: number, total: Prisma.Decimal }>();
-    const historyData: Prisma.OrderHistoryCreateManyInput[] = [];
-    const actualOrderIds = orders.map(o => o.id);
-
-    for (const order of orders) {
-      // Aggregate customer stats
-      const currentCust = customerUpdates.get(order.customerId) || { count: 0, total: Money.ZERO };
-      customerUpdates.set(order.customerId, {
-        count: currentCust.count + 1,
-        total: Money.add(currentCust.total, order.totalAmount)
-      });
-
-      // Prepare history data
-      historyData.push({
-        tenantId: resolveTenantId(order.tenantId),
-        orderId: order.id,
-        status: order.status,
-        notes: `Order deleted in bulk by user ${userId || 'system'} `,
-        changedBy: userId
-      });
+    for (const order of deleted) {
+      const current = customerUpdates.get(order.customerId) || { count: 0, total: Money.ZERO };
+      customerUpdates.set(order.customerId, { count: current.count + 1, total: Money.add(current.total, order.totalAmount) });
     }
 
-    // Perform bulk deletion in a single transaction
     await prisma.$transaction(async (tx) => {
-      // Phase 1: reverse agent stock (sequential — each call makes multiple tx queries
-      // that depend on per-order state, so they cannot be parallelised within the tx).
-      // Performance ceiling: ~50ms × N orders. For bulk deletes > ~100 orders, consider
-      // processing in smaller batches outside a single transaction.
-      // Aggregate warehouse restocks into a Map for batched Phase 2
-      const warehouseRestocks = new Map<number, number>(); // productId → qty
-      const deductedStatuses = ['out_for_delivery', 'delivered'];
+      await Promise.all([...customerUpdates.entries()].map(([customerId, stats]) =>
+        tx.customer.update({
+          where: { id: customerId },
+          data: { totalOrders: { decrement: stats.count }, totalSpent: { decrement: stats.total } }
+        })));
 
-      for (const order of orders) {
-        if (!deductedStatuses.includes(order.status)) continue;
-
-        let reversedFromAgent: number[] = [];
-        if (order.deliveryAgentId) {
-          reversedFromAgent = await agentInventoryService.reverseOrderFulfillment(
-            tx,
-            order.id,
-            order.deliveryAgentId,
-            userId ?? order.deliveryAgentId,
-            order.status === 'delivered'
-          );
-        }
-        for (const item of order.orderItems) {
-          if (reversedFromAgent.includes(item.productId)) continue;
-          warehouseRestocks.set(
-            item.productId,
-            (warehouseRestocks.get(item.productId) ?? 0) + item.quantity
-          );
-        }
-      }
-
-      // Phase 2: batch warehouse restocks (1 update per distinct product)
-      const updatePromises: Promise<any>[] = [];
-      for (const [productId, quantity] of warehouseRestocks.entries()) {
-        updatePromises.push(
-          tx.product.update({
-            where: { id: productId },
-            data: { stockQuantity: { increment: quantity } }
-          })
-        );
-      }
-
-      if (customerUpdates.size > 0) {
-        for (const [customerId, stats] of customerUpdates.entries()) {
-          updatePromises.push(
-            tx.customer.update({
-              where: { id: customerId },
-              data: {
-                totalOrders: { decrement: stats.count },
-                totalSpent: { decrement: stats.total }
-              }
-            })
-          );
-        }
-      }
-
-      // Execute all updates in parallel
-      await Promise.all(updatePromises);
-
-      // 3. Batch create audit trail
       await tx.orderHistory.createMany({
-        data: historyData
+        data: deleted.map((order) => ({
+          tenantId: resolveTenantId(order.tenantId),
+          orderId: order.id,
+          status: order.status,
+          notes: `Order deleted by user ${userId || 'system'} `,
+          changedBy: userId
+        }))
       });
 
-      // 4. Bulk soft delete orders
-      await tx.order.updateMany({
-        where: { id: { in: actualOrderIds } },
-        data: { deletedAt: new Date() }
+      await tx.order.updateMany({ where: { id: { in: deletedIds } }, data: { deletedAt: new Date() } });
+
+      // A draft collection of a deleted order is void. Later stages hold money and stay.
+      await tx.agentCollection.deleteMany({ where: { orderId: { in: deletedIds }, status: 'draft' } });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: resolveTenantId(deleted[0].tenantId),
+          userId,
+          action: orderIds.length === 1 ? 'delete_order' : 'bulk_delete_orders',
+          resource: 'order',
+          resourceId: deletedIds.length === 1 ? String(deletedIds[0]) : null,
+          metadata: { orderIds: deletedIds, skipped: skipped.map(({ id, reason }) => ({ id, reason })) },
+          ...(requester && { actorKind: 'person' as const, channel: 'app' as const })
+        }
       });
     });
 
     const ioInstance = getSocketInstance();
     if (ioInstance) {
-      emitOrdersDeleted(ioInstance as any, actualOrderIds);
+      emitOrdersDeleted(ioInstance as any, deletedIds);
     }
 
-    logger.info(`Bulk orders soft deleted: ${actualOrderIds.join(', ')} `, {
-      orderIds: actualOrderIds,
-      userId
-    });
+    logger.info(`Orders soft deleted: ${deletedIds.join(', ')} `, { orderIds: deletedIds, userId });
 
-    // Trigger proactive aging refresh (non-blocking)
+    // Trigger proactive aging refresh (non-blocking) and the customer stats refresh
     appEvents.emit(AppEvent.ORDERS_DELETED);
+    deleted.forEach((o) => emitOrderDeletedEvent(o));
 
-    return {
-      message: `Successfully deleted ${orders.length} order(s)`,
-      deletedCount: orders.length
-    };
+    return { deleted, skipped };
   }
-
 
   /**
    * Assign customer rep to order
    */
   async assignCustomerRep(orderId: number, customerRepId: number, requester: Requester) {
     // Only admin/manager can assign reps
-    if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+    if (!isManagerUp(requester)) {
       throw new AppError('Only administrators or managers can assign customer representatives', 403);
     }
     return assignmentService.assignByRole(orderId, customerRepId, 'sales_rep', actorOf(requester));
   }
 
   /**
-   * Assign delivery agent to order
+   * Assign delivery agent to order. `confirmBlocked`: the owner confirmed a partner who is blocked for unpaid cash.
    */
-  async assignDeliveryAgent(orderId: number, deliveryAgentId: number, requester: Requester) {
+  async assignDeliveryAgent(orderId: number, deliveryAgentId: number, requester: Requester, confirmBlocked = false) {
     // Only admin/manager/sales_rep can assign delivery agent (sometimes sales reps do it after confirmation)
     // Actually, usually managers assign agents. Let's stick to manager+ for now, or check ownership.
-    if (requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
+    if (!isManagerUp(requester)) {
       // Check if sales rep is assigned to this order
       const order = await prisma.order.findUnique({ where: { id: orderId } });
       if (!order || order.customerRepId !== requester.id) {
         throw new AppError('Only managers or the assigned sales representative can assign delivery agents', 403);
       }
     }
-    return assignmentService.assignByRole(orderId, deliveryAgentId, 'delivery_agent', actorOf(requester), { checkAvailable: true });
+    return assignmentService.assignByRole(orderId, deliveryAgentId, 'delivery_agent', actorOf(requester), { checkAvailable: true, confirmBlocked });
+  }
+
+  /** "Unassign both" for one order (F-314): same role gate as assigning a rep. */
+  async unassignOrder(orderId: number, requester: Requester) {
+    this.assertCanAssign(requester);
+    return assignmentService.unassignBoth(orderId, actorOf(requester));
+  }
+
+  private assertCanAssign(requester: Requester) {
+    if (!isManagerUp(requester)) {
+      throw new AppError('Only administrators or managers can assign orders', 403);
+    }
   }
 
   /**
-   * Get Kanban board view
+   * Bulk status change (F-313): each order goes through the state machine alone, with its own history row and side
+   * effects. A move that fails does not stop the others. The partial result lists every failure with a code.
    */
-  async getKanbanView(filters: { area?: string; agentId?: string }, requester?: Requester) {
-    const where: Prisma.OrderWhereInput = { deletedAt: null };
-    if (filters.area) where.deliveryArea = filters.area;
-
-    // Role-based filtering for Kanban
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      if (requester.role === 'sales_rep') {
-        where.customerRepId = requester.id;
-      } else if (requester.role === 'delivery_agent') {
-        where.deliveryAgentId = requester.id;
+  async bulkUpdateStatus(
+    data: { orderIds: number[]; status: OrderStatus; note?: string; declineReason?: DeclineReason; failureReason?: FailureReason; nextAttemptDate?: Date },
+    requester: Requester,
+  ): Promise<BulkResult> {
+    const { orderIds, ...move } = data;
+    const result: BulkResult = { succeeded: [], failed: [] };
+    for (const id of limitBulk(orderIds)) {
+      try {
+        await this.updateOrderStatus(id, { status: move.status, notes: move.note, declineReason: move.declineReason, failureReason: move.failureReason, nextAttemptDate: move.nextAttemptDate }, requester);
+        result.succeeded.push(id);
+      } catch (error) {
+        result.failed.push(bulkFailure(id, error));
       }
     }
+    return result;
+  }
 
-    if (filters.agentId) where.deliveryAgentId = parseInt(filters.agentId, 10);
-
-    const orders = await prisma.order.findMany({
-      where,
-      include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            phoneNumber: true
-          }
-        },
-        orderItems: {
-          include: {
-            product: {
-              select: {
-                name: true
-              }
-            }
-          }
+  /**
+   * Bulk assign (F-314): one call rep, one delivery agent or both for up to 200 orders. The people are checked once
+   * (missing, wrong role, deactivated, unavailable or blocked fails the whole request); then each order is assigned
+   * alone and failures are listed.
+   */
+  async bulkAssign(
+    data: { orderIds: number[]; customerRepId?: number; deliveryAgentId?: number; confirmBlocked?: boolean; unassign?: 'both' },
+    requester: Requester,
+  ): Promise<BulkResult> {
+    this.assertCanAssign(requester);
+    const ids = limitBulk(data.orderIds);
+    const { customerRepId, deliveryAgentId, confirmBlocked } = data;
+    if (data.unassign === 'both') {
+      const cleared: BulkResult = { succeeded: [], failed: [] };
+      for (const id of ids) {
+        try {
+          await assignmentService.unassignBoth(id, actorOf(requester));
+          cleared.succeeded.push(id);
+        } catch (error) {
+          cleared.failed.push(bulkFailure(id, error));
         }
-      },
-      orderBy: { priority: 'desc' }
-    });
+      }
+      return cleared;
+    }
+    if (customerRepId) await assignmentService.loadAssignee(customerRepId, 'sales_rep');
+    if (deliveryAgentId) await assignmentService.loadAssignee(deliveryAgentId, 'delivery_agent', { checkAvailable: true, confirmBlocked });
 
-    const kanban = {
-      pending_confirmation: orders.filter((o) => o.status === 'pending_confirmation'),
-      confirmed: orders.filter((o) => o.status === 'confirmed'),
-      preparing: orders.filter((o) => o.status === 'preparing'),
-      ready_for_pickup: orders.filter((o) => o.status === 'ready_for_pickup'),
-      out_for_delivery: orders.filter((o) => o.status === 'out_for_delivery'),
-      delivered: orders.filter((o) => o.status === 'delivered'),
-      cancelled: orders.filter((o) => o.status === 'cancelled'),
-      returned: orders.filter((o) => o.status === 'returned'),
-      failed_delivery: orders.filter((o) => o.status === 'failed_delivery')
-    };
-
-    return kanban;
+    const actor = actorOf(requester);
+    const result: BulkResult = { succeeded: [], failed: [] };
+    for (const id of ids) {
+      try {
+        if (customerRepId) await assignmentService.assignByRole(id, customerRepId, 'sales_rep', actor);
+        if (deliveryAgentId) await assignmentService.assignByRole(id, deliveryAgentId, 'delivery_agent', actor, { checkAvailable: true, confirmBlocked });
+        result.succeeded.push(id);
+      } catch (error) {
+        result.failed.push(bulkFailure(id, error));
+      }
+    }
+    return result;
   }
 
   /**
@@ -1501,13 +1639,7 @@ export class OrderService {
     const where: Prisma.OrderWhereInput = { deletedAt: null };
 
     // Role-based filtering for stats
-    if (requester && requester.role !== 'super_admin' && requester.role !== 'admin' && requester.role !== 'manager') {
-      if (requester.role === 'sales_rep') {
-        where.customerRepId = requester.id;
-      } else if (requester.role === 'delivery_agent') {
-        where.deliveryAgentId = requester.id;
-      }
-    }
+    Object.assign(where, orderScope(requester));
 
     if (filters.startDate || filters.endDate) {
       where.createdAt = {};

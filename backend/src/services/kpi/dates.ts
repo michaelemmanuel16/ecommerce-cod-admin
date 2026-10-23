@@ -42,6 +42,11 @@ function zonedParts(instant: Date, zone: string) {
   return { year: p.year, month: p.month, day: p.day, hour: p.hour, minute: p.minute, second: p.second };
 }
 
+/** Wall-clock hour (0-23) of an instant in a zone. */
+export function hourInZone(instant: Date, zone: string): number {
+  return zonedParts(instant, zone).hour;
+}
+
 /** Zone offset from UTC in ms at an instant (positive east of Greenwich). */
 function offsetMs(instant: Date, zone: string): number {
   const p = zonedParts(instant, zone);

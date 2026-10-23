@@ -1,117 +1,182 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { Check, Zap } from 'lucide-react';
 import { z } from 'zod';
-import { authService } from '../services/auth.service';
 import { billingService, Subscription } from '../services/billing.service';
+import { adminService } from '../services/admin.service';
+import { onboardingService, OnboardingStatus } from '../services/onboarding.service';
 import { useAuthStore } from '../stores/authStore';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { getSupportedCountries, getCurrencyForCountry, SUPPORTED_CURRENCIES } from '../utils/countries';
-import toast from 'react-hot-toast';
-
-const setupSchema = z.object({
-  country: z.string().min(1, 'Please select a country'),
-  currency: z.string().min(1, 'Currency is required'),
-  businessEmail: z.string().email('Invalid email').optional().or(z.literal('')),
-  businessPhone: z.string().optional(),
-  businessAddress: z.string().optional(),
-  taxId: z.string().optional(),
-});
-
-type SetupData = z.infer<typeof setupSchema>;
+import { Button, Input, Select, Tag } from '../components/ui-v2';
+import { getSupportedCountries, getCurrencyForCountry, getCurrencySymbol } from '../utils/countries';
 
 const COUNTRIES = getSupportedCountries();
 
-const steps = [
-  { label: 'Country & Currency' },
-  { label: 'Business Details' },
-  { label: 'Done' },
+// The six steps of the mockup rail. Steps 3 to 6 belong to the North Star setup (M6) and stay disabled until then.
+const RAIL = [
+  { n: 1, label: 'Your store' },
+  { n: 2, label: 'Connect your 3PL' },
+  { n: 3, label: 'Set your North Star' },
+  { n: 4, label: 'Driver targets' },
+  { n: 5, label: 'Invite your team' },
+  { n: 6, label: 'Rewards' },
 ];
+
+type View = 1 | 2 | 'done';
+
+const storeSchema = z.object({
+  businessName: z.string().trim().min(1, 'Enter your business name'),
+  country: z.string().min(1, 'Pick a country'),
+  businessEmail: z.string().trim().email('Enter a valid email address').optional().or(z.literal('')),
+});
+
+const partnerSchema = z.object({
+  name: z.string().trim().min(1, 'Enter the partner name'),
+  email: z.string().trim().email('Enter a valid email address'),
+});
+
+const errorText = (error: unknown, fallback: string) =>
+  (error as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
+
+/** First view to show: the first step that is not done, so a closed wizard resumes where it stopped. */
+function startView(status: OnboardingStatus): View {
+  const store = status.steps.find((s) => s.step === 1);
+  const partner = status.steps.find((s) => s.step === 2);
+  if (!store?.done) return 1;
+  if (!partner?.done && !partner?.skipped) return 2;
+  return 'done';
+}
 
 export const Onboarding: React.FC = () => {
   const navigate = useNavigate();
   const { user, updatePreferences } = useAuthStore();
-  const [step, setStep] = useState(0);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [view, setView] = useState<View | null>(null);
+  const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const [store, setStore] = useState({ businessName: '', country: '', businessEmail: '', businessPhone: '', businessAddress: '', taxId: '' });
+  const [partner, setPartner] = useState({ name: '', type: '3pl' as '3pl' | 'agent', email: '', phone: '' });
+
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [isPaying, setIsPaying] = useState(false);
 
-  // On the final step, load the tenant's plan so a pending PAID tier can be
-  // activated with a Pay button — payment comes after business details.
-  React.useEffect(() => {
-    if (step !== 2) return;
-    billingService.getSubscription().then(setSubscription).catch(() => setSubscription(null));
-  }, [step]);
-
-  const form = useForm<SetupData>({
-    resolver: zodResolver(setupSchema),
-    defaultValues: { country: '', currency: 'GHS', businessEmail: '', businessPhone: '', businessAddress: '', taxId: '' },
-  });
-
-  const selectedCountry = form.watch('country');
-
-  // Auto-set currency when country changes
-  React.useEffect(() => {
-    if (selectedCountry) {
-      const currency = getCurrencyForCountry(selectedCountry);
-      form.setValue('currency', currency);
-    }
-  }, [selectedCountry, form]);
-
-  const handleNext = () => {
-    if (step === 0) {
-      const country = form.getValues('country');
-      const currency = form.getValues('currency');
-      if (!country) {
-        form.setError('country', { message: 'Please select a country' });
-        return;
-      }
-      if (!currency) {
-        form.setError('currency', { message: 'Currency is required' });
-        return;
-      }
-      setStep(1);
-    }
-  };
-
-  const handleSubmit = form.handleSubmit(async (data) => {
-    setIsSubmitting(true);
-    try {
-      await authService.setupOnboarding({
-        country: data.country,
-        currency: data.currency,
-        businessEmail: data.businessEmail || undefined,
-        businessPhone: data.businessPhone || undefined,
-        businessAddress: data.businessAddress || undefined,
-        taxId: data.taxId || undefined,
+  // Load the done state and the saved step 1 values, so a closed wizard resumes with its data.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [s, config] = await Promise.all([
+        onboardingService.getStatus(),
+        adminService.getSystemConfig().catch(() => null),
+      ]);
+      if (!alive) return;
+      setStatus(s);
+      setStore({
+        businessName: config?.businessName ?? '',
+        country: s.country ?? '',
+        businessEmail: config?.businessEmail ?? '',
+        businessPhone: config?.businessPhone ?? '',
+        businessAddress: config?.businessAddress ?? '',
+        taxId: config?.taxId ?? '',
       });
-      await updatePreferences({ onboardingCompleted: true });
-      setStep(2);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Setup failed. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  });
+      setView(startView(s));
+    })().catch(() => {
+      if (!alive) return;
+      setError('Could not load your setup. Refresh the page to try again.');
+    });
+    return () => { alive = false; };
+  }, []);
 
-  const handleSkip = async () => {
-    setIsSubmitting(true);
+  // The wizard is complete once step 2 is added or skipped. Saving the flag here lets the app stop sending the owner back.
+  useEffect(() => {
+    if (view !== 'done') return;
+    updatePreferences({ onboardingCompleted: true }).catch(() => undefined);
+    // On the final view, load the plan so a pending PAID tier can be activated with a Pay button.
+    billingService.getSubscription().then(setSubscription).catch(() => setSubscription(null));
+  }, [view, updatePreferences]);
+
+  const stepDone = (n: number) => status?.steps.find((s) => s.step === n)?.done ?? false;
+  const partnerHandled = stepDone(2) || !!status?.steps.find((s) => s.step === 2)?.skipped;
+  const currency = store.country ? getCurrencyForCountry(store.country) : '';
+
+  const markDone = (n: number, patch: { done?: boolean; skipped?: boolean }) =>
+    setStatus((s) => s && { ...s, steps: s.steps.map((x) => (x.step === n ? { ...x, ...patch } : x)) });
+
+  const goto = (next: View) => {
+    setError('');
+    setErrors({});
+    setView(next);
+  };
+
+  const saveStore = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const parsed = storeSchema.safeParse(store);
+    if (!parsed.success) {
+      const f = parsed.error.flatten().fieldErrors;
+      setErrors({ businessName: f.businessName?.[0] ?? '', country: f.country?.[0] ?? '', businessEmail: f.businessEmail?.[0] ?? '' });
+      return;
+    }
+    setErrors({});
+    setBusy(true);
     try {
-      const data = form.getValues();
-      await authService.setupOnboarding({ country: data.country, currency: data.currency });
-      await updatePreferences({ onboardingCompleted: true });
-      setStep(2);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Setup failed.');
+      await onboardingService.saveStore({
+        businessName: store.businessName.trim(),
+        country: store.country,
+        currency,
+        businessEmail: store.businessEmail.trim() || undefined,
+        businessPhone: store.businessPhone.trim() || undefined,
+        businessAddress: store.businessAddress.trim() || undefined,
+        taxId: store.taxId.trim() || undefined,
+      });
+      markDone(1, { done: true });
+      goto(partnerHandled ? 'done' : 2);
+    } catch (err) {
+      setError(errorText(err, 'Could not save your store. Try again.'));
     } finally {
-      setIsSubmitting(false);
+      setBusy(false);
     }
   };
 
-  const handleFinish = () => {
-    navigate('/');
+  const savePartner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const parsed = partnerSchema.safeParse(partner);
+    if (!parsed.success) {
+      const f = parsed.error.flatten().fieldErrors;
+      setErrors({ name: f.name?.[0] ?? '', email: f.email?.[0] ?? '' });
+      return;
+    }
+    setErrors({});
+    setBusy(true);
+    try {
+      await onboardingService.addPartner({
+        name: partner.name.trim(),
+        type: partner.type,
+        email: partner.email.trim(),
+        phone: partner.phone.trim() || undefined,
+      });
+      markDone(2, { done: true });
+      goto('done');
+    } catch (err) {
+      setError(errorText(err, 'Could not add the partner. Try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const skipPartner = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      await onboardingService.skipPartner();
+      markDone(2, { skipped: true });
+      goto('done');
+    } catch (err) {
+      setError(errorText(err, 'Could not skip this step. Try again.'));
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Pending paid tier: charge at the end of onboarding. By now needsOnboarding()
@@ -123,185 +188,205 @@ export const Onboarding: React.FC = () => {
     try {
       const { authorizationUrl } = await billingService.startSubscription(planName);
       window.location.href = authorizationUrl;
-    } catch (error: any) {
+    } catch (err) {
       setIsPaying(false);
-      toast.error(error?.response?.data?.message || 'Could not start payment. You can complete it from Billing.');
+      setError(errorText(err, 'Could not start payment. You can complete it from Billing.'));
     }
   };
 
-  const progressPct = ((step + 1) / steps.length) * 100;
+  const doneBody = () => {
+    if (subscription === null) {
+      return <p>Finalizing your setup...</p>;
+    }
+    const needsPayment =
+      subscription.subscriptionStatus === 'pending' && subscription.plan?.priceNGN != null && subscription.billingEnabled;
+    if (needsPayment) {
+      const amount = subscription.nextChargeAmount ?? subscription.plan?.priceNGN ?? 0;
+      return (
+        <div className="wdone">
+          <h2>Activate {subscription.plan?.displayName}</h2>
+          <p>Your business is set up. Complete your subscription to activate {subscription.plan?.displayName} and start managing orders.</p>
+          <Button variant="primary" disabled={isPaying} onClick={handlePay}>
+            {isPaying ? 'Redirecting to Paystack...' : `Pay ₦${Number(amount).toLocaleString()} & Activate`}
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <div className="wdone">
+        <h2>You're all set</h2>
+        <p>Your store is ready. The North Star steps (goal, driver targets, team and rewards) open soon.</p>
+        <Button variant="primary" onClick={() => navigate('/')}>Go to Dashboard</Button>
+      </div>
+    );
+  };
+
+  const stepNumber = view === 1 ? 1 : view === 2 ? 2 : 7;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center py-12 px-4">
-      <div className="w-full max-w-lg">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Welcome, {user?.firstName}!</h1>
-          <p className="text-gray-500 mt-1">Let's get your company set up.</p>
-        </div>
-
-        {/* Progress */}
-        <div className="mb-6">
-          <div className="flex justify-between text-xs text-gray-500 mb-1">
-            {steps.map((s, i) => (
-              <span key={i} className={i <= step ? 'font-semibold text-blue-600' : ''}>
-                {s.label}
-              </span>
-            ))}
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-1.5">
-            <div
-              className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
-        </div>
-
-        <Card>
-          {/* Step 0: Country & Currency */}
-          {step === 0 && (
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-800">Country & Currency</h2>
-              <p className="text-sm text-gray-500">Select the country you operate in and your preferred currency.</p>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                <select
-                  {...form.register('country')}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a country...</option>
-                  {COUNTRIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                {form.formState.errors.country && (
-                  <p className="text-xs text-red-500 mt-1">{form.formState.errors.country.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
-                <select
-                  {...form.register('currency')}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {SUPPORTED_CURRENCIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="primary" onClick={handleNext}>
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 1: Business Details */}
-          {step === 1 && (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-800">Business Details</h2>
-              <p className="text-sm text-gray-500">Tell us about your business. You can update these later in Settings.</p>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Business Email</label>
-                <input
-                  type="email"
-                  {...form.register('businessEmail')}
-                  placeholder="contact@business.com"
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {form.formState.errors.businessEmail && (
-                  <p className="text-xs text-red-500 mt-1">{form.formState.errors.businessEmail.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Business Phone</label>
-                <input
-                  type="tel"
-                  {...form.register('businessPhone')}
-                  placeholder="+233 XX XXX XXXX"
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Business Address</label>
-                <textarea
-                  {...form.register('businessAddress')}
-                  placeholder="123 Business St, City, Region"
-                  rows={2}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tax ID / VAT Number (optional)</label>
-                <input
-                  type="text"
-                  {...form.register('taxId')}
-                  placeholder="XX-XXXXXXX"
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-between gap-2 pt-2">
-                <Button type="button" variant="outline" onClick={() => setStep(0)}>
-                  Back
-                </Button>
-                <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={handleSkip}>
-                    Skip
-                  </Button>
-                  <Button type="submit" variant="primary" isLoading={isSubmitting}>
-                    Save & Continue
-                  </Button>
-                </div>
-              </div>
-            </form>
-          )}
-
-          {/* Step 2: Done — a pending PAID tier activates by paying here */}
-          {step === 2 && (() => {
-            if (subscription === null) {
-              return <div className="py-6 text-center text-sm text-gray-500">Finalizing your setup…</div>;
-            }
-            const needsPayment =
-              subscription.subscriptionStatus === 'pending' &&
-              subscription.plan?.priceNGN != null &&
-              subscription.billingEnabled;
-            if (needsPayment) {
-              const amount = subscription.nextChargeAmount ?? subscription.plan?.priceNGN ?? 0;
+    <div className="v2 onbpage">
+      <main className="onbbox">
+        <div className="card wiz">
+          <nav className="steps" aria-label="Setup steps">
+            <div className="brand"><div className="logo"><Zap aria-hidden="true" /></div><b>Set up</b></div>
+            <p className="hi">Welcome, {user?.firstName}</p>
+            {RAIL.map((s) => {
+              const done = s.n === 1 ? stepDone(1) : s.n === 2 ? partnerHandled : false;
+              const mark = done ? <Check aria-hidden="true" /> : s.n;
+              if (s.n > 2) {
+                // North Star setup: stays disabled until M6.
+                return (
+                  <span key={s.n} className="step off" aria-disabled="true" title="Opens with the North Star setup">
+                    <span className="n">{s.n}</span>{s.label}<Tag className="soon">Soon</Tag>
+                  </span>
+                );
+              }
               return (
-                <div className="space-y-4 text-center">
-                  <h2 className="text-lg font-semibold text-gray-800">Activate {subscription.plan?.displayName}</h2>
-                  <p className="text-sm text-gray-500">
-                    Your business is set up. Complete your subscription to activate {subscription.plan?.displayName} and start managing orders.
-                  </p>
-                  <Button type="button" variant="primary" className="w-full mt-4" isLoading={isPaying} onClick={handlePay}>
-                    {isPaying ? 'Redirecting to Paystack…' : `Pay ₦${Number(amount).toLocaleString()} & Activate`}
-                  </Button>
-                </div>
+                <button
+                  key={s.n}
+                  type="button"
+                  className={`step${done ? ' done' : ''}${stepNumber === s.n ? ' on' : ''}`}
+                  aria-current={stepNumber === s.n ? 'step' : undefined}
+                  disabled={view === null || (s.n === 2 && !stepDone(1))}
+                  onClick={() => goto(s.n as View)}
+                >
+                  <span className="n">{mark}</span>{s.label}
+                </button>
               );
-            }
-            return (
-              <div className="space-y-4 text-center">
-                <h2 className="text-lg font-semibold text-gray-800">You're all set!</h2>
-                <p className="text-sm text-gray-500">
-                  Your company is configured and ready. Head to the dashboard to start managing orders.
-                </p>
-                <Button type="button" variant="primary" className="w-full mt-4" onClick={handleFinish}>
-                  Go to Dashboard
-                </Button>
-              </div>
-            );
-          })()}
-        </Card>
-      </div>
+            })}
+          </nav>
+
+          <div className="wbody">
+            {error && <div className="authnote bad" role="alert" style={{ marginBottom: 14 }}>{error}</div>}
+            {view === null && !error && <p>Loading your setup...</p>}
+
+            {view === 1 && (
+              <form onSubmit={saveStore} noValidate>
+                <h2>Your store</h2>
+                <p>Pick the country you sell in. Your currency follows it. You can change it later in Settings.</p>
+                <div className="wgrid">
+                  <Select
+                    label="Selling country"
+                    value={store.country}
+                    error={errors.country || undefined}
+                    onChange={(e) => setStore({ ...store, country: e.target.value })}
+                  >
+                    <option value="">Select a country...</option>
+                    {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </Select>
+                  <Input
+                    label="Store currency"
+                    value={currency ? `${currency} (${getCurrencySymbol(currency)})` : ''}
+                    readOnly
+                    hint="Set from the country. You can change it later in Settings."
+                  />
+                  <Input
+                    className="full"
+                    label="Business name"
+                    value={store.businessName}
+                    error={errors.businessName || undefined}
+                    onChange={(e) => setStore({ ...store, businessName: e.target.value })}
+                  />
+                  <Input
+                    label="Business email"
+                    optional
+                    type="email"
+                    placeholder="contact@business.com"
+                    value={store.businessEmail}
+                    error={errors.businessEmail || undefined}
+                    onChange={(e) => setStore({ ...store, businessEmail: e.target.value })}
+                  />
+                  <Input
+                    label="Business phone"
+                    optional
+                    type="tel"
+                    placeholder="+233 XX XXX XXXX"
+                    value={store.businessPhone}
+                    onChange={(e) => setStore({ ...store, businessPhone: e.target.value })}
+                  />
+                  <Input
+                    className="full"
+                    label="Business address"
+                    optional
+                    placeholder="Street, City/Town, State"
+                    value={store.businessAddress}
+                    onChange={(e) => setStore({ ...store, businessAddress: e.target.value })}
+                  />
+                  <Input
+                    className="full"
+                    label="Tax ID / VAT number"
+                    optional
+                    placeholder="XX-XXXXXXX"
+                    value={store.taxId}
+                    onChange={(e) => setStore({ ...store, taxId: e.target.value })}
+                  />
+                </div>
+                <div className="wfoot">
+                  <span />
+                  <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Saving...' : 'Next'}</Button>
+                </div>
+              </form>
+            )}
+
+            {view === 2 && (
+              <form onSubmit={savePartner} noValidate>
+                <h2>Connect your 3PL</h2>
+                <p>Add the first delivery partner. You can skip this and add partners later in Deliveries.</p>
+                {stepDone(2) ? (
+                  <div className="authnote ok" role="status">A delivery partner is already added.</div>
+                ) : (
+                  <div className="wgrid">
+                    <Input
+                      label="Partner name"
+                      placeholder="For example: Logiswift"
+                      value={partner.name}
+                      error={errors.name || undefined}
+                      onChange={(e) => setPartner({ ...partner, name: e.target.value })}
+                    />
+                    <Select
+                      label="Type"
+                      value={partner.type}
+                      onChange={(e) => setPartner({ ...partner, type: e.target.value as '3pl' | 'agent' })}
+                    >
+                      <option value="3pl">3PL company</option>
+                      <option value="agent">Own delivery agent</option>
+                    </Select>
+                    <Input
+                      label="Partner email"
+                      type="email"
+                      value={partner.email}
+                      error={errors.email || undefined}
+                      onChange={(e) => setPartner({ ...partner, email: e.target.value })}
+                    />
+                    <Input
+                      label="Partner phone"
+                      optional
+                      type="tel"
+                      value={partner.phone}
+                      onChange={(e) => setPartner({ ...partner, phone: e.target.value })}
+                    />
+                  </div>
+                )}
+                <div className="wfoot">
+                  <Button onClick={() => goto(1)}>Back</Button>
+                  <div className="right">
+                    {stepDone(2) ? (
+                      <Button variant="primary" onClick={() => goto('done')}>Continue</Button>
+                    ) : (
+                      <>
+                        <Button disabled={busy} onClick={skipPartner}>Skip for now</Button>
+                        <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Saving...' : 'Add partner and continue'}</Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {view === 'done' && doneBody()}
+          </div>
+        </div>
+      </main>
     </div>
   );
 };

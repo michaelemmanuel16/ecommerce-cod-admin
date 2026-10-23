@@ -142,3 +142,15 @@ export function customerPhoneSearch(term: string): { customer: { OR: PhoneCondit
   const conditions = phoneSearchConditions(term);
   return conditions.length ? { customer: { OR: conditions } } : null;
 }
+
+/**
+ * Any international number in E.164 form, or null. Needs the plus sign and a country code;
+ * spaces, dashes, dots and brackets are dropped. Unlike `normalizePhone` it is not limited to GH/NG.
+ */
+export function normalizeInternationalPhone(input: string | null | undefined): string | null {
+  if (input == null) return null;
+  const trimmed = String(input).trim();
+  if (!/^\+[\d\s\-().]+$/.test(trimmed)) return null;
+  const digits = trimmed.replace(/\D/g, '');
+  return /^[1-9]\d{7,14}$/.test(digits) ? `+${digits}` : null;
+}

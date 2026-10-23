@@ -12,6 +12,9 @@ import { clearBrowserState } from './helpers/test-helpers';
  * Uses API route interception to avoid requiring live DB with seed data.
  */
 
+// SaaS signup is off by default (F-123). Run these with VITE_SAAS_SIGNUP_ENABLED=true on the frontend and E2E_SAAS_SIGNUP=true.
+test.skip(process.env.E2E_SAAS_SIGNUP !== 'true', 'SaaS signup pages are off by default');
+
 const REGISTER_URL = '/register';
 const ONBOARDING_URL = '/onboarding';
 

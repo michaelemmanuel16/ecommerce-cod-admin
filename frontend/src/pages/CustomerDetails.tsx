@@ -1,305 +1,258 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Mail, Phone, MapPin, Edit2, TrendingUp, ShoppingBag, DollarSign, Calendar } from 'lucide-react';
-import { Card } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { formatCurrency } from '../utils/format';
-import { customersService } from '../services/customers.service';
-import { ordersService } from '../services/orders.service';
-import { Customer, Order } from '../types';
-import { CustomerForm } from '../components/forms/CustomerForm';
+import { useCallback, useEffect, useState } from 'react';
+import axios from 'axios';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, MessageCircle, Pencil, Phone, ShoppingBag, Trash2 } from 'lucide-react';
+import { useV2Page } from '../components/shell/useV2Page';
+import { Button, Card, ConfirmDialog, EmptyState, Skeleton, Table, Tabs, Tag, Tile, useToast, type Column } from '../components/ui-v2';
+import { usePermissions } from '../hooks/usePermissions';
+import { customersService, type CustomerDetail } from '../services/customers.service';
+import { apiErrorMessage } from '../utils/apiError';
+import { formatCurrency, formatPhoneLocal } from '../utils/format';
+import { ORDER_STATUS_LABELS } from '../utils/orderStatus';
+import type { OrderStatus } from '../types';
+import { RiskTags } from './customers/RiskTags';
+import { CustomerModal } from './customers/CustomerModal';
+import { AVATAR_TONES, initials } from '../utils/people';
+import { customerName, lastOrderDate } from './customers/model';
+import { orderNumber, shortDate, STATUS_TONE } from './orders/model';
 
-export const CustomerDetails: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+type TabId = 'orders' | 'messages' | 'calls' | 'notes';
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: 'orders', label: 'Orders' },
+  { id: 'messages', label: 'Messages' },
+  { id: 'calls', label: 'Calls' },
+  { id: 'notes', label: 'Notes' },
+];
+
+type Order = CustomerDetail['orders'][number];
+
+const ORDER_COLUMNS: Column<Order>[] = [
+  { key: 'order', header: 'Order', render: (o) => <b>{orderNumber(o.id)}</b> },
+  { key: 'date', header: 'Date', render: (o) => <span className="mut">{shortDate(o.createdAt)}</span> },
+  {
+    key: 'status',
+    header: 'Status',
+    render: (o) => <Tag tone={STATUS_TONE[o.status as OrderStatus] ?? 'n'}>{ORDER_STATUS_LABELS[o.status as OrderStatus] ?? o.status}</Tag>,
+  },
+  { key: 'amount', header: 'Amount', right: true, render: (o) => <b className="num">{formatCurrency(o.totalAmount)}</b> },
+];
+
+const dash = <span className="mut">—</span>;
+
+/**
+ * The customer page (M3-T50, F-354). No mockup: built in the v2 style from the Orders and Dashboard parts.
+ * Messages, Calls and Notes wait for M9 and show an empty state.
+ */
+export function CustomerDetails() {
+  useV2Page();
+  const { id } = useParams();
   const navigate = useNavigate();
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const say = useToast();
+  const { can } = usePermissions();
+  const [customer, setCustomer] = useState<CustomerDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabId>('orders');
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
+  const load = useCallback(
+    async (quiet: boolean) => {
+      try {
+        setCustomer(await customersService.getCustomerDetail(Number(id), quiet));
+        setError(null);
+      } catch (e) {
+        const status = axios.isAxiosError(e) ? e.response?.status : undefined;
+        setError(status === 404 ? 'This customer could not be found.' : status === 403 ? 'You cannot open this customer.' : 'The customer could not load.');
+      }
+    },
+    [id],
+  );
   useEffect(() => {
-    if (id) {
-      loadCustomerData();
-    }
-  }, [id]);
+    setCustomer(null);
+    void load(false);
+  }, [load]);
 
-  const loadCustomerData = async () => {
-    if (!id) return;
-    const numericId = parseInt(id, 10);
-    if (isNaN(numericId)) {
-      console.error('Invalid customer ID');
-      navigate('/customers');
-      return;
-    }
-
-    setIsLoading(true);
+  const remove = async () => {
+    if (!customer) return;
+    setDeleting(false);
     try {
-      const [customerData, ordersData] = await Promise.all([
-        customersService.getCustomerById(numericId),
-        ordersService.getOrders({ customerId: numericId, limit: 100 }),
-      ]);
-      setCustomer(customerData);
-      setOrders(ordersData.orders);
-    } catch (error) {
-      console.error('Failed to load customer data:', error);
-      alert('Failed to load customer details');
+      await customersService.deleteCustomer(customer.id);
+      say(`${customerName(customer)} deleted`);
       navigate('/customers');
-    } finally {
-      setIsLoading(false);
+    } catch (e) {
+      // 409: an order is out for delivery. The API's sentence says what to do.
+      say(apiErrorMessage(e, 'The customer could not be deleted.'));
     }
   };
 
-  const handleEditCustomer = () => {
-    setIsFormOpen(true);
-  };
-
-  const handleFormSuccess = () => {
-    loadCustomerData();
-  };
-
-  if (isLoading) {
+  if (error) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading customer details...</p>
-        </div>
-      </div>
+      <section className="cdetail">
+        <EmptyState title={error} action={<Button onClick={() => navigate('/customers')}>Back to customers</Button>} />
+      </section>
     );
   }
-
   if (!customer) {
     return (
-      <div className="text-center py-12">
-        <p className="text-gray-600">Customer not found</p>
-        <Button variant="ghost" onClick={() => navigate('/customers')} className="mt-4">
-          Back to Customers
-        </Button>
-      </div>
+      <section className="cdetail" aria-busy="true" aria-label="Loading customer">
+        <Skeleton height={64} />
+        <Skeleton height={120} />
+        <Skeleton height={220} />
+      </section>
     );
   }
 
-  // Calculate metrics from actual orders data (database values may be stale)
-  const totalOrders = orders.length;
-  const totalSpent = orders.reduce((sum, order) => sum + order.totalAmount, 0);
-  const avgOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
-  const lastOrder = orders.length > 0 ? orders[0] : null;
+  const name = customerName(customer);
+  const deleted = customer.isActive === false;
+  const digits = customer.phoneNumber.replace(/\D/g, '');
+  const orderCount = customer.totalOrders;
+  const optOut = (off: boolean) => (off ? <Tag tone="warn">Opted out</Tag> : <Tag tone="ok">Receives</Tag>);
 
   return (
-    <div>
-      {/* Header */}
-      <div className="mb-6">
-        <Button
-          variant="ghost"
-          onClick={() => navigate('/customers')}
-          className="mb-4"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Customers
-        </Button>
+    <section className="cdetail">
+      <Link to="/customers" className="back">
+        <ArrowLeft aria-hidden="true" />
+        Customers
+      </Link>
 
-        <div className="flex items-center justify-between">
+      <div className="head">
+        <div className="nm who">
+          <div className={`a big ${AVATAR_TONES[customer.id % AVATAR_TONES.length]}`} aria-hidden="true">{initials(name)}</div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{customer.firstName} {customer.lastName}</h1>
-            <p className="text-gray-500 mt-1">Customer since {new Date(customer.createdAt).toLocaleDateString()}</p>
+            <h1>{name}</h1>
+            <RiskTags row={customer}>{customer.codBlocked && <Tag tone="bad">COD off</Tag>}</RiskTags>
+            <small>
+              {formatPhoneLocal(customer.phoneNumber)}
+              {customer.area ? ` · ${customer.area}` : ''}
+            </small>
           </div>
-          <Button variant="primary" onClick={handleEditCustomer}>
-            <Edit2 className="w-4 h-4 mr-2" />
-            Edit Customer
-          </Button>
+        </div>
+        <div className="hact">
+          <a className="btn" href={`tel:+${digits}`}>
+            <Phone />
+            Call
+          </a>
+          <a className="btn" href={`https://wa.me/${digits}`}>
+            <MessageCircle />
+            WhatsApp
+          </a>
+          {!deleted && can('customers', 'update') && (
+            <Button onClick={() => setEditing(true)}>
+              <Pencil />
+              Edit
+            </Button>
+          )}
+          {!deleted && can('customers', 'delete') && (
+            <Button variant="danger" onClick={() => setDeleting(true)}>
+              <Trash2 />
+              Delete
+            </Button>
+          )}
+          {!deleted && can('orders', 'create') && (
+            <Link className="btn pri" to={`/orders?new=1&customerId=${customer.id}`}>
+              <ShoppingBag />
+              New order for this customer
+            </Link>
+          )}
         </div>
       </div>
 
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <Card>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Orders</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{totalOrders}</p>
-            </div>
-            <div className="p-3 bg-blue-100 rounded-full">
-              <ShoppingBag className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </Card>
+      {deleted && (
+        <div className="bar warn" role="status">
+          <b>This customer was deleted</b>
+          <span>Their orders stay. You can read this page but not change it.</span>
+        </div>
+      )}
+      {customer.codBlocked && (
+        <div className="bar bad" role="status">
+          <b>Cash on delivery is off</b>
+          <span>Refused {customer.refusedOrders} deliveries. New orders go to a manual call.</span>
+        </div>
+      )}
 
-        <Card>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Spent</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(totalSpent)}</p>
-            </div>
-            <div className="p-3 bg-green-100 rounded-full">
-              <DollarSign className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Avg Order Value</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(avgOrderValue)}</p>
-            </div>
-            <div className="p-3 bg-purple-100 rounded-full">
-              <TrendingUp className="w-6 h-6 text-purple-600" />
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Last Order</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {lastOrder ? new Date(lastOrder.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A'}
-              </p>
-            </div>
-            <div className="p-3 bg-orange-100 rounded-full">
-              <Calendar className="w-6 h-6 text-orange-600" />
-            </div>
-          </div>
-        </Card>
+      <div className="grid kpis">
+        <Tile value={customer.totalOrders} label="Orders" />
+        <Tile value={customer.deliveredOrders} label="Delivered" />
+        <Tile value={customer.refusedOrders} label="Refused" />
+        <Tile value={formatCurrency(customer.deliveredValue)} label="Delivered value" />
+        <Tile value={customer.averageOrderValue === null ? '—' : formatCurrency(customer.averageOrderValue)} label="Average order value" />
+        <Tile value={lastOrderDate(customer.lastOrderAt) ?? '—'} label="Last order" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Customer Information */}
-        <Card className="lg:col-span-1">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Customer Information</h2>
-
-          <div className="space-y-4">
-            {customer.email && (
-              <div className="flex items-start">
-                <Mail className="w-5 h-5 text-gray-400 mr-3 mt-0.5" />
-                <div>
-                  <p className="text-sm text-gray-600">Email</p>
-                  <a
-                    href={`mailto:${customer.email}`}
-                    className="text-sm text-gray-900 hover:text-blue-600"
-                  >
-                    {customer.email}
-                  </a>
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-start">
-              <Phone className="w-5 h-5 text-gray-400 mr-3 mt-0.5" />
-              <div>
-                <p className="text-sm text-gray-600">Phone</p>
-                <a
-                  href={`tel:${customer.phone}`}
-                  className="text-sm text-gray-900 hover:text-blue-600"
-                >
-                  {customer.phone}
-                </a>
-                {customer.alternatePhone && (
-                  <a
-                    href={`tel:${customer.alternatePhone}`}
-                    className="block text-sm text-gray-600 hover:text-blue-600 mt-1"
-                  >
-                    {customer.alternatePhone}
-                  </a>
-                )}
-              </div>
-            </div>
-
-            {customer.address && (
-              <div className="flex items-start">
-                <MapPin className="w-5 h-5 text-gray-400 mr-3 mt-0.5" />
-                <div>
-                  <p className="text-sm text-gray-600">Address</p>
-                  <div className="text-sm text-gray-900">
-                    <p>{customer.address.street}</p>
-                    <p>{customer.address.area}</p>
-                    <p>{customer.address.state}</p>
-                    {/* <p>{customer.address.country}</p> */}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+      <div className="cols">
+        <Card title="Contact">
+          <dl>
+            <dt>Email</dt>
+            <dd>{customer.email || dash}</dd>
+            <dt>Phone</dt>
+            <dd>{formatPhoneLocal(customer.phoneNumber)}</dd>
+            <dt>Alternate phone</dt>
+            <dd>{customer.alternatePhone ? formatPhoneLocal(customer.alternatePhone) : dash}</dd>
+            <dt>SMS</dt>
+            <dd>{optOut(customer.smsOptOut)}</dd>
+            <dt>WhatsApp</dt>
+            <dd>{optOut(customer.whatsappOptOut)}</dd>
+            <dt>Email messages</dt>
+            <dd>{optOut(customer.emailOptOut)}</dd>
+          </dl>
         </Card>
-
-        {/* Order History */}
-        <Card className="lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Order History</h2>
-            <Button variant="ghost" onClick={() => navigate('/orders')}>
-              View All Orders
-            </Button>
-          </div>
-
-          {orders.length === 0 ? (
-            <div className="text-center py-12">
-              <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-600">No orders yet</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Order #
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Date
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Amount
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {orders.slice(0, 10).map((order) => (
-                    <tr key={order.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {order.id}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                        {new Date(order.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                          {order.status.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                        {formatCurrency(order.totalAmount)}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm">
-                        <Button
-                          variant="ghost"
-                          onClick={() => navigate(`/orders/${order.id}`)}
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          View
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <Card title="Address">
+          <dl>
+            <dt>Street</dt>
+            <dd>{customer.address || dash}</dd>
+            <dt>City/Town</dt>
+            <dd>{customer.area || dash}</dd>
+            <dt>State</dt>
+            <dd>{customer.state || dash}</dd>
+            <dt>Nearest landmark</dt>
+            <dd>{customer.landmark || dash}</dd>
+          </dl>
+          {customer.notes && (
+            <>
+              <div className="ct"><h3>Internal notes</h3></div>
+              <p className="notes">{customer.notes}</p>
+            </>
           )}
         </Card>
       </div>
 
-      {/* Customer Form Modal */}
-      <CustomerForm
-        isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
+      <div className="card ctwrap">
+        <Tabs label="Customer history" items={TABS} value={tab} onChange={(next) => setTab(next as TabId)} />
+        <div role="tabpanel" aria-label={TABS.find((t) => t.id === tab)?.label}>
+          {tab === 'orders' &&
+            (customer.orders.length === 0 ? (
+              <EmptyState title="No orders yet" text="Orders from this customer show here." />
+            ) : (
+              <>
+                <Table label="Orders of this customer" columns={ORDER_COLUMNS} rows={customer.orders} rowKey={(o) => o.id} onRowClick={(o) => navigate(`/orders/${o.id}`)} />
+                {orderCount > customer.orders.length && (
+                  <div className="cfoot">
+                    <span>Showing the last {customer.orders.length} of {orderCount.toLocaleString('en-GB')} orders</span>
+                  </div>
+                )}
+              </>
+            ))}
+          {tab === 'messages' && <EmptyState title="No messages yet" text="Messages sent to this customer will show here." />}
+          {tab === 'calls' && <EmptyState title="No calls yet" text="Calls with this customer will show here." />}
+          {tab === 'notes' && <EmptyState title="No notes yet" text="The team's notes on this customer will show here." />}
+        </div>
+      </div>
+
+      <CustomerModal
+        open={editing}
+        onClose={() => setEditing(false)}
         customer={customer}
-        onSuccess={handleFormSuccess}
+        onSaved={(saved) => {
+          setEditing(false);
+          say(`${saved} saved`);
+          void load(true);
+        }}
       />
-    </div>
+      <ConfirmDialog open={deleting} onClose={() => setDeleting(false)} onConfirm={() => void remove()} action="Delete" count={1} noun="customer" title={`Delete ${name}?`}>
+        {orderCount > 0
+          ? `Their ${orderCount.toLocaleString('en-GB')} ${orderCount === 1 ? 'order stays' : 'orders stay'}. They disappear from the customer list.`
+          : 'They disappear from the customer list.'}
+      </ConfirmDialog>
+    </section>
   );
-};
+}

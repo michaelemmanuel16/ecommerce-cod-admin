@@ -4,6 +4,7 @@ import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
+import { townsForForm } from './locationService';
 
 // Shared PUBLIC render payload — the fields safe to expose on the public
 // checkout page and the embed widget config endpoint. Reused so the page and
@@ -70,9 +71,10 @@ const PUBLIC_FORM_SELECT = {
 } satisfies Prisma.CheckoutFormSelect;
 
 // Replace the raw stock quantity with a boolean in-stock flag.
-function sanitizePublicForm<T extends { product: { stockQuantity: number } }>(form: T) {
+// `towns` (state -> towns) is added so the public form can fill its City/Town dropdown (COD-138).
+function sanitizePublicForm<T extends { product: { stockQuantity: number }; country: string | null; regions: unknown }>(form: T) {
   const { stockQuantity, ...productData } = form.product;
-  return { ...form, product: { ...productData, inStock: stockQuantity > 0 } };
+  return { ...form, product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions) };
 }
 
 // ---------- Public embed config cache ----------
@@ -463,6 +465,7 @@ export class CheckoutFormService {
     return {
       ...form,
       product: { ...productData, inStock: stockQuantity > 0 },
+      towns: townsForForm(form.country, form.regions),
     };
   }
 

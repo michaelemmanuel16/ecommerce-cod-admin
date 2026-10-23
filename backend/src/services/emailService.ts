@@ -280,6 +280,22 @@ export async function sendPasswordResetEmail(
   });
 }
 
+export async function sendEmailChangedNotice(
+  oldEmail: string,
+  firstName: string,
+  newEmail: string
+): Promise<void> {
+  await sendEmail({
+    to: oldEmail,
+    subject: 'Your sign-in email was changed - COD Admin',
+    html: `
+      <p>Hi ${escapeHtml(firstName)},</p>
+      <p>The sign-in email on your account was changed to ${escapeHtml(newEmail)}.</p>
+      <p>If you did not do this, contact your account owner at once.</p>
+    `,
+  });
+}
+
 export async function sendTestEmail(toEmail: string, fromName?: string): Promise<void> {
   await sendEmail({
     to: toEmail,

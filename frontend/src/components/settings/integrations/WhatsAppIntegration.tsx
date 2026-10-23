@@ -89,6 +89,7 @@ export const WhatsAppIntegration: React.FC<WhatsAppIntegrationProps> = ({ system
     // Clean up URL params
     searchParams.delete('oauth');
     searchParams.delete('message');
+    searchParams.set('tab', 'integrations');
     setSearchParams(searchParams, { replace: true });
   }, []); // Run once on mount — handleOAuthSuccess uses stable useState setters
 

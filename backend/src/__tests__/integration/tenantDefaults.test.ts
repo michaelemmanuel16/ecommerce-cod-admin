@@ -43,7 +43,11 @@ const counts = async (tenantId: string) => ({
   systemUsers: await prismaBase.user.count({ where: { tenantId, kind: 'system' } }),
 });
 
+// register-tenant answers 404 unless the SaaS flag is on (M3-T26).
+process.env.SAAS_SIGNUP_ENABLED = 'true';
+
 afterAll(async () => {
+  delete process.env.SAAS_SIGNUP_ENABLED;
   await deleteTenantRows(tenantIds);
   await prismaBase.$disconnect();
 });

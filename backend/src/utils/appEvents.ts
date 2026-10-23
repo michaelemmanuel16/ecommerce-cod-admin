@@ -13,6 +13,7 @@ export enum AppEvent {
     ORDERS_DELETED = 'ORDERS_DELETED',
     ORDER_CREATED = 'order.created',
     ORDER_STATUS_CHANGED = 'order.status_changed',
+    ORDER_DELETED = 'order.deleted',
     // Add more as needed
 }
 
@@ -20,6 +21,8 @@ export enum AppEvent {
 interface OrderEventBase {
     orderId: number;
     tenantId: string;
+    /** The order's customer, so a listener needs no lookup. Optional: a listener falls back to a lookup when it is missing. */
+    customerId?: number;
     /** The order came in through a bulk or sheet import. */
     imported?: boolean;
     runWorkflows?: boolean;
@@ -39,9 +42,15 @@ export interface OrderStatusChangedEvent extends OrderEventBase {
     deliveryDate?: Date | null;
 }
 
+/** A soft-deleted order. It carries the customer because the listener cannot count a deleted order back to its customer. */
+export interface OrderDeletedEvent extends OrderEventBase {
+    customerId: number;
+}
+
 interface OrderEventMap {
     [AppEvent.ORDER_CREATED]: OrderCreatedEvent;
     [AppEvent.ORDER_STATUS_CHANGED]: OrderStatusChangedEvent;
+    [AppEvent.ORDER_DELETED]: OrderDeletedEvent;
 }
 
 /**
@@ -61,11 +70,18 @@ export function emitOrderEvent<E extends keyof OrderEventMap>(event: E, payload:
  * `imported`; `runWorkflows` overrides the import skip rule.
  */
 export function emitOrderCreatedEvent(
-    order: { id: number; tenantId?: string | null; status: OrderStatus },
+    order: { id: number; tenantId?: string | null; status: OrderStatus; customerId?: number },
     opts: { imported?: boolean; runWorkflows?: boolean } = {},
 ): void {
     emitOrderEvent(AppEvent.ORDER_CREATED, {
-        orderId: order.id, tenantId: resolveTenantId(order.tenantId), status: order.status, ...opts,
+        orderId: order.id, tenantId: resolveTenantId(order.tenantId), customerId: order.customerId, status: order.status, ...opts,
+    });
+}
+
+/** Emit `order.deleted` for a soft-deleted order, after the transaction commits. */
+export function emitOrderDeletedEvent(order: { id: number; tenantId?: string | null; customerId: number }): void {
+    emitOrderEvent(AppEvent.ORDER_DELETED, {
+        orderId: order.id, tenantId: resolveTenantId(order.tenantId), customerId: order.customerId,
     });
 }
 

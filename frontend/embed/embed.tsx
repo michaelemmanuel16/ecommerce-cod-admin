@@ -14,8 +14,11 @@
  *  the widget just wires up submission:
  *      <form data-codadmin-checkout-form data-slug="my-form" data-package="12">
  *        <input name="name"> <input name="phone"> <input name="email">
- *        <input name="address"> <input name="state"> <button>Order</button>
+ *        <input name="address"> <input name="state">
+ *        <input name="town"> <input name="landmark"> <button>Order</button>
  *      </form>
+ *  town (or city) and landmark are optional: if the form has neither input the
+ *  widget sends locationFieldsAbsent and the server skips that required check.
  *  On a successful (non-redirect) order the widget fires a bubbling
  *  `codadmin:success` CustomEvent on the form and, if data-on-success names a
  *  global function, calls it — both receive { orderId, total, currency,
@@ -111,6 +114,11 @@ function field(form: HTMLFormElement, ...names: string[]): string {
   return '';
 }
 
+// True when the host form has no input named town/city/landmark at all.
+function locationFieldsAbsent(form: HTMLFormElement): boolean {
+  return ['town', 'city', 'landmark'].every((name) => !form.elements.namedItem(name));
+}
+
 function setMessage(form: HTMLFormElement, text: string, isError: boolean): void {
   let node = form.querySelector<HTMLElement>('[data-codadmin-message]');
   if (!node) {
@@ -166,6 +174,9 @@ function attachModeB(form: HTMLFormElement): void {
         alternativePhone: field(form, 'alternatePhone', 'altPhone') || undefined,
         email: field(form, 'email') || undefined,
         region: field(form, 'state', 'region'),
+        // COD-138: the server asks for these two unless the seller turned them off
+        town: field(form, 'town', 'city'),
+        landmark: field(form, 'landmark'),
         streetAddress: field(form, 'address', 'streetAddress', 'street_address'),
         selectedPackageId: pkgValue,
         selectedAddonIds: [],
@@ -176,7 +187,11 @@ function attachModeB(form: HTMLFormElement): void {
 
       const { payload, totalAmount } = buildOrderPayload(config, data);
       // Attach Meta click ids so the Purchase CAPI event can match this buyer.
-      const res = await submitOrder(API_BASE, slug, { ...payload, ...getFbCookies() });
+      const res = await submitOrder(API_BASE, slug, {
+        ...payload,
+        ...(locationFieldsAbsent(form) ? { locationFieldsAbsent: true } : {}),
+        ...getFbCookies(),
+      });
 
       if (res.authorization_url) {
         window.location.href = res.authorization_url;

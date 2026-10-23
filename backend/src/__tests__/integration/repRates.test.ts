@@ -68,6 +68,26 @@ beforeAll(async () => {
   await call(repA, 'no_answer');
   await call(repA, 'not_reachable');
   await call(repB, 'confirmed');
+
+  // M3-T62 (F-1054) extras. Two of A's delivered orders were first called 30 and 10 minutes after they were placed.
+  const aDelivered = await prismaBase.order.findMany({ where: { tenantId, customerRepId: repA, status: 'delivered' }, orderBy: { id: 'asc' } });
+  for (const [i, minutes] of [30, 10].entries()) {
+    await prismaBase.order.update({ where: { id: aDelivered[i].id }, data: { firstContactAt: new Date(day.getTime() + minutes * 60000) } });
+  }
+  // upsell items: one on a delivered order (counts in extra value) and one on an order still out for delivery (rate only)
+  const product = await prismaBase.product.create({ data: { name: 'Upsell prod', sku: `UP-${Date.now()}`, category: 'test', price: 10, stockQuantity: 10, tenantId } });
+  const outNow = await prismaBase.order.findFirstOrThrow({ where: { tenantId, status: 'out_for_delivery', confirmedById: repA } });
+  const upsell = (orderId: number, totalPrice: string) =>
+    prismaBase.orderItem.create({ data: { orderId, productId: product.id, quantity: 1, unitPrice: totalPrice, totalPrice, itemType: 'upsell' } });
+  await upsell(aDelivered[0].id, '25.50');
+  await upsell(outNow.id, '10.00');
+  // targets: a person target for rep A, the role target for the pool, and a target of tenant B that must never show
+  const role = await prismaBase.role.upsert({ where: { tenantId_name: { tenantId, name: 'Call rep' } }, update: {}, create: { tenantId, name: 'Call rep' } });
+  await prismaBase.roleAssignment.create({ data: { tenantId, roleId: role.id, holderId: repA, fromDate: new Date('2025-01-01') } });
+  const period = { metric: 'confirmed_delivered', unit: 'count', periodStart: new Date('2025-03-01'), periodEnd: new Date('2025-03-31') };
+  await prismaBase.target.create({ data: { ...period, tenantId, scope: 'person', userId: repA, value: '4' } });
+  await prismaBase.target.create({ data: { ...period, tenantId, scope: 'role', roleId: role.id, value: '10' } });
+  await prismaBase.target.create({ data: { ...period, tenantId: pair.b.id, scope: 'person', userId: pair.b.users.salesRep.id, value: '777' } });
 }, 60000);
 
 afterAll(async () => {
@@ -181,8 +201,40 @@ describe('GET /api/reports/team', () => {
     expect(rowA.confirmationRate.value).toBe(75);
     expect(rowA.deliveredFromConfirmedRate.value).toBe(66.7);
     expect(declineReasons).toEqual([{ reason: 'price_too_high', count: 1, percent: 100 }]);
+    expect(tiles.totalDeclined).toBe(1);
     expect(res.body.all.deliveredFromConfirmedRate.value).toBe(71.4);
     expect(JSON.stringify(res.body)).not.toContain(pair.b.marker);
+  });
+
+  it('rep rows carry whole percents, time to first call, upsell rate, extra value, target hit and the kind', async () => {
+    const res = await request(app).get(`/api/reports/team?${RANGE}`).set(auth(pair.a.users.admin.token));
+    const rowA = res.body.reps.find((r: any) => r.repId === repA);
+    const rowB = res.body.reps.find((r: any) => r.repId === repB);
+    expect(rowA).toMatchObject({
+      kind: 'person', confirmationPercent: 75, deliveredFromConfirmedPercent: 67,
+      timeToFirstCallMinutes: 20,
+      upsellRate: 29, // 2 of the 7 orders A confirmed
+      extraValue: '25.50', // only the delivered order's upsell
+      targetHit: { target: 4, actual: 4, percent: 100 },
+    });
+    expect(rowB).toMatchObject({ timeToFirstCallMinutes: null, upsellRate: 0, extraValue: '0.00', targetHit: null });
+    expect(res.body.all).toMatchObject({
+      confirmationPercent: 73, deliveredFromConfirmedPercent: 71, timeToFirstCallMinutes: 20,
+      upsellRate: 25, extraValue: '25.50',
+      targetHit: { target: 10, actual: 5, percent: 50 },
+    });
+  });
+
+  it('tenant B sees none of A and A sees none of B targets', async () => {
+    const a = await request(app).get(`/api/reports/team?${RANGE}`).set(auth(pair.a.users.admin.token));
+    expect(JSON.stringify(a.body)).not.toContain('"target":777'); // a timestamped rep name can hold the digits 777
+    const b = await request(app).get(`/api/reports/team?${RANGE}`).set(auth(pair.b.users.admin.token));
+    expect(b.status).toBe(200);
+    expect(b.body.reps.every((r: any) => r.repId !== repA)).toBe(true);
+    // B has a person target of 777, but none of its orders: the target shows against 0 delivered
+    const rowB = b.body.reps.find((r: any) => r.repId === pair.b.users.salesRep.id);
+    expect(rowB.targetHit).toEqual({ target: 777, actual: 0, percent: 0 });
+    expect(b.body.all.targetHit).toBeNull();
   });
 });
 

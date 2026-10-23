@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/authStore';
 import toast from 'react-hot-toast';
 import { API_URL, handleSessionExpired, refreshAccessToken } from './tokenRefresh';
 import { normalizeMoney } from '../utils/money';
+import { isPreviewMode } from '../stores/previewStore';
 
 // Request cache (5 second TTL)
 const requestCache = new Map<string, { data: any; timestamp: number }>();
@@ -18,6 +19,15 @@ function shouldCache(config: InternalAxiosRequestConfig): boolean {
   return config.method?.toLowerCase() === 'get';
 }
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /** GET only: do not answer from the 5 second request cache. Refresh buttons and socket refetches set it. */
+    skipCache?: boolean;
+    /** The screen shows a failed call itself: the interceptor raises no error toast for it. */
+    quiet?: boolean;
+  }
+}
+
 export const apiClient = axios.create({
   baseURL: API_URL,
   headers: {
@@ -29,6 +39,12 @@ export const apiClient = axios.create({
 // Request interceptor to add JWT token and handle caching
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    // Preview mode (F-103) never writes: only reads go out.
+    // Token refresh and sign-out are not writes to the store's data.
+    if (isPreviewMode() && !['get', 'head', 'options'].includes(config.method?.toLowerCase() ?? 'get') && !config.url?.includes('/api/auth/')) {
+      toast.error('Preview mode: changes are not saved.');
+      return Promise.reject(new axios.Cancel('Blocked in preview mode'));
+    }
     console.log('[API Interceptor] Request:', config.method?.toUpperCase(), config.url);
     const token = useAuthStore.getState().accessToken;
     if (token && config.headers) {
@@ -39,7 +55,7 @@ apiClient.interceptors.request.use(
     }
 
     // Check cache for GET requests
-    if (shouldCache(config)) {
+    if (shouldCache(config) && !config.skipCache) {
       const cacheKey = getCacheKey(config);
       const cached = requestCache.get(cacheKey);
 
@@ -163,7 +179,7 @@ apiClient.interceptors.response.use(
     }
 
     // Show error toast for non-401 errors
-    if (error.response?.status !== 401) {
+    if (error.response?.status !== 401 && !error.config?.quiet) {
       const errorMessage =
         (error.response?.data as any)?.message ||
         // express-validator 400s carry the specific rule message here (e.g. a

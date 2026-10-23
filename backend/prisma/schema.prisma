@@ -58,6 +58,7 @@ model Tenant {
   mcpApiKeys          McpApiKey[]
   roles               Role[]
   roleAssignments     RoleAssignment[]
+  userSessions        UserSession[]
   webhookEvents       WebhookEvent[]
   emailTemplates      EmailTemplate[]
   emailCampaigns      EmailCampaign[]
@@ -141,6 +142,8 @@ model User {
   updatedAt             DateTime            @updatedAt @map("updated_at")
   firstName             String              @map("first_name")
   lastName              String              @map("last_name")
+  displayName           String?             @map("display_name")
+  photoUrl              String?             @map("photo_url")
   calls                 Call[]              @relation("CallSalesRep")
   deliveries            Delivery[]
   expenses              Expense[]
@@ -171,6 +174,8 @@ model User {
   fxRatesCreated        FxRate[]            @relation("FxRateCreator")
   kind                  UserKind            @default(person)
   roleAssignments       RoleAssignment[]    @relation("RoleAssignmentHolder")
+  sessions              UserSession[]
+  customersCreated      Customer[]          @relation("CustomerCreatedBy")
   mcpApiKeys            McpApiKey[]         @relation("McpApiKeyUser")
   tenantId              String?             @map("tenant_id")
   tenant                Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -194,6 +199,12 @@ model Customer {
   notes            String?
   totalOrders      Int          @default(0) @map("total_orders")
   totalSpent       Decimal      @default(0) @map("total_spent") @db.Decimal(19, 4)
+  // Stored stats (F-357). customerStatsService.recompute rebuilds them from orders.
+  deliveredOrders  Int          @default(0) @map("delivered_orders")
+  refusedOrders    Int          @default(0) @map("refused_orders")
+  deliveredValue   Decimal      @default(0) @map("delivered_value") @db.Decimal(19, 4)
+  lastOrderAt      DateTime?    @map("last_order_at")
+  createdById      Int?         @map("created_by_id")
   isActive         Boolean      @default(true) @map("is_active")
   smsOptOut        Boolean      @default(false) @map("sms_opt_out")
   whatsappOptOut   Boolean      @default(false) @map("whatsapp_opt_out")
@@ -209,6 +220,7 @@ model Customer {
   messageLogs      MessageLog[]
   tenantId         String?      @map("tenant_id")
   tenant           Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdBy        User?        @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@unique([phoneNumber, tenantId], map: "customers_phone_number_tenant_key")
   @@index([isActive])
@@ -216,6 +228,8 @@ model Customer {
   @@index([area])
   @@index([totalSpent])
   @@index([tenantId])
+  @@index([tenantId, area])
+  @@index([tenantId, refusedOrders])
   @@map("customers")
 }
 
@@ -300,6 +314,8 @@ model Order {
   webhookData        Json?               @map("webhook_data")
   webhookFingerprint String?             @unique @map("webhook_fingerprint")
   createdById        Int?                @map("created_by_id")
+  // True when COD is off for the customer and the order needs a manual call first (F-317, F-357).
+  requiresManualCall Boolean             @default(false) @map("requires_manual_call")
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   deletedAt          DateTime?           @map("deleted_at")
@@ -711,6 +727,9 @@ model SystemConfig {
   businessEmail         String?  @map("business_email")
   businessPhone         String?  @map("business_phone")
   businessAddress       String?  @map("business_address")
+  supportWhatsapp       String?  @map("support_whatsapp")
+  contactPerson         String?  @map("contact_person")
+  timeZone              String   @default("Africa/Accra") @map("time_zone")
   taxId                 String?  @map("tax_id")
   operatingHours        Json?    @map("operating_hours")
   smsProvider           Json?    @map("sms_provider")
@@ -1668,4 +1687,23 @@ model RoleAssignment {
   @@index([roleId])
   @@index([holderId])
   @@map("role_assignments")
+}
+
+// One row per login (F-1224). tokenHash is the hash of the refresh token; the raw token is never stored.
+model UserSession {
+  id          Int      @id @default(autoincrement())
+  tenantId    String   @map("tenant_id")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  userId      Int      @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String   @map("token_hash")
+  deviceLabel String?  @map("device_label")
+  ip          String?
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([tokenHash])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("user_sessions")
 }
