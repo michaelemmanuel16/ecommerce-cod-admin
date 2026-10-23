@@ -71,3 +71,36 @@ Read and write API for delivery partners (agents and 3PL companies), delivery pr
 - `backend/src/services/deliveryPartnerService.ts`, `deliveryPartnerAdminService.ts`, `deliveryProofService.ts`, `deliveryAttemptHook.ts`, `regionService.ts`, `failureReasonBackfill.ts` (new)
 - `backend/src/utils/failureReasonText.ts` (new), `utils/regions.ts`, `services/deliveryService.ts`, `services/orderStateMachine.ts`, `services/workflowService.ts`, `queues/workflowQueue.ts`
 
+---
+
+## COD-39 — Stock service, order wiring and transfers
+**Date:** 2026-10-24 | **Type:** feat | **Branch:** feature/m4-stock-fulfilment | **Commits:** fb46e60, e898bc0, 8a4c1d9, ce78e38, 1b8bb12, cabee2d, 7c55715, d7ebaf2 (simplify), ed4dc70, bcf5321 (merge)
+
+### Summary
+One service writes all stock quantities. Stock leaves once, when an order becomes delivered, and comes back once when it leaves delivered. Transfers between locations go through "in transit" and need a receive step. Plan tasks: M4-T06 to T10.
+
+### Changes
+- **`stockService`** (`backend/src/services/stockService.ts`): `applyMovement` writes the movement row and the level change in the caller's transaction. Negative on hand is allowed. `lockProduct` locks the product row (tenant scoped, physical only). `getOnHand`, `getReserved` (confirmed, preparing, ready, out for delivery at the holder) and `getAvailableToSell`. `rebuildCache` sets `Product.stockQuantity` to the sum of on hand over the physical locations. A grep test (`stockWriteGrep.test.ts`) fails when other code writes quantities.
+- **Order wiring:** `fulfilOrder` runs once on entering `delivered` (also by a jump), with one `order_fulfillment` movement per line, upsell lines included, from the holder at that moment. `reverseOrder` runs once on leaving `delivered`. Creation, dispatch, failed delivery and cancel move no stock. The decrement in `publicOrderService` and at `out_for_delivery` is gone, and so is the M1 `legacyStockHook`. No holder gives "Assign a delivery partner first". A short holder goes negative and opens one `stock_gap` Finding. `deliveryService.completeDelivery` uses the machine path.
+- **Tests flipped:** the M0 double-decrement test now expects -3 and -2. `stockOnce.test.ts` covers deliver, return and re-deliver, a repeated delivered call, cancel of a pending public order, upsell lines, a holder change before delivery, and two parallel delivered calls.
+- **Transfers** (`transferService.ts`): create (allocation, agent transfer, return to warehouse) as `in_transit`, with the source level down at once. Receive with a counted quantity: equal gives `received`, below gives `disputed` with a reason (short in package, damaged, not received), above is refused. Resolve (`return_to_source` or `write_off`), cancel (units go back to the source). An agent receives only stock addressed to them (403 otherwise). Same-location transfers are refused. An open transfer older than 3 days shows as overdue. Audit rows and a notification to the agent.
+- **Routes** (`/api/inventory`): `POST /transfers`, `/transfers/:id/receive`, `/:id/resolve`, `/:id/cancel`, `POST /adjust` (new quantity, reason, a note for "Other"). Writes need `products:update_stock`. The old `/api/agent-inventory/*` write routes and `PATCH /api/products/:id/stock` are removed. The old GET routes stay as aliases for one release.
+- **Permissions:** admin gets `products:update_stock` in the default matrix. The stock migration grants it on stored permission lists.
+- **Migration script:** after the sum check it rebuilds the cache. This closes the COD-38 open point.
+
+### Verification
+- Milestone branch after the merge: integration 1384 pass (11 skipped), unit 1613, frontend vitest 1057; builds and lints pass.
+- Production-dump copy: a fresh migration gives the cache 735 / 4573 / 217 / 62, equal to the sum of levels, and grants admin `update_stock` on 3 tenants.
+- API check on the copy (port 3300): allocate 4 refill ink from Logiswift to VDL (201), receive (200), second receive (409), adjust Logiswift to 5 (200), cancel of an in-transit transfer gives the unit back (200), cancel of a received one (409), more than on hand (400 "Only 10 available"), in-transit location (400), bad reasons (400 with the list), no token (401), `PATCH /api/products/:id/stock` (404). Levels and cache balance after each step (cache 61 = 5 + 56).
+
+### Open points
+- A database migrated by the COD-38 version of the script keeps the old cache, because a second run skips the tenant. Production has not been migrated, so the T41 run uses the current script. The local `ecommerce_cod_m3copy` copy was fixed with `rebuildCache`.
+- The no-holder rule sits in two layers, and the default permission matrix has two copies. Backlog at Phase 7.
+
+### Key Files
+- `backend/src/services/stockService.ts`, `transferService.ts`, `controllers/inventoryController.ts`, `routes/inventoryRoutes.ts` (new)
+- `backend/src/services/orderStateMachine.ts`, `orderSideEffects.ts`, `publicOrderService.ts`, `deliveryService.ts`, `findingService.ts`, `agentInventoryService.ts`, `glAutomationService.ts`, `tenantDefaultsService.ts`, `adminService.ts`, `middleware/auth.ts`
+- `backend/src/routes/agentInventoryRoutes.ts`, `productRoutes.ts`, `controllers/productController.ts`, `controllers/agentInventoryController.ts`
+- `backend/scripts/migrate-stock-to-levels.ts`
+- Tests: `stockService.test.ts`, `stockOnce.test.ts`, `transfersApi.test.ts`, `stockDoubleDecrement.test.ts`, `unit/stockWriteGrep.test.ts`, `integration/helpers/stock.ts`
+
