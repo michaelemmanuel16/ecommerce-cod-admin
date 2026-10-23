@@ -335,7 +335,7 @@ Terms:
 
 ### F-413: Regions list
 - Priority: P1. Milestone: M3.
-- Description: The region select uses the regions of the store's country (decision O3). Every screen that asks for a region (checkout, New order, Import, Messages filter, Workflows, Customers) uses the same list. The mockups use 6 or 7 regions, and Reports shows cities as regions (matrix section 4 #24).
+- Description: The region select uses the regions of the store's country (decision O3). Owner decision 2026-10-23: the buyer's form labels this field "State". New forms default to "State", and the editor ("Sends to" option, required-field guard) uses the same word. Every screen that asks for a region (checkout, New order, Import, Messages filter, Workflows, Customers) uses the same list. The mockups use 6 or 7 regions, and Reports shows cities as regions (matrix section 4 #24).
 - Current app: `CheckoutForm.regions` JSON (`regions.available`), filled from `country-state-city` when the country changes (`CheckoutFormBuilder.tsx` line 144). `utils/countries.ts` `getRegionsForCountry`.
 - Mockup: New order drawer lists 7 regions; Messages bulk send lists 5 regions; Reports lists cities.
 - Acceptance criteria:
