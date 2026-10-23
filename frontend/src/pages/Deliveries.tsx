@@ -1,16 +1,19 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Clock, Gauge, Hourglass, PackageCheck, Truck } from 'lucide-react';
+import { Plus, Clock, Gauge, Hourglass, PackageCheck, Truck } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useV2Page } from '../components/shell/useV2Page';
-import { Button, EmptyState, Skeleton, Table, Tabs, Tag, Tile } from '../components/ui-v2';
+import { Button, EmptyState, Skeleton, Table, Tabs, Tag, Tile, useToast } from '../components/ui-v2';
 import { formatCurrency } from '../utils/format';
 import { DateRange } from './orders/DateRange';
 import { presetOf, rangePhrase } from './orders/urlState';
 import { buildColumns } from './deliveries/columns';
-import { PartnerDrawer } from './deliveries/PartnerDrawer';
+import { AddPartnerModal } from './deliveries/AddPartnerModal';
+import { PartnerDrawer, type DrawerTab } from './deliveries/PartnerDrawer';
 import { ReasonsCard } from './deliveries/ReasonsCard';
 import { OutNowCard, WaitingCard } from './deliveries/WaitingCards';
+import { deliveryPartnersService, type PartnerRow } from '../services/delivery-partners.service';
+import { apiErrorMessage } from '../utils/apiError';
 import { count, PARTNER_TABS } from './deliveries/model';
 import { parseView, rangeOf, writeView, type DeliveriesView } from './deliveries/urlState';
 import { useDeliveries } from './deliveries/useDeliveries';
@@ -26,15 +29,29 @@ export function Deliveries() {
   const range = useMemo(() => rangeOf(view), [view]);
   const data = useDeliveries(range, view.tab);
   const { isAdmin, isManager } = usePermissions();
+  const say = useToast();
+  const [adding, setAdding] = useState(false);
+  /** A partner just added: its drawer opens on Fees. */
+  const [addedId, setAddedId] = useState<number | null>(null);
 
   const go = useCallback((next: DeliveriesView, replace = false) => setSearch(writeView(next), { replace }), [setSearch]);
 
   const { list, summary } = data;
+
+  const switchAvailability = useCallback(async (row: PartnerRow, on: boolean) => {
+    try {
+      await deliveryPartnersService.setAvailability(row.partnerId, on);
+      say(on ? `${row.name} is available for new orders` : `${row.name} is unavailable for new orders`);
+      await data.refetch();
+    } catch (e) {
+      say(apiErrorMessage(e, 'The availability could not be changed.'));
+    }
+  }, [say, data.refetch]);
   const target = summary?.deliverySuccess.target ?? 60;
   const phrase = rangePhrase(range);
   const columns = useMemo(
-    () => buildColumns({ target, total: list?.total ?? null, canSwitch: false, onSwitch: () => undefined }),
-    [target, list?.total],
+    () => buildColumns({ target, total: list?.total ?? null, canSwitch: isManager, onSwitch: switchAvailability }),
+    [target, list?.total, isManager, switchAvailability],
   );
 
   const tiles = summary;
@@ -51,6 +68,12 @@ export function Deliveries() {
         </div>
         <div className="hd-actions">
           <DateRange range={range} onRange={(r) => go({ ...view, from: r.from, to: r.to })} />
+          {isAdmin && (
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              <Plus />
+              Add delivery partner
+            </Button>
+          )}
         </div>
       </div>
 
@@ -149,8 +172,21 @@ export function Deliveries() {
         target={target}
         canEdit={isAdmin}
         canSwitch={isManager}
+        startTab={(view.partner !== null && view.partner === addedId ? 'fees' : 'summary') satisfies DrawerTab}
         onClose={() => go({ ...view, partner: null })}
         onChanged={() => void data.refetch()}
+      />
+
+      <AddPartnerModal
+        open={adding}
+        onClose={() => setAdding(false)}
+        onAdded={(id, name) => {
+          setAdding(false);
+          setAddedId(id);
+          say(`${name} added as a delivery partner`);
+          void data.refetch();
+          go({ ...view, partner: id });
+        }}
       />
     </section>
   );

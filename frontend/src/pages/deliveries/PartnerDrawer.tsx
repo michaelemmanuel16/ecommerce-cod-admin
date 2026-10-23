@@ -11,7 +11,7 @@ import { DrawerSummary } from './DrawerSummary';
 import { AvailabilitySwitch } from './AvailabilitySwitch';
 import { rowTags, TYPE_LABEL, TYPE_TONE } from './model';
 
-type DrawerTab = 'summary' | 'orders' | 'fees';
+export type DrawerTab = 'summary' | 'orders' | 'fees';
 const TABS: Array<{ id: DrawerTab; label: string }> = [
   { id: 'summary', label: 'Summary' },
   { id: 'orders', label: 'Orders' },
@@ -28,6 +28,8 @@ interface PartnerDrawerProps {
   canEdit: boolean;
   /** Owner, admin and manager turn availability on and off. */
   canSwitch: boolean;
+  /** The tab to open on (a partner just added opens on Fees so setup can be finished, F-708). */
+  startTab?: DrawerTab;
   onClose: () => void;
   /** The partner changed (profile, person, availability): the page reloads its table. */
   onChanged: () => void;
@@ -44,7 +46,7 @@ const agentOf = (p: PartnerDetail): DeliveryAgent => ({
  * The partner drawer (M4-T32, F-707, F-711, F-713, F-709). Tabs Summary, Orders, Fees. "Edit person" opens the existing user edit.
  * A save on Fees writes an audit row on the server. The Stock tab comes with the stock APIs (COD-41).
  */
-export function PartnerDrawer({ id, row, target, canEdit, canSwitch, onClose, onChanged }: PartnerDrawerProps) {
+export function PartnerDrawer({ id, row, target, canEdit, canSwitch, startTab = 'summary', onClose, onChanged }: PartnerDrawerProps) {
   const say = useToast();
   const [tab, setTab] = useState<DrawerTab>('summary');
   const [partner, setPartner] = useState<PartnerDetail | null>(null);
@@ -64,8 +66,9 @@ export function PartnerDrawer({ id, row, target, canEdit, canSwitch, onClose, on
   useEffect(() => {
     setPartner(null);
     setFailed(null);
-    setTab('summary');
+    setTab(startTab);
     void load();
+    // startTab only matters when a partner opens
   }, [id, load]);
 
   const toggle = async (on: boolean) => {
