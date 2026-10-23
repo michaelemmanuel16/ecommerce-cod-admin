@@ -216,6 +216,15 @@ describe('Sales tab (F-1052, F-1064)', () => {
     expect(screen.getByText('376 delivered orders')).toBeInTheDocument();
   });
 
+  it('an average order value change under half a cedi reads Same, never "GH₵0" up or down (QA-08)', async () => {
+    answer({ sales: (b) => { b.tiles.aov.deltaAmount = '-0.2'; return b; } });
+    await openSales();
+    await userEvent.click(screen.getByLabelText('Compare to previous period'));
+    const tiles = screen.getByText('Average order value').closest('.kpis') as HTMLElement;
+    expect(await within(tiles).findByText('Same')).toBeInTheDocument();
+    expect(within(tiles).queryByText(/GH₵0/)).toBeNull();
+  });
+
   it('without financial:view the response has no cash tiles and the page shows two', async () => {
     answer({ sales: (b) => { delete b.tiles.cashReceived; delete b.tiles.cashWithPartners; return b; } });
     await openSales();

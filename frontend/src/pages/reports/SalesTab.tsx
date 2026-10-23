@@ -16,7 +16,8 @@ function aovChange(aov: SalesTiles['aov'], currency: string): ReactNode {
   if (aov.previous === null && aov.deltaAmount === null) return null;
   if (aov.deltaAmount === null || aov.previous === null) return <><Tag tone="n">No data</Tag>in the previous period</>;
   const delta = parseMoney(aov.deltaAmount);
-  if (delta === 0) return <><Tag tone="n">Same</Tag>vs {wholeMoney(aov.previous, currency)}</>;
+  // A change under half a cedi would read "▼ GH₵0": it shows as the same
+  if (Math.round(Math.abs(delta)) === 0) return <><Tag tone="n">Same</Tag>vs {wholeMoney(aov.previous, currency)}</>;
   return <><Tag tone="n">{delta > 0 ? '▲' : '▼'} {wholeMoney(Math.abs(delta), currency)}</Tag>vs {wholeMoney(aov.previous, currency)}</>;
 }
 
