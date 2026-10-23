@@ -76,14 +76,14 @@ const named = (label: string, extra: Partial<FormField> = {}): FormField => ({
 const complete = (): FormField[] => [
   named('Full Name', { standardKey: 'fullName' }),
   named('Phone', { type: 'phone', standardKey: 'phone' }),
-  named('Region', { type: 'state', standardKey: 'region' }),
+  named('State', { type: 'state', standardKey: 'region' }),
   named('Street address', { type: 'textarea', standardKey: 'streetAddress' }),
 ];
 
 describe('FieldsTab', () => {
-  it('renders the add grid with all nine types, the state type as Region', () => {
+  it('renders the add grid with all nine types, the state type as State', () => {
     render(<Harness />);
-    ['Text Input', 'Email', 'Phone Number', 'Number', 'Text Area', 'Dropdown', 'Checkbox', 'Multi Select', 'Region'].forEach(
+    ['Text Input', 'Email', 'Phone Number', 'Number', 'Text Area', 'Dropdown', 'Checkbox', 'Multi Select', 'State'].forEach(
       (label) => expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     );
   });
@@ -103,9 +103,9 @@ describe('FieldsTab', () => {
     expect(screen.getByText('1 field')).toBeInTheDocument();
   });
 
-  it('adds a Region field that is required by default', () => {
+  it('adds a State field that is required by default', () => {
     render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: 'Region' }));
+    fireEvent.click(screen.getByRole('button', { name: 'State' }));
     const fields = readFields();
     expect(fields[0].type).toBe('state');
     expect(fields[0].required).toBe(true);
@@ -201,7 +201,7 @@ describe('FieldsTab', () => {
         'Phone',
         'Alternate phone',
         'Email',
-        'Region',
+        'State',
         'City or town',
         'Street address',
         'Order notes',
@@ -252,12 +252,12 @@ describe('FieldsTab', () => {
   });
 
   describe('regions (F-413)', () => {
-    const boxes = () => within(screen.getByRole('group', { name: /regions selected/i })).getAllByRole('checkbox');
+    const boxes = () => within(screen.getByRole('group', { name: /states selected/i })).getAllByRole('checkbox');
 
     it('lists the regions of the country, all selected', () => {
       render(<Harness />);
       expect(boxes().map((b) => (b as HTMLInputElement).checked)).toEqual([true, true, true]);
-      expect(screen.getByText('3 of 3 regions selected')).toBeInTheDocument();
+      expect(screen.getByText('3 of 3 states selected')).toBeInTheDocument();
     });
 
     it('lets the owner untick a region and tick it back', () => {
@@ -271,11 +271,11 @@ describe('FieldsTab', () => {
     it('keeps the last region: its box is disabled and the hint shows', () => {
       render(<Harness />);
       fireEvent.click(screen.getByLabelText('Volta'));
-      expect(screen.queryByText('Keep at least one region.')).toBeNull();
+      expect(screen.queryByText('Keep at least one state.')).toBeNull();
       fireEvent.click(screen.getByLabelText('Ashanti'));
       expect(readRegions()).toEqual(['Greater Accra']);
       expect(screen.getByLabelText('Greater Accra')).toBeDisabled();
-      expect(screen.getByText('Keep at least one region.')).toBeInTheDocument();
+      expect(screen.getByText('Keep at least one state.')).toBeInTheDocument();
       fireEvent.click(screen.getByLabelText('Greater Accra'));
       expect(readRegions()).toEqual(['Greater Accra']);
     });

@@ -134,7 +134,7 @@ describe('CheckoutFormBuilder, Fields and regions (F-411, F-413)', () => {
     goTo('Fields');
     const all = getRegionsForCountry('Ghana');
     expect(all.length).toBeGreaterThan(1);
-    const boxes = within(screen.getByRole('group', { name: /regions selected/i })).getAllByRole('checkbox') as HTMLInputElement[];
+    const boxes = within(screen.getByRole('group', { name: /states selected/i })).getAllByRole('checkbox') as HTMLInputElement[];
     expect(boxes.map((b) => b.parentElement?.textContent)).toEqual(all);
     expect(boxes.every((b) => b.checked)).toBe(true);
   });
@@ -143,27 +143,27 @@ describe('CheckoutFormBuilder, Fields and regions (F-411, F-413)', () => {
     useConfigStore.setState({ currency: 'NGN', loaded: true });
     renderBuilder();
     goTo('Fields');
-    const boxes = within(screen.getByRole('group', { name: /regions selected/i })).getAllByRole('checkbox');
+    const boxes = within(screen.getByRole('group', { name: /states selected/i })).getAllByRole('checkbox');
     expect(boxes).toHaveLength(getRegionsForCountry('Nigeria').length);
   });
 
   it('cannot remove the last region', () => {
     renderBuilder();
     goTo('Fields');
-    const group = screen.getByRole('group', { name: /regions selected/i });
+    const group = screen.getByRole('group', { name: /states selected/i });
     const boxes = () => within(group).getAllByRole('checkbox') as HTMLInputElement[];
     const total = boxes().length;
     for (let i = 0; i < total - 1; i++) fireEvent.click(boxes().find((b) => b.checked)!);
     const left = boxes().filter((b) => b.checked);
     expect(left).toHaveLength(1);
     expect(left[0]).toBeDisabled();
-    expect(screen.getByText('Keep at least one region.')).toBeInTheDocument();
+    expect(screen.getByText('Keep at least one state.')).toBeInTheDocument();
   });
 
   it('keeps the regions a saved form offers', () => {
     renderBuilder({ id: 5, name: 'F', slug: 'f', productId: 1, isActive: true, country: 'Ghana', regions: { available: ['Ashanti', 'Volta'] } } as unknown as CheckoutForm);
     goTo('Fields');
-    const boxes = within(screen.getByRole('group', { name: /regions selected/i })).getAllByRole('checkbox') as HTMLInputElement[];
+    const boxes = within(screen.getByRole('group', { name: /states selected/i })).getAllByRole('checkbox') as HTMLInputElement[];
     expect(boxes.filter((b) => b.checked).map((b) => b.parentElement?.textContent)).toEqual(['Ashanti', 'Volta']);
   });
 

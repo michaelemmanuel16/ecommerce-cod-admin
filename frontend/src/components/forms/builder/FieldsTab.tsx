@@ -71,7 +71,7 @@ const FieldRow: React.FC<FieldRowProps> = ({ field, standardKey, isFirst, isLast
   );
 };
 
-/** Regions the form delivers to (F-413): the regions of the store's country, all selected at first; at least one stays. */
+/** States the form delivers to (F-413; the buyer's label is "State", owner decision 2026-10-23): the regions of the store's country, all selected at first; at least one stays. */
 const RegionsEditor: React.FC = () => {
   const { allRegions, regions, setRegions, country } = useCheckoutBuilder();
   if (allRegions.length === 0) return null;
@@ -82,12 +82,12 @@ const RegionsEditor: React.FC = () => {
   return (
     <div>
       <div className="paneh" style={{ marginTop: 6 }}>
-        <h3>Regions</h3>
-        <p>Customers pick a region from this list. Untick the ones you do not deliver to in {country}.</p>
+        <h3>States</h3>
+        <p>Customers pick a state from this list. Untick the ones you do not deliver to in {country}.</p>
       </div>
       <fieldset className="regions" style={{ border: 0, padding: 0, margin: 0 }}>
         <legend className="hint" style={{ padding: 0 }}>
-          {regions.length} of {allRegions.length} regions selected
+          {regions.length} of {allRegions.length} states selected
         </legend>
         {allRegions.map((region) => {
           const on = regions.includes(region);
@@ -99,7 +99,7 @@ const RegionsEditor: React.FC = () => {
           );
         })}
       </fieldset>
-      {onlyOne && <p className="hint">Keep at least one region.</p>}
+      {onlyOne && <p className="hint">Keep at least one state.</p>}
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React from 'react';
 import { Check } from 'lucide-react';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
 import { cn } from '../../utils/cn';
+import { formatMoney } from '../../utils/money';
 
 type ProductPackage = PublicCheckoutForm['packages'][number];
 
@@ -28,7 +29,7 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
 }) => {
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold text-gray-900" style={textColor ? { color: textColor } : undefined}>Select Package</h2>
+      <h2 className="text-lg font-semibold text-gray-900" style={textColor ? { color: textColor } : undefined}>Choose your package</h2>
       <div className="space-y-3">
         {packages.map((pkg) => {
           const isSelected = selectedPackageId === pkg.id;
@@ -38,7 +39,7 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
             type="button"
             onClick={() => onSelectPackage(pkg.id)}
             className={cn(
-              'w-full p-4 rounded-lg border-2 transition-all text-left relative',
+              'w-full p-4 rounded-xl border-2 transition-all text-left relative',
               isSelected
                 ? 'border-[#0f172a] bg-gray-50'
                 : 'border-gray-200 hover:border-gray-300 bg-white'
@@ -74,7 +75,7 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                       </span>
                     ) : pkg.isPopular ? (
                       <span className="px-2 py-0.5 bg-[#f97316] text-white text-xs font-medium rounded whitespace-nowrap flex-shrink-0" style={accentColor ? { backgroundColor: accentColor } : undefined}>
-                        Most Popular
+                        Most popular
                       </span>
                     ) : null}
                   </div>
@@ -85,14 +86,14 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
               </div>
 
               {/* Price row */}
-              <div className="flex items-center gap-3 pl-8">
+              <div className="flex items-center gap-x-3 gap-y-1 flex-wrap pl-8">
                 {pkg.originalPrice && pkg.originalPrice > pkg.price && pkg.showDiscount !== false ? (
                   <>
                     <p className="text-sm text-gray-500 line-through">
-                      {currency} {pkg.originalPrice.toFixed(2)}
+                      {formatMoney(pkg.originalPrice, currency)}
                     </p>
                     <p className="text-xl font-bold text-green-600" style={priceColor ? { color: priceColor } : undefined}>
-                      {currency} {pkg.price.toFixed(2)}
+                      {formatMoney(pkg.price, currency)}
                     </p>
                     {pkg.discountType === 'percentage' && pkg.discountValue && (
                       <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded">
@@ -101,13 +102,13 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
                     )}
                     {pkg.discountType === 'fixed' && pkg.discountValue && (
                       <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded">
-                        Save {currency} {(pkg.originalPrice - pkg.price).toFixed(2)}
+                        Save {formatMoney(pkg.originalPrice - pkg.price, currency)}
                       </span>
                     )}
                   </>
                 ) : (
                   <p className="text-xl font-bold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
-                    {currency} {pkg.price.toFixed(2)}
+                    {formatMoney(pkg.price, currency)}
                   </p>
                 )}
               </div>

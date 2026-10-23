@@ -99,6 +99,8 @@ export interface PublicCheckoutForm {
   paystackDepositEnabled?: boolean;
   paystackFullEnabled?: boolean;
   depositPercent?: number | null;
+  /** The store's public support WhatsApp number, or null when it has none. */
+  supportWhatsapp?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -133,6 +135,8 @@ export interface PublicOrderResponse {
   // Present for COD orders (created immediately). Omitted for Paystack, which
   // defers order creation until payment is confirmed and redirects instead.
   orderId?: number;
+  /** "#24118", as the server prints it. */
+  orderNumber?: string;
   // The same buyer just ordered the same thing: no new order was made. orderId is present only for the same submitter.
   deduplicated?: boolean;
   order?: {
@@ -173,6 +177,18 @@ export interface OrderTrackingInfo {
   updatedAt: string;
 }
 
+/** What the payment callback page learns from GET /api/payments/verify/:reference. Nothing about the customer (F-403). */
+export interface PaymentOutcome {
+  status: 'success' | 'pending' | 'failed' | 'not_found';
+  /** "#24118", on success. */
+  orderNumber?: string;
+  orderType: 'physical' | 'digital' | null;
+  formSlug: string | null;
+  redirectUrl?: string;
+  /** Masked ("a***@gmail.com"), only for a paid digital order. */
+  email?: string;
+}
+
 export const publicOrdersService = {
   async getPublicForm(slug: string): Promise<PublicCheckoutForm> {
     const response = await publicClient.get(`/api/public/forms/${slug}`);
@@ -192,8 +208,8 @@ export const publicOrdersService = {
     await publicClient.post(`/api/public/forms/${slug}/track/initiate-checkout`, data);
   },
 
-  async verifyPayment(reference: string): Promise<{ success: boolean; paymentStatus: string; order?: any }> {
-    const response = await publicClient.get(`/api/paystack/verify/${reference}`);
+  async verifyPayment(reference: string): Promise<PaymentOutcome> {
+    const response = await publicClient.get(`/api/payments/verify/${encodeURIComponent(reference)}`);
     return response.data;
   },
 

@@ -59,7 +59,7 @@ describe('CheckoutFormPreview safety (F-419)', () => {
     act(() => {
       window.dispatchEvent(new MessageEvent('message', { data: { type: 'checkout-preview-update', patch: { ...draft, currency: 'NGN' } }, origin: window.location.origin, source: window }));
     });
-    expect(screen.getAllByText(/NGN 200\.00/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/₦200/).length).toBeGreaterThan(0);
   });
 
   it('ignores a draft from another origin', () => {

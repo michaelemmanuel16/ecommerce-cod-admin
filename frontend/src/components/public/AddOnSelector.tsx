@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
 import { cn } from '../../utils/cn';
+import { formatMoney } from '../../utils/money';
 
 type Upsell = PublicCheckoutForm['upsells'][number];
 
@@ -43,7 +44,7 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold text-gray-900">
+      <h2 className="text-lg font-semibold text-gray-900">
         Add-ons <span className="text-gray-500 font-normal text-base">(Optional)</span>
       </h2>
       <div className="space-y-3">
@@ -56,7 +57,7 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
             <div
               key={addon.id}
               className={cn(
-                'rounded-lg border-2 transition-all overflow-hidden',
+                'rounded-xl border-2 transition-all overflow-hidden',
                 isSelected
                   ? 'border-[#0f172a] bg-gray-50'
                   : 'border-gray-200 bg-white'
@@ -66,6 +67,9 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
                 {/* Checkbox — only toggles selection */}
                 <button
                   type="button"
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  aria-label={`Add ${addon.name}`}
                   onClick={() => onToggleAddon(addon.id)}
                   className={cn(
                     'w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0',
@@ -112,8 +116,8 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 ml-4">
-                    <p className="text-lg font-bold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
-                      {currency} {addon.price.toFixed(2)}
+                    <p className="text-base font-bold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
+                      {formatMoney(addon.price, currency)}
                     </p>
                     {expandable && (
                       <ChevronDown

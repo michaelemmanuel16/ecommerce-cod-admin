@@ -56,7 +56,7 @@ export const STANDARD_FIELDS: readonly StandardFieldMeta[] = [
   },
   {
     key: 'region',
-    label: 'Region',
+    label: 'State',
     aliases: ['region', 'region/state', 'state', 'state/region', 'province'],
   },
   {

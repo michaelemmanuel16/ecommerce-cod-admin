@@ -36,9 +36,9 @@ describe('public form reads the Design options (F-418)', () => {
   it('price colour changes the package, add-on and total prices', () => {
     render(<CheckoutForm formData={form({ design: { input: { priceColor: '#059669' } } })} onSubmit={vi.fn()} />);
     const green = rgb('#059669');
-    expect(screen.getAllByText(/GHS 200\.00/).some((el) => el.style.color === green)).toBe(true);
-    expect(screen.getAllByText('GHS 40.00').some((el) => el.style.color === green)).toBe(true);
-    expect(screen.getAllByText(/GHS 200\.00/).filter((el) => el.style.color === green).length).toBeGreaterThan(1);
+    expect(screen.getAllByText(/GH₵200/).some((el) => el.style.color === green)).toBe(true);
+    expect(screen.getAllByText('GH₵40').some((el) => el.style.color === green)).toBe(true);
+    expect(screen.getAllByText(/GH₵200/).filter((el) => el.style.color === green).length).toBeGreaterThan(1);
   });
 
   it('page background changes the page; "transparent" and empty keep the default', () => {

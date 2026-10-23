@@ -8,7 +8,7 @@ import type { FormField, StandardFieldKey } from '../types/checkout-form';
 export const NEW_FORM_FIELDS: FormField[] = [
   { id: 'fullName', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
   { id: 'phone', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
-  { id: 'region', label: 'Region', type: 'state', required: true, enabled: true, standardKey: 'region' },
+  { id: 'region', label: 'State', type: 'state', required: true, enabled: true, standardKey: 'region' },
   { id: 'town', label: 'City or town', type: 'text', required: true, enabled: true, standardKey: 'town' },
   { id: 'landmark', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' },
   { id: 'email', label: 'Email Address', type: 'email', required: false, enabled: false, standardKey: 'email' },

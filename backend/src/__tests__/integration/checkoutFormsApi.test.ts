@@ -225,7 +225,7 @@ describe('required keys on activation', () => {
     const off = FULL_FIELDS.map((f) => (f.standardKey === 'region' ? { ...f, enabled: false } : f));
     const res = await put(id, { fields: off });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe("This form can't take orders yet. Add: Region.");
+    expect(res.body.error).toBe("This form can't take orders yet. Add: State.");
     expect((await stored(id)).fields).toEqual(SAVED_FIELDS);
   });
 

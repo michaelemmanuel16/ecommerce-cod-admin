@@ -1,6 +1,6 @@
 import { format, formatDistance, formatRelative } from 'date-fns';
 import { useConfigStore } from '../stores/configStore';
-import { parseMoney } from './money';
+import { formatMoney, parseMoney } from './money';
 import { getCurrencySymbol } from './countries';
 
 /** The store currency from config (F-100, O5). 'USD' until the config loads. */
@@ -9,26 +9,10 @@ export const getStoreCurrency = (): string => useConfigStore.getState().currency
 /**
  * The one money formatter. Amount in the store currency by default; pass `currency` for a record that has its own.
  * An unknown or malformed code never throws: it shows "XYZ 1,234.50". Whole amounts drop the cents.
+ * The formatting itself is `formatMoney` in ./money, which the public checkout and the embed use without the admin app's stores.
  */
-export const formatCurrency = (amount: string | number | null | undefined, currency?: string): string => {
-  const targetCurrency = currency || getStoreCurrency();
-  const value = parseMoney(amount);
-  // Whole amounts show no cents, as in the v2 mockups ("GH₵249"); other amounts show 2 decimals.
-  const cents = Number.isInteger(value) ? { minimumFractionDigits: 0, maximumFractionDigits: 0 } : {};
-
-  try {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: targetCurrency,
-      // narrowSymbol renders the local glyph (GH₵5,680.00) instead of the ISO
-      // code prefix (GHS 5,680.00) that 'symbol' falls back to for GHS/NGN.
-      currencyDisplay: 'narrowSymbol',
-      ...cents,
-    }).format(value);
-  } catch {
-    return `${targetCurrency} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2, ...cents }).format(value)}`;
-  }
-};
+export const formatCurrency = (amount: string | number | null | undefined, currency?: string): string =>
+  formatMoney(amount, currency || getStoreCurrency());
 
 /** "₦112 = GH₵1": the rate used, `rate` = units of `foreign` for 1 unit of the store currency on that day. */
 export const formatRateUsed = (foreign: string, rate: number, store: string = getStoreCurrency()): string =>

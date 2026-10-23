@@ -97,7 +97,7 @@ describe('CheckoutForm — render + design + CTA (R5)', () => {
     expect(cta).not.toBeDisabled();
     expect(cta.style.backgroundColor).toMatch(/#dc2626|rgb\(\s*220,\s*38,\s*38\s*\)/);
     // Total surface color should be the accent token.
-    const total = container.querySelector('.text-2xl.font-bold') as HTMLElement;
+    const total = container.querySelector('[data-testid="order-total"]') as HTMLElement;
     expect(total).toBeTruthy();
     expect(total.style.color).toMatch(/#0f172a|rgb\(\s*15,\s*23,\s*42\s*\)/);
   });
@@ -236,7 +236,7 @@ describe('CheckoutForm — State, City/Town and Nearest landmark (COD-138)', () 
         { id: '1', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
         { id: '2', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
         { id: '3', label: 'Street Address', type: 'textarea', required: true, enabled: true, standardKey: 'streetAddress' },
-        { id: '4', label: 'Region/State', type: 'state', required: true, enabled: true, standardKey: 'region' },
+        { id: '4', label: 'State', type: 'state', required: true, enabled: true, standardKey: 'region' },
         { id: '5', label: 'Email Address', type: 'email', required: false, enabled: true, standardKey: 'email' },
       ] as any,
     });

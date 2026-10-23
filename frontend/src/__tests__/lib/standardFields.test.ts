@@ -124,7 +124,7 @@ describe('the required-key guard names', () => {
     const disabled = physicalFields.map((f) =>
       f.label === 'Region' ? { ...f, enabled: false } : f
     );
-    expect(missingRequiredLabels(disabled, 'physical')).toEqual(['Region']);
+    expect(missingRequiredLabels(disabled, 'physical')).toEqual(['State']);
   });
 
   it('requires a street address for a physical form but email instead for a digital one', () => {
@@ -155,7 +155,7 @@ describe('the required-key guard names', () => {
 describe('missingKeysMessage', () => {
   it("gives the server's sentence", () => {
     expect(missingKeysMessage([field({ label: 'Full Name' })], 'physical')).toBe(
-      "This form can't take orders yet. Add: Phone, Street address, Region."
+      "This form can't take orders yet. Add: Phone, Street address, State."
     );
   });
 
@@ -167,7 +167,7 @@ describe('missingKeysMessage', () => {
 describe('Sends to options', () => {
   it('has the notes slot and no label inference for it', () => {
     expect(STANDARD_FIELDS.map((f) => f.label)).toEqual(
-      expect.arrayContaining(['Customer name', 'Phone', 'Alternate phone', 'Email', 'Region', 'City or town', 'Street address', 'Order notes'])
+      expect.arrayContaining(['Customer name', 'Phone', 'Alternate phone', 'Email', 'State', 'City or town', 'Street address', 'Order notes'])
     );
     expect(resolveStandardKey(field({ label: 'Notes' }))).toBeNull();
     expect(resolveStandardKey(field({ label: 'Anything', standardKey: 'notes' }))).toBe('notes');
