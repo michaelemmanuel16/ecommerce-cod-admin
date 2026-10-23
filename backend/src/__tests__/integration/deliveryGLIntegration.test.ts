@@ -65,6 +65,10 @@ describe('Delivery GL Integration', () => {
       await (prisma as any).webhookLog.deleteMany({});
       await (prisma as any).webhookConfig.deleteMany({});
       await (prisma as any).product_cost_entries.deleteMany({});
+      await prisma.stockLevel.deleteMany({});
+      await prisma.inventoryTransfer.deleteMany({});
+      await prisma.stockLocation.deleteMany({});
+      await prisma.finding.deleteMany({});
       await prisma.product.deleteMany({});
       await prisma.customer.deleteMany({});
       await prisma.account.deleteMany({});
@@ -192,7 +196,11 @@ describe('Delivery GL Integration', () => {
     await (prisma as any).webhookLog.deleteMany({});
     await (prisma as any).webhookConfig.deleteMany({});
     await (prisma as any).product_cost_entries.deleteMany({});
-    await prisma.product.deleteMany({});
+    await prisma.stockLevel.deleteMany({});
+      await prisma.inventoryTransfer.deleteMany({});
+      await prisma.stockLocation.deleteMany({});
+      await prisma.finding.deleteMany({});
+      await prisma.product.deleteMany({});
     await prisma.customer.deleteMany({});
     await prisma.user.deleteMany({
       where: { email: { in: ['testuser@example.com', 'testagent@example.com'] } },
@@ -291,7 +299,6 @@ describe('Delivery GL Integration', () => {
       await transitionOrder(testOrder.id, 'failed_delivery', actorOf(undefined, testUser.id), {
         note: 'Delivery failed: Customer not home',
         failureReason: 'other',
-        skipLegacyStock: true,
       });
 
       const updatedDelivery = await prisma.delivery.findUnique({

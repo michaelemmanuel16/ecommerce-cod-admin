@@ -4,6 +4,8 @@ import { runInTenant } from '../src/utils/tenantContext';
 import { withSoftDeleted } from '../src/utils/prismaExtensions';
 import { getSystemUserId } from '../src/services/systemUserService';
 import { fullName } from '../src/utils/nameUtils';
+import { rebuildCache } from '../src/services/stockService';
+import { grantAdminUpdateStock } from '../src/services/tenantDefaultsService';
 import { assertNotProduction, hasFlag, option } from './lib/scriptArgs';
 
 // M4-T03 / M4-T04 (COD-38, F-650, F-660, F-657). Moves the legacy stock numbers into StockLocation / StockLevel.
@@ -27,6 +29,8 @@ import { assertNotProduction, hasFlag, option } from './lib/scriptArgs';
 // "After" per product = sum of all StockLevel rows + units of open in_transit transfers. They must be equal.
 // AgentStock.totalInTransit is NOT used (it drifts and is negative in places); it is printed as information only.
 // AgentStock is never written.
+// After the sum check the script rebuilds Product.stockQuantity from the levels (stockService.rebuildCache), so the cache
+// is the sum of on-hand over the locations. The report prints the cache before and after per product.
 
 const CLOSED: OrderStatus[] = ['delivered', 'digital_delivered', 'cancelled', 'returned'];
 const KASAPA = 'Kasapa Express';
@@ -53,13 +57,15 @@ interface ProductRow {
   after: number;
   difference: number;
   inTransitCounter: number;
+  /** Product.stockQuantity after the rebuild (before it was the old warehouse number). */
+  cacheAfter: number;
 }
 
 interface TenantReport {
   tenantId: string;
   alreadyMigrated: boolean;
   ok: boolean;
-  linked3pl: Array<{ location: string; user: string | null }>;
+  linked3pl: Array<{ location: string; user: string | null; setCompany: boolean }>;
   locations: string[];
   rows: ProductRow[];
   ordersA: number;
@@ -71,9 +77,11 @@ interface TenantReport {
   skippedDeliveryDispatch: number;
   oldTransfersToUpdate: number;
   estimateDeliveredDoubleDecrement: number;
+  /** What the run does (dry run) or did to admin products:update_stock on the stored permissions. */
+  adminUpdateStock: 'granted' | 'already there' | 'no stored list';
 }
 
-type Loc = { key: string; name: string; type: 'partner_3pl' | 'agent' | 'in_transit'; userId: number | null; id?: number; needsLink?: boolean };
+type Loc = { key: string; name: string; type: 'partner_3pl' | 'agent' | 'in_transit'; userId: number | null; id?: number; needsLink?: boolean; setCompany?: boolean };
 
 const add = (m: Map<number, number>, k: number, v: number) => m.set(k, (m.get(k) ?? 0) + v);
 
@@ -85,7 +93,7 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
   const [products, agentStocks, users, existingLocs, levelCount] = await Promise.all([
     prisma.product.findMany({ select: { id: true, name: true, stockQuantity: true } }),
     prisma.agentStock.findMany({ select: { agentId: true, productId: true, quantity: true, totalInTransit: true } }),
-    prisma.user.findMany({ where: { role: 'delivery_agent' }, select: { id: true, firstName: true, lastName: true, isActive: true } }),
+    prisma.user.findMany({ where: { role: 'delivery_agent' }, select: { id: true, firstName: true, lastName: true, isActive: true, kind: true } }),
     prisma.stockLocation.findMany(),
     prisma.stockLevel.count(),
   ]);
@@ -153,7 +161,7 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
   const locByUser = new Map(existingLocs.filter((l) => l.userId != null).map((l) => [l.userId as number, l]));
   const locs: Loc[] = [];
   const keyOfUser = new Map<number, string>();
-  const threePl: Array<{ location: string; user: string | null }> = [];
+  const threePl: Array<{ location: string; user: string | null; setCompany: boolean }> = [];
   for (const name of [...new Set([opts.defaultLocation, KASAPA])]) {
     const existing = locByName.get(name);
     let userId = existing?.userId ?? null;
@@ -162,9 +170,11 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
       userId = match?.id ?? null;
     }
     if (userId != null) keyOfUser.set(userId, `3pl:${name}`);
-    locs.push({ key: `3pl:${name}`, name, type: 'partner_3pl', userId, id: existing?.id, needsLink: existing != null && existing.userId == null && userId != null });
+    // A user the script links to a 3PL location is a company: the partners API reads the type from User.kind.
+    const setCompany = existing?.userId == null && userId != null && userById.get(userId)?.kind !== 'company';
+    locs.push({ key: `3pl:${name}`, name, type: 'partner_3pl', userId, id: existing?.id, needsLink: existing != null && existing.userId == null && userId != null, setCompany });
     const linked = userId != null ? userById.get(userId) : undefined;
-    threePl.push({ location: name, user: linked ? `${fullName(linked)} (user ${linked.id})` : null });
+    threePl.push({ location: name, user: linked ? `${fullName(linked)} (user ${linked.id})` : null, setCompany });
   }
   const defaultKey = `3pl:${opts.defaultLocation}`;
 
@@ -174,7 +184,7 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
   for (const c of corrections) if (c.holderUserId != null && !keyOfUser.has(c.holderUserId)) needAgent.add(c.holderUserId);
   const missingUsers = [...needAgent].filter((id) => !userById.has(id));
   if (missingUsers.length) {
-    const more = await prisma.user.findMany({ where: { id: { in: missingUsers } }, select: { id: true, firstName: true, lastName: true, isActive: true } });
+    const more = await prisma.user.findMany({ where: { id: { in: missingUsers } }, select: { id: true, firstName: true, lastName: true, isActive: true, kind: true } });
     for (const u of more) userById.set(u.id, u);
   }
   const takenNames = new Set([...locByName.keys(), ...locs.map((l) => l.name)]);
@@ -222,16 +232,19 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
     const cb = unitsB.get(p.id) ?? 0;
     const before = w + a + ca + cb;
     const after = afterOf(p.id);
-    return { productId: p.id, name: p.name, warehouse: w, agents: a, correctionA: ca, correctionB: cb, before, after, difference: after - before, inTransitCounter: counter.get(p.id) ?? 0 };
+    return { productId: p.id, name: p.name, warehouse: w, agents: a, correctionA: ca, correctionB: cb, before, after, difference: after - before, inTransitCounter: counter.get(p.id) ?? 0, cacheAfter: planned.get(p.id) ?? 0 };
   }).filter((r) => r.before !== 0 || r.after !== 0 || r.inTransitCounter !== 0);
 
   const report: TenantReport = {
     tenantId, alreadyMigrated, ok: true, linked3pl: threePl, locations: locs.map((l) => `${l.name} [${l.type}${l.id ? '' : ', new'}]`),
     rows: [], ordersA: kindA.orders, ordersB: kindB.orders, unitsBByStatus: kindB.byStatus, unitsA, unitsB, skippedDeliveryDispatch: viaDelivery.size, oldTransfersToUpdate,
     estimateDeliveredDoubleDecrement: deliveredPublic._sum.quantity ?? 0,
+    adminUpdateStock: await grantAdminUpdateStock(tenantId, prisma, true),
   };
 
   if (alreadyMigrated) {
+    // A tenant migrated before the grant existed still gets it on a re-run.
+    if (!opts.dryRun) await grantAdminUpdateStock(tenantId);
     return report;
   }
 
@@ -245,6 +258,7 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
     const systemUserId = await getSystemUserId(tenantId);
     const idOf = new Map<string, number>();
     for (const l of locs) {
+      if (l.setCompany) await tx.user.update({ where: { id: l.userId! }, data: { kind: 'company' } });
       if (l.id) {
         idOf.set(l.key, l.id);
         if (l.needsLink) await tx.stockLocation.update({ where: { id: l.id }, data: { userId: l.userId } });
@@ -280,6 +294,10 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
       if (a !== b) wrong.push(`product ${id}: before ${b}, after ${a}`);
     }
     if (wrong.length) throw new Error(`Stock sums differ after the write, rolled back: ${wrong.join('; ')}`);
+
+    await grantAdminUpdateStock(tenantId, tx);
+    const cache = await rebuildCache(tx);
+    for (const r of report.rows) r.cacheAfter = cache.get(r.productId) ?? r.cacheAfter;
   }, { timeout: 600_000, maxWait: 30_000 });
   return report;
 }
@@ -311,7 +329,8 @@ async function backfillTransfers(client: TransactionClient, locOfUser: Map<numbe
 function printReport(r: TenantReport, opts: MigrateOptions, log: (s: string) => void) {
   log(`\nTenant ${r.tenantId}${r.alreadyMigrated ? ' - already migrated (levels exist), nothing written' : ''}`);
   log(`  default location (old warehouse number goes here): ${opts.defaultLocation}`);
-  for (const t of r.linked3pl) log(`  3PL "${t.location}" linked to user: ${t.user ?? 'none (no matching delivery agent user)'}`);
+  for (const t of r.linked3pl) log(`  3PL "${t.location}" linked to user: ${t.user ?? 'none (no matching delivery agent user)'}${t.setCompany ? ' - user kind set to company' : ''}`);
+  log(`  admin products:update_stock: ${r.adminUpdateStock === 'granted' && !opts.dryRun ? 'granted' : r.adminUpdateStock === 'granted' ? 'would be granted' : r.adminUpdateStock}`);
   log(`  locations: ${r.locations.join('; ')}`);
   log(`  old transfers to get from/to locations: ${r.oldTransfersToUpdate}`);
   log(`  out_for_delivery correction (a): ${r.ordersA} orders, ${[...r.unitsA].map(([p, u]) => `product ${p}: ${u}`).join(', ') || 'no units'}` +
@@ -320,8 +339,8 @@ function printReport(r: TenantReport, opts: MigrateOptions, log: (s: string) => 
   log(`    (b) units by order status now: ${JSON.stringify(r.unitsBByStatus)}`);
   log(`  note: ${r.estimateDeliveredDoubleDecrement} package units on delivered COD checkout orders were lowered at creation and again at delivery (upper bound of historic drift; not changed, the stock count fixes it)`);
   if (r.alreadyMigrated) return;
-  log('  product | warehouse | agents | (a) | (b) | before | after | difference | totalInTransit counter (info only)');
-  for (const x of r.rows) log(`  ${x.productId} ${x.name} | ${x.warehouse} | ${x.agents} | ${x.correctionA} | ${x.correctionB} | ${x.before} | ${x.after} | ${x.difference} | ${x.inTransitCounter}`);
+  log('  product | warehouse | agents | (a) | (b) | before | after | difference | totalInTransit counter (info only) | warehouse (cache before) -> cache after');
+  for (const x of r.rows) log(`  ${x.productId} ${x.name} | ${x.warehouse} | ${x.agents} | ${x.correctionA} | ${x.correctionB} | ${x.before} | ${x.after} | ${x.difference} | ${x.inTransitCounter} | ${x.warehouse} -> ${x.cacheAfter}`);
   log(r.ok ? '  sums equal' : '  SUMS DIFFER');
 }
 

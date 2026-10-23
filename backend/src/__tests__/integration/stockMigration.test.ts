@@ -40,6 +40,8 @@ beforeAll(async () => {
   ]);
   p1 = a.id;
   p2 = b.id;
+  // Stored permissions that predate products:update_stock for admin.
+  await db.systemConfig.create({ data: { tenantId, rolePermissions: { admin: { products: ['create', 'view', 'update', 'delete'], orders: ['view'] } } } });
   const customer = await makeCustomer(tenantId);
   // Agent stock. Kofi's totalInTransit counter (20) must NOT become a transfer.
   await db.agentStock.createMany({ data: [
@@ -72,6 +74,9 @@ afterAll(async () => {
   await prismaBase.$disconnect();
 });
 
+const adminProducts = async () =>
+  ((await db.systemConfig.findFirstOrThrow({ where: { tenantId } })).rolePermissions as any).admin.products as string[];
+
 describe('migrate-stock-to-levels', () => {
   it('a dry run writes nothing and reports equal sums', async () => {
     const report = await migrateTenant(tenantId, { ...OPTS, dryRun: true });
@@ -80,18 +85,29 @@ describe('migrate-stock-to-levels', () => {
     expect(await db.stockLevel.count({ where: { tenantId } })).toBe(0);
     const copybook = report.rows.find((r) => r.productId === p1)!;
     // before = warehouse 100 + agents 20 + 36 + (a) 3 + 1 + (b) 2
-    expect(copybook).toMatchObject({ warehouse: 100, agents: 56, correctionA: 4, correctionB: 2, before: 162, after: 162, difference: 0, inTransitCounter: 20 });
+    expect(copybook).toMatchObject({ warehouse: 100, agents: 56, correctionA: 4, correctionB: 2, before: 162, after: 162, difference: 0, inTransitCounter: 20, cacheAfter: 162 });
     expect(report.ordersA).toBe(2);
     expect(report.skippedDeliveryDispatch).toBe(1);
     expect(report.ordersB).toBe(1);
     expect(report.linked3pl[0].user).toContain(`user ${logiswiftUser}`);
+    expect(report.linked3pl[0].setCompany).toBe(true);
+    expect(report.adminUpdateStock).toBe('granted'); // reported, not written
+    expect(await adminProducts()).toEqual(['create', 'view', 'update', 'delete']);
+    expect((await db.user.findUniqueOrThrow({ where: { id: logiswiftUser } })).kind).toBe('person'); // a dry run writes nothing
   });
 
   it('the first real run builds the levels, links the 3PL user and puts back the units of open orders', async () => {
     const report = await migrateTenant(tenantId, OPTS);
     expect(report.ok).toBe(true);
+    expect(report.rows.map((r) => [r.productId, r.warehouse, r.cacheAfter]).sort((a, b) => a[0] - b[0])).toEqual([[p1, 100, 162], [p2, 50, 52]].sort((a, b) => a[0] - b[0]));
     const logiswift = await db.stockLocation.findFirstOrThrow({ where: { tenantId, name: 'Logiswift' } });
     expect(logiswift).toMatchObject({ type: 'partner_3pl', userId: logiswiftUser });
+    // The real run adds update_stock to the stored admin list and keeps the rest.
+    expect(report.adminUpdateStock).toBe('granted');
+    expect(await adminProducts()).toEqual(['create', 'view', 'update', 'delete', 'update_stock']);
+    expect(((await db.systemConfig.findFirstOrThrow({ where: { tenantId } })).rolePermissions as any).admin.orders).toEqual(['view']);
+    // The partners API reads the partner type from User.kind, so the linked 3PL user becomes a company.
+    expect((await db.user.findUniqueOrThrow({ where: { id: logiswiftUser } })).kind).toBe('company');
     expect(await db.stockLocation.findFirst({ where: { tenantId, name: 'Kasapa Express', type: 'partner_3pl' } })).not.toBeNull();
     expect(await db.stockLocation.findFirst({ where: { tenantId, type: 'in_transit' } })).not.toBeNull();
     expect(await db.stockLocation.findFirst({ where: { tenantId, userId: kofi, type: 'agent' } })).not.toBeNull();
@@ -126,10 +142,12 @@ describe('migrate-stock-to-levels', () => {
     expect(rows.every((r) => r.orderId != null && r.status === 'received')).toBe(true);
   });
 
-  it('never writes AgentStock or Product.stockQuantity', async () => {
+  it('never writes AgentStock; rebuilds Product.stockQuantity from the levels (M4-T06)', async () => {
     const stock = await db.agentStock.findMany({ where: { tenantId }, orderBy: { agentId: 'asc' } });
     expect(stock.map((s) => [s.quantity, s.totalInTransit]).sort()).toEqual([[20, 0], [36, 20]]);
-    expect((await db.product.findUniqueOrThrow({ where: { id: p1 } })).stockQuantity).toBe(100);
+    // The old warehouse numbers were 100 and 50; the cache is now the sum of the levels.
+    expect((await db.product.findUniqueOrThrow({ where: { id: p1 } })).stockQuantity).toBe(162);
+    expect((await db.product.findUniqueOrThrow({ where: { id: p2 } })).stockQuantity).toBe(52);
   });
 
   it('a second run changes nothing', async () => {
@@ -141,7 +159,27 @@ describe('migrate-stock-to-levels', () => {
     const before = await snapshot();
     const report = await migrateTenant(tenantId, OPTS);
     expect(report.alreadyMigrated).toBe(true);
+    expect(report.adminUpdateStock).toBe('already there');
+    expect(await adminProducts()).toEqual(['create', 'view', 'update', 'delete', 'update_stock']);
     expect(await snapshot()).toEqual(before);
+  });
+});
+
+describe('a tenant migrated before the grant existed', () => {
+  it('a re-run grants update_stock and skips the rest; no stored list changes nothing', async () => {
+    const t = (await createTenant('StockMig3')).id;
+    await db.stockLevel.count(); // the tenant has no levels: the grant is the only thing a re-run could add
+    await db.systemConfig.create({ data: { tenantId: t, rolePermissions: { admin: { products: ['view'] } } } });
+    const levelOwner = await db.stockLocation.create({ data: { tenantId: t, type: 'own_store', name: 'S' } });
+    const p = await db.product.create({ data: { name: 'P', sku: `Z-${t}`, category: 't', price: 1, stockQuantity: 0, tenantId: t } });
+    await db.stockLevel.create({ data: { tenantId: t, locationId: levelOwner.id, productId: p.id, quantity: 1 } }); // marks it migrated
+    const report = await migrateTenant(t, OPTS);
+    expect(report.alreadyMigrated).toBe(true);
+    const stored = async () => ((await db.systemConfig.findFirstOrThrow({ where: { tenantId: t } })).rolePermissions as any).admin.products;
+    expect(await stored()).toEqual(['view', 'update_stock']);
+    const none = (await createTenant('StockMig4')).id;
+    expect((await migrateTenant(none, { ...OPTS, dryRun: true })).adminUpdateStock).toBe('no stored list');
+    await deleteTenantRows([t, none]);
   });
 });
 

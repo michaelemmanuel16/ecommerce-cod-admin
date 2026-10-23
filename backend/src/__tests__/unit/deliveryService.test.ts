@@ -142,7 +142,7 @@ describe('DeliveryService', () => {
       expect(result.message).toBe('Delivery completed successfully');
       expect(result.glEntry).toEqual({ id: 1, entryNumber: 'JE-001' });
       expect(mockedTransition).toHaveBeenCalledWith(1, 'delivered', expect.objectContaining({ kind: 'system' }),
-        expect.objectContaining({ skipLegacyStock: true, postRevenueAlways: true, paymentStatus: 'collected' }));
+        expect.objectContaining({ postRevenueAlways: true, paymentStatus: 'collected' }));
     });
   });
 });

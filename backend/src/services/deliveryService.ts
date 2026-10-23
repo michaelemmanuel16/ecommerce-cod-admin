@@ -263,14 +263,13 @@ export class DeliveryService {
         });
       }
 
-      // Move the order to delivered through the state machine. D8: this writer does no stock work.
+      // Move the order to delivered through the state machine; it also takes the stock (F-657).
       // D14: it posts revenue whatever the codAmount. The posting is the machine's shared one and
       // idempotent (active-entry guard), so a repeat or an earlier status-path post leaves one entry.
       const moved = await transitionOrder(delivery.orderId, 'delivered', actor, {
         note: 'Order delivered successfully',
         paymentStatus: 'collected',
         postRevenueAlways: true,
-        skipLegacyStock: true,
         tx,
       });
 

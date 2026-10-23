@@ -165,33 +165,6 @@ export const deleteProduct = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
-export const updateProductStock = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-
-    const { id } = req.params;
-    const productId = parseInt(id, 10);
-
-    if (isNaN(productId)) {
-      res.status(400).json({ error: 'Invalid product ID' });
-      return;
-    }
-
-    const { stockQuantity } = req.body;
-
-    const product = await prisma.product.update({
-      where: {
-        id: productId,
-
-      },
-      data: { stockQuantity }
-    });
-
-    res.json({ product });
-  } catch (error) {
-    throw error;
-  }
-};
-
 export const getLowStockProducts = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
 

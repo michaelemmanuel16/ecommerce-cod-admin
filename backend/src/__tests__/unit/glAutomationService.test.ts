@@ -304,27 +304,6 @@ describe('GLAutomationService', () => {
     });
   });
 
-  describe('restoreInventory', () => {
-    it('should increment stock', async () => {
-      const mockTx: any = {
-        product: {
-          update: jest.fn().mockResolvedValue({}),
-        },
-      };
-
-      const orderItems: any[] = [
-        {
-          productId: 1,
-          quantity: 2,
-          product: { name: 'Test Product' }
-        },
-      ];
-
-      await GLAutomationService.restoreInventory(mockTx, orderItems as any);
-      expect(mockTx.product.update).toHaveBeenCalled();
-    });
-  });
-
   describe('GL debit=credit balance validation (Issue 8)', () => {
     const createMockTx = () => ({
       journalEntry: {

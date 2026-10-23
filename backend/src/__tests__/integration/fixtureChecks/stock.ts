@@ -3,7 +3,9 @@
  * Called from numbersFixture.test.ts, which seeds once. Declares describe/it blocks only.
  */
 import { describe, it, expect } from '@jest/globals';
-import { prismaBase } from '../../../utils/prisma';
+import prisma, { prismaBase } from '../../../utils/prisma';
+import { runInTenant } from '../../../utils/tenantContext';
+import { rebuildCache } from '../../../services/stockService';
 
 /** Statuses whose units are reserved at the holder (F-651). */
 const OPEN_STATUSES = "('confirmed','preparing','ready_for_pickup','out_for_delivery')";
@@ -31,6 +33,14 @@ export function stockFixtureChecks(getTenantId: () => string): void {
         SELECT p.sku, p.stock_quantity, COALESCE((SELECT SUM(s.quantity) FROM stock_levels s WHERE s.product_id = p.id), 0) AS levels
         FROM products p WHERE p.tenant_id = $1`);
       for (const r of cache) expect([r.sku, r.stock_quantity]).toEqual([r.sku, Number(r.levels)]);
+    });
+
+    it('stockService.rebuildCache gives the stored Product.stockQuantity of every physical product', async () => {
+      const stored = new Map((await prismaBase.product.findMany({ where: { tenantId: getTenantId(), productType: { not: 'digital' } }, select: { id: true, stockQuantity: true } }))
+        .map((p) => [p.id, p.stockQuantity]));
+      const rebuilt = await runInTenant(getTenantId(), () => prisma.$transaction((tx) => rebuildCache(tx)));
+      expect(rebuilt.size).toBe(stored.size);
+      expect([...rebuilt]).toEqual([...stored].sort((a, b) => a[0] - b[0]));
     });
 
     it('has the five partner locations of the fixture, linked to their users, plus the in-transit location', async () => {

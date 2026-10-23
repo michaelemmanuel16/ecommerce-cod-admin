@@ -599,32 +599,6 @@ export class GLAutomationService {
   }
 
   /**
-   * Restore inventory quantities when order is returned
-   *
-   * Increases product stock quantities by the amounts in the order
-   *
-   * @param tx - Prisma transaction client
-   * @param orderItems - Array of order items with product information
-   */
-  static async restoreInventory(
-    tx: Prisma.TransactionClient,
-    orderItems: OrderItemWithProduct[]
-  ): Promise<void> {
-    for (const item of orderItems) {
-      await tx.product.update({
-        where: { id: item.productId },
-        data: {
-          stockQuantity: {
-            increment: item.quantity,
-          },
-        },
-      });
-
-      logger.info(`Restored inventory for product ${item.product.name}: +${item.quantity} units`);
-    }
-  }
-
-  /**
    * Log warning for products missing COGS
    *
    * @param orderId - Order ID for logging context
