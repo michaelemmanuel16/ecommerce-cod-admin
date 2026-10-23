@@ -9,6 +9,7 @@ export const reportsService = {
     const { data } = await apiClient.get<T>(`/api/reports/${tab}`, {
       params: { from: params.from, to: params.to, ...(params.compare && { compare: 'previous' }) },
       skipCache: fresh,
+      quiet: true, // the tab shows the server's sentence itself (inline), so no second toast
     });
     return data;
   },
