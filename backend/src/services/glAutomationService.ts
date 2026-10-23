@@ -987,26 +987,33 @@ export class GLAutomationService {
   }
 
   /**
-   * Create GL entry for inventory purchase (when a shipment arrives at warehouse)
+   * Inventory purchase entry, posted once when a shipment is received (M4-T12, F-606).
    *
-   * DR: Inventory (1200)       = totalCost
-   * CR: Cash in Hand (1010)    = totalCost
+   * DR: Inventory (1200)       = total in store currency (the full shipment total, not only the counted units)
+   * CR: Cash in Hand (1010)    = the same
+   *
+   * Dated the received date. A repeat for the same shipment returns the entry already posted.
    *
    * @param tx - Prisma transaction client
-   * @param shipment - The inventory shipment record
-   * @param userId - ID of user marking arrival
-   * @returns Created journal entry
+   * @param shipment - The inventory shipment record with its product
+   * @param totalStore - Shipment total in the store currency, at the rate of the received date
+   * @param entryDate - Received date
+   * @param userId - ID of user receiving the shipment
    */
   static async createInventoryPurchaseEntry(
     tx: Prisma.TransactionClient,
     shipment: InventoryShipment & { product: Product },
+    totalStore: Money.MoneyInput,
+    entryDate: Date,
     userId: number
   ): Promise<JournalEntryWithTransactions> {
-    // Idempotency guard — prevent duplicate GL entries for the same shipment
+    // Idempotency guard — prevent duplicate GL entries for the same shipment. The claim entry (settled claim) shares the
+    // source type and carries an external ref, so it is not the purchase entry.
     const existingEntry = await tx.journalEntry.findFirst({
       where: {
         sourceType: JournalSourceType.inventory_purchase,
         sourceId: shipment.id,
+        externalRef: null,
         isVoided: false
       },
       include: { transactions: { include: { account: true } } }
@@ -1016,14 +1023,14 @@ export class GLAutomationService {
       return existingEntry as JournalEntryWithTransactions;
     }
 
-    const totalCost = Money.parse(shipment.totalCost);
+    const totalCost = Money.parse(totalStore);
 
     const transactions: TransactionCreateData[] = [
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.INVENTORY, tx),
         debitAmount: totalCost,
         creditAmount: Money.ZERO,
-        description: `Inventory purchase - ${shipment.product.name} (${shipment.quantity} units)`,
+        description: `Inventory purchase - ${shipment.product.name} (${shipment.quantity} units shipped)`,
       },
       {
         accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
@@ -1034,14 +1041,65 @@ export class GLAutomationService {
     ];
 
     return await this.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate,
       description: `Inventory purchase - ${shipment.product.name} x${shipment.quantity} from ${shipment.supplier || 'Unknown'}`,
       sourceType: JournalSourceType.inventory_purchase,
       sourceId: shipment.id,
       createdBy: userId,
+      tenantId: shipment.tenantId ?? undefined,
       transactions: {
         create: transactions,
       },
+    });
+  }
+
+  /**
+   * Supplier claim settled with money recovered (M4-T12, F-608): the cash comes back and the inventory value goes down.
+   *
+   * DR: Cash in Hand (1010)    = amount recovered
+   * CR: Inventory (1200)       = amount recovered
+   *
+   * Source is the shipment (inventory_purchase) with external ref `claim:<shipmentId>`, which is also unique per tenant,
+   * so a second settle cannot post twice.
+   */
+  static async createInventoryClaimEntry(
+    tx: Prisma.TransactionClient,
+    shipment: InventoryShipment & { product: Product },
+    amountRecovered: Money.MoneyInput,
+    userId: number,
+    entryDate: Date = new Date()
+  ): Promise<JournalEntryWithTransactions> {
+    const externalRef = `claim:${shipment.id}`;
+    const existingEntry = await tx.journalEntry.findFirst({
+      where: { sourceType: JournalSourceType.inventory_purchase, sourceId: shipment.id, externalRef, isVoided: false },
+      include: { transactions: { include: { account: true } } }
+    });
+    if (existingEntry) return existingEntry as JournalEntryWithTransactions;
+
+    const amount = Money.parse(amountRecovered);
+    const transactions: TransactionCreateData[] = [
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND, tx),
+        debitAmount: amount,
+        creditAmount: Money.ZERO,
+        description: `Supplier claim recovered - ${shipment.supplier || 'Unknown supplier'}`,
+      },
+      {
+        accountId: await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.INVENTORY, tx),
+        debitAmount: Money.ZERO,
+        creditAmount: amount,
+        description: `Short shipment recovered - ${shipment.product.name}`,
+      },
+    ];
+    return await this.createJournalEntryWithRetry(tx, {
+      entryDate,
+      description: `Supplier claim recovered - ${shipment.product.name} shipment #${shipment.id}`,
+      sourceType: JournalSourceType.inventory_purchase,
+      sourceId: shipment.id,
+      externalRef,
+      createdBy: userId,
+      tenantId: shipment.tenantId ?? undefined,
+      transactions: { create: transactions },
     });
   }
 

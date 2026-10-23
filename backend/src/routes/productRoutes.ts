@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import * as productController from '../controllers/productController';
-import * as shipmentController from '../controllers/shipmentController';
 import { authenticate, requireResourcePermission, requireEitherPermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
@@ -10,13 +9,6 @@ const router = Router();
 
 router.use(authenticate);
 router.use(tenantRateLimiter);
-
-// Shipment routes (must be before /:id to avoid route conflicts)
-router.get('/shipments', requireResourcePermission('products', 'view'), shipmentController.listShipments);
-router.post('/shipments', requireResourcePermission('products', 'update_stock'), shipmentController.createShipment);
-router.get('/shipments/:id', requireResourcePermission('products', 'view'), shipmentController.getShipment);
-router.patch('/shipments/:id', requireResourcePermission('products', 'update_stock'), shipmentController.updateShipment);
-router.delete('/shipments/:id', requireResourcePermission('products', 'update_stock'), shipmentController.deleteShipment);
 
 // Allow access if user has products:view OR orders:create permission
 // This enables Sales Reps to see products when creating orders, even without products menu access
