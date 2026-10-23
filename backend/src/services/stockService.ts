@@ -57,15 +57,14 @@ export interface LockedProduct { id: number; productType: string; cogs: Prisma.D
 
 /**
  * Lock the product row and read it, in one statement (404 when it is not in this tenant). Every stock change of one
- * product waits here, so level checks, sums and the cache are consistent. A digital product has no stock: it is refused
- * unless `allowDigital`.
+ * product waits here, so level checks, sums and the cache are consistent. A digital product has no stock: it is refused.
  */
-export async function lockProduct(tx: TransactionClient, productId: number, opts: { allowDigital?: boolean } = {}): Promise<LockedProduct> {
+export async function lockProduct(tx: TransactionClient, productId: number): Promise<LockedProduct> {
   const rows = await tx.$queryRaw<LockedProduct[]>`
     SELECT id, product_type AS "productType", cogs, name FROM products
     WHERE id = ${productId} AND tenant_id = ${resolveTenantId()} FOR UPDATE`;
   if (rows.length === 0) throw new AppError('Product not found', 404);
-  if (rows[0].productType === 'digital' && !opts.allowDigital) throw new AppError(`"${rows[0].name}" is a digital product and has no stock`, 400);
+  if (rows[0].productType === 'digital') throw new AppError(`"${rows[0].name}" is a digital product and has no stock`, 400);
   return rows[0];
 }
 
