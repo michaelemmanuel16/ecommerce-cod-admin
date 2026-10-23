@@ -62,6 +62,7 @@ beforeAll(async () => {
   otherTenantId = (await createTenant('Transfers Api Other')).id;
   await mkUser('owner', 'super_admin');
   await mkUser('keeper', 'inventory_manager');
+  await mkUser('admin', 'admin');
   await mkUser('manager', 'manager');
   await mkUser('rep', 'sales_rep');
   const swiftUser = await mkUser('swift', 'delivery_agent', { kind: 'company' });
@@ -142,6 +143,19 @@ describe('POST /api/inventory/transfers (create)', () => {
   it('404 for a product or location that does not exist', async () => {
     expect((await post('owner', '/transfers', { type: 'allocation', productId: 999999, quantity: 1, fromLocationId: swift, toLocationId: esi })).status).toBe(404);
     expect((await allocate('owner', 999999, 1)).status).toBe(404);
+  });
+});
+
+describe('admin role (F-654: owner, admin and stock keeper write stock)', () => {
+  it('an admin can create a transfer and adjust; a manager gets 403 on both', async () => {
+    const spare = await location('Admin spare', 'agent');
+    const made = await allocate('admin', spare, 1);
+    expect(made.status).toBe(201);
+    await post('admin', `/transfers/${made.body.transfer.id}/cancel`);
+    const now = await level(spare);
+    expect((await post('admin', '/adjust', { locationId: spare, productId: copybook, newQuantity: now + 1, reason: 'found_extra_stock' })).status).toBe(200);
+    expect((await allocate('manager', spare, 1)).status).toBe(403);
+    expect((await post('manager', '/adjust', { locationId: spare, productId: copybook, newQuantity: now + 5, reason: 'found_extra_stock' })).status).toBe(403);
   });
 });
 
