@@ -74,11 +74,11 @@ export function productSummary(row: OrderListRow): string {
   return `${name} × ${first.quantity}${rest.length ? ` + ${rest.length} more` : ''}`;
 }
 
-/** "17 Oct, 14:02". */
+/** "17 Oct, 14:02", in store time (Africa/Accra, as the order drawer), not the browser's zone. */
 export function shortDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleString('en-GB', { timeZone: 'Africa/Accra', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 /** Orders that can be deleted (F-316). The others have money or stock effects. */
