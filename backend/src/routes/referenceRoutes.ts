@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import { authenticate } from '../middleware/auth';
 import { getRegions } from '../controllers/referenceController';
+import { optionalAuthenticate } from '../middleware/auth';
 import { apiLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-router.get('/regions', apiLimiter, authenticate, getRegions);
+// Public: the checkout page needs the regions without a login. A token only supplies the store's country.
+router.get('/regions', apiLimiter, optionalAuthenticate, getRegions);
 
 export default router;

@@ -133,7 +133,7 @@ function loadGTM(containerId: string): void {
   document.head.appendChild(script);
 }
 
-const PIXEL_PATTERNS: Record<string, RegExp> = {
+export const PIXEL_PATTERNS: Record<string, RegExp> = {
   facebook: /^\d+$/,
   ga4: /^G-[A-Z0-9]+$/,
   tiktok: /^[A-Z0-9]+$/i,

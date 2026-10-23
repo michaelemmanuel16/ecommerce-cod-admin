@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
-import { Button } from '../components/ui/Button';
+import { Button, Tag } from '../components/ui-v2';
+import { useV2Page } from '../components/shell/useV2Page';
 import { Loading } from '../components/ui/Loading';
 import {
   CheckoutFormBuilder,
@@ -13,11 +14,14 @@ import { CheckoutForm } from '../types/checkout-form';
 import { Product } from '../types';
 import { checkoutFormsService } from '../services/checkout-forms.service';
 import { productsService } from '../services/products.service';
+import { usePermissions } from '../hooks/usePermissions';
 
 const UNSAVED_PROMPT = 'You have unsaved changes. Discard them?';
 
 export const CheckoutFormEditor: React.FC = () => {
+  useV2Page();
   const navigate = useNavigate();
+  const { isAdmin: canEdit } = usePermissions();
   const { id: idParam } = useParams<{ id: string }>();
   const isCreateMode = !idParam || idParam === 'new';
   const formId = isCreateMode ? null : Number(idParam);
@@ -89,6 +93,7 @@ export const CheckoutFormEditor: React.FC = () => {
       if (formId !== null) {
         const updated = await checkoutFormsService.updateCheckoutForm(formId, data);
         setInitialForm(updated);
+        return updated;
       } else {
         const created = await checkoutFormsService.createCheckoutForm(data);
         navigate(`/checkout-forms/${created.id}/edit`, { replace: true });
@@ -112,12 +117,12 @@ export const CheckoutFormEditor: React.FC = () => {
 
   if (loadError) {
     return (
-      <div className="space-y-4">
-        <Button variant="secondary" size="sm" onClick={handleBack}>
+      <div className="stack">
+        <Button onClick={handleBack}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back to forms
         </Button>
-        <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">
+        <div className="banner-note bad">
           {loadError}
         </div>
       </div>
@@ -130,19 +135,17 @@ export const CheckoutFormEditor: React.FC = () => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-7rem)]">
-      <div className="flex items-center justify-between gap-3 flex-none pb-3 border-b border-gray-200">
+      <div className="flex items-center justify-between gap-3 flex-none pb-3 edhead">
         <div className="flex items-center gap-3 min-w-0">
-          <Button variant="secondary" size="sm" onClick={handleBack}>
+          <Button onClick={handleBack}>
             <ArrowLeft className="w-4 h-4 mr-1" />
             Back
           </Button>
-          <h1 className="text-lg font-semibold text-gray-900 truncate">
+          <h1 className="edtitle truncate">
             {title}
           </h1>
           {isDirty && (
-            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
-              Unsaved
-            </span>
+            <Tag tone="warn">Unsaved</Tag>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -153,8 +156,6 @@ export const CheckoutFormEditor: React.FC = () => {
             </>
           )}
           <Button
-            variant="secondary"
-            size="sm"
             onClick={() => setIsPreviewOpen((v) => !v)}
             title={isPreviewOpen ? 'Hide preview' : 'Show preview'}
           >
@@ -165,14 +166,15 @@ export const CheckoutFormEditor: React.FC = () => {
             )}
             Preview
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => builderRef.current?.submit()}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Saving…' : isCreateMode ? 'Create form' : 'Save'}
-          </Button>
+          {canEdit && (
+            <Button
+              variant="primary"
+              onClick={() => builderRef.current?.submit()}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Saving…' : isCreateMode ? 'Create form' : 'Save'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -185,7 +187,11 @@ export const CheckoutFormEditor: React.FC = () => {
       >
         {/* Editor column scrolls independently of the preview. */}
         <div className="min-w-0 overflow-y-auto pr-1">
+          {!canEdit && (
+            <p className="mb-3 ednote" role="status">Only the owner or an admin can change this form.</p>
+          )}
           <CheckoutFormBuilder
+            readOnly={!canEdit}
             ref={builderRef}
             initialData={initialForm}
             products={products}

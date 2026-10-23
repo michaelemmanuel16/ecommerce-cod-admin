@@ -48,7 +48,7 @@ Four open doors are closed. Public register is gone. Delivery routes check role 
 - `backend/src/controllers/deliveryController.ts`, `backend/src/services/deliveryService.ts`, `backend/src/routes/deliveryRoutes.ts`
 - `backend/src/services/adminService.ts`, `backend/src/controllers/adminController.ts`, `backend/src/routes/adminRoutes.ts`
 - `backend/src/middleware/requireSharedSecret.ts` (new), `backend/src/routes/health.routes.ts`
-- `backend/src/controllers/paystackController.ts`, `backend/src/routes/paystackRoutes.ts`
+- `backend/src/controllers/paymentController.ts`, `backend/src/routes/paystackRoutes.ts`
 - `frontend/src/stores/configStore.ts`, `frontend/src/stores/authStore.ts`
 - Tests: `deliveryRoutesAccess`, `publicConfigMetrics`, `publicRegister`, `publicRoutesTenant` (integration)
 
@@ -71,7 +71,7 @@ Every tenant row now carries a required `tenant_id`. A query on a scoped model w
 - `backend/src/services/tenantDefaultsService.ts` (new), `backend/scripts/backfill-null-tenant-chart.ts` (new)
 - `backend/src/sockets/index.ts`, `backend/src/sockets/rooms.ts` (new)
 - `backend/src/middleware/publicTenant.ts`, `backend/src/middleware/auth.ts`, `backend/src/server.ts`
-- `backend/src/services/webhookService.ts`, `backend/src/controllers/paystackController.ts`, `backend/src/controllers/whatsappController.ts`, `backend/src/controllers/publicOrderController.ts`
+- `backend/src/services/webhookService.ts`, `backend/src/controllers/paymentController.ts`, `backend/src/controllers/whatsappController.ts`, `backend/src/controllers/publicOrderController.ts`
 - `backend/src/queues/` (aging, reconciliation, message cleanup, pending-checkout cleanup, workflow, email campaign)
 - `frontend/src/services/tokenRefresh.ts` (new), `frontend/src/services/api.ts`, `frontend/src/services/socket.ts`
 - Tests: `tenantFailClosed`, `scopedModelList`, `tenantQueues`, `socketRooms` (unit); `tenantDefaults`, `perTenantUniques`, `agingTwoTenant`, `authFailClosed`, `publicRoutesTenant`, `socketTenantRooms` (integration)
@@ -113,7 +113,7 @@ Money maths in the backend uses `Money` (Decimal) only. The API sends money as a
 - `backend/src/controllers/publicOrderController.ts`, `financialController.ts`, `bulkOrderController.ts`, `shipmentController.ts`
 - `backend/src/utils/money.ts`, `backend/src/utils/conditionEvaluator.ts`, `backend/src/utils/currency.ts`, `backend/src/mcp/utils.ts`, `backend/src/mcp/tools/`
 - `frontend/src/utils/money.ts` (new), `frontend/src/services/socket.ts`
-- Tests: `moneyContract` (integration, new); `financialService`, `analyticsService`, `paystackSettlementService`, `conditionEvaluator.extended` (unit)
+- Tests: `moneyContract` (integration, new); `financialService`, `analyticsService`, `paymentSettlementService`, `conditionEvaluator.extended` (unit)
 
 ---
 

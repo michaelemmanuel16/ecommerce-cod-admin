@@ -1,77 +1,164 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { publicOrdersService } from '../services/public-orders.service';
-import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { CheckCircle, XCircle, Clock, Loader2, SearchX } from 'lucide-react';
+import { publicOrdersService, type PaymentOutcome, type PublicCheckoutForm } from '../services/public-orders.service';
+import { PublicScreen, StatusIcon, SupportLine } from '../components/public/PublicScreen';
+import { screenColors } from '../lib/publicTheme';
+import { POLL_MS, POLL_LIMIT_MS, REDIRECT_DELAY_MS } from '../lib/paymentPolling';
+
+type View = 'confirming' | 'pending' | 'stalled' | 'success' | 'failed' | 'not_found';
+
+interface FormTheme {
+  design?: PublicCheckoutForm['design'];
+  supportWhatsapp?: string | null;
+}
+
+/** Colours and support number of the form the payment belongs to. A form that is switched off still gives its support number (404 body). */
+async function loadTheme(slug: string): Promise<FormTheme> {
+  try {
+    const form = await publicOrdersService.getPublicForm(slug);
+    return { design: form.design, supportWhatsapp: form.supportWhatsapp };
+  } catch (err: any) {
+    return { supportWhatsapp: err?.response?.data?.supportWhatsapp ?? null };
+  }
+}
 
 export const PaymentCallback: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const [status, setStatus] = useState<'loading' | 'success' | 'failed'>('loading');
-  const [message, setMessage] = useState('');
+  const reference = searchParams.get('reference') || searchParams.get('trxref');
+  // The checkout gives the provider /checkout/payment/callback/<slug>, so the page knows the store even when the
+  // reference is unknown.
+  const { formSlug: formParam = null } = useParams<{ formSlug?: string }>();
+  const [view, setView] = useState<View>(reference ? 'confirming' : 'not_found');
+  const [outcome, setOutcome] = useState<PaymentOutcome | null>(null);
+  const [theme, setTheme] = useState<FormTheme>({});
+  const slug = outcome?.formSlug ?? formParam;
+
+  // Colours and support number of the form the payment belongs to.
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    loadTheme(slug).then((t) => { if (!cancelled) setTheme(t); });
+    return () => { cancelled = true; };
+  }, [slug]);
 
   useEffect(() => {
-    const reference = searchParams.get('reference') || searchParams.get('trxref');
-    if (!reference) {
-      setStatus('failed');
-      setMessage('No payment reference found.');
-      return;
-    }
+    if (!reference) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
 
-    verifyPayment(reference);
-  }, [searchParams]);
-
-  const verifyPayment = async (reference: string) => {
-    try {
-      const result = await publicOrdersService.verifyPayment(reference);
-      if (result.success) {
-        setStatus('success');
-      } else {
-        setStatus('failed');
-        setMessage('Payment could not be verified. Please contact support.');
+    const check = async () => {
+      let result: PaymentOutcome | null = null;
+      try {
+        result = await publicOrdersService.verifyPayment(reference);
+      } catch {
+        result = null; // network trouble or a busy server: treat as not confirmed yet and keep asking
       }
-    } catch {
-      setStatus('failed');
-      setMessage('Unable to verify payment. Please contact support if you were charged.');
-    }
-  };
+      if (cancelled) return;
+      if (result) {
+        setOutcome(result);
+        if (result.status === 'success') return setView('success');
+        if (result.status === 'failed') return setView('failed');
+        if (result.status === 'not_found') return setView('not_found');
+      }
+      if (Date.now() - startedAt >= POLL_LIMIT_MS) return setView('stalled');
+      setView('pending');
+      timer = setTimeout(check, POLL_MS);
+    };
+    check();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [reference]);
+
+  // A form with its own thank-you page: the server built the URL (same details as a COD order); leave for it.
+  useEffect(() => {
+    if (view !== 'success' || !outcome?.redirectUrl) return;
+    const url = outcome.redirectUrl;
+    const timer = setTimeout(() => { window.location.href = url; }, REDIRECT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [view, outcome]);
+
+  const { primary } = screenColors(theme.design);
+  const icon = (node: React.ReactNode, tint: string) => <StatusIcon tint={tint}>{node}</StatusIcon>;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
-        {status === 'loading' && (
-          <>
-            <Loader2 className="w-16 h-16 text-blue-500 animate-spin mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Confirming your payment</h2>
-            <p className="text-gray-600">Please wait a moment...</p>
-          </>
-        )}
+    <PublicScreen design={theme.design}>
+      {view === 'confirming' && (
+        <>
+          {icon(<Loader2 className="w-9 h-9 animate-spin" style={{ color: primary }} aria-hidden="true" />, `${primary}1a`)}
+          <h1 className="text-xl font-bold text-gray-900">Confirming your payment. Please wait.</h1>
+        </>
+      )}
 
-        {/* One neutral thank-you for every order type — digital, deposit, full. */}
-        {status === 'success' && (
-          <>
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-10 h-10 text-green-500" />
-            </div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-3">Order received</h2>
-            <p className="text-gray-600">
-              Thank you for your order! We've received it and we're getting it ready.
-              We'll be in touch shortly with the next steps.
-            </p>
-          </>
-        )}
+      {view === 'pending' && (
+        <>
+          {icon(<Clock className="w-9 h-9" style={{ color: primary }} aria-hidden="true" />, `${primary}1a`)}
+          <h1 className="text-xl font-bold text-gray-900">We are waiting for your payment to be confirmed.</h1>
+          <p className="text-sm text-gray-600 mt-2">Keep this page open. It updates by itself.</p>
+        </>
+      )}
 
-        {status === 'failed' && (
-          <>
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <XCircle className="w-10 h-10 text-red-500" />
-            </div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Payment Issue</h2>
-            <p className="text-gray-600 mb-6">{message}</p>
-            <p className="text-sm text-gray-500">
-              If you were charged, please contact support with your payment reference.
+      {view === 'stalled' && (
+        <>
+          {icon(<Clock className="w-9 h-9 text-amber-600" aria-hidden="true" />, '#fef3c7')}
+          <h1 className="text-xl font-bold text-gray-900">We have not received your payment yet.</h1>
+          <p className="text-sm text-gray-600 mt-2">
+            If you were charged, your order will appear within a few minutes. Your reference is <span className="font-mono font-semibold">{reference}</span>.
+          </p>
+          <SupportLine supportWhatsapp={theme.supportWhatsapp} color={primary} />
+        </>
+      )}
+
+      {view === 'success' && (
+        <>
+          {icon(<CheckCircle className="w-9 h-9" style={{ color: primary }} aria-hidden="true" />, `${primary}1a`)}
+          <h1 className="text-2xl font-bold text-gray-900">Order received.</h1>
+          {outcome?.orderNumber && (
+            <p className="text-gray-700 mt-2">
+              Your order number is <span className="font-bold font-mono" style={{ color: primary }} data-testid="order-number">{outcome.orderNumber}</span>.
             </p>
-          </>
-        )}
-      </div>
-    </div>
+          )}
+          {outcome?.orderType === 'digital' && (
+            <p className="text-sm text-gray-700 mt-3">
+              {outcome.email ? `We sent the download link to ${outcome.email}.` : 'We sent the download link to your email.'}
+            </p>
+          )}
+        </>
+      )}
+
+      {view === 'failed' && (
+        <>
+          {icon(<XCircle className="w-9 h-9 text-red-600" aria-hidden="true" />, '#fee2e2')}
+          <h1 className="text-xl font-bold text-gray-900">The payment did not go through.</h1>
+          {outcome?.formSlug && (
+            // Same tab: the Facebook in-app browser loses a new one.
+            <a
+              href={`/form/${outcome.formSlug}`}
+              className="mt-5 inline-block w-full rounded-lg py-3 font-semibold text-white"
+              style={{ backgroundColor: primary }}
+            >
+              Try again
+            </a>
+          )}
+          <p className="text-sm text-gray-600 mt-4">
+            If you were charged, send us your reference <span className="font-mono font-semibold">{reference}</span>.
+          </p>
+          <SupportLine supportWhatsapp={theme.supportWhatsapp} color={primary} />
+        </>
+      )}
+
+      {view === 'not_found' && (
+        <>
+          {icon(<SearchX className="w-9 h-9 text-gray-500" aria-hidden="true" />, '#f3f4f6')}
+          <h1 className="text-xl font-bold text-gray-900">We could not find this payment.</h1>
+          <p className="text-sm text-gray-600 mt-2">Check the link or contact us.</p>
+          <SupportLine supportWhatsapp={theme.supportWhatsapp} color={primary} />
+        </>
+      )}
+    </PublicScreen>
   );
 };

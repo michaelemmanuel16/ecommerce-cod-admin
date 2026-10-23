@@ -161,3 +161,148 @@ docs/
   snippet; a per-tenant widget bundle is backlog
 - Meta CAPI server-side events
 - Tenant-level brand palette overrides
+
+## COD-33 — Checkout forms API and public checkout rules (M3b T08–T09)
+
+- **Date:** 2026-10-23 · **Type:** feature · **Branch:** `feature/m3b-checkout-payments`
+- **Commits:** `3c21943` (T08), `23c7809` (upsell tenant check), `d4fdcac` (T09), `568d785` (duplicate reply), `98562b2` (town), `2b04a26` (review and simplify fixes)
+
+### Admin API (T08)
+- `GET /api/checkout-forms?archived=true|false`: archived forms are hidden by default. Each row has `ordersThisMonth`, `ordersTotal` (one grouped query) and `conversion: null` (visits come in M8, F-409).
+- `DELETE /:id` archives a form that has submissions or a payment in flight (`archivedAt`, inactive, slug kept) and answers `{ archived: true, ordersTotal }`. Any other form is deleted. Both add `warning: "No active form sells this product."` when the form was the product's last active form.
+- `POST /:id/restore` (super_admin, admin) clears `archivedAt`. The form stays off.
+- `POST /:id/clone` (super_admin, admin) copies the form, packages and upsells by omission: name `"<name> (copy)"`, a free slug (`-2` … `-50`, then a random suffix), inactive. The Conversion API token and test event code are not copied (`capiTokenNotCopied`).
+- Basics: thank-you page must be `https://`; allowed domains are hosts, stored as `https://host`; country is read-only and comes from the store (`countryNameOfTenant`). Pixel ids: Facebook digits only, GA4 `G-`, GTM `GTM-`.
+- Type follows the product (F-422): a mismatched `formType` is 400; a product change across types on a form with orders is 400; add-ons on a digital form must be digital products. Every add-on product must belong to the store (400 "Upsell product not found").
+- Required keys on activation (F-411): physical needs name, phone, street address and region; digital needs name, phone and email. Message: "This form can't take orders yet. Add: …". An empty fields list means the platform defaults and is not blocked.
+- Standard keys `city` (saved as `town`) and `notes`. A form without a town field leaves the town empty (existing rule).
+- Regions: the form's regions must be regions of its country; a new form starts with all of them. `GET /api/reference/regions` is public (`?country=` name or ISO code, or the store country from an optional login; `Cache-Control: public, max-age=86400`).
+- `POST /:id/test-event` (super_admin, admin) sends one test Purchase with the stored token and test event code through `postCapiEvent` (10 s timeout).
+- "Archived" means `archivedAt`, not `isActive=false`. Admin reads use `withSoftDeleted`, because the soft-delete extension still hides inactive forms.
+
+### Public checkout (T09)
+- Order of checks: form active → product active → sold out (physical `stockQuantity <= 0`: "This product is sold out") → package and add-ons → region in the form's list ("Choose a region from the list.") → server price → duplicate guard → create.
+- Add-ons whose product is off or out of stock are hidden on the public form and refused on submit.
+- Duplicate guard: same store, phone, package id and server total within 30 minutes. Only the submitter (same IP on the form submission) gets the order back with `orderId` and `orderNumber`. Anyone else gets a plain success. Neither creates an order or fires CAPI. The hosted page and the embed show the thank-you without an order number and fire no second browser Purchase.
+- The success payload adds `orderNumber` (`#<id>`).
+- `requiresManualCall` stays false: no customer block flag exists (rule comes in M7).
+
+### Key files
+- `backend/src/controllers/checkoutFormController.ts`, `publicOrderController.ts`, `referenceController.ts`
+- `backend/src/utils/checkoutFormRules.ts` (new), `checkoutLocation.ts`, `slugify.ts` (new)
+- `backend/src/middleware/auth.ts` (`optionalAuthenticate`), `services/metaCapiService.ts`, `services/locationService.ts`, `services/checkoutFormService.ts`
+- `frontend/src/pages/PublicCheckout.tsx`, `components/public/OrderSuccess.tsx`, `frontend/embed/*`
+- Tests: `integration/checkoutFormsApi.test.ts`, `integration/publicCheckoutRules.test.ts`
+
+## COD-34 — Forms list and editor Basics, Fields and regions (M3b T10–T11)
+
+- **Date:** 2026-10-23 · **Type:** feature · **Branch:** `feature/m3b-checkout-payments`
+- **Commits:** `b4821b1` (T10), `4e65391` (T11), `610ee96` (review and simplify fixes)
+
+### Forms list (T10)
+- `pages/CheckoutForms.tsx` on ui-v2: Form (name, product, "Digital" tag), Link, Orders this month, Conversion ("—" with a tooltip until visits arrive in M8), Active switch, Actions. "Show archived" loads `?archived=true`; archived rows show an "Archived" tag and Edit and Restore only.
+- Active switch: optimistic, reverts on error and shows the server text (this is how the required-key guard reaches the list).
+- Clone, delete and restore share one `act()` run and update the list in place (no refetch). Clone toast: "Copy created. It stays off until you switch it on." plus "Add the Conversion API token again in Tracking." when the token was not copied.
+- Delete uses `ConfirmDialog`: "<n> orders came from this form. It will be archived …" (n with a thousands separator) or "This form has no orders. It will be removed." The product warning rides on the same toast.
+- Copy link and per-package links (`LinkCell`), host from `VITE_PUBLIC_CHECKOUT_URL` (fallback `window.location.origin`, also used by `lib/embedSnippet.ts`). One `copyText()` in `hooks/useCopyToClipboard.ts`; a refused clipboard opens `CopyFallbackModal` with the text.
+- Roles: the `checkoutForms` menu rule in `backend/src/services/navService.ts` is manager-up (super_admin, admin, manager). `AccessGate` blocks the list and editor routes for everyone else. A manager sees the list read-only (Preview and copy only), and the editor read-only: inputs off, no Save, the line "Only the owner or an admin can change this form." A role with only `settings.view` no longer sees the sidebar link.
+
+### Editor (T11)
+- Basics: name, product (type shown), read-only link, description, read-only country "<country> (from your store)" with currency, read-only form type line, thank-you page (https or empty) and allowed domains (moved from Settings, same rules as the server). A product change on a form with orders shows "New orders use the new product. Past orders do not change." `validateBasics()` in `lib/checkoutBasics.ts` checks before save.
+- Fields: "Sends to" options Customer name, Phone, Alternate phone, Email, Region, City or town (`town` key), Street address, Order notes (`notes`, now sent with the order), Custom field only. Up and down buttons next to drag, Show switch, width, and the note "This field helps Meta match buyers." for name, phone, email and town.
+- Required-key guard: `missingKeysMessage()` in `lib/standardFields.ts` uses the "Sends to" labels; the server `GUARD_LABELS` use the same words ("Add: Region."). The banner shows in Fields and blocks saving a new or active form.
+- New-form fields come from `lib/defaultFields.ts` (`NEW_FORM_FIELDS`, street address on and required). The public form keeps its old wording for saved forms with no fields (`LEGACY_EMPTY_FORM_FIELDS`).
+- Regions: all regions of the store's country to start; the last one cannot be removed ("Keep at least one region.").
+- Open point for the owner: the public form still shows "State" for the region field (COD-138), while F-413 says "Region". The public page is COD-36 (T16).
+
+### Key files
+- `frontend/src/pages/CheckoutForms.tsx`, `pages/checkoutForms/LinkCell.tsx`, `CopyFallbackModal.tsx`, `styles/checkoutForms.css`
+- `frontend/src/components/forms/CheckoutFormBuilder.tsx`, `builder/BasicsTab.tsx`, `FieldsTab.tsx`, `FieldEditModal.tsx`, `SettingsTab.tsx`
+- `frontend/src/lib/checkoutBasics.ts`, `standardFields.ts`, `defaultFields.ts` (new), `orderPayload.ts`, `embedSnippet.ts`; `hooks/useCopyToClipboard.ts`; `services/checkout-forms.service.ts`
+- `backend/src/services/navService.ts`, `utils/checkoutLocation.ts`
+- Tests: `CheckoutForms.test.tsx`, `CheckoutFormBuilder` and `FieldsTab` tests, `checkoutBasics.test.ts`, `accessGate.test.tsx`, `unit/navMenuCheckoutForms.test.ts`, `e2e/17-checkout-forms-list.spec.ts`
+
+## COD-35 — Packages, Upsells, Payment, Tracking, Design and Preview (M3b T12–T15)
+
+- **Date:** 2026-10-23 · **Type:** feature · **Branch:** `feature/m3b-checkout-payments`
+- **Commits:** `0bd1ba8` (T12), `bae6d52` (T13), `9ef4897` (T14), `f9ff831` (T15), `f04d474` (review and simplify fixes)
+- **Migration:** `20261023180000_form_upsell_flags` adds `form_upsells.is_active` (default true) and `is_popular` (default false). Additive.
+
+### Packages and upsells (T12)
+- Packages tab is a table: Sets, Name, Discount (store currency; none, % or fixed), Final price (with "Was"), Badge, Default (one radio), remove. `packageFinalPrice()` and `applyDiscount()` in `lib/packagePricing.ts` are used by the table and the preview (249 × 2 − 49 = 449; 249 × 3 − 118 = 629). Save is blocked when sets < 1 or the final price is below zero.
+- Upsells tab: source product or manual, headline, description, image, quantity, price, discount, popular, on/off. Images go through `/api/upload` (the old builder posted to a missing `/upload` route).
+- Upsell ids are stable: a save updates rows in place, creates new ones and removes missing ones; an id of another form gets 400.
+- Hint: `GET /api/checkout-forms/:id/upsell-stats` (manager-up, tenant-scoped, one query) returns `{ ordersTotal, upsells: [{ upsellId, name, orders }] }`. An upsell order line is matched by `metadata.upsellId`, and by `metadata.upsellName` for lines written before ids were stable. The editor shows "<n>% of buyers also buy this." only from 30 orders. Fetched once per editor load.
+
+### Payment and Tracking (T13)
+- The Settings tab is split into Payment and Tracking (tab order: Basics, Fields, Packages, Upsells, Payment, Tracking, Design).
+- `GET /api/checkout-forms/payment-options` (manager-up) returns `{ prepaidPhysical, connection: { provider, mode, isEnabled, supportedCurrencies, lastCheckedAt } | null }`. It reads safe columns only and decrypts nothing.
+- Payment tab follows `lib/paymentMatrix.ts` (mirror of `services/payments/paymentMethods.ts`): physical with the flag off shows Cash on delivery only, locked; with the flag on, all three with the max-two rule and deposit 1–99; digital shows online in full only, locked. Currency warning uses the server text and disables the online switches; an untested connection only shows a hint. Test mode adds "Real customers cannot pay yet."; flag off with an online method stored shows "Online payment is paused for physical products." "(Nigeria only)" is gone.
+- Tracking tab: Facebook, GA4, TikTok, GTM, CAPI token, test event code. Inline checks from `PIXEL_PATTERNS` with the server messages. The token is write-only: "Connected" + Replace; its value is never in the page. "Send a test event" posts `/:id/test-event` and shows Meta's reply; mocked in every test.
+
+### Design (T14)
+- "Field style" (renamed), label colour, price colour, page background, product banner (JPEG, PNG or WebP up to 1 MB, through `/api/upload`), and "Button text may be hard to read on this colour." under 4.5:1 (`lib/contrast.ts`).
+- The server refuses a banner off the storage host (`R2_PUBLIC_URL`, `isStorageUrl()` in `config/r2.ts`) only when the save changes it; the public and preview payloads drop an off-host banner. In local dev without R2 no banner can be saved.
+- The public form and embed read the new options; empty values keep the old look. The form root sets `color-scheme: light`, so the admin dark mode does not reach it.
+
+### Preview (T15)
+- Live preview at 390 px (Mobile) and 1024 px (Desktop, scaled to the pane). Store currency.
+- `preview` on `CheckoutForm`: every submit path shows "Preview only." and sends nothing. The preview route renders no pixel, GA, TikTok, GTM or CAPI code (those live in `PublicCheckout` and `EmbedCheckout`).
+- `/checkout-forms/:id/preview` sits behind `AccessGate` (manager-up). The list's Preview opens a modal with the same view and a Mobile/Desktop toggle.
+- Not built: a new unsaved form cannot preview an uploaded banner until it is saved.
+
+### Key files
+- `frontend/src/components/forms/CheckoutFormBuilder.tsx`, `PreviewFrame.tsx`, `CheckoutFormPreviewPane.tsx`, `builder/PackagesTab.tsx`, `UpsellsTab.tsx`, `PaymentTab.tsx`, `TrackingTab.tsx`, `DesignTab.tsx`
+- `frontend/src/lib/packagePricing.ts`, `paymentMatrix.ts`, `trackingRules.ts`, `contrast.ts`, `upsellHint.ts`, `previewWidth.ts`; `pages/checkoutForms/PreviewModal.tsx`; `components/public/CheckoutForm.tsx`
+- `backend/src/controllers/checkoutFormController.ts` (`getPaymentOptions`, `getUpsellStats`, `upsellData`, `bannerError`), `routes/checkoutFormRoutes.ts`, `services/checkoutFormService.ts`, `config/r2.ts`, `utils/checkoutFormRules.ts`
+- Removed: `components/forms/PackageEditor.tsx`, `UpsellEditor.tsx`, `builder/SettingsTab.tsx`
+- Tests: Packages/Upsells/Payment/Tracking/Design tab tests, `PublicDesignOptions`, `CheckoutFormPreviewSafety`, `previewRouteGuard`, lib tests, `checkoutFormEditorApi`, `checkoutFormRulesUpsell`, `e2e/18-checkout-forms-editor.spec.ts`
+
+## COD-36 — Public checkout, success and not available screens, payment callback (M3b T16–T18)
+
+### Public checkout page (T16)
+- Sections in F-420 order on the form's own palette (`color-scheme: light`, no admin theme tokens): product header, packages ("Most popular", discount, was-price), add-ons (popular badge, off ones hidden), "Your information", order summary, one button per method, refund note only with an online method (no provider name), and the terms as an in-page section (no new tab).
+- Money: one `formatMoney(amount, currency)` in `utils/money.ts` ("GH₵200", "GH₵649.50"); the admin `formatCurrency` calls it, so the public page and the embed do not load the admin stores.
+- The button shows "Placing your order." after the first tap and ignores a second tap. Sold out and every other failure show above the button; no `alert()` and no toasts.
+- Label "State" (owner decision 2026-10-23, F-413): new forms, the editor's "Sends to" list, the required-field message and the server's "Choose a state from the list." Migration `20261023190000_form_state_label` renamed stored "Region" and "Region/State" labels to "State" (8 dev forms; test DB had none); other labels, such as "County", stay as typed. The client rewrite is gone, so the buyer sees the label the owner typed.
+- Hosted page and embed share `placeOrder()` (`lib/orderPayload.ts`). The embed shows "This form cannot be shown here." when its host is refused. Tracking calls are unchanged.
+
+### Success, not available, digital (T17)
+- "Order placed", the order number, "What happens next" (COD: we call you, we deliver, you pay on arrival; digital: the download link was sent) and "Message us on WhatsApp" (`wa.me`, same tab) when the store has a support number. A repeat order and a reload inside the 10-minute cooldown show the same screen with no tracking. The auto-confirm WhatsApp line waits for the tenant setting (F-466).
+- "This form is not available." for a missing, switched-off or archived form, with the support link; no button into the admin app. The public form payload and its 404 carry the store's `supportWhatsapp` and nothing else about the store.
+- Digital forms show no address fields; email is required; online payment in full only.
+
+### Payment callback (T18)
+- `GET /api/payments/verify/:reference` (alias `/api/paystack/verify/:reference`) returns `{ status, orderNumber?, orderType, formSlug, redirectUrl?, email? }`: email only for a paid digital order, masked (`a***@gmail.com`, `utils/mask.ts`); `redirectUrl` only on success, built on the server with the COD params (`utils/thankYouUrl.ts`); unknown reference is 200 `not_found`. Own limiter, 120 per 15 minutes per IP (the page polls up to 60 times).
+- The checkout gives the provider `/checkout/payment/callback/<form slug>`; the bare path still works. The slug gives the page the store's colours and support number even when the reference is unknown.
+- Six states: Confirming, Pending (asks every 5 s), after 5 minutes "We have not received your payment yet." with the reference, Success (order number, digital line, thank-you redirect after 2 s), Failed ("Try again" to the form, same tab), Not found. No browser Purchase pixel on this page.
+
+### Key files
+- `frontend/src/components/public/CheckoutForm.tsx`, `OrderSummary.tsx`, `PackageSelector.tsx`, `AddOnSelector.tsx`, `OrderSuccess.tsx`, `FormNotAvailable.tsx`, `PublicScreen.tsx`; `pages/PublicCheckout.tsx`, `pages/PaymentCallback.tsx`; `embed/EmbedCheckout.tsx`
+- `frontend/src/utils/money.ts`, `utils/whatsapp.ts`, `lib/orderPayload.ts` (`placeOrder`), `lib/publicTheme.ts`, `lib/paymentPolling.ts`, `lib/standardFields.ts`, `lib/defaultFields.ts`
+- `backend/src/controllers/paymentController.ts` (`publicVerifyPayment`), `controllers/publicOrderController.ts`, `middleware/publicTenant.ts`, `middleware/rateLimiter.ts`, `services/tenantLookupService.ts`, `services/checkoutFormService.ts`, `services/paymentSettlementService.ts`, `utils/thankYouUrl.ts`, `utils/mask.ts`, `utils/checkoutLocation.ts`
+- Tests: `PublicCheckoutPage`, `PublicScreens`, `PaymentCallback`, `placeOrder`, `paymentWebhook` (verify), `publicRoutesTenant`, `formStateLabelMigration`, `e2e/10-public-checkout.spec.ts`, `e2e/10b-public-checkout-mobile.spec.ts` (all public calls mocked)
+
+
+## COD-37 — M3b tests and close-out (T19–T25)
+
+Commits `423cbf7` (T19), `bc25074` (T20), `57d1a8a` (T21), `2477c70` (T22), `653e50d` and `12e71dd` (T24).
+- T19 pixel and CAPI regression: pixel helper unit tests; CAPI payload tests with a mocked Meta endpoint (hashed user data, store currency, no call without a token); the browser Purchase `eventID` equals the server `event_id` for a COD order, and the display number does not feed it; reload inside the 10-minute cooldown sends no second order or pixel.
+- T20 integration sweep: two-tenant checks for every new route group and `PaymentConnection`; webhook replay, bad signature, other tenant's reference and the old Paystack alias.
+- T21 Playwright: form editor and preview, public COD at 390 px, digital form paid online through the mocked callback, role checks (manager read-only editor; call rep and delivery agent get no access). All public calls mocked, tracking hosts blocked.
+- T22 milestone /simplify: manager editor read-only, `usePermissions().isAdmin`, `getFrontendUrl()`, one tenant resolver (`tenantLookupService`), `describeConnection()` without decrypting, neutral file names (`paymentController`, `paymentSettlementService`), dead provider methods removed, one `packageData` mapper and `respondFormError`, verify throttled to one provider call per 4 s, sweep capped at 50 rows per tenant in batches of 5, public form GET cached with the embed config cache.
+- T23 checks: full backend jest 2813 pass (1 timing flake in `glPerformance`, not M3b), vitest 1036/1036, builds and lint clean.
+- T24 browser: forms list fits at 1280 and 1440 px and has no page scroll at 760 (absolute switch checkbox escaped an unpositioned table wrapper); editor tab strip scrolls with a fade and brings the active tab into view; editor follows dark mode while the preview and public form stay light.
+- E2E sweep on `6bbcebb`: specs 10, 10b, 10c, 17, 18, 19, 20, 21 — 39 pass, 1 skipped in the file, 0 fail.
+- T25 owner review: milestone PR to `develop` and the owner's phone test in the Facebook in-app browser.
+
+## COD-150 — Compact package rows and two-column desktop checkout (M3b, owner request 2026-10-23)
+
+Commits `8a80fe0`, `29dc88d`. Mockup: `docs/mockups/m3b-checkout-redesign.html` (owner picked option B, desktop two columns, today's buttons kept, no sticky bar).
+- Package rows (option B): radio, name with a "Qty N" line, price on the right with the old price struck through and the saving pill under it; "Most popular" or the owner's highlight text sits as a tag on the top border. Rows are about 68–76 px tall. `role="radiogroup"` / `role="radio"`.
+- One discount rule for the rows and the summary: `packageSaving(pkg, currency)` in `lib/packagePricing.ts` (`hasDiscount`, `saveLabel`).
+- Add-ons: compact rows; "Qty N" only when N > 1; description and image still expand.
+- Inputs at least 48 px (padding; selects `h-12`).
+- Hosted page from 1024 px: two columns, max 1080 px; the order summary with the payment buttons is sticky on the right and shows the product thumbnail (loaded only on wide screens, `hooks/useMediaQuery.ts`). Below 1024 px and in the embed: one column as before.
+- Unchanged: buttons, colours, labels, section order, tracking, payment flow, same-tab links.
+- Tests: `PublicCheckoutPage`, `packagePricing`, `e2e/10b` (row and input heights), `e2e/10c-public-checkout-desktop.spec.ts` (new; all public calls mocked).

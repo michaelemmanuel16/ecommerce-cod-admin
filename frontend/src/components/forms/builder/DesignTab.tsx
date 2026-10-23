@@ -1,9 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { Check, Pipette } from 'lucide-react';
-import { Input } from '../../ui/Input';
+import React, { useEffect, useRef, useState } from 'react';
+import { Check, ImagePlus, Pipette, X } from 'lucide-react';
+import { Button, Input } from '../../ui-v2';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
 import { BRAND_PALETTE, isValidHex } from '../../../lib/checkoutPalette';
+import { buttonContrastLow, DEFAULT_BUTTON_COLOR } from '../../../lib/contrast';
+import { checkoutFormsService, validateImageFile } from '../../../services/checkout-forms.service';
+import { apiErrorMessage } from '../../../utils/apiError';
 import { CheckoutFormDesign } from '../../../types/checkout-form';
+
+const BANNER_RULE = { types: ['image/jpeg', 'image/png', 'image/webp'], maxBytes: 1024 * 1024, message: 'Use a JPEG, PNG or WebP image up to 1 MB.' };
 
 const ColorField: React.FC<{
   label: string;
@@ -15,58 +20,43 @@ const ColorField: React.FC<{
   const customActive = !!value && !isPreset;
   const pickerValue = value && isValidHex(value) ? value : BRAND_PALETTE[0].hex;
 
-  // Local draft so the user can type a partial hex without it being committed
-  // (and rejected) on every keystroke. Commit only valid 7-char hex values.
+  // Local draft so a partial hex can be typed without being committed (and rejected) on every keystroke.
   const [hexDraft, setHexDraft] = useState(value || '');
   useEffect(() => {
     setHexDraft(value || '');
   }, [value]);
 
   return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-      <div className="grid grid-cols-6 gap-2">
+    <div className="fl">
+      <label>{label}</label>
+      <div className="swatches">
         {BRAND_PALETTE.map((swatch) => {
           const selected = normalized === swatch.hex.toLowerCase();
           return (
             <button
               key={swatch.hex}
               type="button"
+              className={selected ? 'on' : undefined}
               onClick={() => onChange(swatch.hex)}
               aria-label={swatch.name}
+              aria-pressed={selected}
               title={swatch.name}
-              className={`relative h-9 rounded-md border ${
-                selected ? 'ring-2 ring-offset-1 ring-gray-900 border-transparent' : 'border-gray-200'
-              }`}
               style={{ backgroundColor: swatch.hex }}
             >
-              {selected && (
-                <Check className="w-4 h-4 text-white absolute inset-0 m-auto drop-shadow" />
-              )}
+              {selected && <Check />}
             </button>
           );
         })}
-        {/* 6th cell: hex colour picker for any colour outside the presets */}
-        <label
-          title="Custom colour"
-          className={`relative h-9 rounded-md border cursor-pointer flex items-center justify-center ${
-            customActive ? 'ring-2 ring-offset-1 ring-gray-900 border-transparent' : 'border-gray-200 bg-white'
-          }`}
-          style={customActive ? { backgroundColor: value } : undefined}
-        >
-          <Pipette className={`w-4 h-4 ${customActive ? 'text-white drop-shadow' : 'text-gray-500'}`} />
-          <input
-            type="color"
-            aria-label={`${label} custom colour`}
-            value={pickerValue}
-            onChange={(e) => onChange(e.target.value)}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          />
-        </label>
+        <span className={`custom${customActive ? ' on' : ''}`} title="Custom colour" style={customActive ? { backgroundColor: value } : undefined}>
+          <Pipette />
+          <input type="color" aria-label={`${label} custom colour`} value={pickerValue} onChange={(e) => onChange(e.target.value)} />
+        </span>
       </div>
-      <div className="mt-2 flex items-center gap-2">
-        <span className="text-xs text-gray-500">Hex</span>
-        <Input
+      <div className="hexrow">
+        <span className="hint" style={{ margin: 0 }}>Hex</span>
+        <input
+          className="cin"
+          aria-label={`${label} hex`}
           value={hexDraft}
           onChange={(e) => {
             const raw = e.target.value.trim();
@@ -74,9 +64,8 @@ const ColorField: React.FC<{
             setHexDraft(next);
             if (next === '' || isValidHex(next)) onChange(next);
           }}
-          placeholder="#0f172a"
+          placeholder={DEFAULT_BUTTON_COLOR}
           maxLength={7}
-          className="h-8 w-28 font-mono text-sm"
         />
       </div>
     </div>
@@ -94,18 +83,11 @@ const PillGroup = <T extends string>({
   options: { value: T; label: string }[];
   onSelect: (v: T) => void;
 }) => (
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-    <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+  <div className="fl">
+    <label>{label}</label>
+    <div className="seg">
       {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onSelect(opt.value)}
-          className={`px-3 py-1.5 text-sm rounded ${
-            value === opt.value ? 'bg-white shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
+        <button key={opt.value} type="button" className={value === opt.value ? 'on' : undefined} aria-pressed={value === opt.value} onClick={() => onSelect(opt.value)}>
           {opt.label}
         </button>
       ))}
@@ -113,15 +95,27 @@ const PillGroup = <T extends string>({
   </div>
 );
 
+const CheckLine: React.FC<{ label: string; checked: boolean; onChange: (on: boolean) => void }> = ({ label, checked, onChange }) => (
+  <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 600, fontSize: 13 }}>
+    <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    {label}
+  </label>
+);
+
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div>
-    <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>
-    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4">{children}</div>
+    <div className="paneh">
+      <h3 style={{ fontSize: 15 }}>{title}</h3>
+    </div>
+    <div className="stack">{children}</div>
   </div>
 );
 
 export const DesignTab: React.FC = () => {
   const { design, setDesign } = useCheckoutBuilder();
+  const bannerInput = useRef<HTMLInputElement>(null);
+  const [bannerError, setBannerError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const updateSection = <K extends keyof CheckoutFormDesign>(
     key: K,
@@ -132,8 +126,10 @@ export const DesignTab: React.FC = () => {
       [key]: { ...((d[key] as object) || {}), ...patch } as CheckoutFormDesign[K],
     }));
   };
+  // An emptied colour is dropped, so the public form falls back to its default.
+  const colour = (hex: string): string | undefined => hex || undefined;
   const updateColors = (key: 'primary' | 'cta' | 'surface' | 'text', hex: string) =>
-    updateSection('colors', { [key]: hex } as Partial<NonNullable<CheckoutFormDesign['colors']>>);
+    updateSection('colors', { [key]: colour(hex) } as Partial<NonNullable<CheckoutFormDesign['colors']>>);
   const updateButton = (patch: Partial<NonNullable<CheckoutFormDesign['button']>>) =>
     updateSection('button', patch);
   const updateInput = (patch: Partial<NonNullable<CheckoutFormDesign['input']>>) =>
@@ -142,30 +138,44 @@ export const DesignTab: React.FC = () => {
     updateSection('page', patch);
 
   const labelOverLimit = (design.button?.label?.length ?? 0) > 60;
+  const lowContrast = buttonContrastLow(design.colors?.cta || DEFAULT_BUTTON_COLOR);
+
+  const pickBanner = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const refusal = validateImageFile(file, BANNER_RULE);
+    if (refusal) {
+      setBannerError(refusal);
+      return;
+    }
+    setBannerError(null);
+    setUploading(true);
+    try {
+      updatePage({ productBanner: await checkoutFormsService.uploadImage(file) });
+    } catch (err) {
+      setBannerError(apiErrorMessage(err, 'The banner could not be uploaded. Try again.'));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="stack">
+      <div className="paneh">
+        <h3>Design</h3>
+        <p>Colours and button for the customer page.</p>
+      </div>
+
       <Section title="Colors">
-        <ColorField
-          label="Primary"
-          value={design.colors?.primary}
-          onChange={(hex) => updateColors('primary', hex)}
-        />
-        <ColorField
-          label="CTA / Button"
-          value={design.colors?.cta}
-          onChange={(hex) => updateColors('cta', hex)}
-        />
-        <ColorField
-          label="Surface / Accent"
-          value={design.colors?.surface}
-          onChange={(hex) => updateColors('surface', hex)}
-        />
-        <ColorField
-          label="Text"
-          value={design.colors?.text}
-          onChange={(hex) => updateColors('text', hex)}
-        />
+        <ColorField label="Primary" value={design.colors?.primary} onChange={(hex) => updateColors('primary', hex)} />
+        <ColorField label="CTA / Button" value={design.colors?.cta} onChange={(hex) => updateColors('cta', hex)} />
+        {lowContrast && <p className="banner-note warn" role="alert">Button text may be hard to read on this colour.</p>}
+        <ColorField label="Surface / Accent" value={design.colors?.surface} onChange={(hex) => updateColors('surface', hex)} />
+        <ColorField label="Text" value={design.colors?.text} onChange={(hex) => updateColors('text', hex)} />
+        <ColorField label="Label colour" value={design.input?.labelColor} onChange={(hex) => updateInput({ labelColor: colour(hex) })} />
+        <ColorField label="Price colour" value={design.input?.priceColor} onChange={(hex) => updateInput({ priceColor: colour(hex) })} />
+        <ColorField label="Page background" value={design.page?.background} onChange={(hex) => updatePage({ background: colour(hex) })} />
       </Section>
 
       <Section title="Button">
@@ -189,25 +199,21 @@ export const DesignTab: React.FC = () => {
           ]}
           onSelect={(size) => updateButton({ size })}
         />
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Label override <span className="text-gray-400">(max 60 chars)</span>
-          </label>
-          <Input
-            value={design.button?.label || ''}
-            onChange={(e) => updateButton({ label: e.target.value || undefined })}
-            maxLength={60}
-            placeholder="e.g., Place Order"
-          />
-          {labelOverLimit && (
-            <p className="text-xs text-red-500 mt-1">Label must be 60 characters or fewer.</p>
-          )}
-        </div>
+        <Input
+          label="Label override"
+          optional
+          value={design.button?.label || ''}
+          onChange={(e) => updateButton({ label: e.target.value || undefined })}
+          maxLength={60}
+          placeholder="e.g., Place Order"
+          hint="Up to 60 characters."
+          error={labelOverLimit ? 'Label must be 60 characters or fewer.' : undefined}
+        />
       </Section>
 
-      <Section title="Inputs">
+      <Section title="Fields">
         <PillGroup
-          label="Style"
+          label="Field style"
           value={design.input?.style}
           options={[
             { value: 'flat', label: 'Flat' },
@@ -219,24 +225,8 @@ export const DesignTab: React.FC = () => {
       </Section>
 
       <Section title="Layout">
-        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={design.page?.hideProductDisplay || false}
-            onChange={(e) => updatePage({ hideProductDisplay: e.target.checked || undefined })}
-            className="rounded border-gray-300"
-          />
-          Hide product name + description on checkout
-        </label>
-        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={design.page?.showOrderSummary !== false}
-            onChange={(e) => updatePage({ showOrderSummary: e.target.checked ? undefined : false })}
-            className="rounded border-gray-300"
-          />
-          Show order summary (price breakdown + total)
-        </label>
+        <CheckLine label="Hide product name + description on checkout" checked={design.page?.hideProductDisplay || false} onChange={(on) => updatePage({ hideProductDisplay: on || undefined })} />
+        <CheckLine label="Show order summary (price breakdown + total)" checked={design.page?.showOrderSummary !== false} onChange={(on) => updatePage({ showOrderSummary: on ? undefined : false })} />
         <PillGroup
           label="Offer position"
           value={design.page?.offerPosition}
@@ -246,6 +236,22 @@ export const DesignTab: React.FC = () => {
           ]}
           onSelect={(offerPosition) => updatePage({ offerPosition })}
         />
+        <div className="fl">
+          <label>Product banner</label>
+          <div className="bannerbox">
+            {design.page?.productBanner && <img src={design.page.productBanner} alt="Product banner" />}
+            <input ref={bannerInput} type="file" hidden accept={BANNER_RULE.types.join(',')} aria-label="Product banner file" onChange={pickBanner} />
+            <Button disabled={uploading} onClick={() => bannerInput.current?.click()}>
+              <ImagePlus /> {uploading ? 'Uploading…' : design.page?.productBanner ? 'Change banner' : 'Upload banner'}
+            </Button>
+            {design.page?.productBanner && (
+              <Button onClick={() => updatePage({ productBanner: undefined })}>
+                <X /> Remove banner
+              </Button>
+            )}
+          </div>
+          {bannerError ? <p className="err" role="alert">{bannerError}</p> : <p className="hint">Shown above the form. JPEG, PNG or WebP, up to 1 MB.</p>}
+        </div>
       </Section>
     </div>
   );

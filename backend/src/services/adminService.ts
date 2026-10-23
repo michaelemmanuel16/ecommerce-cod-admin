@@ -1,3 +1,6 @@
+import { getPaymentProvider, clearPaymentConfigCache } from './payments';
+import { saveConnection } from './paymentConnectionService';
+import { parseFeaturePatch, clearTenantFeaturesCache } from './tenantFeatures';
 import prisma from '../utils/prisma';
 import { sessionService } from './sessionService';
 import { withSoftDeleted } from '../utils/prismaExtensions';
@@ -13,10 +16,12 @@ import {
   maskProviderSecrets,
   preserveMaskedSecrets,
   SENSITIVE_FIELDS,
+  decryptString,
 } from '../utils/providerCrypto';
 import { getTenantId, resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { HUMAN_USERS_WHERE } from './systemUserService';
-import { tenantIdForFormSlug } from './tenantLookupService';
+import { formTenantBySlug } from './tenantLookupService';
+import { clearCheckoutFormConfigCache } from './checkoutFormService';
 import { currencyOfTenant, getCurrency } from '../utils/currency';
 import { changeStoreCurrency } from './fxService';
 import { parseOperatingHours } from './kpi/workingTime';
@@ -170,7 +175,8 @@ export const adminService = {
     } as const;
     const tenant = await withoutTenant('public-config-slug', async () => {
       if (slugs.tenant) return prisma.tenant.findUnique({ where: { slug: slugs.tenant }, select });
-      const tenantId = slugs.form ? await tenantIdForFormSlug(slugs.form) : null;
+      const form = slugs.form ? await formTenantBySlug(slugs.form) : null;
+      const tenantId = form?.isActive ? form.tenantId : null;
       return tenantId ? prisma.tenant.findUnique({ where: { id: tenantId }, select }) : null;
     });
     if (!tenant) throw new AppError('Not found', 404);
@@ -198,6 +204,7 @@ export const adminService = {
     whatsappProvider?: any;
     paystackProvider?: any;
     notificationTemplates?: any;
+    features?: Record<string, unknown>;
   }) {
     await this.checkAdminPrivilege(requester, 'super_admin');
     const tenantId = getTenantId();
@@ -225,6 +232,11 @@ export const adminService = {
     }
     if (data.timeZone !== undefined && !isValidTimeZone(data.timeZone)) {
       throw new AppError('Time zone must be an IANA name, for example Africa/Accra', 400, 'INVALID_TIME_ZONE');
+    }
+
+    // Tenant feature switches (F-402): only the known boolean keys, merged over what is stored so one switch never wipes another.
+    if (data.features !== undefined) {
+      data.features = parseFeaturePatch(config.features, data.features);
     }
 
     // Operating hours drive the time-to-first-call clock (M1-T22, F-755): reject a bad shape now, not at read time.
@@ -268,20 +280,7 @@ export const adminService = {
     // money through their test account or vice versa.
     if (data.paystackProvider) {
       const pp = data.paystackProvider as any;
-      if (pp.mode === 'live' && pp.secretKey && !pp.secretKey.startsWith('sk_live_')) {
-        throw new AppError(
-          'Paystack mode is set to Live but the secret key is not a live key (sk_live_...). Match the mode to the key.',
-          400,
-          'PAYSTACK_MODE_KEY_MISMATCH',
-        );
-      }
-      if (pp.mode === 'test' && pp.secretKey && !pp.secretKey.startsWith('sk_test_')) {
-        throw new AppError(
-          'Paystack mode is set to Test but the secret key is not a test key (sk_test_...). Match the mode to the key.',
-          400,
-          'PAYSTACK_MODE_KEY_MISMATCH',
-        );
-      }
+      if (pp.secretKey) getPaymentProvider('paystack').validateCredentials?.(pp.mode, decryptString(pp.secretKey) as string);
     }
 
     // Encrypt sensitive fields before writing to DB
@@ -297,6 +296,7 @@ export const adminService = {
     });
 
     // Invalidate provider config caches when settings change
+    if (data.features !== undefined && config.tenantId) clearTenantFeaturesCache(config.tenantId);
     if (data.whatsappProvider !== undefined) {
       clearWhatsAppConfigCache();
     }
@@ -309,13 +309,25 @@ export const adminService = {
       clearEmailConfigCache();
     }
     if (data.paystackProvider !== undefined) {
-      const { clearPaystackConfigCache } = await import('./paystackService');
-      // Only clear the specific tenant's cache entry — passing undefined would
-      // wipe every tenant's cached secret and stampede the DB on the next request.
-      if (config.tenantId) {
-        clearPaystackConfigCache(config.tenantId);
+      // The PaymentConnection row is what checkout reads, so it follows every save here (created if missing). The JSON
+      // stays for the old Integrations panel until the Connections page (M9) and is display-only.
+      const pp = data.paystackProvider as { mode?: string; publicKey?: string; secretKey?: string; isEnabled?: boolean } | null;
+      if (pp && config.tenantId) {
+        await saveConnection({
+          provider: 'paystack',
+          mode: pp.mode === 'live' ? 'live' : 'test',
+          publicKey: pp.publicKey,
+          secretKey: pp.secretKey ? (decryptString(pp.secretKey) as string) : undefined,
+          isEnabled: pp.isEnabled !== false,
+        });
       }
+      // saveConnection clears the tenant's cached keys itself. Clearing the JSON (pp null) skips it, so clear here.
+      // Only this tenant's entry: passing undefined would wipe every tenant's cached secret and stampede the DB.
+      if (!pp && config.tenantId) clearPaymentConfigCache(config.tenantId);
     }
+
+    // The public form page caches the support number with the form (5 minutes): a changed number shows at once.
+    if (data.supportWhatsapp !== undefined) clearCheckoutFormConfigCache();
 
     await this.createAuditLog(requester, 'update', 'system_config', config.id.toString(), { changes: Object.keys(data) });
 

@@ -5,6 +5,10 @@ import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
 import { townsForForm } from './locationService';
+import { isUpsellAvailable } from '../utils/checkoutFormRules';
+import { isStorageUrl } from '../config/r2';
+import { getTenantId } from '../utils/tenantContext';
+import { supportWhatsappForTenant } from './tenantLookupService';
 
 // Shared PUBLIC render payload — the fields safe to expose on the public
 // checkout page and the embed widget config endpoint. Reused so the page and
@@ -66,15 +70,32 @@ const PUBLIC_FORM_SELECT = {
       originalPrice: true,
       discountType: true,
       discountValue: true,
+      isPopular: true,
+      // Read to hide an upsell whose product is inactive or out of stock; removed again before the response.
+      isActive: true,
+      productId: true,
+      product: { select: { isActive: true, stockQuantity: true, productType: true } },
     },
   },
 } satisfies Prisma.CheckoutFormSelect;
 
+type UpsellRow = Parameters<typeof isUpsellAvailable>[0];
+
 // Replace the raw stock quantity with a boolean in-stock flag.
 // `towns` (state -> towns) is added so the public form can fill its City/Town dropdown (COD-138).
-function sanitizePublicForm<T extends { product: { stockQuantity: number }; country: string | null; regions: unknown }>(form: T) {
+// Upsells whose linked product is inactive or out of stock are dropped (F-415).
+/** The design without a product banner that is not on our image storage (F-418). */
+function withStorageBanner<D>(design: D): D {
+  const banner = (design as { page?: { productBanner?: unknown } } | null)?.page?.productBanner;
+  if (banner === undefined || isStorageUrl(banner)) return design;
+  const { productBanner: _banner, ...page } = (design as { page: Record<string, unknown> }).page;
+  return { ...design, page } as D;
+}
+
+function sanitizePublicForm<T extends { product: { stockQuantity: number }; country: string | null; regions: unknown; upsells: UpsellRow[] }>(form: T) {
   const { stockQuantity, ...productData } = form.product;
-  return { ...form, product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions) };
+  const upsells = form.upsells.filter(isUpsellAvailable).map(({ productId: _productId, product: _product, isActive: _isActive, ...visible }: any) => visible);
+  return { ...form, upsells, design: withStorageBanner((form as { design?: unknown }).design), product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions) };
 }
 
 // ---------- Public embed config cache ----------
@@ -169,7 +190,7 @@ export class CheckoutFormService {
 
     if (existingForm) {
       throw new AppError(
-        existingForm.isActive === false
+        existingForm.archivedAt
           ? 'An archived checkout form already uses this slug. Restore it or pick another slug.'
           : 'Checkout form with this slug already exists',
         400
@@ -340,30 +361,20 @@ export class CheckoutFormService {
 
   /**
    * Get PUBLIC checkout form by slug (for public form page)
-   * Only returns active forms with minimal data
+   * Only returns active forms with minimal data. Reads through the embed config cache (same 5 minutes, same invalidation
+   * on save) and drops the server-only fields, so the page and the widget never disagree about what a form looks like.
    */
   async getCheckoutFormBySlug(slug: string) {
-    const form = await prisma.checkoutForm.findUnique({
-      where: {
-        slug,
-        isActive: true
-      },
-      select: PUBLIC_FORM_SELECT
-    });
-
-    if (!form) {
-      throw new AppError('Checkout form not found or inactive', 404);
-    }
-
-    // Sanitize product data: hide exact stock quantity, return status
-    return sanitizePublicForm(form);
+    const { tenantId: _tenantId, allowedOrigins: _allowedOrigins, paymentProvider: _paymentProvider, ...publicForm } =
+      await this.getCheckoutFormConfigBySlug(slug);
+    return publicForm;
   }
 
   /**
    * PUBLIC embed config by slug (for the embed widget's
    * GET /api/public/forms/:slug/config). Same render payload as
    * getCheckoutFormBySlug, plus `tenantId` and the per-form `allowedOrigins`
-   * allowlist — both consumed by the controller (tenant → Paystack public key,
+   * allowlist, and the form's `paymentProvider` — all consumed by the controller (tenant + provider → public key,
    * allowlist → Origin 403 gate) and stripped before the response reaches the
    * host page. The DB read is cached 5 min, invalidated on form save.
    */
@@ -374,16 +385,20 @@ export class CheckoutFormService {
       return cached.data;
     }
 
-    const form = await prisma.checkoutForm.findUnique({
-      where: { slug, isActive: true },
-      select: { ...PUBLIC_FORM_SELECT, tenantId: true, allowedOrigins: true }
-    });
+    const tenantId = getTenantId();
+    const [form, supportWhatsapp] = await Promise.all([
+      prisma.checkoutForm.findUnique({
+        where: { slug, isActive: true },
+        select: { ...PUBLIC_FORM_SELECT, tenantId: true, allowedOrigins: true, paymentProvider: true }
+      }),
+      tenantId ? supportWhatsappForTenant(tenantId) : null,
+    ]);
 
     if (!form) {
       throw new AppError('Checkout form not found or inactive', 404);
     }
 
-    const sanitized = sanitizePublicForm(form);
+    const sanitized = { ...sanitizePublicForm(form), supportWhatsapp };
     configCache.set(slug, { data: sanitized, fetchedAt: now });
     return sanitized;
   }
@@ -398,7 +413,8 @@ export class CheckoutFormService {
     // Guard explicitly: empty-string tenantId from a misconfigured token must
     // not skip the scope filter and leak cross-tenant data.
     if (tenantId != null && tenantId !== '') where.tenantId = tenantId;
-    const form = await prisma.checkoutForm.findFirst({
+    // Drafts and inactive forms preview too, so opt out of the isActive filter.
+    const form = await withSoftDeleted(() => prisma.checkoutForm.findFirst({
       where,
       select: {
         id: true,
@@ -452,10 +468,12 @@ export class CheckoutFormService {
             originalPrice: true,
             discountType: true,
             discountValue: true,
+            isActive: true,
+            isPopular: true,
           },
         },
       },
-    });
+    }));
 
     if (!form) {
       throw new AppError('Checkout form not found', 404);
@@ -464,6 +482,9 @@ export class CheckoutFormService {
     const { stockQuantity, ...productData } = form.product;
     return {
       ...form,
+      // An upsell switched off in the editor is hidden here as on the public form.
+      upsells: form.upsells.filter(isUpsellAvailable),
+      design: withStorageBanner(form.design),
       product: { ...productData, inStock: stockQuantity > 0 },
       towns: townsForForm(form.country, form.regions),
     };
@@ -497,7 +518,7 @@ export class CheckoutFormService {
 
       if (slugExists) {
         throw new AppError(
-          slugExists.isActive === false
+          slugExists.archivedAt
             ? 'An archived checkout form already uses this slug. Restore it or pick another slug.'
             : 'Slug already in use',
           400

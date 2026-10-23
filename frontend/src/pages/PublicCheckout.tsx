@@ -1,36 +1,55 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { CheckoutForm, CheckoutFormData } from '../components/public/CheckoutForm';
 import { OrderSuccess } from '../components/public/OrderSuccess';
+import { FormNotAvailable } from '../components/public/FormNotAvailable';
 import { publicOrdersService, PublicCheckoutForm } from '../services/public-orders.service';
-import { buildOrderPayload, buildRedirectUrl } from '../lib/orderPayload';
-import { initPixels, fireInitiateCheckoutWithCapi, getFbCookies } from '../utils/pixelTracking';
+import { placeOrder } from '../lib/orderPayload';
+import { initPixels, fireInitiateCheckoutWithCapi } from '../utils/pixelTracking';
 import { PixelConfig } from '../types/checkout-form';
-import toast from 'react-hot-toast';
 import { useConfigStore } from '../stores/configStore';
 
 const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 
-function getCooldown(slug: string): { orderId: number; total: number } | null {
+interface Cooldown { orderId: number; orderNumber?: string; total: number }
+
+function getCooldown(slug: string): Cooldown | null {
   try {
     const raw = localStorage.getItem(`checkout_cooldown_${slug}`);
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (Date.now() - data.timestamp < COOLDOWN_MS) {
-      return { orderId: data.orderId, total: data.total };
+      return { orderId: data.orderId, orderNumber: data.orderNumber, total: data.total };
     }
     localStorage.removeItem(`checkout_cooldown_${slug}`);
   } catch { /* ignore corrupt data */ }
   return null;
 }
 
-function setCooldown(slug: string, orderId: number, total: number) {
-  localStorage.setItem(`checkout_cooldown_${slug}`, JSON.stringify({ orderId, total, timestamp: Date.now() }));
+function setCooldown(slug: string, entry: Cooldown) {
+  try {
+    localStorage.setItem(`checkout_cooldown_${slug}`, JSON.stringify({ ...entry, timestamp: Date.now() }));
+  } catch { /* storage blocked: the order is still placed */ }
+}
+
+/** An order the buyer just placed (or placed a moment ago): what the success screen shows. */
+interface Placed {
+  orderId?: number;
+  orderNumber?: string;
+  total: number;
+  /** No new order and no Purchase event: a repeat submit, or a reload inside the cooldown. */
+  repeat: boolean;
+}
+
+/** Why the form is not shown. `support` is the store's public WhatsApp number from the 404 body. */
+interface LoadError {
+  notFound: boolean;
+  support: string | null;
+  message?: string;
 }
 
 export const PublicCheckout: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   // `?package=<id>` deep-links the checkout to a single package (numeric ids only).
   const lockedPackageParam = searchParams.get('package');
@@ -39,9 +58,8 @@ export const PublicCheckout: React.FC = () => {
     : null;
   const [formData, setFormData] = useState<PublicCheckoutForm | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [orderId, setOrderId] = useState<number | null>(null);
-  const [submittedTotal, setSubmittedTotal] = useState<number>(0);
+  const [loadError, setLoadError] = useState<LoadError | null>(null);
+  const [placed, setPlaced] = useState<Placed | null>(null);
 
   // the public config route needs this form's slug to find the tenant
   useEffect(() => {
@@ -50,19 +68,15 @@ export const PublicCheckout: React.FC = () => {
 
   useEffect(() => {
     if (!slug) {
-      setError('Invalid form URL');
+      setLoadError({ notFound: false, support: null, message: 'Invalid form URL' });
       setLoading(false);
       return;
     }
 
-    // Check localStorage cooldown before loading form
+    // A reload inside the cooldown shows the same order again. The form still loads (its colours, currency and support
+    // number); the order is not posted again and no tracking fires.
     const cooldown = getCooldown(slug);
-    if (cooldown) {
-      setOrderId(cooldown.orderId);
-      setSubmittedTotal(cooldown.total);
-      setLoading(false);
-      return;
-    }
+    if (cooldown) setPlaced({ ...cooldown, repeat: true });
 
     loadForm();
   }, [slug]);
@@ -101,90 +115,54 @@ export const PublicCheckout: React.FC = () => {
         observer.disconnect();
       };
     }
-  }, [loading, error, orderId]);
+  }, [loading, loadError, placed]);
 
   // Fire pixel PageView + InitiateCheckout when form data is available. The
   // InitiateCheckout server-side CAPI mirror is shared with the embed widget.
   useEffect(() => {
-    if (!formData?.pixelConfig || !slug) return;
+    if (!formData?.pixelConfig || !slug || placed) return;
     const pixelConfig = formData.pixelConfig as PixelConfig;
     initPixels(pixelConfig);
     fireInitiateCheckoutWithCapi(pixelConfig, (data) =>
       publicOrdersService.trackInitiateCheckout(slug, data),
     );
-  }, [formData?.pixelConfig, slug]);
+  }, [formData?.pixelConfig, slug, placed]);
 
   const loadForm = async () => {
     try {
       setLoading(true);
-      setError(null);
-      const data = await publicOrdersService.getPublicForm(slug!);
-      setFormData(data);
+      setLoadError(null);
+      setFormData(await publicOrdersService.getPublicForm(slug!));
     } catch (err: any) {
       console.error('Failed to load checkout form:', err);
-      setError(err.response?.data?.message || 'Form not found or no longer available');
-      toast.error('Failed to load checkout form');
+      const notFound = err.response?.status === 404;
+      setLoadError(notFound
+        ? { notFound, support: err.response?.data?.supportWhatsapp ?? null }
+        : { notFound, support: null, message: 'We could not load this form. Please reload the page.' });
     } finally {
       setLoading(false);
     }
   };
 
+  // Every failure throws, so CheckoutForm shows the message above the button and lets the buyer try again.
   const handleSubmit = async (data: CheckoutFormData) => {
     if (!formData || !slug) return;
 
     try {
-      // Guard before building so we can show the package-specific toast.
-      if (!formData.packages.some((p) => p.id === data.selectedPackageId)) {
-        toast.error('Please select a package');
-        return;
-      }
-
-      // Shared mapping — identical to what the embed widget posts.
-      const { payload, totalAmount } = buildOrderPayload(formData, data);
-
-      // Attach Meta click ids so the Purchase CAPI event can match this buyer.
-      const response = await publicOrdersService.submitOrder(slug, { ...payload, ...getFbCookies() } as any);
-
-      if (response.success) {
-        // Paystack methods (digital, deposit, full): redirect to Paystack. The
-        // order isn't created until payment is confirmed, so there's no orderId here.
-        if (response.authorization_url) {
-          window.location.href = response.authorization_url;
-          return;
-        }
-
-        // COD: order was created immediately and carries an orderId.
-        if (!response.orderId) {
-          toast.error('Order could not be completed. Please try again.');
-          return;
-        }
-
-        setCooldown(slug, response.orderId, totalAmount);
-
-        // Custom thank-you page: redirect with order details appended so the
-        // merchant's page can show the order and fire its own purchase pixel.
-        const redirect = buildRedirectUrl(formData.redirectUrl, {
-          orderId: response.orderId,
-          total: totalAmount,
-          currency: formData.currency,
-          reference: response.paymentReference,
-          package: data.selectedPackageId,
-        });
-        if (redirect) {
-          window.location.href = redirect;
-          return;
-        }
-
-        setSubmittedTotal(totalAmount);
-        setOrderId(response.orderId);
-        toast.success('Order placed successfully!');
+      const result = await placeOrder(formData, data, (payload) => publicOrdersService.submitOrder(slug, payload as any));
+      if (result.kind === 'redirect') {
+        if (result.order) setCooldown(slug, result.order);
+        window.location.href = result.url;
+      } else if (result.kind === 'placed') {
+        setCooldown(slug, { orderId: result.orderId, orderNumber: result.orderNumber, total: result.total });
+        setPlaced({ orderId: result.orderId, orderNumber: result.orderNumber, total: result.total, repeat: false });
       } else {
-        toast.error(response.message || 'Failed to place order');
+        setPlaced({ orderId: result.orderId, orderNumber: result.orderNumber, total: result.total, repeat: true });
       }
     } catch (err: any) {
       console.error('Order submission error:', err);
-      toast.error(err.response?.data?.message || 'Failed to place order. Please try again.');
-      throw err; // Re-throw so CheckoutForm resets isSubmitting
+      const body = err.response?.data;
+      throw new Error(body?.message || body?.error || err.message || 'We could not place your order. Please try again.');
     }
   };
 
@@ -200,49 +178,24 @@ export const PublicCheckout: React.FC = () => {
     );
   }
 
-  // Error state
-  if (error || !formData) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-lg border border-gray-200 p-8 text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg
-              className="w-8 h-8 text-red-600"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Form Not Found</h1>
-          <p className="text-gray-600 mb-6">
-            {error || 'The checkout form you are looking for is not available.'}
-          </p>
-          <button
-            onClick={() => navigate('/')}
-            className="px-6 py-2 bg-[#0f172a] text-white rounded-lg hover:bg-[#1e293b] transition-colors"
-          >
-            Go Home
-          </button>
-        </div>
-      </div>
-    );
+  // Not available: the form is missing, switched off or archived (or did not load). No link to the admin app.
+  if (loadError || !formData) {
+    return <FormNotAvailable supportWhatsapp={loadError?.support} message={loadError?.message} />;
   }
 
   // Success state
-  if (orderId) {
+  if (placed) {
     return (
       <OrderSuccess
-        orderId={orderId}
-        orderTotal={submittedTotal}
-        currency={formData?.currency}
-        pixelConfig={formData?.pixelConfig as PixelConfig | undefined}
+        orderId={placed.orderId}
+        orderNumber={placed.orderNumber}
+        repeatOrder={placed.repeat}
+        orderTotal={placed.total}
+        currency={formData.currency}
+        pixelConfig={formData.pixelConfig as PixelConfig | undefined}
+        digital={formData.formType === 'digital' || formData.product?.productType === 'digital'}
+        supportWhatsapp={formData.supportWhatsapp}
+        design={formData.design}
       />
     );
   }

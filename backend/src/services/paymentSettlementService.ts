@@ -1,11 +1,13 @@
 import { Prisma } from '@prisma/client';
-import { getTenantId, resolveTenantId, runInTenant, withoutTenant } from '../utils/tenantContext';
+import { getTenantId, resolveTenantId, runInTenant } from '../utils/tenantContext';
+import { findReferenceOwner } from './tenantLookupService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
-import { paystackService } from './paystackService';
+import { getPaymentProvider, normalizeMethod } from './payments';
 import { digitalDeliveryService } from './digitalDeliveryService';
-import { GLAutomationService } from './glAutomationService';
 import { transitionOrder } from './orderStateMachine';
+import { openFindingOnce } from './findingService';
+import { emitPaymentSettled } from './payments/settlementHooks';
 import { metaCapiService } from './metaCapiService';
 import { emitOrderCreatedEvent } from '../utils/appEvents';
 import { emitOrderCreated } from '../sockets';
@@ -15,16 +17,32 @@ import { cleanText, deliveryAddressOf } from '../utils/checkoutLocation';
 
 export type SettlementStatus = 'success' | 'failed' | 'pending' | 'not_found';
 
+/** What the public verify page needs of an order; the full row when the caller did not ask for the narrow read. */
+export interface SettledOrder {
+  id: number;
+  orderType?: string | null;
+  currency?: string | null;
+  customer?: { email: string | null } | null;
+}
+
 export interface SettlementResult {
   status: SettlementStatus;
-  order?: Awaited<ReturnType<typeof prisma.order.findFirst>>;
+  /** The tenant that owns the reference (absent when it is unknown to every tenant). */
+  tenantId?: string;
+  order?: SettledOrder | null;
+}
+
+export interface SettleOptions {
+  webhookTenantId?: string;
+  /** The public callback page: read the order narrowly, and do not ask the provider again inside this many ms of the last check. */
+  publicRead?: { minRecheckMs: number };
 }
 
 /**
- * Settle a Paystack payment by reference.
+ * Settle an online payment by reference (any provider in the registry).
  *
- * Deferred-creation model: a Paystack checkout never creates an Order up front —
- * it stores a {@link PendingCheckout} snapshot keyed by the Paystack reference.
+ * Deferred-creation model: an online checkout never creates an Order up front —
+ * it stores a {@link PendingCheckout} snapshot keyed by the provider reference.
  * This function is the ONLY place that turns a confirmed payment into a real
  * Order (status `confirmed`, paymentStatus `paid`/`deposited`). It is called from
  * both the webhook (`charge.success`) and the callback verify, so an order is
@@ -35,35 +53,44 @@ export interface SettlementResult {
  * delete it wins and creates the Order; a concurrent caller gets P2025 and
  * returns the already-created Order.
  *
- * @param reference  the Paystack transaction reference
+ * @param reference  the provider's transaction reference
  * @param opts.webhookTenantId  when called from a per-tenant webhook, the tenant
  *   that owns the webhook URL — must match the pending checkout's tenant.
  */
-export async function settlePaystackPayment(
+export async function settlePayment(
   reference: string,
-  opts: { webhookTenantId?: string } = {},
+  opts: SettleOptions = {},
 ): Promise<SettlementResult> {
   // Settlement always runs scoped to one tenant: the webhook's tenant, the signed-in
   // caller's tenant, or (public verify, no context) the tenant that owns the
   // reference, found by a minimal unscoped lookup of the pending checkout / order.
   let tenantId = opts.webhookTenantId ?? getTenantId();
   if (!tenantId) {
-    tenantId = await withoutTenant('paystack-verify', async () => {
-      const pendingRow = await prisma.pendingCheckout.findUnique({ where: { reference }, select: { tenantId: true } });
-      if (pendingRow) return pendingRow.tenantId;
-      const orderRow = await prisma.order.findFirst({ where: { paymentReference: reference }, select: { tenantId: true } });
-      return orderRow?.tenantId ?? null;
-    });
+    tenantId = await findReferenceOwner(reference);
     if (!tenantId) {
       return { status: 'not_found' };
     }
   }
-  return runInTenant(tenantId, () => settleInTenant(reference, opts));
+  const result = await runInTenant(tenantId, () => settleInTenant(reference, opts));
+  return { ...result, tenantId };
+}
+
+/** Keep the pending row for a human and open one `payment_unmatched` Finding for the reference. */
+async function flagNeedsReview(reference: string, tenantId: string, paid: Money.Money): Promise<void> {
+  await prisma.pendingCheckout.updateMany({ where: { reference }, data: { status: 'needs_review', lastCheckedAt: new Date() } });
+  await openFindingOnce({
+    tenantId,
+    type: 'payment_unmatched',
+    subjectType: 'pending_checkout',
+    subjectId: reference,
+    amount: paid,
+    note: `Payment received but no order was created. Reference ${reference}.`,
+  }, { includeClosed: true });
 }
 
 async function settleInTenant(
   reference: string,
-  opts: { webhookTenantId?: string },
+  opts: SettleOptions,
 ): Promise<SettlementResult> {
   // Reference lookups are scoped to the webhook's tenant when we have one, so a
   // cross-account reference collision can never resolve another tenant's order.
@@ -73,10 +100,9 @@ async function settleInTenant(
   };
 
   // Fast path: already settled (also the loser-of-race path).
-  const existing = await prisma.order.findFirst({
-    where: orderWhere,
-    include: { customer: true, orderItems: { include: { product: true } } },
-  });
+  const existing = opts.publicRead
+    ? await prisma.order.findFirst({ where: orderWhere, select: { id: true, orderType: true, currency: true, customer: { select: { email: true } } } })
+    : await prisma.order.findFirst({ where: orderWhere, include: { customer: true, orderItems: { include: { product: true } } } });
   if (existing) {
     return { status: 'success', order: existing };
   }
@@ -97,28 +123,50 @@ async function settleInTenant(
     return { status: 'not_found' };
   }
 
-  // Verify with Paystack using the tenant's secret.
-  const verification = await paystackService.verifyTransaction(pending.tenantId, reference);
-  if (verification.data.status !== 'success') {
-    logger.info('Paystack payment not successful — no order created', {
-      reference,
-      tenantId: pending.tenantId,
-      status: verification.data.status,
-    });
-    return { status: verification.data.status === 'failed' ? 'failed' : 'pending' };
+  // The callback page polls: a row the provider answered a moment ago is not asked again (the sweep and the webhook still ask).
+  if (opts.publicRead && pending.lastCheckedAt && Date.now() - pending.lastCheckedAt.getTime() < opts.publicRead.minRecheckMs) {
+    return { status: pending.status === 'failed' ? 'failed' : 'pending' };
   }
 
-  // SECURITY: the amount actually paid must cover the expected charge (deposit
-  // portion or full total). Stops an underpaid/tampered initialize from
-  // fulfilling — digital products auto-deliver. Paystack amounts are minor units.
-  const paidMinor = Money.orZero(verification.data.amount);
-  if (Money.lt(paidMinor, pending.paystackChargeMinor)) {
-    logger.warn('Paystack underpayment — not creating order', {
+  // Verify with the provider that holds this payment, using the tenant's keys.
+  const provider = getPaymentProvider(pending.provider);
+  const verification = await provider.verify(pending.tenantId, reference);
+  if (verification.status !== 'success') {
+    logger.info('Payment not successful — no order created', {
       reference,
-      paidMinor: paidMinor.toString(),
-      expectedMinor: pending.paystackChargeMinor,
+      provider: provider.id,
+      tenantId: pending.tenantId,
+      status: verification.status,
     });
+    // initiated | pending | failed | expired (F-404); lastCheckedAt on every check.
+    const failed = verification.status === 'failed';
+    const nextStatus = failed ? 'failed' : verification.status === 'abandoned' ? 'expired' : 'pending';
+    await prisma.pendingCheckout.updateMany({ where: { reference }, data: { status: nextStatus, lastCheckedAt: new Date() } });
+    return { status: failed ? 'failed' : 'pending' };
+  }
+
+  // Money was taken but no order can be made: the row stays as needs_review and the owner gets a Finding (F-404).
+  const paid = verification.amount;
+  const refuse = async (reason: string, details: Record<string, unknown>): Promise<SettlementResult> => {
+    logger.warn(`${reason} — not creating order`, { reference, provider: provider.id, ...details });
+    await flagNeedsReview(reference, pending.tenantId, paid);
     return { status: 'failed' };
+  };
+
+  // SECURITY: the provider must have charged in the currency we asked for, and the amount must cover the
+  // expected charge (deposit portion or full total). Stops an underpaid/tampered initialize from fulfilling —
+  // digital products auto-deliver. Minor against minor: the stored charge and the provider's figure use the provider's own unit.
+  if (verification.currency !== pending.currency) {
+    return refuse('Payment currency mismatch', { paidCurrency: verification.currency, expectedCurrency: pending.currency });
+  }
+  if (verification.amountMinor < pending.paystackChargeMinor) {
+    return refuse('Payment underpayment', { paidMinor: verification.amountMinor, expectedMinor: pending.paystackChargeMinor });
+  }
+
+  // Every product on the snapshot must still exist, or the order insert fails after the claim and the payment is lost.
+  const productIds = [...new Set((pending.orderItems as Array<{ productId: number }>).map((item) => item.productId))];
+  if (productIds.length > 0 && (await prisma.product.count({ where: { id: { in: productIds } } })) !== productIds.length) {
+    return refuse('Payment for a missing product', { productIds });
   }
 
   // Atomic claim — only one caller deletes the pending row and creates the order.
@@ -135,10 +183,12 @@ async function settleInTenant(
     throw err;
   }
 
-  // Order money is in major units (F-405). Paystack's amount is minor units: convert once here.
-  const paid = Money.fromMinor(paidMinor);
-  const paystackFee = Money.fromMinor(verification.data.fees ?? 0);
-  const isDeposit = pending.paymentMethod === 'paystack_deposit';
+  // Order money is in major units (F-405); the adapter already converted the provider's amounts.
+  const providerFee = verification.fee;
+  const paidAt = verification.paidAt ?? new Date();
+  // Pending rows saved before the neutral names shipped still say paystack_*; the order gets the neutral name.
+  const method = normalizeMethod(pending.paymentMethod) ?? 'online_full';
+  const isDeposit = method === 'online_deposit';
   const formData = pending.formData as Record<string, any>;
 
   const order = await prisma.order.create({
@@ -147,9 +197,7 @@ async function settleInTenant(
       status: 'confirmed',
       paymentStatus: isDeposit ? 'deposited' : 'paid',
       orderType: pending.orderType,
-      // Digital keeps the generic 'paystack' label for back-compat; physical
-      // keeps the granular deposit/full method.
-      paymentMethod: pending.orderType === 'digital' ? 'paystack' : pending.paymentMethod,
+      paymentMethod: method,
       subtotal: pending.subtotal,
       shippingCost: pending.shippingCost,
       discount: pending.discount,
@@ -158,6 +206,7 @@ async function settleInTenant(
       balanceDue: pending.balanceDue,
       depositPaid: paid,
       paymentReference: reference,
+      paymentProvider: provider.id,
       deliveryAddress: deliveryAddressOf(formData.address, formData.landmark),
       deliveryState: formData.state || null,
       deliveryArea: cleanText(formData.town, 100) || null,
@@ -203,13 +252,20 @@ async function settleInTenant(
         orderId: order.id,
         type: 'payment',
         amount: paid,
-        paymentMethod: 'paystack',
+        paymentMethod: provider.id,
+        provider: provider.id,
+        channel: verification.channel,
+        currency: verification.currency,
+        // No fee from the provider: 0 and feeUnknown, so profit is not shown as better than it is (F-406).
+        feeAmount: providerFee,
+        feeUnknown: !verification.feeKnown,
+        providerReference: reference,
+        paidAt,
         status: 'paid',
         reference,
         metadata: {
-          currency: verification.data.currency,
-          fees: Money.toApi(paystackFee),
-          paystackReference: reference,
+          currency: verification.currency,
+          fees: Money.toApi(providerFee),
         },
       },
     });
@@ -219,34 +275,32 @@ async function settleInTenant(
         tenantId: resolveTenantId(order.tenantId),
         orderId: order.id,
         status: 'confirmed',
-        notes: `Payment confirmed via Paystack (ref: ${reference})`,
+        notes: `Payment confirmed via ${provider.displayName} (ref: ${reference})`,
       },
     });
-
-    if (order.orderType === 'digital') {
-      try {
-        const glService = new GLAutomationService();
-        await glService.createDigitalSaleEntry(
-          tx as any,
-          order.id,
-          paid,
-          paystackFee,
-          order.customer?.id || 1,
-        );
-      } catch (glError: any) {
-        logger.warn('Failed to create GL entry for digital sale, continuing', {
-          orderId: order.id,
-          error: glError.message,
-        });
-      }
-    }
   });
 
-  logger.info('Paystack payment settled — order created', {
+  logger.info('Payment settled — order created', {
     tenantId: pending.tenantId,
     orderId: order.id,
     reference,
     amount: Money.toApi(paid),
+  });
+
+  // Tell subscribers (the ledger poster) the payment is settled. After the commit; never awaited, never throws into settlement (F-406).
+  void emitPaymentSettled({
+    tenantId: pending.tenantId,
+    orderId: order.id,
+    provider: provider.id,
+    reference,
+    currency: verification.currency,
+    amount: paid,
+    fee: providerFee,
+    feeUnknown: !verification.feeKnown,
+    channel: verification.channel,
+    paidAt,
+    orderType: order.orderType,
+    method,
   });
 
   // Workflows + realtime, now that the order exists.
@@ -255,7 +309,7 @@ async function settleInTenant(
 
   // Server-side Meta Purchase event (best-effort, idempotent via capiEventFired).
   metaCapiService.fireCapiPurchaseEvent(order.id).catch((err) => {
-    logger.error('Failed to fire Meta CAPI event for settled Paystack order', {
+    logger.error('Failed to fire Meta CAPI event for settled online order', {
       orderId: order.id,
       error: err?.message,
     });

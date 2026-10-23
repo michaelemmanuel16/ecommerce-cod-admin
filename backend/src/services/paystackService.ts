@@ -1,16 +1,11 @@
 import crypto from 'crypto';
 import { safeEqual } from '../utils/crypto';
-import prisma from '../utils/prisma';
-import { decryptProviderSecrets } from '../utils/providerCrypto';
+import { loadProviderConfig, ProviderConfig } from './payments/connectionConfig';
 import { AppError } from '../middleware/errorHandler';
 import logger from '../utils/logger';
+import type { ConnectionCheck } from './payments/types';
 
-interface PaystackConfig {
-  publicKey: string;
-  secretKey: string;
-  mode: 'test' | 'live';
-  isEnabled: boolean;
-}
+type PaystackConfig = ProviderConfig;
 
 interface InitializeResponse {
   authorization_url: string;
@@ -25,7 +20,9 @@ interface VerifyResponse {
     reference: string;
     amount: number; // in kobo/pesewas
     currency: string;
-    fees: number;
+    fees?: number | null;
+    channel?: string | null;
+    paid_at?: string | null;
     metadata: Record<string, any>;
     customer: { email: string };
   };
@@ -44,22 +41,8 @@ async function loadTenantPaystackConfig(tenantId: string): Promise<PaystackConfi
   }
 
   try {
-    const config = await prisma.systemConfig.findUnique({
-      where: { tenantId },
-      select: { paystackProvider: true },
-    });
-    const provider = config?.paystackProvider as any;
-    const decrypted = provider ? decryptProviderSecrets('paystackProvider', provider) : null;
-
-    let result: PaystackConfig | null = null;
-    if (decrypted && decrypted.secretKey) {
-      result = {
-        publicKey: decrypted.publicKey || '',
-        secretKey: decrypted.secretKey,
-        mode: decrypted.mode === 'live' ? 'live' : 'test',
-        isEnabled: decrypted.isEnabled !== false,
-      };
-    }
+    // PaymentConnection first, the old SystemConfig.paystackProvider JSON as the fallback.
+    const result = await loadProviderConfig(tenantId, 'paystack');
 
     configCache.set(tenantId, { data: result, fetchedAt: now });
     return result;
@@ -217,10 +200,37 @@ export const paystackService = {
   },
 
   /**
-   * Whether the tenant has configured + enabled Paystack.
+   * Check the tenant's keys against Paystack. `GET /balance` needs a valid secret key and lists one
+   * balance per currency the account holds, which is what we keep as the currencies it can take (F-401).
+   * A rejected key is a result (ok false), not an error; the secret never goes into the message or the log.
    */
-  async isConfigured(tenantId: string): Promise<boolean> {
+  async testConnection(tenantId: string): Promise<ConnectionCheck> {
     const config = await loadTenantPaystackConfig(tenantId);
-    return !!(config && config.isEnabled && config.secretKey);
+    if (!config) {
+      return { ok: false, message: 'No Paystack secret key is saved yet.', supportedCurrencies: [] };
+    }
+    try {
+      const response = await fetch('https://api.paystack.co/balance', {
+        headers: { Authorization: `Bearer ${config.secretKey}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      const body: any = await response.json();
+      if (!response.ok) {
+        logger.warn('Paystack connection test failed', { tenantId, status: response.status });
+        return { ok: false, message: body?.message || `Paystack answered ${response.status}.`, supportedCurrencies: [] };
+      }
+      const currencies: string[] = Array.isArray(body?.data)
+        ? Array.from(new Set<string>(body.data.map((b: { currency?: string }) => String(b.currency || '').toUpperCase()).filter(Boolean)))
+        : [];
+      return { ok: true, message: 'Paystack accepted the keys.', supportedCurrencies: currencies };
+    } catch (error: any) {
+      const timedOut = error?.name === 'TimeoutError';
+      logger.warn('Paystack connection test could not reach Paystack', { tenantId, error: error.message });
+      return {
+        ok: false,
+        message: timedOut ? 'Paystack did not answer within 10 seconds. Try again.' : 'Could not reach Paystack. Try again.',
+        supportedCurrencies: [],
+      };
+    }
   },
 };

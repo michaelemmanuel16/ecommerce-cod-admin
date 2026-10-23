@@ -41,7 +41,7 @@ const MENU_RULES: Array<[key: string, allowed: (c: MenuCtx) => boolean]> = [
   ['inbox', () => true],
   ['orders', (c) => c.has('orders', 'view')],
   ['customers', (c) => c.has('customers', 'view')],
-  ['checkoutForms', (c) => c.has('settings', 'view')],
+  ['checkoutForms', (c) => MANAGER_UP.includes(c.role)],
   ['messages', (c) => MANAGER_UP.includes(c.role)],
   // Reps and agents never saw Products in the old menu; keep that.
   ['products', (c) => c.has('products', 'view') && c.role !== 'sales_rep' && c.role !== 'delivery_agent'],

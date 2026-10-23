@@ -257,6 +257,10 @@ async function seedTenant(label: string, side: 'a' | 'b', suffix: string): Promi
   await seed('userSession', prismaBase.userSession.create({
     data: { tenantId, userId: admin.id, tokenHash: `hash-${tag}`, deviceLabel: 'Chrome on macOS', ip: '127.0.0.1' },
   }));
+  // M3b: one payment connection. The stored secret is a plain marker; suites that need a real ciphertext write their own row.
+  await seed('paymentConnection', prismaBase.paymentConnection.create({
+    data: { tenantId, provider: 'paystack', mode: 'test', publicKey: `pk_test_${marker}`, secretKey: `sk_test_${marker}`, supportedCurrencies: ['GHS'] },
+  }));
 
   // The MCP key acts as an ai_agent user. admin holds every cell the 14 tools need and the Legacy role lists all
   // 14 tools, so suites that call every tool work. A suite that tests a narrower key makes its own user, role and key.
@@ -324,6 +328,7 @@ export async function deleteTenantRows(tenantIds: string[]): Promise<void> {
     db.fxRate.deleteMany({ where: t }),
     db.roleAssignment.deleteMany({ where: t }),
     db.userSession.deleteMany({ where: t }),
+    db.paymentConnection.deleteMany({ where: t }),
   ]);
   await inSequence([
     db.order.deleteMany({ where: t }),

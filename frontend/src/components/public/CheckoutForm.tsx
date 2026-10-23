@@ -3,11 +3,14 @@ import { useForm, Controller, RegisterOptions, FieldError } from 'react-hook-for
 import { PublicCheckoutForm } from '../../services/public-orders.service';
 import { FormField, PaymentMethod } from '../../types/checkout-form';
 import { MappedField, mapFields } from '../../lib/standardFields';
+import { LEGACY_EMPTY_FORM_FIELDS } from '../../lib/defaultFields';
 import { PackageSelector } from './PackageSelector';
 import { AddOnSelector } from './AddOnSelector';
 import { OrderSummary, PaymentMethodOption } from './OrderSummary';
 import { cn } from '../../utils/cn';
 import { TownSelect } from '../forms/TownSelect';
+import { DEFAULT_BUTTON_COLOR } from '../../lib/contrast';
+import { formatMoney } from '../../utils/money';
 
 interface CheckoutFormProps {
   formData: PublicCheckoutForm;
@@ -18,6 +21,9 @@ interface CheckoutFormProps {
   // Rendered inside the embed widget on a host page — drops the full-screen page
   // chrome (min-h-screen / page background / outer padding) so it fits inline.
   embedded?: boolean;
+  // The editor's preview: "Place order" says "Preview only." and no order is sent. Pixels and server events live in the
+  // pages around this component (PublicCheckout, EmbedCheckout), which the preview route never renders.
+  preview?: boolean;
 }
 
 export interface CheckoutFormData {
@@ -29,6 +35,8 @@ export interface CheckoutFormData {
   town: string;
   landmark: string;
   streetAddress?: string;
+  /** A field whose "Sends to" is Order notes (F-412). */
+  notes?: string;
   selectedPackageId: number;
   selectedAddonIds: number[];
   customFields?: Record<string, string>;
@@ -42,16 +50,6 @@ export interface CheckoutFormData {
 // rejects a submission without) — this one also applies to digital forms, where
 // address and state are still asked for but the server doesn't demand them.
 const DEFAULT_REQUIRED_KEYS: ReadonlySet<string> = new Set(['fullName', 'phone', 'region', 'town', 'landmark', 'streetAddress']);
-
-const DEFAULT_FIELDS: FormField[] = [
-  { id: 'fullName', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
-  { id: 'phone', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
-  { id: 'region', label: 'State', type: 'select', required: true, enabled: true, standardKey: 'region' },
-  { id: 'town', label: 'City/Town', type: 'text', required: true, enabled: true, standardKey: 'town' },
-  { id: 'landmark', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' },
-  { id: 'email', label: 'Email Address', type: 'email', required: false, enabled: false, standardKey: 'email' },
-  { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: false, enabled: false, standardKey: 'streetAddress' },
-];
 
 const TOWN_FIELD: FormField = { id: 'town', label: 'City/Town', type: 'text', required: true, enabled: true, standardKey: 'town' };
 const LANDMARK_FIELD: FormField = { id: 'landmark', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' };
@@ -67,6 +65,22 @@ function withTownAndLandmark(fields: FormField[]): FormField[] {
   return at < 0 ? fields : [...fields.slice(0, at + 1), ...add, ...fields.slice(at + 1)];
 }
 
+// A digital form asks no address, state, town or landmark, and always asks an email (a form with the email field switched
+// off gets it back, so the download link has somewhere to go). The server does not demand those address fields either.
+const DIGITAL_HIDDEN_KEYS: ReadonlySet<string> = new Set(['region', 'town', 'landmark', 'streetAddress']);
+const EMAIL_FIELD: FormField = { id: 'email', label: 'Email Address', type: 'email', required: true, enabled: true, standardKey: 'email' };
+
+function digitalFields(mapped: MappedField[], all: FormField[]): MappedField[] {
+  const kept = mapped.filter((m) => !(m.standardKey && DIGITAL_HIDDEN_KEYS.has(m.standardKey)) && m.field.type !== 'state');
+  if (kept.some((m) => m.standardKey === 'email')) return kept;
+  // An email field the owner switched off comes back as it was typed; a form with none gets the default.
+  const saved = mapFields(all).find((m) => m.standardKey === 'email');
+  const email = saved ? { ...saved.field, enabled: true } : EMAIL_FIELD;
+  const at = kept.findIndex((m) => m.standardKey === 'phone');
+  const added = mapFields([email])[0];
+  return at < 0 ? [...kept, added] : [...kept.slice(0, at + 1), added, ...kept.slice(at + 1)];
+}
+
 interface FieldWrapperProps {
   fieldKey: string;
   label: string;
@@ -80,10 +94,11 @@ interface FieldWrapperProps {
 function FieldWrapper({ fieldKey, label, required, error, children, labelColor, widthPercent }: FieldWrapperProps): React.JSX.Element {
   // Width is a percentage of the row; the container uses negative side margins so
   // the px-2 gutters line up. Two 50% fields share a row, full width gets its own.
+  // Full width on a phone; the owner's width applies from the sm breakpoint up.
   const width = widthPercent && widthPercent < 100 ? `${widthPercent}%` : '100%';
   return (
-    <div key={fieldKey} className="px-2 mb-4" style={{ width }}>
-      <label className="block text-sm font-medium text-gray-700 mb-1" style={labelColor ? { color: labelColor } : undefined}>
+    <div key={fieldKey} className="px-2 mb-4 w-full sm:w-[var(--field-w)]" style={{ ['--field-w' as string]: width } as React.CSSProperties}>
+      <label className="block text-sm font-medium text-gray-700 mb-1.5" style={labelColor ? { color: labelColor } : undefined}>
         {label} {required && <span className="text-red-500">*</span>}
       </label>
       {children}
@@ -94,10 +109,15 @@ function FieldWrapper({ fieldKey, label, required, error, children, labelColor, 
   );
 }
 
-export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, lockedPackageId, embedded }) => {
+export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, lockedPackageId, embedded, preview }) => {
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<Set<number>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewNotice, setPreviewNotice] = useState(false);
+  // The server's answer to the last try, in plain words above the buttons. Never an alert().
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Set on the first tap, before React re-renders: a second tap in the same frame does nothing.
+  const submittingRef = useRef(false);
   const isDigital = formData.formType === 'digital' || formData.product?.productType === 'digital';
 
   // Deep-link lock: when the page resolves a `?package=<id>`, show only that package
@@ -127,22 +147,29 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
     }
   }, [formData.packages, selectedPackageId, lockedPackage]);
 
+  // Back from the payment page (the browser may restore this page as it was): the button works again.
+  useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    };
+    window.addEventListener('pageshow', onShow);
+    return () => window.removeEventListener('pageshow', onShow);
+  }, []);
+
   const selectedPackage = formData.packages.find((p) => p.id === selectedPackageId) || null;
 
   function getFieldsToRender(): MappedField[] {
     let fields: FormField[];
     if (formData.fields?.length) {
       fields = isDigital ? formData.fields : withTownAndLandmark(formData.fields);
-    } else if (isDigital) {
-      // Digital orders need an email and no town or landmark.
-      fields = DEFAULT_FIELDS.filter((f) => f.standardKey !== 'town' && f.standardKey !== 'landmark')
-        .map((f) => (f.standardKey === 'email' ? { ...f, enabled: true } : f));
     } else {
-      fields = DEFAULT_FIELDS;
+      fields = LEGACY_EMPTY_FORM_FIELDS;
     }
-    // Forms saved with the old "Region" wording show the new one.
-    const named = fields.map((f) => (/^region(\s*\/\s*state)?$/i.test(f.label.trim()) ? { ...f, label: 'State' } : f));
-    return mapFields(named.filter((f: FormField) => f.enabled !== false));
+    // The buyer sees exactly the label the owner typed (the old "Region" labels were rewritten to "State" in the database).
+    const mapped = mapFields(fields.filter((f: FormField) => f.enabled !== false));
+    return isDigital ? digitalFields(mapped, fields) : mapped;
   }
 
   function getFieldError(formKey: string): FieldError | undefined {
@@ -157,10 +184,15 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   // Theme derived from the form's Design settings (live-streamed in preview).
   const design = formData.design || {};
   const colors = design.colors || {};
-  const ctaColor = colors.cta || '#0f172a';
+  const ctaColor = colors.cta || DEFAULT_BUTTON_COLOR;
   const surfaceColor = colors.surface || '#f97316';
   const primaryColor = colors.primary || ctaColor;
   const textColor = colors.text;
+  const labelColor = design.input?.labelColor || textColor;
+  const priceColor = design.input?.priceColor || undefined;
+  const pageBackground = design.page?.background && design.page.background !== 'transparent' ? design.page.background : undefined;
+  // The server drops a banner that is not on our image storage, so any banner that arrives here is ours.
+  const banner = design.page?.productBanner || undefined;
   const inputStyle = design.input?.style || 'outlined';
   const buttonShape = design.button?.shape || 'rounded';
   const buttonSize = design.button?.size || 'md';
@@ -173,7 +205,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   const fieldStyle = { ['--tw-ring-color' as string]: primaryColor } as React.CSSProperties;
 
   const fieldBase = (hasError: boolean) => {
-    const base = 'w-full px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition-colors';
+    const base = 'w-full px-4 py-3 text-base focus:outline-none focus:ring-2 focus:border-transparent transition-colors';
     if (inputStyle === 'flat') {
       return cn(base, 'border-0 border-b-2 rounded-none bg-transparent px-1', hasError ? 'border-red-500' : 'border-gray-300');
     }
@@ -184,7 +216,8 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   };
   const inputClassName = (hasError: boolean) => fieldBase(hasError);
   const selectClassName = (hasError: boolean) =>
-    cn(fieldBase(hasError), inputStyle === 'flat' ? 'bg-white' : '');
+    // A native select ignores line-height, so its 48 px comes from h-12, not from the padding.
+    cn(fieldBase(hasError), 'h-12', inputStyle === 'flat' ? 'bg-white' : '');
 
   function requiredRule(label: string): RegisterOptions | undefined {
     return { required: `${label} is required` };
@@ -317,7 +350,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
     }
 
     return (
-      <FieldWrapper key={wrapKey} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={textColor} widthPercent={field.widthPercent}>
+      <FieldWrapper key={wrapKey} fieldKey={formKey} label={field.label} required={isRequired} error={error} labelColor={labelColor} widthPercent={field.widthPercent}>
         {control}
       </FieldWrapper>
     );
@@ -333,7 +366,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   const ctaTotal = (selectedPackage?.price || 0) + selectedAddons.reduce((s, a) => s + a.price, 0);
   const depositPercent = formData.depositPercent ?? 0;
   const depositAmount = (ctaTotal * depositPercent) / 100;
-  const money = (n: number) => `${formData.currency} ${n.toFixed(2)}`;
+  const money = (n: number) => formatMoney(n, formData.currency);
 
   const paymentMethods: PaymentMethodOption[] = (() => {
     if (isDigital) {
@@ -368,11 +401,14 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   };
 
   const onFormSubmit = async (data: Partial<CheckoutFormData>) => {
+    if (submittingRef.current) return;
     if (!selectedPackageId) {
-      alert('Please select a package');
+      setSubmitError('Please choose a package.');
       return;
     }
 
+    submittingRef.current = true;
+    setSubmitError(null);
     setIsSubmitting(true);
     try {
       await onSubmit({
@@ -384,6 +420,8 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
       // Don't reset isSubmitting on success — prevents double-submit while redirecting
     } catch (error) {
       console.error('Order submission error:', error);
+      setSubmitError(error instanceof Error && error.message ? error.message : 'We could not place your order. Please try again.');
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -395,89 +433,105 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
     handleSubmit(onFormSubmit)();
   };
 
+  // The preview never submits: both entry points (the payment buttons and the single CTA) say so and stop here.
+  const guardPreview = <A extends unknown[]>(submit: (...args: A) => void) =>
+    preview ? () => setPreviewNotice(true) : submit;
+
+  const packageSection = (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6" data-testid="section-packages">
+      <PackageSelector
+        packages={visiblePackages}
+        selectedPackageId={selectedPackageId}
+        currency={formData.currency}
+        onSelectPackage={setSelectedPackageId}
+        primaryColor={primaryColor}
+        accentColor={surfaceColor}
+        textColor={textColor}
+        priceColor={priceColor}
+      />
+    </div>
+  );
+
+  const addOnSection = formData.upsells.length > 0 && (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6" data-testid="section-addons">
+      <AddOnSelector
+        upsells={formData.upsells}
+        selectedAddons={selectedAddonIds}
+        currency={formData.currency}
+        onToggleAddon={toggleAddon}
+        priceColor={priceColor}
+      />
+    </div>
+  );
+
+  const informationSection = (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6" data-testid="section-information">
+      <h2 className="text-lg font-semibold text-gray-900 mb-4" style={textColor ? { color: textColor } : undefined}>
+        Your information
+      </h2>
+      <div className="flex flex-wrap -mx-2">
+        {getFieldsToRender().map(renderField)}
+      </div>
+    </div>
+  );
+
+  // The hosted page splits into the offer and a sticky summary from lg up; embedded stays one column.
+  const split = !embedded;
+  const rootClass = split ? 'min-h-screen bg-gray-50 py-6 px-4 sm:py-8' : 'w-full';
+  const containerClass = split ? 'max-w-xl lg:max-w-[1080px] mx-auto' : 'max-w-xl mx-auto';
+  const gridClass = split ? 'lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6 lg:items-start' : undefined;
+  const summaryClass = split ? 'mt-4 lg:mt-0 lg:sticky lg:top-6' : 'mt-4';
+
   return (
-    <div className={embedded ? 'w-full' : 'min-h-screen bg-gray-50 py-8 px-4'}>
-      <div className="max-w-2xl mx-auto">
-        {/* Header */}
-        {!formData.design?.page?.hideProductDisplay && (
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2" style={textColor ? { color: textColor } : undefined}>
-              {formData.product?.name || formData.name || 'Product Order'}
-            </h1>
-            {formData.description && (
-              <p className="text-gray-600">{formData.description}</p>
-            )}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit(onFormSubmit)}>
-          {/* Single centered column on all breakpoints — form, then summary stacked */}
-          <div className="space-y-6">
-            {/* Form fields and selections */}
-            <div className="space-y-6">
-              {/* Package Selection — rendered first when offer position is "top" */}
-              {offerOnTop && (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                  <PackageSelector
-                    packages={visiblePackages}
-                    selectedPackageId={selectedPackageId}
-                    currency={formData.currency}
-                    onSelectPackage={setSelectedPackageId}
-                    primaryColor={primaryColor}
-                    accentColor={surfaceColor}
-                    textColor={textColor}
-                  />
+    // The public form keeps its own colours: it never reads the admin theme, so the admin's dark mode cannot change it.
+    <div
+      className={rootClass}
+      data-testid="public-form-root"
+      style={{ colorScheme: 'light', ...(pageBackground ? { backgroundColor: pageBackground } : {}) }}
+    >
+      <div className={containerClass}>
+        <form onSubmit={preview ? (e) => { e.preventDefault(); setPreviewNotice(true); } : handleSubmit(onFormSubmit)}>
+          <div className={gridClass} data-testid="checkout-layout">
+            <div>
+              {banner && <img src={banner} alt="" className="w-full max-h-64 object-cover rounded-2xl mb-5" data-testid="form-banner" />}
+              {/* Product header (hideable) */}
+              {!formData.design?.page?.hideProductDisplay && (
+                <div className="mb-5" data-testid="section-header">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1" style={textColor ? { color: textColor } : undefined}>
+                    {formData.product?.name || formData.name || 'Product Order'}
+                  </h1>
+                  {formData.description && (
+                    <p className="text-gray-600">{formData.description}</p>
+                  )}
                 </div>
               )}
 
-              {/* Customer Information */}
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-6" style={textColor ? { color: textColor } : undefined}>
-                  Your Information
-                </h2>
-
-                <div className="flex flex-wrap -mx-2">
-                  {getFieldsToRender().map(renderField)}
-                </div>
+              {/* The offer (packages, add-ons) and "Your information" in the owner's order. */}
+              <div className="space-y-4">
+                {offerOnTop ? (
+                  <>
+                    {packageSection}
+                    {addOnSection}
+                    {informationSection}
+                  </>
+                ) : (
+                  <>
+                    {informationSection}
+                    {packageSection}
+                    {addOnSection}
+                  </>
+                )}
               </div>
-
-              {/* Package Selection — default position (below customer info) */}
-              {!offerOnTop && (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                  <PackageSelector
-                    packages={visiblePackages}
-                    selectedPackageId={selectedPackageId}
-                    currency={formData.currency}
-                    onSelectPackage={setSelectedPackageId}
-                    primaryColor={primaryColor}
-                    accentColor={surfaceColor}
-                    textColor={textColor}
-                  />
-                </div>
-              )}
-
-              {/* Add-ons Selection */}
-              {formData.upsells.length > 0 && (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                  <AddOnSelector
-                    upsells={formData.upsells}
-                    selectedAddons={selectedAddonIds}
-                    currency={formData.currency}
-                    onToggleAddon={toggleAddon}
-                  />
-                </div>
-              )}
             </div>
 
-            {/* Order Summary — stacked below the form. The price breakdown is
-                hidden when the toggle is off, but the CTA button always renders. */}
-            <div>
+            {/* Order summary: the price breakdown hides when the toggle is off, but the buttons always render. */}
+            <div className={summaryClass} data-testid="summary-column">
               <OrderSummary
                 selectedPackage={selectedPackage}
                 selectedAddons={selectedAddons}
                 currency={formData.currency}
                 isSubmitting={isSubmitting}
-                onSubmit={handleSubmit(onFormSubmit)}
+                onSubmit={guardPreview(() => handleSubmit(onFormSubmit)())}
                 buttonColor={ctaColor}
                 accentColor={surfaceColor}
                 textColor={textColor}
@@ -486,9 +540,16 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                 submitLabel={buttonLabelOverride || (isDigital ? 'Proceed to Payment' : 'Place Order')}
                 showSummary={showOrderSummary}
                 paymentMethods={paymentMethods}
-                onSelectMethod={submitWithMethod}
+                onSelectMethod={guardPreview(submitWithMethod)}
                 showRefundPolicy={showRefundPolicy}
+                priceColor={priceColor}
+                submitError={submitError}
+                isDigital={isDigital}
+                hasCod={paymentMethods.some((o) => o.method === 'cod')}
+                supportWhatsapp={formData.supportWhatsapp}
+                product={split && formData.product ? { imageUrl: formData.product.imageUrl, name: formData.product.name || formData.name } : undefined}
               />
+              {previewNotice && <p role="status" className="mt-3 text-center text-sm font-medium text-gray-700">Preview only.</p>}
             </div>
           </div>
         </form>

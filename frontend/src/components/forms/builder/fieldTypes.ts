@@ -25,7 +25,7 @@ export interface FieldTypeMeta {
   optionsHelp?: string;
 }
 
-// Order matches the Salesgee "Add Form Fields" grid, with State appended.
+// Order matches the Salesgee "Add Form Fields" grid, with State (the `state` type) appended.
 export const FIELD_TYPES: readonly FieldTypeMeta[] = [
   { type: 'text', label: 'Text Input', icon: Type, defaultLabel: 'Text', hasOptions: false },
   { type: 'email', label: 'Email', icon: Mail, defaultLabel: 'Email Address', hasOptions: false },

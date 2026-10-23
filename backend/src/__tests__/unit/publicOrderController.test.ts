@@ -30,12 +30,19 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
+import { clearTenantFeaturesCache } from '../../services/tenantFeatures';
 import * as paystackServiceModule from '../../services/paystackService';
 import { createPublicOrder } from '../../controllers/publicOrderController';
 import logger from '../../utils/logger';
 import * as Money from '../../utils/money';
 import { emitOrderCreatedEvent } from '../../utils/appEvents';
 import { metaCapiService } from '../../services/metaCapiService';
+
+// features.prepaidPhysical on: physical forms may take online methods (F-402). Tests of the flag set it themselves.
+beforeEach(() => {
+  clearTenantFeaturesCache();
+  (prismaMock.systemConfig.findUnique as any).mockResolvedValue({ features: { prepaidPhysical: true } });
+});
 
 const mockedLogger = logger as jest.Mocked<typeof logger>;
 
@@ -159,7 +166,7 @@ describe('publicOrderController.createPublicOrder — deferred Paystack creation
     // A pending checkout snapshot is stored, keyed by the Paystack reference.
     expect(prismaMock.pendingCheckout.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ reference: 'ref_abc123', paymentMethod: 'paystack_full' }),
+        data: expect.objectContaining({ reference: 'ref_abc123', paymentMethod: 'online_full', provider: 'paystack' }),
       }),
     );
     // The buyer's name is forwarded to Paystack so the receipt shows the payer.

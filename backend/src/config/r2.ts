@@ -12,6 +12,32 @@ const bucket = process.env.R2_BUCKET;
 // Public base URL that serves the bucket (e.g. https://img.codadminpro.com).
 const publicUrl = process.env.R2_PUBLIC_URL;
 
+/**
+ * Host of the public image storage (from R2_PUBLIC_URL), or null when storage is not configured. The checkout
+ * product banner must be on this host (F-418). Read from the environment on each call so a test can set it.
+ */
+export const storageHost = (): string | null => {
+  const base = process.env.R2_PUBLIC_URL;
+  if (!base) return null;
+  try {
+    return new URL(base).host.toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
+/** True when `value` is an https address on our image storage host. False while storage is not configured. */
+export const isStorageUrl = (value: unknown): boolean => {
+  const host = storageHost();
+  if (!host || typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
+};
+
 export const isR2Configured = (): boolean =>
   Boolean(accountId && accessKeyId && secretAccessKey && bucket && publicUrl);
 

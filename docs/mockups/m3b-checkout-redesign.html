@@ -1,0 +1,120 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Checkout redesign - options</title><style>
+:root{--primary:#0f172a;--cta:#0f172a;--accent:#f97316;--price:#16a34a;--ink:#111827;--mut:#4b5563;--line:#e5e7eb;--bg:#f9fafb}
+*{box-sizing:border-box}
+body{margin:0;background:#eef0f3;color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.4}
+.wrap{max-width:1360px;margin:0 auto;padding:32px 16px 64px}
+h1.t{font-size:28px;margin:0 0 4px}.lead{color:var(--mut);margin:0 0 28px}
+h2.s{font-size:20px;margin:40px 0 4px;padding-top:20px;border-top:1px solid #d6d9de}
+.cap{color:var(--mut);font-size:14px;margin:6px 0 14px;max-width:390px}
+.cap.wide{max-width:640px}
+.frames{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.fr{width:390px;background:var(--bg);border:1px solid #cfd3d9;border-radius:14px;overflow:hidden;position:relative}
+.fr.pad{padding:16px}
+.fr img.shot{display:block;width:390px;height:auto}
+.fr.tall{padding:16px 16px 96px}
+/* cards */
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 2px rgba(0,0,0,.05);padding:16px}
+.card h3{font-size:18px;font-weight:600;margin:0 0 12px}
+.card h3 em{font-style:normal;font-weight:400;color:#6b7280;font-size:15px}
+.stack>*+*{margin-top:12px}
+.rd{width:20px;height:20px;flex:none}
+.pill{display:inline-block;font-size:12px;font-weight:600;line-height:1;padding:4px 8px;border-radius:6px;margin-top:4px}
+.pill.save{background:#dcfce7;color:#15803d}.pill.qty{background:#f3f4f6;color:#4b5563}
+.badge{background:var(--accent);color:#fff;font-size:11px;font-weight:600;padding:3px 7px;border-radius:5px;white-space:nowrap}
+.row{display:flex;align-items:center;gap:12px;min-height:68px;padding:10px 14px;border:2px solid var(--line);border-radius:12px;background:#fff;position:relative}
+.row+.row{margin-top:8px}
+.row.on{border-color:var(--primary);background:#f6f7f9}
+.row .mid{flex:1;min-width:0}
+.row .nm{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row .nm b{font-size:16px;font-weight:600;white-space:nowrap}
+.row .sub{display:block;font-size:13px;color:var(--mut);margin-top:2px}
+.pr{text-align:right;display:flex;flex-direction:column;align-items:flex-end;line-height:1.15}
+.pr s{font-size:12px;color:#6b7280}
+.pr b{font-size:18px;font-weight:700;color:var(--ink)}.pr b.g{color:var(--price)}
+.pr.right{gap:2px}.pr .pcol{display:flex;flex-direction:column;align-items:flex-end}.pr.right .pill{margin-top:2px}
+.row.b{margin-top:14px}.row.b:first-child{margin-top:8px}
+.edge{position:absolute;top:-10px;left:42px;background:var(--accent);color:#fff;font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;line-height:1.2}
+.row.add{min-height:52px;padding:8px 14px}.row.add .nm b{font-size:15px;white-space:normal}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tw{display:flex;flex-direction:column;align-items:center}
+.tb{background:var(--accent);color:#fff;font-size:11px;font-weight:600;padding:3px 6px;border-radius:5px;margin-bottom:6px;white-space:nowrap;line-height:1.2}.tb.ph{visibility:hidden}
+.tile{width:100%;border:2px solid var(--line);border-radius:12px;padding:12px 4px 10px;text-align:center;background:#fff}
+.tile.on{border-color:var(--primary);background:#f6f7f9}
+.tq{font-size:30px;font-weight:700;line-height:1}.tl{font-size:12px;color:var(--mut);margin-bottom:8px}.tp{font-size:17px;font-weight:700}.tp.g{color:var(--price)}.to{font-size:12px;color:#6b7280;min-height:16px}
+.fine{font-size:12px;color:var(--mut);margin:10px 0 0}
+/* fields */
+.fld{margin-bottom:14px}.fld label{display:block;font-size:14px;font-weight:500;color:#374151;margin-bottom:6px}.fld label i{color:#ef4444;font-style:normal}
+.in{height:48px;border:1px solid #d1d5db;border-radius:8px;background:#fff;padding:0 14px;display:flex;align-items:center;justify-content:space-between;font-size:16px;color:#9ca3af}
+.in.area{height:84px;align-items:flex-start;padding-top:12px}
+.cardinfo .fld:last-child{margin-bottom:0}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+/* summary */
+.sum .ln{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:6px 0}
+.sum .ln small{display:block;color:var(--mut);font-size:12px}
+.sum .ln .pp{font-weight:600;text-align:right}.sum .ln .pp s{display:block;color:#6b7280;font-weight:400;font-size:12px}
+.sum .ln.disc{color:#15803d;font-weight:500}
+.sum .tot{display:flex;justify-content:space-between;align-items:center;border-top:2px solid #d1d5db;margin-top:6px;padding-top:12px}
+.sum .tot span{font-size:17px;font-weight:600}.sum .tot b{font-size:24px;color:var(--accent)}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:12px;background:var(--cta);color:#fff;font-weight:600;font-size:17px;width:100%}
+.note{font-size:13px;color:var(--mut);margin:10px 0 0;text-align:center}
+.terms{font-size:12px;color:#6b7280;text-align:center;margin:12px 0 0}.terms u{color:#374151;font-weight:500}
+.sticky{position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);box-shadow:0 -4px 12px rgba(0,0,0,.06);padding:10px 16px 14px}
+.sticky .btn{height:52px}
+.h1{font-size:22px;font-weight:700;margin:4px 0 12px;display:flex;gap:12px;align-items:center}
+.pimg{width:64px;height:64px;object-fit:contain;border-radius:10px;border:1px solid var(--line);background:#fff;flex:none}
+.ph-img{width:64px;height:64px;background:#e5e7eb;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#6b7280;text-align:center}
+/* desktop */
+.deskwrap{overflow:auto;max-width:100%}
+.desk{zoom:.6;width:1280px;background:var(--bg);border:1px solid #cfd3d9;padding:40px 0 56px}
+.dc{width:1080px;margin:0 auto}
+.dcols{display:grid;grid-template-columns:1fr 360px;gap:24px;align-items:start}
+.dleft>*+*{margin-top:16px}
+.dright{position:sticky;top:24px}
+.dh{font-size:30px;font-weight:700;margin:0 0 20px}
+.dright .card{padding:24px}
+.dsum{display:flex;gap:14px;align-items:center;padding-bottom:14px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.dsum .pimg,.dsum .ph-img{width:72px;height:72px}
+.dsum b{display:block;font-size:16px}.dsum span{font-size:13px;color:var(--mut)}
+.dbtn{margin-top:14px}
+.btn.alt{background:#fff;color:var(--cta);border:2px solid var(--cta)}
+.or{display:flex;align-items:center;gap:12px;font-size:12px;color:#9ca3af;margin:10px 0}.or:before,.or:after{content:"";height:1px;background:var(--line);flex:1}
+.secure{display:flex;gap:6px;align-items:center;justify-content:center;font-size:12px;color:var(--mut);margin-top:12px}
+</style></head><body><div class="wrap">
+<h1 class="t">Checkout redesign — options</h1>
+<p class="lead">Built from the real public checkout and the dev form "Dictamni Checkout Ghana". Colours are the form's own: primary and button #0f172a, accent #f97316, green for a discounted price.</p>
+
+<h2 class="s">1. Today (before)</h2>
+<div class="frames"><div><div class="fr"><img class="shot" src="m3b-checkout-today-390.png" alt="Current checkout at 390 px" width="390"></div>
+<p class="cap">The live page at 390 px today: every package is a tall card, and add-ons repeat the same tall style, so "Your information" starts well below the first screen.</p></div></div>
+
+<h2 class="s">2. Package row options</h2>
+<div class="frames">
+<div><div class="fr pad"><div class="card"><h3>Choose your package</h3><div class="row "><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#fff" stroke="#d1d5db" stroke-width="2"/></svg><div class="mid"><div class="nm"><b>Buy 2 Packs</b></div><span class="pill qty">2 packs</span></div><div class="pr "><b class="">GH₵200</b></div></div><div class="row on"><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="var(--primary)" stroke="var(--primary)" stroke-width="2"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="mid"><div class="nm"><b>Buy 4 packs</b><span class="badge">Most Popular</span></div><span class="pill save">Save 10%</span></div><div class="pr "><s>GH₵400</s><b class="g">GH₵360</b></div></div><div class="row "><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#fff" stroke="#d1d5db" stroke-width="2"/></svg><div class="mid"><div class="nm"><b>Buy 6 Packs</b></div><span class="pill save">Save 10%</span></div><div class="pr "><s>GH₵600</s><b class="g">GH₵540</b></div></div></div></div><p class="cap"><b>A. Row.</b> One short row per package: radio, name with a small pill, price on the right. The popular badge sits next to the name.</p></div>
+<div><div class="fr pad"><div class="card"><h3>Choose your package</h3><div class="row b "><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#fff" stroke="#d1d5db" stroke-width="2"/></svg><div class="mid"><div class="nm"><b>Buy 2 Packs</b></div><span class="sub">2 packs</span></div><div class="pr right"><div class="pcol"><b class="">GH₵200</b></div></div></div><div class="row b on"><span class="edge">Most Popular</span><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="var(--primary)" stroke="var(--primary)" stroke-width="2"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="mid"><div class="nm"><b>Buy 4 packs</b></div><span class="sub">4 packs</span></div><div class="pr right"><div class="pcol"><s>GH₵400</s><b class="g">GH₵360</b></div><span class="pill save">Save 10%</span></div></div><div class="row b "><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#fff" stroke="#d1d5db" stroke-width="2"/></svg><div class="mid"><div class="nm"><b>Buy 6 Packs</b></div><span class="sub">6 packs</span></div><div class="pr right"><div class="pcol"><s>GH₵600</s><b class="g">GH₵540</b></div><span class="pill save">Save 10%</span></div></div></div></div><p class="cap"><b>B. Row with edge badge.</b> Same row, but "Most popular" sits on the top border and the saving moves under the price.</p></div>
+<div><div class="fr pad"><div class="card"><h3>Choose your package</h3><div class="tiles"><div class="tw"><span class="tb ph"></span><div class="tile "><div class="tq">2</div><div class="tl">packs</div><div class="tp ">GH₵200</div><div class="to">&nbsp;</div></div></div><div class="tw"><span class="tb">Most Popular</span><div class="tile on"><div class="tq">4</div><div class="tl">packs</div><div class="tp g">GH₵360</div><div class="to"><s>GH₵400</s></div></div></div><div class="tw"><span class="tb ph"></span><div class="tile "><div class="tq">6</div><div class="tl">packs</div><div class="tp g">GH₵540</div><div class="to"><s>GH₵600</s></div></div></div></div><p class="fine">Tiles work for 2 or 3 packages. With 4 or more, the page falls back to rows.</p></div></div><p class="cap"><b>C. Tiles.</b> Three equal tiles in one row: the quantity is big, the price sits under it, the badge is above.</p></div>
+</div>
+
+<h2 class="s">3. Full page, mobile (390 px), option A</h2>
+<div class="frames"><div><div class="fr tall"><div class="stack"><div class="h1"><img class="pimg " src="https://img.codadminpro.com/products/86330bd5-7d44-40c5-98ad-e480a9882530/front-1783800271965-121148212.png" alt="Dictamni Hemorrhoid Cream" width="64" height="64"><span>Dictamni Hemorrhoid Cream</span></div>
+<div class="card"><h3>Choose your package</h3><div class="row "><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#fff" stroke="#d1d5db" stroke-width="2"/></svg><div class="mid"><div class="nm"><b>Buy 2 Packs</b></div><span class="pill qty">2 packs</span></div><div class="pr "><b class="">GH₵200</b></div></div><div class="row on"><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="var(--primary)" stroke="var(--primary)" stroke-width="2"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="mid"><div class="nm"><b>Buy 4 packs</b><span class="badge">Most Popular</span></div><span class="pill save">Save 10%</span></div><div class="pr "><s>GH₵400</s><b class="g">GH₵360</b></div></div><div class="row "><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#fff" stroke="#d1d5db" stroke-width="2"/></svg><div class="mid"><div class="nm"><b>Buy 6 Packs</b></div><span class="pill save">Save 10%</span></div><div class="pr "><s>GH₵600</s><b class="g">GH₵540</b></div></div></div>
+<div class="card"><h3>Add-ons <em>(Optional)</em></h3><div class="row add "><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><rect x="1" y="1" width="18" height="18" rx="4" fill="#fff" stroke="#d1d5db" stroke-width="2"/></svg><div class="mid"><div class="nm"><b>WinsTown Hemorrhoids Tea</b></div></div><div class="pr"><b>GH₵120</b></div></div></div>
+<div class="card cardinfo"><h3>Your information</h3><div class="fld"><label>Full Name <i>*</i></label><div class="in "><span>Enter full name</span></div></div><div class="fld"><label>Phone <i>*</i></label><div class="in "><span>Enter phone</span></div></div><div class="fld"><label>Alt Phone Number</label><div class="in "><span>Enter alt phone number</span></div></div><div class="fld"><label>Email Address <i>*</i></label><div class="in "><span>Enter email address</span></div></div><div class="fld"><label>State <i>*</i></label><div class="in sel"><span>Select state</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div><div class="fld"><label>City/Town <i>*</i></label><div class="in sel"><span>Select city/town</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div><div class="fld"><label>Nearest landmark <i>*</i></label><div class="in "><span>e.g. Opposite Kasoa Total station</span></div></div><div class="fld"><label>Street Address <i>*</i></label><div class="in area"><span>Enter street address</span></div></div></div>
+<div class="card sum"><h3>Order summary</h3><div class="ln"><div>Buy 4 packs<small>Qty: 4</small></div><div class="pp"><s>GH₵400</s>GH₵360</div></div><div class="ln disc"><span>Discount (10%)</span><span>- GH₵40</span></div><div class="tot"><span>Total</span><b>GH₵360</b></div></div><div class="card"><div class="btn" style="margin-top:0">Cash on Delivery</div><p class="note">Cash on delivery: you pay when your order arrives.</p><p class="terms">By placing this order, you agree to our <u>terms</u> <svg width="12" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></p></div></div>
+<div class="sticky"><div class="btn">Place order · GH₵360</div></div></div>
+<p class="cap">Tighter spacing, one white card per section with nothing inside a card, 48 px inputs, compact add-on rows, a short summary, and a fixed bar at the bottom with the total.</p></div></div>
+
+<h2 class="s">4. Full page, desktop (1280 px, shown at 0.6), option A</h2>
+<p class="cap wide">Two columns. The order summary stays in view on the right while the buyer fills in the form on the left. Content is at most 1080 px wide.</p>
+<div class="deskwrap"><div class="desk"><div class="dc">
+<div class="dh">Dictamni Hemorrhoid Cream</div>
+<div class="dcols"><div class="dleft">
+<div class="card"><h3>Choose your package</h3><div class="row "><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#fff" stroke="#d1d5db" stroke-width="2"/></svg><div class="mid"><div class="nm"><b>Buy 2 Packs</b></div><span class="pill qty">2 packs</span></div><div class="pr "><b class="">GH₵200</b></div></div><div class="row on"><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="var(--primary)" stroke="var(--primary)" stroke-width="2"/><path d="M6 10.2l2.6 2.6L14 7.4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="mid"><div class="nm"><b>Buy 4 packs</b><span class="badge">Most Popular</span></div><span class="pill save">Save 10%</span></div><div class="pr "><s>GH₵400</s><b class="g">GH₵360</b></div></div><div class="row "><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#fff" stroke="#d1d5db" stroke-width="2"/></svg><div class="mid"><div class="nm"><b>Buy 6 Packs</b></div><span class="pill save">Save 10%</span></div><div class="pr "><s>GH₵600</s><b class="g">GH₵540</b></div></div></div>
+<div class="card"><h3>Add-ons <em>(Optional)</em></h3><div class="row add on"><svg class="rd" viewBox="0 0 20 20" aria-hidden="true"><rect x="1" y="1" width="18" height="18" rx="4" fill="var(--primary)" stroke="var(--primary)" stroke-width="2"/><path d="M5.5 10.3l3 3 6-6.3" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="mid"><div class="nm"><b>WinsTown Hemorrhoids Tea</b></div></div><div class="pr"><b>GH₵120</b></div></div></div>
+<div class="card cardinfo"><h3>Your information</h3><div class="g2"><div class="fld"><label>Full Name <i>*</i></label><div class="in "><span>Enter full name</span></div></div><div class="fld"><label>Email Address <i>*</i></label><div class="in "><span>Enter email address</span></div></div><div class="fld"><label>Phone <i>*</i></label><div class="in "><span>Enter phone</span></div></div><div class="fld"><label>Alt Phone Number</label><div class="in "><span>Enter alt phone number</span></div></div><div class="fld"><label>State <i>*</i></label><div class="in sel"><span>Select state</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div><div class="fld"><label>City/Town <i>*</i></label><div class="in sel"><span>Select city/town</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></div></div></div><div class="fld"><label>Nearest landmark <i>*</i></label><div class="in "><span>e.g. Opposite Kasoa Total station</span></div></div><div class="fld"><label>Street Address <i>*</i></label><div class="in area"><span>Enter street address</span></div></div></div>
+<div class="card"><h3>Payment</h3><div class="btn">Cash on Delivery</div><p class="note">Cash on delivery: you pay when your order arrives.</p><p class="terms">By placing this order, you agree to our <u>terms</u> <svg width="12" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></p></div>
+</div>
+<div class="dright"><div class="card sum"><div class="dsum"><img class="pimg " src="https://img.codadminpro.com/products/86330bd5-7d44-40c5-98ad-e480a9882530/front-1783800271965-121148212.png" alt="Dictamni Hemorrhoid Cream" width="64" height="64"><div><b>Dictamni Hemorrhoid Cream</b><span>Buy 4 packs + 1 add-on</span></div></div>
+<div class="ln"><div>Buy 4 packs<small>Qty: 4</small></div><div class="pp"><s>GH₵400</s>GH₵360</div></div><div class="ln disc"><span>Discount (10%)</span><span>- GH₵40</span></div><div class="ln"><div>WinsTown Hemorrhoids Tea<small>Qty: 1</small></div><div class="pp">GH₵120</div></div><div class="tot"><span>Total</span><b>GH₵480</b></div>
+<div class="btn dbtn">Place order · GH₵480</div><div class="secure"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg> We call you to confirm before we send it.</div></div></div>
+</div></div></div></div>
+</div></body></html>

@@ -15,20 +15,27 @@ jest.mock('../../services/paystackService', () => ({
 
 // Settlement is delegated to the settlement service; the webhook only owns tenant
 // resolution, signature checks and dedup. We mock settlement and assert delegation.
-jest.mock('../../services/paystackSettlementService', () => ({
-  settlePaystackPayment: jest.fn(),
+jest.mock('../../services/paymentSettlementService', () => ({
+  settlePayment: jest.fn(),
+}));
+// The reference owner lookup is mocked; the tenant-slug lookup runs against the prisma mock.
+jest.mock('../../services/tenantLookupService', () => ({
+  ...jest.requireActual<object>('../../services/tenantLookupService'),
+  findReferenceOwner: jest.fn(),
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
 import * as paystackServiceModule from '../../services/paystackService';
-import * as settlementModule from '../../services/paystackSettlementService';
-import { handleWebhook } from '../../controllers/paystackController';
+import * as settlementModule from '../../services/paymentSettlementService';
+import * as lookupModule from '../../services/tenantLookupService';
+import { handleWebhook } from '../../controllers/paymentController';
 
 const mockedPaystack = paystackServiceModule.paystackService as jest.Mocked<
   typeof paystackServiceModule.paystackService
 >;
-const mockedSettle = settlementModule.settlePaystackPayment as jest.MockedFunction<
-  typeof settlementModule.settlePaystackPayment
+const mockedOwner = lookupModule.findReferenceOwner as jest.MockedFunction<typeof lookupModule.findReferenceOwner>;
+const mockedSettle = settlementModule.settlePayment as jest.MockedFunction<
+  typeof settlementModule.settlePayment
 >;
 
 function buildReq(rawBody: string, tenantSlug = 'tenant-1') {
@@ -51,11 +58,12 @@ function chargeBody(reference = 'ref_abc123') {
   return JSON.stringify({ event: 'charge.success', data: { reference } });
 }
 
-describe('paystackController.handleWebhook — tenant scoping + idempotency', () => {
+describe('paymentController.handleWebhook — tenant scoping + idempotency', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedPaystack.validateWebhookSignature.mockResolvedValue(true);
     mockedSettle.mockResolvedValue({ status: 'success' } as any);
+    mockedOwner.mockResolvedValue(null);
     (prismaMock.tenant.findUnique as any).mockResolvedValue({ id: 'tenant-1' });
   });
 

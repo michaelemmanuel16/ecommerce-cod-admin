@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
 import { cn } from '../../utils/cn';
+import { formatMoney } from '../../utils/money';
 
 type Upsell = PublicCheckoutForm['upsells'][number];
 
@@ -10,6 +11,7 @@ interface AddOnSelectorProps {
   selectedAddons: Set<number>;
   currency: string;
   onToggleAddon: (addonId: number) => void;
+  priceColor?: string;
 }
 
 export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
@@ -17,6 +19,7 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
   selectedAddons,
   currency,
   onToggleAddon,
+  priceColor,
 }) => {
   const hasExpandableContent = (addon: Upsell) => {
     return !!(addon.description || addon.imageUrl);
@@ -41,29 +44,33 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold text-gray-900">
+      <h2 className="text-lg font-semibold text-gray-900">
         Add-ons <span className="text-gray-500 font-normal text-base">(Optional)</span>
       </h2>
-      <div className="space-y-3">
+      <div className="space-y-2">
         {upsells.map((addon) => {
           const isSelected = selectedAddons.has(addon.id);
           const isExpanded = expandedAddons.has(addon.id);
           const expandable = hasExpandableContent(addon);
+          const qty = addon.items?.quantity ?? 1;
 
           return (
             <div
               key={addon.id}
               className={cn(
-                'rounded-lg border-2 transition-all overflow-hidden',
+                'rounded-xl border-2 transition-all overflow-hidden',
                 isSelected
                   ? 'border-[#0f172a] bg-gray-50'
                   : 'border-gray-200 bg-white'
               )}
             >
-              <div className="p-4 flex items-center justify-between">
+              <div className="min-h-[52px] px-3.5 py-2 flex items-center justify-between">
                 {/* Checkbox — only toggles selection */}
                 <button
                   type="button"
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  aria-label={`Add ${addon.name}`}
                   onClick={() => onToggleAddon(addon.id)}
                   className={cn(
                     'w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0',
@@ -98,15 +105,20 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
                   onClick={() => expandable && toggleExpand(addon.id)}
                 >
                   <div>
-                    <h3 className="font-semibold text-gray-900">{addon.name}</h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Quantity: {addon.items?.quantity || 1}
-                    </p>
+                    <h3 className="font-semibold text-gray-900">
+                      {addon.name}
+                      {addon.isPopular && (
+                        <span className="ml-2 px-2 py-0.5 bg-gray-900 text-white text-xs font-medium rounded align-middle">Popular</span>
+                      )}
+                    </h3>
+                    {qty > 1 && (
+                      <p className="text-sm text-gray-600">Qty {qty}</p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 ml-4">
-                    <p className="text-lg font-bold text-gray-900">
-                      {currency} {addon.price.toFixed(2)}
+                    <p className="text-base font-bold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
+                      {formatMoney(addon.price, currency)}
                     </p>
                     {expandable && (
                       <ChevronDown
@@ -122,7 +134,7 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
 
               {/* Expanded content */}
               {isExpanded && expandable && (
-                <div className="px-4 pb-4 border-t border-gray-200">
+                <div className="px-3.5 pb-4 border-t border-gray-200">
                   <div className={cn(
                     'mt-4',
                     addon.imageUrl && addon.description

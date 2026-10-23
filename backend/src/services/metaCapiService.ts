@@ -55,9 +55,9 @@ function compact<T extends Record<string, unknown>>(obj: T): Partial<T> {
 }
 
 // Shared send-path for every CAPI event type: wrap the event in Meta's envelope,
-// POST it, and log the outcome. Returns whether Meta accepted it so the caller
-// can run post-send bookkeeping (e.g. marking an order fired). Assumes the outer
-// caller's try/catch handles network errors — keeps each event fn a one-liner.
+// POST it, and log the outcome. Returns Meta's status and answer so the caller can
+// run post-send bookkeeping (e.g. marking an order fired) or pass the answer on.
+// Assumes the outer caller's try/catch handles network errors — keeps each event fn a one-liner.
 async function postCapiEvent(
   eventLabel: string,
   pixelId: string,
@@ -65,7 +65,8 @@ async function postCapiEvent(
   event: Record<string, unknown>,
   testEventCode: string | null | undefined,
   logCtx: Record<string, unknown>,
-): Promise<boolean> {
+  timeoutMs?: number,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
   const body = {
     data: [event],
     ...(testEventCode ? { test_event_code: testEventCode } : {}),
@@ -75,15 +76,22 @@ async function postCapiEvent(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
   });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    logger.warn(`Meta CAPI ${eventLabel} event rejected`, { ...logCtx, status: res.status, body: text.slice(0, 500) });
-    return false;
+  const text = await res.text().catch(() => '');
+  let answer: unknown = text;
+  try {
+    answer = text ? JSON.parse(text) : null;
+  } catch {
+    // not JSON: keep the text
   }
-  logger.info(`Meta CAPI ${eventLabel} event sent`, { ...logCtx, eventId: event.event_id });
-  return true;
+  if (!res.ok) {
+    logger.warn(`Meta CAPI ${eventLabel} event rejected`, { ...logCtx, status: res.status, body: text.slice(0, 500) });
+  } else {
+    logger.info(`Meta CAPI ${eventLabel} event sent`, { ...logCtx, eventId: event.event_id });
+  }
+  return { ok: res.ok, status: res.status, body: answer };
 }
 
 /**
@@ -177,7 +185,7 @@ async function fireCapiPurchaseEvent(orderId: number): Promise<void> {
       },
     };
 
-    const ok = await postCapiEvent('Purchase', pixelId, accessToken, event, form.metaCapiTestEventCode, { orderId });
+    const { ok } = await postCapiEvent('Purchase', pixelId, accessToken, event, form.metaCapiTestEventCode, { orderId });
     if (!ok) return; // leave capiEventFired false so a later settlement site can retry
 
     // Mark fired only after a successful POST so a transient failure can retry.
@@ -262,5 +270,33 @@ async function fireCapiInitiateCheckoutEvent(params: {
   }
 }
 
-export const metaCapiService = { fireCapiPurchaseEvent, fireCapiInitiateCheckoutEvent };
+/**
+ * Send one test Purchase to Meta for the form editor's "Send a test event" button (F-416). It carries the form's
+ * `test_event_code`, so Meta shows it in Test Events and counts no conversion. Returns Meta's answer as it came back.
+ */
+async function sendTestEvent(params: {
+  pixelId: string;
+  accessToken: string;
+  testEventCode: string;
+  currency: string | null;
+  productId: number;
+}): Promise<{ ok: boolean; status: number; metaResponse: unknown }> {
+  const event = {
+    event_name: 'Purchase',
+    event_time: Math.floor(Date.now() / 1000),
+    action_source: 'website',
+    event_id: `test-${Date.now()}`,
+    user_data: compact({ em: hash('test@example.com'), ph: hashPhone('233200000000') }),
+    custom_data: { value: 1, currency: params.currency || 'GHS', content_ids: [params.productId], content_type: 'product' },
+  };
+  try {
+    const { ok, status, body } = await postCapiEvent('test', params.pixelId, params.accessToken, event, params.testEventCode, { productId: params.productId }, 10_000);
+    return { ok, status, metaResponse: body };
+  } catch (err: any) {
+    logger.warn('Meta CAPI test event failed', { error: err?.message });
+    return { ok: false, status: 0, metaResponse: { error: { message: err?.name === 'TimeoutError' ? 'Meta did not answer in 10 seconds.' : 'Could not reach Meta.' } } };
+  }
+}
+
+export const metaCapiService = { fireCapiPurchaseEvent, fireCapiInitiateCheckoutEvent, sendTestEvent };
 export default metaCapiService;

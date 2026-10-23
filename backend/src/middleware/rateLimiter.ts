@@ -72,9 +72,9 @@ export const healthLimiter = rateLimit({
 
 // Public, unauthenticated lookups: cap each IP at 30 per 15 minutes (very restrictive).
 // Each limiter is its own instance, so one endpoint's traffic never uses up another's budget.
-const publicLookupLimiter = (message: string) => rateLimit({
+const publicLookupLimiter = (message: string, max = 30) => rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 5000 : 30, // Relaxed for development
+  max: isDevelopment ? 5000 : max, // Relaxed for development
   message: { message },
   ...commonSettings
 });
@@ -84,3 +84,8 @@ export const publicOrderLimiter = publicLookupLimiter('Too many order tracking a
 
 // Digital download links are guessable only by token, but a leaked link can be hammered
 export const publicDownloadLimiter = publicLookupLimiter('Too many download attempts. Please try again later.');
+
+// The payment callback page asks every 5 seconds for up to 5 minutes (60 calls) plus reloads, and many buyers share one carrier
+// IP, so it gets its own, larger budget: 120 per 15 minutes per IP in production. The reference is an unguessable secret and
+// the answer carries no customer data, so a bigger budget is safe (F-403).
+export const publicVerifyLimiter = publicLookupLimiter('Too many payment checks. Please try again in a few minutes.', 120);

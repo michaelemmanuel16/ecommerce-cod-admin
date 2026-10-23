@@ -69,6 +69,8 @@ vi.mock('../../components/forms/CheckoutFormPreviewPane', () => ({
 
 // Now import the editor.
 import { CheckoutFormEditor } from '../../pages/CheckoutFormEditor';
+import { useAuthStore } from '../../stores/authStore';
+import { V2PageContext } from '../../components/shell/useV2Page';
 
 const renderEditor = () =>
   render(
@@ -81,6 +83,7 @@ const renderEditor = () =>
 
 describe('CheckoutFormEditor — unsaved-changes guard (R3)', () => {
   beforeEach(() => {
+    useAuthStore.setState({ user: { role: 'admin' } as never });
     navigateSpy.mockClear();
     vi.spyOn(window, 'confirm').mockImplementation(() => true);
   });
@@ -145,5 +148,41 @@ describe('CheckoutFormEditor — unsaved-changes guard (R3)', () => {
       window.dispatchEvent(dirtyEvent);
     });
     expect(dirtySpy).toHaveBeenCalled();
+  });
+});
+
+describe('CheckoutFormEditor, who may change the form (COD-37)', () => {
+  it('an admin sees Save and no read-only line', async () => {
+    useAuthStore.setState({ user: { role: 'admin' } as never });
+    renderEditor();
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.queryByText('Only the owner or an admin can change this form.')).toBeNull();
+  });
+
+  it('a manager sees the read-only line, no Save, and Preview still works', async () => {
+    useAuthStore.setState({ user: { role: 'manager' } as never });
+    renderEditor();
+    expect(await screen.findByText('Only the owner or an admin can change this form.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create form' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Preview/ })).toBeEnabled();
+  });
+});
+
+describe('CheckoutFormEditor, dark mode (COD-37)', () => {
+  it('registers as a v2 page, so the shell does not wrap it in .legacy-light', async () => {
+    useAuthStore.setState({ user: { role: 'admin' } as never });
+    const setV2 = vi.fn();
+    render(
+      <V2PageContext.Provider value={setV2}>
+        <MemoryRouter initialEntries={['/checkout-forms/123/edit']}>
+          <Routes>
+            <Route path="/checkout-forms/:id/edit" element={<CheckoutFormEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </V2PageContext.Provider>,
+    );
+    await screen.findByTestId('builder-stub');
+    expect(setV2).toHaveBeenCalledWith(true);
   });
 });

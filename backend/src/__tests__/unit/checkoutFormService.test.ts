@@ -77,11 +77,20 @@ describe('CheckoutFormService', () => {
     // restore it rather than wondering why a slug they can't see is taken.
     it('names the archive when an archived form holds the slug', async () => {
       (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(
-        makeForm({ isActive: false }) as any
+        makeForm({ isActive: false, archivedAt: new Date() }) as any
       );
 
       await expect(checkoutFormService.createCheckoutForm(makeCreateData())).rejects.toThrow(
         /archived checkout form already uses this slug/i
+      );
+    });
+
+    // "Archived" means archivedAt is set (COD-33): an inactive form is just switched off.
+    it('does not call a merely inactive form archived', async () => {
+      (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(makeForm({ isActive: false, archivedAt: null }) as any);
+
+      await expect(checkoutFormService.createCheckoutForm(makeCreateData())).rejects.toThrow(
+        /Checkout form with this slug already exists/i
       );
     });
 
@@ -165,6 +174,8 @@ describe('CheckoutFormService', () => {
 
   // ───────────────────────────── getCheckoutFormBySlug ─────────────────────────────
   describe('getCheckoutFormBySlug', () => {
+    beforeEach(() => clearCheckoutFormConfigCache()); // the page reads through the config cache, keyed by slug
+
     it('returns sanitized form when found (hides stock quantity)', async () => {
       const form = {
         ...makeForm(),
@@ -275,7 +286,7 @@ describe('CheckoutFormService', () => {
         makeForm({ slug: 'original', packages: [], upsells: [] }) as any
       );
       (prismaMock.checkoutForm.findFirst as any).mockResolvedValue(
-        makeForm({ slug: 'taken', isActive: false }) as any
+        makeForm({ slug: 'taken', isActive: false, archivedAt: new Date() }) as any
       );
 
       await expect(

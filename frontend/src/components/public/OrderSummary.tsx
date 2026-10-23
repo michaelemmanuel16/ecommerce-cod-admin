@@ -1,7 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
 import { PaymentMethod } from '../../types/checkout-form';
 import { Button } from '../ui/Button';
+import { formatMoney } from '../../utils/money';
+import { whatsappUrl } from '../../utils/whatsapp';
+import { packageSaving } from '../../lib/packagePricing';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 
 type ProductPackage = PublicCheckoutForm['packages'][number];
 type Upsell = PublicCheckoutForm['upsells'][number];
@@ -33,9 +38,18 @@ interface OrderSummaryProps {
   // single onSubmit button renders (back-compat). Max two per MAN-58.
   paymentMethods?: PaymentMethodOption[];
   onSelectMethod?: (method: PaymentMethodOption['method']) => void;
-  // Renders a short refund-policy note above the CTAs (Paystack dispute defense),
-  // shown whenever an online-payment method is offered.
+  // Renders a short refund note above the CTAs, shown whenever an online-payment method is offered.
   showRefundPolicy?: boolean;
+  priceColor?: string;
+  /** The server's answer to the last try ("This product is sold out"), shown in plain words above the buttons. */
+  submitError?: string | null;
+  /** Digital forms: the terms talk about the download link, not delivery. */
+  isDigital?: boolean;
+  /** COD is one of the buttons: the terms say you pay on delivery. */
+  hasCod?: boolean;
+  supportWhatsapp?: string | null;
+  /** Shows the product thumbnail and name at the top of the card, on wide screens only. */
+  product?: { imageUrl?: string; name: string };
 }
 
 const SHAPE_CLASS: Record<NonNullable<OrderSummaryProps['buttonShape']>, string> = {
@@ -48,6 +62,48 @@ const SIZE_CLASS: Record<NonNullable<OrderSummaryProps['buttonSize']>, string> =
   sm: 'py-2 text-sm',
   md: 'py-3',
   lg: 'py-4 text-lg',
+};
+
+/** The terms note: one line and an in-page section that opens on tap. No link, no new tab (the Facebook in-app browser loses the page). */
+const TermsNote: React.FC<{ isDigital: boolean; hasCod: boolean; supportWhatsapp?: string | null }> = ({ isDigital, hasCod, supportWhatsapp }) => {
+  const [open, setOpen] = useState(false);
+  const support = whatsappUrl(supportWhatsapp);
+  const lines = isDigital
+    ? ['You pay online, in full, before you get the download link.', 'The download link is sent to the email you give us.']
+    : [
+        'We call you to confirm your order before we send it.',
+        ...(hasCod ? ['Cash on delivery: you pay when your order arrives.'] : []),
+        'Give us a phone number that works, so we can reach you.',
+      ];
+  return (
+    <div className="mt-4 text-center">
+      <p className="text-xs text-gray-500">
+        By placing this order, you agree to our{' '}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls="checkout-terms"
+          className="underline font-medium text-gray-700 inline-flex items-center gap-0.5"
+        >
+          terms
+          <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </button>
+      </p>
+      {open && (
+        <div id="checkout-terms" className="mt-2 rounded-lg bg-gray-50 border border-gray-200 p-3 text-left text-xs text-gray-600 space-y-1">
+          <ul className="list-disc pl-4 space-y-1">
+            {lines.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+          {support && (
+            <p>
+              Questions? <a href={support} className="underline font-medium">Message us on WhatsApp</a>.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 };
 
 export const OrderSummary: React.FC<OrderSummaryProps> = ({
@@ -66,10 +122,17 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
   paymentMethods,
   onSelectMethod,
   showRefundPolicy = false,
+  priceColor,
+  submitError,
+  isDigital = false,
+  hasCod = true,
+  supportWhatsapp,
+  product,
 }) => {
-  const hasDiscount = selectedPackage?.originalPrice && selectedPackage.originalPrice > selectedPackage.price && selectedPackage.showDiscount !== false;
-  const packageOriginalPrice = hasDiscount ? selectedPackage.originalPrice! : selectedPackage?.price || 0;
-  const packageDiscount = hasDiscount ? (selectedPackage.originalPrice! - selectedPackage.price) : 0;
+  const isWide = useMediaQuery('(min-width: 1024px)');
+  const hasDiscount = !!selectedPackage && packageSaving(selectedPackage, currency).hasDiscount;
+  const packageOriginalPrice = selectedPackage && hasDiscount ? selectedPackage.originalPrice! : selectedPackage?.price || 0;
+  const packageDiscount = selectedPackage && hasDiscount ? (selectedPackage.originalPrice! - selectedPackage.price) : 0;
   const packageFinalPrice = selectedPackage?.price || 0;
 
   const addonsTotal = selectedAddons.reduce((sum, addon) => sum + addon.price, 0);
@@ -84,15 +147,21 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
       : [{ method: 'cod', label: submitLabel }];
 
   return (
-    <div className="bg-white rounded-lg border-2 border-gray-200 p-6 sticky top-6">
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-6">
+      {isWide && product?.imageUrl && (
+        <div className="flex items-center gap-3 mb-4" data-testid="summary-product">
+          <img src={product.imageUrl} alt="" width={64} height={64} loading="lazy" decoding="async" className="w-16 h-16 rounded-lg border border-gray-200 object-cover flex-none" />
+          <p className="font-semibold text-gray-900 min-w-0">{product.name}</p>
+        </div>
+      )}
       {showSummary && (
         <>
-      <h2 className="text-xl font-semibold text-gray-900 mb-4" style={textColor ? { color: textColor } : undefined}>Order Summary</h2>
+      <h2 className="text-lg font-semibold text-gray-900 mb-4" style={textColor ? { color: textColor } : undefined}>Order summary</h2>
 
       <div className="space-y-3 mb-6">
         {selectedPackage && (
           <div className="pb-3 border-b border-gray-200">
-            <div className="flex justify-between items-start">
+            <div className="flex justify-between items-start gap-3">
               <div>
                 <p className="font-medium text-gray-900">{selectedPackage.name}</p>
                 <p className="text-sm text-gray-600">Qty: {selectedPackage.quantity}</p>
@@ -101,15 +170,15 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
                 {hasDiscount ? (
                   <>
                     <p className="text-sm text-gray-500 line-through">
-                      {currency} {packageOriginalPrice.toFixed(2)}
+                      {formatMoney(packageOriginalPrice, currency)}
                     </p>
-                    <p className="font-semibold text-green-600">
-                      {currency} {packageFinalPrice.toFixed(2)}
+                    <p className="font-semibold text-green-600" style={priceColor ? { color: priceColor } : undefined}>
+                      {formatMoney(packageFinalPrice, currency)}
                     </p>
                   </>
                 ) : (
-                  <p className="font-semibold text-gray-900">
-                    {currency} {packageFinalPrice.toFixed(2)}
+                  <p className="font-semibold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
+                    {formatMoney(packageFinalPrice, currency)}
                   </p>
                 )}
               </div>
@@ -122,7 +191,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
                     : 'Discount'}
                 </span>
                 <span className="text-green-600 font-medium">
-                  - {currency} {packageDiscount.toFixed(2)}
+                  - {formatMoney(packageDiscount, currency)}
                 </span>
               </div>
             )}
@@ -132,13 +201,13 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
         {selectedAddons.length > 0 && (
           <div className="space-y-2 pb-3 border-b border-gray-200">
             {selectedAddons.map((addon) => (
-              <div key={addon.id} className="flex justify-between items-start">
+              <div key={addon.id} className="flex justify-between items-start gap-3">
                 <div>
                   <p className="text-sm font-medium text-gray-900">{addon.name}</p>
-                  <p className="text-xs text-gray-600">Qty: {addon.items?.quantity || 1}</p>
+                  <p className="text-xs text-gray-600">Qty: {addon.items?.quantity ?? 1}</p>
                 </div>
-                <p className="text-sm font-semibold text-gray-900">
-                  {currency} {addon.price.toFixed(2)}
+                <p className="text-sm font-semibold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
+                  {formatMoney(addon.price, currency)}
                 </p>
               </div>
             ))}
@@ -148,8 +217,8 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
 
       <div className="flex justify-between items-center mb-6 pt-3 border-t-2 border-gray-300">
         <span className="text-lg font-semibold text-gray-900" style={textColor ? { color: textColor } : undefined}>Total</span>
-        <span className="text-2xl font-bold" style={{ color: accentColor }}>
-          {currency} {total.toFixed(2)}
+        <span className="text-2xl font-bold" style={{ color: priceColor || accentColor }} data-testid="order-total">
+          {formatMoney(total, currency)}
         </span>
       </div>
         </>
@@ -158,10 +227,16 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
       {showRefundPolicy && (
         <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
           <p className="text-xs text-gray-600">
-            Secure payment processed by Paystack. Orders are refundable in line with
-            our refund policy — your payment is protected.
+            Your payment is processed securely online. Orders are refundable in line with
+            our refund policy.
           </p>
         </div>
+      )}
+
+      {submitError && (
+        <p role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          {submitError}
+        </p>
       )}
 
       <div className="space-y-3">
@@ -175,7 +250,15 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
               </div>
             )}
             <Button
-              onClick={() => (onSelectMethod ? onSelectMethod(opt.method) : onSubmit())}
+              // The first button is the form's submit button, so the phone keyboard's Go key places the order too. Its click
+              // is taken over (preventDefault) so one tap sends one order; the others are plain buttons.
+              type={i === 0 ? 'submit' : 'button'}
+              onClick={(e) => {
+                e.preventDefault();
+                if (isSubmitting) return;
+                if (onSelectMethod) onSelectMethod(opt.method);
+                else onSubmit();
+              }}
               disabled={!selectedPackage || isSubmitting}
               isLoading={isSubmitting}
               // The first/primary method uses the filled brand colour; secondary
@@ -183,15 +266,13 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
               className={`w-full font-semibold px-6 transition-colors disabled:cursor-not-allowed ${!selectedPackage ? 'opacity-60' : ''} ${SHAPE_CLASS[buttonShape]} ${SIZE_CLASS[buttonSize]} ${i === 0 ? 'text-white' : 'border-2 bg-white'}`}
               style={i === 0 ? { backgroundColor: buttonColor } : { borderColor: buttonColor, color: buttonColor }}
             >
-              {isSubmitting ? 'Processing...' : opt.label}
+              {isSubmitting ? 'Placing your order.' : opt.label}
             </Button>
           </React.Fragment>
         ))}
       </div>
 
-      <p className="text-xs text-gray-500 text-center mt-4">
-        By placing this order, you agree to our terms and conditions
-      </p>
+      <TermsNote isDigital={isDigital} hasCod={hasCod} supportWhatsapp={supportWhatsapp} />
     </div>
   );
 };

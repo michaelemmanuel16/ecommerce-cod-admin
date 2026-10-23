@@ -1,4 +1,5 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { AuthRequest } from '../types';
 import { PaymentStatus } from '@prisma/client';
 import financialService from '../services/financialService';
@@ -14,6 +15,8 @@ import { getTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { addRowsWithMoney } from '../utils/xlsxMoney';
 import { readDateBound } from '../utils/kpiRequest';
+import { AppError } from '../middleware/errorHandler';
+import { recordPaystackPayout } from '../services/paystackPayoutService';
 
 export const getFinancialSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   const { startDate, endDate } = req.query;
@@ -635,5 +638,23 @@ export const backfillCommissions = async (_req: AuthRequest, res: Response): Pro
   } catch (error) {
     logger.error('Failed to backfill commissions', { error });
     res.status(500).json({ message: 'Failed to backfill commissions' });
+  }
+};
+
+const paystackPayoutSchema = z.object({
+  amount: z.string().trim().regex(/^\d+(\.\d{1,4})?$/, 'Amount must be a positive number').refine((v) => Money.tryParse(v)?.gt(0) === true, 'Amount must be above 0'),
+  payoutDate: z.coerce.date(),
+  reference: z.string().trim().min(1, 'Reference is required').max(100),
+  note: z.string().trim().max(500).optional(),
+});
+
+/** Record a Paystack payout to the bank: DR 1010, CR 1030 (F-934). */
+export const postPaystackPayout = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const parsed = paystackPayoutSchema.safeParse(req.body);
+    if (!parsed.success) return next(new AppError(parsed.error.issues[0]?.message || 'Invalid payout', 400, 'VALIDATION_ERROR'));
+    res.status(201).json(await recordPaystackPayout(parsed.data, req.user!.id));
+  } catch (error) {
+    next(error);
   }
 };

@@ -39,6 +39,17 @@ export async function countryCodeOfTenant(tenantId: string | null | undefined): 
   return COUNTRY_CODES.find((code) => Country.getCountryByCode(code)?.currency === currency) ?? 'GH';
 }
 
+// Lowercased country name and ISO code -> ISO code, built once.
+const COUNTRY_BY_KEY = new Map(Country.getAllCountries().flatMap((c) => [[c.isoCode.toLowerCase(), c.isoCode], [c.name.toLowerCase(), c.isoCode]] as const));
+
+/** ISO2 code of a country given as a name ('Ghana') or a code ('gh'), or null. */
+export const countryCodeOf = (input: string): string | null => COUNTRY_BY_KEY.get(input.trim().toLowerCase()) ?? null;
+
+/** Country name of the store ('Ghana'), the value a new checkout form stores in `country`. */
+export async function countryNameOfTenant(tenantId: string | null | undefined): Promise<string> {
+  return Country.getCountryByCode(await countryCodeOfTenant(tenantId))?.name ?? 'Ghana';
+}
+
 /** Towns for the states a checkout form offers (`regions.available`), for its country name ('Ghana'). */
 export function townsForForm(countryName: string | null | undefined, regions: unknown): Record<string, string[]> {
   const key = (countryName || 'Ghana').trim().toLowerCase();

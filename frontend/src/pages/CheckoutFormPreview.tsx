@@ -124,10 +124,13 @@ export const CheckoutFormPreview: React.FC = () => {
   }
 
   return (
+    // `preview` makes "Place order" say "Preview only." and send nothing. This page imports no tracking code: pixels,
+    // GA, TikTok, GTM and server events are started by PublicCheckout and EmbedCheckout, never from here.
     <CheckoutForm
+      preview
       formData={merged}
       onSubmit={async () => {
-        // No-op in preview mode — never submits an order.
+        // Never reached: the preview does not submit.
       }}
     />
   );

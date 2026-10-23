@@ -1,17 +1,16 @@
 import React, { createContext, useContext } from 'react';
 import { UseFormRegister, UseFormWatch, UseFormSetValue, FieldErrors } from 'react-hook-form';
-import { CheckoutFormDesign, FieldType, FormField, ProductPackage, Upsell, PixelConfig } from '../../../types/checkout-form';
+import { CheckoutFormDesign, FieldType, FormField, FormType, ProductPackage, Upsell, PixelConfig } from '../../../types/checkout-form';
 import { Product } from '../../../types';
+import type { PaymentOptions, UpsellStats } from '../../../services/checkout-forms.service';
 
 export interface BuilderFormValues {
   name: string;
   slug: string;
   productId: number;
   description: string;
-  defaultCountry: string;
   buttonColor: string;
   accentColor: string;
-  currency: string;
   redirectUrl: string;
   allowedOrigins: string; // newline-separated origins; split to string[] on save
   codEnabled: boolean;
@@ -47,6 +46,38 @@ export interface CheckoutBuilderContextValue {
   setDesign: React.Dispatch<React.SetStateAction<CheckoutFormDesign>>;
 
   products: Product[];
+
+  /** Store country and currency: read-only on a form (F-411). */
+  country: string;
+  currency: string;
+  /** Follows the selected product; the server sets it on save (F-422). */
+  formType: FormType;
+  /** The form is already saved. The link is read-only from then on. */
+  isEditing: boolean;
+  /** The saved form has orders: a product change gets a warning. */
+  hasOrders: boolean;
+  /** The product the saved form had when it opened. */
+  originalProductId: number | null;
+  /** Regions of the country, and the ones this form offers (F-413). */
+  allRegions: string[];
+  regions: string[];
+  setRegions: React.Dispatch<React.SetStateAction<string[]>>;
+  /** Set after a failed save attempt: empty required fields then show their error. */
+  showErrors: boolean;
+
+  /** The saved form's id; null while the form is new. */
+  formId: number | null;
+  /** The chosen product's price: what a package's final price is worked out from. 0 until a product is chosen. */
+  productPrice: number;
+  /** Tenant payment settings for the Payment tab. null while loading or when they could not be loaded (`paymentOptionsFailed`). */
+  paymentOptions: PaymentOptions | null;
+  paymentOptionsFailed: boolean;
+  /** Orders of the saved form and per upsell, for the "x% of buyers also buy this" hint. null for a new form or until loaded. */
+  upsellStats: UpsellStats | null;
+  /** The saved form holds a Conversion API token. The token itself never reaches the browser. */
+  capiTokenStored: boolean;
+  /** Pixel id and test event code as last saved: the test event uses these, not what is typed. */
+  savedCapi: { pixelId: string; testEventCode: string };
 
   addField: (type: FieldType) => void;
   updateField: (id: string, updated: FormField) => void;

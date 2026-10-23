@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import { CheckoutFormPreviewPane } from '../../components/forms/CheckoutFormPreviewPane';
 
 const sendReady = () => {
@@ -65,10 +65,14 @@ describe('CheckoutFormPreviewPane', () => {
     expect(iframe.getAttribute('src')).toBe('/checkout-forms/42/preview');
   });
 
-  it('exposes desktop + mobile device toggle buttons', () => {
+  it('draws the form at 390 px on Mobile and 1024 px on Desktop', () => {
     render(<CheckoutFormPreviewPane formId={1} draft={{}} />);
-    expect(screen.getByTitle('Desktop')).toBeInTheDocument();
-    expect(screen.getByTitle('Mobile')).toBeInTheDocument();
+    const iframe = screen.getByTitle('Checkout preview');
+    expect(screen.getByRole('button', { name: /Mobile/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(iframe.getAttribute('data-width')).toBe('390');
+    fireEvent.click(screen.getByRole('button', { name: /Desktop/ }));
+    expect(iframe.getAttribute('data-width')).toBe('1024');
+    expect((iframe as HTMLIFrameElement).style.width).toBe('1024px');
   });
 
   it('does NOT post the draft until the child sends a ready handshake', () => {

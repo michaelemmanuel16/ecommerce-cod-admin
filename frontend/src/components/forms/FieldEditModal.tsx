@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { Modal } from '../ui/Modal';
-import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
-import { Select } from '../ui/Select';
+import { Button, Input, Modal, Select } from '../ui-v2';
 import { FieldType, FormField, StandardFieldKey } from '../../types/checkout-form';
 import { FIELD_TYPES, getFieldTypeMeta } from './builder/fieldTypes';
 import { STANDARD_FIELDS, getStandardFieldMeta, resolveStandardKey } from '../../lib/standardFields';
@@ -14,16 +11,16 @@ interface FieldEditModalProps {
   onSave: (field: FormField) => void;
 }
 
-const typeOptions = FIELD_TYPES.map((t) => ({ value: t.type, label: t.label }));
-
-// '' = infer from the label (the behaviour for every field built before this
-// picker existed). Anything else pins the destination so the label can be
-// reworded freely without the value silently stopping at customFields.
+// '' = infer from the label (the behaviour for every field built before this picker existed). Anything else pins the
+// destination so the label can be reworded freely without the value silently stopping at customFields.
 const destinationOptions = [
-  { value: '', label: 'Auto — detect from label' },
+  { value: '', label: 'Auto: detect from label' },
   ...STANDARD_FIELDS.map((f) => ({ value: f.key, label: f.label })),
-  { value: 'custom', label: 'Custom field (kept with the order, not delivered on)' },
+  { value: 'custom', label: 'Custom field only' },
 ];
+
+const FULL = 100;
+const HALF = 50;
 
 export const FieldEditModal: React.FC<FieldEditModalProps> = ({ field, onClose, onSave }) => {
   const [draft, setDraft] = useState<FormField>(field);
@@ -31,28 +28,21 @@ export const FieldEditModal: React.FC<FieldEditModalProps> = ({ field, onClose, 
   const showOptions = typeMeta.hasOptions;
   const labelEmpty = !draft.label.trim();
   const options = draft.options ?? [];
-  // Where this field's value will actually land, under the current label and
-  // destination setting — shown live so a mis-mapped field is visible here
-  // rather than discovered as a rejected order.
+  const width = draft.widthPercent ?? FULL;
+  // Where this field's value will actually land, under the current label and destination setting: shown live so a
+  // mis-mapped field is visible here rather than discovered as a rejected order.
   const resolvedKey = resolveStandardKey(draft);
 
   const update = (patch: Partial<FormField>) => setDraft((prev) => ({ ...prev, ...patch }));
-
   const updateOption = (index: number, value: string) =>
     update({ options: options.map((o, i) => (i === index ? value : o)) });
-
   const addOption = () => update({ options: [...options, `Option ${options.length + 1}`] });
-
-  const removeOption = (index: number) =>
-    update({ options: options.filter((_, i) => i !== index) });
+  const removeOption = (index: number) => update({ options: options.filter((_, i) => i !== index) });
 
   // When the type changes to an option-bearing type, seed a starter option.
   const handleTypeChange = (type: FieldType) => {
     const meta = getFieldTypeMeta(type);
-    update({
-      type,
-      options: meta.hasOptions ? (options.length ? options : ['Option 1']) : undefined,
-    });
+    update({ type, options: meta.hasOptions ? (options.length ? options : ['Option 1']) : undefined });
   };
 
   const handleSave = () => {
@@ -66,141 +56,105 @@ export const FieldEditModal: React.FC<FieldEditModalProps> = ({ field, onClose, 
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="Edit Field">
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Field Type</label>
-          <Select
-            options={typeOptions}
-            value={draft.type}
-            onChange={(e) => handleTypeChange(e.target.value as FieldType)}
-          />
-        </div>
+    <Modal
+      open
+      onClose={onClose}
+      title="Edit field"
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={handleSave} disabled={labelEmpty}>Done</Button>
+        </>
+      }
+    >
+      <Select label="Field type" value={draft.type} onChange={(e) => handleTypeChange(e.target.value as FieldType)}>
+        {FIELD_TYPES.map((t) => (
+          <option key={t.type} value={t.type}>{t.label}</option>
+        ))}
+      </Select>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Label <span className="text-red-500">*</span>
-          </label>
-          <Input
-            value={draft.label}
-            onChange={(e) => update({ label: e.target.value })}
-            placeholder="e.g., Full Name"
-          />
-          {labelEmpty && <p className="text-xs text-red-500 mt-1">Label is required</p>}
-        </div>
+      <Input
+        label="Label"
+        value={draft.label}
+        onChange={(e) => update({ label: e.target.value })}
+        placeholder="e.g. Full Name"
+        error={labelEmpty ? 'Label is required' : undefined}
+      />
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Sends To</label>
-          <Select
-            options={destinationOptions}
-            value={draft.standardKey ?? ''}
-            onChange={(e) => {
-              const v = e.target.value;
-              update({ standardKey: v === '' ? undefined : (v as StandardFieldKey | 'custom') });
-            }}
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            {resolvedKey
-              ? `This field's value is delivered as the order's ${getStandardFieldMeta(resolvedKey)?.label.toLowerCase()}.`
-              : 'This value is saved with the order but is not used as the name, phone, address or region.'}
-          </p>
-        </div>
+      <Select
+        label="Sends to"
+        value={draft.standardKey ?? ''}
+        onChange={(e) => {
+          const v = e.target.value;
+          update({ standardKey: v === '' ? undefined : (v as StandardFieldKey | 'custom') });
+        }}
+        hint={
+          resolvedKey
+            ? `This answer is saved as the order's ${getStandardFieldMeta(resolvedKey)?.label.toLowerCase()}.`
+            : 'This answer is saved with the order but is not used as the name, phone, address or region.'
+        }
+      >
+        {destinationOptions.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </Select>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Placeholder</label>
-          <Input
-            value={draft.placeholder || ''}
-            onChange={(e) => update({ placeholder: e.target.value })}
-            placeholder="Placeholder text"
-          />
-        </div>
+      <Input
+        label="Placeholder"
+        optional
+        value={draft.placeholder || ''}
+        onChange={(e) => update({ placeholder: e.target.value })}
+        placeholder="Placeholder text"
+      />
 
-        {showOptions && (
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">Options</label>
-              <Button type="button" variant="secondary" size="sm" onClick={addOption}>
-                <Plus className="h-4 w-4 mr-1" />
-                Add Option
+      {showOptions && (
+        <div className="fl">
+          <label>Options</label>
+          <div className="stack">
+            {options.map((option, index) => (
+              <div key={index} className="linkrow">
+                <input
+                  value={option}
+                  aria-label={`Option ${index + 1}`}
+                  onChange={(e) => updateOption(index, e.target.value)}
+                  placeholder={`Option ${index + 1}`}
+                />
+                <Button size="icon-sm" className="dng" aria-label={`Delete option ${index + 1}`} onClick={() => removeOption(index)}>
+                  <Trash2 />
+                </Button>
+              </div>
+            ))}
+            {options.length === 0 && <p className="hint">No options yet. Add at least one.</p>}
+            <div>
+              <Button size="mini" onClick={addOption}>
+                <Plus /> Add option
               </Button>
             </div>
-            <div className="space-y-2">
-              {options.map((option, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <Input
-                    value={option}
-                    onChange={(e) => updateOption(index, e.target.value)}
-                    placeholder={`Option ${index + 1}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeOption(index)}
-                    aria-label={`Delete option ${index + 1}`}
-                    className="flex-shrink-0 p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
-              {options.length === 0 && (
-                <p className="text-xs text-gray-400">No options yet — add at least one.</p>
-              )}
-            </div>
-            {typeMeta.optionsHelp && (
-              <p className="text-xs text-gray-500 mt-2">{typeMeta.optionsHelp}</p>
-            )}
           </div>
-        )}
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Field Width (%)</label>
-          <Input
-            type="number"
-            min={1}
-            max={100}
-            value={draft.widthPercent ?? 100}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              update({ widthPercent: Number.isFinite(n) ? Math.min(100, Math.max(1, n)) : 100 });
-            }}
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Set two fields to 50% to place them on the same row.
-          </p>
+          {typeMeta.optionsHelp && <p className="hint">{typeMeta.optionsHelp}</p>}
         </div>
+      )}
 
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-900">Required Field</p>
-            <p className="text-xs text-gray-500">Users must fill this field</p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={draft.required}
-            aria-label="Required Field"
-            onClick={() => update({ required: !draft.required })}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
-              draft.required ? 'bg-gray-900' : 'bg-gray-300'
-            }`}
-          >
-            <span
-              className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                draft.required ? 'translate-x-5' : 'translate-x-0.5'
-              }`}
-            />
+      <div className="fl">
+        <label id="field-width-label">Width</label>
+        <div className="seg" role="group" aria-labelledby="field-width-label">
+          <button type="button" className={width === FULL ? 'on' : undefined} aria-pressed={width === FULL} onClick={() => update({ widthPercent: FULL })}>
+            Full
+          </button>
+          <button type="button" className={width === HALF ? 'on' : undefined} aria-pressed={width === HALF} onClick={() => update({ widthPercent: HALF })}>
+            Half
           </button>
         </div>
+        <p className="hint">
+          {width !== FULL && width !== HALF ? `This field is ${width}% wide. ` : ''}Two half-width fields share a row.
+        </p>
       </div>
 
-      <div className="mt-6 flex justify-end gap-2">
-        <Button type="button" variant="secondary" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button type="button" onClick={handleSave} disabled={labelEmpty}>
-          Update Field
-        </Button>
-      </div>
+      <label className="sw">
+        <input type="checkbox" checked={draft.required} aria-label="Required" onChange={(e) => update({ required: e.target.checked })} />
+        <span className="tg" />
+        Required
+      </label>
     </Modal>
   );
 };

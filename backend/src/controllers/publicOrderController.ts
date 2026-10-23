@@ -9,23 +9,46 @@ import prisma from '../utils/prisma';
 import { findAndReactivateCustomerByPhone } from '../utils/customerLookup';
 import { normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import logger from '../utils/logger';
-import { paystackService } from '../services/paystackService';
+import { getPaymentProvider, DEFAULT_PAYMENT_PROVIDER, normalizeMethod, methodMatrix, isOnlineMethod, PaymentMethodName } from '../services/payments';
+import { getTenantFeatures } from '../services/tenantFeatures';
 import { metaCapiService } from '../services/metaCapiService';
 import * as Money from '../utils/money';
 import { cleanText, deliveryAddressOf, slotRule, CheckoutSlot } from '../utils/checkoutLocation';
+import { isUpsellAvailable } from '../utils/checkoutFormRules';
+import { formatOrderNumber } from '../utils/orderNumber';
+import { getFrontendUrl } from '../utils/url';
 
-/**
- * Buyer-selectable payment methods. `cod` settles on delivery; the two Paystack
- * methods charge online against the form tenant's own Paystack account —
- * `paystack_full` for the whole total, `paystack_deposit` for a percentage with
- * the balance collected on delivery.
- */
-type PaymentMethod = 'cod' | 'paystack_deposit' | 'paystack_full';
+// Buyer-selectable payment methods (F-402). `cod` settles on delivery; the two online methods charge through the
+// form's payment provider on the tenant's own account: `online_full` for the whole total, `online_deposit` for a
+// percentage with the balance collected on delivery. The old names (paystack_full, ...) are accepted too, see paymentMethods.ts.
 
 // Meta click ids (fbp/fbc) arrive from the browser; keep only non-empty strings
 // and cap length defensively before they touch the DB or the CAPI payload.
 const clampTracking = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() ? v.trim().slice(0, 255) : null;
+
+/** An order placed through a checkout form in the last 30 minutes by this phone for this package at this total, and whether `ip` submitted it. */
+async function findRecentDuplicate(params: {
+  tenantId: string | null; phone: string; packageId: number; total: Prisma.Decimal; ip: string | undefined;
+}) {
+  const order = await prisma.order.findFirst({
+    where: {
+      source: 'checkout_form',
+      totalAmount: params.total,
+      deletedAt: null,
+      createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) },
+      ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      customer: { phoneNumber: { in: phoneLookupVariants(params.phone) } },
+      orderItems: { some: { itemType: 'package', metadata: { path: ['packageId'], equals: params.packageId } } },
+    },
+    // No address, no match: an undefined filter would match every submission.
+    select: {
+      id: true, totalAmount: true, status: true,
+      formSubmissions: { where: { ipAddress: params.ip ?? '' }, select: { id: true }, take: 1 },
+    },
+  });
+  return order && { ...order, sameSubmitter: !!params.ip && order.formSubmissions.length > 0 };
+}
 
 export const getPublicForm = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -56,9 +79,10 @@ export const getPublicFormConfig = async (req: Request, res: Response, next: Nex
     const { slug } = req.params;
     const form = await checkoutFormService.getCheckoutFormConfigBySlug(slug);
 
-    const { tenantId, allowedOrigins, ...publicForm } = form as typeof form & {
+    const { tenantId, allowedOrigins, paymentProvider, ...publicForm } = form as typeof form & {
       tenantId: string | null;
       allowedOrigins: string[];
+      paymentProvider: string | null;
     };
     // Defense-in-depth: never let the server-only Meta CAPI secrets reach a host
     // page, even if a future select change starts including them.
@@ -72,7 +96,10 @@ export const getPublicFormConfig = async (req: Request, res: Response, next: Nex
       return;
     }
 
-    const paystackPublicKey = tenantId ? await paystackService.getPublicKey(tenantId) : '';
+    // The form names its provider; none means the default (F-400).
+    const paystackPublicKey = tenantId
+      ? await getPaymentProvider(paymentProvider ?? DEFAULT_PAYMENT_PROVIDER).getPublicKey(tenantId)
+      : '';
 
     res.json({ config: { ...publicForm, paystackPublicKey } });
   } catch (error) {
@@ -86,8 +113,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     const {
       formData,
       selectedPackage,
-      selectedUpsells,
-      totalAmount
+      selectedUpsells
     } = req.body;
 
     // Meta click identifiers captured by the checkout page, forwarded to the
@@ -132,7 +158,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         // Load the authoritative package/upsell prices. Order totals are computed
         // from these, NEVER from the client-supplied amounts (price tampering).
         packages: true,
-        upsells: true
+        // The linked product tells whether an upsell is still on offer (inactive or out of stock hides it).
+        upsells: { include: { product: { select: { isActive: true, stockQuantity: true, productType: true } } } }
       }
     });
 
@@ -141,38 +168,45 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       return;
     }
 
-    if (!form.product.isActive) {
-      reject('Product is no longer available');
-      return;
-    }
-
     // Derive tenantId from the checkout form (public routes have no auth context)
     const formTenantId = (form as any).tenantId as string | null;
 
     const isDigital = form.product.productType === 'digital';
 
-    // Resolve the payment method. Digital products always pay full via Paystack
-    // (unchanged). Physical products honor the form's toggle matrix and the
-    // buyer's choice; the server cross-checks the chosen method against the
-    // form's enabled toggles, so a tampered request body can't pay through a
-    // method the merchant disabled.
-    const requestedMethod = req.body.paymentMethod as PaymentMethod | undefined;
-    let paymentMethod: PaymentMethod;
+    // Sold out (F-420): a physical product that is off or has no stock left. Digital products have no stock, they only need to be on.
+    if (!form.product.isActive) {
+      reject(isDigital ? 'Product is no longer available' : 'This product is sold out');
+      return;
+    }
+    if (!isDigital && form.product.stockQuantity <= 0) {
+      reject('This product is sold out');
+      return;
+    }
+
+    // Resolve the payment method. Digital products always pay in full online. Physical products take COD, and
+    // the online methods only while the tenant flag features.prepaidPhysical is on (F-402). The server checks the
+    // buyer's choice against that matrix AND the form's own toggles, so a tampered request body can't pay through
+    // a method the merchant or the plan has switched off. Old method names are accepted (see paymentMethods.ts).
+    let paymentMethod: PaymentMethodName;
     if (isDigital) {
-      paymentMethod = 'paystack_full';
+      paymentMethod = 'online_full';
     } else {
-      paymentMethod = requestedMethod ?? 'cod';
-      const enabledFor: Record<PaymentMethod, boolean> = {
+      const requested = req.body.paymentMethod === undefined ? 'cod' : normalizeMethod(req.body.paymentMethod);
+      // A form with no tenant has no flag; the no-tenant guard below refuses its online methods.
+      const prepaidPhysical = formTenantId ? (await getTenantFeatures(formTenantId)).prepaidPhysical : true;
+      const allowed = methodMatrix('physical', prepaidPhysical);
+      const enabledFor: Record<PaymentMethodName, boolean> = {
         cod: form.codEnabled,
-        paystack_deposit: form.paystackDepositEnabled,
-        paystack_full: form.paystackFullEnabled,
+        online_deposit: form.paystackDepositEnabled,
+        online_full: form.paystackFullEnabled,
       };
-      if (!enabledFor[paymentMethod]) {
+      if (!requested || !allowed[requested] || !enabledFor[requested]) {
         reject('Selected payment method is not available for this form');
         return;
       }
+      paymentMethod = requested;
     }
-    const isPaystack = paymentMethod === 'paystack_deposit' || paymentMethod === 'paystack_full';
+    const isOnline = isOnlineMethod(paymentMethod);
 
     // Validate required fields — digital products don't need address/state
     // Address, town and landmark follow the form's own field config (COD-138): a field the seller turned off
@@ -192,18 +226,101 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         return;
       }
     }
-    const town = cleanText(formData.town, 100);
     const landmark = cleanText(formData.landmark);
 
     // Paystack orders settle into the form's tenant Paystack account; without
     // a tenant we'd create an orphaned unpaid order. Fail fast before any DB write.
-    if (isPaystack && !formTenantId) {
+    if (isOnline && !formTenantId) {
       reject('This checkout form is not attached to a tenant; Paystack cannot be initialized.');
       return;
     }
 
     if (isDigital && !formData.email) {
       reject('Email is required for digital products');
+      return;
+    }
+
+    // SECURITY: prices are authoritative from the DB, never trusted from the client.
+    // Resolve the selected package and upsells against the form's stored rows and
+    // compute the total from those — otherwise a tampered request body could set
+    // price:1 and buy full-price goods (and digital products auto-fulfil on payment).
+    const dbPackages = (form as any).packages as Array<{
+      id: number; name: string; price: Prisma.Decimal; quantity: number;
+      originalPrice: Prisma.Decimal | null; discountType: string; discountValue: Prisma.Decimal;
+    }>;
+    const selectedDbPackage =
+      dbPackages.find((p) => p.id === Number(selectedPackage?.id)) ||
+      dbPackages.find((p) => p.name === selectedPackage?.name);
+    if (!selectedDbPackage) {
+      res.status(400).json({ error: 'Selected package is not available' });
+      return;
+    }
+
+    // Package price is the total bundle price (what customer pays); quantity is
+    // what they receive. unitPrice is the effective per-item price.
+    const packageQuantity = selectedDbPackage.quantity || 1;
+    const packagePrice = Money.parse(selectedDbPackage.price); // NOT price * quantity
+    const unitPrice = Money.roundHalfUp(Money.div(packagePrice, packageQuantity), 4);
+
+    // Resolve each selected upsell against the form's DB upsells (by id) and sum
+    // their server-side prices.
+    const dbUpsells = (form as any).upsells as Array<{
+      id: number; name: string; description: string | null; price: Prisma.Decimal;
+      productId: number | null; items: any; originalPrice: Prisma.Decimal | null;
+      discountType: string; discountValue: Prisma.Decimal;
+      product: { isActive: boolean; stockQuantity: number; productType: string } | null;
+    }>;
+    const resolvedUpsells: typeof dbUpsells = [];
+    if (selectedUpsells && Array.isArray(selectedUpsells)) {
+      for (const upsell of selectedUpsells) {
+        const dbUpsell = dbUpsells.find((u) => u.id === Number(upsell?.id));
+        // An add-on the public form no longer shows (its product is off or out of stock) cannot be bought either.
+        if (!dbUpsell || !isUpsellAvailable(dbUpsell)) {
+          res.status(400).json({ error: 'Selected add-on is not available' });
+          return;
+        }
+        resolvedUpsells.push(dbUpsell);
+      }
+    }
+
+    // Physical forms ship only to the regions the form lists; the list's spelling is what gets stored.
+    const available = (form.regions as { available?: unknown } | null)?.available;
+    if (!isDigital && Array.isArray(available) && available.length > 0) {
+      const asked = cleanText(formData.state).toLowerCase();
+      const region = available.find((r): r is string => typeof r === 'string' && r.toLowerCase() === asked);
+      if (!region) {
+        reject('Choose a state from the list.');
+        return;
+      }
+      formData.state = region;
+    }
+    const area = cleanText(formData.town, 100); // a form that does not ask for a town leaves it empty, never the state
+
+    const upsellsTotal = Money.sum(resolvedUpsells.map((u) => u.price));
+
+    const subtotal = Money.add(packagePrice, upsellsTotal);
+    const shippingCost = Money.ZERO; // Checkout orders carry no shipping charge; the price includes delivery (F-423)
+    const discount = Money.ZERO;
+    const finalTotal = subtotal; // no shipping and no discount at checkout
+
+    // Duplicate guard (F-420): the same buyer, package and server total within 30 minutes gets the order already placed.
+    // The total is the one computed above, never the client's. No new order, no CAPI event.
+    const duplicate = await findRecentDuplicate({
+      tenantId: formTenantId, phone: formData.phoneNumber, packageId: selectedDbPackage.id, total: finalTotal, ip: req.ip,
+    });
+    if (duplicate) {
+      // Only the submitter of that order gets it back. Anyone else who knows the phone number sees a plain success,
+      // so an order id never leaves with a guessed phone (it would open /orders/track).
+      res.status(201).json({
+        success: true,
+        ...(duplicate.sameSubmitter && {
+          orderId: duplicate.id,
+          orderNumber: formatOrderNumber(duplicate.id),
+          order: { id: duplicate.id, totalAmount: Money.toApi(duplicate.totalAmount), status: duplicate.status },
+        }),
+        message: 'Order created successfully',
+        deduplicated: true
+      });
       return;
     }
 
@@ -233,7 +350,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           alternatePhone,
           address: formData.address || '',
           state: formData.state || '',
-          area: town,
+          area,
           landmark: landmark || null,
           notes: formData.notes || null,
           ...(formTenantId ? { tenantId: formTenantId } : {})
@@ -250,7 +367,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         updateData.alternatePhone = alternatePhone;
       }
       // A returning buyer's newest town and landmark replace the old ones.
-      if (town && town !== customer.area) updateData.area = town;
+      if (area && area !== customer.area) updateData.area = area;
+      if (formData.state && formData.state !== customer.state) updateData.state = formData.state;
       if (landmark && landmark !== customer.landmark) updateData.landmark = landmark;
       if (Object.keys(updateData).length > 0) {
         customer = await prisma.customer.update({
@@ -282,100 +400,18 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       }
     }
 
-    // Dedup guard: prevent double-submits within 30 minutes (same phone + amount + form)
-    {
-      const dedupeFrom = new Date(Date.now() - 30 * 60 * 1000);
-      const existingOrder = await prisma.order.findFirst({
-        where: {
-          source: 'checkout_form',
-          totalAmount: totalAmount,
-          deletedAt: null,
-          createdAt: { gte: dedupeFrom },
-          customer: { phoneNumber: { in: phoneLookupVariants(formData.phoneNumber) } },
-          orderItems: {
-            some: { productId: form.productId, itemType: 'package' }
-          }
-        },
-        select: { id: true, totalAmount: true, status: true }
-      });
-
-      if (existingOrder) {
-        res.status(201).json({
-          success: true,
-          orderId: existingOrder.id,
-          order: {
-            id: existingOrder.id,
-            totalAmount: Money.toApi(existingOrder.totalAmount),
-            status: existingOrder.status
-          },
-          message: 'Order created successfully',
-          deduplicated: true
-        });
-        return;
-      }
-    }
-
-    // SECURITY: prices are authoritative from the DB, never trusted from the client.
-    // Resolve the selected package and upsells against the form's stored rows and
-    // compute the total from those — otherwise a tampered request body could set
-    // price:1 and buy full-price goods (and digital products auto-fulfil on payment).
-    const dbPackages = (form as any).packages as Array<{
-      id: number; name: string; price: Prisma.Decimal; quantity: number;
-      originalPrice: Prisma.Decimal | null; discountType: string; discountValue: Prisma.Decimal;
-    }>;
-    const selectedDbPackage =
-      dbPackages.find((p) => p.id === Number(selectedPackage?.id)) ||
-      dbPackages.find((p) => p.name === selectedPackage?.name);
-    if (!selectedDbPackage) {
-      res.status(400).json({ error: 'Selected package is not available' });
-      return;
-    }
-
-    // Package price is the total bundle price (what customer pays); quantity is
-    // what they receive. unitPrice is the effective per-item price.
-    const packageQuantity = selectedDbPackage.quantity || 1;
-    const packagePrice = Money.parse(selectedDbPackage.price);
-    const packageTotal = packagePrice; // NOT price * quantity
-    const unitPrice = Money.roundHalfUp(Money.div(packagePrice, packageQuantity), 4);
-
-    // Resolve each selected upsell against the form's DB upsells (by id) and sum
-    // their server-side prices.
-    const dbUpsells = (form as any).upsells as Array<{
-      id: number; name: string; description: string | null; price: Prisma.Decimal;
-      productId: number | null; items: any; originalPrice: Prisma.Decimal | null;
-      discountType: string; discountValue: Prisma.Decimal;
-    }>;
-    const resolvedUpsells: typeof dbUpsells = [];
-    if (selectedUpsells && Array.isArray(selectedUpsells)) {
-      for (const upsell of selectedUpsells) {
-        const dbUpsell = dbUpsells.find((u) => u.id === Number(upsell?.id));
-        if (!dbUpsell) {
-          res.status(400).json({ error: 'Selected add-on is not available' });
-          return;
-        }
-        resolvedUpsells.push(dbUpsell);
-      }
-    }
-    const upsellsTotal = Money.sum(resolvedUpsells.map((u) => u.price));
-
-    const subtotal = Money.add(packageTotal, upsellsTotal);
-    const shippingCost = Money.ZERO; // Can be calculated based on region
-    const discount = Money.ZERO;
-    const finalTotal = Money.sub(Money.add(subtotal, shippingCost), discount);
-
     // Money is in major units (GH₵) everywhere in the database, including
     // Order.depositPaid/balanceDue (F-405). Only Paystack's own charge is in minor
     // units (pesewas/kobo): PendingCheckout.paystackChargeMinor, converted at this
     // boundary. For a deposit, the buyer pays `depositPercent` of the total online
     // now and the remaining balance is collected on delivery (COD-style).
-    let paystackCharge = finalTotal;
+    let onlineCharge = finalTotal;
     let balanceDue = Money.ZERO;
-    if (paymentMethod === 'paystack_deposit') {
+    if (paymentMethod === 'online_deposit') {
       const pct = form.depositPercent ?? 0;
-      paystackCharge = Money.roundHalfUp(Money.div(Money.mul(finalTotal, pct), 100), 2);
-      balanceDue = Money.sub(finalTotal, paystackCharge);
+      onlineCharge = Money.roundHalfUp(Money.div(Money.mul(finalTotal, pct), 100), 2);
+      balanceDue = Money.sub(finalTotal, onlineCharge);
     }
-    const paystackChargeMinor = Money.toMinor(paystackCharge);
 
     // Prepare order items array: main package + upsells
     const orderItemsData = [];
@@ -385,9 +421,10 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       productId: form.productId,
       quantity: packageQuantity,
       unitPrice: unitPrice,
-      totalPrice: packageTotal,
+      totalPrice: packagePrice,
       itemType: 'package',
       metadata: {
+        packageId: selectedDbPackage.id,
         packageName: selectedDbPackage.name,
         originalPrice: selectedDbPackage.originalPrice ? Money.toApi(selectedDbPackage.originalPrice) : null,
         discountType: selectedDbPackage.discountType,
@@ -425,30 +462,33 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     // is materialized only when payment is confirmed (webhook or callback verify),
     // so abandoned/failed payments never enter the system as orders, and a new
     // Paystack order never appears as "payment pending".
-    if (isPaystack) {
+    if (isOnline) {
       // formTenantId guaranteed non-null here — guarded at the top before any DB write.
       const currency = form.currency || 'GHS';
       // Paystack requires an email; synthesize a stable one from the phone when
       // the buyer left it blank (physical Paystack orders don't require email).
       const buyerEmail =
         formData.email || `${String(formData.phoneNumber).replace(/\D/g, '')}@codadminpro.com`;
-      // Paystack appends ?reference=...&trxref=... to the callback URL on redirect;
-      // the PaymentCallback page settles by that reference.
-      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback`;
+      // The provider appends reference (and trxref) to the callback URL on redirect; the PaymentCallback page settles by
+      // that reference. The form slug is in the path, not the query, so the URL has no query string for the provider to
+      // append to, and the page can show the store's colours and support number even when the reference is unknown.
+      const callbackUrl = `${getFrontendUrl()}/checkout/payment/callback/${encodeURIComponent(slug)}`;
 
-      const paystackResult = await paystackService.initializeTransaction(
-        formTenantId as string,
-        buyerEmail,
-        paystackChargeMinor,
+      const provider = getPaymentProvider(form.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER);
+      // PendingCheckout stores the charge in the provider's minor units (legacy column, replaced in M3b-T06); the provider owns the conversion.
+      const paystackChargeMinor = provider.toMinor(onlineCharge, currency);
+      const paymentResult = await provider.initialize(formTenantId as string, {
+        amount: onlineCharge,
         currency,
-        { formSlug: slug, paymentMethod },
+        customer: { email: buyerEmail, firstName: customer.firstName, lastName: customer.lastName, phone: formData.phoneNumber },
         callbackUrl,
-        { firstName: customer.firstName, lastName: customer.lastName, phone: formData.phoneNumber },
-      );
+        metadata: { formSlug: slug, paymentMethod },
+      });
 
       await prisma.pendingCheckout.create({
         data: {
-          reference: paystackResult.reference,
+          reference: paymentResult.providerReference,
+          provider: provider.id,
           tenantId: formTenantId as string,
           customerId: customer.id,
           formId: form.id,
@@ -460,7 +500,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
           discount,
           totalAmount: finalTotal,
           // What the agent collects on delivery: the balance for a deposit, 0 for full.
-          codAmount: paymentMethod === 'paystack_deposit' ? balanceDue : Money.ZERO,
+          codAmount: paymentMethod === 'online_deposit' ? balanceDue : Money.ZERO,
           balanceDue,
           paystackChargeMinor,
           // JSON column: money goes in as exact strings; Decimal accepts them back on settlement.
@@ -469,7 +509,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
             unitPrice: item.unitPrice.toString(),
             totalPrice: item.totalPrice.toString(),
           })),
-          formData,
+          formData: { ...formData, town: area },
           selectedPackage,
           selectedUpsells: selectedUpsells ?? Prisma.JsonNull,
           ipAddress: req.ip,
@@ -484,8 +524,8 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         paymentMethod,
         amount: paystackChargeMinor,
         currency,
-        authorization_url: paystackResult.authorization_url,
-        paymentReference: paystackResult.reference,
+        authorization_url: paymentResult.authorizationUrl,
+        paymentReference: paymentResult.providerReference,
         message: 'Order received — redirecting to payment',
       });
       return;
@@ -508,7 +548,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
         balanceDue: 0,
         deliveryAddress: deliveryAddressOf(formData.address, landmark),
         deliveryState: formData.state || null,
-        deliveryArea: town || null,
+        deliveryArea: area || null,
         notes: formData.notes || null,
         source: 'checkout_form',
         fbp,
@@ -560,7 +600,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     // COD orders are "purchased" at creation (payment settles on delivery), so
     // fire the server-side Meta Purchase event now. Best-effort + idempotent;
-    // Paystack orders fire instead on settlement (see paystackSettlementService).
+    // Paystack orders fire instead on settlement (see paymentSettlementService).
     metaCapiService.fireCapiPurchaseEvent(order.id).catch((err) => {
       console.error('Meta CAPI fire failed for COD order:', err);
     });
@@ -568,6 +608,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
     res.status(201).json({
       success: true,
       orderId: order.id,
+      orderNumber: formatOrderNumber(order.id),
       order: {
         id: order.id,
         totalAmount: Money.toApi(order.totalAmount),

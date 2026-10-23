@@ -74,6 +74,9 @@ import whatsappRoutes from './routes/whatsappRoutes';
 import smsRoutes from './routes/smsRoutes';
 import emailRoutes from './routes/emailRoutes';
 import paystackRoutes from './routes/paystackRoutes';
+import paymentRoutes from './routes/paymentRoutes';
+import { registerLedgerPoster } from './services/payments/ledgerPoster';
+import paymentConnectionRoutes from './routes/paymentConnectionRoutes';
 import communicationRoutes from './routes/communicationRoutes';
 import onboardingRoutes from './routes/onboardingRoutes';
 import referenceRoutes from './routes/referenceRoutes';
@@ -207,6 +210,7 @@ app.use(express.json({
   verify: (req: any, _res, buf) => {
     if (req.originalUrl?.startsWith('/api/whatsapp/webhook') ||
         req.originalUrl?.startsWith('/api/paystack/webhook') ||
+        req.originalUrl?.startsWith('/api/payments/webhook') ||
         req.originalUrl?.startsWith('/api/paystack/platform-webhook')) {
       req.rawBody = buf;
     }
@@ -275,6 +279,8 @@ app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 app.use('/api/sms', apiLimiter, smsRoutes);
 app.use('/api/email', apiLimiter, emailRoutes);
 app.use('/api/paystack', apiLimiter, paystackRoutes);
+app.use('/api/payments', apiLimiter, paymentRoutes);
+app.use('/api/payment-connections', apiLimiter, paymentConnectionRoutes);
 app.use('/api/communications', apiLimiter, communicationRoutes);
 app.use('/api/onboarding', apiLimiter, onboardingRoutes);
 app.use('/api/reference', apiLimiter, referenceRoutes);
@@ -334,6 +340,9 @@ if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, async () => {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+
+    // Book settled online payments to the ledger (F-406). Registered once.
+    registerLedgerPoster();
 
     // Setup Agent Aging Cron Job
     await setupAgingCron();

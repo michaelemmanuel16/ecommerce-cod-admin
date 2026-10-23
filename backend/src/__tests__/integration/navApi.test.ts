@@ -126,8 +126,8 @@ describe('menu per role (F-102 table)', () => {
   it('admin sees everything but Set up North Star', async () => {
     expect(menuKeys('admin', await perms('admin'))).toEqual(without('setupNorthStar'));
   });
-  it('manager: no Checkout forms, Connections, North Star; Staff read only', async () => {
-    expect(menuKeys('manager', await perms('manager'))).toEqual(without('checkoutForms', 'connections', 'setupNorthStar'));
+  it('manager: Checkout forms, but no Connections or North Star; Staff read only', async () => {
+    expect(menuKeys('manager', await perms('manager'))).toEqual(without('connections', 'setupNorthStar'));
   });
   it('finance clerk', async () => {
     expect(menuKeys('accountant', await perms('finance'))).toEqual(

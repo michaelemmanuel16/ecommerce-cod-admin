@@ -1,77 +1,70 @@
 import React, { useEffect } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { PixelConfig } from '../../types/checkout-form';
+import type { PublicCheckoutForm } from '../../services/public-orders.service';
 import { trackPurchase } from '../../utils/pixelTracking';
-import { getStoreCurrency } from '../../utils/format';
+import { PublicScreen, StatusIcon, SupportLine } from './PublicScreen';
+import { screenColors } from '../../lib/publicTheme';
 
 interface OrderSuccessProps {
-  orderId: number;
+  orderId?: number;
+  /** The order number as the server prints it ("#24118"). Falls back to "#<orderId>". */
+  orderNumber?: string;
+  /** A repeat of an order already placed: the Purchase event fired the first time, so it does not fire again. */
+  repeatOrder?: boolean;
   orderTotal?: number;
   currency?: string;
   pixelConfig?: PixelConfig;
+  /** Digital order: the next-step list says the download link was sent. */
+  digital?: boolean;
+  supportWhatsapp?: string | null;
+  design?: PublicCheckoutForm['design'];
+  embedded?: boolean;
 }
 
-export const OrderSuccess: React.FC<OrderSuccessProps> = ({ orderId, orderTotal, currency = getStoreCurrency(), pixelConfig }) => {
+export const OrderSuccess: React.FC<OrderSuccessProps> = ({
+  orderId, orderNumber, repeatOrder, orderTotal, currency = 'USD', pixelConfig,
+  digital, supportWhatsapp, design, embedded,
+}) => {
   useEffect(() => {
-    if (pixelConfig) {
+    if (pixelConfig && !repeatOrder) {
       trackPurchase(pixelConfig, orderTotal ?? 0, currency, orderId);
     }
   }, []); // intentionally empty — fires once on mount
 
+  const { primary } = screenColors(design);
+  const number = orderNumber || (orderId != null ? `#${orderId}` : null);
+  const steps = digital
+    ? ['We sent the download link to your email.']
+    : ['We call you to confirm your order.', 'We deliver to you.', 'You pay when it arrives.'];
+
   return (
-    <div className="bg-gray-50 flex items-center justify-center py-12 px-4">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-lg border border-gray-200 p-8 text-center">
-        {/* Success Icon */}
-        <div className="flex justify-center mb-6">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
-            <CheckCircle className="w-12 h-12 text-green-600" />
-          </div>
-        </div>
+    <PublicScreen design={design} embedded={embedded}>
+      <StatusIcon tint={`${primary}1a`}>
+        <CheckCircle className="w-9 h-9" style={{ color: primary }} aria-hidden="true" />
+      </StatusIcon>
 
-        {/* Success Message */}
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Order Placed Successfully!
-        </h1>
-        <p className="text-gray-600 mb-8">
-          Thank you for your order. We've received it and will process it shortly.
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">Order placed</h1>
+      {number && (
+        <p className="text-3xl font-bold font-mono mb-1" style={{ color: primary }} data-testid="order-number">
+          {number}
         </p>
+      )}
 
-        {/* Order ID */}
-        <div className="bg-gray-50 rounded-lg p-6 mb-8 border-2 border-gray-200">
-          <p className="text-sm text-gray-600 mb-2">Your Order ID</p>
-          <p className="text-2xl font-bold text-[#0f172a] font-mono">
-            #{orderId}
-          </p>
-        </div>
-
-        {/* Instructions */}
-        <div className="text-left space-y-4 mb-8">
-          <h2 className="font-semibold text-gray-900">What's Next?</h2>
-          <ul className="space-y-2 text-sm text-gray-600">
-            <li className="flex items-start">
-              <span className="inline-block w-1.5 h-1.5 bg-[#0f172a] rounded-full mt-1.5 mr-2 flex-shrink-0"></span>
-              <span>Our team will confirm your order within 24 hours</span>
+      <div className="text-left mt-6">
+        <h2 className="font-semibold text-gray-900 mb-2">What happens next</h2>
+        <ul className="space-y-2 text-sm text-gray-700">
+          {steps.map((step) => (
+            <li key={step} className="flex items-start">
+              <span className="inline-block w-1.5 h-1.5 rounded-full mt-1.5 mr-2 flex-shrink-0" style={{ backgroundColor: primary }} />
+              <span>{step}</span>
             </li>
-            <li className="flex items-start">
-              <span className="inline-block w-1.5 h-1.5 bg-[#0f172a] rounded-full mt-1.5 mr-2 flex-shrink-0"></span>
-              <span>You'll receive SMS updates about your order status</span>
-            </li>
-            <li className="flex items-start">
-              <span className="inline-block w-1.5 h-1.5 bg-[#0f172a] rounded-full mt-1.5 mr-2 flex-shrink-0"></span>
-              <span>Save your order ID for tracking purposes</span>
-            </li>
-            <li className="flex items-start">
-              <span className="inline-block w-1.5 h-1.5 bg-[#0f172a] rounded-full mt-1.5 mr-2 flex-shrink-0"></span>
-              <span>Prepare exact cash for delivery (COD)</span>
-            </li>
-          </ul>
-        </div>
-
-        {/* Contact Info */}
-        <p className="text-xs text-gray-500 mt-6">
-          Questions? Contact us for support
-        </p>
+          ))}
+          {/* Auto-confirm line ("We sent you a message on WhatsApp. Reply to confirm.") goes here once the tenant setting exists (file 05, F-466). */}
+        </ul>
       </div>
-    </div>
+
+      <SupportLine supportWhatsapp={supportWhatsapp} color={primary} />
+    </PublicScreen>
   );
 };

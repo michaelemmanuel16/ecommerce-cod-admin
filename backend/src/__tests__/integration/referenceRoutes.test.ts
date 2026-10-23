@@ -1,5 +1,6 @@
 /**
- * M1-T03 (COD-9): GET /api/reference/regions needs a login and returns the library regions of a country.
+ * M1-T03 (COD-9): GET /api/reference/regions returns the library regions of a country.
+ * COD-33: it is public now; a token only supplies the store's country when none is asked for (see checkoutFormsApi.test.ts).
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
@@ -37,9 +38,10 @@ afterAll(async () => {
 });
 
 describe('GET /api/reference/regions', () => {
-  it('requires authentication', async () => {
+  it('needs no login when a country is named', async () => {
     const res = await request(app).get('/api/reference/regions').query({ country: 'GH' });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('public, max-age=86400');
   });
 
   it('returns the regions of Ghana and Nigeria', async () => {
@@ -55,10 +57,17 @@ describe('GET /api/reference/regions', () => {
     expect(ng.body.regions).toHaveLength(37);
   });
 
-  it('rejects a missing or malformed country', async () => {
-    for (const q of [{}, { country: 'Ghana' }, { country: '' }]) {
-      const res = await request(app).get('/api/reference/regions').query(q).set('Authorization', `Bearer ${token}`);
-      expect(res.status).toBe(400);
-    }
+  it('takes a country name as well as a code', async () => {
+    const res = await request(app).get('/api/reference/regions').query({ country: 'Ghana' }).set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.country).toBe('GH');
+  });
+
+  it('rejects an unknown country; no country falls back to the store of the token', async () => {
+    const unknown = await request(app).get('/api/reference/regions').query({ country: 'Narnia' }).set('Authorization', `Bearer ${token}`);
+    expect(unknown.status).toBe(400);
+    const store = await request(app).get('/api/reference/regions').set('Authorization', `Bearer ${token}`);
+    expect(store.status).toBe(200);
+    expect(store.body.country).toBe('GH'); // the tenant has the default currency, GHS
   });
 });

@@ -46,7 +46,9 @@ interface JournalEntryCreateData {
   entryDate: Date;
   description: string;
   sourceType: JournalSourceType;
-  sourceId: number;
+  sourceId?: number;
+  /** Outside id (a payout reference). Unique per tenant and source type; a repeat is a P2002 the caller sees. */
+  externalRef?: string;
   createdBy: number;
   // Tenant that owns this entry. Pass explicitly (e.g. order.tenantId) so the
   // GL write is correct regardless of execution context. Background callers
@@ -214,7 +216,9 @@ export class GLAutomationService {
       } catch (error: any) {
         lastError = error;
         // P2002 is Prisma's code for unique constraint violation
-        if (error.code === 'P2002' && (error.meta?.target?.includes('entry_number') || error.message?.includes('entry_number'))) {
+        // Only the entry-number key is retried. Any other unique key (an external_ref repeat) is the caller's answer.
+        const target = JSON.stringify(error.meta?.target ?? '');
+        if (error.code === 'P2002' && target.includes('entry_number') && !target.includes('external_ref')) {
           retries++;
           logger.warn(`Unique constraint violation on journal entry_number, retrying (${retries}/${maxRetries})...`);
           // Small random delay before retry to reduce contention
@@ -1000,7 +1004,7 @@ export class GLAutomationService {
     // Mark both original and reversing entries as voided
     await tx.journalEntry.updateMany({
       where: { id: { in: [originalEntry.id, reversingEntry.id] } },
-      data: { isVoided: true }
+      data: { isVoided: true, externalRef: null }
     });
 
     logger.info(`Voided journal entry ${originalEntry.entryNumber} for ${sourceType} #${sourceId}`);
@@ -1084,6 +1088,7 @@ export class GLAutomationService {
     totalAmount: Money.MoneyInput,
     paystackFee: Money.MoneyInput,
     userId: number,
+    entryDate: Date = new Date(),
   ): Promise<JournalEntry> {
     const paystackReceivableId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PAYSTACK_RECEIVABLE);
     const digitalRevenueId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.DIGITAL_REVENUE);
@@ -1125,13 +1130,45 @@ export class GLAutomationService {
     }
 
     return await GLAutomationService.createJournalEntryWithRetry(tx, {
-      entryDate: new Date(),
+      entryDate,
       description: `Digital product sale - order #${orderId}`,
       sourceType: JournalSourceType.digital_sale,
       sourceId: orderId,
       createdBy: userId,
       transactions: {
         create: transactions,
+      },
+    });
+  }
+
+  /**
+   * Paystack pays out to the bank (F-934). Clears the Paystack receivable:
+   *   DR  Cash in Hand (1010)           amount
+   *   CR  Paystack Receivable (1030)    amount
+   */
+  async createPaystackPayoutEntry(
+    tx: Prisma.TransactionClient,
+    amount: Money.MoneyInput,
+    entryDate: Date,
+    description: string,
+    userId: number,
+    externalRef: string,
+  ): Promise<JournalEntry> {
+    const cashId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND);
+    const paystackReceivableId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PAYSTACK_RECEIVABLE);
+    const amountDec = new Decimal(amount);
+
+    return await GLAutomationService.createJournalEntryWithRetry(tx, {
+      entryDate,
+      description,
+      sourceType: JournalSourceType.paystack_payout,
+      externalRef,
+      createdBy: userId,
+      transactions: {
+        create: [
+          { accountId: cashId, debitAmount: amountDec, creditAmount: Money.ZERO, description: 'Paystack payout received in bank' },
+          { accountId: paystackReceivableId, debitAmount: Money.ZERO, creditAmount: amountDec, description: 'Paystack payout clears receivable' },
+        ],
       },
     });
   }

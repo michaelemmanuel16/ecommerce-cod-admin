@@ -194,11 +194,14 @@ function App() {
               </Suspense>
             </SaasRoute>
           } />
-          <Route path="/checkout/payment/callback" element={
-            <Suspense fallback={<Loading />}>
-              <PaymentCallback />
-            </Suspense>
-          } />
+          {/* The slug path is what the checkout gives the provider; the bare path stays for older payment links. */}
+          {['/checkout/payment/callback', '/checkout/payment/callback/:formSlug'].map((path) => (
+            <Route key={path} path={path} element={
+              <Suspense fallback={<Loading />}>
+                <PaymentCallback />
+              </Suspense>
+            } />
+          ))}
           {UiGallery && (
             <Route path="/dev/ui-v2" element={<Suspense fallback={<Loading />}><UiGallery /></Suspense>} />
           )}
@@ -219,11 +222,11 @@ function App() {
           {/* Admin-only preview route — bare shell so the editor iframe
               doesn't render the sidebar/header inside itself. Auth is
               enforced by the backend /preview-config endpoint. */}
-          <Route path="/checkout-forms/:id/preview" element={
-            <ProtectedRoute>
+          <Route element={<ProtectedRoute><AccessGate as="/checkout-forms" /></ProtectedRoute>}>
+            <Route path="/checkout-forms/:id/preview" element={
               <Suspense fallback={<Loading />}><CheckoutFormPreview /></Suspense>
-            </ProtectedRoute>
-          } />
+            } />
+          </Route>
           {/* Mobile routes for delivery agents */}
           <Route
             path="/m"

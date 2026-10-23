@@ -19,12 +19,14 @@ import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { GL_ACCOUNTS } from '../config/glAccounts';
+import { openFindingOnce } from './findingService';
 import { deliveredRevenueByDay } from './kpi/revenue';
 import { getStoreTimeZone, localDate, shiftYmd, startOfDay } from './kpi/dates';
 
 const LEDGER_CHECK_DAYS = 45;
 const LEDGER_GAP_TOLERANCE = '0.01';
 const LEDGER_CHECK_ACTION = 'ledger_check_run';
+const PAYSTACK_UNSETTLED_DAYS = 7;
 
 interface LedgerCheckResult {
   days: number;
@@ -45,6 +47,34 @@ async function ledgerByDay(tenantId: string, from: Date, to: Date): Promise<Map<
       AND j.entry_date >= ${from} AND j.entry_date < ${to}
     GROUP BY 1`);
   return new Map(rows.map((r) => [r.day, Money.parse(r.net)]));
+}
+
+/**
+ * Paystack money that has sat too long (F-934). Payouts clear the oldest sales first, so the part of the 1030 balance
+ * above the debits of the last 7 days is old unsettled money. When there is some, one `paystack_unsettled` Finding opens
+ * with that amount. While one is open the next runs only update its amount. Runs inside the tenant context.
+ */
+async function checkPaystackUnsettled(tenantId: string, now: Date): Promise<void> {
+  const cutoff = new Date(now.getTime() - PAYSTACK_UNSETTLED_DAYS * 24 * 60 * 60 * 1000);
+  const account = await prisma.account.findFirst({ where: { code: GL_ACCOUNTS.PAYSTACK_RECEIVABLE }, select: { id: true, currentBalance: true } });
+  const balance = Money.orZero(account?.currentBalance);
+  if (!account || !balance.gt(0)) return;
+
+  const recent = await prisma.accountTransaction.aggregate({
+    where: { accountId: account.id, journalEntry: { isVoided: false, entryDate: { gte: cutoff } } },
+    _sum: { debitAmount: true },
+  });
+  const old = Money.sub(balance, Money.orZero(recent._sum.debitAmount));
+  if (!old.gt(0)) return;
+
+  await openFindingOnce({
+    tenantId,
+    type: 'paystack_unsettled',
+    subjectType: 'account',
+    subjectId: GL_ACCOUNTS.PAYSTACK_RECEIVABLE,
+    amount: old,
+    note: `Paystack receivable (1030) holds sales older than ${PAYSTACK_UNSETTLED_DAYS} days with no payout.`,
+  }, { updateAmount: true });
 }
 
 /** Check one tenant. `now` is a parameter so tests can run on a fixed date. */
@@ -86,6 +116,8 @@ export async function checkLedgerForTenant(tenantId: string, now: Date = new Dat
         .filter((f) => !Money.parse(f.amount ?? 0).eq(gaps.get(f.subjectId) as Money.Money))
         .map((f) => prisma.finding.update({ where: { id: f.id }, data: { amount: gaps.get(f.subjectId) } })),
     ]);
+
+    await checkPaystackUnsettled(tenantId, now);
 
     await prisma.auditLog.create({
       data: {

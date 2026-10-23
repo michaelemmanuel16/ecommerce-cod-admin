@@ -1052,6 +1052,8 @@ export class GLService {
         where: { id },
         data: {
           isVoided: true,
+          // A voided entry frees its outside reference, so a corrected payout can be posted under it again.
+          externalRef: null,
           voidedAt: new Date(),
           voidedBy: requester?.id,
           voidReason: reason,

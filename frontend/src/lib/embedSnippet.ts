@@ -41,12 +41,21 @@ export interface EmbedSnippetForm {
   name?: string;
 }
 
-export const formUrl = (slug: string, origin: string = window.location.origin): string =>
+/**
+ * Host customers open the checkout on (F-410). `VITE_PUBLIC_CHECKOUT_URL` when set (for example
+ * https://pay.example.com), else the host this app runs on. Links, the embed snippet and the iframe all use it.
+ */
+export const publicOrigin = (): string => {
+  const set = String(import.meta.env.VITE_PUBLIC_CHECKOUT_URL ?? '').trim().replace(/\/+$/, '');
+  return set || window.location.origin;
+};
+
+export const formUrl = (slug: string, origin: string = publicOrigin()): string =>
   `${origin}/form/${slug}`;
 
 export const buildEmbedSnippet = (
   form: EmbedSnippetForm,
-  origin: string = window.location.origin
+  origin: string = publicOrigin()
 ): string => {
   const safeSlug = escapeHtml(form.slug);
   const jsSlug = escapeJsString(form.slug);
@@ -91,7 +100,7 @@ export const buildEmbedSnippet = (
  */
 export const buildWidgetSnippet = (
   form: EmbedSnippetForm,
-  origin: string = window.location.origin,
+  origin: string = publicOrigin(),
   lockedPackageId?: number | null,
 ): string => {
   const safeSlug = escapeHtml(form.slug);

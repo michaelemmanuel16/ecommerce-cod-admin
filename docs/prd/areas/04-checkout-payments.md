@@ -111,7 +111,7 @@ Terms:
 - Mockup: none (matrix CF-17 MISSING-IN-MOCKUP). Build in v2 style: a centred card on the form's colours (primary colour and logo area) with an icon, a heading, one sentence and one button.
 - Acceptance criteria:
   - [ ] Route stays `/checkout/payment/callback`. It reads `reference` or `trxref`.
-  - [ ] `GET /api/payments/verify/:reference` (the old `/api/paystack/verify/:reference` stays as an alias) returns `{status: success | pending | failed | not_found, orderNumber?, orderType, formSlug, redirectUrl?}`. It returns nothing else (no customer data). It is rate limited (30 per 15 minutes per IP).
+  - [ ] `GET /api/payments/verify/:reference` (the old `/api/paystack/verify/:reference` stays as an alias) returns `{status: success | pending | failed | not_found, orderNumber?, orderType, formSlug, redirectUrl?}`. It returns nothing else (no customer data). It is rate limited (120 per 15 minutes per IP; decided 2026-10-23 in COD-36: the page polls up to 60 times in 5 minutes, and many buyers share one carrier IP. The reference is an unguessable secret). On success `redirectUrl` is the thank-you URL already built with `order_id`, `total`, `currency`, `reference`, `package`. The checkout gives the provider `/checkout/payment/callback/<form slug>`.
   - [ ] State "Confirming": spinner, "Confirming your payment. Please wait."
   - [ ] State "Pending" (the payment is not confirmed yet): "We are waiting for your payment to be confirmed." The page asks again every 5 seconds for up to 5 minutes. After 5 minutes: "We have not received your payment yet. If you were charged, your order will appear within a few minutes. Your reference is <reference>."
   - [ ] State "Success": "Order received. Your order number is #24118." For a digital order add "We sent the download link to <email>." If the form has a `redirectUrl`, the page redirects to it with the same query parameters as COD (`orderId`, `total`, `currency`, `reference`, `package`) after 2 seconds.
@@ -335,7 +335,7 @@ Terms:
 
 ### F-413: Regions list
 - Priority: P1. Milestone: M3.
-- Description: The region select uses the regions of the store's country (decision O3). Every screen that asks for a region (checkout, New order, Import, Messages filter, Workflows, Customers) uses the same list. The mockups use 6 or 7 regions, and Reports shows cities as regions (matrix section 4 #24).
+- Description: The region select uses the regions of the store's country (decision O3). Owner decision 2026-10-23: the buyer's form labels this field "State". New forms default to "State", and the editor ("Sends to" option, required-field guard) uses the same word. Every screen that asks for a region (checkout, New order, Import, Messages filter, Workflows, Customers) uses the same list. The mockups use 6 or 7 regions, and Reports shows cities as regions (matrix section 4 #24).
 - Current app: `CheckoutForm.regions` JSON (`regions.available`), filled from `country-state-city` when the country changes (`CheckoutFormBuilder.tsx` line 144). `utils/countries.ts` `getRegionsForCountry`.
 - Mockup: New order drawer lists 7 regions; Messages bulk send lists 5 regions; Reports lists cities.
 - Acceptance criteria:

@@ -9,13 +9,21 @@ import {
   CheckoutFormDesign,
   FieldType,
   FormField,
+  FormType,
   ProductPackage,
   Upsell,
   PixelConfig,
 } from '../../types/checkout-form';
 import { Product } from '../../types';
-import apiClient from '../../services/api';
-import { getCurrencyForCountry, getRegionsForCountry } from '../../utils/countries';
+import { checkoutFormsService, type PaymentOptions, type UpsellStats } from '../../services/checkout-forms.service';
+import { getCountryByCurrency, getRegionsForCountry } from '../../utils/countries';
+import { slugFromName, validateBasics } from '../../lib/checkoutBasics';
+import { missingKeysMessage } from '../../lib/standardFields';
+import { packageIssue, withComputedPrices } from '../../lib/packagePricing';
+import { effectiveToggles } from '../../lib/paymentMatrix';
+import { CAPI_MASK, pixelConfigError } from '../../lib/trackingRules';
+import { NEW_FORM_FIELDS } from '../../lib/defaultFields';
+import { useConfigStore } from '../../stores/configStore';
 import { CheckoutBuilderProvider } from './builder/CheckoutBuilderContext';
 import {
   BuilderFormValues,
@@ -26,7 +34,8 @@ import { FieldsTab } from './builder/FieldsTab';
 import { createFieldOfType } from './builder/fieldTypes';
 import { PackagesTab } from './builder/PackagesTab';
 import { UpsellsTab } from './builder/UpsellsTab';
-import { SettingsTab } from './builder/SettingsTab';
+import { PaymentTab } from './builder/PaymentTab';
+import { TrackingTab } from './builder/TrackingTab';
 import { DesignTab } from './builder/DesignTab';
 import { getStoreCurrency } from '../../utils/format';
 
@@ -35,7 +44,8 @@ export interface CheckoutFormBuilderHandle {
 }
 
 interface CheckoutFormBuilderProps {
-  onSave: (form: Partial<CheckoutForm>) => Promise<void> | void;
+  /** Returns the saved form (an update) so the editor can take the real ids of new rows. */
+  onSave: (form: Partial<CheckoutForm>) => Promise<CheckoutForm | void> | CheckoutForm | void;
   initialData?: CheckoutForm;
   products: Product[];
   onDirtyChange?: (dirty: boolean) => void;
@@ -46,22 +56,57 @@ interface CheckoutFormBuilderProps {
    * Shape mirrors the public-checkout payload subset that the preview needs.
    */
   onDraftChange?: (draft: Record<string, any>) => void;
+  /** Shows every tab with its inputs disabled (a role that may read the form but not change it). */
+  readOnly?: boolean;
 }
 
-// Destinations are pinned via standardKey so relabeling any of these (e.g.
-// "Street Address" → "Delivery Address") keeps the value flowing to the order.
-// State, City/Town and Nearest landmark are part of the default set because a
-// physical order without them is hard for a rider to find. Email and Street
-// address are off by default; a seller can turn them on.
-const defaultFields: FormField[] = [
-  { id: '1', label: 'Full Name', type: 'text', required: true, enabled: true, standardKey: 'fullName' },
-  { id: '2', label: 'Phone', type: 'phone', required: true, enabled: true, standardKey: 'phone' },
-  { id: '3', label: 'State', type: 'state', required: true, enabled: true, standardKey: 'region' },
-  { id: '4', label: 'City/Town', type: 'text', required: true, enabled: true, standardKey: 'town' },
-  { id: '5', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' },
-  { id: '6', label: 'Email Address', type: 'email', required: false, enabled: false, standardKey: 'email' },
-  { id: '7', label: 'Street Address', type: 'textarea', required: false, enabled: false, standardKey: 'streetAddress' },
-];
+/** The regions a saved form offers: `regions.available`, or every region of its country when none are stored. */
+const savedRegions = (form: CheckoutForm | undefined, all: string[]): string[] => {
+  const stored = form?.regions as unknown;
+  const list = Array.isArray(stored) ? stored : (stored as { available?: unknown } | null | undefined)?.available;
+  return Array.isArray(list) && list.length > 0 ? list.filter((r): r is string => typeof r === 'string') : all;
+};
+
+/**
+ * Keys the server sets on save; they are not part of what the admin edits. The unsaved check drops them at every depth,
+ * so an item swapped for an identical one with a new id is not flagged as dirty. Do not give a future admin-editable
+ * field one of these names.
+ */
+const SERVER_KEYS = new Set(['id', 'createdAt', 'updatedAt', 'formId']);
+
+/** An upsell as the editor holds it: `quantity` is the UI copy of items.quantity. */
+const hydrateUpsell = (u: Upsell): Upsell => ({ ...u, quantity: u.items?.quantity || 1, isActive: u.isActive !== false });
+
+/** What the editor keeps of the saved Conversion API settings: the token itself never reaches the browser. */
+const capiOf = (form: CheckoutForm | undefined) => ({
+  stored: Boolean(form?.metaCapiAccessToken),
+  pixelId: form?.pixelConfig?.facebookPixelId ?? '',
+  testEventCode: form?.metaCapiTestEventCode ?? '',
+});
+
+/** Exactly one default package: the first one flagged, else the first. */
+const withOneDefault = (list: ProductPackage[]): ProductPackage[] => {
+  const at = list.findIndex((p) => p.isDefault);
+  return list.map((p, i) => ({ ...p, isDefault: i === (at < 0 ? 0 : at) }));
+};
+
+const initialValues = (form: CheckoutForm | undefined): BuilderFormValues => ({
+  name: form?.name || '',
+  slug: form?.slug || '',
+  productId: form?.productId || 0,
+  description: form?.description || '',
+  buttonColor: form?.styling?.buttonColor || '#0f172a',
+  accentColor: form?.styling?.accentColor || '#f97316',
+  redirectUrl: form?.redirectUrl || '',
+  allowedOrigins: (form?.allowedOrigins || []).join('\n'),
+  codEnabled: form?.codEnabled ?? true,
+  paystackDepositEnabled: form?.paystackDepositEnabled ?? false,
+  paystackFullEnabled: form?.paystackFullEnabled ?? false,
+  depositPercent: form?.depositPercent ?? 50,
+  // The saved token never reaches the browser; the server sends a mask, which stands for "keep the saved token".
+  metaCapiAccessToken: form?.metaCapiAccessToken ? CAPI_MASK : '',
+  metaCapiTestEventCode: form?.metaCapiTestEventCode || '',
+});
 
 export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, CheckoutFormBuilderProps>(({
   onSave,
@@ -70,88 +115,71 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   onDirtyChange,
   onSubmittingChange,
   onDraftChange,
+  readOnly = false,
 }, ref) => {
   const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<BuilderFormValues>({
-    defaultValues: {
-      name: initialData?.name || '',
-      slug: initialData?.slug || '',
-      productId: initialData?.productId || 0,
-      description: initialData?.description || '',
-      defaultCountry: initialData?.country || 'Ghana',
-      buttonColor: initialData?.styling?.buttonColor || '#0f172a',
-      accentColor: initialData?.styling?.accentColor || '#f97316',
-      currency: initialData?.currency || getStoreCurrency(),
-      redirectUrl: initialData?.redirectUrl || '',
-      allowedOrigins: (initialData?.allowedOrigins || []).join('\n'),
-      codEnabled: initialData?.codEnabled ?? true,
-      paystackDepositEnabled: initialData?.paystackDepositEnabled ?? false,
-      paystackFullEnabled: initialData?.paystackFullEnabled ?? false,
-      depositPercent: initialData?.depositPercent ?? 50,
-      metaCapiAccessToken: initialData?.metaCapiAccessToken || '',
-      metaCapiTestEventCode: initialData?.metaCapiTestEventCode || '',
-    },
+    defaultValues: initialValues(initialData),
   });
 
-  const [fields, setFields] = useState<FormField[]>(initialData?.fields || defaultFields);
-  const [packages, setPackages] = useState<ProductPackage[]>(initialData?.packages || []);
-  const [upsells, setUpsells] = useState<Upsell[]>(
-    initialData?.upsells?.map((u) => ({ ...u, quantity: u.items?.quantity || 1 })) || []
-  );
+  const [fields, setFields] = useState<FormField[]>(initialData?.fields || NEW_FORM_FIELDS);
+  const [packages, setPackages] = useState<ProductPackage[]>(withOneDefault(initialData?.packages || []));
+  const [upsells, setUpsells] = useState<Upsell[]>(initialData?.upsells?.map(hydrateUpsell) || []);
   const [upsellImages, setUpsellImages] = useState<Map<number, { file: File; preview: string }>>(new Map());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pixelConfig, setPixelConfig] = useState<PixelConfig>(initialData?.pixelConfig || {});
   const [design, setDesign] = useState<CheckoutFormDesign>(initialData?.design || {});
-  const [currentRegions, setCurrentRegions] = useState<string[]>(
-    getRegionsForCountry(initialData?.country || 'Ghana')
-  );
+  const [showErrors, setShowErrors] = useState(false);
+  const [payment, setPayment] = useState<{ data: PaymentOptions | null; failed: boolean }>({ data: null, failed: false });
+  const [upsellStats, setUpsellStats] = useState<UpsellStats | null>(null);
+  const [savedCapi, setSavedCapi] = useState(() => capiOf(initialData));
+
+  // Read once per editor, not on every tab visit. Upsell numbers come from this form's orders, so a new form has none.
+  const savedFormId = initialData?.id;
+  useEffect(() => {
+    let cancelled = false;
+    checkoutFormsService
+      .getPaymentOptions()
+      .then((data) => !cancelled && setPayment({ data, failed: false }))
+      .catch(() => !cancelled && setPayment({ data: null, failed: true }));
+    if (savedFormId !== undefined) {
+      checkoutFormsService
+        .getUpsellStats(savedFormId)
+        .then((s) => !cancelled && setUpsellStats(s))
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [savedFormId]);
+
+  // Country and currency come from the store and cannot be changed on a form (F-411). A saved form keeps its own.
+  const storeCurrency = useConfigStore((st) => st.currency);
+  const currency = initialData?.currency || storeCurrency || getStoreCurrency();
+  const country = initialData?.country || getCountryByCurrency(currency);
+  const allRegions = React.useMemo(() => getRegionsForCountry(country), [country]);
+  // A new form starts with every region of the country selected (F-413).
+  const [regions, setRegions] = useState<string[]>(() => savedRegions(initialData, allRegions));
 
   const initialDataId = initialData?.id;
   // Re-seed state if the parent swaps to a different form (rare in full-page mode, but covers it)
   useEffect(() => {
     if (initialData) {
-      reset({
-        name: initialData.name || '',
-        slug: initialData.slug || '',
-        productId: initialData.productId || 0,
-        description: initialData.description || '',
-        defaultCountry: initialData.country || 'Ghana',
-        buttonColor: initialData.styling?.buttonColor || '#0f172a',
-        accentColor: initialData.styling?.accentColor || '#f97316',
-        currency: initialData.currency || getStoreCurrency(),
-        redirectUrl: initialData.redirectUrl || '',
-        allowedOrigins: (initialData.allowedOrigins || []).join('\n'),
-        codEnabled: initialData.codEnabled ?? true,
-        paystackDepositEnabled: initialData.paystackDepositEnabled ?? false,
-        paystackFullEnabled: initialData.paystackFullEnabled ?? false,
-        depositPercent: initialData.depositPercent ?? 50,
-        metaCapiAccessToken: initialData.metaCapiAccessToken || '',
-        metaCapiTestEventCode: initialData.metaCapiTestEventCode || '',
-      });
-      setFields(initialData.fields || defaultFields);
-      setPackages(initialData.packages || []);
-      setUpsells(initialData.upsells?.map((u) => ({ ...u, quantity: u.items?.quantity || 1 })) || []);
+      reset(initialValues(initialData));
+      setRegions(savedRegions(initialData, allRegions));
+      setFields(initialData.fields || NEW_FORM_FIELDS);
+      setPackages(withOneDefault(initialData.packages || []));
+      setUpsells(initialData.upsells?.map(hydrateUpsell) || []);
+      setSavedCapi(capiOf(initialData));
       setPixelConfig(initialData.pixelConfig || {});
       setDesign(initialData.design || {});
     }
   }, [initialDataId, reset]);
 
-  // Auto-generate slug from name (create mode only)
+  // Auto-generate slug from name (create mode only); read-only once the form is saved.
   const nameValue = watch('name');
   useEffect(() => {
-    if (nameValue && !initialData) {
-      const slug = nameValue.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      setValue('slug', slug);
-    }
+    if (nameValue && !initialData) setValue('slug', slugFromName(nameValue));
   }, [nameValue, setValue, initialData]);
-
-  // Auto-set currency + regions when country changes
-  const countryValue = watch('defaultCountry');
-  useEffect(() => {
-    if (countryValue) {
-      setValue('currency', getCurrencyForCountry(countryValue as any));
-      setCurrentRegions(getRegionsForCountry(countryValue));
-    }
-  }, [countryValue, setValue]);
 
   // Cleanup preview URLs on unmount. Mirror the live Map into a ref so the
   // unmount cleanup sees the latest set, not the empty mount-time snapshot.
@@ -170,8 +198,6 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   // serialise the draft and compare against the previous snapshot.
   const name = watch('name');
   const description = watch('description');
-  const currency = watch('currency');
-  const defaultCountry = watch('defaultCountry');
   const productIdValue = watch('productId');
   const codEnabledValue = watch('codEnabled');
   const depositEnabledValue = watch('paystackDepositEnabled');
@@ -193,32 +219,39 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       productType: p.productType,
     };
   }, [products, productIdValue]);
+  const formType: FormType = previewProduct?.productType === 'digital' ? 'digital' : 'physical';
+  const productPrice = Number(previewProduct?.price) || 0;
+  const toggles = effectiveToggles(formType, { cod: Boolean(codEnabledValue), deposit: Boolean(depositEnabledValue), full: Boolean(fullEnabledValue) });
   const draftPayload = React.useMemo(
     () => ({
       name,
       description,
       currency,
-      country: defaultCountry,
+      country,
       productId: Number(productIdValue) || 0,
       product: previewProduct,
       fields,
       // Streamed so the State field's dropdown updates live when the country changes.
-      regions: { available: currentRegions },
-      packages,
-      upsells,
+      regions: { available: regions },
+      // Prices are worked out the way the save does it, so the preview shows what the buyer will pay.
+      packages: withComputedPrices(packages, productPrice),
+      // An off upsell is hidden on the public form, so it is hidden here too.
+      upsells: upsells.filter((u) => u.isActive !== false).map((u) => ({ ...u, items: { quantity: u.quantity } })),
       design,
       pixelConfig,
-      codEnabled: codEnabledValue,
-      paystackDepositEnabled: depositEnabledValue,
-      paystackFullEnabled: fullEnabledValue,
+      formType,
+      codEnabled: toggles.cod,
+      paystackDepositEnabled: toggles.deposit,
+      paystackFullEnabled: toggles.full,
       depositPercent: depositPercentValue,
     }),
-    [name, description, currency, defaultCountry, productIdValue, previewProduct, fields, currentRegions, packages, upsells, design, pixelConfig, codEnabledValue, depositEnabledValue, fullEnabledValue, depositPercentValue]
+    [name, description, currency, country, productIdValue, previewProduct, productPrice, formType, fields, regions, packages, upsells, design, pixelConfig, toggles.cod, toggles.deposit, toggles.full, depositPercentValue]
   );
   const hasMountedRef = useRef(false);
   const lastSnapshotRef = useRef<string>('');
   useEffect(() => {
-    const snapshot = JSON.stringify(draftPayload);
+    // Server-owned keys are left out: saving recreates the packages, so the server sets new ids and dates. That is not an edit.
+    const snapshot = JSON.stringify(draftPayload, (key, value) => (SERVER_KEYS.has(key) ? undefined : value));
     if (!hasMountedRef.current) {
       hasMountedRef.current = true;
       lastSnapshotRef.current = snapshot;
@@ -253,7 +286,7 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     const selectedProductId = watch('productId');
     const selectedProduct = products.find((p) => p.id === Number(selectedProductId));
     const productPrice = selectedProduct?.price || 0;
-    setPackages([
+    setPackages(withOneDefault([
       ...packages,
       {
         id: -Date.now(),
@@ -265,12 +298,12 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         originalPrice: productPrice,
         productPrice,
         isPopular: false,
-        isDefault: false,
+        isDefault: packages.length === 0,
         showHighlight: false,
         highlightText: '',
         showDiscount: true,
       },
-    ]);
+    ]));
   };
   const updatePackage = (id: number, updated: ProductPackage) => {
     if (updated.isDefault) {
@@ -279,13 +312,13 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
       setPackages(packages.map((p) => (p.id === id ? updated : p)));
     }
   };
-  const deletePackage = (id: number) => setPackages(packages.filter((p) => p.id !== id));
+  const deletePackage = (id: number) => setPackages(withOneDefault(packages.filter((p) => p.id !== id)));
 
   // Upsell actions
   const addUpsell = () =>
     setUpsells([
       ...upsells,
-      { id: -Date.now(), name: '', price: 0, quantity: 1, isPopular: false },
+      { id: -Date.now(), name: '', price: 0, quantity: 1, isPopular: false, isActive: true },
     ]);
   const updateUpsell = (id: number, updated: Upsell) =>
     setUpsells(upsells.map((u) => (u.id === id ? updated : u)));
@@ -323,12 +356,23 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
   };
 
   const onSubmit = async (data: BuilderFormValues) => {
-    if (!data.productId || data.productId === 0) {
-      alert('Please select a product for this checkout form.');
+    // The server applies the same rules and answers 400; these fail fast, in the owner's words, before the request.
+    // A new form, or one that is on, cannot be saved without the fields an order needs (F-411).
+    const problem =
+      validateBasics(data) ?? (!initialData || initialData.isActive ? missingKeysMessage(fields, formType) : null);
+    if (problem) {
+      setShowErrors(true);
+      toast.error(problem);
       return;
     }
     if (packages.length === 0) {
       alert('Please add at least one package. Packages define what products/quantities customers can purchase.');
+      return;
+    }
+    const packageProblem = packages.map((p) => packageIssue(productPrice, p)).find(Boolean);
+    const trackingProblem = pixelConfigError(pixelConfig);
+    if (packageProblem || trackingProblem) {
+      toast.error((packageProblem || trackingProblem) as string);
       return;
     }
 
@@ -337,25 +381,11 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     try {
       const uploadedUpsells = await Promise.all(
         upsells.map(async (upsell) => {
+          let imageUrl = upsell.imageUrl;
           const imageData = upsellImages.get(upsell.id);
           if (imageData?.file) {
-            const formData = new FormData();
-            formData.append('image', imageData.file);
             try {
-              const response = await apiClient.post('/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-              });
-              return {
-                productId: upsell.productId,
-                name: upsell.name,
-                description: upsell.description,
-                imageUrl: response.data.imageUrl,
-                price: upsell.price,
-                discountType: upsell.discountType || 'none',
-                discountValue: upsell.discountValue || 0,
-                originalPrice: upsell.originalPrice || upsell.price,
-                items: { quantity: upsell.quantity },
-              };
+              imageUrl = await checkoutFormsService.uploadImage(imageData.file);
             } catch (error) {
               console.error('Failed to upload image for upsell:', upsell.name, error);
               alert(`Failed to upload image for "${upsell.name}". Please try again.`);
@@ -363,14 +393,18 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
             }
           }
           return {
+            // A saved upsell keeps its id, so saving updates it in place; a new one has a temporary negative id.
+            id: upsell.id > 0 ? upsell.id : undefined,
             productId: upsell.productId,
             name: upsell.name,
             description: upsell.description,
-            imageUrl: upsell.imageUrl,
+            imageUrl,
             price: upsell.price,
             discountType: upsell.discountType || 'none',
             discountValue: upsell.discountValue || 0,
             originalPrice: upsell.originalPrice || upsell.price,
+            isActive: upsell.isActive !== false,
+            isPopular: upsell.isPopular,
             items: { quantity: upsell.quantity },
           };
         })
@@ -382,10 +416,9 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         productId: data.productId,
         description: data.description || '',
         fields,
-        country: data.defaultCountry,
-        currency: data.currency || getCurrencyForCountry(data.defaultCountry as any),
-        regions: { available: currentRegions },
-        packages: packages.map((pkg) => ({
+        currency,
+        regions: { available: regions },
+        packages: withComputedPrices(packages, productPrice).map((pkg) => ({
           name: pkg.name,
           description: '',
           price: pkg.price,
@@ -414,9 +447,9 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
           .split('\n')
           .map((o) => o.trim())
           .filter(Boolean),
-        codEnabled: Boolean(data.codEnabled),
-        paystackDepositEnabled: Boolean(data.paystackDepositEnabled),
-        paystackFullEnabled: Boolean(data.paystackFullEnabled),
+        codEnabled: toggles.cod,
+        paystackDepositEnabled: toggles.deposit,
+        paystackFullEnabled: toggles.full,
         depositPercent: Number(data.depositPercent) || null,
         // Write-only secret: send only when the admin typed a new value (an
         // untouched field still holds the "••••••••" mask, which the server
@@ -425,7 +458,16 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         metaCapiTestEventCode: data.metaCapiTestEventCode?.trim() || null,
       };
 
-      await onSave(formData);
+      const saved = await onSave(formData);
+      // New rows now have their real ids: take them, or the next save would create them again.
+      if (saved) {
+        setPackages(withOneDefault(saved.packages || []));
+        setUpsells(saved.upsells?.map(hydrateUpsell) || []);
+      }
+      // The typed token is gone from the screen once it is saved; only "Connected" stays.
+      const sentToken = formData.metaCapiAccessToken as string;
+      setValue('metaCapiAccessToken', sentToken ? CAPI_MASK : '');
+      setSavedCapi({ stored: sentToken !== '', pixelId: pixelConfig.facebookPixelId ?? '', testEventCode: formData.metaCapiTestEventCode ?? '' });
       // Only revoke/clear after a successful save so a failed save can be
       // retried without re-uploading the images.
       upsellImages.forEach(({ preview }) => preview && URL.revokeObjectURL(preview));
@@ -465,6 +507,23 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     design,
     setDesign,
     products,
+    country,
+    currency,
+    formType,
+    isEditing: Boolean(initialData),
+    hasOrders: (initialData?._count?.submissions ?? 0) > 0,
+    originalProductId: initialData?.productId ?? null,
+    allRegions,
+    regions,
+    setRegions,
+    showErrors,
+    formId: initialData?.id ?? null,
+    productPrice,
+    paymentOptions: payment.data,
+    paymentOptionsFailed: payment.failed,
+    upsellStats,
+    capiTokenStored: savedCapi.stored,
+    savedCapi,
     addField,
     updateField,
     deleteField,
@@ -479,6 +538,9 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
     handleRemoveUpsellImage,
   };
 
+  // A disabled fieldset disables every input and button inside a tab; the tab buttons themselves stay usable.
+  const tab = (node: React.ReactNode) => (readOnly ? <fieldset disabled className="m-0 min-w-0 border-0 p-0">{node}</fieldset> : node);
+
   return (
     <CheckoutBuilderProvider value={ctx}>
       <form
@@ -487,19 +549,20 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
         aria-busy={isSubmitting}
       >
         <Tabs
+          compact
           tabs={[
-            { id: 'basics', label: 'Basics', content: <BasicsTab /> },
+            { id: 'basics', label: 'Basics', content: tab(<BasicsTab />) },
             {
               id: 'fields',
               label: (
                 <>
                   Fields{' '}
                   {fields.length > 0 && (
-                    <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{fields.length}</span>
+                    <span>{fields.length}</span>
                   )}
                 </>
               ),
-              content: <FieldsTab />,
+              content: tab(<FieldsTab />),
             },
             {
               id: 'packages',
@@ -507,11 +570,11 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
                 <>
                   Packages{' '}
                   {packages.length > 0 && (
-                    <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{packages.length}</span>
+                    <span>{packages.length}</span>
                   )}
                 </>
               ),
-              content: <PackagesTab />,
+              content: tab(<PackagesTab />),
             },
             {
               id: 'upsells',
@@ -519,18 +582,15 @@ export const CheckoutFormBuilder = forwardRef<CheckoutFormBuilderHandle, Checkou
                 <>
                   Upsells{' '}
                   {upsells.length > 0 && (
-                    <span className="ml-1 text-xs bg-gray-200 rounded-full px-2">{upsells.length}</span>
+                    <span>{upsells.length}</span>
                   )}
                 </>
               ),
-              content: <UpsellsTab />,
+              content: tab(<UpsellsTab />),
             },
-            {
-              id: 'design',
-              label: 'Design',
-              content: <DesignTab />,
-            },
-            { id: 'settings', label: 'Settings', content: <SettingsTab /> },
+            { id: 'payment', label: 'Payment', content: tab(<PaymentTab />) },
+            { id: 'tracking', label: 'Tracking', content: tab(<TrackingTab />) },
+            { id: 'design', label: 'Design', content: tab(<DesignTab />) },
           ]}
           defaultTab="basics"
         />

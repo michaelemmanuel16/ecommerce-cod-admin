@@ -27,7 +27,7 @@ New order lifecycle fields and four new tenant-scoped models for the KPI work. P
 ### Key Files
 - `backend/prisma/schema.prisma`, `backend/prisma/migrations/20261021100000_order_lifecycle_columns/`, `backend/prisma/migrations/20261021110000_kpi_support_models/`
 - `backend/src/utils/phone.ts` (new), `backend/src/utils/regions.ts` (new), `backend/src/routes/referenceRoutes.ts` (new), `backend/src/controllers/referenceController.ts` (new)
-- `backend/src/services/customerService.ts`, `orderService.ts`, `deliveryService.ts`, `webhookService.ts`, `paystackSettlementService.ts`, `backend/src/utils/customerLookup.ts`
+- `backend/src/services/customerService.ts`, `orderService.ts`, `deliveryService.ts`, `webhookService.ts`, `paymentSettlementService.ts`, `backend/src/utils/customerLookup.ts`
 - `backend/scripts/backfill-order-timestamps.ts`, `normalize-customer-phones.ts`, `backfill-digital-delivery-date.ts`, `lib/scriptArgs.ts` (all new)
 - `frontend/src/utils/orderStatus.ts` (new), `frontend/src/utils/countries.ts`
 
@@ -52,7 +52,7 @@ One state machine now owns every order status change. It checks the F-301 table,
 
 ### Key Files
 - `backend/src/services/orderStateMachine.ts` (new), `backend/src/services/orderSideEffects.ts` (new)
-- `backend/src/services/orderService.ts`, `deliveryService.ts`, `glAutomationService.ts`, `paystackSettlementService.ts`, `callService.ts`, `customerService.ts`
+- `backend/src/services/orderService.ts`, `deliveryService.ts`, `glAutomationService.ts`, `paymentSettlementService.ts`, `callService.ts`, `customerService.ts`
 - `backend/src/middleware/auth.ts`, `middleware/errorHandler.ts`, `queues/financialReconciliationQueue.ts`, `mcp/tools/ordersWrite.ts`
 - `frontend/src/pages/Orders.tsx`, `frontend/src/pages/mobile/MobileDeliveryDetail.tsx`, `frontend/src/components/admin/RolePermissionsMatrix.tsx`
 

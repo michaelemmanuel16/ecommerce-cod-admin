@@ -8,6 +8,28 @@ import type { AxiosInstance } from 'axios';
 
 const NUMERIC = /^\s*-?\d+(\.\d+)?\s*$/;
 
+/**
+ * An amount in a given currency with its local glyph: "GH₵200", "GH₵199.50", "₦200". Whole amounts drop the cents, as in the
+ * v2 mockups. An unknown or malformed code never throws: it shows "XYZ 1,234.50". Kept here, free of the admin stores, so the
+ * public checkout and the embed widget stay small. The admin app's `formatCurrency` (utils/format) calls it.
+ */
+export const formatMoney = (amount: string | number | null | undefined, currency: string): string => {
+  const value = parseMoney(amount);
+  const cents = Number.isInteger(value) ? { minimumFractionDigits: 0, maximumFractionDigits: 0 } : {};
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      // narrowSymbol renders the local glyph (GH₵5,680.00) instead of the ISO
+      // code prefix (GHS 5,680.00) that 'symbol' falls back to for GHS/NGN.
+      currencyDisplay: 'narrowSymbol',
+      ...cents,
+    }).format(value);
+  } catch {
+    return `${currency} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2, ...cents }).format(value)}`;
+  }
+};
+
 /** "249.00" | "249" | 249 | null | undefined -> number. NaN never escapes. */
 export const parseMoney = (value: string | number | null | undefined): number => {
   if (value === null || value === undefined || value === '') return 0;

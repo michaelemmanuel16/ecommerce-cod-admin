@@ -1,11 +1,29 @@
-import { describe, it, expect } from 'vitest';
-import { buildEmbedSnippet, buildWidgetSnippet, formUrl } from '../../lib/embedSnippet';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { buildEmbedSnippet, buildWidgetSnippet, formUrl, publicOrigin } from '../../lib/embedSnippet';
 
 describe('formUrl', () => {
   it('joins origin and slug', () => {
     expect(formUrl('magic-groove', 'https://app.example.com')).toBe(
       'https://app.example.com/form/magic-groove'
     );
+  });
+});
+
+describe('public host (F-410)', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('is the host the app runs on when nothing is configured', () => {
+    vi.stubEnv('VITE_PUBLIC_CHECKOUT_URL', '');
+    expect(publicOrigin()).toBe(window.location.origin);
+    expect(formUrl('magic-groove')).toBe(`${window.location.origin}/form/magic-groove`);
+  });
+
+  it('is VITE_PUBLIC_CHECKOUT_URL when set, without a trailing slash, in links and in the embed code', () => {
+    vi.stubEnv('VITE_PUBLIC_CHECKOUT_URL', 'https://pay.example.com/');
+    expect(publicOrigin()).toBe('https://pay.example.com');
+    expect(formUrl('magic-groove')).toBe('https://pay.example.com/form/magic-groove');
+    expect(buildWidgetSnippet({ slug: 'magic-groove' })).toContain('src="https://pay.example.com/embed.js"');
+    expect(buildEmbedSnippet({ slug: 'magic-groove' })).toContain('https://pay.example.com/form/magic-groove');
   });
 });
 

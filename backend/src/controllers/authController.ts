@@ -18,6 +18,7 @@ import * as Money from '../utils/money';
 import { auditService } from '../services/auditService';
 import { accountService } from '../services/accountService';
 import { sessionService, hashToken, requestMeta } from '../services/sessionService';
+import { slugify } from '../utils/slugify';
 
 export const login = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -334,14 +335,6 @@ export const me = async (req: AuthRequest, res: Response, next: NextFunction): P
   }
 };
 
-// Slugify helper
-function slugify(str: string): string {
-  return str
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
 
 
 export const registerTenant = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {

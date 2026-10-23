@@ -197,6 +197,12 @@ function attachModeB(form: HTMLFormElement): void {
         window.location.href = res.authorization_url;
         return;
       }
+      // A repeat submit is a placed order: say so, but skip the success event so the host page fires no second purchase.
+      if (res.deduplicated && res.orderId == null) {
+        setMessage(form, 'Order placed successfully!', false);
+        form.reset();
+        return;
+      }
       // COD: the order was created immediately and carries an orderId.
       if (res.orderId == null) {
         setMessage(form, 'Order could not be completed. Please try again.', true);

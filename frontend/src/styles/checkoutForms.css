@@ -1,0 +1,134 @@
+/* Checkout forms list and editor (M3b-T10, T11, F-408, F-410 to F-413). Copied from the style block of
+   docs/mockups/v2/checkout-forms.html (.lnkcell .icn .frow .types .pane), with the `.v2` scope added.
+   Colours come from tokens.css only. Rules with no mockup counterpart are marked "new". */
+
+.v2 .cforms .headtools{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.v2 .cforms .tablewrap td,.v2 .cforms .tablewrap th{white-space:nowrap}
+.v2 .cforms .who b{display:inline}
+.v2 .icn{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;background:var(--pine-soft);color:var(--pine)}
+.v2 .icn svg.lucide{width:17px;height:17px}
+/* new: the Digital and Archived tags sit after the form name */
+.v2 .cforms .formtag{margin-left:8px;font-size:11px;vertical-align:1px}
+.v2 .lnkcell{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.v2 .lnkcell svg.lucide{width:14px;height:14px}
+.v2 .lnkcell .ibtn.sm,.v2 .rowact .ibtn.sm,.v2 .frow .ibtn.sm{border-color:transparent;background:transparent}
+.v2 .lnkcell .ibtn.sm{color:var(--ink-3)}
+.v2 .lnkcell .ibtn.sm:hover,.v2 .rowact .ibtn.sm:hover,.v2 .frow .ibtn.sm:hover{background:var(--hover);color:var(--ink)}
+.v2 .rowact .ibtn.sm:disabled,.v2 .frow .ibtn.sm:disabled{opacity:.5;cursor:default}
+.v2 .lnkmenu{right:auto;left:0;width:auto;min-width:220px}
+.v2 .rowact{display:inline-flex;gap:4px;justify-content:flex-end}
+.v2 .ibtn.sm.dng:hover{background:var(--coral-soft);color:var(--coral)}
+.v2 .cforms .mut{color:var(--ink-3)}
+
+/* editor: Basics, Fields, regions */
+.v2 .stack{display:grid;gap:16px}
+.v2 .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:760px){.v2 .row2{grid-template-columns:1fr}}
+.v2 .linkrow{display:flex;align-items:center;gap:8px}
+.v2 .fl input[readonly]{background:var(--hover);color:var(--ink-2)}
+/* new: a notice line under a field (product change, "helps Meta match buyers") */
+.v2 .fnote{font-size:12.5px;color:var(--warn-ink);margin-top:5px}
+.v2 .banner-warn{display:flex;gap:12px;border:1px solid var(--gold);background:var(--gold-soft);border-radius:12px;padding:12px 14px;color:var(--ink)}
+.v2 .banner-warn svg.lucide{width:18px;height:18px;color:var(--warn-ink);flex:none;margin-top:2px}
+.v2 .banner-warn b{display:block}
+.v2 .frow{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.v2 .frow .gr{color:var(--ink-3);cursor:grab;touch-action:none;display:grid;place-items:center}
+.v2 .frow .sp{flex:1;min-width:0}
+.v2 .frow .sp b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v2 .frow small{display:block;color:var(--ink-3);font-size:12.5px}
+.v2 .frow-list{display:grid;gap:8px}
+.v2 .types{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.v2 .types button{border:1px dashed var(--line);border-radius:11px;padding:9px 10px;display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;color:var(--ink-2)}
+.v2 .types button:hover{border-color:var(--pine);color:var(--pine);background:var(--pine-soft)}
+.v2 .types svg.lucide{width:16px;height:16px}
+.v2 .types button:focus-visible{outline:2px solid var(--pine);outline-offset:1px}
+@media (max-width:760px){.v2 .types{grid-template-columns:repeat(2,1fr)}}
+.v2 .paneh h3{font-size:18px;font-weight:800;margin-bottom:2px}
+.v2 .paneh p{color:var(--ink-2);margin-bottom:18px}
+.v2 .regions{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px 14px;margin-top:10px}
+.v2 .regions label{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
+.v2 .regions input{width:16px;height:16px;accent-color:var(--pine)}
+.v2 .regions input:disabled{opacity:.5}
+
+/* editor: Packages, Upsells, Payment, Tracking, Design (M3b-T12 to T14). From the mockup's .pt2 .pay .swatches .pvbar rules. */
+.v2 .pt2{width:100%;min-width:560px;table-layout:fixed;border-collapse:collapse}
+.v2 .pt2 th,.v2 .pt2 td{padding:10px 4px;vertical-align:top}
+.v2 .pt2 th:first-child,.v2 .pt2 td:first-child{padding-left:0}
+.v2 .tablewrap.pt2wrap{overflow-x:auto}
+/* new: compact input and select inside a table cell or a payment row */
+.v2 .cin{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:500 14px "Plus Jakarta Sans",system-ui,sans-serif}
+.v2 .cin:focus-visible{outline:2px solid var(--pine);outline-offset:1px;border-color:var(--pine)}
+.v2 .cin:disabled{background:var(--hover);color:var(--ink-3)}
+.v2 .cin[aria-invalid="true"]{border-color:var(--coral)}
+.v2 .pt2 .money{display:flex;gap:4px;align-items:center}
+.v2 .pt2 .badgectl{display:flex;gap:6px;align-items:center}
+.v2 .pt2 .badgectl .cin{min-width:0}
+.v2 .pt2 td .cin{padding:7px 6px}
+.v2 .pt2 .sub{display:block;color:var(--ink-3);font-size:12.5px;margin-top:3px;white-space:normal}
+.v2 .pt2 .err{display:block;color:var(--coral);font-size:12.5px;margin-top:3px;white-space:normal}
+.v2 .pt2 .checkline{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--ink-2);margin-top:6px}
+.v2 .pt2 .checkline input{accent-color:var(--pine)}
+.v2 .pt2 input[type=radio]{accent-color:var(--pine);width:18px;height:18px;margin-top:8px}
+.v2 .pay{display:flex;gap:14px;padding:14px;border:1px solid var(--line);border-radius:14px;align-items:flex-start;background:var(--card)}
+.v2 .pay+.pay{margin-top:10px}
+.v2 .pay.off{opacity:.55}
+.v2 .pay b{display:block}
+.v2 .pay small{color:var(--ink-2)}
+.v2 .pay .sw input:disabled+.tg{opacity:.6;cursor:not-allowed}
+.v2 .banner-note{border:1px solid var(--line);background:var(--hover);border-radius:12px;padding:10px 14px;color:var(--ink-2);font-size:13.5px}
+.v2 .banner-note.warn{border-color:var(--gold);background:var(--gold-soft);color:var(--ink)}
+.v2 .banner-note.bad{border-color:var(--coral);background:var(--coral-soft);color:var(--ink)}
+.v2 .swatches{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.v2 .swatches button,.v2 .swatches .custom{width:30px;height:30px;border-radius:50%;border:2px solid var(--card);box-shadow:0 0 0 1px var(--line);position:relative;display:grid;place-items:center}
+.v2 .swatches .custom{cursor:pointer;background:var(--card);color:var(--ink-3)}
+.v2 .swatches button.on,.v2 .swatches .custom.on{box-shadow:0 0 0 2px var(--ink)}
+.v2 .swatches .custom input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.v2 .swatches svg.lucide{width:14px;height:14px;color:white}
+.v2 .swatches .custom svg.lucide{color:var(--ink-3)}
+.v2 .hexrow{display:flex;gap:8px;align-items:center;margin-top:8px}
+.v2 .fl .hexrow .cin{width:110px;font-family:ui-monospace,monospace}
+.v2 .bannerbox{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.v2 .bannerbox img{width:160px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+.v2 .testbox{border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:var(--hover);font-size:13px;word-break:break-word}
+.v2 .testbox.ok{border-color:var(--ok-ink)}
+.v2 .testbox.bad{border-color:var(--coral)}
+.v2 .testbox pre{margin:6px 0 0;white-space:pre-wrap;font:500 12px ui-monospace,monospace}
+.v2 .upcard{display:flex;gap:14px;padding:14px;border:1px solid var(--line);border-radius:14px;align-items:flex-start;background:var(--card)}
+.v2 .upcard+.upcard{margin-top:10px}
+.v2 .upcard.off .upbody{opacity:.55}
+.v2 .upcard .upbody{flex:1;min-width:0;display:grid;gap:12px}
+.v2 .upcard .uphead{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}
+.v2 .upimg{display:flex;gap:10px;align-items:center}
+.v2 .upimg img{width:56px;height:56px;border-radius:10px;object-fit:cover;border:1px solid var(--line)}
+
+/* live preview pane and the list preview modal (M3b-T15) */
+.v2 .pvbar{display:flex;align-items:center;justify-content:space-between;padding:0 0 10px;gap:8px;flex-wrap:wrap}
+.v2 .pvstage{background:var(--hover);border-radius:14px;overflow:hidden;flex:1;min-height:0;display:flex;justify-content:center;align-items:flex-start;border:1px solid var(--line)}
+.v2 .pvclip{overflow:hidden;position:relative}
+/* the live preview is a public page: it keeps its own light palette inside the dark editor */
+.v2 .pvclip iframe{border:0;transform-origin:top left;position:absolute;top:0;left:0;background:var(--white);color-scheme:light}
+
+/* M3b-T24: the list fits at 1280 and scrolls inside its card below that; the editor follows the theme. */
+.v2 .cforms{min-width:0}
+/* the switch's hidden checkbox is position:absolute; without a positioned wrapper it escapes the scroll box and widens the page */
+.v2 .cforms .tablewrap{overflow-x:auto;position:relative}
+.v2 .cforms .tablewrap th{white-space:normal}
+.v2 .cforms .tablewrap td,.v2 .cforms .tablewrap th{padding-left:12px;padding-right:12px}
+.v2 .cforms .tablewrap th:first-child,.v2 .cforms .tablewrap td:first-child{padding-left:20px}
+.v2 .cforms .tablewrap th:last-child,.v2 .cforms .tablewrap td:last-child{padding-right:20px}
+.v2 .cforms .who{min-width:0}
+.v2 .cforms .lnkcell{max-width:100%}
+.v2 .cforms .lnkcell>span:first-child{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v2 .edhead{border-bottom:1px solid var(--line)}
+.v2 .edtitle{font-size:18px;font-weight:700;color:var(--ink)}
+.v2 .ednote{font-size:13.5px;color:var(--ink-2)}
+.v2 .etabs{display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:none}
+.v2 .etabs::-webkit-scrollbar{display:none}
+.v2 .etabs[data-more-right]{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 36px),transparent)}
+.v2 .etabs[data-more-left]{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to left,#000 calc(100% - 36px),transparent)}
+.v2 .etabs[data-more-left][data-more-right]{-webkit-mask-image:linear-gradient(to right,transparent,#000 36px,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(to right,transparent,#000 36px,#000 calc(100% - 36px),transparent)}
+.v2 .etab{flex:none;padding:12px 10px;border-bottom:2px solid transparent;margin-bottom:-1px;font-weight:600;font-size:13.5px;white-space:nowrap;color:var(--ink-2)}
+.v2 .etab:hover{color:var(--ink)}
+.v2 .etab.on{color:var(--pine);border-bottom-color:var(--pine)}
+.v2 .etab:focus-visible{outline:2px solid var(--pine);outline-offset:-2px;border-radius:6px}
+.v2 .etab span{margin-left:6px;font-size:12px;padding:0 7px;border-radius:99px;background:var(--hover);color:var(--ink-2)}

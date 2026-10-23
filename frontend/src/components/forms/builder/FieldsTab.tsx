@@ -1,209 +1,194 @@
 import React, { useState } from 'react';
-import { Pencil, Trash2, GripVertical, AlertTriangle } from 'lucide-react';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
+import { AlertTriangle, ArrowDown, ArrowUp, GripVertical, Pencil, Trash2 } from 'lucide-react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Button, Tag } from '../../ui-v2';
 import { FormField, StandardFieldKey } from '../../../types/checkout-form';
 import { FIELD_TYPES, getFieldTypeMeta } from './fieldTypes';
 import { FieldEditModal } from '../FieldEditModal';
 import { useCheckoutBuilder } from './checkoutBuilderContextValue';
-import {
-  findMissingRequiredKeys,
-  getStandardFieldMeta,
-  mapFields,
-} from '../../../lib/standardFields';
+import { getStandardFieldMeta, mapFields, missingKeysMessage, resolveStandardKey } from '../../../lib/standardFields';
+
+// Fields whose answers Meta uses to match a buyer to an ad click: name, phone, email and town (F-412).
+const META_KEYS: StandardFieldKey[] = ['fullName', 'phone', 'email', 'town'];
+const META_NOTE = 'This field helps Meta match buyers.';
 
 interface FieldRowProps {
   field: FormField;
   standardKey: StandardFieldKey | null;
+  isFirst: boolean;
+  isLast: boolean;
   onEdit: () => void;
   onToggleRequired: () => void;
+  onToggleEnabled: () => void;
+  onMove: (direction: -1 | 1) => void;
   onDelete: () => void;
 }
 
-const FieldRow: React.FC<FieldRowProps> = ({ field, standardKey, onEdit, onToggleRequired, onDelete }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: field.id,
-  });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+const FieldRow: React.FC<FieldRowProps> = ({ field, standardKey, isFirst, isLast, onEdit, onToggleRequired, onToggleEnabled, onMove, onDelete }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
   const meta = getFieldTypeMeta(field.type);
   const Icon = meta.icon;
-  // Where this field's value lands. "Custom" is legitimate for extra questions,
-  // but it's also what a mislabelled address field silently becomes, so it's
-  // shown on every row rather than only on the standard ones.
+  // Where this field's value lands. "Custom" is legitimate for extra questions, but it's also what a mislabelled
+  // address field silently becomes, so it's shown on every row rather than only on the standard ones.
   const destination = getStandardFieldMeta(standardKey)?.label ?? 'Custom';
+  const enabled = field.enabled !== false;
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg p-3"
-    >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing text-gray-400 touch-none"
-      >
-        <GripVertical className="w-5 h-5" />
+    <div ref={setNodeRef} style={style} className="frow" data-testid="field-row">
+      <span className="gr" {...attributes} {...listeners} aria-label={`Drag ${field.label}`}>
+        <GripVertical size={18} />
+      </span>
+      <Icon size={18} aria-hidden="true" />
+      <div className="sp" style={enabled ? undefined : { opacity: 0.55 }}>
+        <b>{field.label}</b>
+        <small>
+          {meta.label} · sends to {destination}
+        </small>
       </div>
+      <label className="sw">
+        <input type="checkbox" checked={enabled} aria-label={`Show ${field.label}`} onChange={onToggleEnabled} />
+        <span className="tg" />
+      </label>
+      <Button size="mini" aria-pressed={field.required} title={field.required ? 'Make optional' : 'Make required'} onClick={onToggleRequired}>
+        {field.required ? 'Required' : 'Optional'}
+      </Button>
+      <Button size="icon-sm" aria-label={`Move ${field.label} up`} disabled={isFirst} onClick={() => onMove(-1)}>
+        <ArrowUp />
+      </Button>
+      <Button size="icon-sm" aria-label={`Move ${field.label} down`} disabled={isLast} onClick={() => onMove(1)}>
+        <ArrowDown />
+      </Button>
+      <Button size="icon-sm" aria-label={`Edit ${field.label}`} title="Edit field" onClick={onEdit}>
+        <Pencil />
+      </Button>
+      <Button size="icon-sm" className="dng" aria-label={`Delete ${field.label}`} title="Delete field" onClick={onDelete}>
+        <Trash2 />
+      </Button>
+    </div>
+  );
+};
 
-      <Icon className="w-5 h-5 text-gray-700 flex-shrink-0" />
+/** States the form delivers to (F-413; the buyer's label is "State", owner decision 2026-10-23): the regions of the store's country, all selected at first; at least one stays. */
+const RegionsEditor: React.FC = () => {
+  const { allRegions, regions, setRegions, country } = useCheckoutBuilder();
+  if (allRegions.length === 0) return null;
+  const onlyOne = regions.length <= 1;
+  const toggle = (region: string, on: boolean) =>
+    setRegions((prev) => (on ? allRegions.filter((r) => r === region || prev.includes(r)) : prev.length > 1 ? prev.filter((r) => r !== region) : prev));
 
-      <div className="min-w-0 flex-1">
-        <p className="font-semibold text-gray-900 truncate">{field.label}</p>
-        <p className="text-xs text-gray-500">
-          {meta.label} <span className="text-gray-400">·</span> sends to {destination}
-        </p>
+  return (
+    <div>
+      <div className="paneh" style={{ marginTop: 6 }}>
+        <h3>States</h3>
+        <p>Customers pick a state from this list. Untick the ones you do not deliver to in {country}.</p>
       </div>
-
-      {field.required && (
-        <span className="text-xs font-medium text-gray-600 bg-gray-100 rounded-full px-2 py-0.5">
-          Required
-        </span>
-      )}
-
-      <button
-        type="button"
-        onClick={onToggleRequired}
-        title={field.required ? 'Make optional' : 'Make required'}
-        className={`text-xs font-semibold rounded-md border px-2 py-1 transition-colors ${
-          field.required
-            ? 'border-red-300 text-red-600 hover:bg-red-50'
-            : 'border-gray-300 text-gray-500 hover:bg-gray-50'
-        }`}
-      >
-        {field.required ? 'R*' : 'R'}
-      </button>
-
-      <button
-        type="button"
-        onClick={onEdit}
-        title="Edit field"
-        className="text-gray-500 hover:text-gray-800 p-1"
-      >
-        <Pencil className="w-4 h-4" />
-      </button>
-
-      <button
-        type="button"
-        onClick={onDelete}
-        title="Delete field"
-        className="text-red-500 hover:text-red-700 p-1"
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
+      <fieldset className="regions" style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend className="hint" style={{ padding: 0 }}>
+          {regions.length} of {allRegions.length} states selected
+        </legend>
+        {allRegions.map((region) => {
+          const on = regions.includes(region);
+          return (
+            <label key={region}>
+              <input type="checkbox" checked={on} disabled={on && onlyOne} onChange={(e) => toggle(region, e.target.checked)} />
+              {region}
+            </label>
+          );
+        })}
+      </fieldset>
+      {onlyOne && <p className="hint">Keep at least one state.</p>}
     </div>
   );
 };
 
 export const FieldsTab: React.FC = () => {
   const ctx = useCheckoutBuilder();
-  const sensors = useSensors(useSensor(PointerSensor));
+  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+  const [metaNote, setMetaNote] = useState(false);
   const editingField = ctx.fields.find((f) => f.id === editingFieldId) || null;
 
-  // A required destination with no field feeding it means the order API rejects
-  // every submission this form makes — surface it here, where it's fixable,
-  // instead of letting the form go live and take zero orders.
-  const productId = ctx.watch('productId');
-  const isDigital =
-    ctx.products.find((p) => p.id === productId)?.productType === 'digital';
-  const missingKeys = findMissingRequiredKeys(ctx.fields, { isDigital });
+  // A required slot with no field feeding it means the server refuses to switch the form on (F-411): say so here, where
+  // it is fixable, with the server's own words.
+  const guard = missingKeysMessage(ctx.fields, ctx.formType);
 
-  // Rows show the destination each field actually WINS, not the one its label
-  // resolves to: when two fields resolve to the same slot only the first claims
-  // it, and a row that claimed nothing must read "Custom" so the disagreement is
-  // visible here. Mapped over the enabled fields only, matching the banner above.
+  // Rows show the destination each field actually WINS, not the one its label resolves to: when two fields resolve to
+  // the same slot only the first claims it, and a row that claimed nothing must read "Custom". Enabled fields only.
   const claimedKeyByFieldId = new Map(
-    mapFields(ctx.fields.filter((f) => f.enabled !== false)).map((m) => [m.field.id, m.standardKey])
+    mapFields(ctx.fields.filter((f) => f.enabled !== false)).map((m) => [m.field.id, m.standardKey]),
   );
 
+  const helpsMeta = (field: FormField) => {
+    const key = resolveStandardKey(field);
+    return key !== null && META_KEYS.includes(key);
+  };
+
+  const move = (index: number, direction: -1 | 1) =>
+    ctx.setFields((prev) => (index + direction < 0 || index + direction >= prev.length ? prev : arrayMove(prev, index, index + direction)));
+
+  const remove = (field: FormField) => {
+    if (helpsMeta(field)) setMetaNote(true);
+    ctx.deleteField(field.id);
+  };
+
+  const toggleEnabled = (field: FormField) => {
+    const enabled = field.enabled !== false;
+    if (enabled && helpsMeta(field)) setMetaNote(true);
+    ctx.updateField(field.id, { ...field, enabled: !enabled });
+  };
+
   return (
-    <div className="space-y-6">
-      {missingKeys.length > 0 && (
-        <div className="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4">
-          <AlertTriangle className="h-5 w-5 flex-shrink-0 text-amber-600" />
-          <div className="text-sm">
-            <p className="font-semibold text-amber-900">
-              This form can’t take orders yet
-            </p>
-            <p className="mt-1 text-amber-800">
-              Nothing is sending the customer’s{' '}
-              <strong>
-                {missingKeys.map((k) => getStandardFieldMeta(k)?.label.toLowerCase()).join(', ')}
-              </strong>
-              . Add a field for it, or open an existing field and set “Sends To”.
-            </p>
+    <div className="stack">
+      <div className="paneh">
+        <h3>Fields</h3>
+        <p>Customers fill these in. “Sends to” says where each answer lands on the order.</p>
+      </div>
+
+      {guard && (
+        <div className="banner-warn" role="alert">
+          <AlertTriangle aria-hidden="true" />
+          <div>
+            <b>{guard}</b>
+            Add a field for it, or open an existing field and set “Sends to”.
           </div>
         </div>
       )}
 
-      {/* Add Form Fields */}
-      <div className="border-2 border-dashed border-gray-300 rounded-xl p-5">
-        <h3 className="text-base font-semibold text-gray-900 mb-4">Add Form Fields</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {FIELD_TYPES.map(({ type, label, icon: Icon }) => (
-            <button
-              key={type}
-              type="button"
-              onClick={() => ctx.addField(type)}
-              className="flex flex-col items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white py-5 text-gray-800 shadow-sm hover:border-gray-400 hover:shadow transition-all"
-            >
-              <Icon className="w-6 h-6" />
-              <span className="text-sm font-semibold">{label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      {metaNote && (
+        <p className="fnote" role="status">
+          {META_NOTE}
+        </p>
+      )}
 
-      {/* Form Fields list */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-gray-900">Form Fields</h3>
-          <span className="text-sm text-gray-500">
+        <div className="head" style={{ marginBottom: 10 }}>
+          <b>Form fields</b>
+          <span className="hint" style={{ margin: 0 }}>
             {ctx.fields.length} {ctx.fields.length === 1 ? 'field' : 'fields'}
           </span>
         </div>
 
         {ctx.fields.length === 0 ? (
-          <div className="text-center text-sm text-gray-500 border border-gray-200 rounded-lg py-10">
-            No fields yet. Add one from the grid above.
-          </div>
+          <p className="hint">No fields yet. Add one below. A form with no fields uses the standard ones.</p>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={ctx.handleFieldDragEnd}
-          >
-            <SortableContext
-              items={ctx.fields.map((f) => f.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div className="space-y-2">
-                {ctx.fields.map((field) => (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={ctx.handleFieldDragEnd}>
+            <SortableContext items={ctx.fields.map((f) => f.id)} strategy={verticalListSortingStrategy}>
+              <div className="frow-list">
+                {ctx.fields.map((field, index) => (
                   <FieldRow
                     key={field.id}
                     field={field}
                     standardKey={claimedKeyByFieldId.get(field.id) ?? null}
+                    isFirst={index === 0}
+                    isLast={index === ctx.fields.length - 1}
                     onEdit={() => setEditingFieldId(field.id)}
-                    onToggleRequired={() =>
-                      ctx.updateField(field.id, { ...field, required: !field.required })
-                    }
-                    onDelete={() => ctx.deleteField(field.id)}
+                    onToggleRequired={() => ctx.updateField(field.id, { ...field, required: !field.required })}
+                    onToggleEnabled={() => toggleEnabled(field)}
+                    onMove={(direction) => move(index, direction)}
+                    onDelete={() => remove(field)}
                   />
                 ))}
               </div>
@@ -211,6 +196,20 @@ export const FieldsTab: React.FC = () => {
           </DndContext>
         )}
       </div>
+
+      <div>
+        <div className="fl"><label>Add a field</label></div>
+        <div className="types">
+          {FIELD_TYPES.map(({ type, label, icon: Icon }) => (
+            <button key={type} type="button" onClick={() => ctx.addField(type)}>
+              <Icon />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <RegionsEditor />
 
       {editingField && (
         <FieldEditModal
