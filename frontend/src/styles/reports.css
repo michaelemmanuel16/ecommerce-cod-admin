@@ -80,7 +80,7 @@
 .v2 .two3{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:14px 20px 4px}
 
 /* tables */
-.v2 .tcard .tablewrap{margin-top:8px}
+.v2 .tcard .tablewrap{margin-top:8px;overflow-x:auto}
 .v2 .dailywrap{max-height:340px;overflow-y:auto}
 .v2 .dt{font-size:13px}
 .v2 .tablewrap .dt th,.v2 .tablewrap .dt td{padding:12px 10px}
@@ -89,7 +89,7 @@
 .v2 .dt th small{display:block;font-weight:500;color:var(--ink-3)}
 .v2 .dt .num{white-space:nowrap}
 .v2 .dt tr.tot td{background:var(--hover);font-weight:700}
-.v2 .dt.camp th{white-space:nowrap;vertical-align:bottom}
+.v2 .dt.camp th{vertical-align:bottom}
 .v2 .dt .rate{min-width:112px}
 .v2 .dt .rate .prog{margin-top:6px}
 
