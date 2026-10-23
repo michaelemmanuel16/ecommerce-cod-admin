@@ -257,3 +257,29 @@ docs/
 - `backend/src/controllers/checkoutFormController.ts` (`getPaymentOptions`, `getUpsellStats`, `upsellData`, `bannerError`), `routes/checkoutFormRoutes.ts`, `services/checkoutFormService.ts`, `config/r2.ts`, `utils/checkoutFormRules.ts`
 - Removed: `components/forms/PackageEditor.tsx`, `UpsellEditor.tsx`, `builder/SettingsTab.tsx`
 - Tests: Packages/Upsells/Payment/Tracking/Design tab tests, `PublicDesignOptions`, `CheckoutFormPreviewSafety`, `previewRouteGuard`, lib tests, `checkoutFormEditorApi`, `checkoutFormRulesUpsell`, `e2e/18-checkout-forms-editor.spec.ts`
+
+## COD-36 — Public checkout, success and not available screens, payment callback (M3b T16–T18)
+
+### Public checkout page (T16)
+- Sections in F-420 order on the form's own palette (`color-scheme: light`, no admin theme tokens): product header, packages ("Most popular", discount, was-price), add-ons (popular badge, off ones hidden), "Your information", order summary, one button per method, refund note only with an online method (no provider name), and the terms as an in-page section (no new tab).
+- Money: one `formatMoney(amount, currency)` in `utils/money.ts` ("GH₵200", "GH₵649.50"); the admin `formatCurrency` calls it, so the public page and the embed do not load the admin stores.
+- The button shows "Placing your order." after the first tap and ignores a second tap. Sold out and every other failure show above the button; no `alert()` and no toasts.
+- Label "State" (owner decision 2026-10-23, F-413): new forms, the editor's "Sends to" list, the required-field message and the server's "Choose a state from the list." Migration `20261023190000_form_state_label` renamed stored "Region" and "Region/State" labels to "State" (8 dev forms; test DB had none); other labels, such as "County", stay as typed. The client rewrite is gone, so the buyer sees the label the owner typed.
+- Hosted page and embed share `placeOrder()` (`lib/orderPayload.ts`). The embed shows "This form cannot be shown here." when its host is refused. Tracking calls are unchanged.
+
+### Success, not available, digital (T17)
+- "Order placed", the order number, "What happens next" (COD: we call you, we deliver, you pay on arrival; digital: the download link was sent) and "Message us on WhatsApp" (`wa.me`, same tab) when the store has a support number. A repeat order and a reload inside the 10-minute cooldown show the same screen with no tracking. The auto-confirm WhatsApp line waits for the tenant setting (F-466).
+- "This form is not available." for a missing, switched-off or archived form, with the support link; no button into the admin app. The public form payload and its 404 carry the store's `supportWhatsapp` and nothing else about the store.
+- Digital forms show no address fields; email is required; online payment in full only.
+
+### Payment callback (T18)
+- `GET /api/payments/verify/:reference` (alias `/api/paystack/verify/:reference`) returns `{ status, orderNumber?, orderType, formSlug, redirectUrl?, email? }`: email only for a paid digital order, masked (`a***@gmail.com`, `utils/mask.ts`); `redirectUrl` only on success, built on the server with the COD params (`utils/thankYouUrl.ts`); unknown reference is 200 `not_found`. Own limiter, 120 per 15 minutes per IP (the page polls up to 60 times).
+- The checkout gives the provider `/checkout/payment/callback/<form slug>`; the bare path still works. The slug gives the page the store's colours and support number even when the reference is unknown.
+- Six states: Confirming, Pending (asks every 5 s), after 5 minutes "We have not received your payment yet." with the reference, Success (order number, digital line, thank-you redirect after 2 s), Failed ("Try again" to the form, same tab), Not found. No browser Purchase pixel on this page.
+
+### Key files
+- `frontend/src/components/public/CheckoutForm.tsx`, `OrderSummary.tsx`, `PackageSelector.tsx`, `AddOnSelector.tsx`, `OrderSuccess.tsx`, `FormNotAvailable.tsx`, `PublicScreen.tsx`; `pages/PublicCheckout.tsx`, `pages/PaymentCallback.tsx`; `embed/EmbedCheckout.tsx`
+- `frontend/src/utils/money.ts`, `utils/whatsapp.ts`, `lib/orderPayload.ts` (`placeOrder`), `lib/publicTheme.ts`, `lib/paymentPolling.ts`, `lib/standardFields.ts`, `lib/defaultFields.ts`
+- `backend/src/controllers/paystackController.ts` (`publicVerifyPayment`), `controllers/publicOrderController.ts`, `middleware/publicTenant.ts`, `middleware/rateLimiter.ts`, `services/tenantLookupService.ts`, `services/checkoutFormService.ts`, `services/paystackSettlementService.ts`, `utils/thankYouUrl.ts`, `utils/mask.ts`, `utils/checkoutLocation.ts`
+- Tests: `PublicCheckoutPage`, `PublicScreens`, `PaymentCallback`, `placeOrder`, `paymentWebhook` (verify), `publicRoutesTenant`, `formStateLabelMigration`, `e2e/10-public-checkout.spec.ts`, `e2e/10b-public-checkout-mobile.spec.ts` (all public calls mocked)
+
