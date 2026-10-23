@@ -1,24 +1,18 @@
 /**
- * Double-decrement characterization test (M0-T04, F-657, F-305).
+ * Stock leaves once per order (M0-T04, M4-T08, F-657, F-305).
  *
- * Today a public checkout order lowers warehouse stock TWICE:
- *   1. publicOrderService.createPublicOrder decrements `stockQuantity` at creation.
- *   2. orderService.updateOrderStatus decrements again on entering `out_for_delivery`
- *      (transition A). Moving on to `delivered` changes nothing for a warehouse order.
- *
- * Observed on the local test DB (2026-10-20), start stock 100, no delivery agent:
- *   3-set package: after create 97 (-3), after out_for_delivery 94 (-6), after delivered 94 (-6).
- *   2-unit package (F-305): after create 98 (-2), after out_for_delivery 96 (-4), after delivered 96 (-4).
- * These match the plan's -6 / -4.
- *
- * Test A pins today's behaviour. Test B states the target (-3 / -2) and is `it.failing`;
- * M4-T08 removes `it.failing` on B and deletes A.
+ * Before M4 a public checkout order lowered warehouse stock twice: at creation (publicOrderService) and again when
+ * the state machine took it at `out_for_delivery`. Observed on 2026-10-20, start 100, no agent stock:
+ *   3-set package: create 97 (-3), out_for_delivery 94 (-6), delivered 94 (-6).
+ *   2-unit package: create 98 (-2), out_for_delivery 96 (-4), delivered 96 (-4).
+ * Now stock moves once, at `delivered`, from the holder: -3 for the 3-set package and -2 for the 2-unit package.
  */
 import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { prismaBase } from '../../utils/prisma';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { runInTenant } from '../../utils/tenantContext';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
+import { levelAt, stockUp } from './helpers/stock';
 import orderService from '../../services/orderService';
 import publicOrderService from '../../services/publicOrderService';
 
@@ -44,6 +38,7 @@ let productId: number;
 let formId: number;
 let formSlug: string;
 let agentId: number;
+let holderId: number;
 let threeSetPackageId: number;
 let twoUnitPackageId: number;
 const orderIds: number[] = [];
@@ -51,12 +46,14 @@ let phoneCounter = 0;
 
 const inTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
 
-const getStock = async () =>
-  (await prismaBase.product.findUniqueOrThrow({ where: { id: productId } })).stockQuantity;
+/** On hand at the holder (the agent's location) and the Product.stockQuantity cache. */
+const getStock = async () => levelAt(holderId, productId);
+const getCache = async () => (await prismaBase.product.findUniqueOrThrow({ where: { id: productId } })).stockQuantity;
 
 /** Creates a public order for the package, moves it out_for_delivery then delivered. Returns stock deltas. */
 async function runPublicOrderToDelivered(packageId: number) {
   const before = await getStock();
+  const cacheBefore = await getCache();
   phoneCounter += 1;
 
   const created = await inTenant(() =>
@@ -71,7 +68,7 @@ async function runPublicOrderToDelivered(packageId: number) {
     }),
   );
   orderIds.push(created.orderId);
-  // out_for_delivery needs a delivery agent (state machine). The agent holds no allocated stock.
+  // out_for_delivery needs a delivery agent (state machine). The agent's location holds the stock.
   await prismaBase.order.update({ where: { id: created.orderId }, data: { deliveryAgentId: agentId } });
   const afterCreate = await getStock();
 
@@ -86,6 +83,7 @@ async function runPublicOrderToDelivered(packageId: number) {
     create: afterCreate - before,
     dispatch: afterDispatch - afterCreate,
     total: afterDelivered - before,
+    cache: (await getCache()) - cacheBefore,
   };
 }
 
@@ -103,11 +101,12 @@ beforeAll(async () => {
       name: 'Double Decrement Set',
       category: 'test',
       price: 100,
-      stockQuantity: START_STOCK,
+      stockQuantity: 0,
       tenantId,
     },
   });
   productId = product.id;
+  holderId = await stockUp(tenantId, productId, START_STOCK, { name: 'Kofi Agent', type: 'agent', userId: agentId });
 
   formSlug = `ddec-form-${SUFFIX}`;
   const form = await prismaBase.checkoutForm.create({
@@ -141,33 +140,18 @@ afterAll(async () => {
   await prismaBase.customer.deleteMany({ where: { tenantId } });
   await prismaBase.formPackage.deleteMany({ where: { formId } });
   await prismaBase.checkoutForm.delete({ where: { id: formId } });
-  await prismaBase.product.delete({ where: { id: productId } });
   await deleteTenantRows([tenantId]);
   await prismaBase.$disconnect();
 });
 
-describe('stock double-decrement on public orders', () => {
-  describe('Test A: pins today (double decrement)', () => {
-    it('3-set package: -3 at creation, -3 more at out_for_delivery, none at delivered (-6 total)', async () => {
-      const delta = await runPublicOrderToDelivered(threeSetPackageId);
-      expect(delta).toEqual({ create: -3, dispatch: -3, total: -6 });
-    });
-
-    it('2-unit package (F-305): -2 at creation, -2 more at out_for_delivery (-4 total)', async () => {
-      const delta = await runPublicOrderToDelivered(twoUnitPackageId);
-      expect(delta).toEqual({ create: -2, dispatch: -2, total: -4 });
-    });
+describe('stock leaves once per order', () => {
+  it('3-set package: nothing at creation or dispatch, -3 at delivered, from the holder', async () => {
+    const delta = await runPublicOrderToDelivered(threeSetPackageId);
+    expect(delta).toEqual({ create: 0, dispatch: 0, total: -3, cache: -3 });
   });
 
-  describe('Test B: target (stock moves once)', () => {
-    it.failing('3-set package lowers stock by 3 in total - fixed in M4-T08', async () => {
-      const delta = await runPublicOrderToDelivered(threeSetPackageId);
-      expect(delta.total).toBe(-3);
-    });
-
-    it.failing('2-unit package (F-305) lowers stock by 2 in total - fixed in M4-T08', async () => {
-      const delta = await runPublicOrderToDelivered(twoUnitPackageId);
-      expect(delta.total).toBe(-2);
-    });
+  it('2-unit package (F-305): -2 in total', async () => {
+    const delta = await runPublicOrderToDelivered(twoUnitPackageId);
+    expect(delta).toEqual({ create: 0, dispatch: 0, total: -2, cache: -2 });
   });
 });
