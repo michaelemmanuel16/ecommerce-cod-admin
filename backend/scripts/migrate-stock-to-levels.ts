@@ -5,6 +5,7 @@ import { withSoftDeleted } from '../src/utils/prismaExtensions';
 import { getSystemUserId } from '../src/services/systemUserService';
 import { fullName } from '../src/utils/nameUtils';
 import { rebuildCache } from '../src/services/stockService';
+import { grantAdminUpdateStock } from '../src/services/tenantDefaultsService';
 import { assertNotProduction, hasFlag, option } from './lib/scriptArgs';
 
 // M4-T03 / M4-T04 (COD-38, F-650, F-660, F-657). Moves the legacy stock numbers into StockLocation / StockLevel.
@@ -77,6 +78,8 @@ interface TenantReport {
   skippedDeliveryDispatch: number;
   oldTransfersToUpdate: number;
   estimateDeliveredDoubleDecrement: number;
+  /** What the run does (dry run) or did to admin products:update_stock on the stored permissions. */
+  adminUpdateStock: 'granted' | 'already there' | 'no stored list';
 }
 
 type Loc = { key: string; name: string; type: 'partner_3pl' | 'agent' | 'in_transit'; userId: number | null; id?: number; needsLink?: boolean; setCompany?: boolean };
@@ -237,9 +240,12 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
     tenantId, alreadyMigrated, ok: true, linked3pl: threePl, locations: locs.map((l) => `${l.name} [${l.type}${l.id ? '' : ', new'}]`),
     rows: [], ordersA: kindA.orders, ordersB: kindB.orders, unitsBByStatus: kindB.byStatus, unitsA, unitsB, skippedDeliveryDispatch: viaDelivery.size, oldTransfersToUpdate,
     estimateDeliveredDoubleDecrement: deliveredPublic._sum.quantity ?? 0,
+    adminUpdateStock: await grantAdminUpdateStock(tenantId, prisma, true),
   };
 
   if (alreadyMigrated) {
+    // A tenant migrated before the grant existed still gets it on a re-run.
+    if (!opts.dryRun) await grantAdminUpdateStock(tenantId);
     return report;
   }
 
@@ -290,6 +296,7 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
     }
     if (wrong.length) throw new Error(`Stock sums differ after the write, rolled back: ${wrong.join('; ')}`);
 
+    await grantAdminUpdateStock(tenantId, tx);
     const cache = await rebuildCache(tx);
     for (const r of report.rows) r.cacheAfter = cache.get(r.productId) ?? r.cacheAfter;
   }, { timeout: 600_000, maxWait: 30_000 });
@@ -324,6 +331,7 @@ function printReport(r: TenantReport, opts: MigrateOptions, log: (s: string) => 
   log(`\nTenant ${r.tenantId}${r.alreadyMigrated ? ' - already migrated (levels exist), nothing written' : ''}`);
   log(`  default location (old warehouse number goes here): ${opts.defaultLocation}`);
   for (const t of r.linked3pl) log(`  3PL "${t.location}" linked to user: ${t.user ?? 'none (no matching delivery agent user)'}${t.setCompany ? ' - user kind set to company' : ''}`);
+  log(`  admin products:update_stock: ${r.adminUpdateStock === 'granted' && !opts.dryRun ? 'granted' : r.adminUpdateStock === 'granted' ? 'would be granted' : r.adminUpdateStock}`);
   log(`  locations: ${r.locations.join('; ')}`);
   log(`  old transfers to get from/to locations: ${r.oldTransfersToUpdate}`);
   log(`  out_for_delivery correction (a): ${r.ordersA} orders, ${[...r.unitsA].map(([p, u]) => `product ${p}: ${u}`).join(', ') || 'no units'}` +

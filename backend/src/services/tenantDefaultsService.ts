@@ -1,4 +1,4 @@
-import prisma from '../utils/prisma';
+import prisma, { TransactionClient } from '../utils/prisma';
 import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
 import { DEFAULT_GL_ACCOUNTS } from '../config/glAccounts';
@@ -21,6 +21,32 @@ export async function grantAdminUpdateStatus(tenantId: string): Promise<void> {
       where: { id: config.id },
       data: { rolePermissions: { ...stored, admin: { ...stored!.admin, orders: [...orders, 'update_status'] } } },
     });
+  });
+}
+
+/**
+ * M4: same for `products:update_stock` on admin (F-654: owner, admin and stock keeper write stock). Adds the cell to a
+ * stored admin.products list that lacks it; nothing is removed; no row or no stored list changes nothing.
+ * `dryRun` only reports. Called by the stock migration script, with its transaction.
+ */
+export async function grantAdminUpdateStock(
+  tenantId: string,
+  db: Pick<TransactionClient, 'systemConfig'> = prisma,
+  dryRun = false,
+): Promise<'granted' | 'already there' | 'no stored list'> {
+  return runInTenant(tenantId, async () => {
+    const config = await db.systemConfig.findFirst();
+    const stored = config?.rolePermissions as Record<string, Record<string, string[]>> | null | undefined;
+    const products = stored?.admin?.products;
+    if (!config || !Array.isArray(products)) return 'no stored list';
+    if (products.includes('update_stock')) return 'already there';
+    if (!dryRun) {
+      await db.systemConfig.update({
+        where: { id: config.id },
+        data: { rolePermissions: { ...stored, admin: { ...stored!.admin, products: [...products, 'update_stock'] } } },
+      });
+    }
+    return 'granted';
   });
 }
 
