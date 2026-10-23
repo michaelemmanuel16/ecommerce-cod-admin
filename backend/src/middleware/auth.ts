@@ -23,7 +23,8 @@ async function getPermissionsFromDatabase() {
 
   let permissions: any;
   try {
-    const config = await prisma.systemConfig.findFirst();
+    // The tenant's own row only (SystemConfig.tenantId is unique). No tenant reads the tenantId-null row.
+    const config = await prisma.systemConfig.findFirst({ where: { tenantId: getTenantId() ?? null } });
 
     if (!config || !config.rolePermissions) {
       logger.info('[auth.getPermissionsFromDatabase] No config or rolePermissions found, using defaults');
