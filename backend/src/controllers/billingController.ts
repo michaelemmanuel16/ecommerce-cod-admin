@@ -11,6 +11,7 @@ import {
 import { bindSubscription } from '../services/platformBillingService';
 import logger from '../utils/logger';
 import * as Money from '../utils/money';
+import { getStoreTimeZone, localDate, monthRange, parseYmd } from '../services/kpi/dates';
 
 /**
  * GET /api/billing/plans — list all active plans (public)
@@ -41,11 +42,12 @@ export const getSubscription = async (_req: AuthRequest, res: Response, next: Ne
     });
     if (!tenant) throw new AppError('Tenant not found', 404);
 
-    // Current month order count
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Current month order count: the store-zone month, the same range the orders list and reports use
+    const zone = getStoreTimeZone(tenantId);
+    const { year, month } = parseYmd(localDate(new Date(), zone));
+    const { from, to } = monthRange(year, month, zone);
     const orderCount = await prisma.order.count({
-      where: { tenantId, createdAt: { gte: monthStart } },
+      where: { tenantId, createdAt: { gte: from, lt: to } },
     });
 
     const plan = tenant.currentPlan;
