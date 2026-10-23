@@ -44,6 +44,10 @@ describe('Billing & plans tab (M3-T65, F-1234)', () => {
     render(<BillingTab />);
     expect(await screen.findByText('Free')).toBeInTheDocument();
     expect(screen.getByText('no limit on your plan')).toBeInTheDocument();
+    // No literal "None" on the plan summary (QA-04)
+    expect(screen.getByText('No limit')).toBeInTheDocument();
+    expect(screen.getByText('Nothing due')).toBeInTheDocument();
+    expect(screen.queryByText('None')).not.toBeInTheDocument();
     expect(screen.getByText('1,445')).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     expect(screen.queryByText(/near your plan limit/)).not.toBeInTheDocument();

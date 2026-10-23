@@ -104,10 +104,10 @@ export function BillingTab() {
       <Card title="Billing & plans" aside={<Tag tone={STATUS_TONE[status] ?? 'warn'}>{statusText(status)}</Tag>}>
         <div className="plan">
           <div><small>Plan</small><div className="big">{current?.displayName ?? 'Free'}</div></div>
-          <div><small>Limits</small><div className="big">{maxOrders ? `${formatNumber(maxOrders)} orders` : 'None'}</div></div>
+          <div><small>Limits</small><div className="big">{maxOrders ? `${formatNumber(maxOrders)} orders` : 'No limit'}</div></div>
           <div>
             <small>Next charge</small>
-            <div className="big">{status === 'active' && subscription?.nextChargeAmount != null ? formatCurrency(Number(subscription.nextChargeAmount), 'NGN') : 'None'}</div>
+            <div className="big">{status === 'active' && subscription?.nextChargeAmount != null ? formatCurrency(Number(subscription.nextChargeAmount), 'NGN') : 'Nothing due'}</div>
           </div>
         </div>
         <div className="usage">
