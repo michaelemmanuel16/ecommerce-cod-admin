@@ -80,18 +80,23 @@ describe('migrate-stock-to-levels', () => {
     expect(await db.stockLevel.count({ where: { tenantId } })).toBe(0);
     const copybook = report.rows.find((r) => r.productId === p1)!;
     // before = warehouse 100 + agents 20 + 36 + (a) 3 + 1 + (b) 2
-    expect(copybook).toMatchObject({ warehouse: 100, agents: 56, correctionA: 4, correctionB: 2, before: 162, after: 162, difference: 0, inTransitCounter: 20 });
+    expect(copybook).toMatchObject({ warehouse: 100, agents: 56, correctionA: 4, correctionB: 2, before: 162, after: 162, difference: 0, inTransitCounter: 20, cacheBefore: 100, cacheAfter: 162 });
     expect(report.ordersA).toBe(2);
     expect(report.skippedDeliveryDispatch).toBe(1);
     expect(report.ordersB).toBe(1);
     expect(report.linked3pl[0].user).toContain(`user ${logiswiftUser}`);
+    expect(report.linked3pl[0].setCompany).toBe(true);
+    expect((await db.user.findUniqueOrThrow({ where: { id: logiswiftUser } })).kind).toBe('person'); // a dry run writes nothing
   });
 
   it('the first real run builds the levels, links the 3PL user and puts back the units of open orders', async () => {
     const report = await migrateTenant(tenantId, OPTS);
     expect(report.ok).toBe(true);
+    expect(report.rows.map((r) => [r.productId, r.cacheBefore, r.cacheAfter])).toEqual([[p1, 100, 162], [p2, 50, 52]]);
     const logiswift = await db.stockLocation.findFirstOrThrow({ where: { tenantId, name: 'Logiswift' } });
     expect(logiswift).toMatchObject({ type: 'partner_3pl', userId: logiswiftUser });
+    // The partners API reads the partner type from User.kind, so the linked 3PL user becomes a company.
+    expect((await db.user.findUniqueOrThrow({ where: { id: logiswiftUser } })).kind).toBe('company');
     expect(await db.stockLocation.findFirst({ where: { tenantId, name: 'Kasapa Express', type: 'partner_3pl' } })).not.toBeNull();
     expect(await db.stockLocation.findFirst({ where: { tenantId, type: 'in_transit' } })).not.toBeNull();
     expect(await db.stockLocation.findFirst({ where: { tenantId, userId: kofi, type: 'agent' } })).not.toBeNull();
@@ -126,10 +131,12 @@ describe('migrate-stock-to-levels', () => {
     expect(rows.every((r) => r.orderId != null && r.status === 'received')).toBe(true);
   });
 
-  it('never writes AgentStock or Product.stockQuantity', async () => {
+  it('never writes AgentStock; rebuilds Product.stockQuantity from the levels (M4-T06)', async () => {
     const stock = await db.agentStock.findMany({ where: { tenantId }, orderBy: { agentId: 'asc' } });
     expect(stock.map((s) => [s.quantity, s.totalInTransit]).sort()).toEqual([[20, 0], [36, 20]]);
-    expect((await db.product.findUniqueOrThrow({ where: { id: p1 } })).stockQuantity).toBe(100);
+    // The old warehouse numbers were 100 and 50; the cache is now the sum of the levels.
+    expect((await db.product.findUniqueOrThrow({ where: { id: p1 } })).stockQuantity).toBe(162);
+    expect((await db.product.findUniqueOrThrow({ where: { id: p2 } })).stockQuantity).toBe(52);
   });
 
   it('a second run changes nothing', async () => {
