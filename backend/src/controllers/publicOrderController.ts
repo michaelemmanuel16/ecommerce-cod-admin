@@ -289,7 +289,7 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       const asked = cleanText(formData.state).toLowerCase();
       const region = available.find((r): r is string => typeof r === 'string' && r.toLowerCase() === asked);
       if (!region) {
-        reject('Choose a region from the list.');
+        reject('Choose a state from the list.');
         return;
       }
       formData.state = region;
@@ -469,9 +469,10 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       // the buyer left it blank (physical Paystack orders don't require email).
       const buyerEmail =
         formData.email || `${String(formData.phoneNumber).replace(/\D/g, '')}@codadminpro.com`;
-      // Paystack appends ?reference=...&trxref=... to the callback URL on redirect;
-      // the PaymentCallback page settles by that reference.
-      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback`;
+      // The provider appends reference (and trxref) to the callback URL on redirect; the PaymentCallback page settles by
+      // that reference. `form` is the slug, so the page can show the store's colours and support number even when the
+      // reference is unknown.
+      const callbackUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/checkout/payment/callback?form=${encodeURIComponent(slug)}`;
 
       const provider = getPaymentProvider(form.paymentProvider ?? DEFAULT_PAYMENT_PROVIDER);
       // PendingCheckout stores the charge in the provider's minor units (legacy column, replaced in M3b-T06); the provider owns the conversion.

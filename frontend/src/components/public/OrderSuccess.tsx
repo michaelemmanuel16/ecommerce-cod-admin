@@ -3,7 +3,7 @@ import { CheckCircle } from 'lucide-react';
 import { PixelConfig } from '../../types/checkout-form';
 import type { PublicCheckoutForm } from '../../services/public-orders.service';
 import { trackPurchase } from '../../utils/pixelTracking';
-import { PublicScreen, SupportLine } from './PublicScreen';
+import { PublicScreen, StatusIcon, SupportLine } from './PublicScreen';
 import { screenColors } from '../../lib/publicTheme';
 
 interface OrderSuccessProps {
@@ -17,8 +17,6 @@ interface OrderSuccessProps {
   pixelConfig?: PixelConfig;
   /** Digital order: the next-step list says the download link was sent. */
   digital?: boolean;
-  /** Where the download link went (digital only). */
-  email?: string;
   supportWhatsapp?: string | null;
   design?: PublicCheckoutForm['design'];
   embedded?: boolean;
@@ -26,7 +24,7 @@ interface OrderSuccessProps {
 
 export const OrderSuccess: React.FC<OrderSuccessProps> = ({
   orderId, orderNumber, repeatOrder, orderTotal, currency = 'USD', pixelConfig,
-  digital, email, supportWhatsapp, design, embedded,
+  digital, supportWhatsapp, design, embedded,
 }) => {
   useEffect(() => {
     if (pixelConfig && !repeatOrder) {
@@ -37,16 +35,14 @@ export const OrderSuccess: React.FC<OrderSuccessProps> = ({
   const { primary } = screenColors(design);
   const number = orderNumber || (orderId != null ? `#${orderId}` : null);
   const steps = digital
-    ? [email ? `We sent the download link to ${email}.` : 'We sent the download link to your email.']
+    ? ['We sent the download link to your email.']
     : ['We call you to confirm your order.', 'We deliver to you.', 'You pay when it arrives.'];
 
   return (
     <PublicScreen design={design} embedded={embedded}>
-      <div className="flex justify-center mb-4">
-        <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ backgroundColor: `${primary}1a` }}>
-          <CheckCircle className="w-9 h-9" style={{ color: primary }} aria-hidden="true" />
-        </div>
-      </div>
+      <StatusIcon tint={`${primary}1a`}>
+        <CheckCircle className="w-9 h-9" style={{ color: primary }} aria-hidden="true" />
+      </StatusIcon>
 
       <h1 className="text-2xl font-bold text-gray-900 mb-1">Order placed</h1>
       {number && (

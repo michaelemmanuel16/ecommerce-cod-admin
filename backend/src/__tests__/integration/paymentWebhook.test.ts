@@ -344,16 +344,22 @@ describe('verify API', () => {
     expect(other.body.email).toBeUndefined();
   });
 
-  it('a form with a thank-you page returns it on success only', async () => {
+  it('a form with a thank-you page returns it on success only, with the same details a COD order sends', async () => {
     await prismaBase.checkoutForm.update({ where: { id: pair.a.ids.checkoutForm }, data: { redirectUrl: 'https://shop.example.com/thanks' } });
     try {
       const ref = newRef('redir');
       await seedPending('a', ref);
+      await prismaBase.pendingCheckout.update({ where: { reference: ref }, data: { selectedPackage: { id: 7, name: 'One' } } });
       const waiting = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
       expect(waiting.body.redirectUrl).toBeUndefined();
       fake.setPayment(ref, { status: 'success', amount: '50' });
       const done = await request(app).get(`/api/payments/verify/${ref}`).set('X-Forwarded-For', ip());
-      expect(done.body.redirectUrl).toBe('https://shop.example.com/thanks');
+      const [order] = await ordersFor(ref);
+      const url = new URL(done.body.redirectUrl);
+      expect(url.origin + url.pathname).toBe('https://shop.example.com/thanks');
+      // same names and order as the checkout page builds for COD
+      expect([...url.searchParams.keys()]).toEqual(['order_id', 'total', 'currency', 'reference', 'package']);
+      expect(Object.fromEntries(url.searchParams)).toEqual({ order_id: String(order.id), total: '50', currency: 'GHS', reference: ref, package: '7' });
     } finally {
       await prismaBase.checkoutForm.update({ where: { id: pair.a.ids.checkoutForm }, data: { redirectUrl: null } });
     }

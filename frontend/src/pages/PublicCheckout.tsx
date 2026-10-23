@@ -1,34 +1,51 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { CheckoutForm, CheckoutFormData } from '../components/public/CheckoutForm';
 import { OrderSuccess } from '../components/public/OrderSuccess';
 import { FormNotAvailable } from '../components/public/FormNotAvailable';
 import { publicOrdersService, PublicCheckoutForm } from '../services/public-orders.service';
-import { buildOrderPayload, buildRedirectUrl } from '../lib/orderPayload';
-import { initPixels, fireInitiateCheckoutWithCapi, getFbCookies } from '../utils/pixelTracking';
-import { rememberLastForm, rememberPayment } from '../lib/lastForm';
+import { placeOrder } from '../lib/orderPayload';
+import { initPixels, fireInitiateCheckoutWithCapi } from '../utils/pixelTracking';
 import { PixelConfig } from '../types/checkout-form';
 import { useConfigStore } from '../stores/configStore';
 
 const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
 
-function getCooldown(slug: string): { orderId: number; total: number } | null {
+interface Cooldown { orderId: number; orderNumber?: string; total: number }
+
+function getCooldown(slug: string): Cooldown | null {
   try {
     const raw = localStorage.getItem(`checkout_cooldown_${slug}`);
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (Date.now() - data.timestamp < COOLDOWN_MS) {
-      return { orderId: data.orderId, total: data.total };
+      return { orderId: data.orderId, orderNumber: data.orderNumber, total: data.total };
     }
     localStorage.removeItem(`checkout_cooldown_${slug}`);
   } catch { /* ignore corrupt data */ }
   return null;
 }
 
-function setCooldown(slug: string, orderId: number, total: number) {
+function setCooldown(slug: string, entry: Cooldown) {
   try {
-    localStorage.setItem(`checkout_cooldown_${slug}`, JSON.stringify({ orderId, total, timestamp: Date.now() }));
+    localStorage.setItem(`checkout_cooldown_${slug}`, JSON.stringify({ ...entry, timestamp: Date.now() }));
   } catch { /* storage blocked: the order is still placed */ }
+}
+
+/** An order the buyer just placed (or placed a moment ago): what the success screen shows. */
+interface Placed {
+  orderId?: number;
+  orderNumber?: string;
+  total: number;
+  /** No new order and no Purchase event: a repeat submit, or a reload inside the cooldown. */
+  repeat: boolean;
+}
+
+/** Why the form is not shown. `support` is the store's public WhatsApp number from the 404 body. */
+interface LoadError {
+  notFound: boolean;
+  support: string | null;
+  message?: string;
 }
 
 export const PublicCheckout: React.FC = () => {
@@ -41,17 +58,8 @@ export const PublicCheckout: React.FC = () => {
     : null;
   const [formData, setFormData] = useState<PublicCheckoutForm | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // The store's support number from the 404 body of a form that is switched off.
-  const [errorSupport, setErrorSupport] = useState<string | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [orderId, setOrderId] = useState<number | null>(null);
-  const [orderNumber, setOrderNumber] = useState<string | null>(null);
-  // Reload inside the 10-minute cooldown: the success screen is back, but no tracking fires again.
-  const cooldownHit = useRef(false);
-  // A repeat of an order already placed: thank-you screen, no order number (the server sends none to a new address), no Purchase event.
-  const [repeatOrder, setRepeatOrder] = useState(false);
-  const [submittedTotal, setSubmittedTotal] = useState<number>(0);
+  const [loadError, setLoadError] = useState<LoadError | null>(null);
+  const [placed, setPlaced] = useState<Placed | null>(null);
 
   // the public config route needs this form's slug to find the tenant
   useEffect(() => {
@@ -60,20 +68,15 @@ export const PublicCheckout: React.FC = () => {
 
   useEffect(() => {
     if (!slug) {
-      setError('Invalid form URL');
+      setLoadError({ notFound: false, support: null, message: 'Invalid form URL' });
       setLoading(false);
       return;
     }
 
-    // Check localStorage cooldown before loading form
+    // A reload inside the cooldown shows the same order again. The form still loads (its colours, currency and support
+    // number); the order is not posted again and no tracking fires.
     const cooldown = getCooldown(slug);
-    if (cooldown) {
-      // The form still loads (its colours, currency and support number); the order is not posted again.
-      cooldownHit.current = true;
-      setOrderId(cooldown.orderId);
-      setRepeatOrder(true); // the Purchase event fired when the order was placed
-      setSubmittedTotal(cooldown.total);
-    }
+    if (cooldown) setPlaced({ ...cooldown, repeat: true });
 
     loadForm();
   }, [slug]);
@@ -112,31 +115,30 @@ export const PublicCheckout: React.FC = () => {
         observer.disconnect();
       };
     }
-  }, [loading, error, orderId]);
+  }, [loading, loadError, placed]);
 
   // Fire pixel PageView + InitiateCheckout when form data is available. The
   // InitiateCheckout server-side CAPI mirror is shared with the embed widget.
   useEffect(() => {
-    if (!formData?.pixelConfig || !slug || cooldownHit.current) return;
+    if (!formData?.pixelConfig || !slug || placed) return;
     const pixelConfig = formData.pixelConfig as PixelConfig;
     initPixels(pixelConfig);
     fireInitiateCheckoutWithCapi(pixelConfig, (data) =>
       publicOrdersService.trackInitiateCheckout(slug, data),
     );
-  }, [formData?.pixelConfig, slug]);
+  }, [formData?.pixelConfig, slug, placed]);
 
   const loadForm = async () => {
     try {
       setLoading(true);
-      setError(null);
-      const data = await publicOrdersService.getPublicForm(slug!);
-      setFormData(data);
+      setLoadError(null);
+      setFormData(await publicOrdersService.getPublicForm(slug!));
     } catch (err: any) {
       console.error('Failed to load checkout form:', err);
-      const missing = err.response?.status === 404;
-      setNotFound(missing);
-      setErrorSupport(missing ? err.response?.data?.supportWhatsapp ?? null : null);
-      setError(missing ? 'This form is not available.' : 'We could not load this form. Please reload the page.');
+      const notFound = err.response?.status === 404;
+      setLoadError(notFound
+        ? { notFound, support: err.response?.data?.supportWhatsapp ?? null }
+        : { notFound, support: null, message: 'We could not load this form. Please reload the page.' });
     } finally {
       setLoading(false);
     }
@@ -147,60 +149,16 @@ export const PublicCheckout: React.FC = () => {
     if (!formData || !slug) return;
 
     try {
-      if (!formData.packages.some((p) => p.id === data.selectedPackageId)) {
-        throw new Error('Please choose a package.');
+      const result = await placeOrder(formData, data, (payload) => publicOrdersService.submitOrder(slug, payload as any));
+      if (result.kind === 'redirect') {
+        if (result.order) setCooldown(slug, result.order);
+        window.location.href = result.url;
+      } else if (result.kind === 'placed') {
+        setCooldown(slug, { orderId: result.orderId, orderNumber: result.orderNumber, total: result.total });
+        setPlaced({ orderId: result.orderId, orderNumber: result.orderNumber, total: result.total, repeat: false });
+      } else {
+        setPlaced({ orderId: result.orderId, orderNumber: result.orderNumber, total: result.total, repeat: true });
       }
-
-      // Shared mapping — identical to what the embed widget posts.
-      const { payload, totalAmount } = buildOrderPayload(formData, data);
-
-      // Attach Meta click ids so the Purchase CAPI event can match this buyer.
-      const response = await publicOrdersService.submitOrder(slug, { ...payload, ...getFbCookies() } as any);
-
-      if (!response.success) throw new Error(response.message || 'We could not place your order. Please try again.');
-
-      // Online payment: redirect to the provider. The order isn't created until payment is confirmed,
-      // so there's no orderId here.
-      if (response.authorization_url) {
-        rememberLastForm(slug);
-        if (response.paymentReference) {
-          rememberPayment(response.paymentReference, { slug, total: totalAmount, currency: formData.currency, package: data.selectedPackageId });
-        }
-        window.location.href = response.authorization_url;
-        return;
-      }
-
-      // A repeat submit is a placed order, not a failure; the original order already fired its Purchase.
-      if (response.deduplicated) {
-        setSubmittedTotal(totalAmount);
-        setOrderId(response.orderId ?? null);
-        setOrderNumber(response.orderNumber ?? null);
-        setRepeatOrder(true);
-        return;
-      }
-
-      // COD: order was created immediately and carries an orderId.
-      if (!response.orderId) throw new Error('We could not complete your order. Please try again.');
-
-      setCooldown(slug, response.orderId, totalAmount);
-
-      // Custom thank-you page: redirect with order details appended so the
-      // merchant's page can show the order and fire its own purchase pixel.
-      const redirect = buildRedirectUrl(formData.redirectUrl, {
-        orderId: response.orderId,
-        total: totalAmount,
-        currency: formData.currency,
-        reference: response.paymentReference,
-        package: data.selectedPackageId,
-      });
-      if (redirect) {
-        window.location.href = redirect;
-        return;
-      }
-
-      setSubmittedTotal(totalAmount);
-      setOrderId(response.orderId);
-      setOrderNumber(response.orderNumber ?? null);
     } catch (err: any) {
       console.error('Order submission error:', err);
       const body = err.response?.data;
@@ -221,20 +179,20 @@ export const PublicCheckout: React.FC = () => {
   }
 
   // Not available: the form is missing, switched off or archived (or did not load). No link to the admin app.
-  if (error || !formData) {
-    return <FormNotAvailable supportWhatsapp={errorSupport} message={notFound ? undefined : error ?? undefined} />;
+  if (loadError || !formData) {
+    return <FormNotAvailable supportWhatsapp={loadError?.support} message={loadError?.message} />;
   }
 
   // Success state
-  if (orderId || repeatOrder) {
+  if (placed) {
     return (
       <OrderSuccess
-        orderId={orderId ?? undefined}
-        orderNumber={orderNumber ?? undefined}
-        repeatOrder={repeatOrder}
-        orderTotal={submittedTotal}
-        currency={formData?.currency}
-        pixelConfig={formData?.pixelConfig as PixelConfig | undefined}
+        orderId={placed.orderId}
+        orderNumber={placed.orderNumber}
+        repeatOrder={placed.repeat}
+        orderTotal={placed.total}
+        currency={formData.currency}
+        pixelConfig={formData.pixelConfig as PixelConfig | undefined}
         digital={formData.formType === 'digital' || formData.product?.productType === 'digital'}
         supportWhatsapp={formData.supportWhatsapp}
         design={formData.design}

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { enterTenant } from '../utils/tenantContext';
-import { tenantIdForFormSlug, supportWhatsappForFormSlug } from '../services/tenantLookupService';
+import { formTenantBySlug, supportWhatsappForTenant } from '../services/tenantLookupService';
 import { AppError } from './errorHandler';
 
 /**
@@ -15,20 +15,21 @@ export const resolveFormSlugTenant = async (
   next: NextFunction,
   slug: string
 ): Promise<void> => {
-  let tenantId: string | null = null;
+  let form: Awaited<ReturnType<typeof formTenantBySlug>>;
   try {
-    tenantId = await tenantIdForFormSlug(slug);
+    form = await formTenantBySlug(slug);
   } catch (error) {
     next(error);
     return;
   }
 
-  if (!tenantId) {
+  if (!form?.isActive) {
     const notFound = new AppError('Checkout form not found or inactive', 404);
     // The store's public support number (and nothing else) rides on the 404, so the "not available" screen can offer it.
-    notFound.details = { supportWhatsapp: await supportWhatsappForFormSlug(slug).catch(() => null) };
+    // An unknown slug has no store: no number, and no second query.
+    notFound.details = { supportWhatsapp: form ? await supportWhatsappForTenant(form.tenantId) : null };
     next(notFound);
     return;
   }
-  enterTenant(tenantId, next);
+  enterTenant(form.tenantId, next);
 };

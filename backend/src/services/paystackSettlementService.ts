@@ -18,6 +18,8 @@ export type SettlementStatus = 'success' | 'failed' | 'pending' | 'not_found';
 
 export interface SettlementResult {
   status: SettlementStatus;
+  /** The tenant that owns the reference (absent when it is unknown to every tenant). */
+  tenantId?: string;
   order?: Awaited<ReturnType<typeof prisma.order.findFirst>>;
 }
 
@@ -54,7 +56,8 @@ export async function settlePayment(
       return { status: 'not_found' };
     }
   }
-  return runInTenant(tenantId, () => settleInTenant(reference, opts));
+  const result = await runInTenant(tenantId, () => settleInTenant(reference, opts));
+  return { ...result, tenantId };
 }
 
 /** The tenant that owns a payment reference: its pending checkout, else its order. Unscoped, so it sees every tenant. */

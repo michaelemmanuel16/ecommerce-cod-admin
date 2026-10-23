@@ -19,7 +19,7 @@ export interface FakePayment {
 
 export interface FakeProvider extends PaymentProvider {
   setPayment(reference: string, payment: FakePayment): void;
-  readonly initialized: Array<{ tenantId: string; reference: string; amount: string; currency: string }>;
+  readonly initialized: Array<{ tenantId: string; reference: string; amount: string; currency: string; callbackUrl?: string }>;
 }
 
 export function createFakeProvider(id = 'fake'): FakeProvider {
@@ -44,7 +44,7 @@ export function createFakeProvider(id = 'fake'): FakeProvider {
 
     async initialize(tenantId, input) {
       const reference = `${id}_ref_${++seq}`;
-      initialized.push({ tenantId, reference, amount: Money.toApi(input.amount), currency: input.currency });
+      initialized.push({ tenantId, reference, amount: Money.toApi(input.amount), currency: input.currency, callbackUrl: input.callbackUrl });
       return { authorizationUrl: `https://pay.${id}.test/${reference}`, providerReference: reference };
     },
 

@@ -118,7 +118,7 @@ describe('region', () => {
   it('a region that is not on the form list is refused', async () => {
     const res = await place(mainSlug, { formData: buyer({ state: 'Volta' }), selectedPackage: { id: packages.one } });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Choose a region from the list.');
+    expect(res.body.error).toBe('Choose a state from the list.');
   });
 
   it('the match ignores case and the list spelling is stored', async () => {

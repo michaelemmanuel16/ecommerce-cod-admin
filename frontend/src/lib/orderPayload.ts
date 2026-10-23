@@ -3,6 +3,7 @@
 // embed widget so the two paths post a provably identical shape.
 import type { PublicCheckoutForm } from '../services/public-orders.service';
 import type { CheckoutFormData } from '../components/public/CheckoutForm';
+import { getFbCookies } from '../utils/pixelTracking';
 
 export interface BuiltOrder {
   payload: {
@@ -102,19 +103,73 @@ export function buildOrderPayload(form: PublicCheckoutForm, data: CheckoutFormDa
 // merchant's page can reconcile the payment and show package-specific upsells.
 export function buildRedirectUrl(
   redirectUrl: string | undefined,
-  // total and currency are left out when unknown (a payment callback in a browser that lost the checkout page's note).
-  params: { orderId: number; total?: number; currency?: string; reference?: string | null; package?: number | string | null },
+  // Mirrored on the server by buildThankYouUrl (backend/src/utils/thankYouUrl.ts), which builds it for online payments.
+  params: { orderId: number; total: number; currency: string; reference?: string | null; package?: number | string | null },
 ): string | null {
   if (!redirectUrl) return null;
   try {
     const url = new URL(redirectUrl);
     url.searchParams.set('order_id', String(params.orderId));
-    if (params.total != null) url.searchParams.set('total', String(params.total));
-    if (params.currency) url.searchParams.set('currency', params.currency);
+    url.searchParams.set('total', String(params.total));
+    url.searchParams.set('currency', params.currency);
     if (params.reference) url.searchParams.set('reference', String(params.reference));
     if (params.package != null) url.searchParams.set('package', String(params.package));
     return url.toString();
   } catch {
     return null;
   }
+}
+
+/** What the order endpoint answers, as far as placing an order needs it. */
+export interface OrderReply {
+  success?: boolean;
+  message?: string;
+  orderId?: number;
+  orderNumber?: string;
+  deduplicated?: boolean;
+  authorization_url?: string;
+  paymentReference?: string;
+}
+
+export type PlaceOrderResult =
+  /** Leave for the provider's payment page, or the merchant's thank-you page. `order` is set for a COD order that was created. */
+  | { kind: 'redirect'; url: string; order?: { orderId: number; orderNumber?: string; total: number } }
+  /** COD order created: show the success screen. */
+  | { kind: 'placed'; orderId: number; orderNumber?: string; total: number }
+  /** The same buyer just ordered the same thing: a thank-you screen, no new order, no Purchase, no thank-you redirect. */
+  | { kind: 'repeat'; orderId?: number; orderNumber?: string; total: number };
+
+/**
+ * The submit sequence both checkouts share (the hosted page and the embed widget): check the package, post the order with
+ * the Meta click ids, and say what to do next. The caller sends the request (`submit`) and applies the result to its own
+ * state. Any failure throws an Error whose message the buyer can read.
+ */
+export async function placeOrder(
+  form: PublicCheckoutForm,
+  data: CheckoutFormData,
+  submit: (payload: BuiltOrder['payload'] & { fbp?: string; fbc?: string }) => Promise<OrderReply>,
+): Promise<PlaceOrderResult> {
+  if (!form.packages.some((p) => p.id === data.selectedPackageId)) throw new Error('Please choose a package.');
+  const { payload, totalAmount } = buildOrderPayload(form, data);
+  // Attach Meta click ids so the Purchase CAPI event can match this buyer.
+  const reply = await submit({ ...payload, ...getFbCookies() });
+  if (reply.success === false) throw new Error(reply.message || 'We could not place your order. Please try again.');
+
+  // Online payment: the order is created after payment, so there is no order id here.
+  if (reply.authorization_url) return { kind: 'redirect', url: reply.authorization_url };
+
+  if (reply.deduplicated) return { kind: 'repeat', orderId: reply.orderId, orderNumber: reply.orderNumber, total: totalAmount };
+
+  // COD: the order was created now and carries an order id.
+  if (!reply.orderId) throw new Error('We could not complete your order. Please try again.');
+  const order = { orderId: reply.orderId, orderNumber: reply.orderNumber, total: totalAmount };
+  // Custom thank-you page: the merchant's page can show the order and fire its own purchase pixel.
+  const url = buildRedirectUrl(form.redirectUrl, {
+    orderId: reply.orderId,
+    total: totalAmount,
+    currency: form.currency,
+    reference: reply.paymentReference,
+    package: data.selectedPackageId,
+  });
+  return url ? { kind: 'redirect', url, order } : { kind: 'placed', ...order };
 }

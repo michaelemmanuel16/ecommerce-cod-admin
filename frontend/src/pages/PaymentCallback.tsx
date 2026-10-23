@@ -1,10 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CheckCircle, XCircle, Clock, Loader2, SearchX } from 'lucide-react';
 import { publicOrdersService, type PaymentOutcome, type PublicCheckoutForm } from '../services/public-orders.service';
-import { buildRedirectUrl } from '../lib/orderPayload';
-import { lastFormSlug, recallPayment } from '../lib/lastForm';
-import { PublicScreen, SupportLine } from '../components/public/PublicScreen';
+import { PublicScreen, StatusIcon, SupportLine } from '../components/public/PublicScreen';
 import { screenColors } from '../lib/publicTheme';
 import { POLL_MS, POLL_LIMIT_MS, REDIRECT_DELAY_MS } from '../lib/paymentPolling';
 
@@ -28,23 +26,24 @@ async function loadTheme(slug: string): Promise<FormTheme> {
 export const PaymentCallback: React.FC = () => {
   const [searchParams] = useSearchParams();
   const reference = searchParams.get('reference') || searchParams.get('trxref');
+  // The checkout adds ?form=<slug> to the callback URL it gives the provider, so the page knows the store even when the
+  // reference is unknown.
+  const formParam = searchParams.get('form');
   const [view, setView] = useState<View>(reference ? 'confirming' : 'not_found');
   const [outcome, setOutcome] = useState<PaymentOutcome | null>(null);
   const [theme, setTheme] = useState<FormTheme>({});
-  const themeFor = useRef<string | null>(null);
+  const slug = outcome?.formSlug ?? formParam;
 
-  const showTheme = (slug: string | null) => {
-    if (!slug || themeFor.current === slug) return;
-    themeFor.current = slug;
-    loadTheme(slug).then(setTheme);
-  };
+  // Colours and support number of the form the payment belongs to.
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    loadTheme(slug).then((t) => { if (!cancelled) setTheme(t); });
+    return () => { cancelled = true; };
+  }, [slug]);
 
   useEffect(() => {
-    if (!reference) {
-      // A link with no reference: still offer the store's support number if this browser remembers the form.
-      showTheme(lastFormSlug());
-      return;
-    }
+    if (!reference) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const startedAt = Date.now();
@@ -59,7 +58,6 @@ export const PaymentCallback: React.FC = () => {
       if (cancelled) return;
       if (result) {
         setOutcome(result);
-        showTheme(result.formSlug ?? (result.status === 'not_found' ? lastFormSlug() : null));
         if (result.status === 'success') return setView('success');
         if (result.status === 'failed') return setView('failed');
         if (result.status === 'not_found') return setView('not_found');
@@ -76,29 +74,16 @@ export const PaymentCallback: React.FC = () => {
     };
   }, [reference]);
 
-  // A form with its own thank-you page: leave for it with the same details as a COD order.
+  // A form with its own thank-you page: the server built the URL (same details as a COD order); leave for it.
   useEffect(() => {
-    if (view !== 'success' || !outcome?.redirectUrl || !reference) return;
-    const note = recallPayment(reference);
-    const orderId = Number((outcome.orderNumber || '').replace(/\D/g, ''));
-    const redirect = buildRedirectUrl(outcome.redirectUrl, {
-      orderId,
-      total: note?.total,
-      currency: note?.currency,
-      reference,
-      package: note?.package,
-    });
-    if (!redirect) return;
-    const timer = setTimeout(() => { window.location.href = redirect; }, REDIRECT_DELAY_MS);
+    if (view !== 'success' || !outcome?.redirectUrl) return;
+    const url = outcome.redirectUrl;
+    const timer = setTimeout(() => { window.location.href = url; }, REDIRECT_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [view, outcome, reference]);
+  }, [view, outcome]);
 
   const { primary } = screenColors(theme.design);
-  const icon = (node: React.ReactNode, tint: string) => (
-    <div className="flex justify-center mb-4">
-      <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ backgroundColor: tint }}>{node}</div>
-    </div>
-  );
+  const icon = (node: React.ReactNode, tint: string) => <StatusIcon tint={tint}>{node}</StatusIcon>;
 
   return (
     <PublicScreen design={theme.design}>

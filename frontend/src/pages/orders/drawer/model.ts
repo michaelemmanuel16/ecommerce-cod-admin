@@ -1,3 +1,4 @@
+import { whatsappUrl as whatsappLink } from '../../../utils/whatsapp';
 import type { TagTone } from '../../../components/ui-v2';
 import type { OrderDetail, OrderEditBody, PaymentTagCode } from '../../../services/orders.service';
 import type { OrderStatus } from '../../../types';
@@ -38,7 +39,7 @@ export const num = (v: string | number | null | undefined): number => Number(v ?
 /** The call button: a `tel:` link on the stored E.164 number. */
 export const telUrl = (e164: string): string => `tel:${e164.replace(/\s/g, '')}`;
 /** The WhatsApp button: `https://wa.me/<number>` with the E.164 number and no "+". */
-export const whatsappUrl = (e164: string): string => `https://wa.me/${e164.replace(/\D/g, '')}`;
+export const whatsappUrl = (e164: string): string => whatsappLink(e164) ?? '';
 
 /** "17 Oct, 14:02" in Accra time (F-322). */
 export function accraTime(iso: string): string {

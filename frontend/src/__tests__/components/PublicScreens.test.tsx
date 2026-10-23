@@ -46,8 +46,8 @@ describe('OrderSuccess (F-421)', () => {
   });
 
   it('digital: says where the download link went instead of the delivery steps', () => {
-    render(<OrderSuccess orderId={5} digital email="a***@gmail.com" />);
-    expect(screen.getByText('We sent the download link to a***@gmail.com.')).toBeInTheDocument();
+    render(<OrderSuccess orderId={5} digital />);
+    expect(screen.getByText('We sent the download link to your email.')).toBeInTheDocument();
     expect(screen.queryByText('We deliver to you.')).toBeNull();
     expect(screen.queryByText('You pay when it arrives.')).toBeNull();
   });

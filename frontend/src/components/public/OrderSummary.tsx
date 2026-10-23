@@ -4,7 +4,7 @@ import { PublicCheckoutForm } from '../../services/public-orders.service';
 import { PaymentMethod } from '../../types/checkout-form';
 import { Button } from '../ui/Button';
 import { formatMoney } from '../../utils/money';
-import { whatsappLink } from '../../lib/publicTheme';
+import { whatsappUrl } from '../../utils/whatsapp';
 
 type ProductPackage = PublicCheckoutForm['packages'][number];
 type Upsell = PublicCheckoutForm['upsells'][number];
@@ -63,7 +63,7 @@ const SIZE_CLASS: Record<NonNullable<OrderSummaryProps['buttonSize']>, string> =
 /** The terms note: one line and an in-page section that opens on tap. No link, no new tab (the Facebook in-app browser loses the page). */
 const TermsNote: React.FC<{ isDigital: boolean; hasCod: boolean; supportWhatsapp?: string | null }> = ({ isDigital, hasCod, supportWhatsapp }) => {
   const [open, setOpen] = useState(false);
-  const support = whatsappLink(supportWhatsapp);
+  const support = whatsappUrl(supportWhatsapp);
   const lines = isDigital
     ? ['You pay online, in full, before you get the download link.', 'The download link is sent to the email you give us.']
     : [

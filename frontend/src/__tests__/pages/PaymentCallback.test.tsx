@@ -105,18 +105,16 @@ describe('PaymentCallback (F-403)', () => {
     expect(window.location.href).toBe('http://localhost/');
   });
 
-  it('Success with a thank-you page: leaves after 2 seconds with the same details as a COD order', async () => {
-    localStorage.setItem('checkout_payment_ref_1', JSON.stringify({ slug: 'f', total: 249, currency: 'GHS', package: 12 }));
-    verifyPayment.mockResolvedValue({ status: 'success', orderNumber: '#24118', orderType: 'physical', formSlug: 'f', redirectUrl: 'https://shop.example.com/thanks' });
+  it('Success with a thank-you page: leaves after 2 seconds for the URL the server built', async () => {
+    const built = 'https://shop.example.com/thanks?order_id=24118&total=249&currency=GHS&reference=ref_1&package=12';
+    verifyPayment.mockResolvedValue({ status: 'success', orderNumber: '#24118', orderType: 'physical', formSlug: 'f', redirectUrl: built });
     Object.defineProperty(window, 'location', { value: { href: 'http://localhost/' }, writable: true, configurable: true });
     open();
     await flush();
     await tick(REDIRECT_DELAY_MS - 100);
     expect(window.location.href).toBe('http://localhost/');
     await tick(200);
-    const url = new URL(window.location.href);
-    expect(url.origin + url.pathname).toBe('https://shop.example.com/thanks');
-    expect(Object.fromEntries(url.searchParams)).toEqual({ order_id: '24118', total: '249', currency: 'GHS', reference: 'ref_1', package: '12' });
+    expect(window.location.href).toBe(built);
   });
 
   it('Failed: "Try again" opens the form in the same tab, the reference, and the support number', async () => {
@@ -133,20 +131,21 @@ describe('PaymentCallback (F-403)', () => {
     expect(screen.getByRole('link', { name: /WhatsApp/ })).toHaveAttribute('href', 'https://wa.me/233245550103');
   });
 
-  it('Not found: "We could not find this payment." and the support number of the form this browser last used', async () => {
-    localStorage.setItem('checkout_last_form', 'last-form');
+  it('Not found: "We could not find this payment." and the support number of the form named in ?form=', async () => {
     verifyPayment.mockResolvedValue({ status: 'not_found', orderType: null, formSlug: null });
-    open();
+    open('?reference=ref_1&form=my-form');
     await flush();
     expect(screen.getByRole('heading', { name: 'We could not find this payment.' })).toBeInTheDocument();
-    expect(getPublicForm).toHaveBeenCalledWith('last-form');
+    expect(getPublicForm).toHaveBeenCalledWith('my-form');
     await flush();
-    expect(screen.getByRole('link', { name: /WhatsApp/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /WhatsApp/ })).toHaveAttribute('href', 'https://wa.me/233245550103');
   });
 
-  it('a link with no reference is Not found and asks the server nothing', async () => {
-    open('');
+  it('a link with no reference is Not found, asks the server nothing, and still shows the support number of ?form=', async () => {
+    open('?form=my-form');
     await flush();
+    await flush();
+    expect(screen.getByRole('link', { name: /WhatsApp/ })).toBeInTheDocument();
     expect(verifyPayment).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'We could not find this payment.' })).toBeInTheDocument();
   });

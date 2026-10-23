@@ -1,3 +1,4 @@
+import { maskEmail } from '../utils/mask';
 import sgMail from '@sendgrid/mail';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
@@ -225,10 +226,6 @@ async function sendViaSmtp(config: EmailConfig, options: SendEmailOptions): Prom
 }
 
 // ---------- Helpers ----------
-
-function maskEmail(email: string): string {
-  return email.replace(/(.{2}).*(@.*)/, '$1***$2');
-}
 
 // ---------- Unified send function ----------
 

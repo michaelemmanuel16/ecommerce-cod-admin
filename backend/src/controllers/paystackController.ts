@@ -7,6 +7,9 @@ import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
 import { withWebhookDedup } from '../utils/webhookDedup';
 import { formatOrderNumber } from '../utils/orderNumber';
+import { maskEmail } from '../utils/mask';
+import { buildThankYouUrl } from '../utils/thankYouUrl';
+import * as Money from '../utils/money';
 
 /** Provider the request names. The old Paystack URL has no `:provider`, so it is Paystack. */
 function providerOf(req: Request): PaymentProvider | null {
@@ -181,13 +184,13 @@ export async function publicVerifyPayment(req: Request, res: Response): Promise<
       return;
     }
 
-    const tenantId = await findReferenceOwner(reference);
-    const where = tenantId
-      ? await runInTenant(tenantId, () => describeOutcome(reference, result.order))
-      : { orderType: null, formSlug: null, redirectUrl: null };
     const order = result.order;
-    const digitalSuccess = result.status === 'success' && where.orderType === 'digital';
-    const email = digitalSuccess ? maskEmail((order as { customer?: { email?: string | null } } | null | undefined)?.customer?.email) : null;
+    const where = result.tenantId
+      ? await runInTenant(result.tenantId, () => describeOutcome(reference, result.status === 'success' ? order : null))
+      : { orderType: null, formSlug: null, redirectUrl: null };
+    const email = result.status === 'success' && where.orderType === 'digital'
+      ? (order as { customer?: { email?: string | null } } | null | undefined)?.customer?.email
+      : null;
 
     res.json({
       status: result.status,
@@ -195,7 +198,7 @@ export async function publicVerifyPayment(req: Request, res: Response): Promise<
       orderType: where.orderType,
       formSlug: where.formSlug,
       ...(result.status === 'success' && where.redirectUrl ? { redirectUrl: where.redirectUrl } : {}),
-      ...(email ? { email } : {}),
+      ...(email ? { email: maskEmail(email) } : {}),
     });
   } catch (error: any) {
     logger.error('Public payment verification failed', { error: error.message });
@@ -203,25 +206,34 @@ export async function publicVerifyPayment(req: Request, res: Response): Promise<
   }
 }
 
-/** "ama@gmail.com" gives "a***@gmail.com". Null when there is no usable address. */
-export function maskEmail(email?: string | null): string | null {
-  const at = email ? email.indexOf('@') : -1;
-  return email && at > 0 ? `${email[0]}***${email.slice(at)}` : null;
-}
-
-/** The order type, form slug and thank-you page of a payment, from its order or its pending checkout. Runs inside the owning tenant. */
-async function describeOutcome(reference: string, order?: { id: number; orderType?: string | null } | null) {
-  let orderType: string | null = order?.orderType ?? null;
-  let formId: number | null = null;
+/**
+ * The order type, form slug and thank-you page URL of a payment, from its order or its pending checkout. Runs inside the
+ * owning tenant. The thank-you URL carries the same details as a COD order (order_id, total, currency, reference, package).
+ * An order is one query (its form submission, with the form). A pending checkout has no relation to its form, so it is two.
+ */
+async function describeOutcome(reference: string, order?: { id: number; orderType?: string | null; currency?: string | null } | null) {
+  const empty = { orderType: null, formSlug: null, redirectUrl: null as string | null };
   if (order) {
-    formId = (await prisma.formSubmission.findFirst({ where: { orderId: order.id }, select: { formId: true } }))?.formId ?? null;
-  } else {
-    const pending = await prisma.pendingCheckout.findUnique({ where: { reference }, select: { formId: true, orderType: true } });
-    orderType = pending?.orderType ?? null;
-    formId = pending?.formId ?? null;
+    const sub = await prisma.formSubmission.findFirst({
+      where: { orderId: order.id },
+      select: { totalAmount: true, selectedPackage: true, form: { select: { slug: true, redirectUrl: true, currency: true } } },
+    });
+    if (!sub) return { ...empty, orderType: order.orderType ?? null };
+    const pkg = (sub.selectedPackage as { id?: number } | null)?.id;
+    return {
+      orderType: order.orderType ?? null,
+      formSlug: sub.form.slug,
+      redirectUrl: buildThankYouUrl(sub.form.redirectUrl, {
+        orderId: order.id,
+        total: Number(Money.toApi(sub.totalAmount)),
+        currency: order.currency ?? sub.form.currency,
+        reference,
+        package: pkg,
+      }),
+    };
   }
-  const form = formId != null
-    ? await prisma.checkoutForm.findFirst({ where: { id: formId }, select: { slug: true, redirectUrl: true } })
-    : null;
-  return { orderType, formSlug: form?.slug ?? null, redirectUrl: form?.redirectUrl ?? null };
+  const pending = await prisma.pendingCheckout.findUnique({ where: { reference }, select: { formId: true, orderType: true } });
+  if (!pending) return empty;
+  const form = await prisma.checkoutForm.findFirst({ where: { id: pending.formId }, select: { slug: true } });
+  return { orderType: pending.orderType, formSlug: form?.slug ?? null, redirectUrl: null };
 }

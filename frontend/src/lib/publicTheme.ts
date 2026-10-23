@@ -12,10 +12,3 @@ export function screenColors(design?: Design): { primary: string; background?: s
     background: background && background !== 'transparent' ? background : undefined,
   };
 }
-
-/** wa.me link for a stored support number ("+233 24 555 0103" gives https://wa.me/233245550103). Null when there are no digits. */
-export function whatsappLink(number?: string | null): string | null {
-  const digits = (number || '').replace(/\D/g, '');
-  return digits ? `https://wa.me/${digits}` : null;
-}
-

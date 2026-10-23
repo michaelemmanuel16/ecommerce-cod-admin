@@ -3,9 +3,9 @@ import { CheckoutForm, CheckoutFormData } from '../src/components/public/Checkou
 import { OrderSuccess } from '../src/components/public/OrderSuccess';
 import { FormNotAvailable } from '../src/components/public/FormNotAvailable';
 import type { PublicCheckoutForm } from '../src/services/public-orders.service';
-import { fetchFormConfig, buildOrderPayload, submitOrder, trackInitiateCheckout, FormLoadError, EmbedFormConfig } from './embedApi';
-import { buildRedirectUrl } from '../src/lib/orderPayload';
-import { fireInitiateCheckoutWithCapi, getFbCookies } from '../src/utils/pixelTracking';
+import { fetchFormConfig, submitOrder, trackInitiateCheckout, FormLoadError, EmbedFormConfig } from './embedApi';
+import { placeOrder } from '../src/lib/orderPayload';
+import { fireInitiateCheckoutWithCapi } from '../src/utils/pixelTracking';
 import type { PixelConfig } from '../src/types/checkout-form';
 
 interface EmbedCheckoutProps {
@@ -48,37 +48,13 @@ export const EmbedCheckout: React.FC<EmbedCheckoutProps> = ({ apiBase, slug, loc
   // A failure throws: CheckoutForm clears its submitting state and shows the message above the button.
   const handleSubmit = async (data: CheckoutFormData) => {
     if (!form) return;
-    const { payload, totalAmount } = buildOrderPayload(form, data);
-    // Attach Meta click ids so the Purchase CAPI event can match this buyer.
-    const res = await submitOrder(apiBase, slug, { ...payload, ...getFbCookies() });
-
-    // Paystack methods: hand off to Paystack (order created after payment).
-    if (res.authorization_url) {
-      window.location.href = res.authorization_url;
-      return;
+    const result = await placeOrder(form, data, (payload) => submitOrder(apiBase, slug, payload));
+    if (result.kind === 'redirect') {
+      window.location.href = result.url;
+    } else {
+      // A repeat submit is a placed order too: thank-you, no redirect to the merchant's purchase page.
+      setSuccess({ orderId: result.orderId, orderNumber: result.orderNumber, total: result.total });
     }
-    // A repeat submit is a placed order: thank-you without a number, no redirect to the merchant's purchase page.
-    if (res.deduplicated && res.orderId == null) {
-      setSuccess({ total: totalAmount });
-      return;
-    }
-    // COD: the order was created immediately and carries an orderId.
-    if (res.orderId == null) {
-      throw new Error('We could not complete your order. Please try again.');
-    }
-    // Custom thank-you page wins over the built-in success panel.
-    const redirect = buildRedirectUrl(form.redirectUrl, {
-      orderId: res.orderId,
-      total: totalAmount,
-      currency: form.currency,
-      reference: res.paymentReference,
-      package: data.selectedPackageId,
-    });
-    if (redirect) {
-      window.location.href = redirect;
-      return;
-    }
-    setSuccess({ orderId: res.orderId, orderNumber: res.orderNumber, total: totalAmount });
   };
 
   if (error && !form) {

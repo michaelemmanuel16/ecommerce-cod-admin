@@ -11,15 +11,24 @@ export const tenantIdForFormSlug = async (slug: string): Promise<string | null> 
 };
 
 /**
- * The store's public support WhatsApp number for a form slug, active or not (unscoped lookup on purpose), or null.
- * Used by the "form not available" 404, so the buyer of a switched-off form still sees how to reach the store.
- * It returns this one public contact and nothing else about the store.
+ * The tenant of a checkout form by slug, active or not (unscoped lookup on purpose), with whether it is on. A switched-off
+ * form is "soft deleted" (isActive false), so the lookup has to see it. Null for an unknown slug.
  */
-export const supportWhatsappForFormSlug = async (slug: string): Promise<string | null> =>
-  withoutTenant('public-form-support', async () => {
-    // A switched-off form is "soft deleted" (isActive false): the lookup has to see it.
-    const form = await withSoftDeleted(() => prisma.checkoutForm.findUnique({ where: { slug }, select: { tenantId: true } }));
-    if (!form?.tenantId) return null;
-    const config = await prisma.systemConfig.findUnique({ where: { tenantId: form.tenantId }, select: { supportWhatsapp: true } });
-    return config?.supportWhatsapp ?? null;
-  });
+export const formTenantBySlug = async (slug: string): Promise<{ tenantId: string; isActive: boolean } | null> => {
+  const form = await withoutTenant('public-form-slug', () =>
+    withSoftDeleted(() => prisma.checkoutForm.findUnique({ where: { slug }, select: { tenantId: true, isActive: true } }))
+  );
+  return form?.tenantId ? { tenantId: form.tenantId, isActive: form.isActive } : null;
+};
+
+/**
+ * A store's public support WhatsApp number, or null. The one source for the public form payload and the "form not
+ * available" 404, so the buyer of a switched-off form still sees how to reach the store. It is a public contact: nothing
+ * else about the store leaves through here.
+ */
+export const supportWhatsappForTenant = async (tenantId: string): Promise<string | null> => {
+  const config = await withoutTenant('public-support-whatsapp', () =>
+    prisma.systemConfig.findUnique({ where: { tenantId }, select: { supportWhatsapp: true } })
+  );
+  return config?.supportWhatsapp ?? null;
+};
