@@ -1,10 +1,11 @@
 import { NextFunction, Response, Router } from 'express';
-import { body, param } from 'express-validator';
+import { body, param, query } from 'express-validator';
 import * as controller from '../controllers/inventoryController';
 import { authenticate, requireResourcePermission } from '../middleware/auth';
 import { tenantRateLimiter } from '../middleware/tenantRateLimiter';
 import { validate } from '../middleware/validation';
 import { AuthRequest } from '../types';
+import { COUNT_REASONS, COUNT_SOURCES } from '../services/stockCountService';
 import { ADJUST_REASONS, CREATE_TYPES, DISPUTE_REASONS, RETURN_REASONS } from '../services/transferService';
 
 const router = Router();
@@ -18,7 +19,15 @@ const canWriteStock = requireResourcePermission('products', 'update_stock');
 const canReceive = (req: AuthRequest, res: Response, next: NextFunction) =>
   req.user?.role === 'delivery_agent' ? next() : canWriteStock(req, res, next);
 
+// Reads: products:view, but never for a call rep or a delivery agent. They get no cost and no per-holder stock (F-600).
+const canView = [
+  requireResourcePermission('products', 'view'),
+  (req: AuthRequest, res: Response, next: NextFunction) =>
+    req.user?.role === 'sales_rep' || req.user?.role === 'delivery_agent' ? res.status(403).json({ error: 'You do not have access to stock figures' }) : next(),
+];
+
 const id = param('id').isInt({ min: 1 }).withMessage('Invalid transfer ID').toInt();
+const countId = param('id').isInt({ min: 1 }).withMessage('Invalid count ID').toInt();
 const intField = (name: string, min = 1) => body(name).isInt({ min }).withMessage(`${name} must be a whole number${min > 0 ? ' above 0' : ', 0 or more'}`).toInt();
 const note = body('note').optional({ nullable: true }).isString().trim().isLength({ max: 500 });
 
@@ -60,6 +69,41 @@ router.post(
     note, validate,
   ],
   controller.adjustStock,
+);
+
+// Stock counts (F-653)
+router.post(
+  '/counts',
+  canWriteStock,
+  [
+    intField('locationId'),
+    body('countDate').isString().withMessage('countDate must be a date, YYYY-MM-DD'),
+    body('source').isIn(COUNT_SOURCES).withMessage(`source must be one of: ${COUNT_SOURCES.join(', ')}`),
+    note,
+    body('lines').isArray({ min: 1 }).withMessage('A count needs at least one product'),
+    body('lines.*.productId').isInt({ min: 1 }).withMessage('productId must be a whole number above 0').toInt(),
+    body('lines.*.countedQuantity').isInt({ min: 0 }).withMessage('countedQuantity must be a whole number, 0 or more').toInt(),
+    validate,
+  ],
+  controller.createCount,
+);
+router.get(
+  '/counts',
+  canView,
+  [query('locationId').optional().isInt({ min: 1 }), query('page').optional().isInt({ min: 1 }), query('limit').optional().isInt({ min: 1, max: 100 }), validate],
+  controller.listCounts,
+);
+router.get('/counts/:id', canView, [countId, validate], controller.getCount);
+router.post(
+  '/counts/:id/lines/:lineId/apply',
+  canWriteStock,
+  [
+    countId, param('lineId').isInt({ min: 1 }).withMessage('Invalid line ID').toInt(),
+    body('reason').optional().isIn([...COUNT_REASONS]).withMessage(`reason must be one of: ${COUNT_REASONS.join(', ')}`),
+    body('shipmentId').optional({ nullable: true }).isInt({ min: 1 }).toInt(),
+    note, validate,
+  ],
+  controller.applyCountLine,
 );
 
 export default router;

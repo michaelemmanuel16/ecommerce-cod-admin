@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../types';
 import * as transfers from '../services/transferService';
+import * as counts from '../services/stockCountService';
 
 /** The signed-in user as the transfer service sees them. */
 const actorOf = (req: AuthRequest): transfers.TransferActor => ({ id: req.user!.id, role: req.user!.role });
@@ -28,4 +29,27 @@ export const cancelTransfer = async (req: AuthRequest, res: Response): Promise<v
 /** POST /api/inventory/adjust (F-655) */
 export const adjustStock = async (req: AuthRequest, res: Response): Promise<void> => {
   res.json({ adjustment: await transfers.adjustStock(actorOf(req), req.body) });
+};
+
+/** POST /api/inventory/counts (F-653) */
+export const createCount = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.status(201).json({ count: await counts.createCount({ id: req.user!.id }, req.body) });
+};
+
+/** GET /api/inventory/counts?locationId= */
+export const listCounts = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { locationId, page, limit } = req.query;
+  res.json(await counts.listCounts({
+    locationId: locationId ? Number(locationId) : undefined, page: page ? Number(page) : 1, limit: limit ? Number(limit) : 20,
+  }));
+};
+
+/** GET /api/inventory/counts/:id */
+export const getCount = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json({ count: await counts.getCount(Number(req.params.id)) });
+};
+
+/** POST /api/inventory/counts/:id/lines/:lineId/apply */
+export const applyCountLine = async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await counts.applyLine({ id: req.user!.id }, Number(req.params.id), Number(req.params.lineId), req.body));
 };
