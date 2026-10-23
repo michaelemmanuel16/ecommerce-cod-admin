@@ -19,12 +19,12 @@ interface DedupKey {
  * re-enter, then the error is rethrown. On success, acks with 200.
  * Must run inside the tenant context (WebhookEvent is tenant-scoped).
  */
-export async function withWebhookDedup(
+export async function withWebhookDedup<T = void>(
   res: Response,
   key: DedupKey,
   label: string,
-  handler: () => Promise<void>
-): Promise<void> {
+  handler: () => Promise<T>
+): Promise<T | undefined> {
   let dedupRowId: number | null = null;
   if (key.reference) {
     try {
@@ -37,14 +37,15 @@ export async function withWebhookDedup(
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         logger.info(`${label} webhook replay ignored`, { tenantId: key.tenantId, eventType: key.eventType, reference: key.reference });
         res.status(200).json({ received: true, duplicate: true });
-        return;
+        return undefined;
       }
       throw err;
     }
   }
 
+  let result: T;
   try {
-    await handler();
+    result = await handler();
   } catch (processingError) {
     // Side-effect processing failed: remove the dedup row so the provider's
     // retries can re-enter the handler. Otherwise a transient miss permanently
@@ -64,4 +65,5 @@ export async function withWebhookDedup(
 
   // Always return 200 to acknowledge receipt
   res.status(200).json({ received: true });
+  return result;
 }

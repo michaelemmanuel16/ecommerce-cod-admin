@@ -4,6 +4,8 @@ import { runInTenant } from '../../utils/tenantContext';
 import * as Money from '../../utils/money';
 import { GLAutomationService } from '../glAutomationService';
 import { getSystemUserId } from '../systemUserService';
+import { JournalSourceType } from '@prisma/client';
+import { openFindingOnce } from '../findingService';
 import { onPaymentSettled, type PaymentSettledEvent } from './settlementHooks';
 
 /**
@@ -25,7 +27,7 @@ async function postDigitalSale(event: PaymentSettledEvent): Promise<void> {
   const userId = await getSystemUserId(event.tenantId);
   await prisma.$transaction(async (tx) => {
     const existing = await tx.journalEntry.findFirst({
-      where: { sourceType: 'digital_sale', sourceId: event.orderId },
+      where: { sourceType: JournalSourceType.digital_sale, sourceId: event.orderId },
       select: { id: true },
     });
     if (existing) return;
@@ -59,20 +61,13 @@ export async function postPaymentToLedger(event: PaymentSettledEvent, opts: Ledg
 
   logger.error('Ledger poster: giving up', { tenantId: event.tenantId, orderId: event.orderId, reference: event.reference, error: (lastError as Error)?.message });
   await runInTenant(event.tenantId, async () => {
-    const open = await prisma.finding.findFirst({
-      where: { type: 'ledger_post_failed', subjectType: 'order', subjectId: String(event.orderId), status: 'open' },
-      select: { id: true },
-    });
-    if (open) return;
-    await prisma.finding.create({
-      data: {
-        tenantId: event.tenantId,
-        type: 'ledger_post_failed',
-        subjectType: 'order',
-        subjectId: String(event.orderId),
-        amount: Money.parse(event.amount),
-        note: `Ledger entry failed for payment ${event.reference}`,
-      },
+    await openFindingOnce({
+      tenantId: event.tenantId,
+      type: 'ledger_post_failed',
+      subjectType: 'order',
+      subjectId: String(event.orderId),
+      amount: Money.parse(event.amount),
+      note: `Ledger entry failed for payment ${event.reference}`,
     });
   });
 }

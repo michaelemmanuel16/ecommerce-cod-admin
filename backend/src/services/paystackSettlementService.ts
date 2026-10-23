@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 import { getPaymentProvider, normalizeMethod } from './payments';
 import { digitalDeliveryService } from './digitalDeliveryService';
 import { transitionOrder } from './orderStateMachine';
+import { openFindingOnce } from './findingService';
 import { emitPaymentSettled } from './payments/settlementHooks';
 import { metaCapiService } from './metaCapiService';
 import { emitOrderCreatedEvent } from '../utils/appEvents';
@@ -13,8 +14,7 @@ import { getSocketInstance } from '../utils/socketInstance';
 import * as Money from '../utils/money';
 import { cleanText, deliveryAddressOf } from '../utils/checkoutLocation';
 
-/** wrong_tenant: the reference belongs to another tenant than the webhook's (answered 404). */
-export type SettlementStatus = 'success' | 'failed' | 'pending' | 'not_found' | 'wrong_tenant';
+export type SettlementStatus = 'success' | 'failed' | 'pending' | 'not_found';
 
 export interface SettlementResult {
   status: SettlementStatus;
@@ -49,51 +49,35 @@ export async function settlePayment(
   // reference, found by a minimal unscoped lookup of the pending checkout / order.
   let tenantId = opts.webhookTenantId ?? getTenantId();
   if (!tenantId) {
-    tenantId = await withoutTenant('paystack-verify', async () => {
-      const pendingRow = await prisma.pendingCheckout.findUnique({ where: { reference }, select: { tenantId: true } });
-      if (pendingRow) return pendingRow.tenantId;
-      const orderRow = await prisma.order.findFirst({ where: { paymentReference: reference }, select: { tenantId: true } });
-      return orderRow?.tenantId ?? null;
-    });
+    tenantId = await findReferenceOwner(reference);
     if (!tenantId) {
       return { status: 'not_found' };
     }
   }
-  const result = await runInTenant(tenantId, () => settleInTenant(reference, opts));
+  return runInTenant(tenantId, () => settleInTenant(reference, opts));
+}
 
-  // A webhook of tenant A never settles tenant B's checkout: the scoped lookup above found nothing, so check whether
-  // another tenant owns the reference. Yes: wrong_tenant (the webhook answers 404). No: nobody knows it.
-  if (result.status === 'not_found' && opts.webhookTenantId) {
-    const webhookTenantId = opts.webhookTenantId;
-    const owner = await withoutTenant('payment-webhook-owner', async () =>
-      (await prisma.pendingCheckout.findUnique({ where: { reference }, select: { tenantId: true } })) ??
-      (await prisma.order.findFirst({ where: { paymentReference: reference, tenantId: { not: webhookTenantId } }, select: { tenantId: true } })));
-    if (owner && owner.tenantId !== webhookTenantId) {
-      logger.warn('Payment webhook for a reference of another tenant — ignoring', { reference, webhookTenantId });
-      return { status: 'wrong_tenant' };
-    }
-  }
-  return result;
+/** The tenant that owns a payment reference: its pending checkout, else its order. Unscoped, so it sees every tenant. */
+export async function findReferenceOwner(reference: string): Promise<string | null> {
+  return withoutTenant('payment-reference-owner', async () => {
+    const pendingRow = await prisma.pendingCheckout.findUnique({ where: { reference }, select: { tenantId: true } });
+    if (pendingRow) return pendingRow.tenantId;
+    const orderRow = await prisma.order.findFirst({ where: { paymentReference: reference }, select: { tenantId: true } });
+    return orderRow?.tenantId ?? null;
+  });
 }
 
 /** Keep the pending row for a human and open one `payment_unmatched` Finding for the reference. */
 async function flagNeedsReview(reference: string, tenantId: string, paid: Money.Money): Promise<void> {
   await prisma.pendingCheckout.updateMany({ where: { reference }, data: { status: 'needs_review', lastCheckedAt: new Date() } });
-  const existing = await prisma.finding.findFirst({
-    where: { type: 'payment_unmatched', subjectType: 'pending_checkout', subjectId: reference },
-    select: { id: true },
-  });
-  if (existing) return;
-  await prisma.finding.create({
-    data: {
-      tenantId,
-      type: 'payment_unmatched',
-      subjectType: 'pending_checkout',
-      subjectId: reference,
-      amount: paid,
-      note: `Payment received but no order was created. Reference ${reference}.`,
-    },
-  });
+  await openFindingOnce({
+    tenantId,
+    type: 'payment_unmatched',
+    subjectType: 'pending_checkout',
+    subjectId: reference,
+    amount: paid,
+    note: `Payment received but no order was created. Reference ${reference}.`,
+  }, { includeClosed: true });
 }
 
 async function settleInTenant(
@@ -143,43 +127,34 @@ async function settleInTenant(
       status: verification.status,
     });
     // initiated | pending | failed | expired (F-404); lastCheckedAt on every check.
-    const nextStatus = verification.status === 'failed' ? 'failed' : verification.status === 'abandoned' ? 'expired' : 'pending';
+    const failed = verification.status === 'failed';
+    const nextStatus = failed ? 'failed' : verification.status === 'abandoned' ? 'expired' : 'pending';
     await prisma.pendingCheckout.updateMany({ where: { reference }, data: { status: nextStatus, lastCheckedAt: new Date() } });
-    return { status: verification.status === 'failed' ? 'failed' : 'pending' };
+    return { status: failed ? 'failed' : 'pending' };
   }
+
+  // Money was taken but no order can be made: the row stays as needs_review and the owner gets a Finding (F-404).
+  const paid = verification.amount;
+  const refuse = async (reason: string, details: Record<string, unknown>): Promise<SettlementResult> => {
+    logger.warn(`${reason} — not creating order`, { reference, provider: provider.id, ...details });
+    await flagNeedsReview(reference, pending.tenantId, paid);
+    return { status: 'failed' };
+  };
 
   // SECURITY: the provider must have charged in the currency we asked for, and the amount must cover the
   // expected charge (deposit portion or full total). Stops an underpaid/tampered initialize from fulfilling —
   // digital products auto-deliver. Minor against minor: the stored charge and the provider's figure use the provider's own unit.
-  // Money was taken but no order can be made: the row stays as needs_review and the owner gets a Finding (F-404).
-  const paid = verification.amount;
   if (verification.currency !== pending.currency) {
-    logger.warn('Payment currency mismatch — not creating order', {
-      reference,
-      provider: provider.id,
-      paidCurrency: verification.currency,
-      expectedCurrency: pending.currency,
-    });
-    await flagNeedsReview(reference, pending.tenantId, paid);
-    return { status: 'failed' };
+    return refuse('Payment currency mismatch', { paidCurrency: verification.currency, expectedCurrency: pending.currency });
   }
   if (verification.amountMinor < pending.paystackChargeMinor) {
-    logger.warn('Payment underpayment — not creating order', {
-      reference,
-      provider: provider.id,
-      paidMinor: verification.amountMinor,
-      expectedMinor: pending.paystackChargeMinor,
-    });
-    await flagNeedsReview(reference, pending.tenantId, paid);
-    return { status: 'failed' };
+    return refuse('Payment underpayment', { paidMinor: verification.amountMinor, expectedMinor: pending.paystackChargeMinor });
   }
 
   // Every product on the snapshot must still exist, or the order insert fails after the claim and the payment is lost.
   const productIds = [...new Set((pending.orderItems as Array<{ productId: number }>).map((item) => item.productId))];
   if (productIds.length > 0 && (await prisma.product.count({ where: { id: { in: productIds } } })) !== productIds.length) {
-    logger.warn('Payment for a missing product — not creating order', { reference, provider: provider.id, productIds });
-    await flagNeedsReview(reference, pending.tenantId, paid);
-    return { status: 'failed' };
+    return refuse('Payment for a missing product', { productIds });
   }
 
   // Atomic claim — only one caller deletes the pending row and creates the order.

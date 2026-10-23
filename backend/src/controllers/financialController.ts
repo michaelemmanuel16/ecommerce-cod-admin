@@ -644,8 +644,7 @@ export const backfillCommissions = async (_req: AuthRequest, res: Response): Pro
 const paystackPayoutSchema = z.object({
   amount: z.string().trim().regex(/^\d+(\.\d{1,4})?$/, 'Amount must be a positive number').refine((v) => Money.tryParse(v)?.gt(0) === true, 'Amount must be above 0'),
   payoutDate: z.coerce.date(),
-  // The reference goes into the entry description between brackets, so a bracket cannot be part of it.
-  reference: z.string().trim().min(1, 'Reference is required').max(100).regex(/^[^[\]]+$/, 'Reference cannot contain [ or ]'),
+  reference: z.string().trim().min(1, 'Reference is required').max(100),
   note: z.string().trim().max(500).optional(),
 });
 
@@ -653,7 +652,7 @@ const paystackPayoutSchema = z.object({
 export const postPaystackPayout = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const parsed = paystackPayoutSchema.safeParse(req.body);
-    if (!parsed.success) throw new AppError(parsed.error.issues[0]?.message || 'Invalid payout', 400, 'VALIDATION_ERROR');
+    if (!parsed.success) return next(new AppError(parsed.error.issues[0]?.message || 'Invalid payout', 400, 'VALIDATION_ERROR'));
     res.status(201).json(await recordPaystackPayout(parsed.data, req.user!.id));
   } catch (error) {
     next(error);

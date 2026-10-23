@@ -17,6 +17,7 @@ jest.mock('../../services/paystackService', () => ({
 // resolution, signature checks and dedup. We mock settlement and assert delegation.
 jest.mock('../../services/paystackSettlementService', () => ({
   settlePayment: jest.fn(),
+  findReferenceOwner: jest.fn(),
 }));
 
 import { prismaMock } from '../mocks/prisma.mock';
@@ -27,6 +28,7 @@ import { handleWebhook } from '../../controllers/paystackController';
 const mockedPaystack = paystackServiceModule.paystackService as jest.Mocked<
   typeof paystackServiceModule.paystackService
 >;
+const mockedOwner = settlementModule.findReferenceOwner as jest.MockedFunction<typeof settlementModule.findReferenceOwner>;
 const mockedSettle = settlementModule.settlePayment as jest.MockedFunction<
   typeof settlementModule.settlePayment
 >;
@@ -56,6 +58,7 @@ describe('paystackController.handleWebhook — tenant scoping + idempotency', ()
     jest.clearAllMocks();
     mockedPaystack.validateWebhookSignature.mockResolvedValue(true);
     mockedSettle.mockResolvedValue({ status: 'success' } as any);
+    mockedOwner.mockResolvedValue(null);
     (prismaMock.tenant.findUnique as any).mockResolvedValue({ id: 'tenant-1' });
   });
 

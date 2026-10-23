@@ -55,8 +55,10 @@ export const processCleanupStalePending = async () => {
 pendingCheckoutCleanupQueue.process('cleanup-stale-pending', processCleanupStalePending);
 
 // Sweep (F-404): a lost webhook or a buyer who never came back leaves a paid checkout without an order.
-// Rows older than this and not yet resolved are asked about at the provider.
+// Rows older than this and not yet resolved are asked about at the provider (rows over an hour old: once an hour).
 const SWEEP_MIN_AGE_MINUTES = 10;
+// Back-off: a row older than this is asked about at most once per this long, so a dead checkout does not cost a call every run.
+const SWEEP_BACKOFF_MS = 60 * 60 * 1000;
 
 /**
  * Per tenant: every `initiated` or `pending` checkout older than 10 minutes goes through settlePayment, which asks the
@@ -65,10 +67,15 @@ const SWEEP_MIN_AGE_MINUTES = 10;
  */
 export const processSweepPendingCheckouts = async () => {
     const cutoff = new Date(Date.now() - SWEEP_MIN_AGE_MINUTES * 60 * 1000);
+    const backoff = new Date(Date.now() - SWEEP_BACKOFF_MS);
     let checked = 0;
     await forEachTenant('Pending-checkout sweep', async () => {
         const rows = await prisma.pendingCheckout.findMany({
-            where: { createdAt: { lt: cutoff }, status: { in: ['initiated', 'pending'] } },
+            where: {
+                createdAt: { lt: cutoff },
+                status: { in: ['initiated', 'pending'] },
+                OR: [{ createdAt: { gte: backoff } }, { lastCheckedAt: null }, { lastCheckedAt: { lt: backoff } }],
+            },
             select: { reference: true },
             orderBy: { createdAt: 'asc' },
             take: 200,

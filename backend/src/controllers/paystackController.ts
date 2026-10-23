@@ -1,14 +1,11 @@
 import { Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { getPaymentProvider, type PaymentProvider } from '../services/payments';
-import { settlePayment } from '../services/paystackSettlementService';
+import { findReferenceOwner, settlePayment } from '../services/paystackSettlementService';
 import prisma from '../utils/prisma';
 import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
 import { withWebhookDedup } from '../utils/webhookDedup';
-
-/** Thrown inside the dedup gate when the reference is another tenant's, so the gate removes its row. */
-class WrongTenantReference extends Error {}
 
 /** Provider the request names. The old Paystack URL has no `:provider`, so it is Paystack. */
 function providerOf(req: Request): PaymentProvider | null {
@@ -81,31 +78,30 @@ async function processTenantWebhook(req: Request, res: Response, provider: Payme
     return;
   }
 
-  let result = 'replay';
-  try {
-    await withWebhookDedup(
-      res,
-      {
-        provider: provider.id,
-        eventType: event.eventType,
-        reference: event.eventType ? event.reference ?? undefined : undefined,
-        payloadHash: createHash('sha256').update(rawBody).digest('hex'),
-        tenantId,
-      },
-      'Payment',
-      async () => {
-        result = await handleChargeSuccess(tenantId, event.reference);
-      }
-    );
-  } catch (error) {
-    if (error instanceof WrongTenantReference) {
+  // A reference that belongs to another tenant is refused before the replay gate, so no WebhookEvent row is written.
+  if (event.reference) {
+    const owner = await findReferenceOwner(event.reference);
+    if (owner && owner !== tenantId) {
+      logger.warn('Payment webhook for a reference of another tenant — ignoring', { reference: event.reference, webhookTenantId: tenantId });
       log('wrong_tenant');
       res.status(404).json({ error: 'Reference not found' });
       return;
     }
-    throw error;
   }
-  log(result);
+
+  const result = await withWebhookDedup(
+    res,
+    {
+      provider: provider.id,
+      eventType: event.eventType,
+      reference: event.reference ?? undefined,
+      payloadHash: createHash('sha256').update(rawBody).digest('hex'),
+      tenantId,
+    },
+    'Payment',
+    () => handleChargeSuccess(tenantId, event.reference),
+  );
+  log(result ?? 'replay');
 }
 
 /**
@@ -122,7 +118,6 @@ async function handleChargeSuccess(tenantId: string, reference: string | null): 
   }
 
   const result = await settlePayment(reference, { webhookTenantId: tenantId });
-  if (result.status === 'wrong_tenant') throw new WrongTenantReference();
   if (result.status === 'not_found') {
     // Unknown to every tenant: answer 200 so the provider stops retrying.
     logger.warn('Payment webhook for a reference no checkout owns — ignored', { tenantId, reference });

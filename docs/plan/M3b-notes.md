@@ -46,4 +46,4 @@ Collected while building M3b-T02 to T05 (COD-31). Dates are 2026-10-23.
 - Settlement no longer posts to the ledger. The ledger poster (`services/payments/ledgerPoster.ts`) subscribes to `onPaymentSettled`, registered in `server.ts` at listen time (not in tests). It tries 3 times in total (waits 0.5 s and 2 s), then opens a `ledger_post_failed` Finding.
 - CAPI Purchase stays where it is (not moved into a subscriber). Digital delivery stays in settlement.
 - `paystack_unsettled` is checked inside `checkLedgerForTenant` (nightly 02:00 job). It updates the amount of an open Finding and never closes it.
-- Payout reference: `JournalEntry` has no reference column, so the reference is kept in the entry description as `Paystack payout [REF]` and the duplicate check matches that prefix (a reference cannot contain `[` or `]`). An advisory lock per tenant and reference makes two parallel posts safe.
+- Payout reference: stored in `JournalEntry.externalRef` (migration `20261023170000_payment_refs`, unique per tenant and source type). A repeat is a unique-key error mapped to 409. The same migration adds a `PendingCheckout (tenantId, status, createdAt)` index for the sweep.

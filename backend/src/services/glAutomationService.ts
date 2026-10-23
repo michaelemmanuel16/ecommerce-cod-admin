@@ -47,6 +47,8 @@ interface JournalEntryCreateData {
   description: string;
   sourceType: JournalSourceType;
   sourceId?: number;
+  /** Outside id (a payout reference). Unique per tenant and source type; a repeat is a P2002 the caller sees. */
+  externalRef?: string;
   createdBy: number;
   // Tenant that owns this entry. Pass explicitly (e.g. order.tenantId) so the
   // GL write is correct regardless of execution context. Background callers
@@ -214,7 +216,9 @@ export class GLAutomationService {
       } catch (error: any) {
         lastError = error;
         // P2002 is Prisma's code for unique constraint violation
-        if (error.code === 'P2002' && (error.meta?.target?.includes('entry_number') || error.message?.includes('entry_number'))) {
+        // Only the entry-number key is retried. Any other unique key (an external_ref repeat) is the caller's answer.
+        const target = JSON.stringify(error.meta?.target ?? '');
+        if (error.code === 'P2002' && target.includes('entry_number') && !target.includes('external_ref')) {
           retries++;
           logger.warn(`Unique constraint violation on journal entry_number, retrying (${retries}/${maxRetries})...`);
           // Small random delay before retry to reduce contention
@@ -1148,6 +1152,7 @@ export class GLAutomationService {
     entryDate: Date,
     description: string,
     userId: number,
+    externalRef: string,
   ): Promise<JournalEntry> {
     const cashId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.CASH_IN_HAND);
     const paystackReceivableId = await GLAccountService.getAccountIdByCode(GL_ACCOUNTS.PAYSTACK_RECEIVABLE);
@@ -1157,6 +1162,7 @@ export class GLAutomationService {
       entryDate,
       description,
       sourceType: JournalSourceType.paystack_payout,
+      externalRef,
       createdBy: userId,
       transactions: {
         create: [

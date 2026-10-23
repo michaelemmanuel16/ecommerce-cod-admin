@@ -8,9 +8,7 @@ import '../mocks/socketInstance.mock';
 import crypto from 'crypto';
 import request from 'supertest';
 
-jest.mock('../../services/metaCapiService', () => ({
-  metaCapiService: { fireCapiPurchaseEvent: () => Promise.resolve() },
-}));
+jest.mock('../../services/metaCapiService', () => require('./helpers/paymentTestKit').metaCapiMock());
 jest.mock('../../services/digitalDeliveryService', () => ({
   digitalDeliveryService: {
     generateDownloadToken: (...args: unknown[]) => (global as any).__digital.generate(...args),
@@ -26,6 +24,7 @@ import { createFakeProvider, FakeProvider } from '../../services/payments/fakePr
 import { processCleanupStalePending, processSweepPendingCheckouts } from '../../queues/pendingCheckoutCleanupQueue';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { bearer, superAdminToken } from './helpers/superAdminToken';
+import { ip, newRef, seedPending as kitSeedPending, PendingOptions } from './helpers/paymentTestKit';
 
 jest.setTimeout(120_000);
 
@@ -34,54 +33,10 @@ const realFetch = global.fetch;
 let pair: TwoTenants;
 let fake: FakeProvider;
 let ownerToken: string;
-let refSeq = 0;
-let ipSeq = 1;
-
-const newRef = (label: string) => `ref_${label}_${Date.now()}_${refSeq++}`;
-const ip = () => `10.9.${ipSeq++ % 250}.${ipSeq % 250}`;
 
 type Side = 'a' | 'b';
 
-interface PendingOptions {
-  total?: string;
-  chargeMinor?: number;
-  method?: string;
-  orderType?: 'physical' | 'digital';
-  currency?: string;
-  status?: string;
-  ageMinutes?: number;
-  provider?: string;
-  codAmount?: string;
-  balanceDue?: string;
-  productId?: number;
-}
-
-/** A PendingCheckout row the way publicOrderController writes it. */
-async function seedPending(side: Side, reference: string, o: PendingOptions = {}) {
-  const t = pair[side];
-  return prismaBase.pendingCheckout.create({
-    data: {
-      reference,
-      tenantId: t.id,
-      provider: o.provider ?? 'fake',
-      customerId: t.ids.customer,
-      formId: t.ids.checkoutForm,
-      paymentMethod: o.method ?? 'online_full',
-      orderType: o.orderType ?? 'physical',
-      currency: o.currency ?? 'GHS',
-      subtotal: o.total ?? '50',
-      totalAmount: o.total ?? '50',
-      codAmount: o.codAmount ?? '0',
-      balanceDue: o.balanceDue ?? '0',
-      paystackChargeMinor: o.chargeMinor ?? 5000,
-      orderItems: [{ productId: o.productId ?? t.ids.product, quantity: 1, unitPrice: o.total ?? '50', totalPrice: o.total ?? '50', itemType: 'package' }],
-      formData: { name: 'Ama Mensah', phoneNumber: t.phone, address: '1 Test St', state: 'Greater Accra', town: 'Osu' },
-      selectedPackage: { name: 'One' },
-      status: o.status ?? 'initiated',
-      createdAt: new Date(Date.now() - (o.ageMinutes ?? 0) * 60_000),
-    },
-  });
-}
+const seedPending = (side: Side, reference: string, o: PendingOptions = {}) => kitSeedPending(pair, side, reference, o);
 
 const webhook = (side: Side, reference: string | null, opts: { sig?: string; type?: string; provider?: string } = {}) =>
   request(app)
@@ -472,6 +427,27 @@ describe('pending-checkout sweep (every 10 minutes)', () => {
     // each tenant's rows settle in that tenant
     const [orderB] = await ordersFor(otherTenantPaid);
     expect(orderB.tenantId).toBe(pair.b.id);
+  });
+
+  it('backs off: a row over an hour old is asked about once an hour; a younger row on every run', async () => {
+    global.fetch = (async () => { throw new Error('no network in tests'); }) as never;
+    const recentlyChecked = newRef('swbo1');
+    const staleCheck = newRef('swbo2');
+    const neverChecked = newRef('swbo3');
+    const youngChecked = newRef('swbo4');
+    await seedPending('a', recentlyChecked, { ageMinutes: 180, status: 'pending', lastCheckedMinutesAgo: 20 });
+    await seedPending('a', staleCheck, { ageMinutes: 180, status: 'pending', lastCheckedMinutesAgo: 90 });
+    await seedPending('a', neverChecked, { ageMinutes: 180 });
+    await seedPending('a', youngChecked, { ageMinutes: 30, status: 'pending', lastCheckedMinutesAgo: 10 });
+
+    await processSweepPendingCheckouts().catch(() => undefined);
+
+    const rows = new Map((await prismaBase.pendingCheckout.findMany({ where: { reference: { in: [recentlyChecked, staleCheck, neverChecked, youngChecked] } } })).map((r) => [r.reference, r]));
+    const checkedJustNow = (ref: string) => Date.now() - (rows.get(ref)!.lastCheckedAt as Date).getTime() < 60_000;
+    expect(checkedJustNow(recentlyChecked)).toBe(false); // checked 20 minutes ago: skipped
+    expect(checkedJustNow(staleCheck)).toBe(true);
+    expect(checkedJustNow(neverChecked)).toBe(true);
+    expect(checkedJustNow(youngChecked)).toBe(true); // under an hour old: every run
   });
 
   it('the sweep and a webhook for the same checkout still make one order', async () => {

@@ -7,9 +7,7 @@ import '../mocks/logger.mock';
 import '../mocks/socketInstance.mock';
 import request from 'supertest';
 
-jest.mock('../../services/metaCapiService', () => ({
-  metaCapiService: { fireCapiPurchaseEvent: () => Promise.resolve() },
-}));
+jest.mock('../../services/metaCapiService', () => require('./helpers/paymentTestKit').metaCapiMock());
 jest.mock('../../services/digitalDeliveryService', () => ({
   digitalDeliveryService: { generateDownloadToken: async () => 'tok', sendDownloadLinks: async () => undefined },
 }));
@@ -27,37 +25,20 @@ import { GLAutomationService } from '../../services/glAutomationService';
 import { checkLedgerForTenant } from '../../services/ledgerCheckService';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { bearer } from './helpers/superAdminToken';
+import { ip, newRef, seedPending } from './helpers/paymentTestKit';
 
 jest.setTimeout(120_000);
 
 const DAY = 24 * 60 * 60 * 1000;
 let pair: TwoTenants;
 let fake: FakeProvider;
-let refSeq = 0;
-let ipSeq = 1;
 const events: PaymentSettledEvent[] = [];
 
-const newRef = (label: string) => `hook_${label}_${Date.now()}_${refSeq++}`;
-const ip = () => `10.8.${ipSeq++ % 250}.${ipSeq % 250}`;
-
-async function seedPending(ref: string, orderType: 'physical' | 'digital') {
-  const t = pair.a;
-  await prismaBase.pendingCheckout.create({
-    data: {
-      reference: ref, tenantId: t.id, provider: 'fake', customerId: t.ids.customer, formId: t.ids.checkoutForm,
-      paymentMethod: 'online_full', orderType, currency: 'GHS', subtotal: '50', totalAmount: '50', codAmount: '0', balanceDue: '0',
-      paystackChargeMinor: 5000,
-      orderItems: [{ productId: t.ids.product, quantity: 1, unitPrice: '50', totalPrice: '50', itemType: 'package' }],
-      formData: { name: 'Ama', phoneNumber: t.phone, address: '1 Test St', state: 'Greater Accra', town: 'Osu' },
-      selectedPackage: { name: 'One' },
-    },
-  });
-}
 
 /** Settle a payment through the real webhook and return the event the hook emitted for it. */
 async function settle(orderType: 'physical' | 'digital', fee: string | undefined = '0.75') {
   const ref = newRef(orderType);
-  await seedPending(ref, orderType);
+  await seedPending(pair, 'a', ref, { orderType });
   fake.setPayment(ref, { status: 'success', amount: '50', ...(fee ? { fee } : {}), channel: 'card' });
   const res = await request(app).post(`/api/payments/webhook/fake/${pair.a.slug}`).set('X-Forwarded-For', ip())
     .set('x-fake-signature', 'valid').send({ type: 'payment.success', reference: ref });
@@ -244,7 +225,7 @@ describe('POST /api/financial/paystack-payouts', () => {
     const res = await payout('a', { amount: '49.25', payoutDate: '2026-10-20', reference: 'PO-1001', note: 'Weekly payout' });
     expect(res.status).toBe(201);
     expect(res.body.warning).toBeUndefined();
-    expect(res.body.entry.description).toBe('Paystack payout [PO-1001] - Weekly payout');
+    expect(res.body.entry.description).toBe('Paystack payout PO-1001 - Weekly payout');
 
     const entry = await prismaBase.journalEntry.findFirstOrThrow({ where: { tenantId: pair.a.id, sourceType: 'paystack_payout' }, include: { transactions: { include: { account: true } } } });
     expect(entry.entryDate.toISOString()).toBe('2026-10-20T00:00:00.000Z');
@@ -265,6 +246,7 @@ describe('POST /api/financial/paystack-payouts', () => {
     const again = await payout('a', { amount: '10', payoutDate: '2026-10-21', reference: 'PO-DUP' });
     expect(again.status).toBe(409);
     expect(await prismaBase.journalEntry.count({ where: { tenantId: pair.a.id, sourceType: 'paystack_payout' } })).toBe(1);
+    expect((await prismaBase.journalEntry.findFirstOrThrow({ where: { tenantId: pair.a.id, sourceType: 'paystack_payout' } })).externalRef).toBe('PO-DUP');
 
     expect((await payout('b', { amount: '10', payoutDate: '2026-10-20', reference: 'PO-DUP' })).status).toBe(201);
   });
@@ -281,7 +263,7 @@ describe('POST /api/financial/paystack-payouts', () => {
     const res = await payout('a', { amount: '35.50', payoutDate: '2026-10-20', reference: 'PO-BIG', note: 'Includes a sale not booked yet' });
     expect(res.status).toBe(201);
     expect(res.body.warning).toBe('Payout is larger than the Paystack receivable balance');
-    expect(res.body.entry.description).toBe('Paystack payout [PO-BIG] - Includes a sale not booked yet - Payout is larger than the Paystack receivable balance');
+    expect(res.body.entry.description).toBe('Paystack payout PO-BIG - Includes a sale not booked yet - Payout is larger than the Paystack receivable balance');
     expect(Money.toApi((await balance1030(pair.a.id)).stored)).toBe('-15.50');
   });
 
@@ -294,7 +276,6 @@ describe('POST /api/financial/paystack-payouts', () => {
       { amount: '5', payoutDate: 'not a date', reference: 'x' },
       { amount: '5', payoutDate: '2026-10-20' },
       { amount: '5', payoutDate: '2026-10-20', reference: '   ' },
-      { amount: '5', payoutDate: '2026-10-20', reference: 'a]b' },
     ];
     for (const body of bad) {
       const res = await payout('a', body);
@@ -351,7 +332,7 @@ describe('paystack_unsettled Finding (nightly ledger check)', () => {
     await clearLedger(pair.a.id);
     await bookSale('a', '30', '0', 9);
     await runInTenant(pair.a.id, () => prisma.$transaction((tx) =>
-      new GLAutomationService().createPaystackPayoutEntry(tx as any, '30', new Date(Date.now() - 8 * DAY), 'Paystack payout [OLD]', pair.a.users.admin.id)));
+      new GLAutomationService().createPaystackPayoutEntry(tx as any, '30', new Date(Date.now() - 8 * DAY), 'Paystack payout OLD', pair.a.users.admin.id, 'OLD')));
     await checkLedgerForTenant(pair.a.id);
     expect(await findings('a')).toHaveLength(0); // balance is 0
 

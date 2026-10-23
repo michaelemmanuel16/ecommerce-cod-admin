@@ -255,7 +255,7 @@ describe('settlePayment (issue #3 — paid → confirmed)', () => {
 
     const result = await settlePayment('ref_ok', { webhookTenantId: 'tenant-2' });
 
-    expect(result.status).toBe('wrong_tenant');
+    expect(result.status).toBe('not_found');
     expect(mockedPaystack.verifyTransaction).not.toHaveBeenCalled();
     expect(prismaMock.order.create).not.toHaveBeenCalled();
   });

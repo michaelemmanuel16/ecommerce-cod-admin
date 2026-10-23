@@ -19,6 +19,7 @@ import logger from '../utils/logger';
 import { runInTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
 import { GL_ACCOUNTS } from '../config/glAccounts';
+import { openFindingOnce } from './findingService';
 import { deliveredRevenueByDay } from './kpi/revenue';
 import { getStoreTimeZone, localDate, shiftYmd, startOfDay } from './kpi/dates';
 
@@ -53,36 +54,27 @@ async function ledgerByDay(tenantId: string, from: Date, to: Date): Promise<Map<
  * above the debits of the last 7 days is old unsettled money. When there is some, one `paystack_unsettled` Finding opens
  * with that amount. While one is open the next runs only update its amount. Runs inside the tenant context.
  */
-async function checkPaystackUnsettled(tenantId: string, now: Date): Promise<boolean> {
+async function checkPaystackUnsettled(tenantId: string, now: Date): Promise<void> {
   const cutoff = new Date(now.getTime() - PAYSTACK_UNSETTLED_DAYS * 24 * 60 * 60 * 1000);
   const account = await prisma.account.findFirst({ where: { code: GL_ACCOUNTS.PAYSTACK_RECEIVABLE }, select: { id: true, currentBalance: true } });
   const balance = Money.orZero(account?.currentBalance);
-  const existing = await prisma.finding.findFirst({ where: { type: 'paystack_unsettled', status: 'open' } });
+  if (!account || !balance.gt(0)) return;
 
-  let old = Money.ZERO;
-  if (account && balance.gt(0)) {
-    const recent = await prisma.accountTransaction.aggregate({
-      where: { accountId: account.id, journalEntry: { isVoided: false, entryDate: { gte: cutoff } } },
-      _sum: { debitAmount: true },
-    });
-    old = Money.sub(balance, Money.orZero(recent._sum.debitAmount));
-  }
-  if (!old.gt(0)) return false;
-  if (existing) {
-    if (!Money.parse(existing.amount ?? 0).eq(old)) await prisma.finding.update({ where: { id: existing.id }, data: { amount: old } });
-  } else {
-    await prisma.finding.create({
-      data: {
-        tenantId,
-        type: 'paystack_unsettled',
-        subjectType: 'account',
-        subjectId: GL_ACCOUNTS.PAYSTACK_RECEIVABLE,
-        amount: old,
-        note: `Paystack receivable (1030) holds sales older than ${PAYSTACK_UNSETTLED_DAYS} days with no payout.`,
-      },
-    });
-  }
-  return true;
+  const recent = await prisma.accountTransaction.aggregate({
+    where: { accountId: account.id, journalEntry: { isVoided: false, entryDate: { gte: cutoff } } },
+    _sum: { debitAmount: true },
+  });
+  const old = Money.sub(balance, Money.orZero(recent._sum.debitAmount));
+  if (!old.gt(0)) return;
+
+  await openFindingOnce({
+    tenantId,
+    type: 'paystack_unsettled',
+    subjectType: 'account',
+    subjectId: GL_ACCOUNTS.PAYSTACK_RECEIVABLE,
+    amount: old,
+    note: `Paystack receivable (1030) holds sales older than ${PAYSTACK_UNSETTLED_DAYS} days with no payout.`,
+  }, { updateAmount: true });
 }
 
 /** Check one tenant. `now` is a parameter so tests can run on a fixed date. */
