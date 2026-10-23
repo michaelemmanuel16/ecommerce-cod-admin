@@ -85,7 +85,7 @@ describe('migrate-stock-to-levels', () => {
     expect(await db.stockLevel.count({ where: { tenantId } })).toBe(0);
     const copybook = report.rows.find((r) => r.productId === p1)!;
     // before = warehouse 100 + agents 20 + 36 + (a) 3 + 1 + (b) 2
-    expect(copybook).toMatchObject({ warehouse: 100, agents: 56, correctionA: 4, correctionB: 2, before: 162, after: 162, difference: 0, inTransitCounter: 20, cacheBefore: 100, cacheAfter: 162 });
+    expect(copybook).toMatchObject({ warehouse: 100, agents: 56, correctionA: 4, correctionB: 2, before: 162, after: 162, difference: 0, inTransitCounter: 20, cacheAfter: 162 });
     expect(report.ordersA).toBe(2);
     expect(report.skippedDeliveryDispatch).toBe(1);
     expect(report.ordersB).toBe(1);
@@ -99,7 +99,7 @@ describe('migrate-stock-to-levels', () => {
   it('the first real run builds the levels, links the 3PL user and puts back the units of open orders', async () => {
     const report = await migrateTenant(tenantId, OPTS);
     expect(report.ok).toBe(true);
-    expect(report.rows.map((r) => [r.productId, r.cacheBefore, r.cacheAfter]).sort((a, b) => a[0] - b[0])).toEqual([[p1, 100, 162], [p2, 50, 52]].sort((a, b) => a[0] - b[0]));
+    expect(report.rows.map((r) => [r.productId, r.warehouse, r.cacheAfter]).sort((a, b) => a[0] - b[0])).toEqual([[p1, 100, 162], [p2, 50, 52]].sort((a, b) => a[0] - b[0]));
     const logiswift = await db.stockLocation.findFirstOrThrow({ where: { tenantId, name: 'Logiswift' } });
     expect(logiswift).toMatchObject({ type: 'partner_3pl', userId: logiswiftUser });
     // The real run adds update_stock to the stored admin list and keeps the rest.

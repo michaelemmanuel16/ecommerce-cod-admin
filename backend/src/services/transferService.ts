@@ -1,10 +1,9 @@
 import { Prisma, TransferReason, TransferType, UserRole } from '@prisma/client';
 import prisma, { TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { hasPermission } from '../middleware/auth';
 import { resolveTenantId } from '../utils/tenantContext';
 import * as Money from '../utils/money';
-import { applyMovement } from './stockService';
+import { applyMovement, getLocation, lockProduct } from './stockService';
 import { openFindingOnce } from './findingService';
 
 /**
@@ -64,26 +63,13 @@ async function audit(tx: TransactionClient, actor: TransferActor, action: string
   });
 }
 
-async function getLocation(tx: TransactionClient, id: number) {
-  const location = await tx.stockLocation.findUnique({ where: { id }, include: { user: { select: { id: true, isActive: true } } } });
-  if (!location) throw new AppError('Stock location not found', 404);
-  return location;
-}
-
-async function getProduct(tx: TransactionClient, id: number) {
-  const product = await tx.product.findUnique({ where: { id }, select: { id: true, name: true, productType: true, cogs: true } });
-  if (!product) throw new AppError('Product not found', 404);
-  if (product.productType === 'digital') throw new AppError(`"${product.name}" is a digital product and has no stock`, 400);
-  return product;
-}
-
 /** Row lock on the transfer, so two receipts or a receipt and a cancel of the same transfer run one after the other. */
 async function lockTransfer(tx: TransactionClient, id: number) {
-  const found = await tx.inventoryTransfer.findUnique({ where: { id }, select: { id: true, fromLocationId: true, toLocationId: true } });
-  if (!found || found.fromLocationId == null || found.toLocationId == null) throw new AppError('Transfer not found', 404);
-  await tx.$queryRaw`SELECT id FROM inventory_transfers WHERE id = ${id} FOR UPDATE`;
+  const locked = await tx.$queryRaw<Array<{ id: number }>>`SELECT id FROM inventory_transfers WHERE id = ${id} AND tenant_id = ${resolveTenantId()} FOR UPDATE`;
+  if (locked.length === 0) throw new AppError('Transfer not found', 404);
   const row = await tx.inventoryTransfer.findUniqueOrThrow({ where: { id }, include: { fromLocation: true, toLocation: true, product: { select: { id: true, name: true, cogs: true } } } });
-  return { ...row, fromLocation: row.fromLocation!, toLocation: row.toLocation! };
+  if (!row.fromLocation || !row.toLocation) throw new AppError('Transfer not found', 404);
+  return { ...row, fromLocation: row.fromLocation, toLocation: row.toLocation };
 }
 
 async function fresh(tx: TransactionClient, id: number) {
@@ -97,9 +83,9 @@ export async function createTransfer(actor: TransferActor, input: CreateTransfer
   if (input.fromLocationId === input.toLocationId) throw new AppError('Cannot transfer to the same location', 400);
 
   return prisma.$transaction(async (tx) => {
-    const [product, from, to] = await Promise.all([
-      getProduct(tx, input.productId), getLocation(tx, input.fromLocationId), getLocation(tx, input.toLocationId),
-    ]);
+    const product = await lockProduct(tx, input.productId);
+    const from = await getLocation(tx, input.fromLocationId, true);
+    const to = await getLocation(tx, input.toLocationId, true);
     for (const l of [from, to]) {
       if (l.type === 'in_transit') throw new AppError('The in-transit location cannot send or receive stock', 400);
       if (!l.isActive) throw new AppError(`${l.name} is not active`, 400);
@@ -109,9 +95,9 @@ export async function createTransfer(actor: TransferActor, input: CreateTransfer
     if (input.type === 'agent_transfer' && (from.type !== 'agent' || to.type !== 'agent')) throw new AppError('A transfer between agents needs two agents', 400);
     if (input.type === 'return_to_warehouse' && from.type !== 'agent' && from.type !== 'partner_3pl') throw new AppError('A return comes from an agent or a 3PL', 400);
 
-    const row = await applyMovement(tx, {
+    const { row } = await applyMovement(tx, {
       type: input.type as TransferType, productId: input.productId, quantity: input.quantity, createdById: actor.id,
-      fromLocationId: from.id, toLocationId: to.id, status: 'in_transit', requireOnHand: true,
+      fromLocationId: from.id, toLocationId: to.id, status: 'in_transit', requireOnHand: true, lockedProduct: product,
       reason: input.reason ?? null, notes: input.note ?? null,
     });
     // The agent is told the stock is on its way (inbox row; the push comes from the notification layer).
@@ -138,11 +124,8 @@ export async function receiveTransfer(actor: TransferActor, id: number, input: {
   return prisma.$transaction(async (tx) => {
     const transfer = await lockTransfer(tx, id);
     const own = transfer.toLocation.userId != null && transfer.toLocation.userId === actor.id;
-    if (actor.role === 'delivery_agent') {
-      if (!own) throw new AppError('You can only confirm stock addressed to you', 403);
-    } else if (!(await hasPermission(actor, 'products', 'update_stock'))) {
-      throw new AppError('You cannot confirm stock for others', 403);
-    }
+    // The route lets a non-agent in only with products:update_stock; an agent confirms only their own stock.
+    if (actor.role === 'delivery_agent' && !own) throw new AppError('You can only confirm stock addressed to you', 403);
     if (transfer.status !== 'in_transit') throw new AppError(`This transfer is already ${transfer.status}`, 409);
 
     const counted = input.quantity ?? transfer.quantity;
@@ -241,17 +224,17 @@ export async function adjustStock(actor: TransferActor, input: AdjustInput) {
   if (input.reason === 'other' && !note) throw new AppError('A note is required when the reason is Other', 400);
 
   return prisma.$transaction(async (tx) => {
-    await getProduct(tx, input.productId);
+    // Lock the product before reading the level, so the difference below is computed on the number that will change.
+    const product = await lockProduct(tx, input.productId);
     const location = await getLocation(tx, input.locationId);
     if (location.type === 'in_transit') throw new AppError('The in-transit location holds no stock to adjust', 400);
-    // The same product lock stockService takes, so the difference below is computed on the number that will change.
-    await tx.$queryRaw`SELECT id FROM products WHERE id = ${input.productId} FOR UPDATE`;
     const level = await tx.stockLevel.findUnique({ where: { locationId_productId: { locationId: location.id, productId: input.productId } } });
     const current = level?.quantity ?? 0;
     const diff = input.newQuantity - current;
     if (diff === 0) throw new AppError('No change', 400);
 
-    const row = await applyMovement(tx, {
+    const { row } = await applyMovement(tx, {
+      lockedProduct: product,
       type: 'adjustment', productId: input.productId, quantity: Math.abs(diff), createdById: actor.id,
       ...(diff < 0 ? { fromLocationId: location.id } : { toLocationId: location.id }),
       reason: input.reason, notes: note ?? null,

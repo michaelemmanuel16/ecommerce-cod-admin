@@ -1,4 +1,4 @@
-import { OrderStatus, Prisma, StockLocationType, TransferReason, TransferStatus, TransferType } from '@prisma/client';
+import { OrderStatus, Prisma, StockLocation, StockLocationType, TransferReason, TransferStatus, TransferType } from '@prisma/client';
 import prisma, { PrismaClientExtended, TransactionClient } from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { resolveTenantId } from '../utils/tenantContext';
@@ -17,7 +17,7 @@ import { openFindingOnce } from './findingService';
 type Db = TransactionClient | PrismaClientExtended;
 
 /** Location types that hold stock the seller can use. The in-transit system location holds none. */
-const PHYSICAL: StockLocationType[] = ['own_store', 'partner_3pl', 'agent'];
+export const PHYSICAL: StockLocationType[] = ['own_store', 'partner_3pl', 'agent'];
 /** Orders whose units are reserved at the holder (F-651). */
 const RESERVING: OrderStatus[] = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'];
 
@@ -42,6 +42,10 @@ export interface MovementInput {
   credit?: boolean;
   /** Refuse with "Only N available" when the source holds fewer units (transfers). Fulfilment never sets it. */
   requireOnHand?: boolean;
+  /** The product row the caller already locked with `lockProduct`; the movement does not lock or read it again. */
+  lockedProduct?: LockedProduct;
+  /** Skip the cache refresh for this movement. The caller refreshes once per product with `refreshCache` (fulfilOrder, reverseOrder). */
+  refreshCache?: boolean;
   /**
    * Settle an existing transfer row instead of writing a new one: only the level legs run and `row` is applied to
    * the row. Used by receive, resolve and cancel (M4-T09).
@@ -49,16 +53,25 @@ export interface MovementInput {
   settle?: { transferId: number; row: Prisma.InventoryTransferUncheckedUpdateInput };
 }
 
-/** Lock the product row. Every stock change of one product waits here, so level checks, sums and the cache are consistent. */
-async function lockProduct(tx: TransactionClient, productId: number): Promise<{ id: number; productType: string; cogs: Prisma.Decimal | null; name: string }> {
-  const product = await tx.product.findUnique({ where: { id: productId }, select: { id: true, productType: true, cogs: true, name: true } });
-  if (!product) throw new AppError('Product not found', 404);
-  await tx.$queryRaw`SELECT id FROM products WHERE id = ${productId} FOR UPDATE`;
-  return product;
+export interface LockedProduct { id: number; productType: string; cogs: Prisma.Decimal | null; name: string }
+
+/**
+ * Lock the product row and read it, in one statement (404 when it is not in this tenant). Every stock change of one
+ * product waits here, so level checks, sums and the cache are consistent. A digital product has no stock: it is refused
+ * unless `allowDigital`.
+ */
+export async function lockProduct(tx: TransactionClient, productId: number, opts: { allowDigital?: boolean } = {}): Promise<LockedProduct> {
+  const rows = await tx.$queryRaw<LockedProduct[]>`
+    SELECT id, product_type AS "productType", cogs, name FROM products
+    WHERE id = ${productId} AND tenant_id = ${resolveTenantId()} FOR UPDATE`;
+  if (rows.length === 0) throw new AppError('Product not found', 404);
+  if (rows[0].productType === 'digital' && !opts.allowDigital) throw new AppError(`"${rows[0].name}" is a digital product and has no stock`, 400);
+  return rows[0];
 }
 
-async function locationOf(tx: Db, id: number) {
-  const location = await tx.stockLocation.findUnique({ where: { id } });
+/** A stock location of this tenant (404 otherwise), with its user when `withUser`. */
+export async function getLocation(db: Db, id: number, withUser = false): Promise<StockLocation & { user?: { id: number; isActive: boolean } | null }> {
+  const location = await db.stockLocation.findUnique({ where: { id }, include: withUser ? { user: { select: { id: true, isActive: true } } } : undefined });
   if (!location) throw new AppError('Stock location not found', 404);
   return location;
 }
@@ -72,20 +85,16 @@ async function changeLevel(tx: TransactionClient, tenantId: string, locationId: 
   return level.quantity;
 }
 
-/** The cache: sum of on-hand over active physical locations. Caller holds the product lock. */
-async function refreshCache(tx: TransactionClient, productId: number): Promise<number> {
-  const sum = await tx.stockLevel.aggregate({
-    _sum: { quantity: true },
-    where: { productId, location: { isActive: true, type: { in: PHYSICAL } } },
-  });
-  const total = sum._sum.quantity ?? 0;
+/** The cache: sum of on-hand over active physical locations. The caller holds the product lock. */
+export async function refreshCache(tx: TransactionClient, productId: number): Promise<number> {
+  const total = await getOnHand(productId, undefined, tx);
   await tx.product.update({ where: { id: productId }, data: { stockQuantity: total } });
   return total;
 }
 
 /**
  * Write one movement and change the levels together, in the caller's transaction. Returns the movement row
- * (the settled row when `settle` is set).
+ * (the settled row when `settle` is set) and the new quantity of each level it changed (null when it changed none).
  */
 export async function applyMovement(tx: TransactionClient, input: MovementInput) {
   if (!Number.isInteger(input.quantity) || input.quantity <= 0) throw new AppError('Quantity must be a whole number above 0', 400);
@@ -96,19 +105,20 @@ export async function applyMovement(tx: TransactionClient, input: MovementInput)
   const credit = input.credit ?? (to != null && status !== 'in_transit');
   if ((from == null && to == null) || (debit && from == null) || (credit && to == null)) throw new AppError('A movement needs the location it changes', 400);
 
-  const product = await lockProduct(tx, input.productId);
-  if (product.productType === 'digital') throw new AppError(`"${product.name}" is a digital product and has no stock`, 400);
+  if (!input.lockedProduct) await lockProduct(tx, input.productId);
   const tenantId = resolveTenantId();
-  const source = from != null ? await locationOf(tx, from) : null;
-  if (to != null) await locationOf(tx, to);
+  const ids = [from, to].filter((id): id is number => id != null);
+  const found = await tx.stockLocation.findMany({ where: { id: { in: ids } } });
+  if (new Set(ids).size !== found.length) throw new AppError('Stock location not found', 404);
+  const source = found.find((l) => l.id === from);
 
   if (debit && input.requireOnHand) {
     const level = await tx.stockLevel.findUnique({ where: { locationId_productId: { locationId: from!, productId: input.productId } } });
     const onHand = level?.quantity ?? 0;
     if (onHand < input.quantity) throw new AppError(`Only ${Math.max(onHand, 0)} available at ${source!.name}`, 400);
   }
-  if (debit) await changeLevel(tx, tenantId, from!, input.productId, -input.quantity);
-  if (credit) await changeLevel(tx, tenantId, to!, input.productId, input.quantity);
+  const fromQuantity = debit ? await changeLevel(tx, tenantId, from!, input.productId, -input.quantity) : null;
+  const toQuantity = credit ? await changeLevel(tx, tenantId, to!, input.productId, input.quantity) : null;
 
   let row;
   if (input.settle) {
@@ -132,8 +142,8 @@ export async function applyMovement(tx: TransactionClient, input: MovementInput)
       },
     });
   }
-  if (debit || credit) await refreshCache(tx, input.productId);
-  return row;
+  if ((debit || credit) && input.refreshCache !== false) await refreshCache(tx, input.productId);
+  return { row, fromQuantity, toQuantity };
 }
 
 /**
@@ -148,7 +158,7 @@ export async function rebuildCache(tx: TransactionClient, productIds?: number[])
   });
   const out = new Map<number, number>();
   for (const p of products) {
-    await tx.$queryRaw`SELECT id FROM products WHERE id = ${p.id} FOR UPDATE`;
+    await lockProduct(tx, p.id);
     out.set(p.id, await refreshCache(tx, p.id));
   }
   return out;
@@ -185,6 +195,10 @@ export async function getReserved(productId: number, locationId?: number, db: Db
 
 /** On hand less reserved, over all holders. May be below 0. */
 export async function getAvailableToSell(productId: number, db: Db = prisma): Promise<number> {
+  if (db === prisma) {
+    const [onHand, reserved] = await Promise.all([getOnHand(productId, undefined, db), getReserved(productId, undefined, db)]);
+    return onHand - reserved;
+  }
   return (await getOnHand(productId, undefined, db)) - (await getReserved(productId, undefined, db));
 }
 
@@ -225,27 +239,29 @@ export async function fulfilOrder(tx: TransactionClient, order: FulfilOrder, act
   const tenantId = resolveTenantId(order.tenantId);
   const holder = await holderLocation(tx, tenantId, order.deliveryAgentId);
   const createdById = actorUserId ?? (await getSystemUserId(tenantId));
+  const active = new Set((await tx.inventoryTransfer.findMany({
+    where: { orderId: order.id, transferType: 'order_fulfillment', reversedAt: null },
+    select: { productId: true, itemKey: true },
+  })).map((r) => `${r.productId}:${r.itemKey}`));
 
+  const moved = new Set<number>();
   for (const line of lines) {
     const itemKey = String(line.id);
-    const active = await tx.inventoryTransfer.findFirst({
-      where: { orderId: order.id, productId: line.productId, itemKey, transferType: 'order_fulfillment', reversedAt: null },
-      select: { id: true },
-    });
-    if (active) continue;
-    await applyMovement(tx, {
+    if (active.has(`${line.productId}:${itemKey}`)) continue;
+    const { fromQuantity } = await applyMovement(tx, {
       type: 'order_fulfillment', productId: line.productId, quantity: line.quantity, createdById,
-      fromLocationId: holder.id, orderId: order.id, itemKey,
+      fromLocationId: holder.id, orderId: order.id, itemKey, refreshCache: false,
     });
-    const level = await tx.stockLevel.findUnique({ where: { locationId_productId: { locationId: holder.id, productId: line.productId } } });
-    if (level && level.quantity < 0) {
+    moved.add(line.productId);
+    if (fromQuantity != null && fromQuantity < 0) {
       await openFindingOnce({
         tenantId, type: 'stock_gap', subjectType: 'stock_level', subjectId: `${holder.id}:${line.productId}`,
-        amount: Money.mul(-level.quantity, Money.orZero(line.product.cogs)),
-        note: `${holder.name} has ${level.quantity} ${line.product.name}`,
+        amount: Money.mul(-fromQuantity, Money.orZero(line.product.cogs)),
+        note: `${holder.name} has ${fromQuantity} ${line.product.name}`,
       }, { updateAmount: true }, tx);
     }
   }
+  for (const productId of moved) await refreshCache(tx, productId);
 }
 
 /**
@@ -263,8 +279,9 @@ export async function reverseOrder(tx: TransactionClient, order: FulfilOrder, ac
   for (const fulfilment of active) {
     await applyMovement(tx, {
       type: 'order_reversal', productId: fulfilment.productId, quantity: fulfilment.quantity, createdById,
-      toLocationId: fulfilment.fromLocationId, orderId: order.id, itemKey: fulfilment.itemKey,
+      toLocationId: fulfilment.fromLocationId, orderId: order.id, itemKey: fulfilment.itemKey, refreshCache: false,
     });
-    await tx.inventoryTransfer.update({ where: { id: fulfilment.id }, data: { reversedAt: new Date() } });
   }
+  await tx.inventoryTransfer.updateMany({ where: { id: { in: active.map((f) => f.id) } }, data: { reversedAt: new Date() } });
+  for (const productId of new Set(active.map((f) => f.productId))) await refreshCache(tx, productId);
 }

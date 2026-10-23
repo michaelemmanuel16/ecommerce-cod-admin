@@ -44,7 +44,7 @@ const mkOrder = async (status: string, agent: number | null = U.agent.id, extra:
   })).id;
 const admin = () => actorOf({ id: U.admin.id, role: 'admin' } as any);
 const move = (orderId: number, to: any, opts: Record<string, unknown> = {}, who = admin()) =>
-  runInTenant(tenantId, () => transitionOrder(orderId, to, who, { skipLegacyStock: true, ...opts }));
+  runInTenant(tenantId, () => transitionOrder(orderId, to, who, { ...opts }));
 const attempts = (orderId: number) => prismaBase.deliveryAttempt.findMany({ where: { orderId }, orderBy: { id: 'asc' } });
 
 beforeAll(async () => {
@@ -121,7 +121,7 @@ describe('DeliveryAttempt rows from the state machine (F-713)', () => {
   it('is part of the move transaction: a rollback leaves no row and no status change', async () => {
     const orderId = await mkOrder('out_for_delivery');
     await expect(runInTenant(tenantId, () => prisma.$transaction(async (tx) => {
-      await transitionOrder(orderId, 'failed_delivery', admin(), { skipLegacyStock: true, failureReason: 'refused', tx });
+      await transitionOrder(orderId, 'failed_delivery', admin(), { failureReason: 'refused', tx });
       expect(await tx.deliveryAttempt.count({ where: { orderId } })).toBe(1);
       throw new Error('rollback');
     }))).rejects.toThrow('rollback');

@@ -299,7 +299,6 @@ describe('Delivery GL Integration', () => {
       await transitionOrder(testOrder.id, 'failed_delivery', actorOf(undefined, testUser.id), {
         note: 'Delivery failed: Customer not home',
         failureReason: 'other',
-        skipLegacyStock: true,
       });
 
       const updatedDelivery = await prisma.delivery.findUnique({

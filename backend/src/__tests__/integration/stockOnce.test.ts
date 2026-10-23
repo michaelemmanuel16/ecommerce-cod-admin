@@ -7,7 +7,7 @@ import '../mocks/logger.mock';
 import { prismaBase } from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
-import { levelAt, stockUp } from './helpers/stock';
+import { cacheOf, levelAt, stockUp } from './helpers/stock';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import orderService from '../../services/orderService';
 import publicOrderService from '../../services/publicOrderService';
@@ -42,7 +42,7 @@ const inTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
 const status = async (id: number, to: any) => inTenant(() => orderService.updateOrderStatus(id, { status: to }));
 const fulfilments = (orderId: number, extra: Record<string, unknown> = {}) =>
   prismaBase.inventoryTransfer.findMany({ where: { orderId, transferType: 'order_fulfillment', ...extra }, orderBy: { id: 'asc' } });
-const cache = async (id = productId) => (await prismaBase.product.findUniqueOrThrow({ where: { id } })).stockQuantity;
+const cache = (id = productId) => cacheOf(id);
 
 const partner = async (label: string) => {
   const user = await prismaBase.user.create({

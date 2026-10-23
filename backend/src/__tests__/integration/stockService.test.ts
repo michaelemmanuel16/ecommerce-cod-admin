@@ -8,6 +8,7 @@ import prisma, { prismaBase } from '../../utils/prisma';
 import { runInTenant } from '../../utils/tenantContext';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import * as stock from '../../services/stockService';
+import { cacheOf, levelAt } from './helpers/stock';
 
 jest.setTimeout(120_000);
 
@@ -28,11 +29,10 @@ let transit: number;
 let otherLocation: number;
 
 const inTenant = <T>(fn: () => Promise<T>) => runInTenant(tenantId, fn);
-const level = async (locationId: number, productId: number) =>
-  (await prismaBase.stockLevel.findUnique({ where: { locationId_productId: { locationId, productId } } }))?.quantity ?? 0;
-const cache = async (productId: number) => (await prismaBase.product.findUniqueOrThrow({ where: { id: productId } })).stockQuantity;
+const level = levelAt;
+const cache = cacheOf;
 const move = (input: Omit<stock.MovementInput, 'createdById'>) =>
-  inTenant(() => prisma.$transaction((tx) => stock.applyMovement(tx, { createdById: adminId, ...input })));
+  inTenant(() => prisma.$transaction((tx) => stock.applyMovement(tx, { createdById: adminId, ...input }))).then((r) => r.row);
 
 beforeAll(async () => {
   tenantId = (await createTenant('Stock Service')).id;

@@ -11,7 +11,7 @@ import { prismaBase } from '../../utils/prisma';
 import { generateAccessToken } from '../../utils/jwt';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { bearer } from './helpers/superAdminToken';
-import { levelAt, stockUp } from './helpers/stock';
+import { cacheOf, levelAt, stockUp } from './helpers/stock';
 
 jest.mock('../../utils/socketInstance', () => ({
   setSocketInstance: jest.fn(),
@@ -51,7 +51,7 @@ const post = (who: string, path: string, body: Record<string, unknown> = {}) =>
 const allocate = (who: string, to: number, quantity: number, extra: Record<string, unknown> = {}) =>
   post(who, '/transfers', { type: 'allocation', productId: copybook, quantity, fromLocationId: swift, toLocationId: to, ...extra });
 const level = (locationId: number, productId = copybook) => levelAt(locationId, productId);
-const cache = async (id = copybook) => (await prismaBase.product.findUniqueOrThrow({ where: { id } })).stockQuantity;
+const cache = (id = copybook) => cacheOf(id);
 /** On hand over every physical location of the tenant (what the cache holds). */
 const total = async () => (await prismaBase.stockLevel.aggregate({
   _sum: { quantity: true }, where: { tenantId, productId: copybook, location: { isActive: true, type: { not: 'in_transit' } } },

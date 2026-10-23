@@ -57,8 +57,7 @@ interface ProductRow {
   after: number;
   difference: number;
   inTransitCounter: number;
-  /** Product.stockQuantity before the run (the old warehouse number) and after the rebuild. */
-  cacheBefore: number;
+  /** Product.stockQuantity after the rebuild (before it was the old warehouse number). */
   cacheAfter: number;
 }
 
@@ -233,7 +232,7 @@ async function migrateInContext(tenantId: string, opts: MigrateOptions): Promise
     const cb = unitsB.get(p.id) ?? 0;
     const before = w + a + ca + cb;
     const after = afterOf(p.id);
-    return { productId: p.id, name: p.name, warehouse: w, agents: a, correctionA: ca, correctionB: cb, before, after, difference: after - before, inTransitCounter: counter.get(p.id) ?? 0, cacheBefore: w, cacheAfter: planned.get(p.id) ?? 0 };
+    return { productId: p.id, name: p.name, warehouse: w, agents: a, correctionA: ca, correctionB: cb, before, after, difference: after - before, inTransitCounter: counter.get(p.id) ?? 0, cacheAfter: planned.get(p.id) ?? 0 };
   }).filter((r) => r.before !== 0 || r.after !== 0 || r.inTransitCounter !== 0);
 
   const report: TenantReport = {
@@ -340,8 +339,8 @@ function printReport(r: TenantReport, opts: MigrateOptions, log: (s: string) => 
   log(`    (b) units by order status now: ${JSON.stringify(r.unitsBByStatus)}`);
   log(`  note: ${r.estimateDeliveredDoubleDecrement} package units on delivered COD checkout orders were lowered at creation and again at delivery (upper bound of historic drift; not changed, the stock count fixes it)`);
   if (r.alreadyMigrated) return;
-  log('  product | warehouse | agents | (a) | (b) | before | after | difference | totalInTransit counter (info only) | cache before -> after');
-  for (const x of r.rows) log(`  ${x.productId} ${x.name} | ${x.warehouse} | ${x.agents} | ${x.correctionA} | ${x.correctionB} | ${x.before} | ${x.after} | ${x.difference} | ${x.inTransitCounter} | ${x.cacheBefore} -> ${x.cacheAfter}`);
+  log('  product | warehouse | agents | (a) | (b) | before | after | difference | totalInTransit counter (info only) | warehouse (cache before) -> cache after');
+  for (const x of r.rows) log(`  ${x.productId} ${x.name} | ${x.warehouse} | ${x.agents} | ${x.correctionA} | ${x.correctionB} | ${x.before} | ${x.after} | ${x.difference} | ${x.inTransitCounter} | ${x.warehouse} -> ${x.cacheAfter}`);
   log(r.ok ? '  sums equal' : '  SUMS DIFFER');
 }
 
