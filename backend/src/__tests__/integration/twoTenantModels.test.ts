@@ -63,6 +63,8 @@ const MODELS: Array<[string, string, string, string]> = [
   ['role assignments', 'roleAssignment', 'roleAssignment', 'RoleAssignment'],
   // M3 models
   ['user sessions', 'userSession', 'userSession', 'UserSession'],
+  // M3b models
+  ['payment connections', 'paymentConnection', 'paymentConnection', 'PaymentConnection'],
 ];
 
 describe('tenant B data never shows for tenant A', () => {

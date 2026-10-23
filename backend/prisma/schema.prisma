@@ -59,6 +59,7 @@ model Tenant {
   roles               Role[]
   roleAssignments     RoleAssignment[]
   userSessions        UserSession[]
+  paymentConnections  PaymentConnection[]
   webhookEvents       WebhookEvent[]
   emailTemplates      EmailTemplate[]
   emailCampaigns      EmailCampaign[]
@@ -294,6 +295,7 @@ model Order {
   orderType          String              @default("physical") @map("order_type")
   paymentMethod      String              @default("cod") @map("payment_method")
   paymentReference   String?             @map("payment_reference")
+  paymentProvider    String?             @map("payment_provider")
   depositPaid        Decimal             @default(0) @map("deposit_paid") @db.Decimal(19, 4)
   balanceDue         Decimal             @default(0) @map("balance_due") @db.Decimal(19, 4)
   capiEventFired     Boolean             @default(false) @map("capi_event_fired")
@@ -459,20 +461,28 @@ model Delivery {
 }
 
 model Transaction {
-  id            Int           @id @default(autoincrement())
-  orderId       Int?          @unique @map("order_id")
-  type          String
-  amount        Decimal       @db.Decimal(19, 4)
-  paymentMethod String        @map("payment_method")
-  status        PaymentStatus @default(pending)
-  reference     String?
-  description   String?
-  metadata      Json?
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-  tenantId      String?       @map("tenant_id")
-  tenant        Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  order         Order?        @relation(fields: [orderId], references: [id])
+  id                Int           @id @default(autoincrement())
+  orderId           Int?          @unique @map("order_id")
+  type              String
+  amount            Decimal       @db.Decimal(19, 4)
+  paymentMethod     String        @map("payment_method")
+  status            PaymentStatus @default(pending)
+  reference         String?
+  description       String?
+  metadata          Json?
+  // Online payments (F-406): which provider took the money and what it charged.
+  provider          String?
+  channel           String?
+  currency          String?
+  feeAmount         Decimal?      @map("fee_amount") @db.Decimal(19, 4)
+  feeUnknown        Boolean       @default(false) @map("fee_unknown")
+  providerReference String?       @map("provider_reference")
+  paidAt            DateTime?     @map("paid_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+  tenantId          String?       @map("tenant_id")
+  tenant            Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  order             Order?        @relation(fields: [orderId], references: [id])
 
   @@index([type])
   @@index([status])
@@ -772,6 +782,10 @@ model CheckoutForm {
   depositPercent         Int?             @map("deposit_percent")
   metaCapiAccessToken    String?          @map("meta_capi_access_token")
   metaCapiTestEventCode  String?          @map("meta_capi_test_event_code")
+  // Set when a form with submissions is removed (F-408): hidden from the list, slug stays reserved.
+  archivedAt             DateTime?        @map("archived_at")
+  // Provider that takes this form's online payments (F-400). Null means the default provider.
+  paymentProvider        String?          @map("payment_provider")
   product                Product          @relation(fields: [productId], references: [id])
   packages               FormPackage[]
   submissions            FormSubmission[]
@@ -861,32 +875,37 @@ model FormSubmission {
 /// pending-checkout cleanup cron. customerId/tenantId are plain scalars (no FK)
 /// since the row is transient.
 model PendingCheckout {
-  id                  Int      @id @default(autoincrement())
-  reference           String   @unique
-  tenantId            String   @map("tenant_id")
-  customerId          Int      @map("customer_id")
-  formId              Int      @map("form_id")
-  paymentMethod       String   @map("payment_method")
-  orderType           String   @map("order_type")
+  id                  Int       @id @default(autoincrement())
+  reference           String    @unique
+  tenantId            String    @map("tenant_id")
+  customerId          Int       @map("customer_id")
+  formId              Int       @map("form_id")
+  paymentMethod       String    @map("payment_method")
+  orderType           String    @map("order_type")
   currency            String
-  subtotal            Decimal  @db.Decimal(19, 4)
-  shippingCost        Decimal  @default(0) @map("shipping_cost") @db.Decimal(19, 4)
-  discount            Decimal  @default(0) @db.Decimal(19, 4)
-  totalAmount         Decimal  @map("total_amount") @db.Decimal(19, 4)
-  codAmount           Decimal? @map("cod_amount") @db.Decimal(19, 4)
-  balanceDue          Decimal  @default(0) @map("balance_due") @db.Decimal(19, 4)
-  paystackChargeMinor Int      @map("paystack_charge_minor")
-  orderItems          Json     @map("order_items")
-  formData            Json     @map("form_data")
-  selectedPackage     Json     @map("selected_package")
-  selectedUpsells     Json?    @map("selected_upsells")
-  ipAddress           String?  @map("ip_address")
-  userAgent           String?  @map("user_agent")
+  subtotal            Decimal   @db.Decimal(19, 4)
+  shippingCost        Decimal   @default(0) @map("shipping_cost") @db.Decimal(19, 4)
+  discount            Decimal   @default(0) @db.Decimal(19, 4)
+  totalAmount         Decimal   @map("total_amount") @db.Decimal(19, 4)
+  codAmount           Decimal?  @map("cod_amount") @db.Decimal(19, 4)
+  balanceDue          Decimal   @default(0) @map("balance_due") @db.Decimal(19, 4)
+  paystackChargeMinor Int       @map("paystack_charge_minor")
+  orderItems          Json      @map("order_items")
+  formData            Json      @map("form_data")
+  selectedPackage     Json      @map("selected_package")
+  selectedUpsells     Json?     @map("selected_upsells")
+  ipAddress           String?   @map("ip_address")
+  userAgent           String?   @map("user_agent")
   // Meta click identifiers, carried from checkout through to the Order created at
   // settlement so the Paystack Purchase CAPI event gets the same match keys as COD.
-  fbp                 String?  @map("fbp")
-  fbc                 String?  @map("fbc")
-  createdAt           DateTime @default(now()) @map("created_at")
+  fbp                 String?   @map("fbp")
+  fbc                 String?   @map("fbc")
+  // Provider that holds the payment (F-400). Settlement picks the adapter from it.
+  provider            String    @default("paystack")
+  // initiated | pending | failed | expired | needs_review (F-404)
+  status              String    @default("initiated")
+  lastCheckedAt       DateTime? @map("last_checked_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
 
   @@index([createdAt])
   @@map("pending_checkouts")
@@ -1706,4 +1725,25 @@ model UserSession {
   @@index([tenantId])
   @@index([userId])
   @@map("user_sessions")
+}
+
+// One payment-provider account per tenant and provider (F-400). The secret key is stored
+// encrypted (enc:v1:) and masked on read.
+model PaymentConnection {
+  id                  Int       @id @default(autoincrement())
+  tenantId            String    @map("tenant_id")
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  provider            String
+  mode                String    @default("test")
+  publicKey           String?   @map("public_key")
+  secretKey           String?   @map("secret_key")
+  isEnabled           Boolean   @default(true) @map("is_enabled")
+  supportedCurrencies String[]  @default([]) @map("supported_currencies")
+  lastCheckedAt       DateTime? @map("last_checked_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  @@unique([tenantId, provider])
+  @@index([tenantId])
+  @@map("payment_connections")
 }
