@@ -99,6 +99,12 @@ test.describe('public checkout at 390 px', () => {
     for (let i = 0; i < 2; i++) expect((await rows.nth(i).boundingBox())!.height).toBeLessThanOrEqual(80);
     await expect(rows.nth(1).getByText('Qty 3')).toBeVisible();
     await expect(rows.nth(1).getByTestId('package-edge-tag')).toHaveText('Most popular');
+    // COD-150: inputs (padding) and selects (h-12) reach 48 px
+    for (const el of [page.getByPlaceholder('Enter full name'), page.getByPlaceholder('Enter phone'), page.locator('select').first()]) {
+      const h = (await el.boundingBox())!.height;
+      expect(h).toBeGreaterThanOrEqual(48);
+      expect(h).toBeLessThanOrEqual(52);
+    }
     await page.screenshot({ path: `${SHOTS}/cod150-390-full.png`, fullPage: true });
 
     await fillCod(page);

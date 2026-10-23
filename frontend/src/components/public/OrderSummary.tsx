@@ -5,6 +5,8 @@ import { PaymentMethod } from '../../types/checkout-form';
 import { Button } from '../ui/Button';
 import { formatMoney } from '../../utils/money';
 import { whatsappUrl } from '../../utils/whatsapp';
+import { packageSaving } from '../../lib/packagePricing';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 
 type ProductPackage = PublicCheckoutForm['packages'][number];
 type Upsell = PublicCheckoutForm['upsells'][number];
@@ -46,9 +48,8 @@ interface OrderSummaryProps {
   /** COD is one of the buttons: the terms say you pay on delivery. */
   hasCod?: boolean;
   supportWhatsapp?: string | null;
-  /** Hosted page, desktop only: the product thumbnail and name at the top of the card. */
-  productImageUrl?: string;
-  productName?: string;
+  /** Shows the product thumbnail and name at the top of the card, on wide screens only. */
+  product?: { imageUrl?: string; name: string };
 }
 
 const SHAPE_CLASS: Record<NonNullable<OrderSummaryProps['buttonShape']>, string> = {
@@ -126,12 +127,12 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
   isDigital = false,
   hasCod = true,
   supportWhatsapp,
-  productImageUrl,
-  productName,
+  product,
 }) => {
-  const hasDiscount = selectedPackage?.originalPrice && selectedPackage.originalPrice > selectedPackage.price && selectedPackage.showDiscount !== false;
-  const packageOriginalPrice = hasDiscount ? selectedPackage.originalPrice! : selectedPackage?.price || 0;
-  const packageDiscount = hasDiscount ? (selectedPackage.originalPrice! - selectedPackage.price) : 0;
+  const isWide = useMediaQuery('(min-width: 1024px)');
+  const hasDiscount = !!selectedPackage && packageSaving(selectedPackage, currency).hasDiscount;
+  const packageOriginalPrice = selectedPackage && hasDiscount ? selectedPackage.originalPrice! : selectedPackage?.price || 0;
+  const packageDiscount = selectedPackage && hasDiscount ? (selectedPackage.originalPrice! - selectedPackage.price) : 0;
   const packageFinalPrice = selectedPackage?.price || 0;
 
   const addonsTotal = selectedAddons.reduce((sum, addon) => sum + addon.price, 0);
@@ -147,10 +148,10 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-6">
-      {productImageUrl && (
-        <div className="hidden lg:flex items-center gap-3 mb-4" data-testid="summary-product">
-          <img src={productImageUrl} alt="" className="w-16 h-16 rounded-lg border border-gray-200 object-cover flex-none" />
-          {productName && <p className="font-semibold text-gray-900 min-w-0">{productName}</p>}
+      {isWide && product?.imageUrl && (
+        <div className="flex items-center gap-3 mb-4" data-testid="summary-product">
+          <img src={product.imageUrl} alt="" width={64} height={64} loading="lazy" decoding="async" className="w-16 h-16 rounded-lg border border-gray-200 object-cover flex-none" />
+          <p className="font-semibold text-gray-900 min-w-0">{product.name}</p>
         </div>
       )}
       {showSummary && (
@@ -203,7 +204,7 @@ export const OrderSummary: React.FC<OrderSummaryProps> = ({
               <div key={addon.id} className="flex justify-between items-start gap-3">
                 <div>
                   <p className="text-sm font-medium text-gray-900">{addon.name}</p>
-                  <p className="text-xs text-gray-600">Qty: {addon.items?.quantity || 1}</p>
+                  <p className="text-xs text-gray-600">Qty: {addon.items?.quantity ?? 1}</p>
                 </div>
                 <p className="text-sm font-semibold text-gray-900" style={priceColor ? { color: priceColor } : undefined}>
                   {formatMoney(addon.price, currency)}

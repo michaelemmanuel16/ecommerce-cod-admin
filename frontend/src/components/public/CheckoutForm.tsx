@@ -205,7 +205,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   const fieldStyle = { ['--tw-ring-color' as string]: primaryColor } as React.CSSProperties;
 
   const fieldBase = (hasError: boolean) => {
-    const base = 'w-full min-h-[48px] px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:border-transparent transition-colors';
+    const base = 'w-full px-4 py-3 text-base focus:outline-none focus:ring-2 focus:border-transparent transition-colors';
     if (inputStyle === 'flat') {
       return cn(base, 'border-0 border-b-2 rounded-none bg-transparent px-1', hasError ? 'border-red-500' : 'border-gray-300');
     }
@@ -216,7 +216,8 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
   };
   const inputClassName = (hasError: boolean) => fieldBase(hasError);
   const selectClassName = (hasError: boolean) =>
-    cn(fieldBase(hasError), inputStyle === 'flat' ? 'bg-white' : '');
+    // A native select ignores line-height, so its 48 px comes from h-12, not from the padding.
+    cn(fieldBase(hasError), 'h-12', inputStyle === 'flat' ? 'bg-white' : '');
 
   function requiredRule(label: string): RegisterOptions | undefined {
     return { required: `${label} is required` };
@@ -474,17 +475,23 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
     </div>
   );
 
+  // The hosted page splits into the offer and a sticky summary from lg up; embedded stays one column.
+  const split = !embedded;
+  const rootClass = split ? 'min-h-screen bg-gray-50 py-6 px-4 sm:py-8' : 'w-full';
+  const containerClass = split ? 'max-w-xl lg:max-w-[1080px] mx-auto' : 'max-w-xl mx-auto';
+  const gridClass = split ? 'lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6 lg:items-start' : undefined;
+  const summaryClass = split ? 'mt-4 lg:mt-0 lg:sticky lg:top-6' : 'mt-4';
+
   return (
     // The public form keeps its own colours: it never reads the admin theme, so the admin's dark mode cannot change it.
     <div
-      className={embedded ? 'w-full' : 'min-h-screen bg-gray-50 py-6 px-4 sm:py-8'}
+      className={rootClass}
       data-testid="public-form-root"
       style={{ colorScheme: 'light', ...(pageBackground ? { backgroundColor: pageBackground } : {}) }}
     >
-      <div className={embedded ? 'max-w-xl mx-auto' : 'max-w-xl lg:max-w-[1080px] mx-auto'}>
+      <div className={containerClass}>
         <form onSubmit={preview ? (e) => { e.preventDefault(); setPreviewNotice(true); } : handleSubmit(onFormSubmit)}>
-          {/* One column below lg and always when embedded; the hosted page splits into the offer and a sticky summary from lg up. */}
-          <div className={embedded ? undefined : 'lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6 lg:items-start'} data-testid="checkout-layout">
+          <div className={gridClass} data-testid="checkout-layout">
             <div>
               {banner && <img src={banner} alt="" className="w-full max-h-64 object-cover rounded-2xl mb-5" data-testid="form-banner" />}
               {/* Product header (hideable) */}
@@ -518,7 +525,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
             </div>
 
             {/* Order summary: the price breakdown hides when the toggle is off, but the buttons always render. */}
-            <div className={embedded ? 'mt-4' : 'mt-4 lg:mt-0 lg:sticky lg:top-6'} data-testid="summary-column">
+            <div className={summaryClass} data-testid="summary-column">
               <OrderSummary
                 selectedPackage={selectedPackage}
                 selectedAddons={selectedAddons}
@@ -540,8 +547,7 @@ export const CheckoutForm: React.FC<CheckoutFormProps> = ({ formData, onSubmit, 
                 isDigital={isDigital}
                 hasCod={paymentMethods.some((o) => o.method === 'cod')}
                 supportWhatsapp={formData.supportWhatsapp}
-                productImageUrl={embedded ? undefined : formData.product?.imageUrl}
-                productName={formData.product?.name}
+                product={split && formData.product ? { imageUrl: formData.product.imageUrl, name: formData.product.name || formData.name } : undefined}
               />
               {previewNotice && <p role="status" className="mt-3 text-center text-sm font-medium text-gray-700">Preview only.</p>}
             </div>

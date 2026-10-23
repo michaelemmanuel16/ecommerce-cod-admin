@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { Check } from 'lucide-react';
 import { PublicCheckoutForm } from '../../services/public-orders.service';
 import { cn } from '../../utils/cn';
 import { formatMoney } from '../../utils/money';
+import { packageSaving } from '../../lib/packagePricing';
 
 type ProductPackage = PublicCheckoutForm['packages'][number];
 
@@ -27,13 +28,16 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
   textColor,
   priceColor,
 }) => {
+  const headingId = useId();
+  // One gap for every row; wider when a row carries an edge tag, so the tag clears the row above.
+  const anyEdgeTag = packages.some((p) => (p.showHighlight && p.highlightText) || p.isPopular);
   return (
     <div className="space-y-4">
-      <h2 id="package-selector-heading" className="text-lg font-semibold text-gray-900" style={textColor ? { color: textColor } : undefined}>Choose your package</h2>
-      <div role="radiogroup" aria-labelledby="package-selector-heading" className="flex flex-col gap-2">
+      <h2 id={headingId} className="text-lg font-semibold text-gray-900" style={textColor ? { color: textColor } : undefined}>Choose your package</h2>
+      <div role="radiogroup" aria-labelledby={headingId} className={cn('flex flex-col', anyEdgeTag ? 'gap-3.5' : 'gap-2')}>
         {packages.map((pkg) => {
           const isSelected = selectedPackageId === pkg.id;
-          const hasDiscount = !!pkg.originalPrice && pkg.originalPrice > pkg.price && pkg.showDiscount !== false;
+          const { hasDiscount, saveLabel } = packageSaving(pkg, currency);
           // Custom highlight if enabled, otherwise "Most popular".
           const edgeTag = pkg.showHighlight && pkg.highlightText ? pkg.highlightText : pkg.isPopular ? 'Most popular' : null;
           return (
@@ -45,7 +49,6 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
             onClick={() => onSelectPackage(pkg.id)}
             className={cn(
               'w-full min-h-[68px] px-3.5 py-2 rounded-xl border-2 transition-all text-left relative flex items-center gap-3',
-              edgeTag && 'mt-1.5',
               isSelected
                 ? 'border-[#0f172a] bg-gray-50'
                 : 'border-gray-200 hover:border-gray-300 bg-white'
@@ -96,14 +99,9 @@ export const PackageSelector: React.FC<PackageSelectorProps> = ({
               >
                 {formatMoney(pkg.price, currency)}
               </p>
-              {hasDiscount && pkg.discountType === 'percentage' && pkg.discountValue && (
+              {saveLabel && (
                 <span className="mt-0.5 px-2 text-xs leading-4 bg-green-100 text-green-700 font-semibold rounded" data-testid="package-saving">
-                  Save {pkg.discountValue}%
-                </span>
-              )}
-              {hasDiscount && pkg.discountType === 'fixed' && pkg.discountValue && (
-                <span className="mt-0.5 px-2 text-xs leading-4 bg-green-100 text-green-700 font-semibold rounded" data-testid="package-saving">
-                  Save {formatMoney(pkg.originalPrice! - pkg.price, currency)}
+                  {saveLabel}
                 </span>
               )}
             </div>

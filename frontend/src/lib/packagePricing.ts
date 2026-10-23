@@ -1,6 +1,7 @@
 // Package prices (F-414): final price = sets x product price - discount. One function for the Packages table, the live
 // preview and the save payload, so the three always agree.
 import type { ProductPackage } from '../types/checkout-form';
+import { formatMoney } from '../utils/money';
 
 type Priced = Pick<ProductPackage, 'quantity' | 'discountType' | 'discountValue'>;
 
@@ -48,4 +49,22 @@ export function withComputedPrices(packages: ProductPackage[], productPrice: num
     originalPrice: packageOriginalPrice(productPrice, pkg),
     price: packageFinalPrice(productPrice, pkg),
   }));
+}
+
+/** The public package shape the buyer sees: prices are already computed. */
+type PublicPriced = {
+  price: number;
+  originalPrice?: number;
+  discountType?: ProductPackage['discountType'];
+  discountValue?: number;
+  showDiscount?: boolean;
+};
+
+/** The one rule for "this package is discounted" on the public page, and the text of its saving pill. */
+export function packageSaving(pkg: PublicPriced, currency: string): { hasDiscount: boolean; saveLabel: string | null } {
+  const hasDiscount = !!pkg.originalPrice && pkg.originalPrice > pkg.price && pkg.showDiscount !== false;
+  if (!hasDiscount || !pkg.discountValue) return { hasDiscount, saveLabel: null };
+  if (pkg.discountType === 'percentage') return { hasDiscount, saveLabel: `Save ${pkg.discountValue}%` };
+  if (pkg.discountType === 'fixed') return { hasDiscount, saveLabel: `Save ${formatMoney(money(pkg.originalPrice! - pkg.price), currency)}` };
+  return { hasDiscount, saveLabel: null };
 }

@@ -52,6 +52,7 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
           const isSelected = selectedAddons.has(addon.id);
           const isExpanded = expandedAddons.has(addon.id);
           const expandable = hasExpandableContent(addon);
+          const qty = addon.items?.quantity ?? 1;
 
           return (
             <div
@@ -110,8 +111,8 @@ export const AddOnSelector: React.FC<AddOnSelectorProps> = ({
                         <span className="ml-2 px-2 py-0.5 bg-gray-900 text-white text-xs font-medium rounded align-middle">Popular</span>
                       )}
                     </h3>
-                    {(addon.items?.quantity || 1) > 1 && (
-                      <p className="text-sm text-gray-600">Qty {addon.items?.quantity}</p>
+                    {qty > 1 && (
+                      <p className="text-sm text-gray-600">Qty {qty}</p>
                     )}
                   </div>
 

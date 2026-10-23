@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyDiscount, packageDiscountAmount, packageFinalPrice, packageIssue, packageOriginalPrice, withComputedPrices } from '../../lib/packagePricing';
+import { applyDiscount, packageDiscountAmount, packageFinalPrice, packageIssue, packageOriginalPrice, packageSaving, withComputedPrices } from '../../lib/packagePricing';
 import type { ProductPackage } from '../../types/checkout-form';
 
 const pkg = (over: Partial<ProductPackage>): ProductPackage =>
@@ -66,5 +66,31 @@ describe('withComputedPrices', () => {
   it('leaves the packages alone when no product price is known', () => {
     const list = [pkg({ price: 12 })];
     expect(withComputedPrices(list, 0)).toBe(list);
+  });
+});
+
+describe('packageSaving (the one public discount rule)', () => {
+  const pub = (over: Record<string, unknown>) => ({ price: 90, originalPrice: 100, discountType: 'percentage' as const, discountValue: 10, ...over });
+
+  it('percentage: Save 10%', () => {
+    expect(packageSaving(pub({}), 'GHS')).toEqual({ hasDiscount: true, saveLabel: 'Save 10%' });
+  });
+
+  it('fixed with cents rounds to cents', () => {
+    const r = packageSaving(pub({ price: 59.7, originalPrice: 99.9, discountType: 'fixed', discountValue: 40.2 }), 'GHS');
+    expect(r.hasDiscount).toBe(true);
+    expect(r.saveLabel).toBe('Save GH₵40.20');
+  });
+
+  it('showDiscount false hides it', () => {
+    expect(packageSaving(pub({ showDiscount: false }), 'GHS')).toEqual({ hasDiscount: false, saveLabel: null });
+  });
+
+  it('a zero value is a discount with no pill', () => {
+    expect(packageSaving(pub({ discountValue: 0 }), 'GHS')).toEqual({ hasDiscount: true, saveLabel: null });
+  });
+
+  it('no originalPrice is no discount', () => {
+    expect(packageSaving(pub({ originalPrice: undefined }), 'GHS')).toEqual({ hasDiscount: false, saveLabel: null });
   });
 });

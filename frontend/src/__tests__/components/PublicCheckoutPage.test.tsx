@@ -101,19 +101,35 @@ describe('public checkout page sections (F-420)', () => {
     expect(screen.getByTestId('summary-column').className).not.toContain('sticky');
   });
 
-  it('inputs are at least 48 px tall', () => {
+  it('inputs are 48 px tall from padding (py-3 on a 24 px line)', () => {
     render(<CheckoutForm formData={form()} onSubmit={vi.fn()} />);
-    expect(screen.getByPlaceholderText('Enter full name').className).toContain('min-h-[48px]');
-    expect(screen.getByPlaceholderText('Enter phone').className).toContain('min-h-[48px]');
+    expect(screen.getByPlaceholderText('Enter full name').className).toContain('py-3');
+    expect(screen.getByPlaceholderText('Enter phone').className).toContain('py-3');
   });
 
-  it('the summary card shows the product image on the hosted page only', () => {
+  const setWide = (wide: boolean) =>
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) => ({ matches: wide, media: query, onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn() }) as unknown as MediaQueryList,
+    );
+
+  it('the summary card shows the product image on the hosted page at lg and up, never embedded', () => {
+    setWide(true);
     const f = form({ product: { name: 'Copybook', price: 200, productType: 'physical', imageUrl: 'https://img.test/p.png' } as never });
     const { unmount } = render(<CheckoutForm formData={f} onSubmit={vi.fn()} />);
-    expect(screen.getByTestId('summary-product').querySelector('img')).toHaveAttribute('src', 'https://img.test/p.png');
+    const img = screen.getByTestId('summary-product').querySelector('img')!;
+    expect(img).toHaveAttribute('src', 'https://img.test/p.png');
+    expect(img).toHaveAttribute('loading', 'lazy');
     unmount();
     render(<CheckoutForm formData={f} onSubmit={vi.fn()} embedded />);
     expect(screen.queryByTestId('summary-product')).toBeNull();
+  });
+
+  it('the summary thumbnail does not render when the media query does not match', () => {
+    setWide(false);
+    const f = form({ product: { name: 'Copybook', price: 200, productType: 'physical', imageUrl: 'https://img.test/p.png' } as never });
+    const { container } = render(<CheckoutForm formData={f} onSubmit={vi.fn()} />);
+    expect(screen.queryByTestId('summary-product')).toBeNull();
+    expect(container.querySelector('img[src="https://img.test/p.png"]')).toBeNull();
   });
 
   it('shows a highlight text instead of Most popular when the owner set one', () => {
