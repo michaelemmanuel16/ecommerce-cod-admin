@@ -14,7 +14,7 @@
  * They come from their own random seed (FIXTURE_SEED + 1), so the October plan is unchanged.
  *
  * Part 3 (M4-T05, F-651 to F-656) adds the stock of docs/mockups/v2/inventory.html: locations, levels, the 9 October
- * shipment received 288 of 300, a 3PL count of 88 on 15 October, 20 copybook sets in transit to Kofi, and the
+ * shipment received 288 of 300, a 3PL count of 188 on 15 October (system 200), 20 copybook sets in transit to Kofi, and the
  * returns sent 41 / received 36. Reserved is never stored: it comes from the orders (see STOCK_AT).
  *
  * `buildFixturePlan()` is pure (no database): it makes every row in memory from a fixed random seed.
@@ -113,12 +113,13 @@ const FIRST_ORDER_NUMBER = 23001;
 
 /**
  * On hand at the two stock holders of F-652 (inventory.html). Products not listed hold 0 and have no level row.
- * Reserved is not stored; it is read from the orders at each holder. NOTE: the mockup's reserved samples (Logiswift
- * 34 / 11 / 14, Kofi copybook 11) cannot come from these orders: 148 orders are out for delivery (100 at Logiswift,
+ * Reserved is not stored; it is read from the orders at each holder: 148 orders are out for delivery (100 at Logiswift,
  * 20 at Kofi) and each holds at least one copybook set, so reserved copybooks are 116 at Logiswift and 21 at Kofi.
+ * The mockup's samples (Logiswift on hand 100, reserved 34) cannot hold with those orders. Logiswift copybook on hand is
+ * therefore 200, so that available to sell (on hand less reserved) stays above 0 and the public checkout accepts an order.
  */
 export const STOCK_AT: Record<'logiswift' | 'kofi', Partial<Record<Sku, number>>> = {
-  logiswift: { 'MG-COPYBOOK-SET': 100, 'MG-REFILL-PENS': 62, 'MG-GRIP-TRAINER': 180 },
+  logiswift: { 'MG-COPYBOOK-SET': 200, 'MG-REFILL-PENS': 62, 'MG-GRIP-TRAINER': 180 },
   kofi: { 'MG-COPYBOOK-SET': 36, 'MG-REFILL-PENS': 18, 'MG-GRIP-TRAINER': 45 },
 };
 /** Product.stockQuantity is the cached sum of on-hand over active physical locations (F-651). */
@@ -994,11 +995,11 @@ export async function seedFixture(prisma: PrismaClient, opts: SeedFixtureOptions
       receivedById: admin.id, reason: 'not_received', createdById: admin.id, createdAt: new Date(Date.UTC(2026, 9, 14, 12, 0, 0)),
     },
   });
-  // 3PL count of Logiswift on 15 October: copybook 88 against our 100 (12 off); pens and grip trainer match.
+  // 3PL count of Logiswift on 15 October: copybook 188 against our 200 (12 off); pens and grip trainer match.
   const count = await prisma.stockCount.create({
     data: { tenantId, locationId: locationId['Logiswift'], countDate: new Date(Date.UTC(2026, 9, 15)), source: 'three_pl_dashboard', countedById: admin.id, createdAt: new Date(Date.UTC(2026, 9, 15, 9, 0, 0)) },
   });
-  const counted: Array<[Sku, number]> = [['MG-COPYBOOK-SET', 88], ['MG-REFILL-PENS', 62], ['MG-GRIP-TRAINER', 180]];
+  const counted: Array<[Sku, number]> = [['MG-COPYBOOK-SET', 188], ['MG-REFILL-PENS', 62], ['MG-GRIP-TRAINER', 180]];
   await prisma.stockCountLine.createMany({
     data: counted.map(([sku, countedQuantity]) => {
       const systemQuantity = STOCK_AT.logiswift[sku] as number;

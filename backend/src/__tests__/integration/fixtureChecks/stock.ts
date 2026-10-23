@@ -10,17 +10,17 @@ export function stockFixtureChecks(getTenantId: () => string): void {
     const rows = <T>(sql: string) => prismaBase.$queryRawUnsafe<T[]>(sql, getTenantId());
     const byName = (list: Array<{ k: string; n: bigint | string }>) => Object.fromEntries(list.map((r) => [r.k, Number(r.n)]));
 
-    it('on hand: Logiswift 100 / 62 / 180 (342), Kofi 36 / 18 / 45 (99)', async () => {
+    it('on hand: Logiswift 200 / 62 / 180 (442), Kofi 36 / 18 / 45 (99)', async () => {
       const level = byName(await rows(`
         SELECT l.name || ' ' || p.sku AS k, s.quantity AS n FROM stock_levels s
         JOIN stock_locations l ON l.id = s.location_id JOIN products p ON p.id = s.product_id WHERE s.tenant_id = $1`));
       expect(level).toEqual({
-        'Logiswift MG-COPYBOOK-SET': 100, 'Logiswift MG-REFILL-PENS': 62, 'Logiswift MG-GRIP-TRAINER': 180,
+        'Logiswift MG-COPYBOOK-SET': 200, 'Logiswift MG-REFILL-PENS': 62, 'Logiswift MG-GRIP-TRAINER': 180,
         'Kofi Appiah MG-COPYBOOK-SET': 36, 'Kofi Appiah MG-REFILL-PENS': 18, 'Kofi Appiah MG-GRIP-TRAINER': 45,
       });
       const total = byName(await rows(`
         SELECT l.name AS k, SUM(s.quantity) AS n FROM stock_levels s JOIN stock_locations l ON l.id = s.location_id WHERE s.tenant_id = $1 GROUP BY 1`));
-      expect(total).toEqual({ Logiswift: 342, 'Kofi Appiah': 99 });
+      expect(total).toEqual({ Logiswift: 442, 'Kofi Appiah': 99 });
     });
 
     it('Product.stockQuantity is the sum of on-hand over the locations', async () => {
@@ -42,11 +42,24 @@ export function stockFixtureChecks(getTenantId: () => string): void {
     it('reserved comes from the orders at the holder, not from a stored number', async () => {
       // The mockup's samples (Logiswift 34 / 11 / 14, Kofi copybook 11) are lower than the number of out-for-delivery
       // orders (100 at Logiswift, 20 at Kofi; one copybook set or more each), so the order data gives 116 and 21.
+      // Logiswift copybook on hand is 200 for that reason (see STOCK_AT).
       const reserved = byName(await rows(`
         SELECT u.first_name || ' ' || p.sku AS k, SUM(i.quantity) AS n FROM orders o
         JOIN order_items i ON i.order_id = o.id JOIN products p ON p.id = i.product_id JOIN users u ON u.id = o.delivery_agent_id
         WHERE o.tenant_id = $1 AND o.status IN ('confirmed','preparing','ready_for_pickup','out_for_delivery') AND u.first_name IN ('Logiswift','Kofi') GROUP BY 1`));
       expect(reserved).toEqual({ 'Logiswift MG-COPYBOOK-SET': 116, 'Kofi MG-COPYBOOK-SET': 21 });
+    });
+
+    it('available to sell (on hand less reserved at the holders) is 0 or more for every product', async () => {
+      const rowsAts = await rows<{ sku: string; on_hand: bigint; reserved: bigint }>(`
+        SELECT p.sku,
+               COALESCE((SELECT SUM(s.quantity) FROM stock_levels s WHERE s.product_id = p.id), 0) AS on_hand,
+               COALESCE((SELECT SUM(i.quantity) FROM order_items i JOIN orders o ON o.id = i.order_id
+                         WHERE i.product_id = p.id AND o.delivery_agent_id IS NOT NULL
+                           AND o.status IN ('confirmed','preparing','ready_for_pickup','out_for_delivery')), 0) AS reserved
+        FROM products p WHERE p.tenant_id = $1`);
+      expect(rowsAts.length).toBeGreaterThan(0);
+      for (const r of rowsAts) expect([r.sku, Number(r.on_hand) - Number(r.reserved) >= 0]).toEqual([r.sku, true]);
     });
 
     it('Kofi has 20 copybook sets in transit from Logiswift', async () => {
@@ -67,13 +80,13 @@ export function stockFixtureChecks(getTenantId: () => string): void {
       });
     });
 
-    it('the 3PL count of 15 October: copybook 88 against 100 (12 off), pens and grip trainer match', async () => {
+    it('the 3PL count of 15 October: copybook 188 against 200 (12 off), pens and grip trainer match', async () => {
       const lines = await rows<{ k: string; system: number; counted: number; diff: number; day: string; source: string }>(`
         SELECT p.sku AS k, cl.system_quantity AS system, cl.counted_quantity AS counted, cl.difference AS diff,
                to_char(c.count_date, 'YYYY-MM-DD') AS day, c.source::text AS source
         FROM stock_count_lines cl JOIN stock_counts c ON c.id = cl.count_id JOIN products p ON p.id = cl.product_id WHERE cl.tenant_id = $1 ORDER BY p.sku`);
       expect(lines.map((l) => [l.k, l.system, l.counted, l.diff, l.day, l.source])).toEqual([
-        ['MG-COPYBOOK-SET', 100, 88, -12, '2026-10-15', 'three_pl_dashboard'],
+        ['MG-COPYBOOK-SET', 200, 188, -12, '2026-10-15', 'three_pl_dashboard'],
         ['MG-GRIP-TRAINER', 180, 180, 0, '2026-10-15', 'three_pl_dashboard'],
         ['MG-REFILL-PENS', 62, 62, 0, '2026-10-15', 'three_pl_dashboard'],
       ]);
