@@ -277,6 +277,15 @@ describe('Orders actions: bulk bar (M3-T44, F-313 to F-315)', () => {
     await waitFor(() => expect(toast()).toHaveTextContent('None of these orders can be deleted.'));
   });
 
+  it('the bulk assign menu is capped to the space on screen and scrolls inside (T5)', async () => {
+    renderPage();
+    await pick(24113);
+    await userEvent.click(screen.getByRole('button', { name: /Assign to call rep/ }));
+    const menu = await screen.findByRole('menu', { name: 'Assign to call rep' });
+    expect(menu).toHaveClass('fixed');
+    expect(menu.style.maxHeight).toMatch(/px$/);
+  });
+
   it('bulk assign to a call rep and to a delivery agent', async () => {
     svc.bulkAssign.mockResolvedValue({ succeeded: [24113, 24112], failed: [] });
     renderPage();

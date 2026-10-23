@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { usePopover } from '../../components/shell/usePopover';
+import { FloatingMenu } from './FloatingMenu';
 
 interface PopMenuProps {
   label: string;
@@ -10,20 +10,25 @@ interface PopMenuProps {
   children: (close: () => void) => ReactNode;
 }
 
-/** A button with a menu under it (.mwrap > .btn + .menu), used by the bulk bar. */
+/**
+ * A button with a menu under it, used by the bulk bar. The menu is a FloatingMenu: a long list (every call rep)
+ * scrolls inside it and stays on the screen; it closes itself on an outside click, Escape, a scroll outside it and a resize.
+ */
 export function PopMenu({ label, icon, className, children }: PopMenuProps) {
-  const menu = usePopover();
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setOpen(false), []);
   return (
-    <div className="mwrap" ref={menu.wrapRef}>
-      <button ref={menu.triggerRef} type="button" className={`btn${className ? ` ${className}` : ''}`} aria-haspopup="menu" aria-expanded={menu.open} onClick={menu.toggle}>
+    <div className="mwrap">
+      <button ref={triggerRef} type="button" className={`btn${className ? ` ${className}` : ''}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {icon}
         {label}
         <ChevronDown style={{ width: 15, height: 15 }} />
       </button>
-      {menu.open && (
-        <div className="menu left" role="menu" aria-label={label}>
-          {children(menu.close)}
-        </div>
+      {open && triggerRef.current && (
+        <FloatingMenu anchor={triggerRef.current} label={label} align="left" onClose={close}>
+          {children(close)}
+        </FloatingMenu>
       )}
     </div>
   );
