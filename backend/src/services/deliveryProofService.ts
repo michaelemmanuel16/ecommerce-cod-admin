@@ -9,6 +9,8 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import prisma from '../utils/prisma';
 import * as Money from '../utils/money';
+import { fullName } from '../utils/nameUtils';
+import { resolveTenantId } from '../utils/tenantContext';
 
 export const PROOF_LINK_TTL_SECONDS = 10 * 60;
 
@@ -60,13 +62,20 @@ export interface AttemptView {
   partner: { id: number; name: string };
 }
 
-/** The proof block and the attempt list of one order. The order must already have been checked by the caller. */
-export async function proofAndAttempts(orderId: number): Promise<{ proof: ProofBlock; attempts: AttemptView[] }> {
-  const [delivery, attempts, cod] = await Promise.all([
-    prisma.delivery.findUnique({
-      where: { orderId },
-      select: { id: true, tenantId: true, proofType: true, proofImageUrl: true, proofData: true, recipientName: true, recipientPhone: true, actualDeliveryTime: true },
-    }),
+/** The proof fields of a delivery as `getDeliveryByOrderId` returns them (time as an ISO string). */
+export interface LoadedDelivery {
+  id: number;
+  proofType: string | null;
+  proofData: unknown;
+  proofImageUrl: string | null;
+  recipientName: string | null;
+  recipientPhone: string | null;
+  actualDeliveryTime: string | null;
+}
+
+/** The proof block and the attempt list of one order. The order must already have been checked by the caller, which passes the delivery it loaded. */
+export async function proofAndAttempts(orderId: number, delivery: LoadedDelivery): Promise<{ proof: ProofBlock; attempts: AttemptView[] }> {
+  const [attempts, cod] = await Promise.all([
     prisma.deliveryAttempt.findMany({
       where: { orderId },
       orderBy: [{ attemptedAt: 'asc' }, { id: 'asc' }],
@@ -75,24 +84,23 @@ export async function proofAndAttempts(orderId: number): Promise<{ proof: ProofB
     prisma.transaction.findFirst({ where: { orderId, type: 'cod_collection', status: 'collected' }, select: { amount: true } }),
   ]);
 
-  const hasPhoto = !!delivery?.proofImageUrl && !!delivery.tenantId;
-  const recorded = !!delivery && !!(delivery.proofImageUrl || delivery.proofData || delivery.recipientName || delivery.actualDeliveryTime);
   return {
     proof: {
-      recorded,
-      proofType: delivery?.proofType ?? null,
-      recipientName: delivery?.recipientName ?? null,
-      recipientPhone: delivery?.recipientPhone ?? null,
-      time: delivery?.actualDeliveryTime?.toISOString() ?? null,
+      // An order with no delivery row reads all null here, so it is not recorded
+      recorded: !!(delivery.proofImageUrl || delivery.proofData || delivery.recipientName || delivery.actualDeliveryTime),
+      proofType: delivery.proofType,
+      recipientName: delivery.recipientName,
+      recipientPhone: delivery.recipientPhone,
+      time: delivery.actualDeliveryTime,
       cashCollected: cod ? Money.toApi(cod.amount) : null,
-      photoUrl: hasPhoto ? signedProofPhotoUrl({ id: delivery!.id, tenantId: delivery!.tenantId! }) : null,
+      photoUrl: delivery.proofImageUrl ? signedProofPhotoUrl({ id: delivery.id, tenantId: resolveTenantId() }) : null,
     },
     attempts: attempts.map((a) => ({
       id: a.id,
       attemptedAt: a.attemptedAt.toISOString(),
       reason: a.reason,
       note: a.note,
-      partner: { id: a.partner.id, name: `${a.partner.firstName} ${a.partner.lastName}`.trim() },
+      partner: { id: a.partner.id, name: fullName(a.partner) },
     })),
   };
 }

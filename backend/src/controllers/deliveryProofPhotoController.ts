@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import fs from 'fs';
 import path from 'path';
 import prisma from '../utils/prisma';
 import { runInTenant } from '../utils/tenantContext';
@@ -29,11 +28,13 @@ export const getProofPhoto = async (req: Request, res: Response): Promise<void> 
   }
   if (url.startsWith('/uploads/')) {
     const file = path.join(uploadDir, path.basename(url));
-    if (!fs.existsSync(file)) {
-      res.status(404).json({ error: 'Photo not found' });
-      return;
-    }
-    res.sendFile(file);
+    await new Promise<void>((done) => {
+      res.sendFile(file, (err) => {
+        // A missing file is a 404; a send that failed after it began has no status left to change
+        if (err && !res.headersSent) res.status(404).json({ error: 'Photo not found' });
+        done();
+      });
+    });
     return;
   }
   if (isStorageUrl(url)) {

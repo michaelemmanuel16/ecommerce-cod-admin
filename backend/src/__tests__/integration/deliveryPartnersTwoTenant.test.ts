@@ -8,12 +8,12 @@ import '../mocks/socketInstance.mock';
 import request from 'supertest';
 import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
+import { bearer } from './helpers/superAdminToken';
 import { createTwoTenants, TwoTenants } from './helpers/twoTenants';
 import { signedProofPhotoUrl } from '../../services/deliveryProofService';
 
 const WIDE = 'from=2020-01-01&to=2100-01-01';
 let pair: TwoTenants;
-const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 const extraOrder = (tenantId: string, customerId: number, data: Record<string, unknown>) =>
   prismaBase.order.create({
@@ -42,7 +42,7 @@ afterAll(async () => {
 describe('tenant A never sees tenant B (T18 reads)', () => {
   it('list: only A partners, and A numbers', async () => {
     const { a, b } = pair;
-    const res = await request(app).get(`/api/delivery-partners?${WIDE}`).set(auth(a.users.admin.token));
+    const res = await request(app).get(`/api/delivery-partners?${WIDE}`).set(bearer(a.users.admin.token));
     expect(res.status).toBe(200);
     expect(res.body.rows.map((r: any) => r.partnerId)).toEqual([a.users.deliveryAgent.id]);
     expect(res.body.rows[0]).toMatchObject({ assigned: 2, outNow: 1, failed: 1, baseTown: `Town ${a.marker}`, daysToPay: 7 });
@@ -51,7 +51,7 @@ describe('tenant A never sees tenant B (T18 reads)', () => {
 
   it('summary, waiting and failure-reasons carry nothing of B', async () => {
     const { a, b } = pair;
-    const h = auth(a.users.admin.token);
+    const h = bearer(a.users.admin.token);
     const summary = await request(app).get(`/api/delivery-partners/summary?${WIDE}`).set(h);
     expect(summary.body.outNow).toEqual({ orders: 1, partners: 1 });
     expect(summary.body.waiting.orders).toBe(0);
@@ -61,7 +61,7 @@ describe('tenant A never sees tenant B (T18 reads)', () => {
     expect(reasons.body.total).toBe(1);
     expect(Object.fromEntries(reasons.body.reasons.map((r: any) => [r.reason, r.count]))).toMatchObject({ not_reachable: 1, refused: 0 });
     // B's own view has its own rows
-    const bWaiting = await request(app).get('/api/delivery-partners/waiting').set(auth(b.users.admin.token));
+    const bWaiting = await request(app).get('/api/delivery-partners/waiting').set(bearer(b.users.admin.token));
     expect(bWaiting.body.orders).toBe(1);
     // A cannot filter by B's partner id
     const other = await request(app).get(`/api/delivery-partners/failure-reasons?${WIDE}&partnerId=${b.users.deliveryAgent.id}`).set(h);
@@ -72,14 +72,14 @@ describe('tenant A never sees tenant B (T18 reads)', () => {
 describe('tenant A never reaches tenant B (T19 writes)', () => {
   it('a partner created in A is not in B, and B ids are 404 for every A write', async () => {
     const { a, b } = pair;
-    const ha = auth(a.users.admin.token);
+    const ha = bearer(a.users.admin.token);
     const created = await request(app).post('/api/delivery-partners').set(ha).send({
       kind: 'person', firstName: 'Tenant', lastName: `A${a.marker}`, email: `partner-${a.marker}@codadmin.test`,
     });
     expect(created.status).toBe(201);
-    const bList = await request(app).get(`/api/delivery-partners?${WIDE}`).set(auth(b.users.admin.token));
+    const bList = await request(app).get(`/api/delivery-partners?${WIDE}`).set(bearer(b.users.admin.token));
     expect(JSON.stringify(bList.body)).not.toContain(`A${a.marker}`);
-    expect((await request(app).get(`/api/delivery-partners/${created.body.partner.id}`).set(auth(b.users.admin.token))).status).toBe(404);
+    expect((await request(app).get(`/api/delivery-partners/${created.body.partner.id}`).set(bearer(b.users.admin.token))).status).toBe(404);
 
     const bId = b.users.deliveryAgent.id;
     expect((await request(app).get(`/api/delivery-partners/${bId}`).set(ha)).status).toBe(404);
@@ -92,10 +92,10 @@ describe('tenant A never reaches tenant B (T19 writes)', () => {
 
   it('the region review lists the caller tenant only', async () => {
     const { a, b } = pair;
-    const review = await request(app).get('/api/delivery-partners/region-review').set(auth(a.users.admin.token));
+    const review = await request(app).get('/api/delivery-partners/region-review').set(bearer(a.users.admin.token));
     expect(review.status).toBe(200);
     expect(JSON.stringify(review.body)).not.toContain(b.marker);
-    const bReview = await request(app).get('/api/delivery-partners/region-review').set(auth(b.users.admin.token));
+    const bReview = await request(app).get('/api/delivery-partners/region-review').set(bearer(b.users.admin.token));
     expect(bReview.body.regions.map((r: any) => r.value)).toContain(`Region ${b.marker}`);
   });
 });
@@ -103,11 +103,11 @@ describe('tenant A never reaches tenant B (T19 writes)', () => {
 describe('tenant A never reaches tenant B (T20 proof and attempts)', () => {
   it('by-order shows A attempts only; a B order is 404; a photo link of B does not open under A', async () => {
     const { a, b } = pair;
-    const own = await request(app).get(`/api/deliveries/by-order/${a.ids.order}`).set(auth(a.users.admin.token));
+    const own = await request(app).get(`/api/deliveries/by-order/${a.ids.order}`).set(bearer(a.users.admin.token));
     expect(own.status).toBe(200);
     expect(own.body.attempts.map((x: any) => x.note)).toContain(`attempt ${a.marker}`);
     expect(JSON.stringify(own.body)).not.toContain(b.marker);
-    expect((await request(app).get(`/api/deliveries/by-order/${b.ids.order}`).set(auth(a.users.admin.token))).status).toBe(404);
+    expect((await request(app).get(`/api/deliveries/by-order/${b.ids.order}`).set(bearer(a.users.admin.token))).status).toBe(404);
 
     await prismaBase.delivery.update({ where: { id: b.ids.delivery }, data: { proofImageUrl: '/uploads/none.png' } });
     const link = signedProofPhotoUrl({ id: b.ids.delivery, tenantId: b.id });

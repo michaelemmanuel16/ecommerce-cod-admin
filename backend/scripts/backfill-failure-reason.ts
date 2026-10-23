@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { assertNotProduction, hasFlag, option } from './lib/scriptArgs';
-import { backfillFailureReasons, ReasonCounts } from '../src/services/failureReasonBackfill';
+import { backfillFailureReasons, emptyCounts, ReasonCounts } from '../src/services/failureReasonBackfill';
 
 // M4-T18 (F-705). Fills Order.failureReason for failed_delivery and returned orders that have none, from the free text
 // they carry (history note and metadata, Delivery.notes). Obvious words map to the FailureReason list; the rest is "other".
@@ -16,7 +16,7 @@ async function main() {
   const tenants = await prisma.tenant.findMany({ where: onlyTenant ? { id: onlyTenant } : {}, select: { id: true, slug: true }, orderBy: { slug: 'asc' } });
   console.log(dryRun ? 'DRY RUN (nothing is written)' : 'APPLY');
 
-  const total: ReasonCounts = { not_reachable: 0, refused: 0, wrong_address: 0, rescheduled: 0, other: 0 };
+  const total = emptyCounts();
   let orders = 0;
   for (const tenant of tenants) {
     const r = await backfillFailureReasons(tenant.id, { dryRun });

@@ -80,7 +80,7 @@ export const getOne = async (req: AuthRequest, res: Response): Promise<void> => 
 /** POST /api/delivery-partners */
 export const create = async (req: AuthRequest, res: Response): Promise<void> => {
   const created = await createPartner(req.user!, req.body);
-  res.status(201).json({ partner: await getPartner(created.user.id, { showMoney: await canSeeMoney(req) }) });
+  res.status(201).json({ partner: await getPartner(created.user.id, { showMoney: await canSeeMoney(req), isNew: true }) });
 };
 
 /** PATCH /api/delivery-partners/:id */

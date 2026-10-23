@@ -15,7 +15,8 @@ const BATCH = 500;
 
 export type ReasonCounts = Record<FailureReason, number>;
 
-const emptyCounts = (): ReasonCounts => ({ not_reachable: 0, refused: 0, wrong_address: 0, rescheduled: 0, other: 0 });
+export const emptyCounts = (): ReasonCounts =>
+  Object.fromEntries(Object.values(FailureReason).map((reason) => [reason, 0])) as ReasonCounts;
 
 interface FailedOrder {
   id: number;
@@ -59,7 +60,8 @@ export async function backfillFailureReasons(tenantId: string, opts: { dryRun?: 
       for (const row of rows) {
         const reason = reasonOf(row);
         counts[reason] += 1;
-        byReason.set(reason, [...(byReason.get(reason) ?? []), row.id]);
+        const ids = byReason.get(reason);
+        if (ids) ids.push(row.id); else byReason.set(reason, [row.id]);
       }
       orders += rows.length;
       if (!opts.dryRun) {

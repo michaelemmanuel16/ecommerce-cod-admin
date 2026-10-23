@@ -73,6 +73,6 @@ export const getDeliveryByOrderId = async (req: AuthRequest, res: Response): Pro
   const id = parseInt(req.params.orderId, 10);
   const delivery = await deliveryService.getDeliveryByOrderId(id, isAgent(req) ? req.user!.id : undefined);
   // F-711, F-713: the proof block (photo by a signed link that expires) and the attempts. The stored photo address is not sent to admin roles.
-  const { proof, attempts } = await proofAndAttempts(id);
+  const { proof, attempts } = await proofAndAttempts(id, delivery);
   res.json({ delivery: isAgent(req) ? delivery : { ...delivery, proofImageUrl: null }, proof, attempts });
 };

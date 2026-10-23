@@ -16,8 +16,8 @@ import { emitToTenant } from '../sockets';
 import { adminService } from './adminService';
 import { auditService } from './auditService';
 import { DEFAULT_DAYS_TO_PAY } from './orderPaymentTag';
-import { partnerTypeOf, type PartnerType } from './deliveryPartnerService';
-import * as Money from '../utils/money';
+import { defaultDataSource, feeRuleView, partnerTypeOf, type PartnerType } from './deliveryPartnerService';
+import { fullName } from '../utils/nameUtils';
 
 /** Vehicle types the Staff person modal offers (F-707). */
 export const VEHICLE_TYPES = ['Motorbike', 'Car', 'Tricycle', 'Bicycle', 'On foot'] as const;
@@ -70,14 +70,12 @@ export async function createPartner(requester: Requester, input: CreatePartnerIn
   const firstName = clean(input.firstName);
   const lastName = clean(input.lastName);
   if (!firstName) throw new AppError('First name is required', 400);
-  if (input.kind !== 'person' && input.kind !== 'company') throw new AppError('Kind must be person or company', 400);
   const vehicleType = input.vehicleType ? requireVehicleType(input.vehicleType) : undefined;
   const daysToPay = input.daysToPay ?? DEFAULT_DAYS_TO_PAY;
-  if (!Number.isInteger(daysToPay) || daysToPay < 0 || daysToPay > 365) throw new AppError('Days to pay must be a whole number from 0 to 365', 400);
 
   const tenantId = resolveTenantId();
   const type: PartnerType = partnerTypeOf(input.kind as UserKind);
-  const name = `${firstName} ${lastName}`.trim();
+  const name = fullName({ firstName, lastName });
 
   try {
     return await prisma.$transaction(async (tx) => {
@@ -102,17 +100,15 @@ export async function createPartner(requester: Requester, input: CreatePartnerIn
           userId: user.id,
           daysToPay,
           isTrial: input.isTrial ?? false,
-          // A person with a login uses the app; a company sends a file (F-700, F-708)
-          dataSource: input.dataSource ?? (input.kind === 'company' ? 'csv' : 'app'),
+          dataSource: input.dataSource ?? defaultDataSource(input.kind),
           baseTown: clean(input.baseTown) || null,
         },
       });
-      await tx.auditLog.create({
-        data: {
-          tenantId, userId: requester.id, actorKind: 'person', channel: 'app',
-          action: 'create', resource: 'delivery_partner', resourceId: String(user.id),
-          metadata: { kind: input.kind, locationId: location.id },
-        },
+      await auditService.record({
+        actorId: requester.id, actorKind: 'person', channel: 'app',
+        action: 'create', resource: 'delivery_partner', resourceId: String(user.id),
+        metadata: { kind: input.kind, locationId: location.id },
+        tx,
       });
       return { user, location, profile, type };
     });
@@ -145,16 +141,14 @@ async function loadPartner(partnerId: number) {
 }
 
 /** One partner with its profile and stock location. Fee rules are added by the caller when the role may see money. */
-export async function getPartner(partnerId: number, opts: { showMoney: boolean }) {
+export async function getPartner(partnerId: number, opts: { showMoney: boolean; /** Just created: it has no fee rules, so none are read. */ isNew?: boolean }) {
   const user = await loadPartner(partnerId);
   const profile = user.partnerProfile;
-  const feeRules = opts.showMoney ? await prisma.feeRule.findMany({ where: { partnerUserId: partnerId } }) : null;
-  const feeRule = feeRules
-    ? feeRules.reduce<Record<string, string | null>>((acc, r) => ({ ...acc, [r.outcome]: Money.toApi(r.amount) }), { delivered: null, failed: null, returned: null })
-    : undefined;
+  const feeRules = !opts.showMoney ? null : opts.isNew ? [] : await prisma.feeRule.findMany({ where: { partnerUserId: partnerId } });
+  const feeRule = feeRules ? feeRuleView(feeRules) : undefined;
   return {
     id: user.id,
-    name: `${user.firstName} ${user.lastName}`.trim(),
+    name: fullName(user),
     firstName: user.firstName,
     lastName: user.lastName,
     email: user.email,
@@ -168,7 +162,7 @@ export async function getPartner(partnerId: number, opts: { showMoney: boolean }
     profile: {
       daysToPay: profile?.daysToPay ?? DEFAULT_DAYS_TO_PAY,
       isTrial: profile?.isTrial ?? false,
-      dataSource: profile?.dataSource ?? (user.kind === 'company' ? 'csv' : 'app'),
+      dataSource: profile?.dataSource ?? defaultDataSource(user.kind),
       baseTown: profile?.baseTown ?? null,
     },
     stockLocation: user.stockLocations[0] ?? null,
@@ -179,9 +173,6 @@ export async function getPartner(partnerId: number, opts: { showMoney: boolean }
 /** Profile fields and the vehicle. Name, phone, pay and login are edited in the Staff modal. A partner with no profile gets one. */
 export async function updatePartner(requester: Requester, partnerId: number, input: UpdatePartnerInput) {
   const before = await loadPartner(partnerId);
-  if (input.daysToPay !== undefined && (!Number.isInteger(input.daysToPay) || input.daysToPay < 0 || input.daysToPay > 365)) {
-    throw new AppError('Days to pay must be a whole number from 0 to 365', 400);
-  }
   const vehicleType = input.vehicleType === undefined ? undefined : requireVehicleType(input.vehicleType);
   const tenantId = resolveTenantId();
 
@@ -204,21 +195,19 @@ export async function updatePartner(requester: Requester, partnerId: number, inp
         create: {
           tenantId, userId: partnerId,
           daysToPay: DEFAULT_DAYS_TO_PAY,
-          dataSource: before.kind === 'company' ? 'csv' : 'app',
+          dataSource: defaultDataSource(before.kind),
           ...profileData,
         },
       });
     }
     if (Object.keys(userData).length > 0) await tx.user.update({ where: { id: partnerId }, data: userData });
-    await tx.auditLog.create({
-      data: {
-        tenantId, userId: requester.id, actorKind: 'person', channel: 'app',
-        action: 'update', resource: 'delivery_partner', resourceId: String(partnerId),
-        metadata: { changes: [...Object.keys(profileData), ...Object.keys(userData)] },
-      },
+    await auditService.record({
+      actorId: requester.id, actorKind: 'person', channel: 'app',
+      action: 'update', resource: 'delivery_partner', resourceId: String(partnerId),
+      metadata: { changes: [...Object.keys(profileData), ...Object.keys(userData)] },
+      tx,
     });
   });
-  return getPartner(partnerId, { showMoney: false });
 }
 
 /**
@@ -226,7 +215,6 @@ export async function updatePartner(requester: Requester, partnerId: number, inp
  * to the tenant with { agentId, isAvailable } (the shape the Deliveries store listens for). Open orders do not move.
  */
 export async function setPartnerAvailability(requester: Requester, partnerId: number, isAvailable: boolean) {
-  if (typeof isAvailable !== 'boolean') throw new AppError('isAvailable must be true or false', 400);
   if (requester.id !== partnerId && !isManagerUp(requester)) {
     throw new AppError('You can only change your own availability', 403);
   }

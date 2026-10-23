@@ -10,14 +10,16 @@
  * before dispatch) is not in it. `notYetDispatched` shows how many such orders the partner holds, so nothing disappears silently.
  * Cash held and oldest unpaid are null until M5 (F-704).
  */
-import { FailureReason, FeeOutcome, OrderStatus, PartnerDataSource, UserKind } from '@prisma/client';
+import { FailureReason, FeeOutcome, OrderStatus, PartnerDataSource, Prisma, UserKind } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { withSoftDeleted } from '../utils/prismaExtensions';
 import { runInTenant } from '../utils/tenantContext';
 import * as Money from '../utils/money';
+import { fullName } from '../utils/nameUtils';
 import { DAY_MS } from './kpi/dates';
+import { DEFAULT_SUCCESS_TARGET, coveringTarget } from './kpi/leadership';
 import { partnerRates } from './kpi/partners';
-import { closedOutcomeResult, DIGITAL, ratePercent, rates } from './kpi/rates';
+import { closedOutcomeResult, DIGITAL, ratePercent } from './kpi/rates';
 import { deliveredRevenue } from './kpi/revenue';
 import { outForDelivery, waitingToDispatch, WAITING } from './kpi/outcomes';
 import { kpiMeta, type KpiResult } from './kpi/types';
@@ -28,12 +30,20 @@ export type PartnerTypeFilter = PartnerType | 'all';
 /** A company is a 3PL; a person (and anything else) is an agent. */
 export const partnerTypeOf = (kind: UserKind): PartnerType => (kind === 'company' ? '3pl' : 'agent');
 
-/** Default delivery success target when the tenant has no `delivery_success_rate` target row (same default as leadership.ts). */
-const DEFAULT_SUCCESS_TARGET = 60;
+/** Where a partner's numbers come from when it has no profile yet: a person with a login uses the app, a company sends a file (F-700). */
+export const defaultDataSource = (kind: UserKind): PartnerDataSource => (kind === 'company' ? 'csv' : 'app');
+
 /** A waiting order older than this many days is marked (F-715, GUESS in the PRD). */
 const WAITING_OVERDUE_DAYS = 2;
 
 export type FeeRuleView = Record<FeeOutcome, string | null>;
+
+/** One partner's fee rule as amounts per outcome; an outcome with no rule is null. */
+export const feeRuleView = (rules: Array<{ outcome: FeeOutcome; amount: Prisma.Decimal }>): FeeRuleView => {
+  const view: FeeRuleView = { delivered: null, failed: null, returned: null };
+  for (const rule of rules) view[rule.outcome] = Money.toApi(rule.amount);
+  return view;
+};
 
 export interface PartnerRow {
   partnerId: number;
@@ -100,6 +110,8 @@ export async function listPartners(
 ): Promise<PartnerList> {
   const type = opts.type ?? 'all';
   const meta = kpiMeta(from, to);
+  const successRate = (counts: { delivered: number; failed: number; returned: number }) =>
+    closedOutcomeResult('Delivery success rate', 'partner.deliverySuccess.cohort.v1', 'cohort', counts, meta);
 
   const [rated, users, outGroups, feeRules] = await Promise.all([
     partnerRates(tenantId, from, to),
@@ -121,11 +133,10 @@ export async function listPartners(
 
   const ratedBy = new Map(rated.map((r) => [r.partnerId, r]));
   const outBy = new Map(outGroups.map((g) => [g.deliveryAgentId as number, g._count._all]));
-  const rulesBy = new Map<number, FeeRuleView>();
+  const rulesBy = new Map<number, typeof feeRules>();
   for (const rule of feeRules) {
-    const view = rulesBy.get(rule.partnerUserId) ?? { delivered: null, failed: null, returned: null };
-    view[rule.outcome] = Money.toApi(rule.amount);
-    rulesBy.set(rule.partnerUserId, view);
+    const rows = rulesBy.get(rule.partnerUserId);
+    if (rows) rows.push(rule); else rulesBy.set(rule.partnerUserId, [rule]);
   }
 
   const all: PartnerRow[] = [];
@@ -143,7 +154,7 @@ export async function listPartners(
     const profile = u.partnerProfile;
     all.push({
       partnerId: u.id,
-      name: `${u.firstName} ${u.lastName}`.trim(),
+      name: fullName(u),
       type: partnerTypeOf(u.kind),
       isActive: u.isActive,
       isAvailable: u.isAvailable,
@@ -151,14 +162,12 @@ export async function listPartners(
       baseTown: profile?.baseTown ?? null,
       assigned, delivered, failed, returned, failedOrReturned: failed + returned, outNow,
       notYetDispatched: (r?.assigned ?? 0) - assigned,
-      deliverySuccessRate: r?.deliverySuccessRate
-        ?? closedOutcomeResult('Delivery success rate', 'partner.deliverySuccess.cohort.v1', 'cohort', { delivered: 0, failed: 0, returned: 0 }, meta),
+      deliverySuccessRate: r?.deliverySuccessRate ?? successRate({ delivered: 0, failed: 0, returned: 0 }),
       confirmedToDispatchedDays: r?.confirmedToDispatchedDays.value ?? null,
       dispatchedToDeliveredDays: r?.dispatchedToDeliveredDays.value ?? null,
-      // No profile yet: a person with a login uses the app, a company sends a file (F-700 default)
-      dataSource: profile?.dataSource ?? (u.kind === 'company' ? 'csv' : 'app'),
+      dataSource: profile?.dataSource ?? defaultDataSource(u.kind),
       daysToPay: profile?.daysToPay ?? null,
-      ...(opts.showMoney ? { feeRule: rulesBy.get(u.id) ?? null } : {}),
+      ...(opts.showMoney ? { feeRule: rulesBy.has(u.id) ? feeRuleView(rulesBy.get(u.id)!) : null } : {}),
       cashHeld: null,
       oldestUnpaidDays: null,
     });
@@ -179,7 +188,7 @@ export async function listPartners(
       delivered, failed, returned, failedOrReturned: failed + returned,
       outNow: sum(rows, (r) => r.outNow),
       notYetDispatched: sum(rows, (r) => r.notYetDispatched),
-      deliverySuccessRate: closedOutcomeResult('Delivery success rate', 'partner.deliverySuccess.cohort.v1', 'cohort', { delivered, failed, returned }, meta),
+      deliverySuccessRate: successRate({ delivered, failed, returned }),
     },
   };
 }
@@ -195,18 +204,25 @@ export interface PartnerSummary {
 
 /** The five tiles above the partner table (F-701). */
 export async function partnerSummary(tenantId: string, from: Date, to: Date, opts: ViewOptions): Promise<PartnerSummary> {
-  const [out, waiting, revenue, rate, target] = await Promise.all([
+  const [out, waiting, revenue, byStatus, target] = await Promise.all([
     outForDelivery(tenantId),
     waitingToDispatch(tenantId),
     deliveredRevenue(tenantId, from, to),
-    rates(tenantId, from, to),
-    runInTenant(tenantId, () => prisma.target.findFirst({
-      where: { metric: 'delivery_success_rate', roleId: null, userId: null, periodStart: { lte: from }, periodEnd: { gte: from } },
-      select: { value: true },
+    // Same rows and formula as rates().deliverySuccessRate on the cohort basis, without its other queries
+    runInTenant(tenantId, () => prisma.order.groupBy({
+      by: ['status'],
+      where: { deletedAt: null, status: { notIn: DIGITAL }, createdAt: { gte: from, lt: to } },
+      _count: { _all: true },
     })),
+    runInTenant(tenantId, () => coveringTarget(tenantId, 'delivery_success_rate', from)),
   ]);
+  const closed = (s: OrderStatus) => byStatus.find((g) => g.status === s)?._count._all ?? 0;
+  const rate = closedOutcomeResult(
+    'Delivery success rate', 'rate.deliverySuccess.cohort.v1', 'cohort',
+    { delivered: closed('delivered'), failed: closed('failed_delivery'), returned: closed('returned') }, kpiMeta(from, to),
+  );
   const targetPct = target ? Money.parse(target.value).toNumber() : DEFAULT_SUCCESS_TARGET;
-  const value = rate.deliverySuccessRate.value;
+  const value = rate.value;
   return {
     outNow: { orders: out.total, partners: out.byPartner.size },
     waiting: { orders: waiting.count.value, oldestDays: waiting.oldestDays },
@@ -215,7 +231,7 @@ export async function partnerSummary(tenantId: string, from: Date, to: Date, opt
       ...(opts.showMoney ? { revenue: revenue.total.value, currency: revenue.total.currency } : {}),
     },
     deliverySuccess: {
-      rate: rate.deliverySuccessRate,
+      rate,
       target: targetPct,
       gapPoints: value === null ? null : Money.roundHalfUp(Money.sub(targetPct, value), 1).toNumber(),
     },
@@ -248,35 +264,37 @@ export interface WaitingList {
 /** Orders confirmed but not dispatched, oldest first (F-715). */
 export async function waitingList(tenantId: string, opts: ViewOptions & { limit?: number }): Promise<WaitingList> {
   const now = Date.now();
-  const [waiting, rows] = await Promise.all([
-    waitingToDispatch(tenantId),
-    runInTenant(tenantId, () => prisma.order.findMany({
-      where: { deletedAt: null, status: { in: WAITING } },
-      orderBy: [{ confirmedAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }, { id: 'asc' }],
-      take: opts.limit ?? 200,
-      select: {
-        id: true, externalOrderId: true, status: true, confirmedAt: true, createdAt: true, deliveryState: true, deliveryArea: true, totalAmount: true,
-        customer: { select: { firstName: true, lastName: true } },
-        deliveryAgent: { select: { id: true, firstName: true, lastName: true } },
-      },
-    })),
-  ]);
+  const take = opts.limit ?? 200;
+  const where = { deletedAt: null, status: { in: WAITING } };
+  const rows = await runInTenant(tenantId, () => prisma.order.findMany({
+    where,
+    orderBy: [{ confirmedAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }, { id: 'asc' }],
+    take,
+    select: {
+      id: true, externalOrderId: true, status: true, confirmedAt: true, createdAt: true, deliveryState: true, deliveryArea: true, totalAmount: true,
+      customer: { select: { firstName: true, lastName: true } },
+      deliveryAgent: { select: { id: true, firstName: true, lastName: true } },
+    },
+  }));
+  const ageOf = (o: (typeof rows)[number]) => Math.floor((now - (o.confirmedAt ?? o.createdAt).getTime()) / DAY_MS);
+  // A short page is the whole list; only a full page needs a count. The first row is the oldest.
+  const orders = rows.length < take ? rows.length : await runInTenant(tenantId, () => prisma.order.count({ where }));
   return {
-    orders: waiting.count.value,
-    oldestDays: waiting.oldestDays,
+    orders,
+    oldestDays: rows.length > 0 ? ageOf(rows[0]) : null,
     overdueAfterDays: WAITING_OVERDUE_DAYS,
     list: rows.map((o) => {
-      const ageDays = Math.floor((now - (o.confirmedAt ?? o.createdAt).getTime()) / DAY_MS);
+      const ageDays = ageOf(o);
       return {
         orderId: o.id,
         orderNumber: o.externalOrderId,
         status: o.status,
-        customerName: `${o.customer.firstName} ${o.customer.lastName}`.trim(),
+        customerName: fullName(o.customer),
         region: o.deliveryState,
         area: o.deliveryArea,
         ageDays,
         overdue: ageDays > WAITING_OVERDUE_DAYS,
-        partner: o.deliveryAgent ? { id: o.deliveryAgent.id, name: `${o.deliveryAgent.firstName} ${o.deliveryAgent.lastName}`.trim() } : null,
+        partner: o.deliveryAgent ? { id: o.deliveryAgent.id, name: fullName(o.deliveryAgent) } : null,
         ...(opts.showMoney ? { total: Money.toApi(Money.orZero(o.totalAmount)) } : {}),
       };
     }),
@@ -294,10 +312,11 @@ export interface FailureReasons {
   reasons: Array<{ reason: FailureReason; count: number; percent: number | null }>;
 }
 
-const REASON_ORDER: FailureReason[] = ['not_reachable', 'refused', 'wrong_address', 'rescheduled', 'other'];
+const REASON_ORDER = Object.values(FailureReason);
 
 /** Failed and returned orders by reason, failed and returned counted apart (F-705). Optional filter by partner. */
 export async function failureReasonBreakdown(tenantId: string, from: Date, to: Date, partnerId?: number): Promise<FailureReasons> {
+  const meta = kpiMeta(from, to);
   const groups = await runInTenant(tenantId, () => prisma.order.groupBy({
     by: ['failureReason', 'status'],
     where: {
@@ -318,13 +337,9 @@ export async function failureReasonBreakdown(tenantId: string, from: Date, to: D
   }
   const total = failed + returned;
   return {
-    ...kpiRange(from, to),
+    from: meta.from,
+    to: meta.to,
     total, failed, returned,
     reasons: REASON_ORDER.map((reason) => ({ reason, count: byReason.get(reason)!, percent: ratePercent(byReason.get(reason)!, total) })),
   };
-}
-
-function kpiRange(from: Date, to: Date) {
-  const { from: f, to: t } = kpiMeta(from, to);
-  return { from: f, to: t };
 }
