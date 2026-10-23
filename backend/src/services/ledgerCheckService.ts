@@ -49,9 +49,9 @@ async function ledgerByDay(tenantId: string, from: Date, to: Date): Promise<Map<
 }
 
 /**
- * Paystack money that has sat too long (F-934). When 1030 holds a balance, has a debit older than 7 days, and no
- * `paystack_payout` entry was posted in the last 7 days, one `paystack_unsettled` Finding opens (amount = the 1030
- * balance). While one is open the next runs only update its amount. Runs inside the tenant context.
+ * Paystack money that has sat too long (F-934). Payouts clear the oldest sales first, so the part of the 1030 balance
+ * above the debits of the last 7 days is old unsettled money. When there is some, one `paystack_unsettled` Finding opens
+ * with that amount. While one is open the next runs only update its amount. Runs inside the tenant context.
  */
 async function checkPaystackUnsettled(tenantId: string, now: Date): Promise<boolean> {
   const cutoff = new Date(now.getTime() - PAYSTACK_UNSETTLED_DAYS * 24 * 60 * 60 * 1000);
@@ -59,24 +59,17 @@ async function checkPaystackUnsettled(tenantId: string, now: Date): Promise<bool
   const balance = Money.orZero(account?.currentBalance);
   const existing = await prisma.finding.findFirst({ where: { type: 'paystack_unsettled', status: 'open' } });
 
-  let unsettled = false;
+  let old = Money.ZERO;
   if (account && balance.gt(0)) {
-    const [oldDebit, recentPayout] = await Promise.all([
-      prisma.accountTransaction.findFirst({
-        where: { accountId: account.id, debitAmount: { gt: 0 }, journalEntry: { isVoided: false, entryDate: { lt: cutoff } } },
-        select: { id: true },
-      }),
-      prisma.journalEntry.findFirst({
-        where: { sourceType: 'paystack_payout', isVoided: false, entryDate: { gte: cutoff } },
-        select: { id: true },
-      }),
-    ]);
-    unsettled = !!oldDebit && !recentPayout;
+    const recent = await prisma.accountTransaction.aggregate({
+      where: { accountId: account.id, journalEntry: { isVoided: false, entryDate: { gte: cutoff } } },
+      _sum: { debitAmount: true },
+    });
+    old = Money.sub(balance, Money.orZero(recent._sum.debitAmount));
   }
-
-  if (!unsettled) return false;
+  if (!old.gt(0)) return false;
   if (existing) {
-    if (!Money.parse(existing.amount ?? 0).eq(balance)) await prisma.finding.update({ where: { id: existing.id }, data: { amount: balance } });
+    if (!Money.parse(existing.amount ?? 0).eq(old)) await prisma.finding.update({ where: { id: existing.id }, data: { amount: old } });
   } else {
     await prisma.finding.create({
       data: {
@@ -84,8 +77,8 @@ async function checkPaystackUnsettled(tenantId: string, now: Date): Promise<bool
         type: 'paystack_unsettled',
         subjectType: 'account',
         subjectId: GL_ACCOUNTS.PAYSTACK_RECEIVABLE,
-        amount: balance,
-        note: `Paystack receivable (1030) has had no payout in ${PAYSTACK_UNSETTLED_DAYS} days.`,
+        amount: old,
+        note: `Paystack receivable (1030) holds sales older than ${PAYSTACK_UNSETTLED_DAYS} days with no payout.`,
       },
     });
   }

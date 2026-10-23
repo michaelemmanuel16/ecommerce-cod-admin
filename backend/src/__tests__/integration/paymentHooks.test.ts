@@ -343,18 +343,10 @@ describe('paystack_unsettled Finding (nightly ledger check)', () => {
     expect(open[0].amount?.toString()).toBe('59.25');
   });
 
-  it('opens nothing when the sale is recent, the balance is 0, or a payout was posted in the last 7 days', async () => {
+  it('opens nothing when the sale is recent, the balance is 0, or old sales are paid out and only recent ones remain', async () => {
     await bookSale('a', '50', '0', 2); // too young
     await checkLedgerForTenant(pair.a.id);
     expect(await findings('a')).toHaveLength(0);
-
-    await bookSale('a', '40', '0', 9); // old debit now exists
-    await prismaBase.accountTransaction.count(); // no-op: keeps the read order explicit
-    const res = await request(app).post('/api/financial/paystack-payouts').set(bearer(pair.a.users.admin.token)).set('X-Forwarded-For', ip())
-      .send({ amount: '10', payoutDate: new Date().toISOString().slice(0, 10), reference: 'PO-RECENT' });
-    expect(res.status).toBe(201);
-    await checkLedgerForTenant(pair.a.id);
-    expect(await findings('a')).toHaveLength(0); // a payout in the last 7 days
 
     await clearLedger(pair.a.id);
     await bookSale('a', '30', '0', 9);
@@ -362,6 +354,22 @@ describe('paystack_unsettled Finding (nightly ledger check)', () => {
       new GLAutomationService().createPaystackPayoutEntry(tx as any, '30', new Date(Date.now() - 8 * DAY), 'Paystack payout [OLD]', pair.a.users.admin.id)));
     await checkLedgerForTenant(pair.a.id);
     expect(await findings('a')).toHaveLength(0); // balance is 0
+
+    await bookSale('a', '20', '0', 2); // the old sale is paid out; only this recent one is owed, and no payout in 7 days
+    await checkLedgerForTenant(pair.a.id);
+    expect(await findings('a')).toHaveLength(0);
+  });
+
+  it('a recent payout smaller than the old sales leaves the old remainder flagged (oldest sales clear first)', async () => {
+    await bookSale('a', '40', '0', 9);
+    await bookSale('a', '50', '0', 2);
+    const res = await request(app).post('/api/financial/paystack-payouts').set(bearer(pair.a.users.admin.token)).set('X-Forwarded-For', ip())
+      .send({ amount: '10', payoutDate: new Date().toISOString().slice(0, 10), reference: 'PO-RECENT' });
+    expect(res.status).toBe(201);
+    await checkLedgerForTenant(pair.a.id);
+    const open = await findings('a');
+    expect(open).toHaveLength(1);
+    expect(open[0].amount?.toString()).toBe('30');
   });
 
   it("is per tenant: A's old sale opens a Finding for A only", async () => {
