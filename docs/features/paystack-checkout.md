@@ -199,3 +199,22 @@ Adds server-side Meta Conversions API `Purchase` events so ad attribution surviv
 - Idempotency: second `fireCapiPurchaseEvent` call no-ops via `capiEventFired`; flag set only after a 2xx Graph response.
 - No-leak: public `/config` response contains neither `metaCapiAccessToken` nor `metaCapiTestEventCode`; admin reads return the mask, not the ciphertext.
 - Per the approved plan (decision 3): built + unit-tested against a mocked Graph API this sprint; real Meta pixel/token + live Test Events verification wired later. No live Meta call made.
+
+---
+
+## COD-31 — Payment schema, provider interface, connections and form rules (M3b T02–T05)
+**Date:** 2026-10-23 | **Type:** feat | **Branch:** feature/m3b-checkout-payments | **Commits:** 4f15322, e413716, 5b9eae1, 4febbe7, 08f47c0, d0355f9
+
+### Summary
+Payments now go through one provider interface. Paystack is the first adapter. Keys live in a tenant-scoped `PaymentConnection` row, encrypted with `enc:v1:` and masked on read. Each form allows only the methods of the F-402 matrix: physical forms are COD only while `features.prepaidPhysical` is off; digital forms are online in full only. New rows store neutral method names (`online_full`, `online_deposit`); the old `paystack_*` names are still accepted for 90 days.
+
+### Changes
+- **Schema:** `PaymentConnection` (provider, mode, publicKey, encrypted secretKey, isEnabled, supportedCurrencies, lastCheckedAt). `CheckoutForm.archivedAt`, `CheckoutForm.paymentProvider`, `Order.paymentProvider`, Transaction provider and fee fields, `PendingCheckout` status, provider and lastCheckedAt. `SystemConfig.features` JSONB. `Tenant.defaultDeliveryFee` dropped (0 non-null rows on dev, test and the production-dump copy). Migrations `20261023140000_payment_connections`, `20261023150000_form_payment_rules`.
+- **Provider interface:** `services/payments/` — `PaymentProvider` type, registry, Paystack adapter (owns minor units, ×100), fake provider, method matrix, connection config loader. Controllers and settlement import the interface only (grep test).
+- **Connections:** `GET/PUT /api/payment-connections`, `POST /api/payment-connections/:id/test` (super_admin and admin). Read fallback to `SystemConfig.paystackProvider`; the old Integrations Paystack save also upserts the row. Copy script `scripts/copy-paystack-to-payment-connections.ts [--dry-run]`.
+- **Settlement:** checks that the provider currency equals the pending currency, then compares minor units with minor units.
+- **Form rules:** server rejects a method the form does not allow (400). `tenantFeatures` service with defaults and a 60 s cache.
+
+### Verification
+- Backend build and lint pass. Full jest 2652 pass, 0 fail. Frontend build pass, lint 0 errors, vitest 766/766. Workflow validation passes.
+- Browser (localhost:5174): Paystack panel save creates the PaymentConnection row; `GET /api/payment-connections` masks the secret; public `/config` returns only the public key. No console errors.

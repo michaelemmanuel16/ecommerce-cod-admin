@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **[Payments]**: Provider interface with a Paystack adapter and a fake provider, tenant `PaymentConnection` with encrypted, masked keys and `/api/payment-connections`, form payment rules by the F-402 matrix behind `features.prepaidPhysical`, neutral method names (`online_full`, `online_deposit`), and `Tenant.defaultDeliveryFee` dropped. (COD-31)
 - **[Finance]**: Nightly ledger check with one `ledger_gap` finding per day, `GET /api/financial/health`, daily FX rates (ExchangeRate-API) with `/api/fx` and a Currencies & FX settings tab, store currency on the tenant with `orders.currency`, and return GL entries dated by `returnedAt`. (COD-14)
 - **[Analytics]**: Wording guard tests with one allow-list, and a KPI contract test that checks GH₵92,000.00 on every endpoint and MCP tool. (COD-15)
 - **[KPI]**: Every analytics, financial and order-stats endpoint and every MCP tool reads revenue and rates from the KPI layer (fixture-proven GH₵92,000.00 / 376 delivered); financial summary adds digital revenue and Paystack fees; `profit-margins` and dead analytics routes removed; date ranges are store-zone days end to end. (COD-13)
