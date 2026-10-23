@@ -26,3 +26,16 @@ export const baseState = (state: string | null | undefined): string => (state ??
 
 /** The report row a state falls in: its baseState, or "Not set" when blank. */
 export const stateLabel = (state: string | null | undefined): string => baseState(state) || 'Not set';
+
+/** Comparison key of a region name: lower case, the word "region" and any bracket suffix dropped, letters only. */
+const regionKey = (s: string): string => baseState(s).toLowerCase().replace(/\bregion\b/g, '').replace(/[^a-z]/g, '');
+
+/**
+ * The region of the store's country that `value` names, or null (O3, M4-T19). Exact after cleaning, never a guess:
+ * "Greater Accra Region", "greater accra" and "Greater Accra (Tema)" are "Greater Accra"; "Accra Central" is null.
+ */
+export function matchStoreRegion(value: string | null | undefined, regions: string[]): string | null {
+  const key = regionKey(value ?? '');
+  if (!key) return null;
+  return regions.find((r) => regionKey(r) === key) ?? null;
+}

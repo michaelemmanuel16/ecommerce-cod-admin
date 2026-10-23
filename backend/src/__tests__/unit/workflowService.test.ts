@@ -400,7 +400,7 @@ describe('WorkflowService', () => {
 
       expect(result.success).toBe(true);
       expect(result.agentId).toBe('agent-1');
-      expect(assignmentService.assignByRole).toHaveBeenCalledWith('order-1', 'agent-1', 'delivery_agent', { kind: 'system', userId: 77 });
+      expect(assignmentService.assignByRole).toHaveBeenCalledWith('order-1', 'agent-1', 'delivery_agent', { kind: 'system', userId: 77 }, { checkAvailable: true });
     });
 
     it('should throw error when agent ID not provided', async () => {

@@ -17,8 +17,7 @@ const canWrite = requireRole('super_admin', 'admin', 'delivery_agent');
 
 router.get('/', canRead, paginationValidation, validate, deliveryController.getAllDeliveries);
 router.get('/agent-orders', requireResourcePermission('orders', 'view'), deliveryController.getAgentOrders);
-router.get('/by-order/:orderId', requireResourcePermission('orders', 'view'), deliveryController.getDeliveryByOrderId);
-router.get('/routes/:agentId', canRead, deliveryController.getAgentRoute);
+router.get('/by-order/:orderId', canRead, deliveryController.getDeliveryByOrderId);
 router.get('/:id', canRead, deliveryController.getDelivery);
 router.patch('/:id/proof', canWrite, deliveryController.uploadProofOfDelivery);
 router.patch('/:id/complete', canWrite, deliveryController.completeDelivery);

@@ -493,7 +493,7 @@ export class WorkflowService {
       throw new Error('Order ID or Agent ID not provided');
     }
 
-    await assignmentService.assignByRole(orderId, agentId, 'delivery_agent', await systemActor());
+    await assignmentService.assignByRole(orderId, agentId, 'delivery_agent', await systemActor(), { checkAvailable: true });
 
     logger.info('Agent assigned via workflow', { orderId, agentId });
     return { success: true, orderId, agentId };
@@ -587,7 +587,9 @@ export class WorkflowService {
     const users = await prisma.user.findMany({
       where: {
         id: { in: userIds },
-        isActive: true
+        isActive: true,
+        // F-709: an unavailable delivery partner is skipped
+        ...(userType === 'delivery_agent' ? { isAvailable: true } : {}),
       }
     });
 
@@ -598,12 +600,13 @@ export class WorkflowService {
     let selectedUser;
 
     if (distributionMode === 'weighted') {
-      // Use weighted selection based on assignments
-      const totalWeight = assignments.reduce((sum: number, a: any) => sum + a.weight, 0);
+      // Use weighted selection based on assignments (a user filtered out above, for example an unavailable partner, carries no weight)
+      const candidates = assignments.filter((a: any) => users.some(u => u.id === a.userId));
+      const totalWeight = candidates.reduce((sum: number, a: any) => sum + a.weight, 0);
       const random = (crypto.randomInt(0, 1000000) / 1000000) * totalWeight;
 
       let cumulativeWeight = 0;
-      for (const assignment of assignments) {
+      for (const assignment of candidates) {
         cumulativeWeight += assignment.weight;
         if (random <= cumulativeWeight) {
           selectedUser = users.find(u => u.id === assignment.userId);

@@ -6,6 +6,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { Requester } from '../utils/authUtils';
 import { OrderStatusChangedEvent } from '../utils/appEvents';
 import { afterCommitEffects, applyGlEffects, GlEffects, legacyStockHook } from './orderSideEffects';
+import { recordDeliveryAttempt } from './deliveryAttemptHook';
 
 /**
  * Order state machine (F-301, F-302). `transitionOrder` is the one function that writes Order.status.
@@ -417,6 +418,7 @@ async function move(
   }
 
   const gl = await applySideEffects(tx, order, from, to, actor, options, history.id);
+  await recordDeliveryAttempt(tx, order, to, options);
 
   const statusChanged: OrderStatusChangedEvent = {
     orderId, tenantId, customerId: order.customerId, from, to,

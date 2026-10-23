@@ -109,12 +109,6 @@ export const deliveriesService = {
     return response.data.delivery || response.data;
   },
 
-  async getAgentRoute(agentId: string | number, date?: string): Promise<{ route: DeliveryListItem[] }> {
-    const params = date ? `?date=${date}` : '';
-    const response = await apiClient.get(`/api/deliveries/routes/${agentId}${params}`);
-    return response.data;
-  },
-
   async uploadProof(id: string | number, payload: { proofType: string; proofData: string; recipientName: string; recipientPhone?: string }): Promise<DeliveryListItem> {
     const response = await apiClient.patch(`/api/deliveries/${id}/proof`, payload);
     return response.data.delivery || response.data;

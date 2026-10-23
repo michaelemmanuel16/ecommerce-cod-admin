@@ -28,6 +28,7 @@ import { kpiWindow } from './kpi/dates';
 import { deliveredRevenue, revenueScope } from './kpi/revenue';
 import { duplicateCandidatesWhere, IMPORT_BLOCKED_STATUSES, isDuplicateOf, isForwardStatus } from './orderImportService';
 import { cleanText, deliveryAddressOf } from '../utils/checkoutLocation';
+import { normalizeOrderRegion } from './regionService';
 
 
 
@@ -383,6 +384,8 @@ export class OrderService {
    * Create a new order
    */
   async createOrder(data: CreateOrderData) {
+    // O3: the region is a value of the store country's list ("Greater Accra Region" is "Greater Accra"); an unknown one stays as typed
+    data = { ...data, deliveryState: await normalizeOrderRegion(data.deliveryState) };
     // Find or create customer
     let customer;
 
