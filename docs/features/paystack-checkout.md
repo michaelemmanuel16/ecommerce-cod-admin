@@ -218,3 +218,32 @@ Payments now go through one provider interface. Paystack is the first adapter. K
 ### Verification
 - Backend build and lint pass. Full jest 2652 pass, 0 fail. Frontend build pass, lint 0 errors, vitest 766/766. Workflow validation passes.
 - Browser (localhost:5174): Paystack panel save creates the PaymentConnection row; `GET /api/payment-connections` masks the secret; public `/config` returns only the public key. No console errors.
+
+---
+
+## COD-32 — Neutral payment webhook, settled hook, ledger poster and Paystack payouts (M3b T06–T07)
+**Date:** 2026-10-23 | **Type:** feat | **Branch:** feature/m3b-checkout-payments | **Commits:** 00617b0, 70638cb, f6ec97b, 03a07aa, 32d15cf
+
+### Summary
+Providers now call one neutral webhook, `POST /api/payments/webhook/:provider/:tenantSlug`. The old Paystack URL stays as an alias, because stores have it saved in their Paystack dashboard. Settlement no longer writes the ledger inside its transaction. After the commit it emits a payment-settled hook (F-406), and the ledger poster books digital sales dated the payment day. A 10-minute sweep settles or closes checkouts whose webhook was lost. Admins record Paystack payouts to the bank (DR 1010, CR 1030). Problems open Findings: `payment_unmatched`, `ledger_post_failed`, `paystack_unsettled`.
+
+### Changes
+- **Webhook:** provider from the path; bad signature 401; a reference owned by another tenant 404 before the replay gate; an unknown reference 200. One log line per call with the result. `GET /api/payments/verify/:reference` and `/api/payments/admin/verify/:reference`, old `/api/paystack/*` paths kept as aliases.
+- **Settlement:** `settlePayment` (was `settlePaystackPayment`). `PendingCheckout.status`: initiated, pending, failed, expired, needs_review, with `lastCheckedAt`. Money taken but no order possible (currency, underpayment, missing product) keeps the row as `needs_review` and opens one `payment_unmatched` Finding. Transaction rows store channel, currency, fee, `feeUnknown`, provider reference and `paidAt`.
+- **Sweep:** every 10 minutes, initiated or pending checkouts older than 10 minutes are verified at the provider; rows older than 1 hour at most hourly. The 24-hour cleanup never deletes `needs_review` rows.
+- **Hook and ledger poster:** `services/payments/settlementHooks.ts` (`onPaymentSettled`, `emitPaymentSettled`), `services/payments/ledgerPoster.ts`: idempotent per order, 3 attempts, then a `ledger_post_failed` Finding. Physical online payments post nothing (prepaid physical is off). A post lost to a crash shows as a `ledger_gap` in the nightly check.
+- **Payouts:** `POST /api/financial/paystack-payouts` (super_admin, admin; amount, payoutDate, reference, note). The reference is `JournalEntry.externalRef`, unique per tenant and source type: a repeat is 409. Voiding an entry frees its reference. A payout above the 1030 balance posts with a warning.
+- **Nightly check:** `paystack_unsettled` Finding for the part of the 1030 balance older than 7 days (payouts clear the oldest sales first).
+- **Schema:** `FindingType` + `payment_unmatched`, `ledger_post_failed`, `paystack_unsettled`; `JournalSourceType` + `paystack_payout`; `JournalEntry.externalRef`; index `PendingCheckout(tenantId, status, createdAt)`. Migrations `20261023160000_payment_hooks`, `20261023170000_payment_refs`.
+- **Seed:** 1030 named Paystack Receivable.
+
+### Key Files
+- `backend/src/routes/paymentRoutes.ts` (new), `backend/src/controllers/paystackController.ts`, `backend/src/utils/webhookDedup.ts`
+- `backend/src/services/paystackSettlementService.ts`, `backend/src/queues/pendingCheckoutCleanupQueue.ts`
+- `backend/src/services/payments/settlementHooks.ts`, `backend/src/services/payments/ledgerPoster.ts` (new)
+- `backend/src/services/paystackPayoutService.ts`, `backend/src/services/findingService.ts` (new), `backend/src/services/ledgerCheckService.ts`, `backend/src/services/glAutomationService.ts`, `backend/src/services/glService.ts`
+- `backend/src/__tests__/integration/paymentWebhook.test.ts`, `paymentHooks.test.ts`, `helpers/paymentTestKit.ts`, `unit/settlementHooks.test.ts` (new)
+
+### Verification
+- Backend build and lint pass. Full jest 2702 pass, 0 fail (214 suites). Frontend build pass, lint 0 errors, vitest 766/766. Workflow validation passes.
+- Browser (dev, signed in): payout 201 with the over-balance warning, same reference 409, bad amount 400, void then re-post 201; test entries voided and 1030 back to 0. New routes answer 404 for an unknown provider or reference.
