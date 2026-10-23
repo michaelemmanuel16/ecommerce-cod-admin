@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { customerRepsService } from '../../services/customer-reps.service';
 import { deliveryAgentsService } from '../../services/delivery-agents.service';
+import { useAuthStore } from '../../stores/authStore';
 import { productsService } from '../../services/products.service';
 
 export interface Option {
@@ -20,9 +21,12 @@ const EMPTY: Options = { products: [], agents: [], reps: [] };
 
 /**
  * The choices of the Product, Delivery agent and Assigned to filters, and of the Assign menus. Each list loads on its
- * own; one that the person may not read (a 403) is left empty and its filter is not drawn.
+ * own, and only from an endpoint the role may call (a refused call would show an error toast): an admin reads the staff
+ * list, a manager the workload and partner figures (active people only), any other role gets no staff lists and its
+ * filters are not drawn.
  */
 export function useFilterOptions(): Options {
+  const role = useAuthStore((s) => s.user?.role);
   const [options, setOptions] = useState<Options>(EMPTY);
   useEffect(() => {
     let live = true;
@@ -31,15 +35,24 @@ export function useFilterOptions(): Options {
     productsService.getProducts()
       .then((ps) => put({ products: ps.filter((p) => p.isActive !== false).map((p) => ({ id: p.id, name: p.name })) }))
       .catch(() => undefined);
-    deliveryAgentsService.getDeliveryAgents()
-      .then((as) => put({ agents: as.filter((a) => a.isActive).map((a) => ({ id: num(a.id), name: a.name, unavailable: a.isAvailable === false })) }))
-      .catch(() => undefined);
-    customerRepsService.getCustomerReps()
-      .then((rs) => put({ reps: rs.filter((r) => r.isActive).map((r) => ({ id: num(r.id), name: r.name })) }))
-      .catch(() => undefined);
+    if (role === 'super_admin' || role === 'admin') {
+      deliveryAgentsService.getDeliveryAgents()
+        .then((as) => put({ agents: as.filter((a) => a.isActive).map((a) => ({ id: num(a.id), name: a.name, unavailable: a.isAvailable === false })) }))
+        .catch(() => undefined);
+      customerRepsService.getCustomerReps()
+        .then((rs) => put({ reps: rs.filter((r) => r.isActive).map((r) => ({ id: num(r.id), name: r.name })) }))
+        .catch(() => undefined);
+    } else if (role === 'manager') {
+      deliveryAgentsService.getAgentPerformance()
+        .then((as) => put({ agents: as.map((a) => ({ id: num(a.userId), name: a.userName, unavailable: a.isAvailable === false })) }))
+        .catch(() => undefined);
+      customerRepsService.getRepWorkload()
+        .then((rs) => put({ reps: rs.map((r) => ({ id: num(r.userId), name: r.userName })) }))
+        .catch(() => undefined);
+    }
     return () => {
       live = false;
     };
-  }, []);
+  }, [role]);
   return options;
 }
