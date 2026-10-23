@@ -9,7 +9,8 @@ import { test, expect, Page } from '@playwright/test';
  * 3. Form validation prevents submission with missing required fields
  * 4. Successful order submission shows confirmation screen
  *
- * Uses API route interception — no live backend or seed data required.
+ * Uses API route interception — no live backend or seed data required. Every public API call is mocked: no order is ever
+ * posted to a real backend, and no pixel or payment provider is called.
  */
 
 const FORM_SLUG = 'test-product-checkout';
@@ -25,6 +26,8 @@ const MOCK_FORM_DATA = {
     { id: 'fullName', label: 'Full Name', type: 'text', required: true, enabled: true },
     { id: 'phone', label: 'Phone', type: 'phone', required: true, enabled: true },
     { id: 'region', label: 'Region/State', type: 'select', required: true, enabled: true },
+    { id: 'town', label: 'City or town', type: 'text', required: true, enabled: true, standardKey: 'town' },
+    { id: 'landmark', label: 'Nearest landmark', type: 'text', required: true, enabled: true, standardKey: 'landmark' },
     { id: 'streetAddress', label: 'Street Address', type: 'textarea', required: true, enabled: true },
   ],
   packages: [
@@ -62,10 +65,18 @@ const MOCK_FORM_DATA = {
     },
   ],
   pixelConfig: null,
-  regions: ['Greater Accra', 'Ashanti', 'Western', 'Eastern', 'Northern'],
+  regions: { available: ['Greater Accra', 'Ashanti', 'Western', 'Eastern', 'Northern'] },
 };
 
+/** The store config the public page reads (currency, name). */
+async function mockStoreConfig(page: Page) {
+  await page.route('**/api/admin/config**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ businessName: 'Test Store', currency: 'GHS' }) });
+  });
+}
+
 async function mockCheckoutAPIs(page: Page) {
+  await mockStoreConfig(page);
   // GET /api/public/forms/:slug
   await page.route(`**/api/public/forms/${FORM_SLUG}`, async (route) => {
     await route.fulfill({
@@ -89,12 +100,20 @@ async function mockCheckoutAPIs(page: Page) {
   });
 }
 
+
+/** City or town and Nearest landmark are required; this form has no town list, so the town is typed. */
+async function fillLocation(page: Page) {
+  await page.getByRole('textbox', { name: /type it/i }).fill('Osu');
+  await page.getByPlaceholder(/Opposite Kasoa/).fill('Near the mall');
+}
+
 async function mock404Form(page: Page) {
+  await mockStoreConfig(page);
   await page.route(`**/api/public/forms/**`, async (route) => {
     await route.fulfill({
       status: 404,
       contentType: 'application/json',
-      body: JSON.stringify({ message: 'Form not found or no longer available' }),
+      body: JSON.stringify({ message: 'Form not found or no longer available', supportWhatsapp: '+233245550103' }),
     });
   });
 }
@@ -104,12 +123,14 @@ test.describe('Public Checkout Form', () => {
     await mock404Form(page);
     await page.goto('/form/nonexistent-form-xyz');
 
-    // Should show error state
-    await expect(page.locator('text=Form Not Found')).toBeVisible({ timeout: 10000 });
+    // Should show the not-available screen, with the store's support contact
+    await expect(page.getByRole('heading', { name: 'This form is not available.' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('link', { name: /WhatsApp/ })).toHaveAttribute('href', 'https://wa.me/233245550103');
     await page.screenshot({ path: 'test-results/screenshots/checkout-form-not-found.png' });
   });
 
   test('shows loading state while fetching form', async ({ page }) => {
+    await mockStoreConfig(page);
     // Slow down the API so we can catch the loading state
     await page.route(`**/api/public/forms/${FORM_SLUG}`, async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -158,14 +179,10 @@ test.describe('Public Checkout Form', () => {
     // Wait for form to be ready
     await expect(page.locator('text=Basic Pack (1 unit)')).toBeVisible({ timeout: 10000 });
 
-    // Attempt to submit without filling anything
-    const submitButton = page.locator('button[type="submit"]');
-    if (await submitButton.isVisible()) {
-      await submitButton.click();
-    }
-
-    // At minimum, phone/name errors should appear OR the button requires a package first
-    // The form uses react-hook-form validation
+    // The button needs a package first; then an empty form is refused with a message and nothing is posted
+    await page.locator('text=Basic Pack (1 unit)').click();
+    await page.locator('button[type="submit"]').click();
+    await expect(page.getByText('Full Name is required')).toBeVisible();
     await page.screenshot({ path: 'test-results/screenshots/checkout-validation-errors.png' });
   });
 
@@ -178,8 +195,8 @@ test.describe('Public Checkout Form', () => {
     // Click the Basic Pack option
     await page.locator('text=Basic Pack (1 unit)').click();
 
-    // Order summary should reflect GHS 150
-    await expect(page.locator('text=150')).toBeVisible();
+    // Order summary should reflect the price with the store currency symbol
+    await expect(page.getByTestId('order-total')).toHaveText('GH₵150');
     await page.screenshot({ path: 'test-results/screenshots/checkout-package-selected.png' });
   });
 
@@ -220,6 +237,7 @@ test.describe('Public Checkout Form', () => {
       await addressInput.fill('15 Main Street, Accra');
     }
 
+    await fillLocation(page);
     await page.screenshot({ path: 'test-results/screenshots/checkout-form-filled.png' });
 
     // Submit form
@@ -228,15 +246,15 @@ test.describe('Public Checkout Form', () => {
       await submitBtn.click();
     }
 
-    // Success state: order confirmation
-    await expect(
-      page.locator('text=Order placed successfully, text=Order #, text=Thank you, text=12345').first()
-    ).toBeVisible({ timeout: 10000 });
+    // Success state: order confirmation with the order number
+    await expect(page.getByRole('heading', { name: 'Order placed' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('order-number')).toHaveText('#12345');
 
     await page.screenshot({ path: 'test-results/screenshots/checkout-order-success.png' });
   });
 
-  test('error response from API shows failure toast', async ({ page }) => {
+  test('error response from API shows the message above the button', async ({ page }) => {
+    await mockStoreConfig(page);
     // Form loads OK but order submission fails
     await page.route(`**/api/public/forms/${FORM_SLUG}`, async (route) => {
       await route.fulfill({
@@ -280,26 +298,24 @@ test.describe('Public Checkout Form', () => {
       await addressInput.fill('25 Test Road, Accra');
     }
 
+    await fillLocation(page);
     const submitBtn = page.locator('button[type="submit"]');
     if (await submitBtn.isVisible()) {
       await submitBtn.click();
     }
 
-    // Error toast from react-hot-toast
-    await expect(
-      page.locator('[role="status"]:has-text("Phone number"), .toast:has-text("Phone number"), text=Phone number already used today').first()
-    ).toBeVisible({ timeout: 10000 });
+    // Inline message above the button (no toast, no alert)
+    await expect(page.getByRole('alert')).toHaveText('Phone number already used today', { timeout: 10000 });
 
     await page.screenshot({ path: 'test-results/screenshots/checkout-error-toast.png' });
   });
 
-  test('Go Home button on error state navigates to root', async ({ page }) => {
+  test('the not-available screen has no Go Home button and no link to the admin app', async ({ page }) => {
     await mock404Form(page);
     await page.goto('/form/bad-slug-abc');
 
-    await expect(page.locator('text=Form Not Found')).toBeVisible({ timeout: 10000 });
-
-    await page.click('button:has-text("Go Home")');
-    await expect(page).toHaveURL('/', { timeout: 5000 });
+    await expect(page.getByRole('heading', { name: 'This form is not available.' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button')).toHaveCount(0);
+    await expect(page.locator('text=Go Home')).toHaveCount(0);
   });
 });

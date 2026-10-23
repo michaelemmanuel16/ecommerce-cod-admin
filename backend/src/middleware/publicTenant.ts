@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { enterTenant } from '../utils/tenantContext';
-import { tenantIdForFormSlug } from '../services/tenantLookupService';
+import { tenantIdForFormSlug, supportWhatsappForFormSlug } from '../services/tenantLookupService';
 import { AppError } from './errorHandler';
 
 /**
@@ -24,7 +24,10 @@ export const resolveFormSlugTenant = async (
   }
 
   if (!tenantId) {
-    next(new AppError('Checkout form not found or inactive', 404));
+    const notFound = new AppError('Checkout form not found or inactive', 404);
+    // The store's public support number (and nothing else) rides on the 404, so the "not available" screen can offer it.
+    notFound.details = { supportWhatsapp: await supportWhatsappForFormSlug(slug).catch(() => null) };
+    next(notFound);
     return;
   }
   enterTenant(tenantId, next);

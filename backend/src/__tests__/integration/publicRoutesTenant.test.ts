@@ -125,6 +125,31 @@ describe('public forms by slug', () => {
     expect(res.body.form.name).toBe('Form A');
   });
 
+  it("carries the store's public support WhatsApp, and null when it has none (F-421)", async () => {
+    await prismaBase.systemConfig.update({ where: { tenantId: ids.A.tenantId }, data: { supportWhatsapp: '+233245550103' } });
+    const a = await request(app).get(`/api/public/forms/pub-form-a-${SUFFIX}`);
+    expect(a.body.form.supportWhatsapp).toBe('+233245550103');
+    const b = await request(app).get(`/api/public/forms/pub-form-b-${SUFFIX}`);
+    expect(b.body.form.supportWhatsapp).toBeNull();
+  });
+
+  it('a switched-off form is 404 with the store support number and nothing else about the store; an unknown slug has none', async () => {
+    await prismaBase.systemConfig.update({ where: { tenantId: ids.A.tenantId }, data: { supportWhatsapp: '+233245550103' } });
+    await prismaBase.checkoutForm.updateMany({ where: { slug: `pub-form-a-${SUFFIX}` }, data: { isActive: false } });
+    try {
+      const off = await request(app).get(`/api/public/forms/pub-form-a-${SUFFIX}`);
+      expect(off.status).toBe(404);
+      expect(off.body.supportWhatsapp).toBe('+233245550103');
+      expect(Object.keys(off.body).sort()).toEqual(['code', 'error', 'errorCode', 'message', 'status', 'supportWhatsapp'].filter((k) => k in off.body).sort());
+      expect(JSON.stringify(off.body)).not.toContain('Biz');
+      const unknown = await request(app).get('/api/public/forms/no-such-form-slug');
+      expect(unknown.status).toBe(404);
+      expect(unknown.body.supportWhatsapp).toBeNull();
+    } finally {
+      await prismaBase.checkoutForm.updateMany({ where: { slug: `pub-form-a-${SUFFIX}` }, data: { isActive: true } });
+    }
+  });
+
   it('config route returns the slug tenant form and an unknown slug is 404 before any other query', async () => {
     const ok = await request(app).get(`/api/public/forms/pub-form-b-${SUFFIX}/config`);
     expect(ok.status).toBe(200);
@@ -209,12 +234,13 @@ describe('Paystack verify', () => {
   it('resolves the tenant from the reference and does not crash (payment still pending)', async () => {
     const res = await request(app).get(`/api/paystack/verify/ref-A-${SUFFIX}`);
     expect(res.status).toBe(200);
-    expect(res.body.paymentStatus).toBe('pending');
+    expect(res.body).toEqual({ status: 'pending', orderType: 'digital', formSlug: `pub-form-a-${SUFFIX}` });
   });
 
-  it('unknown reference is 404', async () => {
+  it('unknown reference answers not_found', async () => {
     const res = await request(app).get('/api/paystack/verify/ref-does-not-exist');
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'not_found', orderType: null, formSlug: null });
   });
 });
 

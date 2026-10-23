@@ -102,14 +102,15 @@ export function buildOrderPayload(form: PublicCheckoutForm, data: CheckoutFormDa
 // merchant's page can reconcile the payment and show package-specific upsells.
 export function buildRedirectUrl(
   redirectUrl: string | undefined,
-  params: { orderId: number; total: number; currency: string; reference?: string | null; package?: number | string | null },
+  // total and currency are left out when unknown (a payment callback in a browser that lost the checkout page's note).
+  params: { orderId: number; total?: number; currency?: string; reference?: string | null; package?: number | string | null },
 ): string | null {
   if (!redirectUrl) return null;
   try {
     const url = new URL(redirectUrl);
     url.searchParams.set('order_id', String(params.orderId));
-    url.searchParams.set('total', String(params.total));
-    url.searchParams.set('currency', params.currency);
+    if (params.total != null) url.searchParams.set('total', String(params.total));
+    if (params.currency) url.searchParams.set('currency', params.currency);
     if (params.reference) url.searchParams.set('reference', String(params.reference));
     if (params.package != null) url.searchParams.set('package', String(params.package));
     return url.toString();

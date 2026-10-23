@@ -7,6 +7,7 @@ import * as Money from '../utils/money';
 import { townsForForm } from './locationService';
 import { isUpsellAvailable } from '../utils/checkoutFormRules';
 import { isStorageUrl } from '../config/r2';
+import { getTenantId } from '../utils/tenantContext';
 
 // Shared PUBLIC render payload — the fields safe to expose on the public
 // checkout page and the embed widget config endpoint. Reused so the page and
@@ -94,6 +95,14 @@ function sanitizePublicForm<T extends { product: { stockQuantity: number }; coun
   const { stockQuantity, ...productData } = form.product;
   const upsells = form.upsells.filter(isUpsellAvailable).map(({ productId: _productId, product: _product, isActive: _isActive, ...visible }: any) => visible);
   return { ...form, upsells, design: withStorageBanner((form as { design?: unknown }).design), product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions) };
+}
+
+/** The store's public support WhatsApp number for the public page (F-421), read under the request's tenant. Null when unset. */
+async function supportWhatsappOfTenant(): Promise<string | null> {
+  const tenantId = getTenantId();
+  if (!tenantId) return null;
+  const config = await prisma.systemConfig.findUnique({ where: { tenantId }, select: { supportWhatsapp: true } });
+  return config?.supportWhatsapp ?? null;
 }
 
 // ---------- Public embed config cache ----------
@@ -375,7 +384,7 @@ export class CheckoutFormService {
     }
 
     // Sanitize product data: hide exact stock quantity, return status
-    return sanitizePublicForm(form);
+    return { ...sanitizePublicForm(form), supportWhatsapp: await supportWhatsappOfTenant() };
   }
 
   /**
@@ -402,7 +411,7 @@ export class CheckoutFormService {
       throw new AppError('Checkout form not found or inactive', 404);
     }
 
-    const sanitized = sanitizePublicForm(form);
+    const sanitized = { ...sanitizePublicForm(form), supportWhatsapp: await supportWhatsappOfTenant() };
     configCache.set(slug, { data: sanitized, fetchedAt: now });
     return sanitized;
   }

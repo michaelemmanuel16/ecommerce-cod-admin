@@ -10,13 +10,22 @@ export { buildOrderPayload };
 // The config endpoint returns the public form payload plus the Paystack public key.
 export type EmbedFormConfig = PublicCheckoutForm & { paystackPublicKey?: string };
 
+/** The form could not be loaded. A 404 is "not available" (with the store's support number when it has one); a 403 is a host the owner did not allow. */
+export class FormLoadError extends Error {
+  constructor(message: string, readonly status: number, readonly supportWhatsapp: string | null = null) {
+    super(message);
+  }
+}
+
 export async function fetchFormConfig(apiBase: string, slug: string): Promise<EmbedFormConfig> {
   const res = await fetch(`${apiBase}/api/public/forms/${encodeURIComponent(slug)}/config`, {
     headers: { Accept: 'application/json' },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Failed to load checkout (${res.status})`);
+    if (res.status === 403) throw new FormLoadError('This form cannot be shown here.', 403);
+    if (res.status === 404) throw new FormLoadError('This form is not available.', 404, body.supportWhatsapp ?? null);
+    throw new FormLoadError(body.error || `Failed to load checkout (${res.status})`, res.status);
   }
   const json = await res.json();
   // Prices arrive as strings ("249.00"); the order total is built with `+`
@@ -28,6 +37,8 @@ export interface OrderResponse {
   // Present for COD only. Paystack defers order creation until payment is
   // confirmed and returns authorization_url instead.
   orderId?: number;
+  /** "#24118", as the server prints it. */
+  orderNumber?: string;
   // Same buyer, same order within 30 minutes: no new order; orderId only for the same submitter.
   deduplicated?: boolean;
   message?: string;

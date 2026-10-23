@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { CheckoutForm, CheckoutFormData } from '../components/public/CheckoutForm';
 import { OrderSuccess } from '../components/public/OrderSuccess';
+import { FormNotAvailable } from '../components/public/FormNotAvailable';
 import { publicOrdersService, PublicCheckoutForm } from '../services/public-orders.service';
 import { buildOrderPayload, buildRedirectUrl } from '../lib/orderPayload';
 import { initPixels, fireInitiateCheckoutWithCapi, getFbCookies } from '../utils/pixelTracking';
+import { rememberLastForm, rememberPayment } from '../lib/lastForm';
 import { PixelConfig } from '../types/checkout-form';
-import toast from 'react-hot-toast';
 import { useConfigStore } from '../stores/configStore';
 
 const COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
@@ -25,12 +26,13 @@ function getCooldown(slug: string): { orderId: number; total: number } | null {
 }
 
 function setCooldown(slug: string, orderId: number, total: number) {
-  localStorage.setItem(`checkout_cooldown_${slug}`, JSON.stringify({ orderId, total, timestamp: Date.now() }));
+  try {
+    localStorage.setItem(`checkout_cooldown_${slug}`, JSON.stringify({ orderId, total, timestamp: Date.now() }));
+  } catch { /* storage blocked: the order is still placed */ }
 }
 
 export const PublicCheckout: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   // `?package=<id>` deep-links the checkout to a single package (numeric ids only).
   const lockedPackageParam = searchParams.get('package');
@@ -40,7 +42,13 @@ export const PublicCheckout: React.FC = () => {
   const [formData, setFormData] = useState<PublicCheckoutForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The store's support number from the 404 body of a form that is switched off.
+  const [errorSupport, setErrorSupport] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [orderId, setOrderId] = useState<number | null>(null);
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
+  // Reload inside the 10-minute cooldown: the success screen is back, but no tracking fires again.
+  const cooldownHit = useRef(false);
   // A repeat of an order already placed: thank-you screen, no order number (the server sends none to a new address), no Purchase event.
   const [repeatOrder, setRepeatOrder] = useState(false);
   const [submittedTotal, setSubmittedTotal] = useState<number>(0);
@@ -60,10 +68,11 @@ export const PublicCheckout: React.FC = () => {
     // Check localStorage cooldown before loading form
     const cooldown = getCooldown(slug);
     if (cooldown) {
+      // The form still loads (its colours, currency and support number); the order is not posted again.
+      cooldownHit.current = true;
       setOrderId(cooldown.orderId);
+      setRepeatOrder(true); // the Purchase event fired when the order was placed
       setSubmittedTotal(cooldown.total);
-      setLoading(false);
-      return;
     }
 
     loadForm();
@@ -108,7 +117,7 @@ export const PublicCheckout: React.FC = () => {
   // Fire pixel PageView + InitiateCheckout when form data is available. The
   // InitiateCheckout server-side CAPI mirror is shared with the embed widget.
   useEffect(() => {
-    if (!formData?.pixelConfig || !slug) return;
+    if (!formData?.pixelConfig || !slug || cooldownHit.current) return;
     const pixelConfig = formData.pixelConfig as PixelConfig;
     initPixels(pixelConfig);
     fireInitiateCheckoutWithCapi(pixelConfig, (data) =>
@@ -124,21 +133,22 @@ export const PublicCheckout: React.FC = () => {
       setFormData(data);
     } catch (err: any) {
       console.error('Failed to load checkout form:', err);
-      setError(err.response?.data?.message || 'Form not found or no longer available');
-      toast.error('Failed to load checkout form');
+      const missing = err.response?.status === 404;
+      setNotFound(missing);
+      setErrorSupport(missing ? err.response?.data?.supportWhatsapp ?? null : null);
+      setError(missing ? 'This form is not available.' : 'We could not load this form. Please reload the page.');
     } finally {
       setLoading(false);
     }
   };
 
+  // Every failure throws, so CheckoutForm shows the message above the button and lets the buyer try again.
   const handleSubmit = async (data: CheckoutFormData) => {
     if (!formData || !slug) return;
 
     try {
-      // Guard before building so we can show the package-specific toast.
       if (!formData.packages.some((p) => p.id === data.selectedPackageId)) {
-        toast.error('Please select a package');
-        return;
+        throw new Error('Please choose a package.');
       }
 
       // Shared mapping — identical to what the embed widget posts.
@@ -147,55 +157,54 @@ export const PublicCheckout: React.FC = () => {
       // Attach Meta click ids so the Purchase CAPI event can match this buyer.
       const response = await publicOrdersService.submitOrder(slug, { ...payload, ...getFbCookies() } as any);
 
-      if (response.success) {
-        // Paystack methods (digital, deposit, full): redirect to Paystack. The
-        // order isn't created until payment is confirmed, so there's no orderId here.
-        if (response.authorization_url) {
-          window.location.href = response.authorization_url;
-          return;
+      if (!response.success) throw new Error(response.message || 'We could not place your order. Please try again.');
+
+      // Online payment: redirect to the provider. The order isn't created until payment is confirmed,
+      // so there's no orderId here.
+      if (response.authorization_url) {
+        rememberLastForm(slug);
+        if (response.paymentReference) {
+          rememberPayment(response.paymentReference, { slug, total: totalAmount, currency: formData.currency, package: data.selectedPackageId });
         }
-
-        // A repeat submit is a placed order, not a failure; the original order already fired its Purchase.
-        if (response.deduplicated) {
-          setSubmittedTotal(totalAmount);
-          setOrderId(response.orderId ?? null);
-          setRepeatOrder(true);
-          toast.success('Order placed successfully!');
-          return;
-        }
-
-        // COD: order was created immediately and carries an orderId.
-        if (!response.orderId) {
-          toast.error('Order could not be completed. Please try again.');
-          return;
-        }
-
-        setCooldown(slug, response.orderId, totalAmount);
-
-        // Custom thank-you page: redirect with order details appended so the
-        // merchant's page can show the order and fire its own purchase pixel.
-        const redirect = buildRedirectUrl(formData.redirectUrl, {
-          orderId: response.orderId,
-          total: totalAmount,
-          currency: formData.currency,
-          reference: response.paymentReference,
-          package: data.selectedPackageId,
-        });
-        if (redirect) {
-          window.location.href = redirect;
-          return;
-        }
-
-        setSubmittedTotal(totalAmount);
-        setOrderId(response.orderId);
-        toast.success('Order placed successfully!');
-      } else {
-        toast.error(response.message || 'Failed to place order');
+        window.location.href = response.authorization_url;
+        return;
       }
+
+      // A repeat submit is a placed order, not a failure; the original order already fired its Purchase.
+      if (response.deduplicated) {
+        setSubmittedTotal(totalAmount);
+        setOrderId(response.orderId ?? null);
+        setOrderNumber(response.orderNumber ?? null);
+        setRepeatOrder(true);
+        return;
+      }
+
+      // COD: order was created immediately and carries an orderId.
+      if (!response.orderId) throw new Error('We could not complete your order. Please try again.');
+
+      setCooldown(slug, response.orderId, totalAmount);
+
+      // Custom thank-you page: redirect with order details appended so the
+      // merchant's page can show the order and fire its own purchase pixel.
+      const redirect = buildRedirectUrl(formData.redirectUrl, {
+        orderId: response.orderId,
+        total: totalAmount,
+        currency: formData.currency,
+        reference: response.paymentReference,
+        package: data.selectedPackageId,
+      });
+      if (redirect) {
+        window.location.href = redirect;
+        return;
+      }
+
+      setSubmittedTotal(totalAmount);
+      setOrderId(response.orderId);
+      setOrderNumber(response.orderNumber ?? null);
     } catch (err: any) {
       console.error('Order submission error:', err);
-      toast.error(err.response?.data?.message || 'Failed to place order. Please try again.');
-      throw err; // Re-throw so CheckoutForm resets isSubmitting
+      const body = err.response?.data;
+      throw new Error(body?.message || body?.error || err.message || 'We could not place your order. Please try again.');
     }
   };
 
@@ -211,39 +220,9 @@ export const PublicCheckout: React.FC = () => {
     );
   }
 
-  // Error state
+  // Not available: the form is missing, switched off or archived (or did not load). No link to the admin app.
   if (error || !formData) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-lg border border-gray-200 p-8 text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg
-              className="w-8 h-8 text-red-600"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Form Not Found</h1>
-          <p className="text-gray-600 mb-6">
-            {error || 'The checkout form you are looking for is not available.'}
-          </p>
-          <button
-            onClick={() => navigate('/')}
-            className="px-6 py-2 bg-[#0f172a] text-white rounded-lg hover:bg-[#1e293b] transition-colors"
-          >
-            Go Home
-          </button>
-        </div>
-      </div>
-    );
+    return <FormNotAvailable supportWhatsapp={errorSupport} message={notFound ? undefined : error ?? undefined} />;
   }
 
   // Success state
@@ -251,10 +230,14 @@ export const PublicCheckout: React.FC = () => {
     return (
       <OrderSuccess
         orderId={orderId ?? undefined}
+        orderNumber={orderNumber ?? undefined}
         repeatOrder={repeatOrder}
         orderTotal={submittedTotal}
         currency={formData?.currency}
         pixelConfig={formData?.pixelConfig as PixelConfig | undefined}
+        digital={formData.formType === 'digital' || formData.product?.productType === 'digital'}
+        supportWhatsapp={formData.supportWhatsapp}
+        design={formData.design}
       />
     );
   }
