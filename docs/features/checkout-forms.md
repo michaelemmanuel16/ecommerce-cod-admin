@@ -193,3 +193,31 @@ docs/
 - `backend/src/middleware/auth.ts` (`optionalAuthenticate`), `services/metaCapiService.ts`, `services/locationService.ts`, `services/checkoutFormService.ts`
 - `frontend/src/pages/PublicCheckout.tsx`, `components/public/OrderSuccess.tsx`, `frontend/embed/*`
 - Tests: `integration/checkoutFormsApi.test.ts`, `integration/publicCheckoutRules.test.ts`
+
+## COD-34 — Forms list and editor Basics, Fields and regions (M3b T10–T11)
+
+- **Date:** 2026-10-23 · **Type:** feature · **Branch:** `feature/m3b-checkout-payments`
+- **Commits:** `b4821b1` (T10), `4e65391` (T11), `610ee96` (review and simplify fixes)
+
+### Forms list (T10)
+- `pages/CheckoutForms.tsx` on ui-v2: Form (name, product, "Digital" tag), Link, Orders this month, Conversion ("—" with a tooltip until visits arrive in M8), Active switch, Actions. "Show archived" loads `?archived=true`; archived rows show an "Archived" tag and Edit and Restore only.
+- Active switch: optimistic, reverts on error and shows the server text (this is how the required-key guard reaches the list).
+- Clone, delete and restore share one `act()` run and update the list in place (no refetch). Clone toast: "Copy created. It stays off until you switch it on." plus "Add the Conversion API token again in Tracking." when the token was not copied.
+- Delete uses `ConfirmDialog`: "<n> orders came from this form. It will be archived …" (n with a thousands separator) or "This form has no orders. It will be removed." The product warning rides on the same toast.
+- Copy link and per-package links (`LinkCell`), host from `VITE_PUBLIC_CHECKOUT_URL` (fallback `window.location.origin`, also used by `lib/embedSnippet.ts`). One `copyText()` in `hooks/useCopyToClipboard.ts`; a refused clipboard opens `CopyFallbackModal` with the text.
+- Roles: the `checkoutForms` menu rule in `backend/src/services/navService.ts` is manager-up (super_admin, admin, manager). `AccessGate` blocks the list and editor routes for everyone else. A manager sees the list read-only: Preview and copy only. A role with only `settings.view` no longer sees the sidebar link.
+
+### Editor (T11)
+- Basics: name, product (type shown), read-only link, description, read-only country "<country> (from your store)" with currency, read-only form type line, thank-you page (https or empty) and allowed domains (moved from Settings, same rules as the server). A product change on a form with orders shows "New orders use the new product. Past orders do not change." `validateBasics()` in `lib/checkoutBasics.ts` checks before save.
+- Fields: "Sends to" options Customer name, Phone, Alternate phone, Email, Region, City or town (`town` key), Street address, Order notes (`notes`, now sent with the order), Custom field only. Up and down buttons next to drag, Show switch, width, and the note "This field helps Meta match buyers." for name, phone, email and town.
+- Required-key guard: `missingKeysMessage()` in `lib/standardFields.ts` uses the "Sends to" labels; the server `GUARD_LABELS` use the same words ("Add: Region."). The banner shows in Fields and blocks saving a new or active form.
+- New-form fields come from `lib/defaultFields.ts` (`NEW_FORM_FIELDS`, street address on and required). The public form keeps its old wording for saved forms with no fields (`LEGACY_EMPTY_FORM_FIELDS`).
+- Regions: all regions of the store's country to start; the last one cannot be removed ("Keep at least one region.").
+- Open point for the owner: the public form still shows "State" for the region field (COD-138), while F-413 says "Region". The public page is COD-36 (T16).
+
+### Key files
+- `frontend/src/pages/CheckoutForms.tsx`, `pages/checkoutForms/LinkCell.tsx`, `CopyFallbackModal.tsx`, `styles/checkoutForms.css`
+- `frontend/src/components/forms/CheckoutFormBuilder.tsx`, `builder/BasicsTab.tsx`, `FieldsTab.tsx`, `FieldEditModal.tsx`, `SettingsTab.tsx`
+- `frontend/src/lib/checkoutBasics.ts`, `standardFields.ts`, `defaultFields.ts` (new), `orderPayload.ts`, `embedSnippet.ts`; `hooks/useCopyToClipboard.ts`; `services/checkout-forms.service.ts`
+- `backend/src/services/navService.ts`, `utils/checkoutLocation.ts`
+- Tests: `CheckoutForms.test.tsx`, `CheckoutFormBuilder` and `FieldsTab` tests, `checkoutBasics.test.ts`, `accessGate.test.tsx`, `unit/navMenuCheckoutForms.test.ts`, `e2e/17-checkout-forms-list.spec.ts`
