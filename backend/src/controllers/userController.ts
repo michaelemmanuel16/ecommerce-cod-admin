@@ -9,6 +9,7 @@ import { resolveTenantId } from '../utils/tenantContext';
 import { readDateBound, toInvalidRange } from '../utils/kpiRequest';
 import { accountService } from '../services/accountService';
 import { dataExportService } from '../services/dataExportService';
+import { isManagerUp } from '../utils/authUtils';
 
 export const getAllUsers = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -87,6 +88,11 @@ export const toggleAvailability = async (req: AuthRequest, res: Response, next: 
 
     if (isNaN(id)) {
       throw new AppError('Invalid user ID', 400);
+    }
+
+    // Only the user themself, or manager-up, may change availability
+    if (!req.user || (req.user.id !== id && !isManagerUp(req.user))) {
+      throw new AppError('You can only change your own availability', 403);
     }
 
     const { isAvailable } = req.body;
