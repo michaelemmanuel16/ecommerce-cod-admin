@@ -201,6 +201,41 @@ export async function getAvailableToSell(productId: number, db: Db = prisma): Pr
   return (await getOnHand(productId, undefined, db)) - (await getReserved(productId, undefined, db));
 }
 
+/** On hand less reserved for many products at once (the batch form of `getAvailableToSell`). Products with no stock read 0. */
+export async function getAvailableMany(productIds: number[], db: Db = prisma): Promise<Map<number, number>> {
+  const ids = [...new Set(productIds)];
+  const out = new Map<number, number>(ids.map((id) => [id, 0]));
+  if (ids.length === 0) return out;
+  const [levels, reserved] = await Promise.all([
+    db.stockLevel.groupBy({ by: ['productId'], _sum: { quantity: true }, where: { productId: { in: ids }, location: { isActive: true, type: { in: PHYSICAL } } } }),
+    db.orderItem.groupBy({
+      by: ['productId'], _sum: { quantity: true },
+      where: { productId: { in: ids }, order: { deletedAt: null, status: { in: RESERVING }, deliveryAgentId: { not: null } } },
+    }),
+  ]);
+  for (const l of levels) out.set(l.productId, l._sum.quantity ?? 0);
+  for (const r of reserved) out.set(r.productId, (out.get(r.productId) ?? 0) - (r._sum.quantity ?? 0));
+  return out;
+}
+
+/**
+ * Create a product row and, when `opening` is given, its opening stock: one `opening` movement that raises the level and
+ * the cache (F-601, M4-T16). The cache starts at 0 here, so this file stays the only one that names `stockQuantity` on a write.
+ */
+export async function createProductWithStock(
+  tx: TransactionClient,
+  data: Omit<Prisma.ProductUncheckedCreateInput, 'stockQuantity'>,
+  opening?: { locationId: number; quantity: number; createdById: number },
+) {
+  const product = await tx.product.create({ data: { ...data, stockQuantity: 0 } });
+  if (opening && opening.quantity > 0) {
+    const locked = await lockProduct(tx, product.id);
+    await applyMovement(tx, { type: 'opening', productId: product.id, quantity: opening.quantity, createdById: opening.createdById, toLocationId: opening.locationId, lockedProduct: locked });
+    return tx.product.findUniqueOrThrow({ where: { id: product.id } });
+  }
+  return product;
+}
+
 /** The stock location of a delivery partner user. A partner with none gets one, so a delivery is never blocked (R11). */
 async function holderLocation(tx: TransactionClient, tenantId: string, userId: number) {
   const existing = await tx.stockLocation.findFirst({ where: { userId } });

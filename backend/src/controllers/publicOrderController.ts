@@ -2,7 +2,7 @@ import { Response, Request, NextFunction } from 'express';
 import { resolveTenantId, withoutTenant } from '../utils/tenantContext';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { emitOrderCreatedEvent } from '../utils/appEvents';
-import checkoutFormService from '../services/checkoutFormService';
+import checkoutFormService, { withAvailable } from '../services/checkoutFormService';
 import { getSocketInstance } from '../utils/socketInstance';
 import { emitOrderCreated } from '../sockets';
 import prisma from '../utils/prisma';
@@ -178,7 +178,9 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
       reject(isDigital ? 'Product is no longer available' : 'This product is sold out');
       return;
     }
-    if (!isDigital && form.product.stockQuantity <= 0) {
+    // Available to sell: on hand less the units reserved for open orders (M4-T16)
+    const stocked = await withAvailable(form.productId, (form as any).upsells);
+    if (!isDigital && stocked.productAvailable <= 0) {
       reject('This product is sold out');
       return;
     }
@@ -264,11 +266,11 @@ export const createPublicOrder = async (req: Request, res: Response, next: NextF
 
     // Resolve each selected upsell against the form's DB upsells (by id) and sum
     // their server-side prices.
-    const dbUpsells = (form as any).upsells as Array<{
+    const dbUpsells = stocked.upsells as unknown as Array<{
       id: number; name: string; description: string | null; price: Prisma.Decimal;
       productId: number | null; items: any; originalPrice: Prisma.Decimal | null;
       discountType: string; discountValue: Prisma.Decimal;
-      product: { isActive: boolean; stockQuantity: number; productType: string } | null;
+      product: { isActive: boolean; available: number; productType: string } | null;
     }>;
     const resolvedUpsells: typeof dbUpsells = [];
     if (selectedUpsells && Array.isArray(selectedUpsells)) {

@@ -13,6 +13,7 @@ import { generateAccessToken } from '../../utils/jwt';
 import { createTenant, deleteTenantRows } from './helpers/twoTenants';
 import { seedTenantDefaults } from '../../services/tenantDefaultsService';
 import { bearer } from './helpers/superAdminToken';
+import { stockUp } from './helpers/stock';
 
 jest.setTimeout(180_000);
 
@@ -67,6 +68,9 @@ beforeAll(async () => {
   await seedTenantDefaults(otherTenantId);
   productA = (await prismaBase.product.create({ data: { sku: `A-${SUFFIX}`, name: 'Copybook', category: 'x', price: 50, stockQuantity: 20, tenantId } })).id;
   productB = (await prismaBase.product.create({ data: { sku: `B-${SUFFIX}`, name: 'Pen set', category: 'x', price: 20, stockQuantity: 5, tenantId } })).id;
+  // Available to sell comes from the levels (M4-T16)
+  await stockUp(tenantId, productA, 20);
+  await stockUp(tenantId, productB, 5);
   customerId = (await mkCustomer('Ama')).id;
   await mkUser('owner', 'super_admin');
   await mkUser('admin', 'admin');
@@ -383,5 +387,38 @@ describe('PUT /api/orders/:id who may edit', () => {
     const res = await edit('otherAdmin', id, { notes: 'from B' });
     expect(res.status).toBe(404);
     expect((await row(id)).notes).toBeNull();
+  });
+});
+
+describe('available to sell (M4-T16)', () => {
+  let productC: number;
+  beforeAll(async () => {
+    productC = (await prismaBase.product.create({ data: { sku: `C-${SUFFIX}`, name: 'Reserved set', category: 'x', price: 30, stockQuantity: 0, tenantId } })).id;
+    const swiftUser = await prismaBase.user.create({ data: { email: `oce-swift-${SUFFIX}@codadmin.test`, password: 'x', firstName: 'Swift', lastName: 'T', role: 'delivery_agent', kind: 'company', tenantId } });
+    await stockUp(tenantId, productC, 10, { name: 'Swift', type: 'partner_3pl', userId: swiftUser.id });
+    // 6 of the 10 are out for delivery at Swift: 4 are left to sell
+    await prismaBase.order.create({
+      data: {
+        customerId, status: 'out_for_delivery', subtotal: 180, totalAmount: 180, codAmount: 180, tenantId, deliveryAgentId: swiftUser.id,
+        deliveryAddress: '1 St', deliveryState: 'Greater Accra', deliveryArea: 'Accra',
+        orderItems: { create: [{ productId: productC, quantity: 6, unitPrice: 30, totalPrice: 180 }] },
+      } as any,
+    });
+  });
+
+  it('create compares with on hand less reserved: 4 can be sold, 5 cannot', async () => {
+    const line = (quantity: number) => ({ orderItems: [{ productId: productC, quantity, unitPrice: 30 }], totalAmount: quantity * 30 });
+    const refused = await create('admin', line(5));
+    expect(refused.status).toBe(400);
+    expect(refused.body.message).toContain('Current stock: 4');
+    expect((await create('admin', line(4))).status).toBe(201);
+  });
+
+  it('edit compares a bigger line the same way', async () => {
+    const id = await mkOrder('pending_confirmation');
+    const line = (quantity: number) => ({ orderItems: [{ productId: productC, quantity, unitPrice: 30 }], totalAmount: quantity * 30 });
+    // the order made above holds 4 but does not reserve (no delivery partner): the 4 sold above are still counted on hand
+    expect((await edit('admin', id, line(5))).status).toBe(400);
+    expect((await edit('admin', id, line(5))).body.message).toContain('Insufficient stock');
   });
 });

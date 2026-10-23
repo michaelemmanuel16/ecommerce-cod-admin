@@ -15,6 +15,8 @@ jest.mock('../../utils/appEvents', () => ({
 jest.mock('../../services/checkoutFormService', () => ({
   __esModule: true,
   default: {},
+  // Available to sell is read from the levels; these tests run on a mocked client
+  withAvailable: async (_productId: number, upsells: any[]) => ({ productAvailable: 10, upsells }),
 }));
 
 jest.mock('../../services/metaCapiService', () => ({

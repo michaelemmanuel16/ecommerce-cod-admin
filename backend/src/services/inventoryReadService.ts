@@ -19,7 +19,7 @@ const key = (a: number, b: number) => `${a}:${b}`;
 const num = (v: bigint | number | null | undefined) => Number(v ?? 0);
 
 /** Reserved units per (holder user, product): orders in a reserving status at the order's delivery partner (F-651). */
-async function reservedByHolder(productId?: number): Promise<Map<string, number>> {
+export async function reservedByHolder(productId?: number): Promise<Map<string, number>> {
   const rows = await prisma.$queryRaw<Array<{ userId: number; productId: number; units: bigint }>>(Prisma.sql`
     SELECT o.delivery_agent_id AS "userId", i.product_id AS "productId", SUM(i.quantity) AS units
     FROM order_items i JOIN orders o ON o.id = i.order_id

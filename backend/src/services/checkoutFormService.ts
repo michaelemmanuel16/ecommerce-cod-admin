@@ -9,12 +9,15 @@ import { isUpsellAvailable } from '../utils/checkoutFormRules';
 import { isStorageUrl } from '../config/r2';
 import { getTenantId } from '../utils/tenantContext';
 import { supportWhatsappForTenant } from './tenantLookupService';
+import { getAvailableMany } from './stockService';
 
 // Shared PUBLIC render payload — the fields safe to expose on the public
 // checkout page and the embed widget config endpoint. Reused so the page and
 // the widget never drift in what they receive.
 const PUBLIC_FORM_SELECT = {
   id: true,
+  // Read to look up available stock; removed again before the response.
+  productId: true,
   name: true,
   slug: true,
   description: true,
@@ -79,8 +82,6 @@ const PUBLIC_FORM_SELECT = {
   },
 } satisfies Prisma.CheckoutFormSelect;
 
-type UpsellRow = Parameters<typeof isUpsellAvailable>[0];
-
 // Replace the raw stock quantity with a boolean in-stock flag.
 // `towns` (state -> towns) is added so the public form can fill its City/Town dropdown (COD-138).
 // Upsells whose linked product is inactive or out of stock are dropped (F-415).
@@ -92,10 +93,31 @@ function withStorageBanner<D>(design: D): D {
   return { ...design, page } as D;
 }
 
-function sanitizePublicForm<T extends { product: { stockQuantity: number }; country: string | null; regions: unknown; upsells: UpsellRow[] }>(form: T) {
+type StockedUpsell = { productId?: number | null; product?: { isActive: boolean; stockQuantity: number; productType: string } | null };
+
+/**
+ * Available to sell (on hand less reserved, M4-T16) for a form's product and the products linked to its upsells.
+ * Each upsell's product carries `available` in place of the cached on-hand number, which is what `isUpsellAvailable` reads.
+ */
+export async function withAvailable<U extends StockedUpsell>(productId: number, upsells: U[]) {
+  const available = await getAvailableMany([productId, ...upsells.map((u) => u.productId).filter((id): id is number => id != null)]);
+  return {
+    productAvailable: available.get(productId) ?? 0,
+    upsells: upsells.map((u) => {
+      if (!u.product) return { ...u, product: u.product as null | undefined };
+      const { stockQuantity: _cached, ...rest } = u.product;
+      return { ...u, product: { ...rest, available: available.get(u.productId!) ?? 0 } };
+    }),
+  };
+}
+
+async function sanitizePublicForm<T extends { productId: number; product: { stockQuantity: number; productType: string }; country: string | null; regions: unknown; upsells: StockedUpsell[] }>(form: T) {
+  const { productId, ...rest } = form;
   const { stockQuantity, ...productData } = form.product;
-  const upsells = form.upsells.filter(isUpsellAvailable).map(({ productId: _productId, product: _product, isActive: _isActive, ...visible }: any) => visible);
-  return { ...form, upsells, design: withStorageBanner((form as { design?: unknown }).design), product: { ...productData, inStock: stockQuantity > 0 }, towns: townsForForm(form.country, form.regions) };
+  const stocked = await withAvailable(productId, form.upsells);
+  const upsells = stocked.upsells.filter(isUpsellAvailable).map(({ productId: _productId, product: _product, isActive: _isActive, ...visible }: any) => visible);
+  const inStock = productData.productType === 'digital' ? stockQuantity > 0 : stocked.productAvailable > 0;
+  return { ...rest, upsells, design: withStorageBanner((form as { design?: unknown }).design), product: { ...productData, inStock }, towns: townsForForm(form.country, form.regions) };
 }
 
 // ---------- Public embed config cache ----------
@@ -398,7 +420,7 @@ export class CheckoutFormService {
       throw new AppError('Checkout form not found or inactive', 404);
     }
 
-    const sanitized = { ...sanitizePublicForm(form), supportWhatsapp };
+    const sanitized = { ...(await sanitizePublicForm(form)), supportWhatsapp };
     configCache.set(slug, { data: sanitized, fetchedAt: now });
     return sanitized;
   }
@@ -418,6 +440,8 @@ export class CheckoutFormService {
       where,
       select: {
         id: true,
+        // Read to look up available stock; removed again before the response.
+        productId: true,
         name: true,
         slug: true,
         description: true,
@@ -479,13 +503,15 @@ export class CheckoutFormService {
       throw new AppError('Checkout form not found', 404);
     }
 
+    const { productId, ...rest } = form;
     const { stockQuantity, ...productData } = form.product;
+    const available = (await getAvailableMany([productId])).get(productId) ?? 0;
     return {
-      ...form,
+      ...rest,
       // An upsell switched off in the editor is hidden here as on the public form.
       upsells: form.upsells.filter(isUpsellAvailable),
       design: withStorageBanner(form.design),
-      product: { ...productData, inStock: stockQuantity > 0 },
+      product: { ...productData, inStock: productData.productType === 'digital' ? stockQuantity > 0 : available > 0 },
       towns: townsForForm(form.country, form.regions),
     };
   }

@@ -32,6 +32,8 @@ jest.mock('../../services/kpi/revenue', () => ({
 }));
 import { revenueResult } from '../mocks/kpiResults';
 import { deliveredRevenue } from '../../services/kpi/revenue';
+// Available to sell is read from the levels; these tests run on a mocked client
+jest.mock('../../services/stockService', () => ({ getAvailableToSell: async () => 1000 }));
 import { prismaMock } from '../mocks/prisma.mock';
 import orderService from '../../services/orderService';
 import { transitionOrder } from '../../services/orderStateMachine';

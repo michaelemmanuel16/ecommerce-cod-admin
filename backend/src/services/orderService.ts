@@ -15,6 +15,7 @@ import { checkResourceOwnership, isManagerUp, orderScope, Requester } from '../u
 import { fullName } from '../utils/nameUtils';
 import { customerPhoneSearch, normalizePhone, normalizePhoneForStorage, phoneLookupVariants } from '../utils/phone';
 import { ORDER_EVENT_INCLUDE } from './orderSideEffects';
+import { getAvailableToSell } from './stockService';
 import assignmentService from './assignmentService';
 import { transitionOrder, allowedTransitions, actorOf, ownsOrder, TransitionActor, TransitionOptions } from './orderStateMachine';
 import { hasPermission } from '../middleware/auth';
@@ -493,9 +494,12 @@ export class OrderService {
       // Validate product availability (optional, as we already checked existence)
       for (const item of data.orderItems) {
         const product = productMap.get(item.productId);
-        if (product.stockQuantity < item.quantity) {
+        // Available to sell: on hand less the units reserved for open orders (M4-T16). A digital product has no stock.
+        if (product.productType === 'digital') continue;
+        const available = await getAvailableToSell(item.productId, tx);
+        if (available < item.quantity) {
           throw new AppError(
-            `Insufficient stock for product ${product.name}.Current stock: ${product.stockQuantity} `,
+            `Insufficient stock for product ${product.name}.Current stock: ${available} `,
             400
           );
         }
@@ -1242,9 +1246,10 @@ export class OrderService {
       if (Money.parse(item.unitPrice).isZero() && !canGiveAway && !(was && Money.parse(was.unitPrice).isZero())) {
         throw new AppError('Only the owner and admins can set a price to 0.', 403, 'PRICE_ZERO_ADMIN_ONLY');
       }
-      // Current stock number until M4 (available to sell); a line that did not grow is not checked again
-      if ((!was || item.quantity > was.quantity) && product.stockQuantity < item.quantity) {
-        throw new AppError(`Insufficient stock for product ${product.name}. Current stock: ${product.stockQuantity} `, 400);
+      // Available to sell (on hand less reserved, M4-T16); a line that did not grow is not checked again. A digital product has no stock.
+      if ((!was || item.quantity > was.quantity) && product.productType !== 'digital') {
+        const available = await getAvailableToSell(item.productId);
+        if (available < item.quantity) throw new AppError(`Insufficient stock for product ${product.name}. Current stock: ${available} `, 400);
       }
     }
     return items.map((item) => ({ ...item, itemType: item.itemType || 'package', metadata: item.metadata || null }));

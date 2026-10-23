@@ -43,7 +43,8 @@ export function pixelConfigError(config: unknown): string | null {
   return null;
 }
 
-type UpsellStock = { productId?: number | null; product?: { isActive: boolean; stockQuantity: number; productType: string } | null };
+/** `available` is on hand less reserved over all holders (stockService.getAvailableToSell), not the cached on-hand number. */
+type UpsellStock = { productId?: number | null; product?: { isActive: boolean; available: number; productType: string } | null };
 
 /** An upsell shows only while it is switched on. A product-linked upsell also needs its product active and, for a physical product, in stock. */
 export function isUpsellAvailable(upsell: UpsellStock & { isActive?: boolean }): boolean {
@@ -51,5 +52,5 @@ export function isUpsellAvailable(upsell: UpsellStock & { isActive?: boolean }):
   if (upsell.isActive === false) return false;
   const product = upsell.product;
   if (!upsell.productId || !product) return true;
-  return product.isActive && (product.productType === 'digital' || product.stockQuantity > 0);
+  return product.isActive && (product.productType === 'digital' || product.available > 0);
 }

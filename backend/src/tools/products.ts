@@ -29,10 +29,10 @@ registerToolDef(defineTool({
       name: p.name,
       sku: p.sku,
       price: Money.toApi(p.price),
-      stock: p.stockQuantity,
+      stock: p.stock,
       deliveredUnits: input.productId ? delivered.units.value : unitsBy.get(p.id) ?? 0,
       lowStockThreshold: p.lowStockThreshold,
-      isLowStock: p.lowStockThreshold ? p.stockQuantity <= p.lowStockThreshold : false,
+      isLowStock: p.lowStockThreshold ? p.stock <= p.lowStockThreshold : false,
     }));
 
     if (input.lowStockOnly) results = results.filter((p) => p.isLowStock);

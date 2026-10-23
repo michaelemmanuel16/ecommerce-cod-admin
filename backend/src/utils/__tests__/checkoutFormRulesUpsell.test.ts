@@ -8,7 +8,7 @@ describe('isUpsellAvailable (F-415)', () => {
 
   it('an upsell switched off in the editor (isActive false) is hidden, linked to a product or not', () => {
     expect(isUpsellAvailable({ productId: null, isActive: false })).toBe(false);
-    expect(isUpsellAvailable({ productId: 1, product: { isActive: true, stockQuantity: 5, productType: 'physical' }, isActive: false })).toBe(false);
+    expect(isUpsellAvailable({ productId: 1, product: { isActive: true, available: 5, productType: 'physical' }, isActive: false })).toBe(false);
   });
 
   it('isActive true or missing still shows', () => {
@@ -17,8 +17,8 @@ describe('isUpsellAvailable (F-415)', () => {
   });
 
   it('a product-linked upsell needs an active product with stock (digital needs no stock)', () => {
-    expect(isUpsellAvailable({ productId: 1, product: { isActive: true, stockQuantity: 0, productType: 'physical' } })).toBe(false);
-    expect(isUpsellAvailable({ productId: 1, product: { isActive: false, stockQuantity: 5, productType: 'physical' } })).toBe(false);
-    expect(isUpsellAvailable({ productId: 1, product: { isActive: true, stockQuantity: 0, productType: 'digital' } })).toBe(true);
+    expect(isUpsellAvailable({ productId: 1, product: { isActive: true, available: 0, productType: 'physical' } })).toBe(false);
+    expect(isUpsellAvailable({ productId: 1, product: { isActive: false, available: 5, productType: 'physical' } })).toBe(false);
+    expect(isUpsellAvailable({ productId: 1, product: { isActive: true, available: 0, productType: 'digital' } })).toBe(true);
   });
 });

@@ -10,6 +10,7 @@ import app from '../../server';
 import { prismaBase } from '../../utils/prisma';
 import { generateAccessToken } from '../../utils/jwt';
 import { bearer } from './helpers/superAdminToken';
+import { toolData } from './helpers/callTool';
 import { seedFixture, deleteFixtureRows, FIXTURE_SLUG } from '../fixtures/numbersFixture';
 
 jest.setTimeout(240_000);
@@ -98,5 +99,49 @@ describe('inventory on the fixture (T15)', () => {
     expect(res.status).toBe(201);
     // 200 on hand, 188 counted: 12 units at the fixture cost GH₵30 (the landed cost 30.2083 arrives with the receive service)
     expect(res.body.count.lines[0]).toMatchObject({ systemQuantity: 200, difference: -12, finding: { status: 'open', amount: '360.00' } });
+  });
+});
+
+describe('products on the fixture (T16)', () => {
+  const MONTH = 'month=2026-10';
+  const byName = (body: any) => Object.fromEntries(body.products.map((p: any) => [p.sku, p]));
+
+  it('best seller this month: the copybook set, 306 delivered; on hand 236 over the two holders; 170 reserved over all partners', async () => {
+    const { body } = await get(`/api/products?tab=all&${MONTH}&limit=100`);
+    const p = byName(body);
+    expect(p['MG-COPYBOOK-SET']).toMatchObject({ deliveredInPeriod: 306, onHandTotal: 236, reservedTotal: 170, marginPct: 88 }); // reserved: 116 + 21 at the two holders with stock, 33 at partners without a level
+    expect(p['MG-REFILL-PENS'].deliveredInPeriod).toBe(172);
+    expect(p['MG-GRIP-TRAINER'].deliveredInPeriod).toBe(89);
+    expect(p['MG-PARENT-GUIDE'].deliveredInPeriod).toBe(58);
+    const summary = (await get(`/api/products/summary?${MONTH}`)).body;
+    expect(summary.bestSeller).toMatchObject({ name: 'Magic Groove copybook set', units: 306 });
+    expect(summary.activeProducts).toEqual({ active: 5, archived: 0 });
+  });
+
+  it('margin per row 88% / 70% / 69% / 95% once the costs of the three add-ons are set, and the weighted average of the tile', async () => {
+    // The fixture leaves the cost of the add-ons at 0 (only the copybook has the owner-set GH₵30), so their margin reads 100% until a cost is set.
+    expect(byName((await get(`/api/products?tab=all&${MONTH}&limit=100`)).body)['MG-REFILL-PENS'].marginPct).toBe(100);
+    const costs: Record<string, string> = { 'MG-REFILL-PENS': '12', 'MG-GRIP-TRAINER': '10.85', 'MG-PARENT-GUIDE': '2.95' };
+    for (const [code, cogs] of Object.entries(costs)) await prismaBase.product.updateMany({ where: { tenantId, sku: code }, data: { cogs } });
+    const p = byName((await get(`/api/products?tab=all&${MONTH}&limit=100`)).body);
+    expect([p['MG-COPYBOOK-SET'], p['MG-REFILL-PENS'], p['MG-GRIP-TRAINER'], p['MG-PARENT-GUIDE']].map((x) => x.marginPct)).toEqual([88, 70, 69, 95]);
+    // Sum of units x (price - cost) over sum of units x price, all five products: 79,730.25 / 92,111 = 86.56%, shown as 87
+    expect((await get(`/api/products/summary?${MONTH}`)).body.averageMargin).toBe(87);
+  });
+
+  it('a call rep gets no cost field; PATCH /api/products/:id/stock is a 404', async () => {
+    const rep = await prismaBase.user.findFirstOrThrow({ where: { tenantId, role: 'sales_rep' } });
+    const repToken = generateAccessToken({ id: rep.id, email: rep.email, role: 'sales_rep', tenantId });
+    const res = await request(app).get('/api/products?tab=all&limit=100').set(bearer(repToken));
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toMatch(/cogs|marginPct/);
+    expect((await request(app).patch(`/api/products/${sku['MG-COPYBOOK-SET']}/stock`).set(bearer(ownerToken)).send({ stockQuantity: 5 })).status).toBe(404);
+  });
+
+  it('the MCP tool products_inventory reads the levels, not the cached number', async () => {
+    await prismaBase.product.update({ where: { id: sku['MG-COPYBOOK-SET'] }, data: { stockQuantity: 999 } });
+    const out = await toolData('products_inventory', {}, tenantId);
+    expect(out.products.find((x: any) => x.sku === 'MG-COPYBOOK-SET').stock).toBe(236);
+    await prismaBase.product.update({ where: { id: sku['MG-COPYBOOK-SET'] }, data: { stockQuantity: 236 } });
   });
 });

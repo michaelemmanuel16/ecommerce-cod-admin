@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 
 jest.mock('../../utils/appEvents', () => ({ __esModule: true, emitOrderCreatedEvent: jest.fn() }));
-jest.mock('../../services/checkoutFormService', () => ({ __esModule: true, default: {} }));
+jest.mock('../../services/checkoutFormService', () => ({ __esModule: true, default: {}, withAvailable: async (_id: number, upsells: any[]) => ({ productAvailable: 10, upsells }) }));
 jest.mock('../../services/metaCapiService', () => ({
   metaCapiService: { fireCapiPurchaseEvent: jest.fn(() => Promise.resolve()) },
 }));
