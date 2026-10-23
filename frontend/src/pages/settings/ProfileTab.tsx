@@ -3,12 +3,12 @@ import { Button, Card, Input, useToast } from '../../components/ui-v2';
 import { accountService, type ProfileUser } from '../../services/account.service';
 import { authService } from '../../services/auth.service';
 import { useAuthStore } from '../../stores/authStore';
+import { initials, personName } from '../../utils/people';
 import { photoSrc } from '../../utils/photoSrc';
 
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const PHOTO_MAX = 5 * 1024 * 1024;
 
-const initials = (first = '', last = '') => `${first[0] ?? ''}${last[0] ?? ''}`.toUpperCase();
 const joinName = (u: { firstName?: string; lastName?: string }) => [u.firstName, u.lastName].filter(Boolean).join(' ');
 const apiMessage = (e: unknown, fallback: string) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
 
@@ -109,7 +109,7 @@ export function ProfileTab() {
       <form onSubmit={save}>
         <div className="proftop">
           <div className="avbig">
-            {user?.photoUrl ? <img src={photoSrc(user.photoUrl)} alt="Your photo" /> : initials(user?.firstName, user?.lastName)}
+            {user?.photoUrl ? <img src={photoSrc(user.photoUrl)} alt="Your photo" /> : initials(personName({ firstName: user?.firstName ?? '', lastName: user?.lastName ?? '' }))}
           </div>
           <div>
             <b style={{ fontSize: 16 }}>{user?.displayName || (user && joinName(user))}</b>

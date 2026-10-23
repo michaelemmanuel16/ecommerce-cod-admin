@@ -2,10 +2,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfigStore } from '../../stores/configStore';
 import { photoSrc } from '../../utils/photoSrc';
+import { initials, personName } from '../../utils/people';
 import { platformLoginPath } from '../../utils/platformDomain';
 import { usePopover } from './usePopover';
-
-const initials = (first = '', last = '') => `${first[0] ?? ''}${last[0] ?? ''}`.toUpperCase();
 
 /** The avatar and its menu (F-104): Profile, Security, Sign out. Profile and Security open those Settings tabs. */
 export function UserMenu() {
@@ -34,7 +33,7 @@ export function UserMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        {user?.photoUrl ? <img src={photoSrc(user.photoUrl)} alt="" className="avatar-img" /> : initials(user?.firstName, user?.lastName)}
+        {user?.photoUrl ? <img src={photoSrc(user.photoUrl)} alt="" className="avatar-img" /> : initials(personName({ firstName: user?.firstName ?? '', lastName: user?.lastName ?? '' }))}
       </button>
       {open && (
         <div className="sx-menu" role="menu">
