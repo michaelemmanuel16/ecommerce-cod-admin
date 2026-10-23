@@ -7,7 +7,6 @@ import { test, expect, Page } from '@playwright/test';
  * `status[]`, `sortBy`, `page`, `limit`; the counts ignore status; a bulk call answers {succeeded, failed}.
  * Needs the dev users (password123) and the frontend. Point E2E_BASE_URL at the Vite port.
  */
-test.use({ baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173' });
 
 const PASSWORD = 'password123';
 

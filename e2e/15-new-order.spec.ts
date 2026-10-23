@@ -6,7 +6,6 @@ import { test, expect, Page } from '@playwright/test';
  * database. The POST answers the way the backend does: the body has no status and the order starts pending_confirmation.
  * Needs the dev users (password123) and the frontend. Point E2E_BASE_URL at the Vite port.
  */
-test.use({ baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173' });
 
 const COUNTS = {
   all: 1,

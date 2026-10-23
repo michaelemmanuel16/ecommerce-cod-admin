@@ -5,7 +5,6 @@ import { test, expect, Page } from '@playwright/test';
  * The API is served by routes inside each test, so the numbers do not depend on the dev database.
  * Needs the dev users (password123) and the frontend. Point E2E_BASE_URL at the Vite port.
  */
-test.use({ baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173' });
 
 const COUNTS = {
   all: 1445,

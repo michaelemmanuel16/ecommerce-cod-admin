@@ -6,7 +6,6 @@ import { test, expect, Page, BrowserContext } from '@playwright/test';
  * timeline and edit routes follow the backend contract: PUT answers 409 STALE_ORDER when the body's `updatedAt` is not
  * the stored one. Needs the dev users (password123) and the frontend. Point E2E_BASE_URL at the Vite port.
  */
-test.use({ baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173' });
 
 const PASSWORD = 'password123';
 const ID = 24118;

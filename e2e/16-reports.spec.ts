@@ -8,7 +8,6 @@ import { reportsFixture, withoutCompare } from '../frontend/src/__tests__/fixtur
  * The sign-in uses the real dev API. Needs the dev users (password123) and the frontend with the repApp and agentApp
  * flags off. Point E2E_BASE_URL at the Vite port.
  */
-test.use({ baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173' });
 
 const PASSWORD = 'password123';
 

@@ -6,7 +6,6 @@ import { test, expect, Page } from '@playwright/test';
  * e2e-admin (role admin with the default settings:view), e2e-rep and admin@codadmin.com (owner), all password123,
  * and the frontend. Point E2E_BASE_URL at the Vite port.
  */
-test.use({ baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173' });
 
 const PASSWORD = 'password123';
 
