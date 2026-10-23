@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma';
 import { hasPermission } from '../middleware/auth';
-import { orderScope, Requester } from '../utils/authUtils';
+import { customerScope, orderScope, Requester } from '../utils/authUtils';
 import { looksLikePhone, phoneSearchConditions } from '../utils/phone';
 
 /** M3-T08: command palette search (F-105). Orders and customers, 5 each, tenant-scoped and permission-filtered. */
@@ -94,14 +94,11 @@ class SearchService {
   private findCustomers(customerMatch: Prisma.CustomerWhereInput[], requester: Requester) {
     if (!customerMatch.length) return [];
 
-    // Same row scope as the customers list: below manager, only customers with an order of theirs.
-    const scoped = !['super_admin', 'admin', 'manager'].includes(requester.role);
-    const scope: Prisma.CustomerWhereInput = scoped
-      ? { orders: { some: { deletedAt: null, OR: [{ customerRepId: requester.id }, { deliveryAgentId: requester.id }] } } }
-      : {};
+    // Same row scope as the customers list (shared `customerScope`)
+    const scope = customerScope(requester);
 
     return prisma.customer.findMany({
-      where: { ...scope, OR: customerMatch },
+      where: scope ? { AND: [scope, { OR: customerMatch }] } : { OR: customerMatch },
       orderBy: [{ totalOrders: 'desc' }, { id: 'desc' }],
       take: LIMIT,
       select: { id: true, firstName: true, lastName: true, phoneNumber: true, area: true, state: true, totalOrders: true },

@@ -2,7 +2,7 @@ import prisma from '../utils/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { Prisma } from '@prisma/client';
 import logger from '../utils/logger';
-import { isManagerUp, Requester } from '../utils/authUtils';
+import { customerScope, isManagerUp, Requester } from '../utils/authUtils';
 import { fullName } from '../utils/nameUtils';
 import { getTenantId, resolveTenantId } from '../utils/tenantContext';
 import { findCustomerByPhoneIncludingArchived } from '../utils/customerLookup';
@@ -67,18 +67,9 @@ interface CustomerFilters {
 const isAdminRole = (requester?: Requester) => !requester || isManagerUp(requester);
 
 export class CustomerService {
-  /**
-   * Row scope (F-350): owner, admin and manager see all. A call rep sees customers they created or have an order with.
-   * A delivery agent sees customers of their own orders. Any other role keeps the old rule (an order of theirs).
-   */
+  /** Row scope (F-350): the shared `customerScope` rule, also used by the global search. */
   private scopeWhere(requester?: Requester): Prisma.CustomerWhereInput | null {
-    if (isAdminRole(requester)) return null;
-    const { id, role } = requester!;
-    if (role === 'sales_rep') {
-      return { OR: [{ createdById: id }, { orders: { some: { customerRepId: id, deletedAt: null } } }] };
-    }
-    if (role === 'delivery_agent') return { orders: { some: { deliveryAgentId: id, deletedAt: null } } };
-    return { orders: { some: { OR: [{ customerRepId: id }, { deliveryAgentId: id }], deletedAt: null } } };
+    return customerScope(requester);
   }
 
   /**
